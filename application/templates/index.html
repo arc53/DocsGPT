@@ -9,12 +9,12 @@
   </head>
   <body>
     <header class="bg-white p-2 flex justify-between items-center">
-      <h1 class="text-lg font-medium">DocsGPT</h1>
+      <h1 class="text-lg font-medium">DocsGPT 🦖 Very early Preview</h1>
       <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">About</a>
     </header>
     <div class="flex">
       <div class="w-3/4">
-        <div class="w-full flex flex-col">
+        <div class="w-full flex flex-col h-5/6">
           <div id="chat-container">
 
             <div id="messages" class="w-full flex flex-col" >
@@ -45,7 +45,7 @@
           </div>
         </div>
 
-        <div class=" flex mt-4 mb-2">
+        <div class="flex mt-4 mb-2">
         <form id="message-form">
           <input id="message-input" class="bg-white p-2 rounded-lg ml-2 w-[46rem]" type="text" placeholder="Type your message here...">
           <button id="button-submit" class="bg-blue-500 text-white p-2 rounded-lg ml-2 mr-2 ml-2" type="submit">Send</button>
@@ -57,7 +57,10 @@
         </div>
         <div class="w-1/4 p-2">
           <p class="text-sm">This is a chatbot that uses the GPT-3, Faiss and <a href="https://github.com/hwchase17/langchain >" class="text-blue-500 hover:text-blue-800">Longchain</a> to answer questions</p>
-          <p class="text-sm">The source code is available on <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">Github</a></p>
+          <br>
+          <p class="text-sm">The source code is available on <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">Github</a></p><br>
+          <p class="text-sm">Currently It uses python pandas documentation, so it will respond to information relevant to pandas. If you want to train it on different documentation -  <a href="https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation" class="text-blue-500 hover:text-blue-800"> please follow this guide </a></p><br>
+          <p class="text-sm">If you want to launch it on your own server - <a href="https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation" class="text-blue-500 hover:text-blue-800"> follow this guide </a></p>
         </div>
     </div>
   <script src="{{url_for('static',filename='src/chat.js')}}"></script>
