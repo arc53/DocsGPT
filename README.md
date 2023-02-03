@@ -5,7 +5,9 @@ The aim of DocsGPT is to utilize the GPT engine to answer questions about the do
 
 ## Project structure
 application - flask app (main application)
+
 extensions - chrome extension
+
 scripts - script that creates similarity search index and store for other libraries 
 
 
