@@ -32,3 +32,19 @@ Copy .env_sample and create .env with your openai api token
 ## [How to use any other documentation](https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation)
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
+
+## Roadmap
+
+Good vectorDB scraping/parsing
+
+Load vectors in UI from arc53
+
+better UI
+
+More prompts for other languages
+
+Better parsing
+
+Extensions for firefox
+
+Extensions for Vscode
