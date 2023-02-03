@@ -3,6 +3,9 @@
 ## What is DocsGPT
 The aim of DocsGPT is to utilize the GPT engine to answer questions about the documentation of any project, making it easier for developers to find the information they need .
 
+Screenshot <img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
+
+
 ## Project structure
 application - flask app (main application)
 
