@@ -1,0 +1,21 @@
+{
+  "name": "Documenation AI butler",
+  "version": "0.0.1",
+  "manifest_version": 2,
+  "description": "AI assistant for developers, that helps you answer your questions about the documentation you are reading.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "default_locale": "en",
+  "background": {
+    "page": "src/bg/background.html",
+    "persistent": true
+  },
+  "permissions": ["activeTab", "storage"],
+  "browser_action": {
+    "default_popup": "popup.html"
+}
+
+}

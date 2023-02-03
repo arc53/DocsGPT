@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Chat Extension</title>
+    <link href="/dist/output.css" rel="stylesheet">
+    <!-- <link rel="stylesheet" href="styles.css"> -->
+
+
+
+  </head>
+  <body>
+    <header class="bg-white p-2 flex justify-between items-center">
+      <h1 class="text-lg font-medium">DocsGPT</h1>
+      <a href="#about" class="text-blue-500 hover:text-blue-800">About</a>
+    </header>
+        <div class="w-full flex flex-col">
+          <div id="chat-container">
+            
+            <div id="messages" class="w-full flex flex-col">
+              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
+                <p class="text-sm">Hello, ask me anything about this library. Im here to help</p>
+              </div>
+              <div class="bg-blue-500 text-white p-2 rounded-lg mb-2 self-end">
+                <p class="text-sm">How to create API key for Api gateway?</p>
+              </div>
+              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
+                <p class="text-sm">Import the boto3 library and create a client for the API Gateway service:</p>
+                
+
+              </div>
+              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
+                <code class="text-sm">client = boto3.client('apigateway')</code> 
+                
+
+              </div>
+              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
+                <p class="text-sm">Create an API key:</p>
+                
+              </div>
+              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
+                <code class="text-sm">response = client.create_api_key(<br>name='API_KEY_NAME',<br>description='API key description',<br>enabled=True)<br>api_key = response['value']</code>
+
+              </div>
+          </div>
+        </div>
+        <div class=" flex mt-4 mb-2">
+        <form id="message-form">
+          <input id="message-input" class="bg-white p-2 rounded-lg ml-2 w-[26rem]" type="text" placeholder="Type your message here...">
+          <button class="bg-blue-500 text-white p-2 rounded-lg ml-2 mr-2 ml-2" type="submit">Send</button>
+        </form>
+        </div>
+
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
