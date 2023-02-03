@@ -22,26 +22,17 @@
                 <p class="text-sm">Hello, ask me anything about this library. Im here to help</p>
               </div>
               <div class="bg-blue-500 text-white p-2 rounded-lg mb-2 self-end">
-                <p class="text-sm">How to create API key for Api gateway?</p>
+                <p class="text-sm">How to merge tables?</p>
               </div>
               <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
-                <p class="text-sm">Import the boto3 library and create a client for the API Gateway service:</p>
-
-
+                <p class="text-sm">To merge two tables in pandas, you can use the pd.merge() function. The basic syntax is:<br>
+pd.merge(left, right, on, how)<br>
+where left and right are the two tables to merge, on is the column to merge on, and how is the type of merge to perform.<br>
+For example, to merge the two tables df1 and df2 on the column 'key', you can use:<br>
+pd.merge(df1, df2, on='key', how='left')<br>
+This will return a new DataFrame with all the columns from both tables, and only the rows that match the 'key' column. </p>
               </div>
-              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
-                <code class="text-sm">client = boto3.client('apigateway')</code>
 
-
-              </div>
-              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
-                <p class="text-sm">Create an API key:</p>
-
-              </div>
-              <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
-                <code class="text-sm">response = client.create_api_key(<br>name='API_KEY_NAME',<br>description='API key description',<br>enabled=True)<br>api_key = response['value']</code>
-
-              </div>
           </div>
         </div>
 
