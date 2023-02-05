@@ -1,3 +1,13 @@
+<p align="center">
+  <img src=".Readme Logo.png">
+</p>
+
+
+<p align="center">
+  <strong>DocsGPT - Simplifying Project Documentation with AI-powered Assistance</strong>
+</p>
+
+
 # DocsGPT 🦖
 
 ## What is DocsGPT
