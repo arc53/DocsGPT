@@ -16,8 +16,13 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 
   [![Github Repo Stars](https://img.shields.io/github/stars/arc53/docsgpt?style=social)](https://github.com/arc53/docsgpt)
-  [![Github Repo Stars](https://img.shields.io/discord/1070046503302877216)](https://github.com/arc53/docsgpt)
+  [![Forks](https://img.shields.io/github/forks/arc53/docsgpt?style=social)](https://github.com/arc53/docsgpt)
+  
   [![Licence](https://img.shields.io/github/license/arc53/docsgpt)](https://github.com/arc53/docsgpt)
+  [![Discord](https://img.shields.io/discord/1070046503302877216)](https://github.com/arc53/docsgpt)
+  
+  
+  
 
 
 
