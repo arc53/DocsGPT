@@ -9,6 +9,13 @@ from langchain import OpenAI
 from langchain.chains import VectorDBQAWithSourcesChain
 from langchain.prompts import PromptTemplate
 
+# Redirect PosixPath to WindowsPath on Windows
+import platform
+if platform.system() == "Windows":
+    import pathlib
+    temp = pathlib.PosixPath
+    pathlib.PosixPath = pathlib.WindowsPath
+
 # loading the .env file
 dotenv.load_dotenv()
 
