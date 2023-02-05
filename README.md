@@ -40,16 +40,11 @@ Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
 
 ## Roadmap
 
-Good vectorDB scraping/parsing
+- Good vectorDB scraping/parsing
+- Load vectors in UI from arc53
+- Better UI
+- More prompts for other languages
+- Better parsing
+- Extensions for firefox
+- Extensions for Vscode
 
-Load vectors in UI from arc53
-
-better UI
-
-More prompts for other languages
-
-Better parsing
-
-Extensions for firefox
-
-Extensions for Vscode
