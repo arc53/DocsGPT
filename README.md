@@ -1,6 +1,6 @@
-<p align="center">
-  <H1><strong>DocsGPT  🦖 </strong></H1>
-</p>
+<h1 align="center">
+  DocsGPT  🦖
+</h1>
 
 <p align="center">
   <strong>DocsGPT - Simplifying Project Documentation with AI-powered Assistance</strong>
