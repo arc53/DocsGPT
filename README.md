@@ -12,15 +12,14 @@
 Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
 
+<div align="center">
 
-  [![Github Repo Stars](https://img.shields.io/github/stars/arc53/docsgpt?style=social)](https://github.com/arc53/docsgpt)
-  [![Forks](https://img.shields.io/github/forks/arc53/docsgpt?style=social)](https://github.com/arc53/docsgpt)
-  
-  [![Licence](https://img.shields.io/github/license/arc53/docsgpt)](https://github.com/arc53/docsgpt)
-  [![Discord](https://img.shields.io/discord/1070046503302877216)](https://github.com/arc53/docsgpt)
-  
-  
-  
+  <a href="">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
+  <a href="">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
+  <a href="">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
+  <a href="">![example3](https://img.shields.io/discord/1070046503302877216)</a>
+
+</div>
 
 
 
