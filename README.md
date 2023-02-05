@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="./Readme Logo.png">
+  <H1><strong>DocsGPT  🦖 </strong></H1>
 </p>
-
-
 
 <p align="center">
   <strong>DocsGPT - Simplifying Project Documentation with AI-powered Assistance</strong>
