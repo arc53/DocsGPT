@@ -8,13 +8,15 @@
   <strong>DocsGPT - Simplifying Project Documentation with AI-powered Assistance</strong>
 </p>
 
-[![Github Repo Stars](https://img.shields.io/github/stars/arc53/docsgpt?style=social)](https://github.com/arc53/docsgpt)
-
 <p align="left">
   <strong>DocsGPT</strong> is a cutting-edge open-source solution that streamlines the process of finding information in project documentation. With its integration of the powerful <strong>GPT</strong> engine, developers can easily ask questions about a project and receive accurate answers.
   
 Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
+
+
+  [![Github Repo Stars](https://img.shields.io/github/stars/arc53/docsgpt?style=social)](https://github.com/arc53/docsgpt)
+  [![Github Repo Stars](https://img.shields.io/discord/1070046503302877216)](https://github.com/arc53/docsgpt)
 
 
 
