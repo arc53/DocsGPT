@@ -14,7 +14,6 @@
 Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
 
-# DocsGPT 🦖
 
 ## What is DocsGPT
 The aim of DocsGPT is to utilize the GPT engine to answer questions about the documentation of any project, making it easier for developers to find the information they need .
