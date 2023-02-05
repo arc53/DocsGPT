@@ -1,5 +1,5 @@
 {
-  "name": "Documenation AI butler",
+  "name": "DocsGPT - Documentation AI butler",
   "version": "0.0.1",
   "manifest_version": 2,
   "description": "AI assistant for developers, that helps you answer your questions about the documentation you are reading.",
