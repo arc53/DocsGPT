@@ -9,7 +9,7 @@
 </p>
 
 <p align="left">
-  DocsGPT is a cutting-edge open-source solution that streamlines the process of finding information in project documentation. With its integration of the powerful GPT engine, developers can easily ask questions about a project and receive accurate answers.
+  <strong>DocsGPT</strong> is a cutting-edge open-source solution that streamlines the process of finding information in project documentation. With its integration of the powerful GPT engine, developers can easily ask questions about a project and receive accurate answers.
   
 Say goodbye to time-consuming manual searches, and let DocsGPT help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
