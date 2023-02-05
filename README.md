@@ -1,9 +1,27 @@
-# DocsGPT 🦖
+<h1 align="center">
+  DocsGPT  🦖
+</h1>
 
-## What is DocsGPT
-The aim of DocsGPT is to utilize the GPT engine to answer questions about the documentation of any project, making it easier for developers to find the information they need .
+<p align="center">
+  <strong>Open-Source Documentation Assistant</strong>
+</p>
 
-Screenshot <img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
+<p align="left">
+  <strong>DocsGPT</strong> is a cutting-edge open-source solution that streamlines the process of finding information in project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
+  
+Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
+</p>
+
+<div align="center">
+
+  <a href="">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
+  <a href="">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
+  <a href="">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
+  <a href="">![example3](https://img.shields.io/discord/1070046503302877216)</a>
+
+</div>
+
+<img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
 
 ## [Live preview](https://docsgpt.arc53.com/)
 
@@ -40,16 +58,11 @@ Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
 
 ## Roadmap
 
-Good vectorDB scraping/parsing
+- Good vectorDB scraping/parsing
+- Load vectors in UI from arc53
+- Better UI
+- More prompts for other languages
+- Better parsing
+- Extensions for firefox
+- Extensions for Vscode
 
-Load vectors in UI from arc53
-
-better UI
-
-More prompts for other languages
-
-Better parsing
-
-Extensions for firefox
-
-Extensions for Vscode
