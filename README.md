@@ -14,10 +14,10 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 <div align="center">
 
-  <a href="">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
-  <a href="">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
-  <a href="">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
-  <a href="">![example3](https://img.shields.io/discord/1070046503302877216)</a>
+  <a href="https://discord.gg/n5BX8dh8rU">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
+  <a href="https://discord.gg/n5BX8dh8rU">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
+  <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
+  <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/discord/1070046503302877216)</a>
 
 </div>
 
@@ -29,6 +29,8 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 <img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
 
 ## [Live preview](https://docsgpt.arc53.com/)
+
+## [Join Our Discord](https://discord.gg/n5BX8dh8rU)
 
 
 ## Project structure
