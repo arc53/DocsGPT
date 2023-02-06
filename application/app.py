@@ -39,18 +39,24 @@ def home():
 def api_answer():
     data = request.get_json()
     question = data["question"]
+    api_key = data["api_key"]
 
     store.index = index
     # create a prompt template
     c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
     # create a chain with the prompt template and the store
-    chain = VectorDBQAWithSourcesChain.from_llm(llm=OpenAI(temperature=0), vectorstore=store, combine_prompt=c_prompt)
+    chain = VectorDBQAWithSourcesChain.from_llm(llm=OpenAI(openai_api_key=api_key, temperature=0), vectorstore=store, combine_prompt=c_prompt)
     # fetch the answer
     result = chain({"question": question})
 
     # some formatting for the frontend
     result['answer'] = result['answer'].replace("\\n", "<br>")
     result['answer'] = result['answer'].replace("SOURCES:", "")
+    # mock result
+    # result = {
+    #     "answer": "The answer is 42",
+    #     "sources": ["https://en.wikipedia.org/wiki/42_(number)", "https://en.wikipedia.org/wiki/42_(number)"]
+    # }
 
 
     return result

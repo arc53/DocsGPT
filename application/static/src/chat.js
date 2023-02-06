@@ -19,7 +19,8 @@ if (el) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({question: message}),
+
+            body: JSON.stringify({question: message, api_key: localStorage.getItem('apiKey')}),
         })
             .then(response => response.json())
             .then(data => {

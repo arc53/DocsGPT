@@ -6,11 +6,20 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 
 
+
   </head>
+
+
   <body>
+
+
+
     <header class="bg-white p-2 flex justify-between items-center">
-      <h1 class="text-lg font-medium">DocsGPT 🦖 Very early Preview</h1>
+      <h1 class="text-lg font-medium">DocsGPT 🦖 Preview</h1>
+        <div>
       <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800 text-sm">About</a>
+      <button class="text-sm text-yellow-500 hover:text-yellow-800" onclick="resetApiKey()">Reset Key</button>
+            </div>
     </header>
     <div class="lg:flex ml-2 mr-2">
       <div class="lg:w-3/4 min-h-screen max-h-screen">
@@ -54,6 +63,41 @@ This will return a new DataFrame with all the columns from both tables, and only
           <p class="text-sm">If you want to launch it on your own server - <a href="https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation" class="text-blue-500 hover:text-blue-800"> follow this guide </a></p>
         </div>
     </div>
+
+  <div class="flex items-center justify-center h-full">
+
+</div>
+<div class="fixed z-10 overflow-y-auto top-0 w-full left-0 hidden" id="modal">
+  <div class="flex items-center justify-center min-height-100vh pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+    <div class="fixed inset-0 transition-opacity">
+      <div class="absolute inset-0 bg-gray-900 opacity-75" />
+    </div>
+    <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+    <div class=" text-sm inline-block align-center bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full" role="dialog" aria-modal="true" aria-labelledby="modal-headline">
+       <form id="api-key-form">
+        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <h2>Before you can start using DocsGPT we need you to provide an API key for llm. Currently, we support only OpenAI but soon many more. You can find it <a class="text-blue-500 hover:text-blue-800" href="https://platform.openai.com/account/api-keys">here</a></h2><br>
+        <label>OpenAI API key:</label>
+
+        <input id="api-key-input" type="password" class="w-full bg-gray-100 p-2 mt-2 mb-3" placeholder="Paste you Api Key here">
+
+      </div>
+      <div class="bg-gray-200 px-4 py-3 text-right">
+        <button type="submit" class="py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-700 mr-2">Save</button>
+
+      </div>
+            </form>
+    </div>
+  </div>
+</div>
+      <script>
+      // check if api_key is set
+        if (localStorage.getItem('apiKey') === null) {
+            console.log("apiKey is not set")
+            document.getElementById('modal').classList.toggle('hidden')
+        }
+  </script>
+    <script src="{{url_for('static',filename='src/authapi.js')}}"></script>
   <script src="{{url_for('static',filename='src/chat.js')}}"></script>
   </body>
 </html>
