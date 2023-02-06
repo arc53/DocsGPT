@@ -52,6 +52,7 @@ def api_answer():
     result['answer'] = result['answer'].replace("\\n", "<br>")
     result['answer'] = result['answer'].replace("SOURCES:", "")
 
+
     return result
 
 
