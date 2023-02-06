@@ -8,7 +8,7 @@ if (el) {
         msg_html += message
         msg_html += '</p></div>'
         document.getElementById("messages").innerHTML += msg_html;
-        let chatWindow = document.getElementById("chat-container");
+        let chatWindow = document.getElementById("messages-container");
         chatWindow.scrollTop = chatWindow.scrollHeight;
         document.getElementById("message-input").value = "";
         document.getElementById("button-submit").innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i> Thinking...';
@@ -28,7 +28,7 @@ if (el) {
                 msg_html += data.answer
                 msg_html += '</code></div>'
                 document.getElementById("messages").innerHTML += msg_html;
-                let chatWindow = document.getElementById("chat-container");
+                let chatWindow = document.getElementById("messages-container");
                 chatWindow.scrollTop = chatWindow.scrollHeight;
                 document.getElementById("button-submit").innerHTML = 'Send';
                 document.getElementById("button-submit").disabled = false;

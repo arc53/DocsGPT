@@ -13,9 +13,9 @@
       <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">About</a>
     </header>
     <div class="flex">
-      <div class="w-3/4">
+      <div class="w-3/4 min-h-screen max-h-screen">
         <div class="w-full flex flex-col h-5/6">
-          <div id="chat-container">
+          <div id="messages-container" style="overflow: auto;" class="">
 
             <div id="messages" class="w-full flex flex-col" >
               <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
@@ -36,9 +36,9 @@ This will return a new DataFrame with all the columns from both tables, and only
           </div>
         </div>
 
-        <div class="flex mt-4 mb-2">
+        <div class="fixed bottom-0 w-full mt-4 mb-2">
         <form id="message-form" autocomplete="off">
-          <input autocomplete="false" id="message-input" class="bg-white p-2 rounded-lg ml-2 w-[46rem]" type="text" placeholder="Type your message here...">
+          <input autocomplete="off" id="message-input" class="bg-white p-2 rounded-lg ml-2 w-[46rem]" type="text" placeholder="Type your message here...">
           <button id="button-submit" class="bg-blue-500 text-white p-2 rounded-lg ml-2 mr-2 ml-2" type="submit">Send</button>
         </form>
         </div>
