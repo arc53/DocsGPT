@@ -25,6 +25,8 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 ## [Live preview](https://docsgpt.arc53.com/)
 
+## [Join Our Discord](https://discord.gg/n5BX8dh8rU)
+
 
 ## Project structure
 application - flask app (main application)
