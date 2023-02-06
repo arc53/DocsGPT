@@ -13,11 +13,11 @@ document.getElementById("message-form").addEventListener("submit", function(even
     });
 
     document.getElementById("message-input").value = "";
-    var converstation_state = localStorage.getItem("conversation_state");
+    var conversation_state = localStorage.getItem("conversation_state");
     // check if conversation state is null
-    if (converstation_state == null) {
-      converstation_state = 0;
-      localStorage.setItem("conversation_state", converstation_state);
+    if (conversation_state == null) {
+      conversation_state = 0;
+      localStorage.setItem("conversation_state", conversation_state);
     }
 
     // send post request to server http://127.0.0.1:5000/ with message in json body
