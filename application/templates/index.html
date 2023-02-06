@@ -10,14 +10,14 @@
   <body>
     <header class="bg-white p-2 flex justify-between items-center">
       <h1 class="text-lg font-medium">DocsGPT 🦖 Very early Preview</h1>
-      <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">About</a>
+      <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800 text-sm">About</a>
     </header>
-    <div class="flex">
-      <div class="w-3/4 min-h-screen max-h-screen">
+    <div class="lg:flex ml-2 mr-2">
+      <div class="lg:w-3/4 min-h-screen max-h-screen">
         <div class="w-full flex flex-col h-5/6">
-          <div id="messages-container" style="overflow: auto;" class="">
+          <div id="messages-container" style="overflow: auto;" class="sm:max-lg:mb-[12rem]">
 
-            <div id="messages" class="w-full flex flex-col" >
+            <div id="messages" class="w-full flex flex-col mt-2" >
               <div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start">
                 <p class="text-sm">Hello, ask me anything about this library. Im here to help</p>
               </div>
@@ -36,17 +36,17 @@ This will return a new DataFrame with all the columns from both tables, and only
           </div>
         </div>
 
-        <div class="fixed bottom-0 w-full mt-4 mb-2">
-        <form id="message-form" autocomplete="off">
-          <input autocomplete="off" id="message-input" class="bg-white p-2 rounded-lg ml-2 w-[46rem]" type="text" placeholder="Type your message here...">
-          <button id="button-submit" class="bg-blue-500 text-white p-2 rounded-lg ml-2 mr-2 ml-2" type="submit">Send</button>
+        <div class="fixed bottom-0 w-full mt-4 mb-2 lg:w-3/4">
+        <form id="message-form" autocomplete="off" class="flex items-stretch">
+          <input autocomplete="off" id="message-input" class="bg-white p-2 rounded-lg ml-2 text-sm w-full" type="text" placeholder="Type your message here...">
+          <button id="button-submit" class="bg-blue-500 text-white p-2 rounded-lg ml-2 mr-2 text-sm sm:max-lg:p-5" type="submit">Send</button>
         </form>
         </div>
 
 
     </div>
         </div>
-        <div class="w-1/4 p-2">
+        <div class="lg:w-1/4 p-2 sm:max-lg:hidden">
           <p class="text-sm">This is a chatbot that uses the GPT-3, Faiss and <a href="https://github.com/hwchase17/langchain" class="text-blue-500 hover:text-blue-800">LangChain</a> to answer questions</p>
           <br>
           <p class="text-sm">The source code is available on <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">Github</a></p><br>
