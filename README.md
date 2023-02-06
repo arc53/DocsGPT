@@ -28,7 +28,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 ## Screenshot
 <img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
 
-## [Live preview](https://docsgpt.arc53.com/)
+## [Live preview] - is temporarily down, will be up soon😢
 
 ## [Join Our Discord](https://discord.gg/n5BX8dh8rU)
 
