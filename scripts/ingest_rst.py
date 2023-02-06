@@ -5,13 +5,12 @@ from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 import pickle
 import dotenv
-import os
 
 dotenv.load_dotenv()
 
 
 # Here we load in the data in the format that Notion exports it in.
-ps = list(Path("pandasdocs/").glob("**/*.rst"))
+ps = list(Path("scikit-learn").glob("**/*.rst"))
 # parse all child directories
 
 data = []
