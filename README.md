@@ -23,7 +23,7 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 ## Roadmap
 
-You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please dont hesitate contributing or creating issues, it helps us make DocsGPT better
+You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please dont hesitate contributing or creating issues, it helps us make DocsGPT better!
 
 ## Screenshot
 <img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
