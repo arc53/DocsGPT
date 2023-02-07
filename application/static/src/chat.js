@@ -20,7 +20,9 @@ if (el) {
                 'Content-Type': 'application/json',
             },
 
-            body: JSON.stringify({question: message, api_key: localStorage.getItem('apiKey')}),
+            body: JSON.stringify({question: message,
+                api_key: localStorage.getItem('apiKey'),
+                active_docs: localStorage.getItem('activeDocs'),}),
         })
             .then(response => response.json())
             .then(data => {

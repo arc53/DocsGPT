@@ -19,13 +19,11 @@ if platform.system() == "Windows":
 # loading the .env file
 dotenv.load_dotenv()
 
-# loading the index and the store and the prompt template
-index = faiss.read_index("docs.index")
+
 with open("combine_prompt.txt", "r") as f:
     template = f.read()
 
-with open("faiss_store.pkl", "rb") as f:
-    store = pickle.load(f)
+
 
 app = Flask(__name__)
 
@@ -40,6 +38,20 @@ def api_answer():
     data = request.get_json()
     question = data["question"]
     api_key = data["api_key"]
+    # check if the vectorstore is set
+    if "active_docs" in data:
+        vectorstore = "vectorstores/" + data["active_docs"]
+
+    else:
+        vectorstore = ""
+    print(vectorstore)
+
+    # loading the index and the store and the prompt template
+    index = faiss.read_index(f"{vectorstore}docs.index")
+
+
+    with open(f"{vectorstore}faiss_store.pkl", "rb") as f:
+        store = pickle.load(f)
 
     store.index = index
     # create a prompt template
