@@ -52,7 +52,7 @@ Copy .env_sample and create .env with your openai api token
 `python app.py`
 
 
-[To install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
+[How to install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
 
 
 ## [Guides](https://github.com/arc53/docsgpt/wiki)
