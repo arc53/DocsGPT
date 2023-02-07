@@ -66,7 +66,7 @@ def get_user_permission():
 dotenv.load_dotenv()
 
 #Directory to vector
-src_dir = "scikit-learn"
+src_dir = "inputs"
 dst_dir = "tmp"
 
 convert_rst_to_txt(src_dir, dst_dir)
@@ -106,4 +106,4 @@ else:
 
 # Delete tmp folder
 # Commented out for now 
-#shutil.rmtree(dst_dir)
+shutil.rmtree(dst_dir)

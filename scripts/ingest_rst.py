@@ -44,7 +44,7 @@ def get_user_permission():
 dotenv.load_dotenv()
 
 # Here we load in the data in the format that Notion exports it in.
-ps = list(Path("scikit-learn").glob("**/*.rst"))
+ps = list(Path("inputs").glob("**/*.rst"))
 
 # parse all child directories
 data = []
