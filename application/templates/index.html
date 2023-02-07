@@ -96,6 +96,18 @@ This will return a new DataFrame with all the columns from both tables, and only
   </div>
 </div>
       <script>
+          function docsIndex() {
+                // loads latest index from https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json
+                // and stores it in localStorage
+                fetch('https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json')
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Success:', data);
+                        localStorage.setItem("docsIndex", JSON.stringify(data));
+                    }
+                )
+
+            }
       // check if api_key is set
         if (localStorage.getItem('apiKey') === null) {
             console.log("apiKey is not set")
