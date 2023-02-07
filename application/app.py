@@ -44,14 +44,11 @@ def api_answer():
         vectorstore = "vectors/" + data["active_docs"]
         if data['active_docs'] == "default":
             vectorstore = ""
-
     else:
         vectorstore = ""
 
-
     # loading the index and the store and the prompt template
     index = faiss.read_index(f"{vectorstore}docs.index")
-
 
     with open(f"{vectorstore}faiss_store.pkl", "rb") as f:
         store = pickle.load(f)
@@ -72,8 +69,6 @@ def api_answer():
     #     "answer": "The answer is 42",
     #     "sources": ["https://en.wikipedia.org/wiki/42_(number)", "https://en.wikipedia.org/wiki/42_(number)"]
     # }
-
-
     return result
 
 @app.route("/api/docs_check", methods=["POST"])
