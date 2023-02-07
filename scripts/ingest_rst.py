@@ -7,6 +7,7 @@ import pickle
 import dotenv
 import tiktoken
 import sys
+from argparse import ArgumentParser
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
 # Function to convert string to tokens and estimate user cost.
@@ -28,7 +29,7 @@ def get_user_permission():
     # Here we convert the docs list to a string and calculate the number of OpenAI tokens the string represents.
     docs_content = (" ".join(docs))
     tokens, total_price = num_tokens_from_string(string=docs_content, encoding_name="cl100k_base")
-    # Here we print the number of tokens and the approx user cost with some visually appealing formatting. 
+    # Here we print the number of tokens and the approx user cost with some visually appealing formatting.
     print(f"Number of Tokens = {format(tokens, ',d')}")
     print(f"Approx Cost = ${format(total_price, ',.2f')}")
     #Here we check for user permission before calling the API.
@@ -43,8 +44,15 @@ def get_user_permission():
 #Load .env file
 dotenv.load_dotenv()
 
+ap = ArgumentParser("Script for training DocsGPT on .rst documentation files.")
+ap.add_argument("-i", "--inputs",
+                type=str,
+                default="inputs",
+                help="Directory containing documentation files")
+args = ap.parse_args()
+
 # Here we load in the data in the format that Notion exports it in.
-ps = list(Path("inputs").glob("**/*.rst"))
+ps = list(Path(args.inputs).glob("**/*.rst"))
 
 # parse all child directories
 data = []
@@ -64,14 +72,14 @@ for i, d in enumerate(data):
     docs.extend(splits)
     metadatas.extend([{"source": sources[i]}] * len(splits))
 
-# Here we check for command line arguments for bot calls. 
-# If no argument exists or the permission_bypass_flag argument is not '-y', 
-# user permission is requested to call the API. 
+# Here we check for command line arguments for bot calls.
+# If no argument exists or the permission_bypass_flag argument is not '-y',
+# user permission is requested to call the API.
 if len(sys.argv) > 1:
     permission_bypass_flag = sys.argv[1]
     if permission_bypass_flag == '-y':
         call_openai_api()
     else:
-        get_user_permission()  
+        get_user_permission()
 else:
     get_user_permission()
