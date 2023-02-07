@@ -10,7 +10,7 @@ from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from sphinx.cmd.build import main as sphinx_main
-
+from argparse import ArgumentParser
 
 def convert_rst_to_txt(src_dir, dst_dir):
   # Check if the source directory exists
@@ -50,7 +50,7 @@ def get_user_permission():
     # Here we convert the docs list to a string and calculate the number of OpenAI tokens the string represents.
     docs_content = (" ".join(docs))
     tokens, total_price = num_tokens_from_string(string=docs_content, encoding_name="cl100k_base")
-    # Here we print the number of tokens and the approx user cost with some visually appealing formatting. 
+    # Here we print the number of tokens and the approx user cost with some visually appealing formatting.
     print(f"Number of Tokens = {format(tokens, ',d')}")
     print(f"Approx Cost = ${format(total_price, ',.2f')}")
     #Here we check for user permission before calling the API.
@@ -62,11 +62,18 @@ def get_user_permission():
     else:
         print("The API was not called. No money was spent.")
 
+ap = ArgumentParser("Script for training DocsGPT on Sphinx documentation")
+ap.add_argument("-i", "--inputs",
+                type=str,
+                default="inputs",
+                help="Directory containing documentation files")
+args = ap.parse_args()
+
 #Load .env file
 dotenv.load_dotenv()
 
 #Directory to vector
-src_dir = "inputs"
+src_dir = args.inputs
 dst_dir = "tmp"
 
 convert_rst_to_txt(src_dir, dst_dir)
@@ -92,18 +99,18 @@ for i, d in enumerate(data):
     docs.extend(splits)
     metadatas.extend([{"source": sources[i]}] * len(splits))
 
-# Here we check for command line arguments for bot calls. 
-# If no argument exists or the permission_bypass_flag argument is not '-y', 
-# user permission is requested to call the API.  
+# Here we check for command line arguments for bot calls.
+# If no argument exists or the permission_bypass_flag argument is not '-y',
+# user permission is requested to call the API.
 if len(sys.argv) > 1:
     permission_bypass_flag = sys.argv[1]
     if permission_bypass_flag == '-y':
         call_openai_api()
     else:
-        get_user_permission()  
+        get_user_permission()
 else:
     get_user_permission()
 
 # Delete tmp folder
-# Commented out for now 
+# Commented out for now
 shutil.rmtree(dst_dir)
