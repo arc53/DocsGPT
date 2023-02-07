@@ -60,7 +60,14 @@ This will return a new DataFrame with all the columns from both tables, and only
           <br>
           <p class="text-sm">The source code is available on <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800">Github</a></p><br>
           <p class="text-sm">Currently It uses python pandas documentation, so it will respond to information relevant to pandas. If you want to train it on different documentation -  <a href="https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation" class="text-blue-500 hover:text-blue-800"> please follow this guide </a></p><br>
-          <p class="text-sm">If you want to launch it on your own server - <a href="https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation" class="text-blue-500 hover:text-blue-800"> follow this guide </a></p>
+          <p class="text-sm">If you want to launch it on your own server - <a href="https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation" class="text-blue-500 hover:text-blue-800"> follow this guide </a></p><br>
+            <label  class="block mb-2 text-sm font-medium text-gray-900">Select pre-loaded documentation</label>
+            <select id="select-docs" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+              <option selected>Choose documentation</option>
+              <option value="ethereum/solidity/">Solidity</option>
+              <option value="python/pandas/">Pandas</option>
+              <option value="python/scikit-learn/">scikit-learn</option>
+            </select>
         </div>
     </div>
 
@@ -99,5 +106,7 @@ This will return a new DataFrame with all the columns from both tables, and only
   </script>
     <script src="{{url_for('static',filename='src/authapi.js')}}"></script>
   <script src="{{url_for('static',filename='src/chat.js')}}"></script>
+  <script src="{{url_for('static',filename='src/choiceChange.js')}}"></script>
+
   </body>
 </html>
