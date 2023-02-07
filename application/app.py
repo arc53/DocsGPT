@@ -8,6 +8,7 @@ import faiss
 from langchain import OpenAI
 from langchain.chains import VectorDBQAWithSourcesChain
 from langchain.prompts import PromptTemplate
+import requests
 
 # Redirect PosixPath to WindowsPath on Windows
 import platform
@@ -40,11 +41,13 @@ def api_answer():
     api_key = data["api_key"]
     # check if the vectorstore is set
     if "active_docs" in data:
-        vectorstore = "vectorstores/" + data["active_docs"]
+        vectorstore = "vectors/" + data["active_docs"]
+        if data['active_docs'] == "default":
+            vectorstore = ""
 
     else:
         vectorstore = ""
-    print(vectorstore)
+
 
     # loading the index and the store and the prompt template
     index = faiss.read_index(f"{vectorstore}docs.index")
@@ -73,6 +76,30 @@ def api_answer():
 
     return result
 
+@app.route("/api/docs_check", methods=["POST"])
+def check_docs():
+    # check if docs exist in a vectorstore folder
+    data = request.get_json()
+    vectorstore = "vectors/" + data["docs"]
+    base_path = 'https://raw.githubusercontent.com/arc53/DocsHUB/main/'
+    #
+    if os.path.exists(vectorstore):
+        return {"status": 'exists'}
+    else:
+        r = requests.get(base_path + vectorstore + "docs.index")
+        # save to vectors directory
+        # check if the directory exists
+        if not os.path.exists(vectorstore):
+            os.makedirs(vectorstore)
+
+        with open(vectorstore + "docs.index", "wb") as f:
+            f.write(r.content)
+        # download the store
+        r = requests.get(base_path + vectorstore + "faiss_store.pkl")
+        with open(vectorstore + "faiss_store.pkl", "wb") as f:
+            f.write(r.content)
+
+        return {"status":  'loaded'}
 
 # handling CORS
 @app.after_request
