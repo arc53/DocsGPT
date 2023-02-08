@@ -18,7 +18,9 @@
       <h1 class="text-lg font-medium">DocsGPT 🦖 Preview</h1>
         <div>
       <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800 text-sm">About</a>
+            {% if not api_key_set %}
       <button class="text-sm text-yellow-500 hover:text-yellow-800" onclick="resetApiKey()">Reset Key</button>
+        {% endif %}
             </div>
     </header>
     <div class="lg:flex ml-2 mr-2">
@@ -72,6 +74,8 @@ This will return a new DataFrame with all the columns from both tables, and only
   <div class="flex items-center justify-center h-full">
 
 </div>
+
+{% if not api_key_set %}
 <div class="fixed z-10 overflow-y-auto top-0 w-full left-0 hidden" id="modal">
   <div class="flex items-center justify-center min-height-100vh pt-4 px-4 pb-20 text-center sm:block sm:p-0">
     <div class="fixed inset-0 transition-opacity">
@@ -95,6 +99,7 @@ This will return a new DataFrame with all the columns from both tables, and only
     </div>
   </div>
 </div>
+{% endif %}
       <script>
           function docsIndex() {
                 // loads latest index from https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json
@@ -104,6 +109,7 @@ This will return a new DataFrame with all the columns from both tables, and only
                     .then(data => {
                         console.log('Success:', data);
                         localStorage.setItem("docsIndex", JSON.stringify(data));
+                        loacalStorage.setItem("docsIndexDate", Date.now());
                         generateOptions()
                     }
 
@@ -134,20 +140,27 @@ This will return a new DataFrame with all the columns from both tables, and only
                 }
 
           }
-      // check if api_key is set
+        {% if not api_key_set %}
         if (localStorage.getItem('apiKey') === null) {
             console.log("apiKey is not set")
             document.getElementById('modal').classList.toggle('hidden')
         }
+        {% endif %}
         if (localStorage.getItem('docsIndex') === null) {
             console.log("docsIndex is not set")
+            docsIndex()
+        }
+        else if (localStorage.getItem("docsIndexDate") < Date.now() - 900000) {
+            console.log("docsIndex is older than 24 hours")
             docsIndex()
         }
 
         generateOptions()
 
   </script>
+    {% if not api_key_set %}
     <script src="{{url_for('static',filename='src/authapi.js')}}"></script>
+    {% endif %}
   <script src="{{url_for('static',filename='src/chat.js')}}"></script>
   <script src="{{url_for('static',filename='src/choiceChange.js')}}"></script>
 
