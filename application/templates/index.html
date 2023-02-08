@@ -104,12 +104,12 @@ This will return a new DataFrame with all the columns from both tables, and only
           function docsIndex() {
                 // loads latest index from https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json
                 // and stores it in localStorage
-                fetch('https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json')
+                fetch('https://d3dg1063dc54p9.cloudfront.net/combined.json')
                     .then(response => response.json())
                     .then(data => {
                         console.log('Success:', data);
                         localStorage.setItem("docsIndex", JSON.stringify(data));
-                        loacalStorage.setItem("docsIndexDate", Date.now());
+                        localStorage.setItem("docsIndexDate", Date.now());
                         generateOptions()
                     }
 
