@@ -13,6 +13,9 @@ if (el) {
         document.getElementById("message-input").value = "";
         document.getElementById("button-submit").innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i> Thinking...';
         document.getElementById("button-submit").disabled = true;
+        if (localStorage.getItem('activeDocs') == null) {
+            localStorage.setItem('activeDocs', 'default')
+        }
 
         fetch('/api/answer', {
             method: 'POST',
@@ -22,7 +25,7 @@ if (el) {
 
             body: JSON.stringify({question: message,
                 api_key: localStorage.getItem('apiKey'),
-                active_docs: localStorage.getItem('activeDocs'),}),
+                active_docs: localStorage.getItem('activeDocs')}),
         })
             .then(response => response.json())
             .then(data => {

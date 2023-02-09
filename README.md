@@ -34,11 +34,11 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 
 
 ## Project structure
-application - flask app (main application)
+- Application - flask app (main application)
 
-extensions - chrome extension
+- Extensions - chrome extension
 
-scripts - script that creates similarity search index and store for other libraries 
+- Scripts - script that creates similarity search index and store for other libraries. 
 
 ## QuickStart
 Please note: current vector database uses pandas Python documentation, thus responses will be related to it, if you want to use other docs please follow a guide below
