@@ -12,8 +12,8 @@
     "format": "prettier ./src --write",
     "prepare": "cd .. && husky install frontend/.husky"
   },
-  "lint-staged":{
-    "**/*.{js,jsx,ts,tsx}":[
+  "lint-staged": {
+    "**/*.{js,jsx,ts,tsx}": [
       "npm run lint-fix",
       "npm run format"
     ]

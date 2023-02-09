@@ -2,7 +2,7 @@ module.exports = {
   env: {
     browser: true,
     es2021: true,
-    node: true
+    node: true,
   },
   extends: [
     'eslint:recommended',
@@ -10,24 +10,22 @@ module.exports = {
     'plugin:react/recommended',
     'plugin:prettier/recommended',
   ],
-  overrides: [
-  ],
+  overrides: [],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
-    sourceType: 'module'
+    sourceType: 'module',
   },
-  plugins: [
-    'react'
-  ],
+  plugins: ['react'],
   rules: {
+    'react/react-in-jsx-scope': 'off',
   },
   settings: {
     'import/parsers': {
       '@typescript-eslint/parser': ['.ts', '.tsx'],
     },
     react: {
-      version: "detect",
+      version: 'detect',
     },
     'import/resolver': {
       node: {
