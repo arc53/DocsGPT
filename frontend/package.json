@@ -6,7 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint ./src --ext .jsx,.js,.ts,.tsx",
+    "lint-fix": "eslint ./src --ext .jsx,.js,.ts,.tsx --fix",
+    "format": "prettier ./src --write",
+    "prepare": "cd .. && husky install frontend/.husky"
+  },
+  "lint-staged":{
+    "**/*.{js,jsx,ts,tsx}":[
+      "npm run lint-fix",
+      "npm run format"
+    ]
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -27,6 +37,8 @@
     "eslint-plugin-prettier": "^4.2.1",
     "eslint-plugin-promise": "^6.1.1",
     "eslint-plugin-react": "^7.32.2",
+    "husky": "^8.0.0",
+    "lint-staged": "^13.1.1",
     "postcss": "^8.4.21",
     "prettier": "^2.8.4",
     "tailwindcss": "^3.2.4",
