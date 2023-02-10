@@ -1,11 +1,34 @@
-import './App.css'
+import { useEffect, useState } from 'react';
+import Navigation from './components/Navigation';
+import DocsGPT from './components/DocsGPT';
+import './App.css';
 
 function App() {
+  const [isMobile, setIsMobile] = useState(true);
+
+  const handleResize = () => {
+    if (window.innerWidth > 768 && isMobile) {
+      setIsMobile(false);
+    } else {
+      setIsMobile(true);
+    }
+  };
+
+  useEffect(() => {
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   return (
-    <div className="flex justify-center h-screen items-center">
-      <p className="text-6xl">DocsGPT 🦖</p>
+    <div className={`${isMobile ? 'flex-col' : 'flex-row'} flex`}>
+      <Navigation isMobile={isMobile} />
+      <DocsGPT />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
