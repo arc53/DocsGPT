@@ -11,7 +11,7 @@ from parser.open_ai_func import call_openai_api, get_user_permission
 dotenv.load_dotenv()
 
 #Specify your folder HERE
-directory_to_ingest = 'data_test'
+directory_to_ingest = 'inputs'
 
 nltk.download('punkt')
 nltk.download('averaged_perceptron_tagger')
