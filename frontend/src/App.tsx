@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import Navigation from './components/Navigation';
+import Navigation from './components/Navigation/Navigation';
 import DocsGPT from './components/DocsGPT';
 import './App.css';
 
