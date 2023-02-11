@@ -1,11 +1,55 @@
-import './App.css'
+import { useEffect, useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
+import Navigation from './components/Navigation/Navigation';
+import DocsGPT from './components/DocsGPT';
+import APIKeyModal from './components/APIKeyModal';
+import './App.css';
 
-function App() {
+export default function App() {
+  //Currently using primitive state management. Will most likely be replaced with Redux.
+  const [isMobile, setIsMobile] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const [isApiModalOpen, setIsApiModalOpen] = useState(true);
+  const [apiKey, setApiKey] = useState('');
+
+  const handleResize = () => {
+    if (window.innerWidth > 768 && isMobile) {
+      setIsMobile(false);
+    } else {
+      setIsMobile(true);
+    }
+  };
+
+  useEffect(() => {
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   return (
-    <div className="flex justify-center h-screen items-center">
-      <p className="text-6xl">DocsGPT 🦖</p>
+    <div
+      className={`${
+        isMobile ? 'flex-col' : 'flex-row'
+      } relative flex transition-all`}
+    >
+      <APIKeyModal
+        apiKey={apiKey}
+        setApiKey={setApiKey}
+        isApiModalOpen={isApiModalOpen}
+        setIsApiModalOpen={setIsApiModalOpen}
+      />
+      <Navigation
+        isMobile={isMobile}
+        isMenuOpen={isMenuOpen}
+        setIsMenuOpen={setIsMenuOpen}
+        setIsApiModalOpen={setIsApiModalOpen}
+      />
+      <Routes>
+        <Route path="/" element={<DocsGPT isMenuOpen={isMenuOpen} />} />
+      </Routes>
     </div>
-  )
+  );
 }
-
-export default App
