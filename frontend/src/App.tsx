@@ -3,13 +3,13 @@ import { Routes, Route } from 'react-router-dom';
 import Navigation from './components/Navigation/Navigation';
 import DocsGPT from './components/DocsGPT';
 import APIKeyModal from './components/APIKeyModal';
-import './App.css';
+import About from './components/About';
 
 export default function App() {
   //Currently using primitive state management. Will most likely be replaced with Redux.
   const [isMobile, setIsMobile] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(true);
-  const [isApiModalOpen, setIsApiModalOpen] = useState(true);
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const [apiKey, setApiKey] = useState('');
 
   const handleResize = () => {
@@ -49,6 +49,7 @@ export default function App() {
       />
       <Routes>
         <Route path="/" element={<DocsGPT isMenuOpen={isMenuOpen} />} />
+        <Route path="/about" element={<About isMenuOpen={isMenuOpen} />} />
       </Routes>
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import Arrow1 from './imgs/arrow.svg';
 import Key from './imgs/key.svg';
 import Info from './imgs/info.svg';
@@ -57,10 +58,13 @@ function DesktopNavigation({
           </div>
 
           <div className="flex h-48 flex-col border-b-2 border-gray-100">
-            <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
+            <NavLink
+              to="/about"
+              className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            >
               <img src={Info} alt="info" className="ml-2 w-5" />
               <p className="my-auto text-eerie-black">About</p>
-            </div>
+            </NavLink>
 
             <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
               <img src={Link} alt="link" className="ml-2 w-5" />
