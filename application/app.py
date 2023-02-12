@@ -5,8 +5,8 @@ import datetime
 from flask import Flask, request, render_template
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 import faiss
-from langchain import OpenAI
-from langchain.chains import VectorDBQAWithSourcesChain
+from langchain import OpenAI, VectorDBQA
+from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 import requests
 
@@ -69,11 +69,22 @@ def api_answer():
     c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
     # create a chain with the prompt template and the store
 
-    chain = VectorDBQAWithSourcesChain.from_llm(llm=OpenAI(openai_api_key=api_key, temperature=0), vectorstore=store, combine_prompt=c_prompt)
+    #chain = VectorDBQA.from_llm(llm=OpenAI(openai_api_key=api_key, temperature=0), vectorstore=store, combine_prompt=c_prompt)
+    # chain = VectorDBQA.from_chain_type(llm=OpenAI(openai_api_key=api_key, temperature=0), chain_type='map_reduce',
+    #                                    vectorstore=store)
+
+    qa_chain = load_qa_chain(OpenAI(openai_api_key=api_key, temperature=0), chain_type="map_reduce",
+                             combine_prompt=c_prompt)
+    chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=store)
+
+
+
     # fetch the answer
-    result = chain({"question": question})
+    result = chain({"query": question})
+    print(result)
 
     # some formatting for the frontend
+    result['answer'] = result['result']
     result['answer'] = result['answer'].replace("\\n", "<br>")
     result['answer'] = result['answer'].replace("SOURCES:", "")
     # mock result

@@ -31,13 +31,20 @@ def call_openai_api(docs):
             print("Error on ", i)
             print("Saving progress")
             print(f"stopped at {c1} out of {len(docs)}")
-            store.save_local("outputs")
+            faiss.write_index(store.index, "docs.index")
+            store.index = None
+            with open("faiss_store.pkl", "wb") as f:
+                pickle.dump(store, f)
             print("Sleeping for 10 seconds and trying again")
             time.sleep(10)
             store.add_texts([i.page_content], metadatas=[i.metadata])
         c1 += 1
 
-    store.save_local("outputs")
+
+    faiss.write_index(store.index, "docs.index")
+    store.index = None
+    with open("faiss_store.pkl", "wb") as f:
+        pickle.dump(store, f)
 
 def get_user_permission(docs):
 # Function to ask user permission to call the OpenAI api and spend their OpenAI funds.
