@@ -17,6 +17,7 @@ function MobileNavigation({
   setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
+  //TODO - Need to add Discord and Github links
   return (
     <div
       className={`${
@@ -67,6 +68,13 @@ function MobileNavigation({
           <div className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100">
             <img src={Link} alt="info" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Github</p>
+          </div>
+          <div
+            className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100"
+            onClick={() => setIsApiModalOpen(true)}
+          >
+            <img src={Key} alt="info" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">Reset Key</p>
           </div>
         </nav>
       )}
