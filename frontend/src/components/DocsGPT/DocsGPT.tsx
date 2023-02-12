@@ -11,7 +11,7 @@ export default function DocsGPT({
       className={`${
         isMobile
           ? isMenuOpen
-            ? 'mt-72'
+            ? 'mt-80'
             : 'mt-16'
           : isMenuOpen
           ? 'md:ml-72 lg:ml-96'
