@@ -24,6 +24,8 @@ class RstParser(BaseParser):
         remove_hyperlinks: bool = True,
         remove_images: bool = True,
         remove_table_excess: bool = True,
+        remove_interpreters: bool = True,
+        remove_directives: bool = True,
         remove_whitespaces_excess: bool = True,
         #Be carefull with remove_characters_excess, might cause data loss
         remove_characters_excess: bool = True,
@@ -34,6 +36,8 @@ class RstParser(BaseParser):
         self._remove_hyperlinks = remove_hyperlinks
         self._remove_images = remove_images
         self._remove_table_excess = remove_table_excess
+        self._remove_interpreters = remove_interpreters
+        self._remove_directives = remove_directives
         self._remove_whitespaces_excess = remove_whitespaces_excess
         self._remove_characters_excess = remove_characters_excess
 
@@ -95,6 +99,18 @@ class RstParser(BaseParser):
         content = re.sub(pattern, r"\1", content)
         return content
 
+    def remove_directives(self, content: str) -> str:
+        """Removes reStructuredText Directives"""
+        pattern = r"`\.\.([^:]+)::"
+        content = re.sub(pattern, "", content)
+        return content
+
+    def remove_interpreters(self, content: str) -> str:
+        """Removes reStructuredText Interpreted Text Roles"""
+        pattern = r":(\w+):"
+        content = re.sub(pattern, "", content)
+        return content
+
     def remove_table_excess(self, content: str) -> str:
         """Pattern to remove grid table separators"""
         pattern = r"^\+[-]+\+[-]+\+$"
@@ -129,6 +145,10 @@ class RstParser(BaseParser):
             content = self.remove_images(content)
         if self._remove_table_excess:
             content = self.remove_table_excess(content)
+        if self._remove_directives:
+            content = self.remove_directives(content)
+        if self._remove_interpreters:
+            content = self.remove_interpreters(content)
         rst_tups = self.rst_to_tups(content)
         if self._remove_whitespaces_excess:
             rst_tups = self.remove_whitespaces_excess(rst_tups)
