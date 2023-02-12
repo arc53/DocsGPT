@@ -1,12 +1,77 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './imgs/arrow.svg';
+import Hamburger from './imgs/hamburger.svg';
 import Key from './imgs/key.svg';
 import Info from './imgs/info.svg';
 import Link from './imgs/link.svg';
+import Exit from './imgs/exit.svg';
 
-function MobileNavigation() {
-  return <div>Mobile Navigation</div>;
+function MobileNavigation({
+  isMenuOpen,
+  setIsMenuOpen,
+  setIsApiModalOpen,
+}: {
+  isMenuOpen: boolean;
+  setIsMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}) {
+  //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
+  return (
+    <div
+      className={`${
+        isMenuOpen ? 'border-b-2 border-gray-100' : 'h-16'
+      } fixed flex w-full flex-col bg-gray-50 transition-all`}
+    >
+      <div className="h-16 w-full border-b-2 border-gray-100">
+        {isMenuOpen ? (
+          <>
+            <button
+              className="mt-5 ml-6 h-6 w-6"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+            >
+              <img src={Exit} alt="menu toggle" className="w-5" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className="mt-5 ml-6 h-6 w-6"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+            >
+              <img src={Hamburger} alt="menu toggle" className="w-7" />
+            </button>
+          </>
+        )}
+      </div>
+      {isMenuOpen && (
+        <nav className="my-4 flex flex-col">
+          <NavLink
+            to="/"
+            className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100"
+          >
+            <img src={Info} alt="info" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">Chat</p>
+          </NavLink>
+          <NavLink
+            to="/about"
+            className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100"
+          >
+            <img src={Info} alt="info" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">About</p>
+          </NavLink>
+          <div className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100">
+            <img src={Link} alt="info" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">Discord</p>
+          </div>
+          <div className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100">
+            <img src={Link} alt="info" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">Github</p>
+          </div>
+        </nav>
+      )}
+    </div>
+  );
 }
 
 function DesktopNavigation({
@@ -94,7 +159,13 @@ export default function Navigation({
   setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   if (isMobile) {
-    return <MobileNavigation />;
+    return (
+      <MobileNavigation
+        isMenuOpen={isMenuOpen}
+        setIsMenuOpen={setIsMenuOpen}
+        setIsApiModalOpen={setIsApiModalOpen}
+      />
+    );
   } else {
     return (
       <DesktopNavigation

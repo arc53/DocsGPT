@@ -1,17 +1,29 @@
-export default function About({ isMenuOpen }: { isMenuOpen: boolean }) {
+export default function About({
+  isMenuOpen,
+  isMobile,
+}: {
+  isMenuOpen: boolean;
+  isMobile: boolean;
+}) {
   //TODO - Add hyperlinks to text
   //TODO - Styling
 
   return (
-    //Parent div for all content shown through App.tsx routing needs to have this styling.
+    //Parent div for all content shown through App.tsx routing needs to have this styling. Might change when state management is updated.
     <div
       className={`${
-        isMenuOpen ? 'md:ml-72 lg:ml-96' : 'ml-16'
+        isMobile
+          ? isMenuOpen
+            ? 'mt-72'
+            : 'mt-16'
+          : isMenuOpen
+          ? 'md:ml-72 lg:ml-96'
+          : 'ml-16'
       } h-full w-full p-6 transition-all`}
     >
       <article className="mx-auto my-auto flex w-full max-w-6xl flex-col gap-6 rounded-lg bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
         <p className="text-3xl font-semibold">About DocsGPT 🦖</p>
-        <p className="mt-4 text-xl">
+        <p className="mt-4 text-xl font-bold">
           Find the information in your documentation through AI-powered
           open-source chatbot. Powered by GPT-3, Faiss and LangChain.
         </p>
@@ -23,7 +35,7 @@ export default function About({ isMenuOpen }: { isMenuOpen: boolean }) {
           </p>
           <p className="mt-4 text-lg">
             1. Navigate to{' '}
-            <span className="bg-gray-200 italic"> /application </span> folder
+            <span className="bg-gray-200 italic"> /application</span> folder
           </p>
           <p className="mt-4 text-lg">
             2. Install dependencies from{' '}

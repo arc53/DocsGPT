@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Navigation from './components/Navigation/Navigation';
-import DocsGPT from './components/DocsGPT';
+import DocsGPT from './components/DocsGPT/DocsGPT';
 import APIKeyModal from './components/APIKeyModal';
 import About from './components/About';
 
@@ -17,6 +17,7 @@ export default function App() {
       setIsMobile(false);
     } else {
       setIsMobile(true);
+      setIsMenuOpen(false);
     }
   };
 
@@ -48,8 +49,14 @@ export default function App() {
         setIsApiModalOpen={setIsApiModalOpen}
       />
       <Routes>
-        <Route path="/" element={<DocsGPT isMenuOpen={isMenuOpen} />} />
-        <Route path="/about" element={<About isMenuOpen={isMenuOpen} />} />
+        <Route
+          path="/"
+          element={<DocsGPT isMenuOpen={isMenuOpen} isMobile={isMobile} />}
+        />
+        <Route
+          path="/about"
+          element={<About isMenuOpen={isMenuOpen} isMobile={isMobile} />}
+        />
       </Routes>
     </div>
   );
