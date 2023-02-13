@@ -161,3 +161,4 @@ frontend/*.sw?
 
 application/vectors/
 
+**/inputs
