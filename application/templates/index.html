@@ -3,6 +3,11 @@
   <head>
     <title>DocsGPT 🦖 Preview</title>
     <link href="{{url_for('static',filename='dist/css/output.css')}}" rel="stylesheet">
+      <link rel="favicon" href="{{ url_for('static', filename='favicon/favicon.ico') }}">
+      <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='favicon/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon/favicon-16x16.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='favicon//site.webmanifest') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 
 
@@ -18,7 +23,9 @@
       <h1 class="text-lg font-medium">DocsGPT 🦖 Preview</h1>
         <div>
       <a href="https://github.com/arc53/docsgpt" class="text-blue-500 hover:text-blue-800 text-sm">About</a>
+            {% if not api_key_set %}
       <button class="text-sm text-yellow-500 hover:text-yellow-800" onclick="resetApiKey()">Reset Key</button>
+        {% endif %}
             </div>
     </header>
     <div class="lg:flex ml-2 mr-2">
@@ -72,6 +79,8 @@ This will return a new DataFrame with all the columns from both tables, and only
   <div class="flex items-center justify-center h-full">
 
 </div>
+
+{% if not api_key_set %}
 <div class="fixed z-10 overflow-y-auto top-0 w-full left-0 hidden" id="modal">
   <div class="flex items-center justify-center min-height-100vh pt-4 px-4 pb-20 text-center sm:block sm:p-0">
     <div class="fixed inset-0 transition-opacity">
@@ -95,15 +104,16 @@ This will return a new DataFrame with all the columns from both tables, and only
     </div>
   </div>
 </div>
+{% endif %}
       <script>
           function docsIndex() {
                 // loads latest index from https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json
                 // and stores it in localStorage
-                fetch('https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json')
+                fetch('https://d3dg1063dc54p9.cloudfront.net/combined.json')
                     .then(response => response.json())
                     .then(data => {
-                        console.log('Success:', data);
                         localStorage.setItem("docsIndex", JSON.stringify(data));
+                        localStorage.setItem("docsIndexDate", Date.now());
                         generateOptions()
                     }
 
@@ -119,8 +129,6 @@ This will return a new DataFrame with all the columns from both tables, and only
                 // create option for each key in docsIndex
                 for (var key in docsIndex) {
                     var option = document.createElement("option");
-                    console.log(key)
-                    console.log(docsIndex[key])
                     if (docsIndex[key].name == docsIndex[key].language) {
                         option.text = docsIndex[key].name + " " + docsIndex[key].version;
                         option.value = docsIndex[key].name + "/" + ".project" + "/" + docsIndex[key].version + "/";
@@ -134,20 +142,27 @@ This will return a new DataFrame with all the columns from both tables, and only
                 }
 
           }
-      // check if api_key is set
+        {% if not api_key_set %}
         if (localStorage.getItem('apiKey') === null) {
             console.log("apiKey is not set")
             document.getElementById('modal').classList.toggle('hidden')
         }
+        {% endif %}
         if (localStorage.getItem('docsIndex') === null) {
             console.log("docsIndex is not set")
+            docsIndex()
+        }
+        else if (localStorage.getItem("docsIndexDate") < Date.now() - 900000) {
+            console.log("docsIndex is older than 15 minutes")
             docsIndex()
         }
 
         generateOptions()
 
   </script>
+    {% if not api_key_set %}
     <script src="{{url_for('static',filename='src/authapi.js')}}"></script>
+    {% endif %}
   <script src="{{url_for('static',filename='src/chat.js')}}"></script>
   <script src="{{url_for('static',filename='src/choiceChange.js')}}"></script>
 

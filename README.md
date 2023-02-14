@@ -25,8 +25,8 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please don't hesitate contributing or creating issues, it helps us make DocsGPT better!
 
-## Screenshot
-<img width="1440" alt="image" src="https://user-images.githubusercontent.com/15183589/216717215-adc6ea2d-5b35-4694-ac0d-e39a396025f4.png">
+## Preview
+![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demo.gif)
 
 ## [Live preview](https://docsgpt.arc53.com/)
 
@@ -34,11 +34,11 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 
 
 ## Project structure
-application - flask app (main application)
+- Application - flask app (main application)
 
-extensions - chrome extension
+- Extensions - chrome extension
 
-scripts - script that creates similarity search index and store for other libraries 
+- Scripts - script that creates similarity search index and store for other libraries. 
 
 ## QuickStart
 Please note: current vector database uses pandas Python documentation, thus responses will be related to it, if you want to use other docs please follow a guide below
@@ -57,7 +57,7 @@ Copy .env_sample and create .env with your openai api token
 
 ## [Guides](https://github.com/arc53/docsgpt/wiki)
 
-
+## [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
 ## [How to use any other documentation](https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation)
 

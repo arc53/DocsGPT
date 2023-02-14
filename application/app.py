@@ -5,8 +5,8 @@ import datetime
 from flask import Flask, request, render_template
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 import faiss
-from langchain import OpenAI
-from langchain.chains import VectorDBQAWithSourcesChain
+from langchain import OpenAI, VectorDBQA
+from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 import requests
 
@@ -24,6 +24,13 @@ dotenv.load_dotenv()
 with open("combine_prompt.txt", "r") as f:
     template = f.read()
 
+# check if OPENAI_API_KEY is set
+if os.getenv("OPENAI_API_KEY") is not None:
+    api_key_set = True
+
+else:
+    api_key_set = False
+
 
 
 app = Flask(__name__)
@@ -31,14 +38,18 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return render_template("index.html", api_key_set=api_key_set)
 
 
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
     data = request.get_json()
     question = data["question"]
-    api_key = data["api_key"]
+    if not api_key_set:
+        api_key = data["api_key"]
+    else:
+        api_key = os.getenv("OPENAI_API_KEY")
+
     # check if the vectorstore is set
     if "active_docs" in data:
         vectorstore = "vectors/" + data["active_docs"]
@@ -57,11 +68,23 @@ def api_answer():
     # create a prompt template
     c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
     # create a chain with the prompt template and the store
-    chain = VectorDBQAWithSourcesChain.from_llm(llm=OpenAI(openai_api_key=api_key, temperature=0), vectorstore=store, combine_prompt=c_prompt)
+
+    #chain = VectorDBQA.from_llm(llm=OpenAI(openai_api_key=api_key, temperature=0), vectorstore=store, combine_prompt=c_prompt)
+    # chain = VectorDBQA.from_chain_type(llm=OpenAI(openai_api_key=api_key, temperature=0), chain_type='map_reduce',
+    #                                    vectorstore=store)
+
+    qa_chain = load_qa_chain(OpenAI(openai_api_key=api_key, temperature=0), chain_type="map_reduce",
+                             combine_prompt=c_prompt)
+    chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=store)
+
+
+
     # fetch the answer
-    result = chain({"question": question})
+    result = chain({"query": question})
+    print(result)
 
     # some formatting for the frontend
+    result['answer'] = result['result']
     result['answer'] = result['answer'].replace("\\n", "<br>")
     result['answer'] = result['answer'].replace("SOURCES:", "")
     # mock result
