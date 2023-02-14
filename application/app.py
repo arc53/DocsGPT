@@ -5,10 +5,21 @@ import datetime
 from flask import Flask, request, render_template
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 import faiss
-from langchain import OpenAI
-from langchain.chains import VectorDBQAWithSourcesChain
+from langchain import FAISS
+from langchain import OpenAI, VectorDBQA, HuggingFaceHub, Cohere
+from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 import requests
+from langchain.embeddings import OpenAIEmbeddings
+
+# from manifest import Manifest
+# from langchain.llms.manifest import ManifestWrapper
+
+# manifest = Manifest(
+#     client_name = "huggingface",
+#     client_connection = "http://127.0.0.1:5000"
+# )
+
 
 # Redirect PosixPath to WindowsPath on Windows
 import platform
@@ -58,22 +69,33 @@ def api_answer():
     else:
         vectorstore = ""
 
+
     # loading the index and the store and the prompt template
-    index = faiss.read_index(f"{vectorstore}docs.index")
+    docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=api_key))
 
-    with open(f"{vectorstore}faiss_store.pkl", "rb") as f:
-        store = pickle.load(f)
 
-    store.index = index
+    #docsearch = FAISS(OpenAIEmbeddings(openai_api_key="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"), index, store)
     # create a prompt template
     c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
     # create a chain with the prompt template and the store
 
-    chain = VectorDBQAWithSourcesChain.from_llm(llm=OpenAI(openai_api_key=api_key, temperature=0), vectorstore=store, combine_prompt=c_prompt)
+    #llm = ManifestWrapper(client=manifest, llm_kwargs={"temperature": 0.001, "max_tokens": 2048})
+    llm = OpenAI(openai_api_key=api_key, temperature=0)
+    #llm = HuggingFaceHub(repo_id="bigscience/bloom", huggingfacehub_api_token=api_key)
+    # llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+
+    qa_chain = load_qa_chain(llm = llm, chain_type="map_reduce",
+                             combine_prompt=c_prompt)
+
+
+    chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=2)
+
     # fetch the answer
-    result = chain({"question": question})
+    result = chain({"query": question})
+    print(result)
 
     # some formatting for the frontend
+    result['answer'] = result['result']
     result['answer'] = result['answer'].replace("\\n", "<br>")
     result['answer'] = result['answer'].replace("SOURCES:", "")
     # mock result

@@ -3,6 +3,7 @@ import pickle
 import tiktoken
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
+#from langchain.embeddings import HuggingFaceEmbeddings
 
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
@@ -22,6 +23,11 @@ def call_openai_api(docs):
     #docs = docs[:n]
     c1 = 0
     store = FAISS.from_documents(docs_test, OpenAIEmbeddings())
+
+    # Uncomment for MPNet embeddings
+    # model_name = "sentence-transformers/all-mpnet-base-v2"
+    # hf = HuggingFaceEmbeddings(model_name=model_name)
+    # store = FAISS.from_documents(docs_test, hf)
     for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
         try:
             import time
