@@ -73,8 +73,6 @@ def api_answer():
     # loading the index and the store and the prompt template
     docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=api_key))
 
-
-    #docsearch = FAISS(OpenAIEmbeddings(openai_api_key="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"), index, store)
     # create a prompt template
     c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
     # create a chain with the prompt template and the store
