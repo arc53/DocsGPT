@@ -32,11 +32,14 @@ def call_openai_api(docs):
             print("Saving progress")
             print(f"stopped at {c1} out of {len(docs)}")
             faiss.write_index(store.index, "docs.index")
+            store_index_bak = store.index
             store.index = None
             with open("faiss_store.pkl", "wb") as f:
                 pickle.dump(store, f)
             print("Sleeping for 10 seconds and trying again")
             time.sleep(10)
+            faiss.write_index(store_index_bak, "docs.index")
+            store.index = store_index_bak
             store.add_texts([i.page_content], metadatas=[i.metadata])
         c1 += 1
 
