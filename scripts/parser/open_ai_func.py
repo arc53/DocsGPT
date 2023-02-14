@@ -36,8 +36,8 @@ def call_openai_api(docs):
             store.index = None
             with open("faiss_store.pkl", "wb") as f:
                 pickle.dump(store, f)
-            print("Sleeping for 10 seconds and trying again")
-            time.sleep(10)
+            print("Sleeping for 60 seconds and trying again")
+            time.sleep(60)
             faiss.write_index(store_index_bak, "docs.index")
             store.index = store_index_bak
             store.add_texts([i.page_content], metadatas=[i.metadata])
