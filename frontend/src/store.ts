@@ -7,9 +7,9 @@ interface State {
 }
 
 const initialState: State = {
-  isApiKeyModalOpen: true,
+  isApiKeyModalOpen: false,
   apiKey: '',
-  isMenuOpen: true,
+  isMenuOpen: false,
 };
 
 export const slice = createSlice({
