@@ -50,7 +50,6 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
                                          required_exts=formats, num_files_limit=limit,
                                          exclude_hidden=exclude).load_data()
         raw_docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
-        print(raw_docs)
         # Here we split the documents, as needed, into smaller chunks.
         # We do this due to the context limits of the LLMs.
         text_splitter = RecursiveCharacterTextSplitter()

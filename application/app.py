@@ -78,8 +78,6 @@ def api_answer():
     else:
         embeddings_key = os.getenv("EMBEDDINGS_KEY")
 
-    print(embeddings_key)
-    print(api_key)
 
     # check if the vectorstore is set
     if "active_docs" in data:
@@ -115,7 +113,7 @@ def api_answer():
     qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                              combine_prompt=c_prompt)
 
-    chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=2)
+    chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=4)
 
     # fetch the answer
     result = chain({"query": question})
