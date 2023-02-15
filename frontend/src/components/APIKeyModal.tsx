@@ -1,30 +1,29 @@
 import { useState } from 'react';
-
-export default function APIKeyModal({
-  isApiModalOpen,
-  setIsApiModalOpen,
-  apiKey,
+import { useDispatch, useSelector } from 'react-redux';
+import {
   setApiKey,
-}: {
-  isApiModalOpen: boolean;
-  setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  apiKey: string;
-  setApiKey: React.Dispatch<React.SetStateAction<string>>;
-}) {
-  //TODO - Add form validation
+  toggleApiKeyModal,
+  selectIsApiKeyModalOpen,
+} from '../store';
+
+export default function APIKeyModal({}) {
+  //TODO - Add form validation?
   //TODO - Connect to backend
   //TODO - Add link to OpenAI API Key page
 
+  const dispatch = useDispatch();
+  const isApiModalOpen = useSelector(selectIsApiKeyModalOpen);
+  const [key, setKey] = useState('');
   const [formError, setFormError] = useState(false);
 
-  const handleResetKey = () => {
-    if (!apiKey) {
+  function handleSubmit() {
+    if (key.length < 1) {
       setFormError(true);
-    } else {
-      setFormError(false);
-      setIsApiModalOpen(false);
+      return;
     }
-  };
+    dispatch(setApiKey(key));
+    dispatch(toggleApiKeyModal());
+  }
 
   return (
     <div
@@ -42,17 +41,17 @@ export default function APIKeyModal({
         <input
           type="text"
           className="h-10 w-full border-b-2 border-jet focus:outline-none"
-          value={apiKey}
+          value={key}
           maxLength={100}
           placeholder="API Key"
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={(e) => setKey(e.target.value)}
         />
         <div className="flex justify-between">
           {formError && (
             <p className="text-sm text-red-500">Please enter a valid API key</p>
           )}
           <button
-            onClick={handleResetKey}
+            onClick={() => handleSubmit()}
             className="ml-auto h-10 w-20 rounded-lg bg-violet-800 text-white transition-all hover:bg-violet-700"
           >
             Save

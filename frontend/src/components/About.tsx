@@ -1,12 +1,13 @@
-export default function About({
-  isMenuOpen,
-  isMobile,
-}: {
-  isMenuOpen: boolean;
-  isMobile: boolean;
-}) {
-  //TODO - Add hyperlinks to text
-  //TODO - Styling
+import { useSelector } from 'react-redux';
+import { useMediaQuery } from '../hooks';
+import { selectIsMenuOpen } from '../store';
+
+//TODO - Add hyperlinks to text
+//TODO - Styling
+
+export default function About() {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const isMenuOpen = useSelector(selectIsMenuOpen);
 
   return (
     //Parent div for all content shown through App.tsx routing needs to have this styling. Might change when state management is updated.

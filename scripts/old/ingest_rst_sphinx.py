@@ -29,6 +29,18 @@ def convert_rst_to_txt(src_dir, dst_dir):
                f"-D source_suffix=.rst " \
                f"-C {dst_dir} "
         sphinx_main(args.split())
+      elif file.endswith(".md"):
+        # Rename the .md file to .rst file
+        src_file = os.path.join(root, file)
+        dst_file = os.path.join(root, file.replace(".md", ".rst"))
+        os.rename(src_file, dst_file)
+        # Convert the .rst file to .txt file using sphinx-build
+        args = f". -b text -D extensions=sphinx.ext.autodoc " \
+                f"-D master_doc={dst_file} " \
+                f"-D source_suffix=.rst " \
+                f"-C {dst_dir} "
+        sphinx_main(args.split())
+
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
 # Function to convert string to tokens and estimate user cost.
