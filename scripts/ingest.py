@@ -23,7 +23,8 @@ nltk.download('averaged_perceptron_tagger', quiet=True)
 
 #Splits all files in specified folder to documents
 @app.command()
-def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False),
+def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
+                                                   help="Whether to skip price confirmation"),
            dir: Optional[List[str]] = typer.Option(["inputs"],
                                                    help="""List of paths to directory for index creation.
                                                         E.g. --dir inputs --dir inputs2"""),
