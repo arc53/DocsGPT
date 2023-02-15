@@ -25,6 +25,7 @@ if (el) {
 
             body: JSON.stringify({question: message,
                 api_key: localStorage.getItem('apiKey'),
+                embeddings_key: localStorage.getItem('apiKey'),
                 active_docs: localStorage.getItem('activeDocs')}),
         })
             .then(response => response.json())
