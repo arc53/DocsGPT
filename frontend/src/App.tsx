@@ -1,62 +1,17 @@
-import { useEffect, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import Navigation from './components/Navigation/Navigation';
-import DocsGPT from './components/DocsGPT/DocsGPT';
+import Navigation from './components/Navigation';
+import Conversation from './components/Conversation/Conversation';
 import APIKeyModal from './components/APIKeyModal';
 import About from './components/About';
 
 export default function App() {
-  //Currently using primitive state management. Will most likely be replaced with Redux.
-  const [isMobile, setIsMobile] = useState(true);
-  const [isMenuOpen, setIsMenuOpen] = useState(true);
-  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-
-  const handleResize = () => {
-    if (window.innerWidth > 768 && isMobile) {
-      setIsMobile(false);
-    } else {
-      setIsMobile(true);
-      setIsMenuOpen(false);
-    }
-  };
-
-  useEffect(() => {
-    window.addEventListener('resize', handleResize);
-    handleResize();
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-
   return (
-    <div
-      className={`${
-        isMobile ? 'flex-col' : 'flex-row'
-      } relative flex transition-all`}
-    >
-      <APIKeyModal
-        apiKey={apiKey}
-        setApiKey={setApiKey}
-        isApiModalOpen={isApiModalOpen}
-        setIsApiModalOpen={setIsApiModalOpen}
-      />
-      <Navigation
-        isMobile={isMobile}
-        isMenuOpen={isMenuOpen}
-        setIsMenuOpen={setIsMenuOpen}
-        setIsApiModalOpen={setIsApiModalOpen}
-      />
+    <div className="relative flex flex-col transition-all md:flex-row">
+      <APIKeyModal />
+      <Navigation />
       <Routes>
-        <Route
-          path="/"
-          element={<DocsGPT isMenuOpen={isMenuOpen} isMobile={isMobile} />}
-        />
-        <Route
-          path="/about"
-          element={<About isMenuOpen={isMenuOpen} isMobile={isMobile} />}
-        />
+        <Route path="/" element={<Conversation />} />
+        <Route path="/about" element={<About />} />
       </Routes>
     </div>
   );

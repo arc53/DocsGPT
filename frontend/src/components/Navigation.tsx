@@ -1,23 +1,25 @@
-import React, { useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { NavLink } from 'react-router-dom';
-import Arrow1 from './imgs/arrow.svg';
-import Hamburger from './imgs/hamburger.svg';
-import Key from './imgs/key.svg';
-import Info from './imgs/info.svg';
-import Link from './imgs/link.svg';
-import Exit from './imgs/exit.svg';
+import { useMediaQuery } from '../hooks';
+import {
+  toggleApiKeyModal,
+  selectIsMenuOpen,
+  toggleIsMenuOpen,
+} from '../store';
+import Arrow1 from '../imgs/arrow.svg';
+import Hamburger from '../imgs/hamburger.svg';
+import Key from '../imgs/key.svg';
+import Info from '../imgs/info.svg';
+import Link from '../imgs/link.svg';
+import Exit from '../imgs/exit.svg';
 
-function MobileNavigation({
-  isMenuOpen,
-  setIsMenuOpen,
-  setIsApiModalOpen,
-}: {
-  isMenuOpen: boolean;
-  setIsMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}) {
-  //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
-  //TODO - Need to add Discord and Github links
+//TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
+//TODO - Need to add Discord and Github links
+
+function MobileNavigation({}) {
+  const dispatch = useDispatch();
+  const isMenuOpen = useSelector(selectIsMenuOpen);
+
   return (
     <div
       className={`${
@@ -29,7 +31,7 @@ function MobileNavigation({
           <>
             <button
               className="mt-5 ml-6 h-6 w-6"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              onClick={() => dispatch(toggleIsMenuOpen())}
             >
               <img src={Exit} alt="menu toggle" className="w-5" />
             </button>
@@ -38,7 +40,7 @@ function MobileNavigation({
           <>
             <button
               className="mt-5 ml-6 h-6 w-6"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              onClick={() => dispatch(toggleIsMenuOpen())}
             >
               <img src={Hamburger} alt="menu toggle" className="w-7" />
             </button>
@@ -71,7 +73,7 @@ function MobileNavigation({
           </div>
           <div
             className="flex h-12 cursor-pointer gap-4 rounded-md px-6 hover:bg-gray-100"
-            onClick={() => setIsApiModalOpen(true)}
+            onClick={() => dispatch(toggleApiKeyModal())}
           >
             <img src={Key} alt="info" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Reset Key</p>
@@ -82,15 +84,10 @@ function MobileNavigation({
   );
 }
 
-function DesktopNavigation({
-  isMenuOpen,
-  setIsMenuOpen,
-  setIsApiModalOpen,
-}: {
-  isMenuOpen: boolean;
-  setIsMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}) {
+function DesktopNavigation() {
+  const dispatch = useDispatch();
+  const isMenuOpen = useSelector(selectIsMenuOpen);
+
   return (
     <div
       className={`${
@@ -104,7 +101,7 @@ function DesktopNavigation({
       >
         <button
           className="float-right mr-5 mt-5 h-5 w-5"
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          onClick={() => dispatch(toggleIsMenuOpen())}
         >
           <img
             src={Arrow1}
@@ -123,7 +120,7 @@ function DesktopNavigation({
           <div className="flex h-16 flex-col border-b-2 border-gray-100">
             <div
               className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
-              onClick={() => setIsApiModalOpen(true)}
+              onClick={() => dispatch(toggleApiKeyModal())}
             >
               <img src={Key} alt="key" className="ml-2 w-6" />
               <p className="my-auto text-eerie-black">Reset Key</p>
@@ -155,32 +152,12 @@ function DesktopNavigation({
   );
 }
 
-export default function Navigation({
-  isMobile,
-  isMenuOpen,
-  setIsMenuOpen,
-  setIsApiModalOpen,
-}: {
-  isMobile: boolean;
-  isMenuOpen: boolean;
-  setIsMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsApiModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}) {
+export default function Navigation() {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+
   if (isMobile) {
-    return (
-      <MobileNavigation
-        isMenuOpen={isMenuOpen}
-        setIsMenuOpen={setIsMenuOpen}
-        setIsApiModalOpen={setIsApiModalOpen}
-      />
-    );
+    return <MobileNavigation />;
   } else {
-    return (
-      <DesktopNavigation
-        isMenuOpen={isMenuOpen}
-        setIsMenuOpen={setIsMenuOpen}
-        setIsApiModalOpen={setIsApiModalOpen}
-      />
-    );
+    return <DesktopNavigation />;
   }
 }
