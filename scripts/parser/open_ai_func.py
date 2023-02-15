@@ -6,6 +6,8 @@ from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 
 #from langchain.embeddings import HuggingFaceEmbeddings
+#from langchain.embeddings import HuggingFaceInstructEmbeddings
+#from langchain.embeddings import CohereEmbeddings
 
 from retry import retry
 
@@ -44,28 +46,16 @@ def call_openai_api(docs, folder_name):
     # store = FAISS.from_documents(docs_test, hf)
     for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
         try:
-            import time
             store_add_texts_with_retry(store, i)
         except Exception as e:
             print(e)
             print("Error on ", i)
             print("Saving progress")
             print(f"stopped at {c1} out of {len(docs)}")
-            faiss.write_index(store.index, f"outputs/{folder_name}/docs.index")
-            store_index_bak = store.index
-            store.index = None
-            with open(f"outputs/{folder_name}/faiss_store.pkl", "wb") as f:
-                pickle.dump(store, f)
-            print("Sleeping for 60 seconds and trying again")
-            time.sleep(60)
-            store.index = store_index_bak
-            store.add_texts([i.page_content], metadatas=[i.metadata])
+            store.save_local(f"outputs/{folder_name}")
+            break
         c1 += 1
-
-    faiss.write_index(store.index, f"outputs/{folder_name}/docs.index")
-    store.index = None
-    with open(f"outputs/{folder_name}/faiss_store.pkl", "wb") as f:
-        pickle.dump(store, f)
+    store.save_local(f"outputs/{folder_name}")
 
 def get_user_permission(docs, folder_name):
 # Function to ask user permission to call the OpenAI api and spend their OpenAI funds.
