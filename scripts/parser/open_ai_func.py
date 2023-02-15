@@ -4,6 +4,7 @@ import pickle
 import tiktoken
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
+from retry import retry
 
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
@@ -12,6 +13,10 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
     num_tokens = len(encoding.encode(string))
     total_price = ((num_tokens/1000) * 0.0004)
     return num_tokens, total_price
+
+@retry(tries=10, delay=60)
+def store_add_texts_with_retry(store, i):
+    store.add_texts([i.page_content], metadatas=[i.metadata])
 
 def call_openai_api(docs, folder_name):
 # Function to create a vector store from the documents and save it to disk.
@@ -31,7 +36,7 @@ def call_openai_api(docs, folder_name):
     for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
         try:
             import time
-            store.add_texts([i.page_content], metadatas=[i.metadata])
+            store_add_texts_with_retry(store, i)
         except Exception as e:
             print(e)
             print("Error on ", i)
