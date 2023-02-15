@@ -14,10 +14,38 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
 
 def call_openai_api(docs):
 # Function to create a vector store from the documents and save it to disk.
-    store = FAISS.from_documents(docs, OpenAIEmbeddings())
+    from tqdm import tqdm
+    docs_test = [docs[0]]
+    # remove the first element from docs
+    docs.pop(0)
+    # cut first n docs if you want to restart
+    #docs = docs[:n]
+    c1 = 0
+    store = FAISS.from_documents(docs_test, OpenAIEmbeddings())
+    for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
+        try:
+            import time
+            store.add_texts([i.page_content], metadatas=[i.metadata])
+        except Exception as e:
+            print(e)
+            print("Error on ", i)
+            print("Saving progress")
+            print(f"stopped at {c1} out of {len(docs)}")
+            faiss.write_index(store.index, "docs.index")
+            store_index_bak = store.index
+            store.index = None
+            with open("faiss_store.pkl", "wb") as f:
+                pickle.dump(store, f)
+            print("Sleeping for 60 seconds and trying again")
+            time.sleep(60)
+            faiss.write_index(store_index_bak, "docs.index")
+            store.index = store_index_bak
+            store.add_texts([i.page_content], metadatas=[i.metadata])
+        c1 += 1
+
+
     faiss.write_index(store.index, "docs.index")
     store.index = None
-
     with open("faiss_store.pkl", "wb") as f:
         pickle.dump(store, f)
 
