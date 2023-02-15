@@ -57,7 +57,7 @@ Copy .env_sample and create .env with your openai api token
 
 ## [Guides](https://github.com/arc53/docsgpt/wiki)
 
-
+## [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
 ## [How to use any other documentation](https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation)
 
