@@ -1,4 +1,5 @@
 import os
+import json
 
 import dotenv
 import requests
@@ -47,6 +48,9 @@ dotenv.load_dotenv()
 with open("combine_prompt.txt", "r") as f:
     template = f.read()
 
+with open("combine_prompt_hist.txt", "r") as f:
+    template_hist = f.read()
+
 if os.getenv("API_KEY") is not None:
     api_key_set = True
 else:
@@ -69,6 +73,7 @@ def home():
 def api_answer():
     data = request.get_json()
     question = data["question"]
+    history = data["history"]
     if not api_key_set:
         api_key = data["api_key"]
     else:
@@ -99,7 +104,12 @@ def api_answer():
         docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
 
     # create a prompt template
-    c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
+    if history:
+        history = json.loads(history)
+        template_temp = template_hist.replace("{historyquestion}", history[0]).replace("{historyanswer}", history[1])
+        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template_temp)
+    else:
+        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
 
     if llm_choice == "openai":
         llm = OpenAI(openai_api_key=api_key, temperature=0)
