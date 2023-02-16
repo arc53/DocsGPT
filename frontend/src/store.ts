@@ -3,13 +3,11 @@ import { configureStore, createSlice, PayloadAction } from '@reduxjs/toolkit';
 interface State {
   isApiKeyModalOpen: boolean;
   apiKey: string;
-  isMenuOpen: boolean;
 }
 
 const initialState: State = {
   isApiKeyModalOpen: false,
   apiKey: '',
-  isMenuOpen: false,
 };
 
 export const slice = createSlice({
@@ -24,13 +22,10 @@ export const slice = createSlice({
       state.apiKey = action.payload;
       console.log('setApiKey', action.payload);
     },
-    toggleIsMenuOpen: (state) => {
-      state.isMenuOpen = !state.isMenuOpen;
-    },
   },
 });
 
-export const { toggleApiKeyModal, setApiKey, toggleIsMenuOpen } = slice.actions;
+export const { toggleApiKeyModal, setApiKey } = slice.actions;
 
 const store = configureStore({
   reducer: {
@@ -43,6 +38,5 @@ type RootState = ReturnType<typeof store.getState>;
 export const selectIsApiKeyModalOpen = (state: RootState) =>
   state.app.isApiKeyModalOpen;
 export const selectApiKey = (state: RootState) => state.app.apiKey;
-export const selectIsMenuOpen = (state: RootState) => state.app.isMenuOpen;
 
 export default store;

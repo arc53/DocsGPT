@@ -6,7 +6,7 @@ import {
   selectIsApiKeyModalOpen,
 } from '../store';
 
-export default function APIKeyModal({}) {
+export default function APIKeyModal() {
   //TODO - Add form validation?
   //TODO - Connect to backend
   //TODO - Add link to OpenAI API Key page

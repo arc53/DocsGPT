@@ -1,28 +1,11 @@
-import { useSelector } from 'react-redux';
-import { useMediaQuery } from '../hooks';
-import { selectIsMenuOpen } from '../store';
-
 //TODO - Add hyperlinks to text
 //TODO - Styling
 
 export default function About() {
-  const isMobile = useMediaQuery('(max-width: 768px)');
-  const isMenuOpen = useSelector(selectIsMenuOpen);
-
   return (
     //Parent div for all content shown through App.tsx routing needs to have this styling. Might change when state management is updated.
-    <div
-      className={`${
-        isMobile
-          ? isMenuOpen
-            ? 'mt-80'
-            : 'mt-16'
-          : isMenuOpen
-          ? 'md:ml-72 lg:ml-96'
-          : 'ml-16'
-      } h-full w-full p-6 transition-all`}
-    >
-      <article className="mx-auto my-auto flex w-full max-w-6xl flex-col gap-6 rounded-lg bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
+    <div className="grid min-h-screen">
+      <article className=" mx-auto my-auto flex w-full max-w-6xl flex-col place-items-center gap-6 rounded-lg bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
         <p className="text-3xl font-semibold">About DocsGPT 🦖</p>
         <p className="mt-4 text-xl font-bold">
           Find the information in your documentation through AI-powered
