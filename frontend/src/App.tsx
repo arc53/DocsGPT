@@ -1,11 +1,11 @@
 import { Routes, Route } from 'react-router-dom';
-import Navigation from './components/Navigation';
-import Conversation from './components/Conversation/Conversation';
-import APIKeyModal from './components/APIKeyModal';
-import About from './components/About';
+import Navigation from './Navigation';
+import Conversation from './conversation/Conversation';
+import APIKeyModal from './preferences/APIKeyModal';
+import About from './About';
 import { useState } from 'react';
 import { ActiveState } from './models/misc';
-import { selectApiKeyStatus } from './store';
+import { selectApiKeyStatus } from './preferences/preferenceSlice';
 import { useSelector } from 'react-redux';
 
 export default function App() {

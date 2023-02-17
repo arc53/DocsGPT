@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { ActiveState } from '../models/misc';
-import { setApiKey } from '../store';
+import { setApiKey } from './preferenceSlice';
 
 export default function APIKeyModal({
   modalState,

@@ -1,14 +1,10 @@
-import { useDispatch, useSelector } from 'react-redux';
 import { NavLink } from 'react-router-dom';
-import { useMediaQuery } from '../hooks';
-import { toggleApiKeyModal } from '../store';
-import Arrow1 from '../imgs/arrow.svg';
-import Hamburger from '../imgs/hamburger.svg';
-import Key from '../imgs/key.svg';
-import Info from '../imgs/info.svg';
-import Link from '../imgs/link.svg';
-import Exit from '../imgs/exit.svg';
-import { ActiveState } from '../models/misc';
+import Arrow1 from './assets/arrow.svg';
+import Hamburger from './assets/hamburger.svg';
+import Key from './assets/key.svg';
+import Info from './assets/info.svg';
+import Link from './assets/link.svg';
+import { ActiveState } from './models/misc';
 
 //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
 //TODO - Need to add Discord and Github links
