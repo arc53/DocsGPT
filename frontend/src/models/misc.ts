@@ -1,1 +1,1 @@
-export type NavState = 'OPEN' | 'CLOSED';
+export type ActiveState = 'ACTIVE' | 'INACTIVE';

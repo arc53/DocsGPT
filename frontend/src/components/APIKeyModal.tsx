@@ -1,34 +1,42 @@
 import { useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import {
-  setApiKey,
-  toggleApiKeyModal,
-  selectIsApiKeyModalOpen,
-} from '../store';
+import { useDispatch } from 'react-redux';
+import { ActiveState } from '../models/misc';
+import { setApiKey } from '../store';
 
-export default function APIKeyModal() {
-  //TODO - Add form validation?
-  //TODO - Connect to backend
-  //TODO - Add link to OpenAI API Key page
-
+export default function APIKeyModal({
+  modalState,
+  setModalState,
+  isCancellable = true,
+}: {
+  modalState: ActiveState;
+  setModalState: (val: ActiveState) => void;
+  isCancellable?: boolean;
+}) {
   const dispatch = useDispatch();
-  const isApiModalOpen = useSelector(selectIsApiKeyModalOpen);
   const [key, setKey] = useState('');
-  const [formError, setFormError] = useState(false);
+  const [isError, setIsError] = useState(false);
 
   function handleSubmit() {
-    if (key.length < 1) {
-      setFormError(true);
-      return;
+    if (key.length <= 1) {
+      setIsError(true);
+    } else {
+      dispatch(setApiKey(key));
+      setModalState('INACTIVE');
+      setKey('');
+      setIsError(false);
     }
-    dispatch(setApiKey(key));
-    dispatch(toggleApiKeyModal());
+  }
+
+  function handleCancel() {
+    setKey('');
+    setIsError(false);
+    setModalState('INACTIVE');
   }
 
   return (
     <div
       className={`${
-        isApiModalOpen ? 'visible' : 'hidden'
+        modalState === 'ACTIVE' ? 'visible' : 'hidden'
       } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
@@ -46,16 +54,28 @@ export default function APIKeyModal() {
           placeholder="API Key"
           onChange={(e) => setKey(e.target.value)}
         />
-        <div className="flex justify-between">
-          {formError && (
-            <p className="text-sm text-red-500">Please enter a valid API key</p>
+        <div className="flex flex-row-reverse">
+          <div>
+            <button
+              onClick={() => handleSubmit()}
+              className="ml-auto h-10 w-20 rounded-lg bg-violet-800 text-white transition-all hover:bg-violet-700"
+            >
+              Save
+            </button>
+            {isCancellable && (
+              <button
+                onClick={() => handleCancel()}
+                className="ml-5 h-10 w-20 rounded-lg border border-violet-700 bg-white text-violet-800 transition-all hover:bg-violet-700 hover:text-white"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          {isError && (
+            <p className="mr-auto text-sm text-red-500">
+              Please enter a valid API key
+            </p>
           )}
-          <button
-            onClick={() => handleSubmit()}
-            className="ml-auto h-10 w-20 rounded-lg bg-violet-800 text-white transition-all hover:bg-violet-700"
-          >
-            Save
-          </button>
         </div>
       </article>
     </div>

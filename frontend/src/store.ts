@@ -1,4 +1,9 @@
-import { configureStore, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import {
+  configureStore,
+  createSelector,
+  createSlice,
+  PayloadAction,
+} from '@reduxjs/toolkit';
 
 interface State {
   isApiKeyModalOpen: boolean;
@@ -38,5 +43,6 @@ type RootState = ReturnType<typeof store.getState>;
 export const selectIsApiKeyModalOpen = (state: RootState) =>
   state.app.isApiKeyModalOpen;
 export const selectApiKey = (state: RootState) => state.app.apiKey;
+export const selectApiKeyStatus = (state: RootState) => !!state.app.apiKey;
 
 export default store;

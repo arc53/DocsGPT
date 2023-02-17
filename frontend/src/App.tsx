@@ -4,21 +4,32 @@ import Conversation from './components/Conversation/Conversation';
 import APIKeyModal from './components/APIKeyModal';
 import About from './components/About';
 import { useState } from 'react';
-import { NavState } from './models/misc';
+import { ActiveState } from './models/misc';
+import { selectApiKeyStatus } from './store';
+import { useSelector } from 'react-redux';
 
 export default function App() {
-  const [navState, setNavState] = useState<NavState>('OPEN');
+  const isApiKeySet = useSelector(selectApiKeyStatus);
+  const [navState, setNavState] = useState<ActiveState>('ACTIVE');
+  const [apiKeyModalState, setApiKeyModalState] = useState<ActiveState>(
+    isApiKeySet ? 'INACTIVE' : 'ACTIVE',
+  );
 
   return (
     <div className="min-h-full min-w-full transition-all">
-      <APIKeyModal />
+      <APIKeyModal
+        modalState={apiKeyModalState}
+        setModalState={setApiKeyModalState}
+        isCancellable={isApiKeySet}
+      />
       <Navigation
         navState={navState}
-        setNavState={(val: NavState) => setNavState(val)}
+        setNavState={(val: ActiveState) => setNavState(val)}
+        setApiKeyModalState={setApiKeyModalState}
       />
       <div
         className={`${
-          navState === 'OPEN' ? 'ml-0 md:ml-72 lg:ml-96' : ' ml-0 md:ml-16'
+          navState === 'ACTIVE' ? 'ml-0 md:ml-72 lg:ml-96' : ' ml-0 md:ml-16'
         }`}
       >
         <Routes>
