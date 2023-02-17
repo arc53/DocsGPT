@@ -1,55 +1,42 @@
-import { useEffect, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import Navigation from './components/Navigation/Navigation';
-import DocsGPT from './components/DocsGPT';
-import APIKeyModal from './components/APIKeyModal';
-import './App.css';
+import Navigation from './Navigation';
+import Conversation from './conversation/Conversation';
+import APIKeyModal from './preferences/APIKeyModal';
+import About from './About';
+import { useState } from 'react';
+import { ActiveState } from './models/misc';
+import { selectApiKeyStatus } from './preferences/preferenceSlice';
+import { useSelector } from 'react-redux';
 
 export default function App() {
-  //Currently using primitive state management. Will most likely be replaced with Redux.
-  const [isMobile, setIsMobile] = useState(true);
-  const [isMenuOpen, setIsMenuOpen] = useState(true);
-  const [isApiModalOpen, setIsApiModalOpen] = useState(true);
-  const [apiKey, setApiKey] = useState('');
-
-  const handleResize = () => {
-    if (window.innerWidth > 768 && isMobile) {
-      setIsMobile(false);
-    } else {
-      setIsMobile(true);
-    }
-  };
-
-  useEffect(() => {
-    window.addEventListener('resize', handleResize);
-    handleResize();
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
+  const isApiKeySet = useSelector(selectApiKeyStatus);
+  const [navState, setNavState] = useState<ActiveState>('ACTIVE');
+  const [apiKeyModalState, setApiKeyModalState] = useState<ActiveState>(
+    isApiKeySet ? 'INACTIVE' : 'ACTIVE',
+  );
 
   return (
-    <div
-      className={`${
-        isMobile ? 'flex-col' : 'flex-row'
-      } relative flex transition-all`}
-    >
+    <div className="min-h-full min-w-full transition-all">
       <APIKeyModal
-        apiKey={apiKey}
-        setApiKey={setApiKey}
-        isApiModalOpen={isApiModalOpen}
-        setIsApiModalOpen={setIsApiModalOpen}
+        modalState={apiKeyModalState}
+        setModalState={setApiKeyModalState}
+        isCancellable={isApiKeySet}
       />
       <Navigation
-        isMobile={isMobile}
-        isMenuOpen={isMenuOpen}
-        setIsMenuOpen={setIsMenuOpen}
-        setIsApiModalOpen={setIsApiModalOpen}
+        navState={navState}
+        setNavState={(val: ActiveState) => setNavState(val)}
+        setApiKeyModalState={setApiKeyModalState}
       />
-      <Routes>
-        <Route path="/" element={<DocsGPT isMenuOpen={isMenuOpen} />} />
-      </Routes>
+      <div
+        className={`${
+          navState === 'ACTIVE' ? 'ml-0 md:ml-72 lg:ml-96' : ' ml-0 md:ml-16'
+        }`}
+      >
+        <Routes>
+          <Route path="/" element={<Conversation />} />
+          <Route path="/about" element={<About />} />
+        </Routes>
+      </div>
     </div>
   );
 }
