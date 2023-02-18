@@ -5,6 +5,10 @@ import Key from './assets/key.svg';
 import Info from './assets/info.svg';
 import Link from './assets/link.svg';
 import { ActiveState } from './models/misc';
+import APIKeyModal from './preferences/APIKeyModal';
+import { useSelector } from 'react-redux';
+import { selectApiKeyStatus } from './preferences/preferenceSlice';
+import { useState } from 'react';
 
 //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
 //TODO - Need to add Discord and Github links
@@ -12,12 +16,14 @@ import { ActiveState } from './models/misc';
 export default function Navigation({
   navState,
   setNavState,
-  setApiKeyModalState,
 }: {
   navState: ActiveState;
   setNavState: (val: ActiveState) => void;
-  setApiKeyModalState: (val: ActiveState) => void;
 }) {
+  const isApiKeySet = useSelector(selectApiKeyStatus);
+  const [apiKeyModalState, setApiKeyModalState] = useState<ActiveState>(
+    isApiKeySet ? 'INACTIVE' : 'ACTIVE',
+  );
   const openNav = (
     <div className="fixed h-full w-72 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all md:visible md:flex lg:w-96">
       <div className={'h-16 w-full border-b-2 border-gray-100'}>
@@ -93,5 +99,14 @@ export default function Navigation({
     </>
   );
 
-  return navState === 'ACTIVE' ? openNav : closedNav;
+  return (
+    <>
+      {navState === 'ACTIVE' ? openNav : closedNav}
+      <APIKeyModal
+        modalState={apiKeyModalState}
+        setModalState={setApiKeyModalState}
+        isCancellable={isApiKeySet}
+      />
+    </>
+  );
 }
