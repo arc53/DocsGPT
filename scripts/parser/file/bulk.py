@@ -7,6 +7,7 @@ from parser.file.base import BaseReader
 from parser.file.base_parser import BaseParser
 from parser.file.docs_parser import DocxParser, PDFParser
 from parser.file.epub_parser import EpubParser
+from parser.file.html_parser import HTMLParser
 from parser.file.markdown_parser import MarkdownParser
 from parser.file.rst_parser import RstParser
 from parser.file.tabular_parser import PandasCSVParser
@@ -19,6 +20,7 @@ DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".epub": EpubParser(),
     ".md": MarkdownParser(),
     ".rst": RstParser(),
+    ".html": HTMLParser(),
 }
 
 
