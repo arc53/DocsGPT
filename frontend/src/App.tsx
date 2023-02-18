@@ -9,13 +9,13 @@ export default function App() {
   const [navState, setNavState] = useState<ActiveState>('ACTIVE');
 
   return (
-    <div className="min-h-full min-w-full transition-all">
+    <div className="min-h-full min-w-full">
       <Navigation
         navState={navState}
         setNavState={(val: ActiveState) => setNavState(val)}
       />
       <div
-        className={`${
+        className={`transition-all duration-200 ${
           navState === 'ACTIVE' ? 'ml-0 md:ml-72 lg:ml-96' : ' ml-0 md:ml-16'
         }`}
       >
