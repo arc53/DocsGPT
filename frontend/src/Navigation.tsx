@@ -25,7 +25,7 @@ export default function Navigation({
     isApiKeySet ? 'INACTIVE' : 'ACTIVE',
   );
   const openNav = (
-    <div className="fixed h-full w-72 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all md:visible md:flex lg:w-96">
+    <div className="fixed z-10 h-full w-72 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all md:visible md:flex lg:w-96">
       <div className={'h-16 w-full border-b-2 border-gray-100'}>
         <button
           className="float-right mr-5 mt-5 h-5 w-5"
@@ -76,7 +76,7 @@ export default function Navigation({
 
   const closedNav = (
     <>
-      <div className="fixed hidden h-full w-16 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all md:flex">
+      <div className="fixed z-10 hidden h-full w-16 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all md:flex">
         <div className={'h-16 w-16 border-b-2 border-gray-100'}>
           <button
             className="float-right mr-5 mt-5 h-5 w-5"
