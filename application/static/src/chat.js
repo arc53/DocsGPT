@@ -25,6 +25,8 @@ if (el) {
 
             body: JSON.stringify({question: message,
                 api_key: localStorage.getItem('apiKey'),
+                embeddings_key: localStorage.getItem('apiKey'),
+                history: localStorage.getItem('chatHistory'),
                 active_docs: localStorage.getItem('activeDocs')}),
         })
             .then(response => response.json())
@@ -38,9 +40,12 @@ if (el) {
                 chatWindow.scrollTop = chatWindow.scrollHeight;
                 document.getElementById("button-submit").innerHTML = 'Send';
                 document.getElementById("button-submit").disabled = false;
+                let chatHistory = [message, data.answer];
+                localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
             })
             .catch((error) => {
                 console.error('Error:', error);
+                console.log(error);
                 document.getElementById("button-submit").innerHTML = 'Send';
                 document.getElementById("button-submit").disabled = false;
             });
