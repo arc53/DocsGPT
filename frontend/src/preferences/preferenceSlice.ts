@@ -33,7 +33,5 @@ type RootState = ReturnType<typeof store.getState>;
 export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;
-export const selectSelectedDocs = (state: RootState) =>
-  state.preference.selectedDocs;
 export const selectSelectedDocsStatus = (state: RootState) =>
   !!state.preference.selectedDocs;

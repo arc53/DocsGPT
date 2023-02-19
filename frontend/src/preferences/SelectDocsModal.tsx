@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { ActiveState, Doc } from '../models/misc';
-import { setSelectedDocs, selectSelectedDocs } from './preferenceSlice';
+import { setSelectedDocs } from './preferenceSlice';
 import { getDocs } from '../api/docs';
 
 export default function APIKeyModal({
@@ -109,7 +109,7 @@ export default function APIKeyModal({
             className="ml-auto h-10 w-20 rounded-lg bg-violet-800 text-white transition-all hover:bg-violet-700"
           >
             Save
-          </button>{' '}
+          </button>
           {isError && (
             <p className="mr-auto text-sm text-red-500">
               Please select source documentation.
