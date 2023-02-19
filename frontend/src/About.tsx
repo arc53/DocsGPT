@@ -4,7 +4,7 @@
 export default function About() {
   return (
     //Parent div for all content shown through App.tsx routing needs to have this styling. Might change when state management is updated.
-    <div className="grid min-h-screen">
+    <div className="mx-6 grid min-h-screen">
       <article className=" mx-auto my-auto flex w-full max-w-6xl flex-col place-items-center gap-6 rounded-lg bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
         <p className="text-3xl font-semibold">About DocsGPT 🦖</p>
         <p className="mt-4 text-xl font-bold">
