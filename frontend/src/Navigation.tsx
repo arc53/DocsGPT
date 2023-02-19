@@ -37,7 +37,7 @@ export default function Navigation({
     <>
       <div
         className={`${
-          navState === 'INACTIVE' && '-ml-96 md:-ml-60 lg:-ml-80'
+          navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem] lg:-ml-80'
         } fixed z-10 flex h-full w-72 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all duration-200 lg:w-96`}
       >
         <div className={'h-16 w-full border-b-2 border-gray-100'}>
