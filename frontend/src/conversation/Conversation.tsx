@@ -1,28 +1,33 @@
+import { useEffect, useRef } from 'react';
+import { useSelector } from 'react-redux';
+import Hero from '../Hero';
 import ConversationBubble from './ConversationBubble';
 import ConversationInput from './ConversationInput';
+import { selectConversation } from './conversationSlice';
 
 export default function Conversation() {
-  // uncomment below JSX to see the sample harcoded chat box
+  const messages = useSelector(selectConversation);
+  const endMessageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => endMessageRef?.current?.scrollIntoView());
+
   return (
     <div className="flex justify-center p-6">
-      {/* <div className="w-10/12 transition-all md:w-1/2">
-        {new Array(10).fill(1).map((item, index) => {
+      <div className="w-10/12 transition-all md:w-1/2">
+        {messages.map((message, index) => {
           return (
             <ConversationBubble
-              className="mt-5"
+              ref={index === messages.length - 1 ? endMessageRef : null}
+              className="mb-7"
               key={index}
-              user={index % 2 === 0 ? { avatar: '🦖' } : { avatar: '👤' }}
-              message={
-                index % 2 === 0
-                  ? 'A chatbot is a computer program that simulates human conversation through voice commands or text chats or both. It can be integrated with various messaging platforms like Facebook Messenger, WhatsApp, WeChat, etc.'
-                  : 'what is DocsGPT'
-              }
-              isCurrentUser={index % 2 === 0 ? false : true}
+              message={message.text}
+              type={message.type}
             ></ConversationBubble>
           );
         })}
+        {messages.length === 0 && <Hero className="mt-24"></Hero>}
       </div>
-      <ConversationInput className="fixed bottom-2 w-10/12 md:w-[50%]"></ConversationInput> */}
+      <ConversationInput className="fixed bottom-2 w-10/12 md:w-[50%]"></ConversationInput>
     </div>
   );
 }
