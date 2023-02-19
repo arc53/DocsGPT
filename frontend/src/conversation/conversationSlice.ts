@@ -2,8 +2,33 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
 import { ConversationState, Message } from './conversationModels';
 
+// harcoding the initial state just for demo
 const initialState: ConversationState = {
-  conversation: [],
+  conversation: [
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
+    { text: 'what is ChatGPT', type: 'QUESTION' },
+    {
+      text: 'ChatGPT is large learning model',
+      type: 'ANSWER',
+    },
+  ],
 };
 
 export const conversationSlice = createSlice({

@@ -1,18 +1,18 @@
+import { forwardRef } from 'react';
 import Avatar from '../Avatar';
-import { User } from '../models/misc';
 import { MESSAGE_TYPE } from './conversationModels';
 
-export default function ConversationBubble({
-  message,
-  type,
-  className,
-}: {
-  message: string;
-  type: MESSAGE_TYPE;
-  className: string;
-}) {
+const ConversationBubble = forwardRef<
+  HTMLDivElement,
+  {
+    message: string;
+    type: MESSAGE_TYPE;
+    className: string;
+  }
+>(function ConversationBubble({ message, type, className }, ref) {
   return (
     <div
+      ref={ref}
       className={`flex rounded-3xl ${
         type === 'QUESTION' ? '' : 'bg-gray-1000'
       } py-7 px-5 ${className}`}
@@ -21,4 +21,6 @@ export default function ConversationBubble({
       <p className="ml-5">{message}</p>
     </div>
   );
-}
+});
+
+export default ConversationBubble;
