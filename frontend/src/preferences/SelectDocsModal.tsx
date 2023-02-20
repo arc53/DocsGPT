@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useDispatch } from 'react-redux';
-import { ActiveState, Doc } from '../models/misc';
-import { setSelectedDocs } from './preferenceSlice';
-import { getDocs } from '../api/docs';
+import { useDispatch, useSelector } from 'react-redux';
+import { ActiveState } from '../models/misc';
+import { Doc } from './selectDocsApi';
+import {
+  setSelectedDocs,
+  setSourceDocs,
+  selectSourceDocs,
+} from './preferenceSlice';
+import { getDocs } from './selectDocsApi';
 
 export default function APIKeyModal({
   modalState,
@@ -14,7 +19,7 @@ export default function APIKeyModal({
   isCancellable?: boolean;
 }) {
   const dispatch = useDispatch();
-  const [docs, setDocs] = useState<Doc[] | null>(null);
+  const docs = useSelector(selectSourceDocs);
   const [localSelectedDocs, setLocalSelectedDocs] = useState<Doc | null>(null);
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const [isError, setIsError] = useState(false);
@@ -39,7 +44,7 @@ export default function APIKeyModal({
   useEffect(() => {
     async function requestDocs() {
       const data = await getDocs();
-      setDocs(data);
+      dispatch(setSourceDocs(data));
     }
 
     requestDocs();
