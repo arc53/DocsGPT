@@ -14,10 +14,10 @@ export default function APIKeyModal({
   isCancellable?: boolean;
 }) {
   const dispatch = useDispatch();
-  const [isError, setIsError] = useState(false);
-  const [docs, setDocs] = useState<Doc[]>([]);
+  const [docs, setDocs] = useState<Doc[] | null>(null);
   const [localSelectedDocs, setLocalSelectedDocs] = useState<Doc | null>(null);
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
+  const [isError, setIsError] = useState(false);
 
   function handleSubmit() {
     if (!localSelectedDocs) {
@@ -31,7 +31,7 @@ export default function APIKeyModal({
   }
 
   function handleCancel() {
-    setSelectedDocs(null);
+    setLocalSelectedDocs(null);
     setIsError(false);
     setModalState('INACTIVE');
   }
@@ -71,25 +71,31 @@ export default function APIKeyModal({
             )}
           </div>
           {isDocsListOpen && (
-            <div className="absolute top-10 left-0 h-52 w-full overflow-y-scroll bg-white">
-              {docs.map((doc, index) => {
-                if (doc.model) {
-                  return (
-                    <div
-                      key={index}
-                      onClick={() => {
-                        setLocalSelectedDocs(doc);
-                        setIsDocsListOpen(false);
-                      }}
-                      className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100"
-                    >
-                      <p className="ml-5 py-3">
-                        {doc.name} {doc.version}
-                      </p>
-                    </div>
-                  );
-                }
-              })}
+            <div className="absolute top-10 left-0 max-h-52 w-full overflow-y-scroll bg-white">
+              {docs ? (
+                docs.map((doc, index) => {
+                  if (doc.model) {
+                    return (
+                      <div
+                        key={index}
+                        onClick={() => {
+                          setLocalSelectedDocs(doc);
+                          setIsDocsListOpen(false);
+                        }}
+                        className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100"
+                      >
+                        <p className="ml-5 py-3">
+                          {doc.name} {doc.version}
+                        </p>
+                      </div>
+                    );
+                  }
+                })
+              ) : (
+                <div className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
+                  <p className="ml-5 py-3">No default documentation.</p>
+                </div>
+              )}
             </div>
           )}
         </div>

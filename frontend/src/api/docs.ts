@@ -1,18 +1,22 @@
 import { Doc } from '../models/misc';
 
-export async function getDocs(): Promise<Array<Doc>> {
-  //Fetch default source docs
-  const response = await fetch(
-    'https://d3dg1063dc54p9.cloudfront.net/combined.json',
-  );
-  const data = await response.json();
+export async function getDocs(): Promise<Array<Doc> | null> {
+  try {
+    //Fetch default source docs
+    const response = await fetch(
+      'https://d3dg1063dc54p9.cloudfront.net/combined.json',
+    );
+    const data = await response.json();
 
-  //Create array of Doc objects
-  const docs: Array<Doc> = [];
+    //Create array of Doc objects
+    const docs: Array<Doc> = [];
 
-  data.forEach((doc: Doc) => {
-    docs.push(doc);
-  });
+    data.forEach((doc: Doc) => {
+      docs.push(doc);
+    });
 
-  return docs;
+    return docs;
+  } catch (error) {
+    return null;
+  }
 }
