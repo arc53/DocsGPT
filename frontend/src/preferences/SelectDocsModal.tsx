@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { ActiveState } from '../models/misc';
-import { Doc } from './selectDocsApi';
 import {
   setSelectedDocs,
   setSourceDocs,
   selectSourceDocs,
 } from './preferenceSlice';
-import { getDocs } from './selectDocsApi';
+import { getDocs, Doc } from './selectDocsApi';
 
 export default function APIKeyModal({
   modalState,
