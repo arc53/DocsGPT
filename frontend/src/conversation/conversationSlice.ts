@@ -3,30 +3,8 @@ import store from '../store';
 import { fetchAnswerApi } from './conversationApi';
 import { Answer, ConversationState, Message } from './conversationModels';
 
-// harcoding the initial state just for demo
 const initialState: ConversationState = {
-  conversation: [
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-    { text: 'what is ChatGPT', type: 'QUESTION' },
-    { text: 'ChatGPT is large learning model', type: 'ANSWER' },
-  ],
+  conversation: [],
   status: 'idle',
 };
 
