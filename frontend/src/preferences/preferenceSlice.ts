@@ -23,11 +23,9 @@ export const prefSlice = createSlice({
     },
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
-      console.log('setSelectedDocs', state.selectedDocs);
     },
     setSourceDocs: (state, action) => {
       state.sourceDocs = action.payload;
-      console.log('setSourceDocs', state.sourceDocs);
     },
   },
 });
