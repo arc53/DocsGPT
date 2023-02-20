@@ -1,6 +1,6 @@
 import { Doc } from '../models/misc';
 
-export async function getDocs(): Promise<Array<Doc> | null> {
+export async function getDocs(): Promise<Doc[] | null> {
   try {
     //Fetch default source docs
     const response = await fetch(
