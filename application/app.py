@@ -107,9 +107,9 @@ def api_answer():
     if history:
         history = json.loads(history)
         template_temp = template_hist.replace("{historyquestion}", history[0]).replace("{historyanswer}", history[1])
-        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template_temp)
+        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template_temp, template_format="jinja2")
     else:
-        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template)
+        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template, template_format="jinja2")
 
     if llm_choice == "openai":
         llm = OpenAI(openai_api_key=api_key, temperature=0)

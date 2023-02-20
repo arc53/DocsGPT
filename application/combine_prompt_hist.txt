@@ -12,16 +12,16 @@ Source: 30-pl
 FINAL ANSWER: To merge two tables in pandas, you can use the pd.merge() function. The basic syntax is: \n\npd.merge(left, right, on, how) \n\nwhere left and right are the two tables to merge, on is the column to merge on, and how is the type of merge to perform. \n\nFor example, to merge the two tables df1 and df2 on the column 'id', you can use: \n\npd.merge(df1, df2, on='id', how='inner')
 SOURCES: 28-pl 30-pl
 
-QUESTION: {historyquestion}
+QUESTION: {{ historyquestion }}
 =========
 CONTENT:
 SOURCE:
 =========
-FINAL ANSWER: {historyanswer}
+FINAL ANSWER: {{ historyanswer }}
 SOURCES:
 
-QUESTION: {question}
+QUESTION: {{ question }}
 =========
-{summaries}
+{{ summaries }}
 =========
 FINAL ANSWER:
