@@ -108,16 +108,15 @@ export default function Navigation({
       >
         <img src={Hamburger} alt="menu toggle" className="w-7" />
       </button>
-
-      <APIKeyModal
-        modalState={apiKeyModalState}
-        setModalState={setApiKeyModalState}
-        isCancellable={isApiKeySet}
-      />
       <SelectDocsModal
         modalState={selectedDocsModalState}
         setModalState={setSelectedDocsModalState}
         isCancellable={isSelectedDocsSet}
+      />
+      <APIKeyModal
+        modalState={apiKeyModalState}
+        setModalState={setApiKeyModalState}
+        isCancellable={isApiKeySet}
       />
     </>
   );

@@ -1,15 +1,17 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { Doc } from '../models/misc';
+import { Doc } from './selectDocsApi';
 import store from '../store';
 
 interface Preference {
   apiKey: string;
   selectedDocs: Doc | null;
+  sourceDocs: Doc[] | null;
 }
 
 const initialState: Preference = {
   apiKey: '',
   selectedDocs: null,
+  sourceDocs: null,
 };
 
 export const prefSlice = createSlice({
@@ -21,11 +23,16 @@ export const prefSlice = createSlice({
     },
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
+      console.log('setSelectedDocs', state.selectedDocs);
+    },
+    setSourceDocs: (state, action) => {
+      state.sourceDocs = action.payload;
+      console.log('setSourceDocs', state.sourceDocs);
     },
   },
 });
 
-export const { setApiKey, setSelectedDocs } = prefSlice.actions;
+export const { setApiKey, setSelectedDocs, setSourceDocs } = prefSlice.actions;
 export default prefSlice.reducer;
 
 type RootState = ReturnType<typeof store.getState>;
@@ -35,3 +42,5 @@ export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;
 export const selectSelectedDocsStatus = (state: RootState) =>
   !!state.preference.selectedDocs;
+export const selectSourceDocs = (state: RootState) =>
+  state.preference.sourceDocs;
