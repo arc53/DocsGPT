@@ -22,8 +22,8 @@ export async function getDocs(): Promise<Doc[] | null> {
     //Create array of Doc objects
     const docs: Doc[] = [];
 
-    data.forEach((doc: Doc) => {
-      docs.push(doc);
+    data.forEach((doc: object) => {
+      docs.push(doc as Doc);
     });
 
     return docs;
