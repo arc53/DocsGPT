@@ -147,22 +147,23 @@ def check_docs():
     data = request.get_json()
     vectorstore = "vectors/" + data["docs"]
     base_path = 'https://raw.githubusercontent.com/arc53/DocsHUB/main/'
-    #
-    if os.path.exists(vectorstore):
+    if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": 'exists'}
     else:
         r = requests.get(base_path + vectorstore + "index.faiss")
-        # save to vectors directory
-        # check if the directory exists
-        if not os.path.exists(vectorstore):
-            os.makedirs(vectorstore)
 
-        with open(vectorstore + "index.faiss", "wb") as f:
-            f.write(r.content)
-        # download the store
-        r = requests.get(base_path + vectorstore + "index.pkl")
-        with open(vectorstore + "index.pkl", "wb") as f:
-            f.write(r.content)
+        if r.status_code != 200:
+            return {"status": 'null'}
+        else:
+            if not os.path.exists(vectorstore):
+                os.makedirs(vectorstore)
+            with open(vectorstore + "index.faiss", "wb") as f:
+                f.write(r.content)
+
+            # download the store
+            r = requests.get(base_path + vectorstore + "index.pkl")
+            with open(vectorstore + "index.pkl", "wb") as f:
+                f.write(r.content)
 
         return {"status": 'loaded'}
 
