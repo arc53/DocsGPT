@@ -6,8 +6,12 @@ import Info from './assets/info.svg';
 import Link from './assets/link.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
+import SelectDocsModal from './preferences/SelectDocsModal';
 import { useSelector } from 'react-redux';
-import { selectApiKeyStatus } from './preferences/preferenceSlice';
+import {
+  selectApiKeyStatus,
+  selectSelectedDocsStatus,
+} from './preferences/preferenceSlice';
 import { useState } from 'react';
 
 //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
@@ -24,11 +28,16 @@ export default function Navigation({
   const [apiKeyModalState, setApiKeyModalState] = useState<ActiveState>(
     isApiKeySet ? 'INACTIVE' : 'ACTIVE',
   );
+
+  const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
+  const [selectedDocsModalState, setSelectedDocsModalState] =
+    useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
+
   return (
     <>
       <div
         className={`${
-          navState === 'INACTIVE' && '-ml-96 md:-ml-60 lg:-ml-80'
+          navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem] lg:-ml-80'
         } fixed z-10 flex h-full w-72 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all duration-200 lg:w-96`}
       >
         <div className={'h-16 w-full border-b-2 border-gray-100'}>
@@ -49,7 +58,7 @@ export default function Navigation({
         </div>
         <div className="flex-grow border-b-2 border-gray-100"></div>
 
-        <div className="flex h-16 flex-col border-b-2 border-gray-100">
+        <div className="flex flex-col gap-2 border-b-2 border-gray-100 py-2">
           <div
             className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
             onClick={() => {
@@ -58,6 +67,18 @@ export default function Navigation({
           >
             <img src={Key} alt="key" className="ml-2 w-6" />
             <p className="my-auto text-eerie-black">Reset Key</p>
+          </div>
+
+          <div
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            onClick={() => {
+              setSelectedDocsModalState('ACTIVE');
+            }}
+          >
+            <img src={Link} alt="key" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">
+              Select Source Documentation
+            </p>
           </div>
         </div>
 
@@ -87,6 +108,11 @@ export default function Navigation({
       >
         <img src={Hamburger} alt="menu toggle" className="w-7" />
       </button>
+      <SelectDocsModal
+        modalState={selectedDocsModalState}
+        setModalState={setSelectedDocsModalState}
+        isCancellable={isSelectedDocsSet}
+      />
       <APIKeyModal
         modalState={apiKeyModalState}
         setModalState={setApiKeyModalState}
