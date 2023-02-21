@@ -11,6 +11,7 @@ module.exports = {
         'eerie-black': '#212121',
         jet: '#343541',
         'gray-alpha': 'rgba(0,0,0, .1)',
+        'gray-1000': '#F6F6F6',
       },
     },
   },

@@ -1,8 +1,16 @@
+import os
 import faiss
 import pickle
 import tiktoken
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
+
+#from langchain.embeddings import HuggingFaceEmbeddings
+#from langchain.embeddings import HuggingFaceInstructEmbeddings
+#from langchain.embeddings import CohereEmbeddings
+
+from retry import retry
+
 
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
@@ -12,16 +20,44 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
     total_price = ((num_tokens/1000) * 0.0004)
     return num_tokens, total_price
 
-def call_openai_api(docs):
+@retry(tries=10, delay=60)
+def store_add_texts_with_retry(store, i):
+    store.add_texts([i.page_content], metadatas=[i.metadata])
+
+def call_openai_api(docs, folder_name):
 # Function to create a vector store from the documents and save it to disk.
-    store = FAISS.from_documents(docs, OpenAIEmbeddings())
-    faiss.write_index(store.index, "docs.index")
-    store.index = None
 
-    with open("faiss_store.pkl", "wb") as f:
-        pickle.dump(store, f)
+    # create output folder if it doesn't exist
+    if not os.path.exists(f"outputs/{folder_name}"):
+        os.makedirs(f"outputs/{folder_name}")
 
-def get_user_permission(docs):
+    from tqdm import tqdm
+    docs_test = [docs[0]]
+    # remove the first element from docs
+    docs.pop(0)
+    # cut first n docs if you want to restart
+    #docs = docs[:n]
+    c1 = 0
+    store = FAISS.from_documents(docs_test, OpenAIEmbeddings())
+
+    # Uncomment for MPNet embeddings
+    # model_name = "sentence-transformers/all-mpnet-base-v2"
+    # hf = HuggingFaceEmbeddings(model_name=model_name)
+    # store = FAISS.from_documents(docs_test, hf)
+    for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
+        try:
+            store_add_texts_with_retry(store, i)
+        except Exception as e:
+            print(e)
+            print("Error on ", i)
+            print("Saving progress")
+            print(f"stopped at {c1} out of {len(docs)}")
+            store.save_local(f"outputs/{folder_name}")
+            break
+        c1 += 1
+    store.save_local(f"outputs/{folder_name}")
+
+def get_user_permission(docs, folder_name):
 # Function to ask user permission to call the OpenAI api and spend their OpenAI funds.
     # Here we convert the docs list to a string and calculate the number of OpenAI tokens the string represents.
     #docs_content = (" ".join(docs))
@@ -37,8 +73,8 @@ def get_user_permission(docs):
     #Here we check for user permission before calling the API.
     user_input = input("Price Okay? (Y/N) \n").lower()
     if user_input == "y":
-        call_openai_api(docs)
+        call_openai_api(docs, folder_name)
     elif user_input == "":
-        call_openai_api(docs)
+        call_openai_api(docs, folder_name)
     else:
         print("The API was not called. No money was spent.")

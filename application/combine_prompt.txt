@@ -20,8 +20,8 @@ Source: 0-pl
 FINAL ANSWER: You can't eat vegetables using pandas. You can only eat them using your mouth.
 SOURCES:
 
-QUESTION: {question}
+QUESTION: {{ question }}
 =========
-{summaries}
+{{ summaries }}
 =========
 FINAL ANSWER:
