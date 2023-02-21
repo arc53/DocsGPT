@@ -13,13 +13,16 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 </p>
 
 <div align="center">
-
+  
   <a href="https://discord.gg/n5BX8dh8rU">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/discord/1070046503302877216)</a>
-
+  
 </div>
+
+![Group 8](https://user-images.githubusercontent.com/17906039/220401693-befc2291-4087-4863-9e25-79809ff20318.png)
+
 
 ## Roadmap
 
