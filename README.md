@@ -21,6 +21,9 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 </div>
 
+![Group 8](https://user-images.githubusercontent.com/17906039/220401693-befc2291-4087-4863-9e25-79809ff20318.png)
+
+
 ## Roadmap
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please don't hesitate contributing or creating issues, it helps us make DocsGPT better!
