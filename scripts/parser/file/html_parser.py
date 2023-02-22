@@ -61,7 +61,7 @@ class HTMLParser(BaseParser):
         # Each Chunk can be thought of as an individual set of data, which can be sent to the model
         # Where Each Title is grouped together with the data under it
 
-        Chunks = list(list())
+        Chunks = [[]]
         final_chunks = list(list())
 
         for i,isd_el in enumerate(isd):
