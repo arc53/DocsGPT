@@ -33,23 +33,17 @@ export async function getDocs(): Promise<Doc[] | null> {
 export async function getLocalApiKey(): Promise<string | null> {
   try {
     const key = localStorage.getItem('DocsGPTApiKey');
-    if (key) {
-      return key;
-    }
-    return null;
+    return key;
   } catch (error) {
     console.log(error);
     return null;
   }
 }
 
-export async function getLocalRecentDocs(): Promise<Doc | null> {
+export async function getLocalRecentDocs(): Promise<string | null> {
   try {
     const doc = localStorage.getItem('DocsGPTRecentDocs');
-    if (doc) {
-      return JSON.parse(doc);
-    }
-    return null;
+    return doc;
   } catch (error) {
     console.log(error);
     return null;

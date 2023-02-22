@@ -41,30 +41,37 @@ export default function APIKeyModal({
 
   function handleCancel() {
     async function getRecentDocs() {
-      const recentDocs = await getLocalRecentDocs();
-      if (recentDocs) {
-        setLocalSelectedDocs(recentDocs);
+      const response = await getLocalRecentDocs();
+      console.log('response');
+
+      if (response) {
+        const parsedResponse = JSON.parse(response) as Doc;
+        setLocalSelectedDocs(parsedResponse);
       }
     }
 
     getRecentDocs();
+    console.log('cancel');
     setIsError(false);
     setModalState('INACTIVE');
   }
 
   useEffect(() => {
+    async function getRecentDocs() {
+      const response = await getLocalRecentDocs();
+
+      if (response) {
+        const parsedResponse = JSON.parse(response) as Doc;
+
+        dispatch(setSelectedDocs(parsedResponse));
+        setLocalSelectedDocs(parsedResponse);
+        setModalState('INACTIVE');
+      }
+    }
+
     async function requestDocs() {
       const data = await getDocs();
       dispatch(setSourceDocs(data));
-    }
-
-    async function getRecentDocs() {
-      const recentDocs = await getLocalRecentDocs();
-      if (recentDocs) {
-        dispatch(setSelectedDocs(recentDocs));
-        setLocalSelectedDocs(recentDocs);
-        setModalState('INACTIVE');
-      }
     }
 
     getRecentDocs();
