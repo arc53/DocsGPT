@@ -6,7 +6,12 @@ import {
   setSourceDocs,
   selectSourceDocs,
 } from './preferenceSlice';
-import { getDocs, Doc } from './selectDocsApi';
+import {
+  getDocs,
+  Doc,
+  getLocalRecentDocs,
+  setLocalRecentDocs,
+} from './preferenceApi';
 
 export default function APIKeyModal({
   modalState,
@@ -27,15 +32,22 @@ export default function APIKeyModal({
     if (!localSelectedDocs) {
       setIsError(true);
     } else {
+      setLocalRecentDocs(localSelectedDocs);
       dispatch(setSelectedDocs(localSelectedDocs));
       setModalState('INACTIVE');
-      setLocalSelectedDocs(null);
       setIsError(false);
     }
   }
 
   function handleCancel() {
-    setLocalSelectedDocs(null);
+    async function getRecentDocs() {
+      const recentDocs = await getLocalRecentDocs();
+      if (recentDocs) {
+        setLocalSelectedDocs(recentDocs);
+      }
+    }
+
+    getRecentDocs();
     setIsError(false);
     setModalState('INACTIVE');
   }
@@ -46,6 +58,16 @@ export default function APIKeyModal({
       dispatch(setSourceDocs(data));
     }
 
+    async function getRecentDocs() {
+      const recentDocs = await getLocalRecentDocs();
+      if (recentDocs) {
+        dispatch(setSelectedDocs(recentDocs));
+        setLocalSelectedDocs(recentDocs);
+        setModalState('INACTIVE');
+      }
+    }
+
+    getRecentDocs();
     requestDocs();
   }, []);
 

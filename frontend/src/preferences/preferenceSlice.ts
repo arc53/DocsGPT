@@ -1,5 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { Doc } from './selectDocsApi';
+import { Doc } from './preferenceApi';
 import store from '../store';
 
 interface Preference {

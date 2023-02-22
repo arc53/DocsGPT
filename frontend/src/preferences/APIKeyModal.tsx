@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { ActiveState } from '../models/misc';
 import { setApiKey } from './preferenceSlice';
+import { getLocalApiKey, setLocalApiKey } from './preferenceApi';
 
 export default function APIKeyModal({
   modalState,
@@ -20,18 +21,38 @@ export default function APIKeyModal({
     if (key.length <= 1) {
       setIsError(true);
     } else {
+      setLocalApiKey(key);
       dispatch(setApiKey(key));
       setModalState('INACTIVE');
-      setKey('');
       setIsError(false);
     }
   }
 
   function handleCancel() {
-    setKey('');
+    async function getApiKey() {
+      const localKey = await getLocalApiKey();
+      if (localKey) {
+        setKey(localKey);
+      }
+    }
+
+    getApiKey();
     setIsError(false);
     setModalState('INACTIVE');
   }
+
+  useEffect(() => {
+    async function getApiKey() {
+      const localKey = await getLocalApiKey();
+      if (localKey) {
+        dispatch(setApiKey(localKey));
+        setKey(localKey);
+        setModalState('INACTIVE');
+      }
+    }
+
+    getApiKey();
+  }, []);
 
   return (
     <div

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Hamburger from './assets/hamburger.svg';
@@ -12,7 +13,6 @@ import {
   selectApiKeyStatus,
   selectSelectedDocsStatus,
 } from './preferences/preferenceSlice';
-import { useState } from 'react';
 
 //TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
 //TODO - Need to add Discord and Github links
