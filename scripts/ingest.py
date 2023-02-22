@@ -37,7 +37,7 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
                                                    help="Maximum number of files to read."),
            formats: Optional[List[str]] = typer.Option([".rst", ".md"],
                                                    help="""List of required extensions (list with .)
-                                                        Currently supported: .rst, .md, .pdf, .docx, .csv, .epub"""),
+                                                        Currently supported: .rst, .md, .pdf, .docx, .csv, .epub, .html"""),
            exclude: Optional[bool] = typer.Option(True, help="Whether to exclude hidden files (dotfiles).")):
 
     """
