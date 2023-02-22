@@ -18,9 +18,6 @@ import {
 } from './preferences/preferenceSlice';
 import { setLocalRecentDocs } from './preferences/preferenceApi';
 
-//TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
-//TODO - Need to add Discord and Github links
-
 export default function Navigation({
   navState,
   setNavState,
@@ -134,12 +131,26 @@ export default function Navigation({
 
           <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
             <img src={Link} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Discord</p>
+            <a
+              href="https://discord.gg/WHJdfbQDR4"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto text-eerie-black"
+            >
+              Discord
+            </a>
           </div>
 
           <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
             <img src={Link} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Github</p>
+            <a
+              href="https://github.com/arc53/DocsGPT"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto text-eerie-black"
+            >
+              Github
+            </a>
           </div>
         </div>
       </div>
