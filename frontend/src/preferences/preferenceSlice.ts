@@ -42,3 +42,5 @@ export const selectSelectedDocsStatus = (state: RootState) =>
   !!state.preference.selectedDocs;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
+export const selectSelectedDocs = (state: RootState) =>
+  state.preference.selectedDocs;
