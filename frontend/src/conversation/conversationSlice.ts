@@ -38,8 +38,12 @@ export const conversationSlice = createSlice({
           type: 'ANSWER',
         });
       })
-      .addCase(fetchAnswer.rejected, (state) => {
+      .addCase(fetchAnswer.rejected, (state, action) => {
         state.status = 'failed';
+        state.conversation.push({
+          text: 'Something went wrong. Please try again later.',
+          type: 'ERROR',
+        });
       });
   },
 });

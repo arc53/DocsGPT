@@ -21,7 +21,8 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
   
 </div>
 
-![Group 8](https://user-images.githubusercontent.com/17906039/220401693-befc2291-4087-4863-9e25-79809ff20318.png)
+![Group 9](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
+
 
 
 ## Roadmap

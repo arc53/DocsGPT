@@ -5,7 +5,7 @@ export function fetchAnswerApi(
   apiKey: string,
 ): Promise<Answer> {
   // a mock answer generator, this is going to be replaced with real http call
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     setTimeout(() => {
       let result = '';
       const characters =
@@ -18,7 +18,16 @@ export function fetchAnswerApi(
         );
         counter += 1;
       }
-      resolve({ answer: result, query: question, result });
+      const randNum = getRandomInt(0, 10);
+      randNum < 5
+        ? reject()
+        : resolve({ answer: result, query: question, result });
     }, 3000);
   });
+}
+
+function getRandomInt(min: number, max: number) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min) + min); // The maximum is exclusive and the minimum is inclusive
 }
