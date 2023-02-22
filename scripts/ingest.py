@@ -1,10 +1,12 @@
-from collections import defaultdict
 import os
 import sys
 import nltk
 import dotenv
 import typer
+import ast
 
+from collections import defaultdict
+from pathlib import Path
 from typing import List, Optional
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -12,6 +14,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api, get_user_permission
+from parser.py2doc import get_classes, get_functions, transform_to_docs
 
 dotenv.load_dotenv()
 
@@ -77,6 +80,30 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
 
     for directory, folder_name in zip(dir, folder_names):
         process_one_docs(directory, folder_name)
+
+
+@app.command()
+def convert():
+    ps = list(Path("inputs").glob("**/*.py"))
+    data = []
+    sources = []
+    for p in ps:
+        with open(p) as f:
+            data.append(f.read())
+        sources.append(p)
+
+    functions_dict = {}
+    classes_dict = {}
+    c1 = 0
+    for code in data:
+        functions = get_functions(ast.parse(code))
+        source = str(sources[c1])
+        functions_dict[source] = functions
+        classes = get_classes(code)
+        classes_dict[source] = classes
+        c1 += 1
+
+    transform_to_docs(functions_dict, classes_dict)
 
 if __name__ == "__main__":
   app()
