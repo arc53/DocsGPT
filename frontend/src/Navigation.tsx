@@ -108,7 +108,7 @@ export default function Navigation({
               </div>
             )}
           </div>
-          <p className="ml-6 font-bold">Source Docs</p>
+          <p className="ml-6 font-bold text-jet">Source Docs</p>
         </div>
 
         <div className="flex flex-col gap-2 border-b-2 py-2">
