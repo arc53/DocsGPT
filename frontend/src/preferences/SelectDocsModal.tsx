@@ -42,7 +42,6 @@ export default function APIKeyModal({
   function handleCancel() {
     async function getRecentDocs() {
       const response = await getLocalRecentDocs();
-      console.log('response');
 
       if (response) {
         const parsedResponse = JSON.parse(response) as Doc;
@@ -51,7 +50,6 @@ export default function APIKeyModal({
     }
 
     getRecentDocs();
-    console.log('cancel');
     setIsError(false);
     setModalState('INACTIVE');
   }
