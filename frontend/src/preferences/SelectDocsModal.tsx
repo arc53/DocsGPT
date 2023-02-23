@@ -55,12 +55,11 @@ export default function APIKeyModal({
   }
 
   useEffect(() => {
-    async function getRecentDocs() {
-      const response = await getLocalRecentDocs();
+    function getRecentDocs() {
+      const response = getLocalRecentDocs();
 
       if (response) {
         const parsedResponse = JSON.parse(response) as Doc;
-
         dispatch(setSelectedDocs(parsedResponse));
         setLocalSelectedDocs(parsedResponse);
         setModalState('INACTIVE');

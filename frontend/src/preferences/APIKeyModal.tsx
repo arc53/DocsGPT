@@ -42,8 +42,8 @@ export default function APIKeyModal({
   }
 
   useEffect(() => {
-    async function getApiKey() {
-      const localKey = await getLocalApiKey();
+    function getApiKey() {
+      const localKey = getLocalApiKey();
       if (localKey) {
         dispatch(setApiKey(localKey));
         setKey(localKey);

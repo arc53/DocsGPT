@@ -30,38 +30,20 @@ export async function getDocs(): Promise<Doc[] | null> {
   }
 }
 
-export async function getLocalApiKey(): Promise<string | null> {
-  try {
-    const key = localStorage.getItem('DocsGPTApiKey');
-    return key;
-  } catch (error) {
-    console.log(error);
-    return null;
-  }
+export function getLocalApiKey(): string | null {
+  const key = localStorage.getItem('DocsGPTApiKey');
+  return key;
 }
 
-export async function getLocalRecentDocs(): Promise<string | null> {
-  try {
-    const doc = localStorage.getItem('DocsGPTRecentDocs');
-    return doc;
-  } catch (error) {
-    console.log(error);
-    return null;
-  }
+export function getLocalRecentDocs(): string | null {
+  const doc = localStorage.getItem('DocsGPTRecentDocs');
+  return doc;
 }
 
-export async function setLocalApiKey(key: string): Promise<void> {
-  try {
-    localStorage.setItem('DocsGPTApiKey', key);
-  } catch (error) {
-    console.log(error);
-  }
+export function setLocalApiKey(key: string): void {
+  localStorage.setItem('DocsGPTApiKey', key);
 }
 
-export async function setLocalRecentDocs(doc: Doc): Promise<void> {
-  try {
-    localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
-  } catch (error) {
-    console.log(error);
-  }
+export function setLocalRecentDocs(doc: Doc): void {
+  localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
 }
