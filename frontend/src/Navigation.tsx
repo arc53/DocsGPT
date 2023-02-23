@@ -129,29 +129,25 @@ export default function Navigation({
             <p className="my-auto text-eerie-black">About</p>
           </NavLink>
 
-          <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
+          <a
+            href="https://discord.gg/WHJdfbQDR4"
+            target="_blank"
+            rel="noreferrer"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+          >
             <img src={Link} alt="link" className="ml-2 w-5" />
-            <a
-              href="https://discord.gg/WHJdfbQDR4"
-              target="_blank"
-              rel="noreferrer"
-              className="my-auto text-eerie-black"
-            >
-              Discord
-            </a>
-          </div>
+            <p className="my-auto text-eerie-black">Discord</p>
+          </a>
 
-          <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
+          <a
+            href="https://github.com/arc53/DocsGPT"
+            target="_blank"
+            rel="noreferrer"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+          >
             <img src={Link} alt="link" className="ml-2 w-5" />
-            <a
-              href="https://github.com/arc53/DocsGPT"
-              target="_blank"
-              rel="noreferrer"
-              className="my-auto text-eerie-black"
-            >
-              Github
-            </a>
-          </div>
+            <p className="my-auto text-eerie-black">Github</p>
+          </a>
         </div>
       </div>
       <button
