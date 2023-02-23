@@ -16,7 +16,7 @@
 
 
   <body>
-
+    
 
 
     <header class="bg-white p-2 flex justify-between items-center">
@@ -28,6 +28,17 @@
         {% endif %}
             </div>
     </header>
+
+  
+ <!-- Alert Info  -->
+ <div class="border flex justify-between 
+  w-auto px-4 py-3 rounded relative 
+  hidden" style="background-color: rgb(197, 51, 51);color: white;" id="error-alert" role="alert">
+  <span class="block sm:inline" id="text-error"></span>
+  <strong class="text-xl align-center alert-del" style="cursor: pointer;" id="close">&times;</strong>
+</div>
+
+
     <div class="lg:flex ml-2 mr-2">
       <div class="lg:w-3/4 min-h-screen max-h-screen">
         <div class="w-full flex flex-col h-5/6">
@@ -59,6 +70,8 @@ This will return a new DataFrame with all the columns from both tables, and only
         </form>
         </div>
 
+        
+
 
     </div>
         </div>
@@ -77,11 +90,16 @@ This will return a new DataFrame with all the columns from both tables, and only
     </div>
 
   <div class="flex items-center justify-center h-full">
-
+    
+ 
 </div>
 
+
+
+
 {% if not api_key_set %}
-<div class="fixed z-10 overflow-y-auto top-0 w-full left-0 hidden" id="modal">
+
+<div class="fixed z-10 overflow-y-auto top-0 w-full left-0 show" id="modal">
   <div class="flex items-center justify-center min-height-100vh pt-4 px-4 pb-20 text-center sm:block sm:p-0">
     <div class="fixed inset-0 transition-opacity">
       <div class="absolute inset-0 bg-gray-900 opacity-75" />
@@ -105,6 +123,9 @@ This will return a new DataFrame with all the columns from both tables, and only
   </div>
 </div>
 {% endif %}
+
+
+
       <script>
           function docsIndex() {
                 // loads latest index from https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json
