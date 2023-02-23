@@ -2,7 +2,7 @@ from flask import jsonify
 from werkzeug.http import HTTP_STATUS_CODES
 
 def response_error(code_status,message=None):
-    payload = {'error':HTTP_STATUS_CODES.get(code_status,"something get weong")}
+    payload = {'error':HTTP_STATUS_CODES.get(code_status,"something went wrong")}
     if message:
         payload['message'] = message
     response = jsonify(payload)
