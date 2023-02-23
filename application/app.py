@@ -75,7 +75,6 @@ def api_answer():
     question = data["question"]
     history = data["history"]
     print('-'*5)
-    print(data["embeddings_key"])
     if not api_key_set:
         api_key = data["api_key"]
     else:
@@ -110,7 +109,6 @@ def api_answer():
         # create a prompt template
         if history:
             history = json.loads(history)
-            print(history)
             template_temp = template_hist.replace("{historyquestion}", history[0]).replace("{historyanswer}", history[1])
             c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template_temp, template_format="jinja2")
         else:
