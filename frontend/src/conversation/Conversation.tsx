@@ -49,6 +49,15 @@ export default function Conversation() {
           ref={inputRef}
           contentEditable
           className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto rounded-xl border bg-white p-2 pr-9 opacity-100 focus:border-2 focus:outline-none`}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (inputRef.current?.textContent && status !== 'loading') {
+                handleQuestion(inputRef.current.textContent);
+                inputRef.current.textContent = '';
+              }
+            }
+          }}
         ></div>
         {status === 'loading' ? (
           <img

@@ -4,12 +4,21 @@
 export default function About() {
   return (
     //Parent div for all content shown through App.tsx routing needs to have this styling. Might change when state management is updated.
-    <div className="mx-6 grid min-h-screen">
+    <div className="mx-36 grid min-h-screen">
       <article className=" mx-auto my-auto flex w-full max-w-6xl flex-col place-items-center gap-6 rounded-lg bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
         <p className="text-3xl font-semibold">About DocsGPT 🦖</p>
-        <p className="mt-4 text-xl font-bold">
+        <p className="mt-4 text-xl">
           Find the information in your documentation through AI-powered
-          open-source chatbot. Powered by GPT-3, Faiss and LangChain.
+          <a
+            className="text-blue-500"
+            href="https://github.com/arc53/DocsGPT"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {' '}
+            open-source{' '}
+          </a>
+          chatbot. Powered by GPT-3, Faiss and LangChain.
         </p>
 
         <div>
@@ -42,11 +51,31 @@ export default function About() {
         <p className="text-lg">
           Currently It uses python pandas documentation, so it will respond to
           information relevant to pandas. If you want to train it on different
-          documentation - please follow this guide.
+          documentation - please follow
+          <a
+            className="text-blue-500"
+            href="https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {' '}
+            this guide
+          </a>
+          .
         </p>
 
-        <p className="mt-4 text-lg">
-          If you want to launch it on your own server - follow this guide.
+        <p className="mt-4 text-left text-lg">
+          If you want to launch it on your own server - follow
+          <a
+            className="text-blue-500"
+            href="https://github.com/arc53/DocsGPT/wiki/Hosting-the-app"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {' '}
+            this guide
+          </a>
+          .
         </p>
       </article>
     </div>
