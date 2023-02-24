@@ -17,7 +17,6 @@ import {
   selectSourceDocs,
   setSelectedDocs,
 } from './preferences/preferenceSlice';
-import { setLocalRecentDocs } from './preferences/preferenceApi';
 
 export default function Navigation({
   navState,
@@ -98,7 +97,6 @@ export default function Navigation({
                         <div
                           key={index}
                           onClick={() => {
-                            setLocalRecentDocs(doc);
                             dispatch(setSelectedDocs(doc));
                             setIsDocsListOpen(false);
                           }}

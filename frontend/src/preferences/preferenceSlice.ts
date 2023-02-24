@@ -1,6 +1,10 @@
-import { createSlice } from '@reduxjs/toolkit';
-import { Doc } from './preferenceApi';
-import store from '../store';
+import {
+  createListenerMiddleware,
+  createSlice,
+  isAnyOf,
+} from '@reduxjs/toolkit';
+import { Doc, setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
+import { RootState } from '../store';
 
 interface Preference {
   apiKey: string;
@@ -33,7 +37,23 @@ export const prefSlice = createSlice({
 export const { setApiKey, setSelectedDocs, setSourceDocs } = prefSlice.actions;
 export default prefSlice.reducer;
 
-type RootState = ReturnType<typeof store.getState>;
+export const prefListenerMiddleware = createListenerMiddleware();
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setApiKey),
+  effect: (action, listenerApi) => {
+    setLocalApiKey((listenerApi.getState() as RootState).preference.apiKey);
+  },
+});
+
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setSelectedDocs),
+  effect: (action, listenerApi) => {
+    setLocalRecentDocs(
+      (listenerApi.getState() as RootState).preference.selectedDocs ??
+        ([] as unknown as Doc),
+    );
+  },
+});
 
 export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>

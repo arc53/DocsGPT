@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { ActiveState } from '../models/misc';
-import { setApiKey } from './preferenceSlice';
-import { getLocalApiKey, setLocalApiKey } from './preferenceApi';
+import { selectApiKey, setApiKey } from './preferenceSlice';
 
 export default function APIKeyModal({
   modalState,
@@ -14,14 +13,14 @@ export default function APIKeyModal({
   isCancellable?: boolean;
 }) {
   const dispatch = useDispatch();
-  const [key, setKey] = useState('');
+  const apiKey = useSelector(selectApiKey);
+  const [key, setKey] = useState(apiKey);
   const [isError, setIsError] = useState(false);
 
   function handleSubmit() {
     if (key.length <= 1) {
       setIsError(true);
     } else {
-      setLocalApiKey(key);
       dispatch(setApiKey(key));
       setModalState('INACTIVE');
       setIsError(false);
@@ -29,30 +28,10 @@ export default function APIKeyModal({
   }
 
   function handleCancel() {
-    async function getApiKey() {
-      const localKey = await getLocalApiKey();
-      if (localKey) {
-        setKey(localKey);
-      }
-    }
-
-    getApiKey();
+    setKey(apiKey);
     setIsError(false);
     setModalState('INACTIVE');
   }
-
-  useEffect(() => {
-    function getApiKey() {
-      const localKey = getLocalApiKey();
-      if (localKey) {
-        dispatch(setApiKey(localKey));
-        setKey(localKey);
-        setModalState('INACTIVE');
-      }
-    }
-
-    getApiKey();
-  }, []);
 
   return (
     <div
