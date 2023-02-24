@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+
+  backend:
+    build: ./application
+    ports:
+      - "5001:5000"
