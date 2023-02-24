@@ -64,6 +64,7 @@ transformers==4.26.0
 typer==0.7.0
 typing-inspect==0.8.0
 typing_extensions==4.4.0
+unstructured==0.4.8
 urllib3==1.26.14
 Werkzeug==2.2.3
 XlsxWriter==3.0.8
