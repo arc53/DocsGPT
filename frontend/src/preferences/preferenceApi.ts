@@ -1,4 +1,3 @@
-//Exporting Doc type from here since its the first place its used and seems needless to make an entire file for it.
 export type Doc = {
   name: string;
   language: string;
@@ -13,13 +12,11 @@ export type Doc = {
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(): Promise<Doc[] | null> {
   try {
-    //Fetch default source docs
     const response = await fetch(
       'https://d3dg1063dc54p9.cloudfront.net/combined.json',
     );
     const data = await response.json();
 
-    //Create array of Doc objects
     const docs: Doc[] = [];
 
     data.forEach((doc: object) => {
@@ -28,6 +25,25 @@ export async function getDocs(): Promise<Doc[] | null> {
 
     return docs;
   } catch (error) {
+    console.log(error);
     return null;
   }
+}
+
+export function getLocalApiKey(): string | null {
+  const key = localStorage.getItem('DocsGPTApiKey');
+  return key;
+}
+
+export function getLocalRecentDocs(): string | null {
+  const doc = localStorage.getItem('DocsGPTRecentDocs');
+  return doc;
+}
+
+export function setLocalApiKey(key: string): void {
+  localStorage.setItem('DocsGPTApiKey', key);
+}
+
+export function setLocalRecentDocs(doc: Doc): void {
+  localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
 }

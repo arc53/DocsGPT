@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Message from './assets/message.svg';
@@ -8,15 +9,14 @@ import Link from './assets/link.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
 import SelectDocsModal from './preferences/SelectDocsModal';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import {
   selectApiKeyStatus,
+  selectSelectedDocs,
   selectSelectedDocsStatus,
+  selectSourceDocs,
+  setSelectedDocs,
 } from './preferences/preferenceSlice';
-import { useState } from 'react';
-
-//TODO - Need to replace Chat button to open secondary nav with scrollable past chats option and new chat at top
-//TODO - Need to add Discord and Github links
 
 export default function Navigation({
   navState,
@@ -25,6 +25,12 @@ export default function Navigation({
   navState: ActiveState;
   setNavState: (val: ActiveState) => void;
 }) {
+  const dispatch = useDispatch();
+  const docs = useSelector(selectSourceDocs);
+  const selectedDocs = useSelector(selectSelectedDocs);
+
+  const [isDocsListOpen, setIsDocsListOpen] = useState(false);
+
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] = useState<ActiveState>(
     isApiKeySet ? 'INACTIVE' : 'ACTIVE',
@@ -39,9 +45,9 @@ export default function Navigation({
       <div
         className={`${
           navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem] lg:-ml-80'
-        } fixed z-10 flex h-full w-72 flex-col border-r-2 border-gray-100 bg-gray-50 transition-all duration-200 lg:w-96`}
+        } fixed z-10 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all duration-200 lg:w-96`}
       >
-        <div className={'h-16 w-full border-b-2 border-gray-100'}>
+        <div className={'h-16 w-full border-b-2'}>
           <button
             className="float-right mr-5 mt-5 h-5 w-5"
             onClick={() =>
@@ -70,8 +76,50 @@ export default function Navigation({
         </NavLink>
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
-
-        <div className="flex flex-col gap-2 border-b-2 border-gray-100 py-2">
+        <div className="flex flex-grow flex-col-reverse border-b-2">
+          <div className="relative my-4 px-6 ">
+            <div
+              className="h-12 w-full cursor-pointer rounded-md border-2"
+              onClick={() => setIsDocsListOpen(!isDocsListOpen)}
+            >
+              {selectedDocs && (
+                <p className="my-3 mx-4">
+                  {selectedDocs.name} {selectedDocs.version}
+                </p>
+              )}
+            </div>
+            {isDocsListOpen && (
+              <div className="absolute top-12 left-0 right-0 mx-6 max-h-52 overflow-y-scroll bg-white shadow-lg">
+                {docs ? (
+                  docs.map((doc, index) => {
+                    if (doc.model) {
+                      return (
+                        <div
+                          key={index}
+                          onClick={() => {
+                            dispatch(setSelectedDocs(doc));
+                            setIsDocsListOpen(false);
+                          }}
+                          className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100"
+                        >
+                          <p className="ml-5 py-3">
+                            {doc.name} {doc.version}
+                          </p>
+                        </div>
+                      );
+                    }
+                  })
+                ) : (
+                  <div className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
+                    <p className="ml-5 py-3">No default documentation.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <p className="ml-6 font-bold text-jet">Source Docs</p>
+        </div>
+        <div className="flex flex-col gap-2 border-b-2 py-2">
           <div
             className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
             onClick={() => {
@@ -81,21 +129,9 @@ export default function Navigation({
             <img src={Key} alt="key" className="ml-2 w-6" />
             <p className="my-auto text-eerie-black">Reset Key</p>
           </div>
-
-          <div
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
-            onClick={() => {
-              setSelectedDocsModalState('ACTIVE');
-            }}
-          >
-            <img src={Link} alt="key" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">
-              Select Source Documentation
-            </p>
-          </div>
         </div>
 
-        <div className="flex h-48 flex-col border-b-2 border-gray-100">
+        <div className="flex flex-col gap-2 border-b-2 py-2">
           <NavLink
             to="/about"
             className={({ isActive }) =>
@@ -108,15 +144,25 @@ export default function Navigation({
             <p className="my-auto text-eerie-black">About</p>
           </NavLink>
 
-          <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
+          <a
+            href="https://discord.gg/WHJdfbQDR4"
+            target="_blank"
+            rel="noreferrer"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+          >
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Discord</p>
-          </div>
+          </a>
 
-          <div className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
+          <a
+            href="https://github.com/arc53/DocsGPT"
+            target="_blank"
+            rel="noreferrer"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+          >
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Github</p>
-          </div>
+          </a>
         </div>
       </div>
       <button

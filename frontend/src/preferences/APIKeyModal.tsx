@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { ActiveState } from '../models/misc';
-import { setApiKey } from './preferenceSlice';
+import { selectApiKey, setApiKey } from './preferenceSlice';
 
 export default function APIKeyModal({
   modalState,
@@ -13,7 +13,8 @@ export default function APIKeyModal({
   isCancellable?: boolean;
 }) {
   const dispatch = useDispatch();
-  const [key, setKey] = useState('');
+  const apiKey = useSelector(selectApiKey);
+  const [key, setKey] = useState(apiKey);
   const [isError, setIsError] = useState(false);
 
   function handleSubmit() {
@@ -22,13 +23,12 @@ export default function APIKeyModal({
     } else {
       dispatch(setApiKey(key));
       setModalState('INACTIVE');
-      setKey('');
       setIsError(false);
     }
   }
 
   function handleCancel() {
-    setKey('');
+    setKey(apiKey);
     setIsError(false);
     setModalState('INACTIVE');
   }

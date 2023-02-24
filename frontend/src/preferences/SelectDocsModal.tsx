@@ -5,6 +5,7 @@ import {
   setSelectedDocs,
   setSourceDocs,
   selectSourceDocs,
+  selectSelectedDocs,
 } from './preferenceSlice';
 import { getDocs, Doc } from './selectDocsApi';
 
@@ -19,7 +20,10 @@ export default function APIKeyModal({
 }) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
-  const [localSelectedDocs, setLocalSelectedDocs] = useState<Doc | null>(null);
+  const selectedDoc = useSelector(selectSelectedDocs);
+  const [localSelectedDocs, setLocalSelectedDocs] = useState<Doc | null>(
+    selectedDoc,
+  );
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const [isError, setIsError] = useState(false);
 
@@ -29,13 +33,11 @@ export default function APIKeyModal({
     } else {
       dispatch(setSelectedDocs(localSelectedDocs));
       setModalState('INACTIVE');
-      setLocalSelectedDocs(null);
       setIsError(false);
     }
   }
 
   function handleCancel() {
-    setLocalSelectedDocs(null);
     setIsError(false);
     setModalState('INACTIVE');
   }
@@ -57,7 +59,7 @@ export default function APIKeyModal({
     >
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
         <p className="text-xl text-jet">Select Source Documentation</p>
-        <p className="text-md leading-6 text-gray-500">
+        <p className="text-lg leading-5 text-gray-500">
           Please select the library of documentation that you would like to use
           with our app.
         </p>
