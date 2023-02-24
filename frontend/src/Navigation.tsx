@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
+import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
@@ -56,6 +57,14 @@ export default function Navigation({
             />
           </button>
         </div>
+        <NavLink
+          to={'/'}
+          className="my-auto mx-4 mt-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+        >
+          <img src={Message} className="ml-2 w-5"></img>
+          <p className="my-auto text-eerie-black">Chat</p>
+        </NavLink>
+
         <div className="flex-grow border-b-2 border-gray-100"></div>
 
         <div className="flex flex-col gap-2 border-b-2 border-gray-100 py-2">
