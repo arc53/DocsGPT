@@ -42,7 +42,7 @@ export default function Conversation() {
             ></ConversationBubble>
           );
         })}
-        {messages.length === 0 && <Hero className="mt-24 md:mt-36"></Hero>}
+        {messages.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
       </div>
       <div className="fixed bottom-14 flex w-10/12 md:bottom-12 md:w-[50%]">
         <div
