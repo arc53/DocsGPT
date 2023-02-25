@@ -1,11 +1,24 @@
 import { Answer } from './conversationModels';
+import { Doc } from '../preferences/preferenceApi';
 
 export function fetchAnswerApi(
   question: string,
   apiKey: string,
-  selectedDocs: string,
+  selectedDocs: Doc,
 ): Promise<Answer> {
-  // a mock answer generator, this is going to be replaced with real http call
+  let namePath = selectedDocs.name;
+  if (selectedDocs.language === namePath) {
+    namePath = '.project';
+  }
+
+  const docPath =
+    selectedDocs.language +
+    '/' +
+    namePath +
+    '/' +
+    selectedDocs.version +
+    '/' +
+    selectedDocs.model;
   return new Promise((resolve, reject) => {
     const activeDocs = 'default';
     fetch('https://docsgpt.arc53.com/api/answer', {
@@ -18,7 +31,7 @@ export function fetchAnswerApi(
         api_key: apiKey,
         embeddings_key: apiKey,
         history: localStorage.getItem('chatHistory'),
-        active_docs: selectedDocs,
+        active_docs: docPath,
       }),
     })
       .then((response) => response.json())

@@ -14,23 +14,11 @@ export const fetchAnswer = createAsyncThunk<
   { state: RootState }
 >('fetchAnswer', async ({ question }, { getState }) => {
   const state = getState();
-  let namePath = state.preference.selectedDocs?.name;
-  if (state.preference.selectedDocs?.language === namePath) {
-    namePath = '.project';
-  }
 
-  const docPath =
-    state.preference.selectedDocs?.language +
-    '/' +
-    namePath +
-    '/' +
-    state.preference.selectedDocs?.version +
-    '/' +
-    state.preference.selectedDocs?.model;
   const answer = await fetchAnswerApi(
     question,
     state.preference.apiKey,
-    docPath,
+    state.preference.selectedDocs,
   );
   return answer;
 });
