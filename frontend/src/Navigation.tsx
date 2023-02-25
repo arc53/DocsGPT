@@ -78,7 +78,7 @@ export default function Navigation({
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-grow flex-col-reverse border-b-2">
-          <div className="relative my-4 px-6 ">
+          <div className="relative my-4 px-6">
             <div
               className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
