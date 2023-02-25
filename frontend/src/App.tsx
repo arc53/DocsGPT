@@ -6,7 +6,10 @@ import { useState } from 'react';
 import { ActiveState } from './models/misc';
 
 export default function App() {
-  const [navState, setNavState] = useState<ActiveState>('ACTIVE');
+  //TODO : below media query is disjoint from tailwind. Please wire it together.
+  const [navState, setNavState] = useState<ActiveState>(
+    window.matchMedia('((min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
+  );
 
   return (
     <div className="min-h-full min-w-full">
