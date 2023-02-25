@@ -19,7 +19,7 @@ export default function App() {
       />
       <div
         className={`transition-all duration-200 ${
-          navState === 'ACTIVE' ? 'ml-0 md:ml-72 lg:ml-96' : ' ml-0 md:ml-16'
+          navState === 'ACTIVE' ? 'ml-0 md:ml-72 lg:ml-60' : ' ml-0 md:ml-16'
         }`}
       >
         <Routes>

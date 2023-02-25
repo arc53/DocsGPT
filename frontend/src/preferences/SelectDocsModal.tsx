@@ -7,7 +7,7 @@ import {
   selectSourceDocs,
   selectSelectedDocs,
 } from './preferenceSlice';
-import { getDocs, Doc } from './selectDocsApi';
+import { getDocs, Doc } from './preferenceApi';
 
 export default function APIKeyModal({
   modalState,

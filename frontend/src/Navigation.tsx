@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
+import Arrow2 from './assets/dropdown-arrow.svg';
 import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
@@ -45,7 +46,7 @@ export default function Navigation({
       <div
         className={`${
           navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem] lg:-ml-80'
-        } fixed z-10 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all duration-200 lg:w-96`}
+        } fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all duration-200 lg:w-96`}
       >
         <div className={'h-16 w-full border-b-2'}>
           <button
@@ -59,7 +60,7 @@ export default function Navigation({
               alt="menu toggle"
               className={`${
                 navState === 'INACTIVE' ? 'rotate-180' : 'rotate-0'
-              }  m-auto w-3 transition-all duration-200`}
+              } m-auto w-3 transition-all duration-200`}
             />
           </button>
         </div>
@@ -77,9 +78,9 @@ export default function Navigation({
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-grow flex-col-reverse border-b-2">
-          <div className="relative my-4 px-6 ">
+          <div className="relative my-4 px-6">
             <div
-              className="h-12 w-full cursor-pointer rounded-md border-2"
+              className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
@@ -87,6 +88,13 @@ export default function Navigation({
                   {selectedDocs.name} {selectedDocs.version}
                 </p>
               )}
+              <img
+                src={Arrow2}
+                alt="arrow"
+                className={`${
+                  isDocsListOpen ? 'rotate-0' : '-rotate-90'
+                } mr-3 w-3 transition-all`}
+              />
             </div>
             {isDocsListOpen && (
               <div className="absolute top-12 left-0 right-0 mx-6 max-h-52 overflow-y-scroll bg-white shadow-lg">
@@ -165,12 +173,14 @@ export default function Navigation({
           </a>
         </div>
       </div>
-      <button
-        className="fixed mt-5 ml-6 h-6 w-6 md:hidden"
-        onClick={() => setNavState('ACTIVE')}
-      >
-        <img src={Hamburger} alt="menu toggle" className="w-7" />
-      </button>
+      <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden">
+        <button
+          className="mt-5 ml-6 h-6 w-6 md:hidden"
+          onClick={() => setNavState('ACTIVE')}
+        >
+          <img src={Hamburger} alt="menu toggle" className="w-7" />
+        </button>
+      </div>
       <SelectDocsModal
         modalState={selectedDocsModalState}
         setModalState={setSelectedDocsModalState}
