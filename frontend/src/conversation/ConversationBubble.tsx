@@ -33,7 +33,7 @@ const ConversationBubble = forwardRef<
         {type === 'ERROR' && (
           <img src={Alert} alt="alert" className="mr-2 inline" />
         )}
-        <span>{message}</span>
+        <p className="whitespace-pre-wrap break-all">{message}</p>
       </div>
     </div>
   );
