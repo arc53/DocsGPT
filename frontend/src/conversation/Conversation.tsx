@@ -30,7 +30,7 @@ export default function Conversation() {
 
   return (
     <div className="flex justify-center p-6">
-      <div className="w-10/12 transition-all md:w-1/2">
+      <div className="mt-20 w-10/12 transition-all md:w-1/2">
         {messages.map((message, index) => {
           return (
             <ConversationBubble
