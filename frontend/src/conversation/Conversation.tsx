@@ -30,7 +30,7 @@ export default function Conversation() {
 
   return (
     <div className="flex justify-center p-6">
-      <div className="w-10/12 transition-all md:w-1/2">
+      <div className="flex w-10/12 flex-col transition-all md:w-1/2">
         {messages.map((message, index) => {
           return (
             <ConversationBubble
@@ -48,7 +48,7 @@ export default function Conversation() {
         <div
           ref={inputRef}
           contentEditable
-          className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto rounded-xl border bg-white p-2 pr-9 opacity-100 focus:border-2 focus:outline-none`}
+          className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white p-2 pr-9 opacity-100 focus:border-2 focus:outline-none`}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
