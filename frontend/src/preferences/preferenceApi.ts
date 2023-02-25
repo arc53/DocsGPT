@@ -46,4 +46,20 @@ export function setLocalApiKey(key: string): void {
 
 export function setLocalRecentDocs(doc: Doc): void {
   localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
+  let namePath = doc.name;
+  if (doc.language === namePath) {
+    namePath = '.project';
+  }
+
+  const docPath =
+    doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model;
+  fetch('https://docsgpt.arc53.com/api/docs_check', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      docs: docPath,
+    }),
+  }).then((response) => response.json());
 }

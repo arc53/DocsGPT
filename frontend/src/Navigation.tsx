@@ -45,8 +45,8 @@ export default function Navigation({
     <>
       <div
         className={`${
-          navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem] lg:-ml-80'
-        } fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all duration-200 lg:w-60`}
+          navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem]'
+        } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
       >
         <div className={'h-16 w-full border-b-2'}>
           <button
@@ -80,7 +80,7 @@ export default function Navigation({
         <div className="flex flex-grow flex-col-reverse border-b-2">
           <div className="relative my-4 px-6">
             <div
-              className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2"
+              className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (

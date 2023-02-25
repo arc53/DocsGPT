@@ -1,29 +1,49 @@
 import { Answer } from './conversationModels';
+import { Doc } from '../preferences/preferenceApi';
 
 export function fetchAnswerApi(
   question: string,
   apiKey: string,
+  selectedDocs: Doc,
 ): Promise<Answer> {
-  // a mock answer generator, this is going to be replaced with real http call
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      let result = '';
-      const characters =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      const charactersLength = characters.length;
-      let counter = 0;
-      while (counter < 5) {
-        result += characters.charAt(
-          Math.floor(Math.random() * charactersLength),
-        );
-        counter += 1;
+  let namePath = selectedDocs.name;
+  if (selectedDocs.language === namePath) {
+    namePath = '.project';
+  }
+
+  const docPath =
+    selectedDocs.language +
+    '/' +
+    namePath +
+    '/' +
+    selectedDocs.version +
+    '/' +
+    selectedDocs.model;
+
+  return fetch('https://docsgpt.arc53.com/api/answer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      question: question,
+      api_key: apiKey,
+      embeddings_key: apiKey,
+      history: localStorage.getItem('chatHistory'),
+      active_docs: docPath,
+    }),
+  })
+    .then((response) => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        Promise.reject(response);
       }
-      const randNum = getRandomInt(0, 10);
-      randNum < 5
-        ? reject()
-        : resolve({ answer: result, query: question, result });
-    }, 3000);
-  });
+    })
+    .then((data) => {
+      const result = data.answer;
+      return { answer: result, query: question, result };
+    });
 }
 
 function getRandomInt(min: number, max: number) {

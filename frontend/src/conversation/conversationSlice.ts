@@ -14,7 +14,12 @@ export const fetchAnswer = createAsyncThunk<
   { state: RootState }
 >('fetchAnswer', async ({ question }, { getState }) => {
   const state = getState();
-  const answer = await fetchAnswerApi(question, state.preference.apiKey);
+
+  const answer = await fetchAnswerApi(
+    question,
+    state.preference.apiKey,
+    state.preference.selectedDocs!,
+  );
   return answer;
 });
 
