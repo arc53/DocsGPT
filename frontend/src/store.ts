@@ -29,3 +29,5 @@ export type AppDispatch = typeof store.dispatch;
 export default store;
 
 // TODO : use https://redux-toolkit.js.org/tutorials/typescript#define-typed-hooks everywere instead of direct useDispatch
+
+// TODO : streamline async state management
