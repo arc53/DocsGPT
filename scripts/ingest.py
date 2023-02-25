@@ -14,7 +14,11 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api, get_user_permission
-from parser.py2doc import get_classes, get_functions, transform_to_docs
+from parser.py2doc import transform_to_docs
+from parser.py2doc import extract_functions_and_classes as extract_py
+from parser.js2doc import extract_functions_and_classes as extract_js
+from parser.java2doc import extract_functions_and_classes as extract_java
+
 
 dotenv.load_dotenv()
 
@@ -83,27 +87,25 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
 
 
 @app.command()
-def convert():
-    ps = list(Path("inputs").glob("**/*.py"))
-    data = []
-    sources = []
-    for p in ps:
-        with open(p) as f:
-            data.append(f.read())
-        sources.append(p)
+def convert(dir: Optional[str] = typer.Option("inputs",
+                                                   help="""Path to directory to make documentation for.
+                                                        E.g. --dir inputs """),
+            formats: Optional[str] = typer.Option("py",
+                                                        help="""Required language. 
+                                                        py, js, java supported for now""")):
 
-    functions_dict = {}
-    classes_dict = {}
-    c1 = 0
-    for code in data:
-        functions = get_functions(ast.parse(code))
-        source = str(sources[c1])
-        functions_dict[source] = functions
-        classes = get_classes(code)
-        classes_dict[source] = classes
-        c1 += 1
-
-    transform_to_docs(functions_dict, classes_dict)
-
+    """
+            Creates documentation linked to original functions from specified location.
+            By default /inputs folder is used, .py is parsed.
+    """
+    if formats == 'py':
+        functions_dict, classes_dict = extract_py(dir)
+    elif formats == 'js':
+        functions_dict, classes_dict = extract_js(dir)
+    elif formats == 'java':
+        functions_dict, classes_dict = extract_java(dir)
+    else:
+        raise Exception("Sorry, language not supported yet")
+    transform_to_docs(functions_dict, classes_dict, formats, dir)
 if __name__ == "__main__":
   app()
