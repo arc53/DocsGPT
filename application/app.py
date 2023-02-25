@@ -1,5 +1,6 @@
 import os
 import json
+import traceback
 
 import dotenv
 import requests
@@ -86,7 +87,6 @@ def api_answer():
 
     # use try and except  to check for exception
     try:
-
         # check if the vectorstore is set
         if "active_docs" in data:
             vectorstore = "vectors/" + data["active_docs"]
@@ -144,6 +144,8 @@ def api_answer():
         # }
         return result
     except Exception as e:
+        # print whole traceback
+        traceback.print_exc()
         print(str(e))
         return bad_request(500,str(e))
 
@@ -185,4 +187,4 @@ def after_request(response):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
