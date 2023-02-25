@@ -19,30 +19,31 @@ export function fetchAnswerApi(
     selectedDocs.version +
     '/' +
     selectedDocs.model;
-  return new Promise((resolve, reject) => {
-    const activeDocs = 'default';
-    fetch('https://docsgpt.arc53.com/api/answer', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        question: question,
-        api_key: apiKey,
-        embeddings_key: apiKey,
-        history: localStorage.getItem('chatHistory'),
-        active_docs: docPath,
-      }),
+
+  return fetch('https://docsgpt.arc53.com/api/answer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      question: question,
+      api_key: apiKey,
+      embeddings_key: apiKey,
+      history: localStorage.getItem('chatHistory'),
+      active_docs: docPath,
+    }),
+  })
+    .then((response) => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        Promise.reject(response);
+      }
     })
-      .then((response) => response.json())
-      .then((data) => {
-        const result = data.answer;
-        resolve({ answer: result, query: question, result });
-      })
-      .catch((error) => {
-        reject();
-      });
-  });
+    .then((data) => {
+      const result = data.answer;
+      return { answer: result, query: question, result };
+    });
 }
 
 function getRandomInt(min: number, max: number) {
