@@ -44,43 +44,45 @@ export default function Conversation() {
         })}
         {messages.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
       </div>
-      <div className="fixed bottom-14 flex w-10/12 md:bottom-12 md:w-[50%]">
-        <div
-          ref={inputRef}
-          contentEditable
-          className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white p-2 pr-9 leading-7 opacity-100 focus:border-2 focus:outline-none`}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              if (inputRef.current?.textContent && status !== 'loading') {
-                handleQuestion(inputRef.current.textContent);
-                inputRef.current.textContent = '';
-              }
-            }
-          }}
-        ></div>
-        {status === 'loading' ? (
-          <img
-            src={Spinner}
-            className="relative right-9 animate-spin cursor-pointer"
-          ></img>
-        ) : (
-          <img
-            onClick={() => {
-              if (inputRef.current?.textContent) {
-                handleQuestion(inputRef.current.textContent);
-                inputRef.current.textContent = '';
+      <div className="fixed bottom-6 flex w-10/12 flex-col items-end self-center md:w-[50%]">
+        <div className="flex w-full">
+          <div
+            ref={inputRef}
+            contentEditable
+            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white p-2 pr-9 leading-7 opacity-100 focus:outline-none`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (inputRef.current?.textContent && status !== 'loading') {
+                  handleQuestion(inputRef.current.textContent);
+                  inputRef.current.textContent = '';
+                }
               }
             }}
-            src={Send}
-            className="relative right-9 cursor-pointer"
-          ></img>
-        )}
+          ></div>
+          {status === 'loading' ? (
+            <img
+              src={Spinner}
+              className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end"
+            ></img>
+          ) : (
+            <img
+              onClick={() => {
+                if (inputRef.current?.textContent) {
+                  handleQuestion(inputRef.current.textContent);
+                  inputRef.current.textContent = '';
+                }
+              }}
+              src={Send}
+              className="relative right-[35px] bottom-[15px] -mr-[21px] cursor-pointer self-end"
+            ></img>
+          )}
+        </div>
+        <p className="mt-3 w-10/12 self-center text-center text-xs text-gray-2000">
+          This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
+          questions.
+        </p>
       </div>
-      <p className="fixed bottom-6 w-10/12 text-center text-xs text-gray-2000">
-        This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
-        questions.
-      </p>
     </div>
   );
 }
