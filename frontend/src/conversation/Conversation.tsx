@@ -19,8 +19,9 @@ export default function Conversation() {
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() =>
-    endMessageRef?.current?.scrollIntoView({ behavior: 'smooth' }),
+  useEffect(
+    () => endMessageRef?.current?.scrollIntoView({ behavior: 'smooth' }),
+    [messages],
   );
 
   const handleQuestion = (question: string) => {
