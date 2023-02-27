@@ -36,7 +36,7 @@ export default function Conversation() {
           return (
             <ConversationBubble
               ref={index === messages.length - 1 ? endMessageRef : null}
-              className={`${index === messages.length - 1 ? 'mb-20' : 'mb-7'}`}
+              className={`${index === messages.length - 1 ? 'mb-24' : 'mb-7'}`}
               key={index}
               message={message.text}
               type={message.type}
