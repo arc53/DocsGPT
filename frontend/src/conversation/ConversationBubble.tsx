@@ -22,7 +22,10 @@ const ConversationBubble = forwardRef<
           : 'flex-row-reverse self-end '
       }  ${className}`}
     >
-      <Avatar avatar={type === 'QUESTION' ? '🧑‍💻' : '🦖'}></Avatar>
+      <Avatar
+        className="mt-4 text-2xl"
+        avatar={type === 'QUESTION' ? '🧑‍💻' : '🦖'}
+      ></Avatar>
       <div
         className={`${
           type === 'QUESTION'
