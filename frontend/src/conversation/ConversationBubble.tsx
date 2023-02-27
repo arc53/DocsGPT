@@ -14,21 +14,23 @@ const ConversationBubble = forwardRef<
   return (
     <div
       ref={ref}
-      className={`flex rounded-3xl ${
+      className={`flex ${
         type === 'ANSWER'
-          ? 'self-start bg-gray-1000'
+          ? 'self-start '
           : type === 'ERROR'
-          ? 'self-start bg-red-1000'
-          : 'flex-row-reverse self-end bg-blue-1000 text-white'
-      } py-7 px-5 ${className}`}
+          ? 'self-start'
+          : 'flex-row-reverse self-end '
+      }  ${className}`}
     >
-      <Avatar avatar={type === 'QUESTION' ? '👤' : '🦖'}></Avatar>
+      <Avatar avatar={type === 'QUESTION' ? '🧑‍💻' : '🦖'}></Avatar>
       <div
         className={`${
-          type === 'QUESTION' ? 'mr-5' : 'ml-5'
-        } flex items-center ${
+          type === 'QUESTION'
+            ? ' mr-2 ml-10 bg-blue-1000 py-5 px-5 text-white'
+            : ' ml-2 mr-10 bg-gray-1000 py-5 px-5'
+        } flex items-center rounded-3xl ${
           type === 'ERROR'
-            ? 'rounded-lg border border-red-2000 p-2 text-red-3000'
+            ? 'rounded-lg border border-red-2000 bg-red-1000 p-2 text-red-3000'
             : ''
         }`}
       >
