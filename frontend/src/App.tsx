@@ -4,6 +4,9 @@ import Conversation from './conversation/Conversation';
 import About from './About';
 import { useState } from 'react';
 import { ActiveState } from './models/misc';
+import { inject } from '@vercel/analytics';
+
+inject();
 
 export default function App() {
   //TODO : below media query is disjoint from tailwind. Please wire it together.
