@@ -49,8 +49,8 @@ export default function About() {
         </div>
 
         <p>
-          Currently It uses python pandas documentation, so it will respond to
-          information relevant to pandas. If you want to train it on different
+          Currently It uses DocsGPT documentation, so it will respond to
+          information relevant to DocsGPT. If you want to train it on different
           documentation - please follow
           <a
             className="text-blue-500"
