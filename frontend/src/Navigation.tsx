@@ -55,7 +55,7 @@ export default function Navigation({
         setIsDocsListOpen(false);
       }
     },
-    [isDocsListOpen, apiKeyModalState],
+    [navState, isDocsListOpen, apiKeyModalState],
   );
 
   return (
