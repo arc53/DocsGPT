@@ -67,16 +67,18 @@ export default function Conversation() {
               className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end"
             ></img>
           ) : (
-            <img
-              onClick={() => {
-                if (inputRef.current?.textContent) {
-                  handleQuestion(inputRef.current.textContent);
-                  inputRef.current.textContent = '';
-                }
-              }}
-              src={Send}
-              className="relative right-[35px] bottom-[15px] -mr-[21px] cursor-pointer self-end"
-            ></img>
+            <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
+              <img
+                className="ml-[9px] mt-[9px]"
+                onClick={() => {
+                  if (inputRef.current?.textContent) {
+                    handleQuestion(inputRef.current.textContent);
+                    inputRef.current.textContent = '';
+                  }
+                }}
+                src={Send}
+              ></img>
+            </div>
           )}
         </div>
         <p className="mt-3 w-10/12 self-center text-center text-xs text-gray-2000">

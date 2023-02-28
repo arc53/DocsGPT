@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
@@ -18,13 +18,14 @@ import {
   selectSourceDocs,
   setSelectedDocs,
 } from './preferences/preferenceSlice';
+import { useOutsideAlerter } from './hooks';
 
 export default function Navigation({
   navState,
   setNavState,
 }: {
   navState: ActiveState;
-  setNavState: (val: ActiveState) => void;
+  setNavState: React.Dispatch<React.SetStateAction<ActiveState>>;
 }) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
@@ -41,9 +42,26 @@ export default function Navigation({
   const [selectedDocsModalState, setSelectedDocsModalState] =
     useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
 
+  const navRef = useRef(null);
+  useOutsideAlerter(
+    navRef,
+    () => {
+      if (
+        window.matchMedia('(max-width: 768px)').matches &&
+        navState === 'ACTIVE' &&
+        apiKeyModalState === 'INACTIVE'
+      ) {
+        setNavState('INACTIVE');
+        setIsDocsListOpen(false);
+      }
+    },
+    [navState, isDocsListOpen, apiKeyModalState],
+  );
+
   return (
     <>
       <div
+        ref={navRef}
         className={`${
           navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem]'
         } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
