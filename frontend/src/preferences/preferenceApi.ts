@@ -53,7 +53,7 @@ export function setLocalRecentDocs(doc: Doc): void {
 
   const docPath =
     doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model;
-  fetch('https://docsgpt.arc53.com/api/docs_check', {
+  fetch('https://docsapi.arc53.com/api/docs_check', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

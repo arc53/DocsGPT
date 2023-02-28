@@ -20,7 +20,7 @@ export function fetchAnswerApi(
     '/' +
     selectedDocs.model;
 
-  return fetch('https://docsgpt.arc53.com/api/answer', {
+  return fetch('https://docsapi.arc53.com/api/answer', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
