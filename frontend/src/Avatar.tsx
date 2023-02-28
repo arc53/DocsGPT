@@ -1,9 +1,18 @@
 export default function Avatar({
   avatar,
   size,
+  className,
 }: {
   avatar: string;
   size?: 'SMALL' | 'MEDIUM' | 'LARGE';
+  className: string;
 }) {
-  return <div>{avatar}</div>;
+  const styles = {
+    transform: 'scale(-1, 1)',
+  };
+  return (
+    <div style={styles} className={className}>
+      {avatar}
+    </div>
+  );
 }
