@@ -42,27 +42,26 @@ export default function Navigation({
   const [selectedDocsModalState, setSelectedDocsModalState] =
     useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
 
-  const navDiv = useRef(null);
+  const navRef = useRef(null);
   useOutsideAlerter(
-    navDiv,
+    navRef,
     () => {
       if (
         window.matchMedia('(max-width: 768px)').matches &&
         navState === 'ACTIVE' &&
-        apiKeyModalState === 'INACTIVE' &&
-        selectedDocsModalState === 'INACTIVE' &&
-        !isDocsListOpen
+        apiKeyModalState === 'INACTIVE'
       ) {
         setNavState('INACTIVE');
+        setIsDocsListOpen(false);
       }
     },
-    [navState, isDocsListOpen, apiKeyModalState, selectedDocsModalState],
+    [isDocsListOpen, apiKeyModalState],
   );
 
   return (
     <>
       <div
-        ref={navDiv}
+        ref={navRef}
         className={`${
           navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem]'
         } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
