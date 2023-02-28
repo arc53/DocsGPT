@@ -15,6 +15,6 @@ ENV FLASK_APP=app.py
 ENV FLASK_DEBUG=true
 RUN pip install -r requirements.txt
 
-EXPOSE 5000
+EXPOSE 5001
 
-CMD ["flask", "run", "--host=0.0.0.0"]
+CMD ["gunicorn", "-w", "6", "--bind", "0.0.0.0:5001", "wsgi:app"]
