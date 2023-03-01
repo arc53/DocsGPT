@@ -3,6 +3,8 @@ version: "3.9"
 services:
   frontend:
     build: ./frontend
+    environment:
+      - API_HOST=http://backend:5001
     ports:
       - "5173:5173"
 

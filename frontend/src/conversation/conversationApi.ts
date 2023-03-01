@@ -23,7 +23,9 @@ export function fetchAnswerApi(
         selectedDocs.model +
         '/';
 
-  return fetch('https://docsapi.arc53.com/api/answer', {
+  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+
+  return fetch(apiHost + '/api/answer', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
