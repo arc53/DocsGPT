@@ -12,13 +12,15 @@ export function fetchAnswerApi(
   }
 
   const docPath =
-    selectedDocs.language +
-    '/' +
-    namePath +
-    '/' +
-    selectedDocs.version +
-    '/' +
-    selectedDocs.model;
+    selectedDocs.name === 'default'
+      ? 'default'
+      : selectedDocs.language +
+        '/' +
+        namePath +
+        '/' +
+        selectedDocs.version +
+        '/' +
+        selectedDocs.model;
 
   return fetch('https://docsapi.arc53.com/api/answer', {
     method: 'POST',

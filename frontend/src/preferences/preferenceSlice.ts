@@ -29,7 +29,7 @@ export const prefSlice = createSlice({
       state.selectedDocs = action.payload;
     },
     setSourceDocs: (state, action) => {
-      state.sourceDocs = action.payload;
+      state.sourceDocs?.push(...action.payload);
     },
   },
 });
