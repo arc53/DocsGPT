@@ -20,7 +20,8 @@ export function fetchAnswerApi(
         '/' +
         selectedDocs.version +
         '/' +
-        selectedDocs.model;
+        selectedDocs.model +
+        '/';
 
   return fetch('https://docsapi.arc53.com/api/answer', {
     method: 'POST',

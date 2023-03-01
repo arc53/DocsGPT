@@ -55,7 +55,14 @@ export function setLocalRecentDocs(doc: Doc): void {
   const docPath =
     doc.name === 'default'
       ? 'default'
-      : doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model;
+      : doc.language +
+        '/' +
+        namePath +
+        '/' +
+        doc.version +
+        '/' +
+        doc.model +
+        '/';
   fetch('https://docsapi.arc53.com/api/docs_check', {
     method: 'POST',
     headers: {
