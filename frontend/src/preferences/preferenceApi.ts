@@ -63,7 +63,8 @@ export function setLocalRecentDocs(doc: Doc): void {
         '/' +
         doc.model +
         '/';
-  fetch('https://docsapi.arc53.com/api/docs_check', {
+  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+  fetch(apiHost + '/api/docs_check', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
