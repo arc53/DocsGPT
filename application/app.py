@@ -6,7 +6,8 @@ import dotenv
 import requests
 from flask import Flask, request, render_template
 from langchain import FAISS
-from langchain import OpenAI, VectorDBQA, HuggingFaceHub, Cohere
+from langchain.llms import OpenAIChat
+from langchain import VectorDBQA, HuggingFaceHub, Cohere
 from langchain.chains.question_answering import load_qa_chain
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceHubEmbeddings, CohereEmbeddings, HuggingFaceInstructEmbeddings
 from langchain.prompts import PromptTemplate
@@ -115,7 +116,7 @@ def api_answer():
             c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template, template_format="jinja2")
 
         if llm_choice == "openai":
-            llm = OpenAI(openai_api_key=api_key, temperature=0)
+            llm = OpenAIChat(openai_api_key=api_key, temperature=0)
         elif llm_choice == "manifest":
             llm = ManifestWrapper(client=manifest, llm_kwargs={"temperature": 0.001, "max_tokens": 2048})
         elif llm_choice == "huggingface":
