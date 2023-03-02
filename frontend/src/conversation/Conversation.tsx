@@ -31,20 +31,24 @@ export default function Conversation() {
 
   return (
     <div className="flex justify-center p-6">
-      <div className="mt-20 flex w-10/12 flex-col transition-all md:w-1/2">
-        {messages.map((message, index) => {
-          return (
-            <ConversationBubble
-              ref={index === messages.length - 1 ? endMessageRef : null}
-              className={`${index === messages.length - 1 ? 'mb-24' : 'mb-7'}`}
-              key={index}
-              message={message.text}
-              type={message.type}
-            ></ConversationBubble>
-          );
-        })}
-        {messages.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-      </div>
+      {messages.length && (
+        <div className="mt-20 flex w-10/12 flex-col transition-all md:w-1/2">
+          {messages.map((message, index) => {
+            return (
+              <ConversationBubble
+                ref={index === messages.length - 1 ? endMessageRef : null}
+                className={`${
+                  index === messages.length - 1 ? 'mb-24' : 'mb-7'
+                }`}
+                key={index}
+                message={message.text}
+                type={message.type}
+              ></ConversationBubble>
+            );
+          })}
+        </div>
+      )}
+      {messages.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
       <div className="fixed bottom-6 flex w-10/12 flex-col items-end self-center md:w-[50%]">
         <div className="flex w-full">
           <div
