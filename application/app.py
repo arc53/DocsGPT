@@ -1,7 +1,6 @@
 import os
 import json
 import traceback
-import pprint
 
 import dotenv
 import requests
@@ -137,15 +136,10 @@ def api_answer():
         qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                                  combine_prompt=c_prompt, question_prompt=q_prompt)
 
-        chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=25, return_source_documents=True)
+        chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=10)
 
         # fetch the answer
         result = chain({"query": question})
-        # pprint.pprint(result)
-        # docs = docsearch.similarity_search(question, k=8)
-
-        for i in result['source_documents']:
-            print(i.page_content)
 
         # some formatting for the frontend
         result['answer'] = result['result']
@@ -154,7 +148,6 @@ def api_answer():
             result['answer'] = result['answer'].split("SOURCES:")[0]
         except:
             pass
-        del result['source_documents']
 
         # mock result
         # result = {
