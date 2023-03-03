@@ -143,7 +143,7 @@ def api_answer():
 
         # some formatting for the frontend
         result['answer'] = result['result']
-        result['answer'] = result['answer'].replace("\\n", "<br>")
+        result['answer'] = result['answer'].replace("\\n", "\n")
         try:
             result['answer'] = result['answer'].split("SOURCES:")[0]
         except:

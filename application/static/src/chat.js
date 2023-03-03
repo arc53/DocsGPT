@@ -46,6 +46,7 @@ function submitForm(event){
             }
             if(data.answer){
             msg_html = '<div class="bg-indigo-500 text-white p-2 rounded-lg mb-2 self-start"><code class="text-sm">'
+            data.answer = data.answer.replace(/\n/g, "<br>");
             msg_html += data.answer
             msg_html += '</code></div>'
             document.getElementById("messages").innerHTML += msg_html;
