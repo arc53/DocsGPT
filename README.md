@@ -55,6 +55,16 @@ Copy .env_sample and create .env with your openai api token
 4. Run the app
 `python app.py`
 
+To start frontend
+1. Navigate to `/frontend` folder
+2. Install dependencies
+`npm install`
+3. Run the app
+4. `npm run dev`
+
+Alternatively, you can use docker-compose to run the app via docker
+1. From the root folder run `docker-compose build && docker-compose up`
+
 
 [How to install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
 
