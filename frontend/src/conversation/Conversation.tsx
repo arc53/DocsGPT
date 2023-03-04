@@ -32,7 +32,7 @@ export default function Conversation() {
   return (
     <div className="flex justify-center p-6">
       {messages.length > 0 && (
-        <div className="mt-20 flex w-10/12 flex-col transition-all md:w-1/2">
+        <div className="mt-20 flex w-10/12 flex-col transition-all md:w-3/4">
           {messages.map((message, index) => {
             return (
               <ConversationBubble
@@ -49,7 +49,7 @@ export default function Conversation() {
         </div>
       )}
       {messages.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-      <div className="fixed bottom-6 flex w-10/12 flex-col items-end self-center md:w-[50%]">
+      <div className="fixed bottom-0 flex w-10/12 flex-col items-end self-center md:w-[50%]">
         <div className="flex w-full">
           <div
             ref={inputRef}
@@ -85,7 +85,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
-        <p className="mt-3 w-10/12 self-center text-center text-xs text-gray-2000">
+        <p className="w-[100vw] self-center bg-white p-5 text-center text-xs text-gray-2000">
           This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
           questions.
         </p>

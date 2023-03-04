@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
@@ -58,6 +58,19 @@ export default function Navigation({
     [navState, isDocsListOpen, apiKeyModalState],
   );
 
+  /*
+    Needed to fix bug where if mobile nav was closed and then window was resized to desktop, nav would still be closed but the button to open would be gone, as per #1 on issue #146
+  */
+  useEffect(() => {
+    window.addEventListener('resize', () => {
+      if (window.matchMedia('(min-width: 768px)').matches) {
+        setNavState('ACTIVE');
+      } else {
+        setNavState('INACTIVE');
+      }
+    });
+  }, []);
+
   return (
     <>
       <div
@@ -66,7 +79,7 @@ export default function Navigation({
           navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem]'
         } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
       >
-        <div className={'h-16 w-full border-b-2'}>
+        <div className={'visible h-16 w-full border-b-2 md:hidden'}>
           <button
             className="float-right mr-5 mt-5 h-5 w-5"
             onClick={() =>
@@ -95,7 +108,7 @@ export default function Navigation({
         </NavLink>
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
-        <div className="flex flex-grow flex-col-reverse border-b-2">
+        <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 px-6">
             <div
               className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2 bg-white"
@@ -143,7 +156,7 @@ export default function Navigation({
               </div>
             )}
           </div>
-          <p className="ml-6 font-bold text-jet">Source Docs</p>
+          <p className="ml-6 mt-3 font-bold text-jet">Source Docs</p>
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <div
