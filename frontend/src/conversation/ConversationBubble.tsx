@@ -1,4 +1,3 @@
-import React from 'react';
 import { forwardRef, useState } from 'react';
 import Avatar from '../Avatar';
 import { MESSAGE_TYPE } from './conversationModels';
@@ -15,7 +14,6 @@ const ConversationBubble = forwardRef<
   }
 >(function ConversationBubble({ message, type, className }, ref) {
   const [showFeedback, setShowFeedback] = useState(false);
-
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
@@ -49,14 +47,14 @@ const ConversationBubble = forwardRef<
         </div>
         <div
           className={`mr-2 flex items-center justify-center ${
-            showFeedback ? '' : 'invisible'
+            type !== 'ERROR' && showFeedback ? '' : 'invisible'
           }`}
         >
           <Like fill="none" className="hover:fill-gray-4000"></Like>
         </div>
         <div
           className={`mr-10 flex items-center justify-center ${
-            showFeedback ? '' : 'invisible'
+            type !== 'ERROR' && showFeedback ? '' : 'invisible'
           }`}
         >
           <Dislike fill="none" className="hover:fill-gray-4000"></Dislike>
