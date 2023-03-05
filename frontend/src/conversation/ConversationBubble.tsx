@@ -8,7 +8,7 @@ const ConversationBubble = forwardRef<
   {
     message: string;
     type: MESSAGE_TYPE;
-    className: string;
+    className?: string;
   }
 >(function ConversationBubble({ message, type, className }, ref) {
   return (

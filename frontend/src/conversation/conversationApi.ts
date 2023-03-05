@@ -1,5 +1,7 @@
-import { Answer } from './conversationModels';
+import { Answer, FEEDBACK } from './conversationModels';
 import { Doc } from '../preferences/preferenceApi';
+
+const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 export function fetchAnswerApi(
   question: string,
@@ -22,8 +24,6 @@ export function fetchAnswerApi(
         '/' +
         selectedDocs.model +
         '/';
-
-  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
   return fetch(apiHost + '/api/answer', {
     method: 'POST',
@@ -51,8 +51,31 @@ export function fetchAnswerApi(
     });
 }
 
-function getRandomInt(min: number, max: number) {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min) + min); // The maximum is exclusive and the minimum is inclusive
+export function sendFeedback(
+  {
+    prompt,
+    response,
+  }: {
+    prompt: string;
+    response: string;
+  },
+  feedback: FEEDBACK,
+) {
+  return fetch(`${apiHost}/api/feedback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      question: prompt,
+      answer: response,
+      feedback: feedback,
+    }),
+  }).then((response) => {
+    if (response.ok) {
+      return Promise.resolve();
+    } else {
+      return Promise.reject();
+    }
+  });
 }

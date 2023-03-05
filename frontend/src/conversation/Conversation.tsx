@@ -1,19 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Hero from '../Hero';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import {
-  addMessage,
+  addQuery,
   fetchAnswer,
-  selectConversation,
+  selectQueries,
   selectStatus,
 } from './conversationSlice';
 import Send from './../assets/send.svg';
 import Spinner from './../assets/spinner.svg';
+import { Query } from './conversationModels';
 
 export default function Conversation() {
-  const messages = useSelector(selectConversation);
+  const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
@@ -21,34 +22,65 @@ export default function Conversation() {
 
   useEffect(
     () => endMessageRef?.current?.scrollIntoView({ behavior: 'smooth' }),
-    [messages],
+    [queries],
   );
 
   const handleQuestion = (question: string) => {
-    dispatch(addMessage({ text: question, type: 'QUESTION' }));
+    dispatch(addQuery({ prompt: question }));
     dispatch(fetchAnswer({ question }));
+  };
+
+  const prepResponseView = (query: Query, index: number) => {
+    let responseView;
+    if (query.error) {
+      responseView = (
+        <ConversationBubble
+          ref={endMessageRef}
+          className={`${index === queries.length - 1 ? 'mb-24' : 'mb-7'}`}
+          key={`${index}ERROR`}
+          message={query.error}
+          type="ERROR"
+        ></ConversationBubble>
+      );
+    } else if (query.response) {
+      responseView = (
+        <ConversationBubble
+          ref={endMessageRef}
+          className={`${index === queries.length - 1 ? 'mb-24' : 'mb-7'}`}
+          key={`${index}ANSWER`}
+          message={query.response}
+          type={'ANSWER'}
+        ></ConversationBubble>
+      );
+    }
+    return responseView;
   };
 
   return (
     <div className="flex justify-center p-6">
-      {messages.length > 0 && (
+      {queries.length > 0 && (
         <div className="mt-20 flex w-10/12 flex-col transition-all md:w-3/4">
-          {messages.map((message, index) => {
+          {queries.map((query, index) => {
             return (
-              <ConversationBubble
-                ref={index === messages.length - 1 ? endMessageRef : null}
-                className={`${
-                  index === messages.length - 1 ? 'mb-24' : 'mb-7'
-                }`}
-                key={index}
-                message={message.text}
-                type={message.type}
-              ></ConversationBubble>
+              <Fragment key={index}>
+                <ConversationBubble
+                  ref={endMessageRef}
+                  className={`${
+                    index === queries.length - 1 && status === 'loading'
+                      ? 'mb-24'
+                      : 'mb-7'
+                  }`}
+                  key={`${index}QUESTION`}
+                  message={query.prompt}
+                  type="QUESTION"
+                ></ConversationBubble>
+                {prepResponseView(query, index)}
+              </Fragment>
             );
           })}
         </div>
       )}
-      {messages.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
+      {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
       <div className="fixed bottom-0 flex w-10/12 flex-col items-end self-center md:w-[50%]">
         <div className="flex w-full">
           <div

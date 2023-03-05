@@ -1,10 +1,10 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
 import { fetchAnswerApi } from './conversationApi';
-import { Answer, ConversationState, Message } from './conversationModels';
+import { Answer, ConversationState, Query } from './conversationModels';
 
 const initialState: ConversationState = {
-  conversation: [],
+  queries: [],
   status: 'idle',
 };
 
@@ -27,8 +27,8 @@ export const conversationSlice = createSlice({
   name: 'conversation',
   initialState,
   reducers: {
-    addMessage(state, action: PayloadAction<Message>) {
-      state.conversation.push(action.payload);
+    addQuery(state, action: PayloadAction<Query>) {
+      state.queries.push(action.payload);
     },
   },
   extraReducers(builder) {
@@ -38,27 +38,22 @@ export const conversationSlice = createSlice({
       })
       .addCase(fetchAnswer.fulfilled, (state, action) => {
         state.status = 'idle';
-        state.conversation.push({
-          text: action.payload.answer,
-          type: 'ANSWER',
-        });
+        state.queries[state.queries.length - 1].response =
+          action.payload.answer;
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
         state.status = 'failed';
-        state.conversation.push({
-          text: 'Something went wrong. Please try again later.',
-          type: 'ERROR',
-        });
+        state.queries[state.queries.length - 1].error =
+          'Something went wrong. Please try again later.';
       });
   },
 });
 
 type RootState = ReturnType<typeof store.getState>;
 
-export const selectConversation = (state: RootState) =>
-  state.conversation.conversation;
+export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
 
-export const { addMessage } = conversationSlice.actions;
+export const { addQuery } = conversationSlice.actions;
 export default conversationSlice.reducer;
