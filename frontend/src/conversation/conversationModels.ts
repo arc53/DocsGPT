@@ -1,5 +1,6 @@
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed';
+export type FEEDBACK = 'LIKE' | 'DISLIKE';
 
 export interface Message {
   text: string;
@@ -15,4 +16,10 @@ export interface Answer {
   answer: string;
   query: string;
   result: string;
+}
+
+export interface Query {
+  prompt: string;
+  response?: string;
+  feedback?: FEEDBACK;
 }
