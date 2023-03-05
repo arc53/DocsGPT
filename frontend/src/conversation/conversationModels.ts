@@ -8,7 +8,7 @@ export interface Message {
 }
 
 export interface ConversationState {
-  conversation: Message[];
+  queries: Query[];
   status: Status;
 }
 
@@ -22,4 +22,5 @@ export interface Query {
   prompt: string;
   response?: string;
   feedback?: FEEDBACK;
+  error?: string;
 }
