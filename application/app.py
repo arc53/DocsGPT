@@ -189,6 +189,22 @@ def check_docs():
         return {"status": 'loaded'}
 
 
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    data = request.get_json()
+    question = data["question"]
+    answer = data["answer"]
+    feedback = data["feedback"]
+
+    print('-' * 5)
+    print("Question: " + question)
+    print("Answer: " + answer)
+    print("Feedback: " + feedback)
+    print('-' * 5)
+    return {"status": 'ok'}
+
+
+
 # handling CORS
 @app.after_request
 def after_request(response):
