@@ -5,6 +5,9 @@ RUN apt-get update && apt-get install -y gcc curl
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && apt-get install --reinstall libc6-dev -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN pip install --upgrade pip && pip install tiktoken==0.1.2
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
 
 FROM python:3.10-slim-bullseye
 # Copy pre-built packages from builder stage
@@ -13,7 +16,7 @@ WORKDIR /app
 COPY . /app
 ENV FLASK_APP=app.py
 ENV FLASK_DEBUG=true
-RUN pip install -r requirements.txt
+RUN pip install gunicorn
 
 EXPOSE 5001
 
