@@ -30,6 +30,16 @@ export const conversationSlice = createSlice({
     addQuery(state, action: PayloadAction<Query>) {
       state.queries.push(action.payload);
     },
+    updateQuery(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const index = action.payload.index;
+      state.queries[index] = {
+        ...state.queries[index],
+        ...action.payload.query,
+      };
+    },
   },
   extraReducers(builder) {
     builder
@@ -55,5 +65,5 @@ export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
 
-export const { addQuery } = conversationSlice.actions;
+export const { addQuery, updateQuery } = conversationSlice.actions;
 export default conversationSlice.reducer;

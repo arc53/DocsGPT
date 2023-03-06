@@ -12,17 +12,17 @@ const ConversationBubble = forwardRef<
     type: MESSAGE_TYPE;
     className?: string;
     feedback?: FEEDBACK;
-    handleFeedback?: () => Promise<void>;
+    handleFeedback?: (feedback: FEEDBACK) => void;
   }
 >(function ConversationBubble(
   { message, type, className, feedback, handleFeedback },
   ref,
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
-  const [overriddenFeedback, setOverriddenFeedback] = useState<
-    FEEDBACK | undefined
-  >(undefined);
-  const effectiveFeedback = overriddenFeedback ?? feedback;
+  // const [overriddenFeedback, setOverriddenFeedback] = useState<
+  //   FEEDBACK | undefined
+  // >(undefined);
+  // const effectiveFeedback = overriddenFeedback ?? feedback;
   let bubble;
 
   if (type === 'QUESTION') {
@@ -57,7 +57,7 @@ const ConversationBubble = forwardRef<
         </div>
         <div
           className={`mr-2 flex items-center justify-center ${
-            effectiveFeedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
+            feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
               ? ''
               : 'invisible'
           }`}
@@ -65,17 +65,14 @@ const ConversationBubble = forwardRef<
           <Like
             fill="none"
             className={`cursor-pointer ${
-              effectiveFeedback === 'LIKE'
-                ? 'fill-blue-1000'
-                : 'hover:fill-gray-4000'
+              feedback === 'LIKE' ? 'fill-blue-1000' : 'hover:fill-gray-4000'
             }`}
-            onClick={() => setOverriddenFeedback('LIKE')}
+            onClick={() => handleFeedback?.('LIKE')}
           ></Like>
         </div>
         <div
           className={`mr-10 flex items-center justify-center ${
-            effectiveFeedback === 'DISLIKE' ||
-            (type !== 'ERROR' && showFeedback)
+            feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
               ? ''
               : 'invisible'
           }`}
@@ -83,11 +80,9 @@ const ConversationBubble = forwardRef<
           <Dislike
             fill="none"
             className={`cursor-pointer ${
-              effectiveFeedback === 'DISLIKE'
-                ? 'fill-red-2000'
-                : 'hover:fill-gray-4000'
+              feedback === 'DISLIKE' ? 'fill-red-2000' : 'hover:fill-gray-4000'
             }`}
-            onClick={() => setOverriddenFeedback('DISLIKE')}
+            onClick={() => handleFeedback?.('DISLIKE')}
           ></Dislike>
         </div>
       </div>

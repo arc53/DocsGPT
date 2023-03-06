@@ -8,10 +8,12 @@ import {
   fetchAnswer,
   selectQueries,
   selectStatus,
+  updateQuery,
 } from './conversationSlice';
 import Send from './../assets/send.svg';
 import Spinner from './../assets/spinner.svg';
-import { Query } from './conversationModels';
+import { FEEDBACK, Query } from './conversationModels';
+import { sendFeedback } from './conversationApi';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -22,12 +24,20 @@ export default function Conversation() {
 
   useEffect(
     () => endMessageRef?.current?.scrollIntoView({ behavior: 'smooth' }),
-    [queries],
+    [queries.length, queries[queries.length - 1]],
   );
 
   const handleQuestion = (question: string) => {
     dispatch(addQuery({ prompt: question }));
     dispatch(fetchAnswer({ question }));
+  };
+
+  const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
+    const prevFeedback = query.feedback;
+    dispatch(updateQuery({ index, query: { feedback } }));
+    sendFeedback(query.prompt, query.response!, feedback).catch(() =>
+      dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
+    );
   };
 
   const prepResponseView = (query: Query, index: number) => {
@@ -51,6 +61,9 @@ export default function Conversation() {
           message={query.response}
           type={'ANSWER'}
           feedback={query.feedback}
+          handleFeedback={(feedback: FEEDBACK) =>
+            handleFeedback(query, feedback, index)
+          }
         ></ConversationBubble>
       );
     }
