@@ -52,13 +52,8 @@ export function fetchAnswerApi(
 }
 
 export function sendFeedback(
-  {
-    prompt,
-    response,
-  }: {
-    prompt: string;
-    response: string;
-  },
+  prompt: string,
+  response: string,
   feedback: FEEDBACK,
 ) {
   return fetch(`${apiHost}/api/feedback`, {
