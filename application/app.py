@@ -201,6 +201,17 @@ def api_feedback():
     print("Answer: " + answer)
     print("Feedback: " + feedback)
     print('-' * 5)
+    response = requests.post(
+        url="https://86x89umx77.execute-api.eu-west-2.amazonaws.com/docsgpt-feedback",
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        data=json.dumps({
+            "answer": answer,
+            "question": question,
+            "feedback": feedback
+        })
+    )
     return {"status": 'ok'}
 
 
