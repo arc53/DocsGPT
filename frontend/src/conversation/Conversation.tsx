@@ -50,6 +50,7 @@ export default function Conversation() {
           key={`${index}ANSWER`}
           message={query.response}
           type={'ANSWER'}
+          feedback={query.feedback}
         ></ConversationBubble>
       );
     }
