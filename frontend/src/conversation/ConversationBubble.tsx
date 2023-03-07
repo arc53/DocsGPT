@@ -63,9 +63,10 @@ const ConversationBubble = forwardRef<
           }`}
         >
           <Like
-            fill="none"
             className={`cursor-pointer ${
-              feedback === 'LIKE' ? 'fill-blue-1000' : 'hover:fill-gray-4000'
+              feedback === 'LIKE'
+                ? 'fill-blue-1000 stroke-blue-1000'
+                : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
             }`}
             onClick={() => handleFeedback?.('LIKE')}
           ></Like>
@@ -78,9 +79,10 @@ const ConversationBubble = forwardRef<
           }`}
         >
           <Dislike
-            fill="none"
             className={`cursor-pointer ${
-              feedback === 'DISLIKE' ? 'fill-red-2000' : 'hover:fill-gray-4000'
+              feedback === 'DISLIKE'
+                ? 'fill-red-2000 stroke-red-2000'
+                : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
             }`}
             onClick={() => handleFeedback?.('DISLIKE')}
           ></Dislike>
