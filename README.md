@@ -65,6 +65,7 @@ To start frontend
 Alternatively, you can use docker-compose to run the app via docker
 1. From the root folder run `docker-compose build && docker-compose up`
 
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/2ZSNAt?referralCode=97q7Ll)
 
 [How to install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
 
