@@ -19,10 +19,6 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
-  // const [overriddenFeedback, setOverriddenFeedback] = useState<
-  //   FEEDBACK | undefined
-  // >(undefined);
-  // const effectiveFeedback = overriddenFeedback ?? feedback;
   let bubble;
 
   if (type === 'QUESTION') {
@@ -59,13 +55,14 @@ const ConversationBubble = forwardRef<
           className={`mr-2 flex items-center justify-center ${
             feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
               ? ''
-              : 'invisible'
+              : 'md:invisible'
           }`}
         >
           <Like
-            fill="none"
             className={`cursor-pointer ${
-              feedback === 'LIKE' ? 'fill-blue-1000' : 'hover:fill-gray-4000'
+              feedback === 'LIKE'
+                ? 'fill-blue-1000 stroke-blue-1000'
+                : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
             }`}
             onClick={() => handleFeedback?.('LIKE')}
           ></Like>
@@ -74,13 +71,14 @@ const ConversationBubble = forwardRef<
           className={`mr-10 flex items-center justify-center ${
             feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
               ? ''
-              : 'invisible'
+              : 'md:invisible'
           }`}
         >
           <Dislike
-            fill="none"
             className={`cursor-pointer ${
-              feedback === 'DISLIKE' ? 'fill-red-2000' : 'hover:fill-gray-4000'
+              feedback === 'DISLIKE'
+                ? 'fill-red-2000 stroke-red-2000'
+                : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
             }`}
             onClick={() => handleFeedback?.('DISLIKE')}
           ></Dislike>
