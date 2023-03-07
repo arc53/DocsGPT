@@ -19,10 +19,6 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
-  // const [overriddenFeedback, setOverriddenFeedback] = useState<
-  //   FEEDBACK | undefined
-  // >(undefined);
-  // const effectiveFeedback = overriddenFeedback ?? feedback;
   let bubble;
 
   if (type === 'QUESTION') {
@@ -59,7 +55,7 @@ const ConversationBubble = forwardRef<
           className={`mr-2 flex items-center justify-center ${
             feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
               ? ''
-              : 'invisible'
+              : 'md:invisible'
           }`}
         >
           <Like
@@ -75,7 +71,7 @@ const ConversationBubble = forwardRef<
           className={`mr-10 flex items-center justify-center ${
             feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
               ? ''
-              : 'invisible'
+              : 'md:invisible'
           }`}
         >
           <Dislike
