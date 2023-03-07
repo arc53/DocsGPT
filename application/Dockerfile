@@ -16,7 +16,7 @@ WORKDIR /app
 COPY . /app
 ENV FLASK_APP=app.py
 ENV FLASK_DEBUG=true
-RUN pip install gunicorn
+RUN pip install gunicorn==20.1.0
 
 EXPOSE 5001
 

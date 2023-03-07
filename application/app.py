@@ -136,7 +136,7 @@ def api_answer():
         qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                                  combine_prompt=c_prompt, question_prompt=q_prompt)
 
-        chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=10)
+        chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=4)
 
         # fetch the answer
         result = chain({"query": question})
