@@ -59,6 +59,7 @@ To start frontend
 1. Navigate to `/frontend` folder
 2. Install dependencies
 `npm install`
+3. In the file  `.env.development` instead of `VITE_API_HOST = https://docsapi.arc53.com` use `VITE_API_HOST=http://localhost:5001`
 3. Run the app
 4. `npm run dev`
 
