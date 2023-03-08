@@ -45,16 +45,13 @@ class RstParser(BaseParser):
 
     def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str], current_text: str):
         """Append to tups chunk."""
-        if current_header is not None:
-            if current_text == "" or None:
-                 return tups
-            num_tokens = len(tiktoken.get_encoding("cl100k_base").encode(current_text))
-            if num_tokens > self._max_tokens:
-                chunks = [current_text[i:i + self._max_tokens] for i in range(0, len(current_text), self._max_tokens)]
-                for chunk in chunks:
-                    tups.append((current_header, chunk))
-            else:
-                tups.append((current_header, current_text))
+        num_tokens = len(tiktoken.get_encoding("cl100k_base").encode(current_text))
+        if num_tokens > self._max_tokens:
+            chunks = [current_text[i:i + self._max_tokens] for i in range(0, len(current_text), self._max_tokens)]
+            for chunk in chunks:
+                tups.append((current_header, chunk))
+        else:
+            tups.append((current_header, current_text))
         return tups
 
 
@@ -69,7 +66,6 @@ class RstParser(BaseParser):
 
         current_header = None
         current_text = ""
-        encoding = tiktoken.get_encoding("cl100k_base")
 
         for i, line in enumerate(lines):
             header_match = re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", line)
