@@ -61,6 +61,7 @@ class SimpleDirectoryReader(BaseReader):
         file_extractor: Optional[Dict[str, BaseParser]] = None,
         num_files_limit: Optional[int] = None,
         file_metadata: Optional[Callable[[str], Dict]] = None,
+        chunk_size_max: int = 2048,
     ) -> None:
         """Initialize with parameters."""
         super().__init__()
