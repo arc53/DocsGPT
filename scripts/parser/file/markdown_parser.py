@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from parser.file.base_parser import BaseParser
+import tiktoken
 
 
 class MarkdownParser(BaseParser):
@@ -23,6 +24,7 @@ class MarkdownParser(BaseParser):
         *args: Any,
         remove_hyperlinks: bool = True,
         remove_images: bool = True,
+        max_tokens: int = 2048,
         # remove_tables: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -30,8 +32,20 @@ class MarkdownParser(BaseParser):
         super().__init__(*args, **kwargs)
         self._remove_hyperlinks = remove_hyperlinks
         self._remove_images = remove_images
+        self._max_tokens = max_tokens
         # self._remove_tables = remove_tables
 
+
+    def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str], current_text: str):
+        """Append to tups chunk."""
+        num_tokens = len(tiktoken.get_encoding("cl100k_base").encode(current_text))
+        if num_tokens > self._max_tokens:
+            chunks = [current_text[i:i + self._max_tokens] for i in range(0, len(current_text), self._max_tokens)]
+            for chunk in chunks:
+                tups.append((current_header, chunk))
+        else:
+            tups.append((current_header, current_text))
+        return tups
     def markdown_to_tups(self, markdown_text: str) -> List[Tuple[Optional[str], str]]:
         """Convert a markdown file to a dictionary.
 
@@ -50,13 +64,13 @@ class MarkdownParser(BaseParser):
                 if current_header is not None:
                     if current_text == "" or None:
                         continue
-                    markdown_tups.append((current_header, current_text))
+                    markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
                 current_header = line
                 current_text = ""
             else:
                 current_text += line + "\n"
-        markdown_tups.append((current_header, current_text))
+        markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
         if current_header is not None:
             # pass linting, assert keys are defined

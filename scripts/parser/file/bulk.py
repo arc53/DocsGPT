@@ -21,6 +21,7 @@ DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".md": MarkdownParser(),
     ".rst": RstParser(),
     ".html": HTMLParser(),
+    ".mdx": MarkdownParser(),
 }
 
 
