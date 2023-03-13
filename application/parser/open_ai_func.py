@@ -25,44 +25,38 @@ def store_add_texts_with_retry(store, i):
     store.add_texts([i.page_content], metadatas=[i.metadata])
     #store_pine.add_texts([i.page_content], metadatas=[i.metadata])
 
-def call_openai_api(docs, folder_name):
+def call_openai_api(docs, folder_name, task_status):
 # Function to create a vector store from the documents and save it to disk.
 
     # create output folder if it doesn't exist
-    if not os.path.exists(f"outputs/{folder_name}"):
-        os.makedirs(f"outputs/{folder_name}")
+    if not os.path.exists(f"{folder_name}"):
+        os.makedirs(f"{folder_name}")
 
     from tqdm import tqdm
     docs_test = [docs[0]]
-    # remove the first element from docs
     docs.pop(0)
-    # cut first n docs if you want to restart
-    #docs = docs[:n]
     c1 = 0
-    # pinecone.init(
-    #     api_key="",  # find at app.pinecone.io
-    #     environment="us-east1-gcp"  # next to api key in console
-    # )
-    #index_name = "pandas"
-    store = FAISS.from_documents(docs_test, OpenAIEmbeddings())
-    #store_pine = Pinecone.from_documents(docs_test, OpenAIEmbeddings(), index_name=index_name)
+
+    store = FAISS.from_documents(docs_test, OpenAIEmbeddings(openai_api_key=os.getenv("EMBEDDINGS_KEY")))
 
     # Uncomment for MPNet embeddings
     # model_name = "sentence-transformers/all-mpnet-base-v2"
     # hf = HuggingFaceEmbeddings(model_name=model_name)
     # store = FAISS.from_documents(docs_test, hf)
+    s1 = len(docs)
     for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
         try:
+            task_status.update_state(state='PROGRESS', meta={'current': int((c1 / s1) * 100)})
             store_add_texts_with_retry(store, i)
         except Exception as e:
             print(e)
             print("Error on ", i)
             print("Saving progress")
             print(f"stopped at {c1} out of {len(docs)}")
-            store.save_local(f"outputs/{folder_name}")
+            store.save_local(f"{folder_name}")
             break
         c1 += 1
-    store.save_local(f"outputs/{folder_name}")
+    store.save_local(f"{folder_name}")
 
 def get_user_permission(docs, folder_name):
 # Function to ask user permission to call the OpenAI api and spend their OpenAI funds.

@@ -7,9 +7,30 @@ services:
       - API_HOST=http://backend:5001
     ports:
       - "5173:5173"
+    depends_on:
+        - backend
 
   backend:
     build: ./application
     ports:
       - "5001:5001"
+    depends_on:
+        - redis
+        - mongo
 
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/data/db
+
+
+
+volumes:
+  mongodb_data_container:
