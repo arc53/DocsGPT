@@ -71,4 +71,6 @@ function submitForm(event){
         });
 }
 
-window.addEventListener('submit',submitForm)
+//window.addEventListener('submit',submitForm)
+// rewrite using id = button-submit
+document.getElementById("button-submit").addEventListener('click',submitForm)

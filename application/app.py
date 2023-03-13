@@ -1,10 +1,11 @@
 import json
 import os
 import traceback
+import datetime
 
 import dotenv
 import requests
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, redirect, send_from_directory, jsonify
 from langchain import FAISS
 from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains.question_answering import load_qa_chain
@@ -19,6 +20,14 @@ from langchain.prompts.chat import (
 )
 
 from error import bad_request
+from werkzeug.utils import secure_filename
+from pymongo import MongoClient
+
+from celery import Celery, current_task
+from celery.result import AsyncResult
+
+from worker import my_background_task_worker, ingest_worker
+
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 
@@ -53,6 +62,7 @@ if platform.system() == "Windows":
 # loading the .env file
 dotenv.load_dotenv()
 
+# load the prompts
 with open("prompts/combine_prompt.txt", "r") as f:
     template = f.read()
 
@@ -78,7 +88,20 @@ else:
     embeddings_key_set = False
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER = "inputs"
+app.config['CELERY_BROKER_URL'] = os.getenv("CELERY_BROKER_URL")
+app.config['CELERY_RESULT_BACKEND'] = os.getenv("CELERY_RESULT_BACKEND")
+app.config['MONGO_URI'] = os.getenv("MONGO_URI")
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'], backend=app.config['CELERY_RESULT_BACKEND'])
+celery.conf.update(app.config)
+mongo = MongoClient(app.config['MONGO_URI'])
+db = mongo["docsgpt"]
+vectors_collection = db["vectors"]
 
+@celery.task(bind=True)
+def ingest(self, directory, formats, name_job, filename, user):
+    resp = ingest_worker(self, directory, formats, name_job, filename, user)
+    return resp
 
 @app.route("/")
 def home():
@@ -105,7 +128,10 @@ def api_answer():
     try:
         # check if the vectorstore is set
         if "active_docs" in data:
-            vectorstore = "vectors/" + data["active_docs"]
+            if data["active_docs"].split("/")[0] == "local":
+                vectorstore = "indexes/" + data["active_docs"]
+            else:
+                vectorstore = "vectors/" + data["active_docs"]
             if data['active_docs'] == "default":
                 vectorstore = ""
         else:
@@ -160,7 +186,8 @@ def api_answer():
             chain = VectorDBQA.from_chain_type(llm=llm, chain_type="map_reduce", vectorstore=docsearch,
                                                k=4,
                                                chain_type_kwargs={"question_prompt": p_chat_reduce,
-                                                                  "combine_prompt": p_chat_combine})
+                                                                  "combine_prompt": p_chat_combine}
+                                               )
             result = chain({"query": question})
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
@@ -195,6 +222,9 @@ def api_answer():
 def check_docs():
     # check if docs exist in a vectorstore folder
     data = request.get_json()
+    # split docs on / and take first part
+    if data["docs"].split("/")[0] == "local":
+        return {"status": 'exists'}
     vectorstore = "vectors/" + data["docs"]
     base_path = 'https://raw.githubusercontent.com/arc53/DocsHUB/main/'
     if os.path.exists(vectorstore) or data["docs"] == "default":
@@ -243,6 +273,127 @@ def api_feedback():
     )
     return {"status": 'ok'}
 
+@app.route('/api/combine', methods=['GET'])
+def combined_json():
+    user = 'local'
+    """Provide json file with combined available indexes."""
+    # get json from https://d3dg1063dc54p9.cloudfront.net/combined.json
+
+    data = []
+    # structure: name, language, version, description, fullName, date, docLink
+    # append data from vectors_collection
+    for index in vectors_collection.find({'user': user}):
+        data.append({
+            "name": index['name'],
+            "language": index['language'],
+            "version": '',
+            "description": index['name'],
+            "fullName": index['name'],
+            "date": index['date'],
+            "docLink": index['location'],
+            "model": embeddings_choice,
+            "location": "local"
+        })
+
+    data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
+    for index in data_remote:
+        index['location'] = "remote"
+        data.append(index)
+
+
+    return jsonify(data)
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    """Upload a file to get vectorized and indexed."""
+    if 'user' not in request.form:
+        return {"status": 'no user'}
+    user = request.form['user']
+    if 'name' not in request.form:
+        return {"status": 'no name'}
+    job_name = request.form['name']
+    # check if the post request has the file part
+    if 'file' not in request.files:
+        print('No file part')
+        return {"status": 'no file'}
+    file = request.files['file']
+    if file.filename == '':
+        return {"status": 'no file name'}
+
+
+    if file:
+        filename = secure_filename(file.filename)
+        # save dir
+        save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
+        # create dir if not exists
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        file.save(os.path.join(save_dir, filename))
+        task = ingest.delay('temp', [".rst", ".md", ".pdf"], job_name, filename, user)
+        # task id
+        task_id = task.id
+        return {"status": 'ok', "task_id": task_id}
+    else:
+        return {"status": 'error'}
+
+@app.route('/api/task_status', methods=['GET'])
+def task_status():
+    """Get celery job status."""
+    task_id = request.args.get('task_id')
+    task = AsyncResult(task_id)
+    task_meta = task.info
+    return {"status": task.status, "result": task_meta}
+
+### Backgound task api
+@app.route('/api/upload_index', methods=['POST'])
+def upload_index_files():
+    """Upload two files(index.faiss, index.pkl) to the user's folder."""
+    if 'user' not in request.form:
+        return {"status": 'no user'}
+    user = request.form['user']
+    if 'name' not in request.form:
+        return {"status": 'no name'}
+    job_name = request.form['name']
+    if 'file_faiss' not in request.files:
+        print('No file part')
+        return {"status": 'no file'}
+    file_faiss = request.files['file_faiss']
+    if file_faiss.filename == '':
+        return {"status": 'no file name'}
+    if 'file_pkl' not in request.files:
+        print('No file part')
+        return {"status": 'no file'}
+    file_pkl = request.files['file_pkl']
+    if file_pkl.filename == '':
+        return {"status": 'no file name'}
+
+    # saves index files
+    save_dir = os.path.join('indexes', user, job_name)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    file_faiss.save(os.path.join(save_dir, 'index.faiss'))
+    file_pkl.save(os.path.join(save_dir, 'index.pkl'))
+    # create entry in vectors_collection
+    vectors_collection.insert_one({
+        "user": user,
+        "name": job_name,
+        "language": job_name,
+        "location": save_dir,
+        "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "model": embeddings_choice,
+        "type": "local"
+    })
+    return {"status": 'ok'}
+
+
+
+@app.route('/api/download', methods=['get'])
+def download_file():
+    user = request.args.get('user')
+    job_name = request.args.get('name')
+    filename = request.args.get('file')
+    save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
+    return send_from_directory(save_dir, filename, as_attachment=True)
 
 # handling CORS
 @app.after_request
