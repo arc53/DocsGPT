@@ -26,7 +26,7 @@ from pymongo import MongoClient
 from celery import Celery, current_task
 from celery.result import AsyncResult
 
-from worker import my_background_task_worker, ingest_worker
+from worker import ingest_worker
 
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
@@ -394,6 +394,19 @@ def download_file():
     filename = request.args.get('file')
     save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
     return send_from_directory(save_dir, filename, as_attachment=True)
+
+@app.route('/api/delete_old', methods=['get'])
+def delete_old():
+    """Delete old indexes."""
+    import shutil
+    path = request.args.get('path')
+    first_dir = path.split('/')[0]
+    # check that path strats with indexes or vectors
+    if first_dir not in ['indexes', 'vectors']:
+        return {"status": 'error'}
+    shutil.rmtree(path)
+    vectors_collection.delete_one({'location': path})
+    return {"status": 'ok'}
 
 # handling CORS
 @app.after_request
