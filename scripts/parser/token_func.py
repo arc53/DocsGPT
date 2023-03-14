@@ -13,7 +13,7 @@ def separate_header_and_body(text):
     body = text[len(header):]
     return header, body
 
-def group_documents(documents: List[Document], min_tokens: int = 200, max_tokens: int = 2000) -> List[Document]:
+def group_documents(documents: List[Document], min_tokens: int, max_tokens: int) -> List[Document]:
     docs = []
     current_group = None
 
@@ -35,7 +35,7 @@ def group_documents(documents: List[Document], min_tokens: int = 200, max_tokens
 
     return docs
 
-def split_documents(documents: List[Document], max_tokens: int = 2000) -> List[Document]:
+def split_documents(documents: List[Document], max_tokens: int) -> List[Document]:
     docs = []
     for doc in documents:
         token_length = len(tiktoken.get_encoding("cl100k_base").encode(doc.text))
@@ -54,7 +54,8 @@ def split_documents(documents: List[Document], max_tokens: int = 2000) -> List[D
                 docs.append(new_doc)
     return docs
 
-def group_split(documents: List[Document], max_tokens: int = 1500, min_tokens: int = 500, token_check: bool = True):
+def group_split(documents: List[Document], max_tokens: int = 2000, min_tokens: int = 150, token_check: bool = True):
+    print(max_tokens, min_tokens, token_check)
     if token_check == False:
         return documents
     print("Grouping small documents")
