@@ -4,12 +4,56 @@ services:
   frontend:
     build: ./frontend
     environment:
-      - API_HOST=http://backend:5001
+      - VITE_API_HOST=http://localhost:5001
     ports:
       - "5173:5173"
+    depends_on:
+        - backend
 
   backend:
     build: ./application
+    environment:
+      - API_KEY=<your_api_key>
+      - EMBEDDINGS_KEY=<your_api_key>
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - MONGO_URI=mongodb://mongo:27017/docsgpt
     ports:
       - "5001:5001"
+    volumes:
+      - app_data_container:/app
+    depends_on:
+        - redis
+        - mongo
 
+  worker:
+    build: ./application
+    command: celery -A app.celery worker -l INFO
+    environment:
+      - API_KEY=<your_api_key>
+      - EMBEDDINGS_KEY=<your_api_key>
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - API_URL=http://backend:5001
+    depends_on:
+        - redis
+        - mongo
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/data/db
+
+
+
+volumes:
+  mongodb_data_container:
+  app_data_container:

@@ -86,6 +86,19 @@ This will return a new DataFrame with all the columns from both tables, and only
               <option selected value="default">Choose documentation</option>
               <option value="default">Default</option>
             </select>
+            <form action="/api/upload" method="post" enctype="multipart/form-data" class="mt-2">
+                <input type="file" name="file" class="py-4" id="file-upload">
+                <input type="text" name="user" value="local" hidden>
+                <input type="text" name="name" placeholder="Name:">
+
+
+              <button type="submit" class="py-2 px-4 text-white bg-blue-500 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Upload
+              </button>
+            </form>
+
+
+
         </div>
     </div>
 
@@ -130,7 +143,7 @@ This will return a new DataFrame with all the columns from both tables, and only
           function docsIndex() {
                 // loads latest index from https://raw.githubusercontent.com/arc53/DocsHUB/main/combined.json
                 // and stores it in localStorage
-                fetch('https://d3dg1063dc54p9.cloudfront.net/combined.json')
+                fetch('/api/combine')
                     .then(response => response.json())
                     .then(data => {
                         localStorage.setItem("docsIndex", JSON.stringify(data));
@@ -150,19 +163,26 @@ This will return a new DataFrame with all the columns from both tables, and only
                 // create option for each key in docsIndex
                 for (var key in docsIndex) {
                     var option = document.createElement("option");
-                    if (docsIndex[key].name == docsIndex[key].language) {
-                        option.text = docsIndex[key].name + " " + docsIndex[key].version;
-                        option.value = docsIndex[key].name + "/" + ".project" + "/" + docsIndex[key].version + "/{{ embeddings_choice }}/";
-                        if (docsIndex[key].model == "{{ embeddings_choice }}") {
-                            select.add(option);
+                    if (docsIndex[key].location == 'docshub'){
+                        if (docsIndex[key].name == docsIndex[key].language) {
+                            option.text = docsIndex[key].name + " " + docsIndex[key].version;
+                            option.value = docsIndex[key].name + "/" + ".project" + "/" + docsIndex[key].version + "/{{ embeddings_choice }}/";
+                            if (docsIndex[key].model == "{{ embeddings_choice }}") {
+                                select.add(option);
+                            }
+                        }
+                        else {
+                            option.text = docsIndex[key].name + " " + docsIndex[key].version;
+                            option.value = docsIndex[key].language + "/" + docsIndex[key].name + "/" + docsIndex[key].version + "/{{ embeddings_choice }}/";
+                            if (docsIndex[key].model == "{{ embeddings_choice }}") {
+                                select.add(option);
+                            }
                         }
                     }
                     else {
-                        option.text = docsIndex[key].name + " " + docsIndex[key].version;
-                        option.value = docsIndex[key].language + "/" + docsIndex[key].name + "/" + docsIndex[key].version + "/{{ embeddings_choice }}/";
-                        if (docsIndex[key].model == "{{ embeddings_choice }}") {
-                            select.add(option);
-                        }
+                        option.text = docsIndex[key].name;
+                        option.value = docsIndex[key].location + "/" + docsIndex[key].name;
+                        select.add(option);
                     }
                 }
 

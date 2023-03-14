@@ -76,12 +76,11 @@ class SimpleDirectoryReader(BaseReader):
         self.exclude_hidden = exclude_hidden
         self.required_exts = required_exts
         self.num_files_limit = num_files_limit
-        print("input_files")
-        print(input_files)
 
         if input_files:
             self.input_files = []
             for path in input_files:
+                print(path)
                 input_file = Path(path)
                 self.input_files.append(input_file)
         elif input_dir:
