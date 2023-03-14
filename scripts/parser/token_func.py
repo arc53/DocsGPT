@@ -55,7 +55,6 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
     return docs
 
 def group_split(documents: List[Document], max_tokens: int = 2000, min_tokens: int = 150, token_check: bool = True):
-    print(max_tokens, min_tokens, token_check)
     if token_check == False:
         return documents
     print("Grouping small documents")
