@@ -307,10 +307,10 @@ def upload_file():
     """Upload a file to get vectorized and indexed."""
     if 'user' not in request.form:
         return {"status": 'no user'}
-    user = request.form['user']
+    user = secure_filename(request.form['user'])
     if 'name' not in request.form:
         return {"status": 'no name'}
-    job_name = request.form['name']
+    job_name = secure_filename(request.form['name'])
     # check if the post request has the file part
     if 'file' not in request.files:
         print('No file part')
@@ -350,10 +350,10 @@ def upload_index_files():
     """Upload two files(index.faiss, index.pkl) to the user's folder."""
     if 'user' not in request.form:
         return {"status": 'no user'}
-    user = request.form['user']
+    user = secure_filename(request.form['user'])
     if 'name' not in request.form:
         return {"status": 'no name'}
-    job_name = request.form['name']
+    job_name = secure_filename(request.form['name'])
     if 'file_faiss' not in request.files:
         print('No file part')
         return {"status": 'no file'}
@@ -389,9 +389,9 @@ def upload_index_files():
 
 @app.route('/api/download', methods=['get'])
 def download_file():
-    user = request.args.get('user')
-    job_name = request.args.get('name')
-    filename = request.args.get('file')
+    user = secure_filename(request.args.get('user'))
+    job_name = secure_filename(request.args.get('name'))
+    filename = secure_filename(request.args.get('file'))
     save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
     return send_from_directory(save_dir, filename, as_attachment=True)
 

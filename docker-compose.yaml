@@ -14,6 +14,14 @@ services:
     build: ./application
     ports:
       - "5001:5001"
+    volumes:
+      - app_data_container:/app
+    depends_on:
+        - redis
+        - mongo
+  worker:
+    build: ./application
+    command: celery -A app.celery worker -l info
     depends_on:
         - redis
         - mongo
@@ -34,3 +42,4 @@ services:
 
 volumes:
   mongodb_data_container:
+  app_data_container:
