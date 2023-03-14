@@ -3,13 +3,9 @@ import sys
 import nltk
 import dotenv
 import typer
-import ast
 
 from collections import defaultdict
-from pathlib import Path
 from typing import List, Optional
-
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
@@ -18,6 +14,7 @@ from parser.py2doc import transform_to_docs
 from parser.py2doc import extract_functions_and_classes as extract_py
 from parser.js2doc import extract_functions_and_classes as extract_js
 from parser.java2doc import extract_functions_and_classes as extract_java
+from parser.token_func import group_split
 
 
 dotenv.load_dotenv()
@@ -38,14 +35,17 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
            file: Optional[List[str]] = typer.Option(None,
                                                    help="""File paths to use (Optional; overrides dir).
                                                         E.g. --file inputs/1.md --file inputs/2.md"""),
-           recursive: Optional[bool] = typer.Option(True,
-                                                   help="Whether to recursively search in subdirectories."),
-           limit: Optional[int] = typer.Option(None,
-                                                   help="Maximum number of files to read."),
+           recursive: Optional[bool] = typer.Option(True, help="Whether to recursively search in subdirectories."),
+           limit: Optional[int] = typer.Option(None, help="Maximum number of files to read."),
            formats: Optional[List[str]] = typer.Option([".rst", ".md"],
                                                    help="""List of required extensions (list with .)
                                                         Currently supported: .rst, .md, .pdf, .docx, .csv, .epub, .html, .mdx"""),
-           exclude: Optional[bool] = typer.Option(True, help="Whether to exclude hidden files (dotfiles).")):
+           exclude: Optional[bool] = typer.Option(True, help="Whether to exclude hidden files (dotfiles)."),
+           sample: Optional[bool] = typer.Option(False, help="Whether to output sample of the first 5 split documents."),
+           token_check: Optional[bool] = typer.Option(True, help="Whether to group small documents and split large."),
+           min_tokens: Optional[int] = typer.Option(150, help="Minimum number of tokens to not group."),
+           max_tokens: Optional[int] = typer.Option(2000, help="Maximum number of tokens to not split."),
+           ):
 
     """
         Creates index from specified location or files.
@@ -56,11 +56,21 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
         raw_docs = SimpleDirectoryReader(input_dir=directory, input_files=file, recursive=recursive,
                                          required_exts=formats, num_files_limit=limit,
                                          exclude_hidden=exclude).load_data()
-        raw_docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+
         # Here we split the documents, as needed, into smaller chunks.
         # We do this due to the context limits of the LLMs.
-        text_splitter = RecursiveCharacterTextSplitter()
-        docs = text_splitter.split_documents(raw_docs)
+        raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
+        #Old method
+        # text_splitter = RecursiveCharacterTextSplitter()
+        # docs = text_splitter.split_documents(raw_docs)
+
+        #Sample feature
+        if sample == True:
+            for i in range(min(5, len(raw_docs))):
+                print(raw_docs[i].text)
+
+        docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+
 
         # Here we check for command line arguments for bot calls.
         # If no argument exists or the yes is not True, then the
@@ -109,3 +119,5 @@ def convert(dir: Optional[str] = typer.Option("inputs",
     transform_to_docs(functions_dict, classes_dict, formats, dir)
 if __name__ == "__main__":
   app()
+
+
