@@ -401,15 +401,13 @@ def delete_old():
     import shutil
     path = request.args.get('path')
     dirs = path.split('/')
-    first_dir = path.split('/')[0]
+    dirs_clean = []
     for i in range(1, len(dirs)):
-        dirs[i] = secure_filename(dirs[i])
-
-
+        dirs_clean.append(secure_filename(dirs[i]))
     # check that path strats with indexes or vectors
     if dirs[0] not in ['indexes', 'vectors']:
         return {"status": 'error'}
-    path = '/'.join(dirs)
+    path_clean = '/'.join(dirs)
     shutil.rmtree(path)
     vectors_collection.delete_one({'location': path})
     return {"status": 'ok'}
