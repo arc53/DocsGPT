@@ -400,10 +400,16 @@ def delete_old():
     """Delete old indexes."""
     import shutil
     path = request.args.get('path')
+    dirs = path.split('/')
     first_dir = path.split('/')[0]
+    for i in range(1, len(dirs)):
+        dirs[i] = secure_filename(dirs[i])
+
+
     # check that path strats with indexes or vectors
-    if first_dir not in ['indexes', 'vectors']:
+    if dirs[0] not in ['indexes', 'vectors']:
         return {"status": 'error'}
+    path = '/'.join(dirs)
     shutil.rmtree(path)
     vectors_collection.delete_one({'location': path})
     return {"status": 'ok'}
@@ -414,6 +420,7 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
 
 

@@ -8,11 +8,16 @@ from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api
 from celery import current_task
 
-nltk.download('punkt', quiet=True)
-nltk.download('averaged_perceptron_tagger', quiet=True)
+
 import string
 import zipfile
 import shutil
+
+try:
+    nltk.download('punkt', quiet=True)
+    nltk.download('averaged_perceptron_tagger', quiet=True)
+except FileExistsError:
+    pass
 def generate_random_string(length):
     return ''.join([string.ascii_letters[i % 52] for i in range(length)])
 
@@ -29,7 +34,11 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     # filename = 'install.rst'
     # user = 'local'
     full_path = directory + '/' + user + '/' + name_job
-    url = 'http://localhost:5001/api/download'
+    # check if API_URL env variable is set
+    if not os.environ.get('API_URL'):
+        url = 'http://localhost:5001/api/download'
+    else:
+        url = os.environ.get('API_URL') + '/api/download'
     file_data = {'name': name_job, 'file': filename, 'user': user}
     response = requests.get(url, params=file_data)
     file = response.content
@@ -62,14 +71,20 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    url = 'http://localhost:5001/api/upload_index'
+    if not os.environ.get('API_URL'):
+        url = 'http://localhost:5001/api/upload_index'
+    else:
+        url = os.environ.get('API_URL') + '/api/upload_index'
     file_data = {'name': name_job, 'user': user}
     files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
              'file_pkl': open(full_path + '/index.pkl', 'rb')}
     response = requests.post(url, files=files, data=file_data)
 
     #deletes remote
-    url = 'http://localhost:5001/api/delete_old?path=' + 'inputs/' + user + '/' + name_job
+    if not os.environ.get('API_URL'):
+        url = 'http://localhost:5001/api/delete_old?path=' + 'inputs/' + user + '/' + name_job
+    else:
+        url = os.environ.get('API_URL') + '/api/delete_old?path=' + 'inputs/' + user + '/' + name_job
     response = requests.get(url)
     # delete local
     shutil.rmtree(full_path)
