@@ -29,7 +29,6 @@ class RstParser(BaseParser):
         remove_whitespaces_excess: bool = True,
         #Be carefull with remove_characters_excess, might cause data loss
         remove_characters_excess: bool = True,
-        max_tokens: int = 2048,
         **kwargs: Any,
     ) -> None:
         """Init params."""
@@ -41,18 +40,6 @@ class RstParser(BaseParser):
         self._remove_directives = remove_directives
         self._remove_whitespaces_excess = remove_whitespaces_excess
         self._remove_characters_excess = remove_characters_excess
-        self._max_tokens = max_tokens
-
-    def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str], current_text: str):
-        """Append to tups chunk."""
-        num_tokens = len(tiktoken.get_encoding("cl100k_base").encode(current_text))
-        if num_tokens > self._max_tokens:
-            chunks = [current_text[i:i + self._max_tokens] for i in range(0, len(current_text), self._max_tokens)]
-            for chunk in chunks:
-                tups.append((current_header, chunk))
-        else:
-            tups.append((current_header, current_text))
-        return tups
 
 
     def rst_to_tups(self, rst_text: str) -> List[Tuple[Optional[str], str]]:
@@ -76,14 +63,14 @@ class RstParser(BaseParser):
                     # removes the next heading from current Document
                     if current_text.endswith(lines[i - 1] + "\n"):
                         current_text = current_text[:len(current_text) - len(lines[i - 1] + "\n")]
-                    rst_tups = self.tups_chunk_append(rst_tups, current_header, current_text)
+                    rst_tups.append((current_header, current_text))
 
                 current_header = lines[i - 1]
                 current_text = ""
             else:
                 current_text += line + "\n"
 
-        rst_tups = self.tups_chunk_append(rst_tups, current_header, current_text)
+        rst_tups.append((current_header, current_text))
 
         #TODO: Format for rst
         #

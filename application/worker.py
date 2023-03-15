@@ -1,11 +1,11 @@
 import requests
 import nltk
 import os
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api
+from parser.token_func import group_split
 from celery import current_task
 
 
@@ -33,6 +33,10 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     # name_job = 'job1'
     # filename = 'install.rst'
     # user = 'local'
+    sample = False
+    token_check = True
+    min_tokens = 150
+    max_tokens = 2000
     full_path = directory + '/' + user + '/' + name_job
     # check if API_URL env variable is set
     if not os.environ.get('API_URL'):
@@ -61,13 +65,16 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     raw_docs = SimpleDirectoryReader(input_dir=full_path, input_files=input_files, recursive=recursive,
                                      required_exts=formats, num_files_limit=limit,
                                      exclude_hidden=exclude).load_data()
-    raw_docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
-    # Here we split the documents, as needed, into smaller chunks.
-    # We do this due to the context limits of the LLMs.
-    text_splitter = RecursiveCharacterTextSplitter()
-    docs = text_splitter.split_documents(raw_docs)
+    raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
+
+    docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+
     call_openai_api(docs, full_path, self)
     self.update_state(state='PROGRESS', meta={'current': 100})
+
+    if sample == True:
+        for i in range(min(5, len(raw_docs))):
+            print(raw_docs[i].text)
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
