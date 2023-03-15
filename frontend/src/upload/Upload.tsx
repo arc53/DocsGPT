@@ -7,7 +7,7 @@ export default function Upload() {
   return (
     <article className="absolute z-30  h-screen w-screen  bg-gray-alpha">
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
-        <p className="text-xl text-jet">Upload New Documentation</p>
+        <p className="mb-7 text-xl text-jet">Upload New Documentation</p>
         <input
           type="text"
           className="h-10 w-[60%] rounded-md border-2 border-gray-5000 px-3 outline-none"
