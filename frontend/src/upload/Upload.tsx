@@ -1,9 +1,22 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useDropzone } from 'react-dropzone';
 
 export default function Upload() {
-  //   return null;
-
   const [docName, setDocName] = useState('');
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    console.log(acceptedFiles);
+  }, []);
+
+  const doNothing = () => {
+    return undefined;
+  };
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    multiple: true,
+    onDragEnter: doNothing,
+    onDragOver: doNothing,
+    onDragLeave: doNothing,
+  });
   return (
     <article className="absolute z-30  h-screen w-screen  bg-gray-alpha">
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
@@ -17,9 +30,9 @@ export default function Upload() {
         <div className="relative bottom-12 left-2 mt-[-18.39px]">
           <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
         </div>
-        <div>
-          <label className="rounded-md border border-blue-2000 px-4 py-2 font-medium text-blue-2000">
-            <input type="file" className="hidden" />
+        <div {...getRootProps()}>
+          <label className="rounded-md border border-blue-2000 px-4 py-2 font-medium text-blue-2000 hover:cursor-pointer">
+            <input type="button" {...getInputProps()} />
             Choose Files
           </label>
         </div>
