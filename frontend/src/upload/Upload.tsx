@@ -14,7 +14,7 @@ export default function Upload() {
           value={docName}
           onChange={(e) => setDocName(e.target.value)}
         ></input>
-        <div className="relative bottom-16 left-2">
+        <div className="relative bottom-12 left-2 mt-[-18.39px]">
           <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
         </div>
         <div>
@@ -22,6 +22,10 @@ export default function Upload() {
             <input type="file" className="hidden" />
             Choose Files
           </label>
+        </div>
+        <div className="mt-9">
+          <p className="font-medium text-eerie-black">Uploaded Files</p>
+          <p className="mt-5 text-gray-6000">None</p>
         </div>
         <div className="flex flex-row-reverse">
           <button className="ml-6 rounded-md bg-blue-3000 py-2 px-6 text-white">
