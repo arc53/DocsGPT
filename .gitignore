@@ -166,3 +166,7 @@ application/vectors/
 **/indexes
 
 **/temp
+
+**/yarn.lock
+
+node_modules/
