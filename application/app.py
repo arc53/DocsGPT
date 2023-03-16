@@ -162,6 +162,7 @@ def api_answer():
         q_prompt = PromptTemplate(input_variables=["context", "question"], template=template_quest,
                                   template_format="jinja2")
         if llm_choice == "openai_chat":
+            #llm = ChatOpenAI(openai_api_key=api_key, model_name="gpt-4")
             llm = ChatOpenAI(openai_api_key=api_key)
             messages_combine = [
                 SystemMessagePromptTemplate.from_template(chat_combine_template),
