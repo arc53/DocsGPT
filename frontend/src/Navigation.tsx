@@ -7,6 +7,7 @@ import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
 import Link from './assets/link.svg';
+import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
 import SelectDocsModal from './preferences/SelectDocsModal';
@@ -19,6 +20,7 @@ import {
   setSelectedDocs,
 } from './preferences/preferenceSlice';
 import { useOutsideAlerter } from './hooks';
+import Upload from './upload/Upload';
 
 export default function Navigation({
   navState,
@@ -41,6 +43,9 @@ export default function Navigation({
   const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
   const [selectedDocsModalState, setSelectedDocsModalState] =
     useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
+
+  const [uploadModalState, setUploadModalState] =
+    useState<ActiveState>('INACTIVE');
 
   const navRef = useRef(null);
   useOutsideAlerter(
@@ -109,7 +114,7 @@ export default function Navigation({
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-col-reverse border-b-2">
-          <div className="relative my-4 px-6">
+          <div className="relative my-4 flex gap-2 px-2">
             <div
               className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
@@ -127,8 +132,13 @@ export default function Navigation({
                 } mr-3 w-3 transition-all`}
               />
             </div>
+            <img
+              className="mt-2 h-9 w-9 hover:cursor-pointer"
+              src={UploadIcon}
+              onClick={() => setUploadModalState('ACTIVE')}
+            ></img>
             {isDocsListOpen && (
-              <div className="absolute top-12 left-0 right-0 mx-6 max-h-52 overflow-y-scroll bg-white shadow-lg">
+              <div className="absolute top-12 left-0 right-6 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
                   docs.map((doc, index) => {
                     if (doc.model) {
@@ -222,6 +232,10 @@ export default function Navigation({
         setModalState={setApiKeyModalState}
         isCancellable={isApiKeySet}
       />
+      <Upload
+        modalState={uploadModalState}
+        setModalState={setUploadModalState}
+      ></Upload>
     </>
   );
 }
