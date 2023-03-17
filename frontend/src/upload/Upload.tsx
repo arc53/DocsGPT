@@ -19,6 +19,38 @@ export default function Upload({
 
   const doNothing = () => undefined;
 
+  const uploadFile = async () => {
+    const formData = new FormData();
+
+    // Add the uploaded files to formData
+    files.forEach((file) => {
+      formData.append('file', file);
+    });
+
+    // Add the document name to formData
+    formData.append('name', docName);
+    formData.append('user', 'local');
+    const apiHost = import.meta.env.VITE_API_HOST;
+
+    try {
+      const response = await fetch(apiHost + '/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        console.log('Files uploaded successfully');
+        setDocName('');
+        setfiles([]);
+        setModalState('INACTIVE');
+      } else {
+        console.error('File upload failed');
+      }
+    } catch (error) {
+      console.error('Error during file upload:', error);
+    }
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
@@ -59,7 +91,10 @@ export default function Upload({
           {files.length === 0 && <p className="text-gray-6000">None</p>}
         </div>
         <div className="flex flex-row-reverse">
-          <button className="ml-6 rounded-md bg-blue-3000 py-2 px-6 text-white">
+          <button
+            onClick={uploadFile}
+            className="ml-6 rounded-md bg-blue-3000 py-2 px-6 text-white"
+          >
             Train
           </button>
           <button
