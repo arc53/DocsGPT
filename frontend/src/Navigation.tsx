@@ -133,7 +133,7 @@ export default function Navigation({
               />
             </div>
             <img
-              className="hover:cursor-pointer"
+              className="mt-2 h-9 w-9 hover:cursor-pointer"
               src={UploadIcon}
               onClick={() => setUploadModalState('ACTIVE')}
             ></img>
