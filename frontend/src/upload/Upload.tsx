@@ -3,13 +3,15 @@ import { useDropzone } from 'react-dropzone';
 
 export default function Upload() {
   const [docName, setDocName] = useState('');
+  const [files, setfiles] = useState<File[]>([]);
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    console.log(acceptedFiles);
+    setfiles(acceptedFiles);
+    setDocName(acceptedFiles[0]?.name);
   }, []);
 
-  const doNothing = () => {
-    return undefined;
-  };
+  const doNothing = () => undefined;
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
@@ -37,8 +39,13 @@ export default function Upload() {
           </label>
         </div>
         <div className="mt-9">
-          <p className="font-medium text-eerie-black">Uploaded Files</p>
-          <p className="mt-5 text-gray-6000">None</p>
+          <p className="mb-5 font-medium text-eerie-black">Uploaded Files</p>
+          {files.map((file) => (
+            <p key={file.name} className="text-gray-6000">
+              {file.name}
+            </p>
+          ))}
+          {files.length === 0 && <p className="text-gray-6000">None</p>}
         </div>
         <div className="flex flex-row-reverse">
           <button className="ml-6 rounded-md bg-blue-3000 py-2 px-6 text-white">
