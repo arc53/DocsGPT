@@ -1,7 +1,14 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { ActiveState } from '../models/misc';
 
-export default function Upload() {
+export default function Upload({
+  modalState,
+  setModalState,
+}: {
+  modalState: ActiveState;
+  setModalState: (state: ActiveState) => void;
+}) {
   const [docName, setDocName] = useState('');
   const [files, setfiles] = useState<File[]>([]);
 
@@ -20,7 +27,11 @@ export default function Upload() {
     onDragLeave: doNothing,
   });
   return (
-    <article className="absolute z-30  h-screen w-screen  bg-gray-alpha">
+    <article
+      className={`${
+        modalState === 'ACTIVE' ? 'visible' : 'hidden'
+      } absolute z-30  h-screen w-screen  bg-gray-alpha`}
+    >
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
         <p className="mb-7 text-xl text-jet">Upload New Documentation</p>
         <input
@@ -51,7 +62,16 @@ export default function Upload() {
           <button className="ml-6 rounded-md bg-blue-3000 py-2 px-6 text-white">
             Train
           </button>
-          <button className="font-medium">Cancel</button>
+          <button
+            onClick={() => {
+              setDocName('');
+              setfiles([]);
+              setModalState('INACTIVE');
+            }}
+            className="font-medium"
+          >
+            Cancel
+          </button>
         </div>
       </article>
     </article>

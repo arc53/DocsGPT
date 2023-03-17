@@ -20,6 +20,7 @@ import {
   setSelectedDocs,
 } from './preferences/preferenceSlice';
 import { useOutsideAlerter } from './hooks';
+import Upload from './upload/Upload';
 
 export default function Navigation({
   navState,
@@ -42,6 +43,9 @@ export default function Navigation({
   const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
   const [selectedDocsModalState, setSelectedDocsModalState] =
     useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
+
+  const [uploadModalState, setUploadModalState] =
+    useState<ActiveState>('INACTIVE');
 
   const navRef = useRef(null);
   useOutsideAlerter(
@@ -128,7 +132,11 @@ export default function Navigation({
                 } mr-3 w-3 transition-all`}
               />
             </div>
-            <img className="hover:cursor-pointer" src={UploadIcon}></img>
+            <img
+              className="hover:cursor-pointer"
+              src={UploadIcon}
+              onClick={() => setUploadModalState('ACTIVE')}
+            ></img>
             {isDocsListOpen && (
               <div className="absolute top-12 left-0 right-6 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
@@ -224,7 +232,10 @@ export default function Navigation({
         setModalState={setApiKeyModalState}
         isCancellable={isApiKeySet}
       />
-      {/* <Upload></Upload> */}
+      <Upload
+        modalState={uploadModalState}
+        setModalState={setUploadModalState}
+      ></Upload>
     </>
   );
 }
