@@ -1,3 +1,4 @@
+import React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useDispatch } from 'react-redux';
@@ -128,7 +129,8 @@ export default function Upload({
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
   } else if (progress?.type === 'TRAINIING') {
-    view = <TrainingProgress></TrainingProgress>;
+    const MemoTrainingProgress = React.memo(TrainingProgress);
+    view = <MemoTrainingProgress></MemoTrainingProgress>;
   } else {
     view = (
       <>
