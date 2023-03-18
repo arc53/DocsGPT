@@ -47,6 +47,8 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 ## QuickStart
 Please note: current vector database uses pandas Python documentation, thus responses will be related to it, if you want to use other docs please follow a guide below
 
+Make sure you have python 3.10 or 3.11 installed
+
 1. Navigate to `/application` folder
 2. Install dependencies
 `pip install -r requirements.txt`
