@@ -32,12 +32,12 @@ export default function Upload({
       <div className="mt-5 flex flex-col items-center gap-2">
         <p className="text-xl tracking-[0.15px]">{title}...</p>
         <p className="text-sm text-gray-2000">This may take several minutes</p>
-        <p className="mt-10 text-2xl">{progress?.percentage}%</p>
+        <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p>
         <div className="mb-10 w-[50%]">
           <div className="h-1 w-[100%] bg-blue-4000"></div>
           <div
             className={`relative bottom-1 h-1 bg-blue-5000 transition-all`}
-            style={{ width: `${progress?.percentage}%` }}
+            style={{ width: `${progress?.percentage || 0}%` }}
           ></div>
         </div>
         <button
@@ -48,7 +48,7 @@ export default function Upload({
             setModalState('INACTIVE');
           }}
           className={`rounded-md bg-blue-3000 px-4 py-2 text-sm font-medium text-white ${
-            isCancellable ? 'hidden' : ''
+            isCancellable ? '' : 'hidden'
           }`}
         >
           Finish
@@ -64,27 +64,26 @@ export default function Upload({
   function TrainingProgress() {
     const dispatch = useDispatch();
     useEffect(() => {
-      const id = setInterval(() => {
-        const apiHost = import.meta.env.VITE_API_HOST;
-        fetch(`${apiHost}/api/task_status}?task_id=${progress?.taskId}`)
-          .then((data) => data.json())
-          .then((data) => {
-            if (data.status == 'SUCCESS') {
-              clearInterval(id);
-              getDocs().then((data) => dispatch(setSourceDocs(data)));
-            }
-            setProgress(
-              (progress) =>
-                progress && { ...progress, percentage: data.result.current },
-            );
-          });
-      });
-      return () => clearInterval(id);
+      (progress?.percentage ?? 0) < 100 &&
+        setTimeout(() => {
+          const apiHost = import.meta.env.VITE_API_HOST;
+          fetch(`${apiHost}/api/task_status}?task_id=${progress?.taskId}`)
+            .then((data) => data.json())
+            .then((data) => {
+              if (data.status == 'SUCCESS') {
+                getDocs().then((data) => dispatch(setSourceDocs(data)));
+              }
+              setProgress(
+                (progress) =>
+                  progress && { ...progress, percentage: data.result.current },
+              );
+            });
+        }, 5000);
     }, []);
     return (
       <Progress
         title="Training is in progress"
-        isCancellable={progress?.percentage === 1000}
+        isCancellable={progress?.percentage === 100}
       ></Progress>
     );
   }
@@ -129,8 +128,7 @@ export default function Upload({
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
   } else if (progress?.type === 'TRAINIING') {
-    const MemoTrainingProgress = React.memo(TrainingProgress);
-    view = <MemoTrainingProgress></MemoTrainingProgress>;
+    view = <TrainingProgress></TrainingProgress>;
   } else {
     view = (
       <>
