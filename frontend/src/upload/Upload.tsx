@@ -67,19 +67,26 @@ export default function Upload({
       (progress?.percentage ?? 0) < 100 &&
         setTimeout(() => {
           const apiHost = import.meta.env.VITE_API_HOST;
-          fetch(`${apiHost}/api/task_status}?task_id=${progress?.taskId}`)
+          fetch(`${apiHost}/api/task_status?task_id=${progress?.taskId}`)
             .then((data) => data.json())
             .then((data) => {
               if (data.status == 'SUCCESS') {
                 getDocs().then((data) => dispatch(setSourceDocs(data)));
+                setProgress(
+                  (progress) => progress && { ...progress, percentage: 100 },
+                );
+              } else {
+                setProgress(
+                  (progress) =>
+                    progress && {
+                      ...progress,
+                      percentage: data.result.current,
+                    },
+                );
               }
-              setProgress(
-                (progress) =>
-                  progress && { ...progress, percentage: data.result.current },
-              );
             });
         }, 5000);
-    }, []);
+    }, [progress, dispatch]);
     return (
       <Progress
         title="Training is in progress"
