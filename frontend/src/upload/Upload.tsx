@@ -143,10 +143,10 @@ export default function Upload({
           <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
         </div>
         <div {...getRootProps()}>
-          <label className="rounded-md border border-blue-2000 px-4 py-2 font-medium text-blue-2000 hover:cursor-pointer">
+          <span className="rounded-md border border-blue-2000 px-4 py-2 font-medium text-blue-2000 hover:cursor-pointer">
             <input type="button" {...getInputProps()} />
             Choose Files
-          </label>
+          </span>
         </div>
         <div className="mt-9">
           <p className="mb-5 font-medium text-eerie-black">Uploaded Files</p>
