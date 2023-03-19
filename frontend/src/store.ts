@@ -15,6 +15,7 @@ const store = configureStore({
       selectedDocs: doc !== null ? JSON.parse(doc) : null,
       sourceDocs: [
         {
+          location: '',
           language: '',
           name: 'default',
           version: '',

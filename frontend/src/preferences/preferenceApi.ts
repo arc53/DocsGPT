@@ -1,5 +1,6 @@
 // not all properties in Doc are going to be present. Make some optional
 export type Doc = {
+  location: string;
   name: string;
   language: string;
   version: string;
@@ -13,9 +14,10 @@ export type Doc = {
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(): Promise<Doc[] | null> {
   try {
-    const response = await fetch(
-      'https://d3dg1063dc54p9.cloudfront.net/combined.json',
-    );
+    const apiHost =
+      import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+
+    const response = await fetch(apiHost + '/api/combine');
     const data = await response.json();
 
     const docs: Doc[] = [];
@@ -52,17 +54,13 @@ export function setLocalRecentDocs(doc: Doc): void {
     namePath = '.project';
   }
 
-  const docPath =
-    doc.name === 'default'
-      ? 'default'
-      : doc.language +
-        '/' +
-        namePath +
-        '/' +
-        doc.version +
-        '/' +
-        doc.model +
-        '/';
+  let docPath = 'default';
+  if (doc.location === 'local') {
+    docPath = 'local' + '/' + doc.name + '/';
+  } else if (doc.location === 'remote') {
+    docPath =
+      doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model + '/';
+  }
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
   fetch(apiHost + '/api/docs_check', {
     method: 'POST',
