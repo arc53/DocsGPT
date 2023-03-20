@@ -63,7 +63,8 @@ export default function Navigation({
         const imageElement = document.querySelector(
           `#img-${index}`,
         ) as HTMLElement;
-        imageElement.parentNode?.removeChild(imageElement);
+        const parentElement = imageElement.parentNode as HTMLElement;
+        parentElement.parentNode?.removeChild(parentElement);
       })
       .catch((error) => console.error(error));
   };
@@ -173,13 +174,18 @@ export default function Navigation({
                           <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
                             {doc.name} {doc.version}
                           </p>
-                          <img
-                            src={Exit}
-                            alt="Exit"
-                            className="mr-4 h-3 w-3 cursor-pointer"
-                            id={`img-${index}`}
-                            onClick={() => handleDeleteClick(index, doc)}
-                          />
+                          {doc.location === 'local' ? (
+                            <img
+                              src={Exit}
+                              alt="Exit"
+                              className="mr-4 h-3 w-3 cursor-pointer hover:opacity-50"
+                              id={`img-${index}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteClick(index, doc);
+                              }}
+                            />
+                          ) : null}
                         </div>
                       );
                     }
@@ -189,6 +195,7 @@ export default function Navigation({
                     <p className="ml-5 py-3">No default documentation.</p>
                   </div>
                 )}
+                )
               </div>
             )}
           </div>
