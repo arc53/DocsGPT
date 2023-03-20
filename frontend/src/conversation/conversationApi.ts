@@ -13,17 +13,20 @@ export function fetchAnswerApi(
     namePath = '.project';
   }
 
-  const docPath =
-    selectedDocs.name === 'default'
-      ? 'default'
-      : selectedDocs.language +
-        '/' +
-        namePath +
-        '/' +
-        selectedDocs.version +
-        '/' +
-        selectedDocs.model +
-        '/';
+  let docPath = 'default';
+  if (selectedDocs.location === 'local') {
+    docPath = 'local' + '/' + selectedDocs.name + '/';
+  } else if (selectedDocs.location === 'remote') {
+    docPath =
+      selectedDocs.language +
+      '/' +
+      namePath +
+      '/' +
+      selectedDocs.version +
+      '/' +
+      selectedDocs.model +
+      '/';
+  }
 
   return fetch(apiHost + '/api/answer', {
     method: 'POST',

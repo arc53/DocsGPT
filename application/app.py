@@ -136,6 +136,7 @@ def api_answer():
                 vectorstore = ""
         else:
             vectorstore = ""
+        print(vectorstore)
         # vectorstore = "outputs/inputs/"
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
@@ -409,8 +410,11 @@ def delete_old():
     if dirs[0] not in ['indexes', 'vectors']:
         return {"status": 'error'}
     path_clean = '/'.join(dirs)
-    shutil.rmtree(path)
     vectors_collection.delete_one({'location': path})
+    try:
+        shutil.rmtree(path_clean)
+    except FileNotFoundError:
+        pass
     return {"status": 'ok'}
 
 # handling CORS
