@@ -410,8 +410,11 @@ def delete_old():
     if dirs[0] not in ['indexes', 'vectors']:
         return {"status": 'error'}
     path_clean = '/'.join(dirs)
-    shutil.rmtree(path)
     vectors_collection.delete_one({'location': path})
+    try:
+        shutil.rmtree(path_clean)
+    except FileNotFoundError:
+        pass
     return {"status": 'ok'}
 
 # handling CORS
