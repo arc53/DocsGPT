@@ -38,7 +38,7 @@ Jinja2==3.1.2
 jmespath==1.0.1
 joblib==1.2.0
 kombu==5.2.4
-langchain==0.0.103
+langchain==0.0.118
 lxml==4.9.2
 MarkupSafe==2.1.2
 marshmallow==3.19.0
@@ -64,12 +64,13 @@ pycryptodomex==3.17
 pydantic==1.10.5
 PyJWT==2.6.0
 pymongo==4.3.3
+PyPDF2==3.0.1
 python-dateutil==2.8.2
 python-dotenv==1.0.0
 python-jose==3.3.0
 pytz==2022.7.1
 PyYAML==6.0
-redis==4.5.1
+redis==4.5.2
 regex==2022.10.31
 requests==2.28.2
 retry==0.9.2

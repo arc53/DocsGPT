@@ -36,7 +36,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     sample = False
     token_check = True
     min_tokens = 150
-    max_tokens = 2000
+    max_tokens = 1250
     full_path = directory + '/' + user + '/' + name_job
     # check if API_URL env variable is set
     if not os.environ.get('API_URL'):
