@@ -195,7 +195,6 @@ export default function Navigation({
                     <p className="ml-5 py-3">No default documentation.</p>
                   </div>
                 )}
-                )
               </div>
             )}
           </div>
