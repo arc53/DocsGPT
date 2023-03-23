@@ -44,8 +44,21 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 
 - Scripts - script that creates similarity search index and store for other libraries. 
 
+- frontend - frontend in vite and
+
 ## QuickStart
-Please note: current vector database uses pandas Python documentation, thus responses will be related to it, if you want to use other docs please follow a guide below
+
+Note: Make sure you have docker installed
+
+1. Open dowload this repository with `git clone https://github.com/arc53/DocsGPT.git`
+2. Open docker-compose.yaml and replace <your_api_key> with your OpenAI's key (there are 4 places)
+3. Run `docker-compose build && docker-compose up`
+
+To stop just run Ctrl + C
+
+## Development environments
+
+Spin up only 2 containers from docker-compose.yaml (by deleting all services except for redis and mongo)
 
 Make sure you have python 3.10 or 3.11 installed
 
@@ -56,6 +69,7 @@ Make sure you have python 3.10 or 3.11 installed
 Copy .env_sample and create .env with your openai api token
 4. Run the app
 `python app.py`
+5. Start worker with `celery -A app.celery worker -l INFO`
 
 To start frontend
 1. Navigate to `/frontend` folder
@@ -65,10 +79,6 @@ To start frontend
 3. Run the app
 4. `npm run dev`
 
-Alternatively, you can use docker-compose to run the app via docker
-1. From the root folder run `docker-compose build && docker-compose up`
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/2ZSNAt?referralCode=97q7Ll)
 
 [How to install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
 
