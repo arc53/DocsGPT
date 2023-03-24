@@ -21,6 +21,11 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
   
 </div>
 
+![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
+
+
+## Features
+
 ![Group 9](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
 
 
@@ -29,8 +34,7 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please don't hesitate contributing or creating issues, it helps us make DocsGPT better!
 
-## Preview
-![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov2.gif)
+
 
 ## [Live preview](https://docsgpt.arc53.com/)
 
