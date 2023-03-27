@@ -100,7 +100,7 @@ export default function Upload({
                       },
                   );
                 }
-              } else {
+              } else if (data.status == 'STARTED') {
                 setProgress(
                   (progress) =>
                     progress && {
