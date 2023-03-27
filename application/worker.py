@@ -96,4 +96,4 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     # delete local
     shutil.rmtree(full_path)
 
-    return {'directory': directory, 'formats': formats, 'name_job': name_job, 'filename': filename, 'user': user}
+    return {'directory': directory, 'formats': formats, 'name_job': name_job, 'filename': filename, 'user': user, 'limited': False}

@@ -196,7 +196,7 @@ def api_answer():
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                                      combine_prompt=c_prompt, question_prompt=q_prompt)
-            chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=4)
+            chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
             result = chain({"query": question})
 
         print(result)
@@ -285,7 +285,17 @@ def combined_json():
     """Provide json file with combined available indexes."""
     # get json from https://d3dg1063dc54p9.cloudfront.net/combined.json
 
-    data = []
+    data = [{
+            "name": 'default',
+            "language": 'default',
+            "version": '',
+            "description": 'default',
+            "fullName": 'default',
+            "date": 'default',
+            "docLink": 'default',
+            "model": embeddings_choice,
+            "location": "local"
+        }]
     # structure: name, language, version, description, fullName, date, docLink
     # append data from vectors_collection
     for index in vectors_collection.find({'user': user}):
@@ -335,7 +345,7 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay('temp', [".rst", ".md", ".pdf"], job_name, filename, user)
+        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
