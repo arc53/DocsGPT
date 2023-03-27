@@ -38,9 +38,8 @@ export default function Navigation({
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
-  const [apiKeyModalState, setApiKeyModalState] = useState<ActiveState>(
-    isApiKeySet ? 'INACTIVE' : 'ACTIVE',
-  );
+  const [apiKeyModalState, setApiKeyModalState] =
+    useState<ActiveState>('INACTIVE');
 
   const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
   const [selectedDocsModalState, setSelectedDocsModalState] =
