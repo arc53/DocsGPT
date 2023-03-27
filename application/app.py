@@ -285,7 +285,17 @@ def combined_json():
     """Provide json file with combined available indexes."""
     # get json from https://d3dg1063dc54p9.cloudfront.net/combined.json
 
-    data = []
+    data = [{
+            "name": 'default',
+            "language": 'default',
+            "version": '',
+            "description": 'default',
+            "fullName": 'default',
+            "date": 'default',
+            "docLink": 'default',
+            "model": embeddings_choice,
+            "location": "local"
+        }]
     # structure: name, language, version, description, fullName, date, docLink
     # append data from vectors_collection
     for index in vectors_collection.find({'user': user}):
