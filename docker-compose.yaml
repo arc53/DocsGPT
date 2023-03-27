@@ -21,7 +21,9 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - app_data_container:/app
+      - ./application/indexes:/app/indexes
+      - ./application/inputs:/app/inputs
+      - ./application/vectors:/app/vectors
     depends_on:
         - redis
         - mongo
@@ -56,4 +58,3 @@ services:
 
 volumes:
   mongodb_data_container:
-  app_data_container:
