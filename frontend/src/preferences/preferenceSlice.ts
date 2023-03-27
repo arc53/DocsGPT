@@ -13,8 +13,18 @@ interface Preference {
 }
 
 const initialState: Preference = {
-  apiKey: '',
-  selectedDocs: null,
+  apiKey: 'xxx',
+  selectedDocs: {
+    name: 'default',
+    language: 'default',
+    location: 'default',
+    version: 'default',
+    description: 'default',
+    fullName: 'default',
+    dat: 'default',
+    docLink: 'default',
+    model: 'openai_text-embedding-ada-002',
+  } as Doc,
   sourceDocs: null,
 };
 

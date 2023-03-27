@@ -151,10 +151,18 @@ export default function Upload({
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: true,
+    multiple: false,
     onDragEnter: doNothing,
     onDragOver: doNothing,
     onDragLeave: doNothing,
+    maxSize: 25000000,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'text/x-rst': ['.rst'],
+      'text/x-markdown': ['.md'],
+      'application/zip': ['.zip'],
+    },
   });
 
   let view;
@@ -165,7 +173,10 @@ export default function Upload({
   } else {
     view = (
       <>
-        <p className="mb-7 text-xl text-jet">Upload New Documentation</p>
+        <p className="text-xl text-jet">Upload New Documentation</p>
+        <p className="mb-3 text-xs text-gray-4000">
+          Please upload .pdf, .txt, .rst, .md, .zip limited to 25mb
+        </p>
         <input
           type="text"
           className="h-10 w-[60%] rounded-md border-2 border-gray-5000 px-3 outline-none"

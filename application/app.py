@@ -335,7 +335,7 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay('temp', [".rst", ".md", ".pdf"], job_name, filename, user)
+        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
