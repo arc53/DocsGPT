@@ -71,9 +71,9 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex justify-center p-6">
+    <div className="flex justify-center p-4">
       {queries.length > 0 && (
-        <div className="mt-20 flex w-10/12 flex-col transition-all md:w-3/4">
+        <div className="mt-20 flex flex-col transition-all md:w-3/4">
           {queries.map((query, index) => {
             return (
               <Fragment key={index}>
