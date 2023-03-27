@@ -19,20 +19,27 @@ export default function Upload({
     type: 'UPLOAD' | 'TRAINIING';
     percentage: number;
     taskId?: string;
+    failed?: boolean;
   }>();
 
   function Progress({
     title,
     isCancellable = false,
+    isFailed = false,
   }: {
     title: string;
     isCancellable?: boolean;
+    isFailed?: boolean;
   }) {
     return (
       <div className="mt-5 flex flex-col items-center gap-2">
         <p className="text-xl tracking-[0.15px]">{title}...</p>
         <p className="text-sm text-gray-2000">This may take several minutes</p>
+        <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
+          Over the token limit, please consider uploading smaller document
+        </p>
         <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p>
+
         <div className="mb-10 w-[50%]">
           <div className="h-1 w-[100%] bg-blue-4000"></div>
           <div
@@ -40,6 +47,7 @@ export default function Upload({
             style={{ width: `${progress?.percentage || 0}%` }}
           ></div>
         </div>
+
         <button
           onClick={() => {
             setDocName('');
@@ -71,10 +79,27 @@ export default function Upload({
             .then((data) => data.json())
             .then((data) => {
               if (data.status == 'SUCCESS') {
-                getDocs().then((data) => dispatch(setSourceDocs(data)));
-                setProgress(
-                  (progress) => progress && { ...progress, percentage: 100 },
-                );
+                if (data.result.limited === true) {
+                  getDocs().then((data) => dispatch(setSourceDocs(data)));
+                  setProgress(
+                    (progress) =>
+                      progress && {
+                        ...progress,
+                        percentage: 100,
+                        failed: true,
+                      },
+                  );
+                } else {
+                  getDocs().then((data) => dispatch(setSourceDocs(data)));
+                  setProgress(
+                    (progress) =>
+                      progress && {
+                        ...progress,
+                        percentage: 100,
+                        failed: false,
+                      },
+                  );
+                }
               } else {
                 setProgress(
                   (progress) =>
@@ -91,6 +116,7 @@ export default function Upload({
       <Progress
         title="Training is in progress"
         isCancellable={progress?.percentage === 100}
+        isFailed={progress?.failed === true}
       ></Progress>
     );
   }
