@@ -39,7 +39,7 @@ export const prefSlice = createSlice({
       state.selectedDocs = action.payload;
     },
     setSourceDocs: (state, action) => {
-      state.sourceDocs?.push(...action.payload);
+      state.sourceDocs = action.payload;
     },
   },
 });
