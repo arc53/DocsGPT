@@ -191,8 +191,8 @@ def api_answer():
             chain = ChatVectorDBChain.from_llm(
                 llm=llm,
                 vectorstore=docsearch,
-                prompt=p_chat_combine,
-                qa_prompt=p_chat_reduce,
+                #prompt=p_chat_combine,
+                qa_prompt=p_chat_combine,
                 top_k_docs_for_context=3,
                 return_source_documents=False)
             result = chain({"question": question, "chat_history": []})
