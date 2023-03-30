@@ -10,7 +10,8 @@ from celery.result import AsyncResult
 from flask import Flask, request, render_template, send_from_directory, jsonify
 from langchain import FAISS
 from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
-from langchain.chains import ChatVectorDBChain
+from langchain.chains import LLMChain, ConversationalRetrievalChain
+from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
 from langchain.chains.question_answering import load_qa_chain
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceHubEmbeddings, CohereEmbeddings, \
@@ -188,14 +189,15 @@ def api_answer():
             llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
 
         if llm_choice == "openai_chat":
-            chain = ChatVectorDBChain.from_llm(
-                llm=llm,
-                vectorstore=docsearch,
-                #prompt=p_chat_combine,
-                qa_prompt=p_chat_combine,
-                top_k_docs_for_context=3,
-                return_source_documents=False)
-            result = chain({"question": question, "chat_history": []})
+            question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
+            doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
+            chain = ConversationalRetrievalChain(
+                retriever=docsearch.as_retriever(k=2),
+                question_generator=question_generator,
+                combine_docs_chain=doc_chain,
+            )
+            chat_history = []
+            result = chain({"question": question, "chat_history": chat_history})
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                                      combine_prompt=c_prompt, question_prompt=q_prompt)
@@ -289,16 +291,16 @@ def combined_json():
     # get json from https://d3dg1063dc54p9.cloudfront.net/combined.json
 
     data = [{
-            "name": 'default',
-            "language": 'default',
-            "version": '',
-            "description": 'default',
-            "fullName": 'default',
-            "date": 'default',
-            "docLink": 'default',
-            "model": embeddings_choice,
-            "location": "local"
-        }]
+        "name": 'default',
+        "language": 'default',
+        "version": '',
+        "description": 'default',
+        "fullName": 'default',
+        "date": 'default',
+        "docLink": 'default',
+        "model": embeddings_choice,
+        "location": "local"
+    }]
     # structure: name, language, version, description, fullName, date, docLink
     # append data from vectors_collection
     for index in vectors_collection.find({'user': user}):
