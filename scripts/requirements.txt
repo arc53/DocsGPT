@@ -88,7 +88,7 @@ python-magic==0.4.27
 python-pptx==0.6.21
 pytz==2022.7.1
 PyYAML==6.0
-redis==4.5.3
+redis==4.5.4
 regex==2022.10.31
 requests==2.28.2
 retry==0.9.2
