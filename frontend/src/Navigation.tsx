@@ -147,7 +147,7 @@ export default function Navigation({
                 src={Arrow2}
                 alt="arrow"
                 className={`${
-                  isDocsListOpen ? 'rotate-0' : '-rotate-90'
+                  isDocsListOpen ? 'rotate-0' : 'rotate-180'
                 } mr-3 w-3 transition-all`}
               />
             </div>

@@ -25,7 +25,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-4 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-blue-1000 py-5 px-5 text-white">
+        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-blue-1000 p-3.5 text-white">
           <p className="whitespace-pre-wrap break-words">{message}</p>
         </div>
       </div>
@@ -40,7 +40,7 @@ const ConversationBubble = forwardRef<
       >
         <Avatar className="mt-4 text-2xl" avatar="🦖"></Avatar>
         <div
-          className={`ml-2 mr-5 flex items-center rounded-3xl bg-gray-1000 py-5 px-5 ${
+          className={`ml-2 mr-5 flex items-center rounded-3xl bg-gray-1000 p-3.5 ${
             type === 'ERROR'
               ? ' rounded-lg border border-red-2000 bg-red-1000 p-2 text-red-3000'
               : ''
