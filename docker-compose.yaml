@@ -13,8 +13,8 @@ services:
   backend:
     build: ./application
     environment:
-      - API_KEY=<your_api_key>
-      - EMBEDDINGS_KEY=<your_api_key>
+      - API_KEY=$OPENAI_API_KEY
+      - EMBEDDINGS_KEY=$OPENAI_API_KEY
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
@@ -32,8 +32,8 @@ services:
     build: ./application
     command: celery -A app.celery worker -l INFO
     environment:
-      - API_KEY=<your_api_key>
-      - EMBEDDINGS_KEY=<your_api_key>
+      - API_KEY=$OPENAI_API_KEY
+      - EMBEDDINGS_KEY=$OPENAI_API_KEY
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
