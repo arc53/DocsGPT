@@ -55,7 +55,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 Note: Make sure you have docker installed
 
 1. Open dowload this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. Open docker-compose.yaml and replace <your_api_key> with your OpenAI's key (there are 4 places)
+2. Open .env and replace your OPENAI_API_KEY
 3. Run `docker-compose build && docker-compose up`
 4. Navigate to http://localhost:5173/
 
