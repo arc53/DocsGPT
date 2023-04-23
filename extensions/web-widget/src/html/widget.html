@@ -1,0 +1,58 @@
+<div id="docsgpt-widget" class="dark fixed bottom-5 left-5 pl-5 md:pl-0 z-50">
+<style>
+  @keyframes dotBounce {
+    0%, 80%, 100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-5px);
+    }
+  }
+
+  .dot-animation {
+    display: inline-block;
+    animation: dotBounce 1s infinite ease-in-out;
+  }
+
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .delay-400 {
+    animation-delay: 400ms;
+  }
+</style>
+
+
+<div class="divide-y dark:divide-gray-700 rounded-md border dark:border-gray-700 bg-gradient-to-br from-gray-100/80 via-white to-white dark:from-gray-900/80 dark:via-gray-900 dark:to-gray-900 font-sans shadow backdrop-blur-sm" style="width: 18rem; transform: translateY(0%) translateZ(0px);"><div>
+    <div class="flex items-center gap-2 p-3">
+        <div id="docsgpt-init-message" class="flex-1">
+            <h3 class="text-sm font-bold text-gray-700 dark:text-gray-200">Looking for help with documentation?</h3>
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">DocsGPT AI assistant will help you with docs</p>
+        </div>
+        <div id="docsgpt-answer" class="hidden">
+            <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">Come cool  answer</p>
+        </div>
+
+    </div>
+</div>
+    <div class="w-full">
+        <button id="ask-docsgpt" class="flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 hover:bg-gray-100 rounded-b dark:hover:bg-gray-800/70">
+            Ask DocsGPT
+        </button>
+
+        <form id="docsgpt-chat-form" class="relative w-full m-0 hidden" style="opacity: 1;" data-projection-id="1">
+            <input id="docsgpt-chat-input" type="text" class="w-full bg-transparent px-5 py-3 pr-8 text-sm text-gray-700 dark:text-white focus:outline-none" placeholder="What do you want to do?" value="">
+            <button class="absolute inset-y-0 right-2 -mx-2 px-2" type="submit" style="opacity: 0;" data-projection-id="2">
+
+            </button>
+        </form>
+        <p id="docsgpt-chat-processing" class="hidden flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 rounded-b animate-fadeIn animate-2s">
+          Processing<span class="dot-animation">.</span><span class="dot-animation delay-200">.</span><span class="dot-animation delay-400">.</span>
+        </p>
+
+
+
+    </div>
+</div>
+</div>
