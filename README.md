@@ -71,22 +71,23 @@ Make sure you have python 3.10 or 3.11 installed
 
 2. Install redis server `sudo apt install redis-server`
 3. Start redis server `sudo service redis-server start`
-4. Export required variables              
+4. Start mongo DB `sudo docker run -d -p 27017:27017 --name test-mongo mongo:latest`
+5. Export required variables              
 `export CELERY_BROKER_URL=redis://localhost:6379/0`   
 `export CELERY_RESULT_BACKEND=redis://localhost:6379/1`
-5. Install dependencies
+`export MONGO_URI=mongodb://localhost=localhost:27017/docsgpt`
+6. Install dependencies
 `pip install -r requirements.txt`
-6. Prepare .env file
+7. Prepare .env file
 Copy .env_sample and create .env with your openai api token
-7. Run the app
+8. Run the app
 `python app.py`
-8. Start worker with `celery -A app.celery worker -l INFO`
+9. Start worker with `celery -A app.celery worker -l INFO`
 
 To start frontend
 1. Navigate to `/frontend` folder
 2. Install dependencies
 `npm install`
-3. In the file  `.env.development` instead of `VITE_API_HOST = https://docsapi.arc53.com` use `VITE_API_HOST=http://localhost:5001`
 3. Run the app
 4. `npm run dev`
 
