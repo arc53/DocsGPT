@@ -68,13 +68,19 @@ Spin up only 2 containers from docker-compose.yaml (by deleting all services exc
 Make sure you have python 3.10 or 3.11 installed
 
 1. Navigate to `/application` folder
-2. Install dependencies
+
+2. Install redis server `sudo apt install redis-server`
+3. Start redis server `sudo service redis-server start`
+4. Export required variables              
+`export CELERY_BROKER_URL=redis://localhost:6379/0`   
+`export CELERY_RESULT_BACKEND=redis://localhost:6379/1`
+5. Install dependencies
 `pip install -r requirements.txt`
-3. Prepare .env file
+6. Prepare .env file
 Copy .env_sample and create .env with your openai api token
-4. Run the app
+7. Run the app
 `python app.py`
-5. Start worker with `celery -A app.celery worker -l INFO`
+8. Start worker with `celery -A app.celery worker -l INFO`
 
 To start frontend
 1. Navigate to `/frontend` folder
