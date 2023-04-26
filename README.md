@@ -75,13 +75,13 @@ Make sure you have python 3.10 or 3.11 installed
 5. Export required variables              
 `export CELERY_BROKER_URL=redis://localhost:6379/0`   
 `export CELERY_RESULT_BACKEND=redis://localhost:6379/1`
-`export MONGO_URI=mongodb://localhost=localhost:27017/docsgpt`
+`export MONGO_URI=mongodb://localhost:27017/docsgpt`
 6. Install dependencies
 `pip install -r requirements.txt`
 7. Prepare .env file
 Copy .env_sample and create .env with your openai api token
 8. Run the app
-`python app.py`
+`python wsgi.py`
 9. Start worker with `celery -A app.celery worker -l INFO`
 
 To start frontend
