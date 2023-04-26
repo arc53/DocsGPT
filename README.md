@@ -68,21 +68,18 @@ Spin up only 2 containers from docker-compose.yaml (by deleting all services exc
 Make sure you have python 3.10 or 3.11 installed
 
 1. Navigate to `/application` folder
-
-2. Install redis server `sudo apt install redis-server`
-3. Start redis server `sudo service redis-server start`
-4. Start mongo DB `sudo docker run -d -p 27017:27017 --name test-mongo mongo:latest`
-5. Export required variables              
+2. Run `docker-compose -f docker-compose-dev.yaml build && docker-compose -f docker-compose-dev.yaml up -d`
+3. Export required variables              
 `export CELERY_BROKER_URL=redis://localhost:6379/0`   
 `export CELERY_RESULT_BACKEND=redis://localhost:6379/1`
 `export MONGO_URI=mongodb://localhost:27017/docsgpt`
-6. Install dependencies
+4. Install dependencies
 `pip install -r requirements.txt`
-7. Prepare .env file
+5. Prepare .env file
 Copy .env_sample and create .env with your openai api token
-8. Run the app
+6. Run the app
 `python wsgi.py`
-9. Start worker with `celery -A app.celery worker -l INFO`
+7. Start worker with `celery -A app.celery worker -l INFO`
 
 To start frontend
 1. Navigate to `/frontend` folder
