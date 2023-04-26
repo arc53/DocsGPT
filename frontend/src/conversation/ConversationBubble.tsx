@@ -6,7 +6,7 @@ import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vs } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,
@@ -65,7 +65,7 @@ const ConversationBubble = forwardRef<
                     PreTag="div"
                     language={match[1]}
                     {...props}
-                    style={vs}
+                    style={vscDarkPlus}
                   >
                     {String(children).replace(/\n$/, '')}
                   </SyntaxHighlighter>
