@@ -1,0 +1,39 @@
+#!/bin/bash
+cd "$(dirname "$0")" || exit
+
+# Build frontend and backend images
+docker build -t frontend_image ./frontend
+docker build -t backend_image ./application
+
+# Run redis and mongo services
+docker run -d --name redis -p 6379:6379 redis:6-alpine
+docker run -d --name mongo -p 27017:27017 -v mongodb_data_container:/data/db mongo:6
+
+# Run backend and worker services
+docker run -d --name backend -p 5001:5001 \
+  -v $(pwd)/application/indexes:/app/indexes \
+  -v $(pwd)/application/inputs:/app/inputs \
+  -v $(pwd)/application/vectors:/app/vectors \
+  -e API_KEY=$OPENAI_API_KEY \
+  -e EMBEDDINGS_KEY=$OPENAI_API_KEY \
+  -e CELERY_BROKER_URL=redis://localhost:6379/0 \
+  -e CELERY_RESULT_BACKEND=redis://localhost:6379/1 \
+  -e MONGO_URI=mongodb://localhost:27017/docsgpt \
+  backend_image
+
+docker run -d --name worker \
+  -e API_KEY=$OPENAI_API_KEY \
+  -e EMBEDDINGS_KEY=$OPENAI_API_KEY \
+  -e CELERY_BROKER_URL=redis://localhost:6379/0 \
+  -e CELERY_RESULT_BACKEND=redis://localhost:6379/1 \
+  -e MONGO_URI=mongodb://localhost:27017/docsgpt \
+  -e API_URL=http://localhost:5001 \
+  backend_image celery -A app.celery worker -l INFO
+
+# Run frontend service
+docker run -d --name frontend -p 5173:5173 \
+  -e VITE_API_HOST=http://localhost:5001 \
+  frontend_image
+
+# List running containers
+docker ps
