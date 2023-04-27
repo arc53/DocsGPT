@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/data/db
+
+
+
+volumes:
+  mongodb_data_container:

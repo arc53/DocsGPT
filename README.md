@@ -68,19 +68,23 @@ Spin up only 2 containers from docker-compose.yaml (by deleting all services exc
 Make sure you have python 3.10 or 3.11 installed
 
 1. Navigate to `/application` folder
-2. Install dependencies
+2. Run `docker-compose -f docker-compose-dev.yaml build && docker-compose -f docker-compose-dev.yaml up -d`
+3. Export required variables              
+`export CELERY_BROKER_URL=redis://localhost:6379/0`   
+`export CELERY_RESULT_BACKEND=redis://localhost:6379/1`
+`export MONGO_URI=mongodb://localhost:27017/docsgpt`
+4. Install dependencies
 `pip install -r requirements.txt`
-3. Prepare .env file
+5. Prepare .env file
 Copy .env_sample and create .env with your openai api token
-4. Run the app
-`python app.py`
-5. Start worker with `celery -A app.celery worker -l INFO`
+6. Run the app
+`python wsgi.py`
+7. Start worker with `celery -A app.celery worker -l INFO`
 
 To start frontend
 1. Navigate to `/frontend` folder
 2. Install dependencies
 `npm install`
-3. In the file  `.env.development` instead of `VITE_API_HOST = https://docsapi.arc53.com` use `VITE_API_HOST=http://localhost:5001`
 3. Run the app
 4. `npm run dev`
 
