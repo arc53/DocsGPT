@@ -1,16 +1,36 @@
 #!/bin/bash
 
 check_cpu_avx_support() {
-  if grep -q -E "avx" /proc/cpuinfo; then
-    echo "AVX support found."
-  else
-    echo "Error: Your CPU does not support the AVX instruction set, which is required by Mongo 5+."
-    exit 1
-  fi
+  case "$(uname -s)" in
+    Linux)
+      if grep -q -e avx /proc/cpuinfo; then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    Darwin) # macOS
+      if sysctl -a | grep -q -e machdep.cpu.features.*AVX; then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    *)
+      echo "Unsupported OS"
+      return 1
+      ;;
+  esac
 }
 
 # Check if the CPU supports AVX
-check_cpu_avx_support
+if check_cpu_avx_support; then
+  echo "AVX support found."
+else
+  echo “Error: Your CPU does not support the AVX instruction set, which is required by Mongo 5+."
+  exit 1
+fi
+
 
 
 cd "$(dirname "$0")" || exit
