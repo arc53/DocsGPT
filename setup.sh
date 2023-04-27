@@ -1,4 +1,16 @@
 #!/bin/bash
+
+check_cpu_avx_support() {
+  if grep -q -E "avx" /proc/cpuinfo; then
+    echo "AVX support found."
+  else
+    echo "Error: Your CPU does not support the AVX instruction set, which is required by Mongo 5+."
+    exit 1
+  fi
+}
+
+# Check if the CPU supports AVX
+check_cpu_avx_support
 cd "$(dirname "$0")" || exit
 
 # Create the required directories on the host machine if they don't exist
