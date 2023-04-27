@@ -1,6 +1,11 @@
 #!/bin/bash
 cd "$(dirname "$0")" || exit
 
+# Create the required directories on the host machine if they don't exist
+[ ! -d "./application/indexes" ] && mkdir -p ./application/indexes
+[ ! -d "./application/inputs" ] && mkdir -p ./application/inputs
+[ ! -d "./application/vectors" ] && mkdir -p ./application/vectors
+
 # Build frontend and backend images
 docker build -t frontend_image ./frontend
 docker build -t backend_image ./application
