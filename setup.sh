@@ -11,6 +11,8 @@ check_cpu_avx_support() {
 
 # Check if the CPU supports AVX
 check_cpu_avx_support
+
+
 cd "$(dirname "$0")" || exit
 
 # Create the required directories on the host machine if they don't exist
@@ -52,6 +54,6 @@ docker run -d --name worker \
 
 # Run frontend service
 docker run -d --name frontend -p 5173:5173 \
+  --link backend:backend \
   -e VITE_API_HOST=http://localhost:5001 \
   frontend_image
-
