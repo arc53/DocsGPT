@@ -27,7 +27,7 @@ check_cpu_avx_support() {
 if check_cpu_avx_support; then
   echo "AVX support found."
 else
-  echo “Error: Your CPU does not support the AVX instruction set, which is required by Mongo 5+."
+  echo "Error: Your CPU does not support the AVX instruction set, which is required by Mongo 5+."
   exit 1
 fi
 
