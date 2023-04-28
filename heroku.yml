@@ -8,8 +8,8 @@ build:
     dockerfile: Dockerfile
     context: ./application
     args:
-      API_KEY: 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 
-      EMBEDDINGS_KEY: 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 
+      API_KEY: $OPENAI_API_KEY
+      EMBEDDINGS_KEY: $OPENAI_API_KEY
 services:
   web:
     image: frontend
@@ -24,8 +24,8 @@ services:
     image: backend
     command: uvicorn main:app --host localhost --port 5001
     env:
-      API_KEY: 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 # replace with your actual API key
-      EMBEDDINGS_KEY: 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 # replace with your actual embeddings key
+      API_KEY: $OPENAI_API_KEY # replace with your actual API key
+      EMBEDDINGS_KEY: $OPENAI_API_KEY # replace with your actual embeddings key
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       MONGO_URI: mongodb://mongo:27017/docsgpt
@@ -42,8 +42,8 @@ services:
     image: backend
     command: celery -A app.celery worker -l INFO
     env:
-      API_KEY: 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 # replace with your actual API key
-      EMBEDDINGS_KEY: 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 # replace with your actual embeddings key
+      API_KEY: $OPENAI_API_KEY # replace with your actual API key
+      EMBEDDINGS_KEY: $OPENAI_API_KEY # replace with your actual embeddings key
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       MONGO_URI: mongodb://mongo:27017/docsgpt
