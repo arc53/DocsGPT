@@ -44,6 +44,10 @@ services:
 
   redis:
     image: redis:6-alpine
+    ulimits:
+      nofile:
+        soft: 10032
+        hard: 10032
     ports:
       - 6379:6379
 
@@ -58,3 +62,4 @@ services:
 
 volumes:
   mongodb_data_container:
+  
