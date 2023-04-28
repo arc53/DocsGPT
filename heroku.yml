@@ -1,0 +1,61 @@
+build:
+  frontend:
+    dockerfile: Dockerfile
+    context: ./frontend
+    args:
+      VITE_API_HOST: http://localhost:5001 
+  backend:
+    dockerfile: Dockerfile
+    context: ./application
+    args:
+      API_KEY: $OPENAI_API_KEY
+      EMBEDDINGS_KEY: $OPENAI_API_KEY
+services:
+  web:
+    image: frontend
+    command: npm run serve
+    env:
+      API_HOST: http://localhost:5001
+    ports:
+      - 5173:5173
+    depends_on:
+      - backend
+  backend:
+    image: backend
+    command: uvicorn main:app --host localhost --port 5001
+    env:
+      API_KEY: $OPENAI_API_KEY # replace with your actual API key
+      EMBEDDINGS_KEY: $OPENAI_API_KEY # replace with your actual embeddings key
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MONGO_URI: mongodb://mongo:27017/docsgpt
+    ports:
+      - 5001:5001
+    volumes:
+      - indexes:/app/indexes
+      - inputs:/app/inputs
+      - vectors:/app/vectors
+    depends_on:
+      - redis
+      - mongo
+  worker:
+    image: backend
+    command: celery -A app.celery worker -l INFO
+    env:
+      API_KEY: $OPENAI_API_KEY # replace with your actual API key
+      EMBEDDINGS_KEY: $OPENAI_API_KEY # replace with your actual embeddings key
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MONGO_URI: mongodb://mongo:27017/docsgpt
+      API_URL: http://localhost:5001 # replace with your actual API host
+    depends_on:
+      - redis
+      - mongo
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
