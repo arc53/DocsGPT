@@ -194,6 +194,8 @@ def api_answer():
             llm = HuggingFaceHub(repo_id="bigscience/bloom", huggingfacehub_api_token=api_key)
         elif settings.LLM_NAME == "cohere":
             llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+        else:
+            raise ValueError("unknown LLM model")
 
         if settings.LLM_NAME == "openai_chat":
             question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
