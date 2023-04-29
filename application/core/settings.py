@@ -4,6 +4,7 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     LLM_NAME: str = "openai_chat"
+    EMBEDDINGS_NAME: str = "openai_text-embedding-ada-002"
     openai_token: str
 
 

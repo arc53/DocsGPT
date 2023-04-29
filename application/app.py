@@ -33,11 +33,6 @@ import celeryconfig
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 
-if os.getenv("EMBEDDINGS_NAME") is not None:
-    embeddings_choice = os.getenv("EMBEDDINGS_NAME")
-else:
-    embeddings_choice = "openai_text-embedding-ada-002"
-
 if settings.LLM_NAME == "manifest":
     from manifest import Manifest
     from langchain.llms.manifest import ManifestWrapper
@@ -119,7 +114,7 @@ def ingest(self, directory, formats, name_job, filename, user):
 @app.route("/")
 def home():
     return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
-                           embeddings_choice=embeddings_choice)
+                           embeddings_choice=settings.EMBEDDINGS_NAME)
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -156,13 +151,13 @@ def api_answer():
         # vectorstore = "outputs/inputs/"
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        if embeddings_choice == "openai_text-embedding-ada-002":
+        if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
             docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
-        elif embeddings_choice == "huggingface_sentence-transformers/all-mpnet-base-v2":
+        elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
             docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-        elif embeddings_choice == "huggingface_hkunlp/instructor-large":
+        elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
             docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-        elif embeddings_choice == "cohere_medium":
+        elif settings.EMBEDDINGS_NAME == "cohere_medium":
             docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
 
         # create a prompt template
@@ -312,7 +307,7 @@ def combined_json():
         "fullName": 'default',
         "date": 'default',
         "docLink": 'default',
-        "model": embeddings_choice,
+        "model": settings.EMBEDDINGS_NAME,
         "location": "local"
     }]
     # structure: name, language, version, description, fullName, date, docLink
@@ -326,7 +321,7 @@ def combined_json():
             "fullName": index['name'],
             "date": index['date'],
             "docLink": index['location'],
-            "model": embeddings_choice,
+            "model": settings.EMBEDDINGS_NAME,
             "location": "local"
         })
 
@@ -417,7 +412,7 @@ def upload_index_files():
         "language": job_name,
         "location": save_dir,
         "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "model": embeddings_choice,
+        "model": settings.EMBEDDINGS_NAME,
         "type": "local"
     })
     return {"status": 'ok'}
