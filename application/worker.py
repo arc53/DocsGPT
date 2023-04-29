@@ -6,7 +6,7 @@ from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api
 from parser.token_func import group_split
-from celery import current_task
+from application.core.settings import settings
 
 
 import string
@@ -18,9 +18,10 @@ try:
     nltk.download('averaged_perceptron_tagger', quiet=True)
 except FileExistsError:
     pass
+
+
 def generate_random_string(length):
     return ''.join([string.ascii_letters[i % 52] for i in range(length)])
-
 
 
 def ingest_worker(self, directory, formats, name_job, filename, user):
@@ -39,12 +40,8 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     max_tokens = 1250
     full_path = directory + '/' + user + '/' + name_job
     # check if API_URL env variable is set
-    if not os.environ.get('API_URL'):
-        url = 'http://localhost:5001/api/download'
-    else:
-        url = os.environ.get('API_URL') + '/api/download'
     file_data = {'name': name_job, 'file': filename, 'user': user}
-    response = requests.get(url, params=file_data)
+    response = requests.get(os.path.join(settings.API_URL, "/api/download"), params=file_data)
     file = response.content
 
     if not os.path.exists(full_path):
@@ -58,8 +55,6 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
             zip_ref.extractall(full_path)
         os.remove(full_path + '/' + filename)
 
-
-    import time
     self.update_state(state='PROGRESS', meta={'current': 1})
 
     raw_docs = SimpleDirectoryReader(input_dir=full_path, input_files=input_files, recursive=recursive,
@@ -78,22 +73,20 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    if not os.environ.get('API_URL'):
-        url = 'http://localhost:5001/api/upload_index'
-    else:
-        url = os.environ.get('API_URL') + '/api/upload_index'
     file_data = {'name': name_job, 'user': user}
     files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
              'file_pkl': open(full_path + '/index.pkl', 'rb')}
-    response = requests.post(url, files=files, data=file_data)
+    response = requests.post(os.path.join(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
 
-    #deletes remote
-    if not os.environ.get('API_URL'):
-        url = 'http://localhost:5001/api/delete_old?path=' + 'inputs/' + user + '/' + name_job
-    else:
-        url = os.environ.get('API_URL') + '/api/delete_old?path=' + 'inputs/' + user + '/' + name_job
-    response = requests.get(url)
+    response = requests.get(os.path.join(settings.API_URL, "/api/delete_old?path="))
     # delete local
     shutil.rmtree(full_path)
 
-    return {'directory': directory, 'formats': formats, 'name_job': name_job, 'filename': filename, 'user': user, 'limited': False}
+    return {
+        'directory': directory,
+        'formats': formats,
+        'name_job': name_job,
+        'filename': filename,
+        'user': user,
+        'limited': False
+    }
