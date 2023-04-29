@@ -70,20 +70,20 @@ with open("prompts/chat_combine_prompt.txt", "r") as f:
 with open("prompts/chat_reduce_prompt.txt", "r") as f:
     chat_reduce_template = f.read()
 
-if os.getenv("API_KEY") is not None:
+if settings.API_KEY is not None:
     api_key_set = True
 else:
     api_key_set = False
-if os.getenv("EMBEDDINGS_KEY") is not None:
+if settings.EMBEDDINGS_KEY is not None:
     embeddings_key_set = True
 else:
     embeddings_key_set = False
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER = "inputs"
-app.config['CELERY_BROKER_URL'] = os.getenv("CELERY_BROKER_URL")
-app.config['CELERY_RESULT_BACKEND'] = os.getenv("CELERY_RESULT_BACKEND")
-app.config['MONGO_URI'] = os.getenv("MONGO_URI")
+app.config['CELERY_BROKER_URL'] = settings.CELERY_BROKER_URL
+app.config['CELERY_RESULT_BACKEND'] = settings.CELERY_RESULT_BACKEND
+app.config['MONGO_URI'] = settings.MONGO_URI
 celery = Celery()
 celery.config_from_object('celeryconfig')
 mongo = MongoClient(app.config['MONGO_URI'])
@@ -126,11 +126,11 @@ def api_answer():
     if not api_key_set:
         api_key = data["api_key"]
     else:
-        api_key = os.getenv("API_KEY")
+        api_key = settings.API_KEY
     if not embeddings_key_set:
         embeddings_key = data["embeddings_key"]
     else:
-        embeddings_key = os.getenv("EMBEDDINGS_KEY")
+        embeddings_key = settings.EMBEDDINGS_KEY
 
     # use try and except  to check for exception
     try:
