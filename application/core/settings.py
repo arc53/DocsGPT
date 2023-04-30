@@ -5,9 +5,9 @@ from pathlib import Path
 class Settings(BaseSettings):
     LLM_NAME: str = "openai_chat"
     EMBEDDINGS_NAME: str = "openai_text-embedding-ada-002"
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str
-    MONGO_URI: str
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+    MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
 
     API_URL: str = "http://localhost:5001"  # backend url for celery worker
 
