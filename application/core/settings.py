@@ -9,10 +9,10 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str
     MONGO_URI: str
 
-    API_URL: str = "http://localhost:5001"
+    API_URL: str = "http://localhost:5001"  # backend url for celery worker
 
-    API_KEY: str = None
-    EMBEDDINGS_KEY: str = None
+    API_KEY: str = None  # LLM api key
+    EMBEDDINGS_KEY: str = None  # api key for embeddings (if using openai, just copy API_KEY
 
 
 path = Path(__file__).parent.parent.absolute()

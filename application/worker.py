@@ -6,7 +6,8 @@ from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api
 from parser.token_func import group_split
-from application.core.settings import settings
+from urllib.parse import urljoin
+from core.settings import settings
 
 
 import string
@@ -41,7 +42,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     full_path = directory + '/' + user + '/' + name_job
     # check if API_URL env variable is set
     file_data = {'name': name_job, 'file': filename, 'user': user}
-    response = requests.get(os.path.join(settings.API_URL, "/api/download"), params=file_data)
+    response = requests.get(urljoin(settings.API_URL, "/api/download"), params=file_data)
     file = response.content
 
     if not os.path.exists(full_path):
@@ -76,9 +77,9 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     file_data = {'name': name_job, 'user': user}
     files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
              'file_pkl': open(full_path + '/index.pkl', 'rb')}
-    response = requests.post(os.path.join(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
+    response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
 
-    response = requests.get(os.path.join(settings.API_URL, "/api/delete_old?path="))
+    response = requests.get(urljoin(settings.API_URL, "/api/delete_old?path="))
     # delete local
     shutil.rmtree(full_path)
 
