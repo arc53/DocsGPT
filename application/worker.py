@@ -1,13 +1,14 @@
 import requests
 import nltk
 import os
+# import pymongo
 
 from parser.file.bulk import SimpleDirectoryReader
 from parser.schema.base import Document
 from parser.open_ai_func import call_openai_api
 from parser.token_func import group_split
 from celery import current_task
-
+# from pymongo import MongoClient # MongoDB Database connector
 
 import string
 import zipfile
@@ -24,6 +25,27 @@ def generate_random_string(length):
 
 
 def ingest_worker(self, directory, formats, name_job, filename, user):
+
+    """
+    Trying to connect to MongoDB and insert sample data into collection.
+
+    
+    mongodb_URI = "mongodb://localhost:27017/" # MongoDB URI 
+    client = MongoClient(mongodb_URI) # DB client
+    db = client['docgpt'] # Connect to DB
+    collection = db['upload_files'] # Connect to collection
+
+    sample = {
+        'self' : self,
+        'directory' : directory,
+        'formats' : formats,
+        'name_job' : name_job,
+        'filename' : filename,
+        'user' : user
+    }
+
+    collection.insert_one(sample) # Insert sample into collection.
+    """
     # directory = 'inputs' or 'temp'
     # formats = [".rst", ".md"]
     input_files = None
