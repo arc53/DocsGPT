@@ -28,21 +28,12 @@ from werkzeug.utils import secure_filename
 
 from error import bad_request
 from worker import ingest_worker
+from core.settings import settings
 import celeryconfig
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 
-if os.getenv("LLM_NAME") is not None:
-    llm_choice = os.getenv("LLM_NAME")
-else:
-    llm_choice = "openai_chat"
-
-if os.getenv("EMBEDDINGS_NAME") is not None:
-    embeddings_choice = os.getenv("EMBEDDINGS_NAME")
-else:
-    embeddings_choice = "openai_text-embedding-ada-002"
-
-if llm_choice == "manifest":
+if settings.LLM_NAME == "manifest":
     from manifest import Manifest
     from langchain.llms.manifest import ManifestWrapper
 
@@ -79,20 +70,20 @@ with open("prompts/chat_combine_prompt.txt", "r") as f:
 with open("prompts/chat_reduce_prompt.txt", "r") as f:
     chat_reduce_template = f.read()
 
-if os.getenv("API_KEY") is not None:
+if settings.API_KEY is not None:
     api_key_set = True
 else:
     api_key_set = False
-if os.getenv("EMBEDDINGS_KEY") is not None:
+if settings.EMBEDDINGS_KEY is not None:
     embeddings_key_set = True
 else:
     embeddings_key_set = False
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER = "inputs"
-app.config['CELERY_BROKER_URL'] = os.getenv("CELERY_BROKER_URL")
-app.config['CELERY_RESULT_BACKEND'] = os.getenv("CELERY_RESULT_BACKEND")
-app.config['MONGO_URI'] = os.getenv("MONGO_URI")
+app.config['CELERY_BROKER_URL'] = settings.CELERY_BROKER_URL
+app.config['CELERY_RESULT_BACKEND'] = settings.CELERY_RESULT_BACKEND
+app.config['MONGO_URI'] = settings.MONGO_URI
 celery = Celery()
 celery.config_from_object('celeryconfig')
 mongo = MongoClient(app.config['MONGO_URI'])
@@ -122,8 +113,8 @@ def ingest(self, directory, formats, name_job, filename, user):
 
 @app.route("/")
 def home():
-    return render_template("index.html", api_key_set=api_key_set, llm_choice=llm_choice,
-                           embeddings_choice=embeddings_choice)
+    return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
+                           embeddings_choice=settings.EMBEDDINGS_NAME)
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -135,11 +126,11 @@ def api_answer():
     if not api_key_set:
         api_key = data["api_key"]
     else:
-        api_key = os.getenv("API_KEY")
+        api_key = settings.API_KEY
     if not embeddings_key_set:
         embeddings_key = data["embeddings_key"]
     else:
-        embeddings_key = os.getenv("EMBEDDINGS_KEY")
+        embeddings_key = settings.EMBEDDINGS_KEY
 
     # use try and except  to check for exception
     try:
@@ -160,13 +151,13 @@ def api_answer():
         # vectorstore = "outputs/inputs/"
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        if embeddings_choice == "openai_text-embedding-ada-002":
+        if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
             docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
-        elif embeddings_choice == "huggingface_sentence-transformers/all-mpnet-base-v2":
+        elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
             docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-        elif embeddings_choice == "huggingface_hkunlp/instructor-large":
+        elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
             docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-        elif embeddings_choice == "cohere_medium":
+        elif settings.EMBEDDINGS_NAME == "cohere_medium":
             docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
 
         # create a prompt template
@@ -182,7 +173,7 @@ def api_answer():
 
         q_prompt = PromptTemplate(input_variables=["context", "question"], template=template_quest,
                                   template_format="jinja2")
-        if llm_choice == "openai_chat":
+        if settings.LLM_NAME == "openai_chat":
             # llm = ChatOpenAI(openai_api_key=api_key, model_name="gpt-4")
             llm = ChatOpenAI(openai_api_key=api_key)
             messages_combine = [
@@ -195,16 +186,18 @@ def api_answer():
                 HumanMessagePromptTemplate.from_template("{question}")
             ]
             p_chat_reduce = ChatPromptTemplate.from_messages(messages_reduce)
-        elif llm_choice == "openai":
+        elif settings.LLM_NAME == "openai":
             llm = OpenAI(openai_api_key=api_key, temperature=0)
-        elif llm_choice == "manifest":
+        elif settings.LLM_NAME == "manifest":
             llm = ManifestWrapper(client=manifest, llm_kwargs={"temperature": 0.001, "max_tokens": 2048})
-        elif llm_choice == "huggingface":
+        elif settings.LLM_NAME == "huggingface":
             llm = HuggingFaceHub(repo_id="bigscience/bloom", huggingfacehub_api_token=api_key)
-        elif llm_choice == "cohere":
+        elif settings.LLM_NAME == "cohere":
             llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+        else:
+            raise ValueError("unknown LLM model")
 
-        if llm_choice == "openai_chat":
+        if settings.LLM_NAME == "openai_chat":
             question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
             doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
             chain = ConversationalRetrievalChain(
@@ -316,7 +309,7 @@ def combined_json():
         "fullName": 'default',
         "date": 'default',
         "docLink": 'default',
-        "model": embeddings_choice,
+        "model": settings.EMBEDDINGS_NAME,
         "location": "local"
     }]
     # structure: name, language, version, description, fullName, date, docLink
@@ -330,7 +323,7 @@ def combined_json():
             "fullName": index['name'],
             "date": index['date'],
             "docLink": index['location'],
-            "model": embeddings_choice,
+            "model": settings.EMBEDDINGS_NAME,
             "location": "local"
         })
 
@@ -421,7 +414,7 @@ def upload_index_files():
         "language": job_name,
         "location": save_dir,
         "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "model": embeddings_choice,
+        "model": settings.EMBEDDINGS_NAME,
         "type": "local"
     })
     return {"status": 'ok'}
