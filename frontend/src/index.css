@@ -365,7 +365,7 @@ template {
 }
 
 .conversation {
-  background-color: lightblue;
+  background-color: white;
 }
 
 .chatWindow {
@@ -392,6 +392,20 @@ template {
 .chatNavigation {
   background-color: #f9f9f9;
   border-left: 2px solid #8e8e8e;
+}
+
+.queryHistory {
+  min-height: 69vh;
+}
+
+.chatNavigation-lower {
+  /* position: absolute;
+  bottom: 70px; */
+}
+
+.chatNavigation-links {
+  /* position: absolute;
+  bottom: 10px; */
 }
 
 .queryBar {

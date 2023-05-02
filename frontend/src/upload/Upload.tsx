@@ -204,7 +204,7 @@ export default function Upload({
         <div className="flex flex-row-reverse">
           <button
             onClick={uploadFile}
-            className="ml-6 rounded-md bg-blue-3000 py-2 px-6 text-white"
+            className="ml-6 rounded-md bg-blue-3000 px-6 py-2 text-white"
           >
             Train
           </button>

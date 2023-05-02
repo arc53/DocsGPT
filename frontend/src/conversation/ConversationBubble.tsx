@@ -1,5 +1,4 @@
 import { forwardRef, useState } from 'react';
-import Avatar from '../Avatar';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
@@ -27,7 +26,6 @@ const ConversationBubble = forwardRef<
   if (type === 'QUESTION') {
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
-        <Avatar className="mt-4 text-2xl" avatar="🧑‍💻"></Avatar>
         <div className="ml-10 mr-2 flex items-center rounded-3xl bg-blue-1000 p-3.5 text-white">
           <ReactMarkdown className="whitespace-pre-wrap break-words">
             {message}
@@ -43,7 +41,6 @@ const ConversationBubble = forwardRef<
         onMouseEnter={() => setShowFeedback(true)}
         onMouseLeave={() => setShowFeedback(false)}
       >
-        <Avatar className="mt-4 text-2xl" avatar="🦖"></Avatar>
         <div
           className={`ml-2 mr-5 flex items-center rounded-3xl bg-gray-1000 p-3.5 ${
             type === 'ERROR'
