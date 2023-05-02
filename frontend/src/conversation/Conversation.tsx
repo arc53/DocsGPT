@@ -10,10 +10,10 @@ import {
   selectStatus,
   updateQuery,
 } from './conversationSlice';
-import Send from './../assets/send.svg';
 import Spinner from './../assets/spinner.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
+import { IoSend } from 'react-icons/io5';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -71,9 +71,9 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex justify-center p-4">
+    <div className="conversation-container justify-center p-4">
       {queries.length > 0 && (
-        <div className="mt-20 flex flex-col transition-all md:w-3/4">
+        <div className="conversation mt-0 flex flex-col transition-all md:w-[100%]">
           {queries.map((query, index) => {
             return (
               <Fragment key={index}>
@@ -95,12 +95,12 @@ export default function Conversation() {
         </div>
       )}
       {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-      <div className="fixed bottom-0 flex w-10/12 flex-col items-end self-center md:w-[50%]">
+      <div className="queryBar w-4/12">
         <div className="flex w-full">
           <div
             ref={inputRef}
             contentEditable
-            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white py-2 pl-4 pr-9 leading-7 opacity-100 focus:outline-none`}
+            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border-2 bg-white py-2 pl-4 pr-9 leading-7 opacity-100 focus:outline-none`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -114,11 +114,11 @@ export default function Conversation() {
           {status === 'loading' ? (
             <img
               src={Spinner}
-              className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end"
+              className="relative bottom-[7px] right-[38px] -mr-[30px] animate-spin cursor-pointer self-end"
             ></img>
           ) : (
-            <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
-              <img
+            <div className="relative bottom-[7px] right-[43px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end hover:bg-gray-3000">
+              <button
                 className="ml-[9px] mt-[9px]"
                 onClick={() => {
                   if (inputRef.current?.textContent) {
@@ -126,15 +126,12 @@ export default function Conversation() {
                     inputRef.current.textContent = '';
                   }
                 }}
-                src={Send}
-              ></img>
+              >
+                <IoSend color="#1677FF" />
+              </button>
             </div>
           )}
         </div>
-        <p className="w-[100vw] self-center bg-white p-5 text-center text-xs text-gray-2000">
-          This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
-          questions.
-        </p>
       </div>
     </div>
   );

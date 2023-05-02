@@ -358,3 +358,44 @@ template {
 [hidden] {
   display: none;
 }
+
+.conversation-container {
+  min-height: 100vh;
+  background-color: white;
+}
+
+.conversation {
+  background-color: lightblue;
+}
+
+.chatWindow {
+  background-color: white;
+  min-height: 100vh;
+}
+
+.wrapper {
+  display: grid;
+  grid-template-columns: 15% 35% 35% 15%;
+}
+
+.docNavigation {
+  background-color: white;
+  border-right: 2px solid #8e8e8e;
+}
+
+.docWindow {
+  background-color: white;
+  min-height: 100vh;
+  border-right: 3px solid #8e8e8e;
+}
+
+.chatNavigation {
+  background-color: #f9f9f9;
+  border-left: 2px solid #8e8e8e;
+}
+
+.queryBar {
+  position: absolute;
+  bottom: 15px;
+  box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 12px;
+}
