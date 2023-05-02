@@ -1,5 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import Navigation from './Navigation';
+import DocNavigation from './DocNavigation';
+import DocWindow from './DocWindow';
 import Conversation from './conversation/Conversation';
 import About from './About';
 import { useState } from 'react';
@@ -15,17 +17,22 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-full min-w-full">
-      <Navigation navState={navState} setNavState={setNavState} />
-      <div
-        className={`transition-all duration-200 ${
-          navState === 'ACTIVE' ? 'ml-0 md:ml-72 lg:ml-60' : 'ml-0 md:ml-16'
-        }`}
-      >
+    <div className="wrapper">
+      <div className="docNavigation">
+        <DocNavigation />
+      </div>
+      <div className="docWindow">
+        <DocWindow />
+      </div>
+      <div className="chatWindow">
         <Routes>
           <Route path="/" element={<Conversation />} />
           <Route path="/about" element={<About />} />
         </Routes>
+      </div>
+      <div className="chatNavigation">
+        {' '}
+        <Navigation navState={navState} setNavState={setNavState} />
       </div>
     </div>
   );

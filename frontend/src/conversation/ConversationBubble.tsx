@@ -1,9 +1,11 @@
 import { forwardRef, useState } from 'react';
-import Avatar from '../Avatar';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,
@@ -24,9 +26,10 @@ const ConversationBubble = forwardRef<
   if (type === 'QUESTION') {
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
-        <Avatar className="mt-4 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-blue-1000 p-3.5 text-white">
-          <p className="whitespace-pre-wrap break-words">{message}</p>
+        <div className="ml-10 mr-2 flex items-center rounded-3xl bg-blue-1000 p-3.5 text-white">
+          <ReactMarkdown className="whitespace-pre-wrap break-words">
+            {message}
+          </ReactMarkdown>
         </div>
       </div>
     );
@@ -38,7 +41,6 @@ const ConversationBubble = forwardRef<
         onMouseEnter={() => setShowFeedback(true)}
         onMouseLeave={() => setShowFeedback(false)}
       >
-        <Avatar className="mt-4 text-2xl" avatar="🦖"></Avatar>
         <div
           className={`ml-2 mr-5 flex items-center rounded-3xl bg-gray-1000 p-3.5 ${
             type === 'ERROR'
@@ -49,7 +51,31 @@ const ConversationBubble = forwardRef<
           {type === 'ERROR' && (
             <img src={Alert} alt="alert" className="mr-2 inline" />
           )}
-          <p className="whitespace-pre-wrap break-words">{message}</p>
+          <ReactMarkdown
+            className="whitespace-pre-wrap break-words"
+            components={{
+              code({ node, inline, className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '');
+
+                return !inline && match ? (
+                  <SyntaxHighlighter
+                    PreTag="div"
+                    language={match[1]}
+                    {...props}
+                    style={vscDarkPlus}
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                ) : (
+                  <code className={className ? className : ''} {...props}>
+                    {children}
+                  </code>
+                );
+              },
+            }}
+          >
+            {message}
+          </ReactMarkdown>
         </div>
         <div
           className={`mr-2 flex items-center justify-center ${
