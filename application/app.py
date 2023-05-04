@@ -16,7 +16,6 @@ from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
 from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
 from langchain.chains.question_answering import load_qa_chain
-from langchain.chains.qa_with_sources import load_qa_with_sources_chain
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceHubEmbeddings, CohereEmbeddings, \
     HuggingFaceInstructEmbeddings
@@ -117,7 +116,7 @@ def run_async_chain(chain, question, chat_history):
     result["answer"] = answer
     return result
 
-@celery.task(bind=True, name='app.ingest')
+@celery.task(bind=True)
 def ingest(self, directory, formats, name_job, filename, user):
     resp = ingest_worker(self, directory, formats, name_job, filename, user)
     return resp
@@ -372,8 +371,6 @@ def upload_file():
 
 
     if file:
-        # collection.insert_one(sample) # Insert sample into collection.
-
         filename = secure_filename(file.filename)
         # save dir
         save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
@@ -382,7 +379,7 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay('local', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
