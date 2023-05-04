@@ -25,27 +25,6 @@ def generate_random_string(length):
 
 
 def ingest_worker(self, directory, formats, name_job, filename, user):
-
-    """
-    Trying to connect to MongoDB and insert sample data into collection.
-
-    
-    mongodb_URI = "mongodb://localhost:27017/" # MongoDB URI 
-    client = MongoClient(mongodb_URI) # DB client
-    db = client['docgpt'] # Connect to DB
-    collection = db['upload_files'] # Connect to collection
-
-    sample = {
-        'self' : self,
-        'directory' : directory,
-        'formats' : formats,
-        'name_job' : name_job,
-        'filename' : filename,
-        'user' : user
-    }
-
-    collection.insert_one(sample) # Insert sample into collection.
-    """
     # directory = 'inputs' or 'temp'
     # formats = [".rst", ".md"]
     input_files = None
