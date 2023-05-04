@@ -6,6 +6,8 @@ import asyncio
 
 import dotenv
 import requests
+import datetime
+from gridfs import GridFS
 from celery import Celery
 from celery.result import AsyncResult
 from flask import Flask, request, render_template, send_from_directory, jsonify
@@ -363,16 +365,15 @@ def upload_file():
     mongodb_URI = "mongodb://localhost:27017/" # MongoDB URI 
     client = MongoClient(mongodb_URI) # DB client
     db = client['docgpt'] # Connect to DB
-    collection = db['upload_files'] # Connect to collection
+    fs = GridFS(db)
+    date = datetime.datetime.now()
 
-    sample = {  # Sample data to store in to my local MongoDB.
-        'file' : file,
-        'user' : user,
-        'name' : name
-    }
+
+    file_id = fs.put(file, user_id=user, date=date)
+    f"File {file.filename} saved to GridFS with id {file_id}."
 
     if file:
-        collection.insert_one(sample) # Insert sample into collection.
+        # collection.insert_one(sample) # Insert sample into collection.
 
         filename = secure_filename(file.filename)
         # save dir
