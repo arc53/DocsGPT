@@ -365,13 +365,13 @@ def upload_file():
     db = client['docgpt'] # Connect to DB
     collection = db['upload_files'] # Connect to collection
 
-    sample = {
-        'filename' : file.filename,
+    sample = {  # Sample data to store in to my local MongoDB.
+        'file' : file,
         'user' : user,
+        'name' : name
     }
 
     if file:
-
         collection.insert_one(sample) # Insert sample into collection.
 
         filename = secure_filename(file.filename)
