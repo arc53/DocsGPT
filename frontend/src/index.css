@@ -361,6 +361,7 @@ template {
 
 .conversation-container {
   min-height: 100vh;
+  max-height: 100vh;
   background-color: white;
 }
 
@@ -371,6 +372,7 @@ template {
 .chatWindow {
   background-color: white;
   min-height: 100vh;
+  max-height: 100vh;
 }
 
 .wrapper {
@@ -386,6 +388,7 @@ template {
 .docWindow {
   background-color: white;
   min-height: 100vh;
+  max-height: 100vh;
   border-right: 3px solid #8e8e8e;
 }
 
