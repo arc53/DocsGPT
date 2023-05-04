@@ -19,7 +19,8 @@ import {
 import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc } from './preferences/preferenceApi';
-import { AiFillInfoCircle, AiFillHome } from 'react-icons/ai';
+import { AiFillHome } from 'react-icons/ai';
+import { FaCloudUploadAlt } from 'react-icons/fa';
 
 export default function Navigation({
   navState,
@@ -214,7 +215,7 @@ export default function Navigation({
           <div className="mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
             <button onClick={() => setUploadModalState('ACTIVE')}>
               <div className="mb-1 ml-2 w-4">
-                <AiFillHome color="#727272" size={18} />
+                <FaCloudUploadAlt color="#727272" size={20} />
               </div>
             </button>
             <button
@@ -235,7 +236,7 @@ export default function Navigation({
             }
           >
             <div className="ml-2 mt-3 w-5">
-              <AiFillInfoCircle color="#727272" size={20} />
+              <AiFillHome color="#727272" size={20} />
             </div>
             <p className="my-auto text-eerie-black">Home</p>
           </NavLink>
