@@ -3,10 +3,10 @@ import Navigation from './Navigation';
 import DocNavigation from './DocNavigation';
 import DocWindow from './DocWindow';
 import Conversation from './conversation/Conversation';
-import About from './About';
 import { useState } from 'react';
 import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
+import Login from './Login';
 
 inject();
 
@@ -17,23 +17,30 @@ export default function App() {
   );
 
   return (
-    <div className="wrapper">
-      <div className="docNavigation">
-        <DocNavigation />
-      </div>
-      <div className="docWindow">
-        <DocWindow />
-      </div>
-      <div className="chatWindow">
-        <Routes>
-          <Route path="/" element={<Conversation />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
-      </div>
-      <div className="chatNavigation">
-        {' '}
-        <Navigation navState={navState} setNavState={setNavState} />
-      </div>
-    </div>
+    <>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route
+          path="/query"
+          element={
+            <div className="wrapper">
+              <div className="docNavigation">
+                <DocNavigation />
+              </div>
+              <div className="docWindow">
+                <DocWindow />
+              </div>
+              <div className="chatWindow">
+                <Conversation />
+              </div>
+              <div className="chatNavigation">
+                {' '}
+                <Navigation navState={navState} setNavState={setNavState} />
+              </div>
+            </div>
+          }
+        />
+      </Routes>
+    </>
   );
 }

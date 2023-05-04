@@ -5,8 +5,6 @@ import Arrow2 from './assets/dropdown-arrow.svg';
 import Exit from './assets/exit.svg';
 import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
-import Info from './assets/info.svg';
-import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
 import SelectDocsModal from './preferences/SelectDocsModal';
@@ -21,6 +19,7 @@ import {
 import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc } from './preferences/preferenceApi';
+import { AiFillInfoCircle, AiFillHome } from 'react-icons/ai';
 
 export default function Navigation({
   navState,
@@ -65,6 +64,7 @@ export default function Navigation({
       })
       .catch((error) => console.error(error));
   };
+
   useOutsideAlerter(
     navRef,
     () => {
@@ -149,11 +149,11 @@ export default function Navigation({
                 } mr-3 w-3 transition-all`}
               />
             </div>
-            <img
+            {/* <img
               className="mt-2 h-9 w-9 hover:cursor-pointer"
               src={UploadIcon}
               onClick={() => setUploadModalState('ACTIVE')}
-            ></img>
+            ></img> */}
             {isDocsListOpen && (
               <div className="absolute left-0 right-6 top-12 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
@@ -211,29 +211,33 @@ export default function Navigation({
         </div> */}
 
         <div className="chatNavigation-links flex flex-col py-2">
-          <NavLink
-            to="/upload"
-            className={({ isActive }) =>
-              `mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100 ${
-                isActive ? 'bg-gray-3000' : ''
-              }`
-            }
-          >
-            <img src={UploadIcon} alt="info" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Upload</p>
-          </NavLink>
+          <div className="mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
+            <button onClick={() => setUploadModalState('ACTIVE')}>
+              <div className="mb-1 ml-2 w-4">
+                <AiFillHome color="#727272" size={18} />
+              </div>
+            </button>
+            <button
+              className="my-auto text-eerie-black"
+              onClick={() => setUploadModalState('ACTIVE')}
+            >
+              Upload
+            </button>
+          </div>
         </div>
         <div className="chatNavigation-links flex flex-col">
           <NavLink
-            to="/about"
+            to="/"
             className={({ isActive }) =>
               `mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100 ${
                 isActive ? 'bg-gray-3000' : ''
               }`
             }
           >
-            <img src={Info} alt="info" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">About</p>
+            <div className="ml-2 mt-3 w-5">
+              <AiFillInfoCircle color="#727272" size={20} />
+            </div>
+            <p className="my-auto text-eerie-black">Home</p>
           </NavLink>
         </div>
       </div>
