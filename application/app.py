@@ -156,7 +156,7 @@ def api_answer():
                 vectorstore = ""
         else:
             vectorstore = ""
-        print(vectorstore)
+        print('vector store is' + vectorstore)
         # vectorstore = "outputs/inputs/"
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
