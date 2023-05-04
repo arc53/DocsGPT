@@ -367,10 +367,8 @@ def upload_file():
     db = client['docgpt'] # Connect to DB
     fs = GridFS(db)
     date = datetime.datetime.now()
+    file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
 
-
-    file_id = fs.put(file, user_id=user, date=date)
-    f"File {file.filename} saved to GridFS with id {file_id}."
 
     if file:
         # collection.insert_one(sample) # Insert sample into collection.
