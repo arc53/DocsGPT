@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 export default function Login() {
   return (
     <div className="p-5">
-      <div className="gap-6 rounded-lg bg-gray-100 text-jet">
+      <div className="rounded-lg bg-gray-100 text-jet">
         <div className={`flex flex-col`}>
           <div className="mb-10 flex items-center justify-center">
             <p className="mr-2 text-4xl font-semibold">Document Genius</p>

@@ -416,3 +416,10 @@ template {
   bottom: 15px;
   box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 12px;
 }
+
+.queryInfo {
+  background-color: #e9e9ee;
+  box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 12px;
+  position: relative;
+  top: -12em;
+}
