@@ -156,7 +156,7 @@ def api_answer():
                 vectorstore = ""
         else:
             vectorstore = ""
-        print(vectorstore)
+        print('vector store is' + vectorstore)
         # vectorstore = "outputs/inputs/"
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
@@ -359,7 +359,21 @@ def upload_file():
     if file.filename == '':
         return {"status": 'no file name'}
 
+    # Trying to connect to MongoDB and insert sample data into collection.
+    mongodb_URI = "mongodb://localhost:27017/" # MongoDB URI 
+    client = MongoClient(mongodb_URI) # DB client
+    db = client['docgpt'] # Connect to DB
+    collection = db['upload_files'] # Connect to collection
+
+    sample = {
+        'filename' : file.filename,
+        'user' : user,
+    }
+
     if file:
+
+        collection.insert_one(sample) # Insert sample into collection.
+
         filename = secure_filename(file.filename)
         # save dir
         save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
