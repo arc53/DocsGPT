@@ -3,7 +3,6 @@ import json
 import os
 import traceback
 import asyncio
-import copy
 
 import dotenv
 import requests
@@ -101,6 +100,8 @@ celery.config_from_object('celeryconfig')
 mongo = MongoClient(app.config['MONGO_URI'])
 db = mongo["docsgpt"]
 vectors_collection = db["vectors"]
+users = db['users']
+fs = GridFS(db)
 
 async def async_generate(chain, question, chat_history):
     result = await chain.arun({"question": question, "chat_history": chat_history})
@@ -359,35 +360,58 @@ def upload_file():
         print('No file part')
         return {"status": 'no file'}
     file = request.files['file']
-
-    # file_for_local = copy.deepcopy(file)
     if file.filename == '':
         return {"status": 'no file name'}
+    
 
-    # Trying to connect to MongoDB and insert sample data into collection.
-    mongodb_URI = "mongodb://localhost:27017/" # MongoDB URI 
-    client = MongoClient(mongodb_URI) # DB client
-    db = client['docgpt'] # Connect to DB
-    fs = GridFS(db)
     date = datetime.datetime.now()
-    # file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
+    file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
 
 
     if file:
         filename = secure_filename(file.filename)
         # save dir
-        save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, 'temp')
+        save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
         # create dir if not exists
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay('inputs', [".rst", ".md", ".pdf", ".txt"], 'temp', filename, user)
+        task = ingest.delay('inputs', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
     else:
         return {"status": 'error'}
+    
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    username = request.json['username']
+    password = request.json['password']
+
+    user = users.find_one({'username': username})
+
+    if user: 
+        return {'status': 'user already exists'}
+    else:
+        user = users.insert_one({'username': username, 'password': password})
+    
+    return {'status': 'ok'}
+
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    username = request.json['username']
+    password = request.json['password']
+    user = users.find_one({'username': username})
+    if not user:
+        return {"status": 'no file name'}
+    if password != user['password']:
+        return {'status': 'password incorrect'}
+    
+    return {'status': 'ok'}
 
 
 @app.route('/api/task_status', methods=['GET'])
