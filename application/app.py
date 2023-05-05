@@ -3,6 +3,7 @@ import json
 import os
 import traceback
 import asyncio
+import copy
 
 import dotenv
 import requests
@@ -116,7 +117,7 @@ def run_async_chain(chain, question, chat_history):
     result["answer"] = answer
     return result
 
-@celery.task(bind=True)
+@celery.task(bind=True, name="app.ingest")
 def ingest(self, directory, formats, name_job, filename, user):
     resp = ingest_worker(self, directory, formats, name_job, filename, user)
     return resp
@@ -358,26 +359,28 @@ def upload_file():
         print('No file part')
         return {"status": 'no file'}
     file = request.files['file']
+
+    # file_for_local = copy.deepcopy(file)
     if file.filename == '':
         return {"status": 'no file name'}
 
     # Trying to connect to MongoDB and insert sample data into collection.
     fs = GridFS(db)
     date = datetime.datetime.now()
-    file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
+    # file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
 
 
     if file:
         filename = secure_filename(file.filename)
         # save dir
-        save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
+        save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, 'temp')
         # create dir if not exists
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
         print('save the file into: ' + os.path.join(save_dir, filename))
-        task = ingest.delay('local', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
