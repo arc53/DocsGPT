@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-export default function Login() {
+export default function Register() {
   return (
     <>
       {' '}
@@ -30,7 +30,7 @@ export default function Login() {
                       <div id="loginForm">
                         <form>
                           <p className="text-md mb-4 mt-8">
-                            Login to your account
+                            Register an account
                           </p>
                           <div
                             className="relative mb-4"
@@ -58,13 +58,24 @@ export default function Login() {
                                 placeholder="Password"
                               />
                             </div>
+                            <div
+                              className="relative mb-5"
+                              data-te-input-wrapper-init
+                            >
+                              <input
+                                className="inputText peer block min-h-[auto] w-full rounded border-2 bg-transparent px-3 py-[0.32rem] leading-[1.6] outline-none focus:placeholder:opacity-100"
+                                id="userPasswordConfirm"
+                                type="password"
+                                placeholder="Confirm Password"
+                              />
+                            </div>
                           </div>
                           <div
                             className="relative mb-4"
                             data-te-input-wrapper-init
                           ></div>
 
-                          <div className="mb-12 pb-1 pt-1 text-center">
+                          <div className="mb-8 pb-1 pt-1 text-center">
                             <Link to="/query">
                               <button
                                 className="loginButton mb-3 inline-block w-full rounded px-6 pb-2 pt-2.5 text-xs font-medium uppercase leading-normal text-white shadow-[0_4px_9px_-4px_rgba(0,0,0,0.2)] transition duration-150 ease-in-out hover:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)] focus:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)] focus:outline-none focus:ring-0 active:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)]"
@@ -72,23 +83,21 @@ export default function Login() {
                                 data-te-ripple-init
                                 data-te-ripple-color="light"
                               >
-                                Log In
+                                Sign Up
                               </button>
                             </Link>
-
-                            <span className="forgotPassword text-sm">
-                              <a href="#!">Forgot password?</a>
-                            </span>
                           </div>
 
                           <div className="flex items-center justify-between pb-6">
-                            <p className="mb-0 mr-2">Don't have an account?</p>
-                            <Link to="/register">
+                            <p className="mb-0 mr-2">
+                              Already have an account?
+                            </p>
+                            <Link to="/">
                               <button
                                 type="button"
                                 className="border-danger text-danger hover:border-danger-600 hover:text-danger-600 focus:border-danger-600 focus:text-danger-600 active:border-danger-700 active:text-danger-700 inline-block rounded border-2 px-6 pb-[6px] pt-2 text-xs font-medium uppercase leading-normal transition duration-150 ease-in-out hover:bg-neutral-500 hover:bg-opacity-10 focus:outline-none focus:ring-0 dark:hover:bg-neutral-100 dark:hover:bg-opacity-10"
                               >
-                                Register
+                                Log In
                               </button>
                             </Link>
                           </div>

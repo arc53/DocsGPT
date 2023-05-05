@@ -469,12 +469,16 @@ template {
 .loginAbout {
   background-image: url('./assets/207.jpeg');
   background-size: cover;
-  background-position-x: -20em;
-  height: 75vh;
+  background-position-x: -22em;
 }
 
 .loginTitle {
   font-size: 2em;
+}
+
+
+.loginPane {
+  height: 75vh;
 }
 
 .Block {

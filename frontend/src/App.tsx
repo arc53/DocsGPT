@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
 import Login from './Login';
+import Register from './Register';
 
 inject();
 
@@ -40,6 +41,7 @@ export default function App() {
     <>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route
           path="/query"
           element={
