@@ -44,6 +44,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
         url = 'http://localhost:5001/api/download'
     else:
         url = os.environ.get('API_URL') + '/api/download'
+    print('current download url is: ' + url)
     file_data = {'name': name_job, 'file': filename, 'user': user}
     response = requests.get(url, params=file_data)
     file = response.content

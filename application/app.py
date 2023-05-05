@@ -98,7 +98,7 @@ app.config['MONGO_URI'] = os.getenv("MONGO_URI")
 celery = Celery()
 celery.config_from_object('celeryconfig')
 mongo = MongoClient(app.config['MONGO_URI'])
-db = mongo["docsgpt"]
+db = mongo["docgen"]
 vectors_collection = db["vectors"]
 
 async def async_generate(chain, question, chat_history):
@@ -362,9 +362,6 @@ def upload_file():
         return {"status": 'no file name'}
 
     # Trying to connect to MongoDB and insert sample data into collection.
-    mongodb_URI = "mongodb://localhost:27017/" # MongoDB URI 
-    client = MongoClient(mongodb_URI) # DB client
-    db = client['docgpt'] # Connect to DB
     fs = GridFS(db)
     date = datetime.datetime.now()
     file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
@@ -379,6 +376,7 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
+        print('save the file into: ' + os.path.join(save_dir, filename))
         task = ingest.delay('local', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
