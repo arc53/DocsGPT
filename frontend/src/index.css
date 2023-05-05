@@ -442,9 +442,12 @@ template {
   background-image: url('./assets/207.jpeg');
   background-size: cover;
   background-position-x: -20em;
-  height: 75vh;
 }
 
 .loginTitle {
   font-size: 2em;
+}
+
+.loginPane {
+  height: 75vh;
 }
