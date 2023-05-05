@@ -19,8 +19,8 @@ import {
 import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc } from './preferences/preferenceApi';
-import { AiFillHome } from 'react-icons/ai';
 import { FaCloudUploadAlt } from 'react-icons/fa';
+import { FiLogOut } from 'react-icons/fi';
 
 export default function Navigation({
   navState,
@@ -212,18 +212,14 @@ export default function Navigation({
         </div> */}
 
         <div className="chatNavigation-links flex flex-col py-2">
-          <div className="mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100">
-            <button onClick={() => setUploadModalState('ACTIVE')}>
-              <div className="mb-1 ml-2 w-4">
-                <FaCloudUploadAlt color="#727272" size={20} />
-              </div>
-            </button>
-            <button
-              className="my-auto text-eerie-black"
-              onClick={() => setUploadModalState('ACTIVE')}
-            >
-              Upload
-            </button>
+          <div
+            className="mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            onClick={() => setUploadModalState('ACTIVE')}
+          >
+            <div className="ml-2 mt-3 w-5">
+              <FaCloudUploadAlt color="#727272" size={20} />
+            </div>
+            <div className="my-auto text-eerie-black">Upload</div>
           </div>
         </div>
         <div className="chatNavigation-links flex flex-col">
@@ -235,10 +231,10 @@ export default function Navigation({
               }`
             }
           >
-            <div className="ml-2 mt-3 w-5">
-              <AiFillHome color="#727272" size={20} />
+            <div className="ml-2.5 mt-3 w-5">
+              <FiLogOut color="#727272" size={20} />
             </div>
-            <p className="my-auto text-eerie-black">Home</p>
+            <p className="my-auto text-eerie-black">Logout</p>
           </NavLink>
         </div>
       </div>
