@@ -23,13 +23,16 @@ class HTMLParser(BaseParser):
             Union[str, List[str]]: a string or a List of strings.
         """
         try:
-            import unstructured
+            import unstructured 
         except ImportError:
             raise ValueError("unstructured package is required to parse HTML files.")
         from unstructured.partition.html import partition_html
         from unstructured.staging.base import convert_to_isd
         from unstructured.cleaners.core import clean
 
+        from langchain.document_loaders import BSHTMLLoader
+        loader = BSHTMLLoader(file)
+        data = loader.load()
         # Using the unstructured library to convert the html to isd format
         # isd sample : isd = [
                             #   {"text": "My Title", "type": "Title"},

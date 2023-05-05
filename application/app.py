@@ -16,6 +16,7 @@ from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
 from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
 from langchain.chains.question_answering import load_qa_chain
+from langchain.chains.qa_with_sources import load_qa_with_sources_chain
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceHubEmbeddings, CohereEmbeddings, \
     HuggingFaceInstructEmbeddings
@@ -103,8 +104,8 @@ vectors_collection = db["vectors"]
 users = db['users']
 fs = GridFS(db)
 
-async def async_generate(chain, question, chat_history):
-    result = await chain.arun({"question": question, "chat_history": chat_history})
+def async_generate(chain, question, chat_history):
+    result = chain({"question": question, "chat_history": chat_history})
     return result
 
 def run_async_chain(chain, question, chat_history):
@@ -210,18 +211,19 @@ def api_answer():
 
         if llm_choice == "openai_chat":
             question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
-            doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
+            doc_chain = load_qa_with_sources_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
             chain = ConversationalRetrievalChain(
                 retriever=docsearch.as_retriever(k=2),
                 question_generator=question_generator,
                 combine_docs_chain=doc_chain,
+                return_source_documents=True
             )
             chat_history = []
             #result = chain({"question": question, "chat_history": chat_history})
             # generate async with async generate method
-            result = run_async_chain(chain, question, chat_history)
+            result = async_generate(chain, question, chat_history)
         else:
-            qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
+            qa_chain = load_qa_with_sources_chain(llm=llm, chain_type="map_reduce",
                                      combine_prompt=c_prompt, question_prompt=q_prompt)
             chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
             result = chain({"query": question})
@@ -229,20 +231,28 @@ def api_answer():
         print(result)
 
         # some formatting for the frontend
-        if "result" in result:
-            result['answer'] = result['result']
-        result['answer'] = result['answer'].replace("\\n", "\n")
-        try:
-            result['answer'] = result['answer'].split("SOURCES:")[0]
-        except:
-            pass
+        # if "result" in result:
+        #     result['answer'] = result['result']
+        # result['answer'] = result['answer'].replace("\\n", "\n")
+        # try:
+        #     result['answer'] = result['answer'].split("SOURCES:")[0]
+        # except:
+        #     pass
 
         # mock result
         # result = {
         #     "answer": "The answer is 42",
         #     "sources": ["https://en.wikipedia.org/wiki/42_(number)", "https://en.wikipedia.org/wiki/42_(number)"]
         # }
-        return result
+
+        print('test')
+        print(result['source_documents'])
+
+        return jsonify(
+            answer=result['answer'],
+            sources=result['source_documents'][0].metadata['source'],
+        )
+
     except Exception as e:
         # print whole traceback
         traceback.print_exc()
@@ -376,9 +386,11 @@ def upload_file():
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
+        file.seek(0)
         file.save(os.path.join(save_dir, filename))
+        print("Size of file is :", file.tell(), "bytes")
         print('save the file into: ' + os.path.join(save_dir, filename))
-        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".html"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
@@ -490,6 +502,7 @@ def delete_old():
     path_clean = '/'.join(dirs)
     vectors_collection.delete_one({'location': path})
     try:
+        print('deleting ' + path_clean)
         shutil.rmtree(path_clean)
     except FileNotFoundError:
         pass
