@@ -1,6 +1,42 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 
 export default function Login() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const handleSubmit = (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+
+    const data = {
+      username: username,
+      password: password,
+    };
+
+    fetch('http://localhost:5001/api/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+      mode: 'cors',
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.status === 'ok') {
+          navigate('/query');
+        } else {
+          setError('Invalid username or password');
+        }
+      })
+      .catch((error) => {
+        console.error('Error:', error);
+      });
+  };
+
   return (
     <>
       {' '}
@@ -28,7 +64,7 @@ export default function Login() {
                       </p>
                       <hr></hr>
                       <div id="loginForm">
-                        <form>
+                        <form onSubmit={handleSubmit}>
                           <p className="text-md mb-4 mt-8">
                             Login to your account
                           </p>
@@ -43,8 +79,10 @@ export default function Login() {
                               <input
                                 className="inputText peer block min-h-[auto] w-full rounded border-2 bg-transparent px-3 py-[0.32rem] leading-[1.6] outline-none focus:placeholder:opacity-100"
                                 id="userEmail"
-                                type="email"
+                                type="text"
                                 placeholder="Email Address"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
                               />
                             </div>
                             <div
@@ -56,6 +94,8 @@ export default function Login() {
                                 id="userPassword"
                                 type="password"
                                 placeholder="Password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
                               />
                             </div>
                           </div>
@@ -63,18 +103,20 @@ export default function Login() {
                             className="relative mb-4"
                             data-te-input-wrapper-init
                           ></div>
-
+                          {error && (
+                            <div className="mb-6 text-sm text-red-500">
+                              {error}
+                            </div>
+                          )}
                           <div className="mb-12 pb-1 pt-1 text-center">
-                            <Link to="/query">
-                              <button
-                                className="loginButton mb-3 inline-block w-full rounded px-6 pb-2 pt-2.5 text-xs font-medium uppercase leading-normal text-white shadow-[0_4px_9px_-4px_rgba(0,0,0,0.2)] transition duration-150 ease-in-out hover:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)] focus:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)] focus:outline-none focus:ring-0 active:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)]"
-                                type="button"
-                                data-te-ripple-init
-                                data-te-ripple-color="light"
-                              >
-                                Log In
-                              </button>
-                            </Link>
+                            <button
+                              className="loginButton mb-3 inline-block w-full rounded px-6 pb-2 pt-2.5 text-xs font-medium uppercase leading-normal text-white shadow-[0_4px_9px_-4px_rgba(0,0,0,0.2)] transition duration-150 ease-in-out hover:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)] focus:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)] focus:outline-none focus:ring-0 active:shadow-[0_8px_9px_-4px_rgba(0,0,0,0.1),0_4px_18px_0_rgba(0,0,0,0.2)]"
+                              type="submit"
+                              data-te-ripple-init
+                              data-te-ripple-color="light"
+                            >
+                              Log In
+                            </button>
 
                             <span className="forgotPassword text-sm">
                               <a href="#!">Forgot password?</a>
@@ -82,7 +124,9 @@ export default function Login() {
                           </div>
 
                           <div className="flex items-center justify-between pb-6">
-                            <p className="mb-0 mr-2">Don't have an account?</p>
+                            <p className="mb-0 mr-2">
+                              Don&apos;t have an account?
+                            </p>
                             <Link to="/register">
                               <button
                                 type="button"

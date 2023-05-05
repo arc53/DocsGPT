@@ -44,6 +44,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
         url = 'http://localhost:5001/api/download'
     else:
         url = os.environ.get('API_URL') + '/api/download'
+    print('current download url is: ' + url)
     file_data = {'name': name_job, 'file': filename, 'user': user}
     response = requests.get(url, params=file_data)
     file = response.content
@@ -63,19 +64,24 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     import time
     self.update_state(state='PROGRESS', meta={'current': 1})
 
-    raw_docs = SimpleDirectoryReader(input_dir=full_path, input_files=input_files, recursive=recursive,
-                                     required_exts=formats, num_files_limit=limit,
-                                     exclude_hidden=exclude).load_data()
-    raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
+    # raw_docs = SimpleDirectoryReader(input_dir=full_path, input_files=input_files, recursive=recursive,
+    #                                  required_exts=formats, num_files_limit=limit,
+    #                                  exclude_hidden=exclude).load_data()
+    # raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
 
-    docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+    # docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+
+    from langchain.document_loaders import DirectoryLoader
+    from langchain.document_loaders import BSHTMLLoader
+    loader = DirectoryLoader(full_path, glob="**/*.html", loader_cls=BSHTMLLoader)
+    docs = loader.load()
 
     call_openai_api(docs, full_path, self)
     self.update_state(state='PROGRESS', meta={'current': 100})
 
-    if sample == True:
-        for i in range(min(5, len(raw_docs))):
-            print(raw_docs[i].text)
+    # if sample == True:
+    #     for i in range(min(5, len(raw_docs))):
+    #         print(raw_docs[i].text)
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
@@ -84,9 +90,10 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     else:
         url = os.environ.get('API_URL') + '/api/upload_index'
     file_data = {'name': name_job, 'user': user}
-    files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
-             'file_pkl': open(full_path + '/index.pkl', 'rb')}
-    response = requests.post(url, files=files, data=file_data)
+    with open(full_path + '/index.faiss', 'rb') as file_faiss, open(full_path + '/index.pkl', 'rb') as file_pkl:
+        files = {'file_faiss': file_faiss, 'file_pkl': file_pkl}
+        response = requests.post(url, files=files, data=file_data)
+
 
     #deletes remote
     if not os.environ.get('API_URL'):

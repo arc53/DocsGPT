@@ -30,6 +30,7 @@
     "react-icons": "^4.8.0",
     "react-markdown": "^8.0.7",
     "react-redux": "^8.0.5",
+    "react-resize-panel": "^0.3.5",
     "react-router-dom": "^6.8.1",
     "react-syntax-highlighter": "^15.5.0"
   },

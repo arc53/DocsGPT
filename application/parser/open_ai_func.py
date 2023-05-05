@@ -4,6 +4,7 @@ import pickle
 import tiktoken
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
+from langchain.text_splitter import CharacterTextSplitter
 
 #from langchain.embeddings import HuggingFaceEmbeddings
 #from langchain.embeddings import HuggingFaceInstructEmbeddings
@@ -33,11 +34,15 @@ def call_openai_api(docs, folder_name, task_status):
         os.makedirs(f"{folder_name}")
 
     from tqdm import tqdm
-    docs_test = [docs[0]]
-    docs.pop(0)
+
+    # docs_test = [docs[0]]
+    # docs.pop(0)
     c1 = 0
 
-    store = FAISS.from_documents(docs_test, OpenAIEmbeddings(openai_api_key=os.getenv("EMBEDDINGS_KEY")))
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+    texts = text_splitter.split_documents(docs)
+
+    store = FAISS.from_documents(texts, OpenAIEmbeddings(openai_api_key=os.getenv("EMBEDDINGS_KEY")))
 
     # Uncomment for MPNet embeddings
     # model_name = "sentence-transformers/all-mpnet-base-v2"

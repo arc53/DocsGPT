@@ -19,7 +19,6 @@ import {
 import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc } from './preferences/preferenceApi';
-import { AiFillHome } from 'react-icons/ai';
 import { FaCloudUploadAlt } from 'react-icons/fa';
 import { FiLogOut } from 'react-icons/fi';
 
