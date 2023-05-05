@@ -21,6 +21,7 @@ import Upload from './upload/Upload';
 import { Doc } from './preferences/preferenceApi';
 import { AiFillHome } from 'react-icons/ai';
 import { FaCloudUploadAlt } from 'react-icons/fa';
+import { FiLogOut } from 'react-icons/fi';
 
 export default function Navigation({
   navState,
@@ -231,10 +232,10 @@ export default function Navigation({
               }`
             }
           >
-            <div className="ml-2 mt-3 w-5">
-              <AiFillHome color="#727272" size={20} />
+            <div className="ml-2.5 mt-3 w-5">
+              <FiLogOut color="#727272" size={20} />
             </div>
-            <p className="my-auto text-eerie-black">Home</p>
+            <p className="my-auto text-eerie-black">Logout</p>
           </NavLink>
         </div>
       </div>
