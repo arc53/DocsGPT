@@ -428,3 +428,7 @@ template {
   position: fixed;
   top: -15em;
 }
+
+.loginButton {
+  background-color: #1677ff;
+}
