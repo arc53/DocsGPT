@@ -22,6 +22,16 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
+  const List = ({
+    ordered,
+    children,
+  }: {
+    ordered?: boolean;
+    children: React.ReactNode;
+  }) => {
+    const Tag = ordered ? 'ol' : 'ul';
+    return <Tag className="list-inside list-disc">{children}</Tag>;
+  };
   let bubble;
 
   if (type === 'QUESTION') {
@@ -74,6 +84,12 @@ const ConversationBubble = forwardRef<
                     {children}
                   </code>
                 );
+              },
+              ul({ node, children }) {
+                return <List>{children}</List>;
+              },
+              ol({ node, children }) {
+                return <List ordered>{children}</List>;
               },
             }}
           >
