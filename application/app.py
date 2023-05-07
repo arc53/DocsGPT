@@ -54,7 +54,16 @@ if platform.system() == "Windows":
 # loading the .env file
 dotenv.load_dotenv()
 
+
+# Define the path to the chat history file
+CHAT_HISTORY_FILE = "chat_history.json"
+
+# Clear the chat history file if it exists
+if os.path.exists(CHAT_HISTORY_FILE):
+    os.remove(CHAT_HISTORY_FILE)
+
 # load the prompts
+
 with open("prompts/combine_prompt.txt", "r") as f:
     template = f.read()
 
@@ -122,6 +131,14 @@ def api_answer():
     data = request.get_json()
     question = data["question"]
     history = data["history"]
+
+    # Load the chat history from the file, or create an empty list if the file doesn't exist
+    try:
+        with open(CHAT_HISTORY_FILE, "r") as f:
+            chat_history = json.load(f)
+    except FileNotFoundError:
+        chat_history = []
+
     print('-' * 5)
     if not api_key_set:
         api_key = data["api_key"]
@@ -205,15 +222,20 @@ def api_answer():
                 question_generator=question_generator,
                 combine_docs_chain=doc_chain,
             )
-            chat_history = []
-            #result = chain({"question": question, "chat_history": chat_history})
+            
+            result = chain({"question": question, "chat_history": chat_history})
+            chat_history.append((question, result["answer"]))
             # generate async with async generate method
-            result = run_async_chain(chain, question, chat_history)
+            #result = run_async_chain(chain, question, chat_history)
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                                      combine_prompt=c_prompt, question_prompt=q_prompt)
             chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
             result = chain({"query": question})
+        
+        # Save the updated chat history to the file
+        with open(CHAT_HISTORY_FILE, "w") as f:
+            json.dump(chat_history, f)
 
         print(result)
 
