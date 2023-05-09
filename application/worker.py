@@ -58,6 +58,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     if filename.endswith('.zip'):
         with zipfile.ZipFile(full_path + '/' + filename, 'r') as zip_ref:
             zip_ref.extractall(full_path)
+            zip_ref.extractall('inputs' + '/' + user + '/' + name_job + '/' + 'extractedfiles') 
         os.remove(full_path + '/' + filename)
 
 
