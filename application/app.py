@@ -419,8 +419,9 @@ def login():
     username = request.json['username']
     password = request.json['password']
     user = users.find_one({'username': username})
+    print(user)
     if not user:
-        return {"status": 'no file name'}
+        return {"status": 'no user name'}
     if password != user['password']:
         return {'status': 'password incorrect'}
     
