@@ -224,15 +224,15 @@ export default function Upload({
   }
 
   return (
-    <div
+    <article
       className={`${
         modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } fixed inset-0 flex items-center justify-center `}
+      } uploadWindow inset-0 mx-auto flex items-center justify-center`}
     >
-      <article className="static top-0 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
+      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
         {view}
       </article>
-    </div>
+    </article>
   );
 }
 // TODO: sanitize all inputs
