@@ -8,6 +8,7 @@ import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
 import Login from './Login';
 import Register from './Register';
+import Draggable from 'react-draggable';
 
 inject();
 
@@ -16,6 +17,30 @@ export default function App() {
   const [navState, setNavState] = useState<ActiveState>(
     window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
   );
+
+  const [startX, setStartX] = useState(0); // [startX, setStartX
+  const totalWidth = window.innerWidth;
+
+  const [widths, setWidths] = useState([15, 35, 35, 15]);
+
+  const handleDragStart = (event: any, ui: { x: number }) => {
+    setStartX(ui.x);
+  };
+
+  const handleDrag = (index: number, event: any, ui: any) => {
+    const preWidthforCurrent = widths[index];
+    const preWidthforNextOne = widths[index + 1];
+    const currentWidth = (event.clientX / totalWidth) * 100;
+    const diff = ((ui.x - startX) / totalWidth) * 100;
+    console.log('diff: ' + diff);
+
+    const newWidths = [...widths];
+    newWidths[index] = preWidthforCurrent + diff;
+    newWidths[index + 1] = preWidthforNextOne - diff;
+    setWidths(newWidths);
+
+    // console.log(newWidths);
+  };
 
   return (
     <>
@@ -26,19 +51,31 @@ export default function App() {
           path="/query"
           element={
             <div className="wrapper">
-              <div className="docNavigation">
-                <DocNavigation />
-              </div>
-              <div className="docWindow">
-                <DocWindow />
-              </div>
-              <div className="chatWindow">
-                <Conversation />
-              </div>
-              <div className="chatNavigation">
-                {' '}
-                <Navigation navState={navState} setNavState={setNavState} />
-              </div>
+              {widths.map((width, index) => (
+                <Draggable
+                  axis="x"
+                  bounds={{ right: window.innerWidth }}
+                  position={{ x: widths[index], y: 0 }}
+                  onStart={(e: any, ui: { x: any }) => handleDragStart(e, ui)}
+                  onDrag={(e: any, ui: { x: any }) => handleDrag(index, e, ui)}
+                  key={index}
+                >
+                  <div
+                    className="column"
+                    style={{ width: `${width}%`, float: 'left' }}
+                  >
+                    {index === 0 && <DocNavigation />}
+                    {index === 1 && <DocWindow />}
+                    {index === 2 && <Conversation />}
+                    {index === 3 && (
+                      <Navigation
+                        navState={navState}
+                        setNavState={setNavState}
+                      />
+                    )}
+                  </div>
+                </Draggable>
+              ))}
             </div>
           }
         />
