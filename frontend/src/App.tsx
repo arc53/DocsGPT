@@ -28,6 +28,10 @@ export default function App() {
   };
 
   const handleDrag = (index: number, event: any, ui: any) => {
+    if (index == 3) {
+      return;
+    } // do nothing with the last division.
+
     const preWidthforCurrent = widths[index];
     const preWidthforNextOne = widths[index + 1];
     const diff = ((ui.x - startX) / totalWidth) * 100;
@@ -37,7 +41,6 @@ export default function App() {
     newWidths[index] = preWidthforCurrent + diff;
     newWidths[index + 1] = preWidthforNextOne - diff;
     setWidths(newWidths);
-
     // console.log(newWidths);
   };
 
