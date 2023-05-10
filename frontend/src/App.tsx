@@ -30,7 +30,6 @@ export default function App() {
   const handleDrag = (index: number, event: any, ui: any) => {
     const preWidthforCurrent = widths[index];
     const preWidthforNextOne = widths[index + 1];
-    const currentWidth = (event.clientX / totalWidth) * 100;
     const diff = ((ui.x - startX) / totalWidth) * 100;
     console.log('diff: ' + diff);
 
@@ -62,7 +61,11 @@ export default function App() {
                 >
                   <div
                     className="column"
-                    style={{ width: `${width}%`, float: 'left' }}
+                    style={{
+                      width: `${width}%`,
+                      float: 'left',
+                      margin: '10px',
+                    }}
                   >
                     {index === 0 && <DocNavigation />}
                     {index === 1 && <DocWindow />}

@@ -457,7 +457,7 @@ template {
 }
 
 
-div {
-  border-right: red 3px solid;
-  border-left: blue 3px solid;
+.column {
+  border-right: gray 1px solid;
+  border-left: gray 1px solid;
 }
