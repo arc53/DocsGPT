@@ -18,30 +18,30 @@ export default function App() {
     window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
   );
 
+  const [widths, setWidths] = useState([15, 35, 35, 15]);
+
   const [startX, setStartX] = useState(0); // [startX, setStartX
   const totalWidth = window.innerWidth;
 
-  const [widths, setWidths] = useState([15, 35, 35, 15]);
-
-  const handleDragStart = (event: any, ui: { x: number }) => {
-    setStartX(ui.x);
+  const handleDragStart = (event: any) => {
+    setStartX(event.clientX);
   };
 
-  const handleDrag = (index: number, event: any, ui: any) => {
+  const handleDrag = (index: number, event: any) => {
     if (index == 3) {
       return;
     } // do nothing with the last division.
 
     const preWidthforCurrent = widths[index];
     const preWidthforNextOne = widths[index + 1];
-    const diff = ((ui.x - startX) / totalWidth) * 100;
+    const pixelDiff = event.clientX - startX;
+    const diff = (pixelDiff / totalWidth) * 100;
     console.log('diff: ' + diff);
 
     const newWidths = [...widths];
-    newWidths[index] = preWidthforCurrent + diff;
-    newWidths[index + 1] = preWidthforNextOne - diff;
+    newWidths[index] = preWidthforCurrent + (diff / totalWidth) * 100;
+    newWidths[index + 1] = preWidthforNextOne - (diff / totalWidth) * 100;
     setWidths(newWidths);
-    // console.log(newWidths);
   };
 
   return (
@@ -58,16 +58,14 @@ export default function App() {
                   axis="x"
                   bounds={{ right: window.innerWidth }}
                   position={{ x: widths[index], y: 0 }}
-                  onStart={(e: any, ui: { x: any }) => handleDragStart(e, ui)}
-                  onDrag={(e: any, ui: { x: any }) => handleDrag(index, e, ui)}
+                  onStart={(e: any) => handleDragStart(e)}
+                  onDrag={(e: any) => handleDrag(index, e)}
                   key={index}
                 >
                   <div
                     className="column"
                     style={{
                       width: `${width}%`,
-                      float: 'left',
-                      margin: '10px',
                     }}
                   >
                     {index === 0 && <DocNavigation />}
