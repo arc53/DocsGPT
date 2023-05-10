@@ -41,6 +41,9 @@ export default function App() {
     const newWidths = [...widths];
     newWidths[index] = preWidthforCurrent + (diff / totalWidth) * 100;
     newWidths[index + 1] = preWidthforNextOne - (diff / totalWidth) * 100;
+    if (newWidths[3] < 15) {
+      return;
+    }
     setWidths(newWidths);
   };
 
@@ -63,7 +66,6 @@ export default function App() {
                   key={index}
                 >
                   <div
-                    className="column"
                     style={{
                       width: `${width}%`,
                     }}
