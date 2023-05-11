@@ -1,17 +1,31 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import { BrowserRouter } from 'react-router-dom';
-import { Provider } from 'react-redux';
-import store from './store';
-import './index.css';
+import DocNavigation from './DocNavigation';
+import DocWindow from './DocWindow';
+import Navigation from './Navigation';
+import Conversation from './conversation/Conversation';
+import { ActiveState } from './models/misc';
+import { useState } from 'react';
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <Provider store={store}>
-        <App />
-      </Provider>
-    </BrowserRouter>
-  </React.StrictMode>,
-);
+export default function Query() {
+  const [navState, setNavState] = useState<ActiveState>(
+    window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
+  );
+  return (
+    <>
+      <div className="wrapper">
+        <div className="docNavigation">
+          <DocNavigation />
+        </div>
+        <div className="docWindow">
+          <DocWindow />
+        </div>
+        <div className="chatWindow">
+          <Conversation />
+        </div>
+        <div className="chatNavigation">
+          {' '}
+          <Navigation navState={navState} setNavState={setNavState} />
+        </div>
+      </div>
+    </>
+  );
+}

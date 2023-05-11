@@ -58,7 +58,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     if filename.endswith('.zip'):
         with zipfile.ZipFile(full_path + '/' + filename, 'r') as zip_ref:
             zip_ref.extractall(full_path)
-            zip_ref.extractall('inputs' + '/' + user + '/' + name_job + '/' + 'extractedfiles') 
+            zip_ref.extractall('inputs' + '/' + user + '/' + name_job) 
         os.remove(full_path + '/' + filename)
 
 
@@ -77,6 +77,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     loader = DirectoryLoader(full_path, glob="**/*.html", loader_cls=BSHTMLLoader)
     docs = loader.load()
 
+    print(docs)
     call_openai_api(docs, full_path, self)
     self.update_state(state='PROGRESS', meta={'current': 100})
 

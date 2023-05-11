@@ -158,6 +158,8 @@ frontend/*.ntvs*
 frontend/*.njsproj
 frontend/*.sln
 frontend/*.sw?
+frontend/.env.production
+frontend/.env.development
 
 application/vectors/
 

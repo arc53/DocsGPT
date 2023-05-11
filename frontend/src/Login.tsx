@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { SignIn } from '@clerk/clerk-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -54,13 +54,28 @@ export default function Login() {
                           Document Genius
                         </h4>
                       </div>
-
-                      <p className="text-md mb-8">
-                        Welcome to Document Genius!
-                      </p>
-                      <hr></hr>
                       <div id="loginForm">
-                        <form onSubmit={handleSubmit}>
+                        <SignIn
+                          appearance={{
+                            layout: {
+                              socialButtonsPlacement: 'bottom',
+                            },
+                            variables: {
+                              colorPrimary: '#0087fe',
+                            },
+                          }}
+                        />
+
+                        {/* <p className="text-md mb-8">
+                        Lorem ipsum dolor sit amet, consectetur adipisicing
+                        elit, sed do eiusmod tempor incididunt ut labore et
+                        dolore magna aliqua. Ut enim ad minim veniam, quis
+                        nostrud exercitation ullamco laboris nisi ut aliquip ex
+                        ea commodo consequat.
+                      </p>
+                      <hr></hr> */}
+
+                        {/* <form onSubmit={handleSubmit}>
                           <p className="text-md mb-4 mt-8">
                             Login to your account
                           </p>
@@ -132,7 +147,7 @@ export default function Login() {
                               </button>
                             </Link>
                           </div>
-                        </form>
+                        </form> */}
                       </div>
                     </div>
                   </div>
