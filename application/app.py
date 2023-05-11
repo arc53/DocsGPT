@@ -397,6 +397,14 @@ def upload_file():
     else:
         return {"status": 'error'}
     
+@app.route('/api/get_docs', methods=['POST'])
+def serve_html():
+    user = secure_filename(request.json['user'])
+    path = request.json['path']
+    filename = secure_filename(request.json['filename'])
+    save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, path)
+    print(save_dir)
+    return send_from_directory(save_dir, filename)
 
 @app.route('/api/register', methods=['POST'])
 def register():
