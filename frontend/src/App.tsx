@@ -11,7 +11,7 @@ inject();
 //   throw 'Missing Publishable Key';
 // }
 
-const clerkPubKey = 'YOUR_KEY_HERE';
+const clerkPubKey = 'API_KEY_HERE';
 // const clerkPubKey = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
 
 export default function App() {

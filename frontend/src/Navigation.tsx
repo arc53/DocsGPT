@@ -160,7 +160,7 @@ export default function Navigation({
               />
             </div>
             {isDocsListOpen && (
-              <div className="absolute left-0 right-6 top-12 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
+              <div className="absolute left-0 right-0 top-12 ml-2 mr-4 max-h-20 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
                   docs.map((doc, index) => {
                     if (doc.model === 'openai_text-embedding-ada-002') {
@@ -193,7 +193,7 @@ export default function Navigation({
                     }
                   })
                 ) : (
-                  <div className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
+                  <div className="sourceDoc-menu h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
                     <p className="ml-5 py-3">No default documentation.</p>
                   </div>
                 )}
