@@ -1,15 +1,18 @@
-import { Routes, Route } from 'react-router-dom';
-import Navigation from './Navigation';
-import DocNavigation from './DocNavigation';
-import DocWindow from './DocWindow';
-import Conversation from './conversation/Conversation';
 import { useState } from 'react';
 import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
 import Login from './Login';
-import Register from './Register';
+import { ClerkProvider, SignedIn, SignedOut } from '@clerk/clerk-react';
+import Query from './Query';
 
 inject();
+
+// if (!process.env.REACT_APP_CLERK_PUBLISHABLE_KEY) {
+//   throw 'Missing Publishable Key';
+// }
+
+const clerkPubKey = 'YOUR_KEY_HERE';
+// const clerkPubKey = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
 
 export default function App() {
   //TODO : below media query is disjoint from tailwind. Please wire it together.
@@ -18,31 +21,13 @@ export default function App() {
   );
 
   return (
-    <>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route
-          path="/query"
-          element={
-            <div className="wrapper">
-              <div className="docNavigation">
-                <DocNavigation />
-              </div>
-              <div className="docWindow">
-                <DocWindow />
-              </div>
-              <div className="chatWindow">
-                <Conversation />
-              </div>
-              <div className="chatNavigation">
-                {' '}
-                <Navigation navState={navState} setNavState={setNavState} />
-              </div>
-            </div>
-          }
-        />
-      </Routes>
-    </>
+    <ClerkProvider publishableKey={clerkPubKey}>
+      <SignedIn>
+        <Query />
+      </SignedIn>
+      <SignedOut>
+        <Login />
+      </SignedOut>
+    </ClerkProvider>
   );
 }

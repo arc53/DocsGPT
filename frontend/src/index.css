@@ -400,17 +400,7 @@ template {
 }
 
 .queryHistory {
-  min-height: 69vh;
-}
-
-.chatNavigation-lower {
-  /* position: absolute;
-  bottom: 70px; */
-}
-
-.chatNavigation-links {
-  /* position: absolute;
-  bottom: 10px; */
+  height: 75vh;
 }
 
 .queryBar {
@@ -431,15 +421,6 @@ template {
   top: -15em;
 }
 
-.loginButton {
-  background-color: #0087fe;
-  font-weight: 600;
-}
-
-.forgotPassword {
-  color: grey;
-}
-
 .loginAbout {
   background-image: url('./assets/207.jpeg');
   background-size: cover;
@@ -455,5 +436,6 @@ template {
 }
 
 .userInfo {
-  background-color: green;
+  float: right;
+  height: 2.8vh;
 }

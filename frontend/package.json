@@ -19,6 +19,7 @@
     ]
   },
   "dependencies": {
+    "@clerk/clerk-react": "^4.15.4",
     "@fortawesome/fontawesome-svg-core": "^6.4.0",
     "@fortawesome/free-solid-svg-icons": "^6.4.0",
     "@fortawesome/react-fontawesome": "^0.2.0",
@@ -35,6 +36,7 @@
     "react-syntax-highlighter": "^15.5.0"
   },
   "devDependencies": {
+    "@types/node": "^20.1.2",
     "@types/react": "^18.0.27",
     "@types/react-dom": "^18.0.10",
     "@types/react-syntax-highlighter": "^15.5.6",

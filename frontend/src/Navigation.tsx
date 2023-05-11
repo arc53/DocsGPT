@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
 import Exit from './assets/exit.svg';
-import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
@@ -20,7 +18,8 @@ import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc } from './preferences/preferenceApi';
 import { FaCloudUploadAlt } from 'react-icons/fa';
-import { FiLogOut } from 'react-icons/fi';
+import { UserButton, useUser } from '@clerk/clerk-react';
+import { BsFillChatRightTextFill } from 'react-icons/bs';
 
 export default function Navigation({
   navState,
@@ -94,6 +93,12 @@ export default function Navigation({
     });
   }, []);
 
+  const { isLoaded, isSignedIn, user } = useUser();
+
+  if (!isLoaded || !isSignedIn) {
+    return null;
+  }
+
   return (
     <>
       <div
@@ -118,19 +123,23 @@ export default function Navigation({
             />
           </button>
         </div>
-        <NavLink
-          to={'/'}
-          className={({ isActive }) =>
-            `${
-              isActive ? 'bg-gray-3000' : ''
-            } mx-4 my-auto mt-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100`
-          }
-        >
-          <img src={Message} className="ml-2 w-5"></img>
-          <p className="my-auto text-eerie-black">Chat</p>
-        </NavLink>
+        <div className="userInfo h-10 w-full">
+          <div className="float-right mr-4">
+            <UserButton
+              showName={true}
+              appearance={{
+                userProfile: { elements: { breadcrumbs: 'bg-slate-500' } },
+              }}
+            />
+          </div>
+        </div>
 
-        <div className="queryHistory flex-grow border-b-2 border-gray-100"></div>
+        <div className="queryHistory mt-3 flex-grow">
+          <div className="w-full border-b-2">
+            <p>&nbsp;</p>
+          </div>
+          <p className="ml-6 mt-3 font-bold text-jet">Chat History</p>
+        </div>
         <div className="chatNavigation-lower flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
@@ -150,11 +159,6 @@ export default function Navigation({
                 } mr-3 w-3 transition-all`}
               />
             </div>
-            {/* <img
-              className="mt-2 h-9 w-9 hover:cursor-pointer"
-              src={UploadIcon}
-              onClick={() => setUploadModalState('ACTIVE')}
-            ></img> */}
             {isDocsListOpen && (
               <div className="absolute left-0 right-6 top-12 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
@@ -211,31 +215,24 @@ export default function Navigation({
           </div>
         </div> */}
 
-        <div className="chatNavigation-links flex flex-col py-2">
+        <div className="chatNavigation-links mt-3">
           <div
-            className="mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            className="mx-3 my-auto flex h-10 cursor-pointer gap-4 rounded-md hover:bg-gray-200"
             onClick={() => setUploadModalState('ACTIVE')}
           >
-            <div className="ml-2 mt-3 w-5">
+            <div className="ml-2 mt-2 w-5">
               <FaCloudUploadAlt color="#727272" size={20} />
             </div>
             <div className="my-auto text-eerie-black">Upload</div>
           </div>
         </div>
-        <div className="chatNavigation-links flex flex-col">
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              `mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100 ${
-                isActive ? 'bg-gray-3000' : ''
-              }`
-            }
-          >
-            <div className="ml-2.5 mt-3 w-5">
-              <FiLogOut color="#727272" size={20} />
+        <div className="chatNavigation-links-lower mt-3">
+          <div className="mx-3 my-auto flex h-10 cursor-pointer gap-4 rounded-md hover:bg-gray-200">
+            <div className="ml-2 mt-2.5 w-5">
+              <BsFillChatRightTextFill color="#727272" size={18} />
             </div>
-            <p className="my-auto text-eerie-black">Logout</p>
-          </NavLink>
+            <div className="my-auto text-eerie-black">New Chat</div>
+          </div>
         </div>
       </div>
       <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden">
