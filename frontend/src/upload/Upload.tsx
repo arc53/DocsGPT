@@ -229,7 +229,7 @@ export default function Upload({
         modalState === 'ACTIVE' ? 'visible' : 'hidden'
       } uploadWindow inset-0 mx-auto flex items-center justify-center`}
     >
-      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
+      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
         {view}
       </article>
     </article>

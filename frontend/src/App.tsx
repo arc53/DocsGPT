@@ -8,6 +8,7 @@ import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
 import Login from './Login';
 import Register from './Register';
+import Draggable from 'react-draggable';
 
 inject();
 
@@ -17,58 +18,34 @@ export default function App() {
     window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
   );
 
-  const resizer = document.getElementById('dragMe');
-  if (resizer) {
-    const leftSide = resizer.previousElementSibling;
-    const rightSide = resizer.nextElementSibling;
-    let x = 0;
-    let y = 0;
-    let leftWidth = 0;
-    const mouseDownHandler = function (e) {
-      // Get the current mouse position
-      x = e.clientX;
-      y = e.clientY;
-      if (leftSide) {
-        leftWidth = leftSide.getBoundingClientRect().width;
-      }
-      // Attach the listeners to `document`
-      document.addEventListener('mousemove', mouseMoveHandler);
-      document.addEventListener('mouseup', mouseUpHandler);
-    };
-    resizer.addEventListener('mousedown', mouseDownHandler);
+  const [widths, setWidths] = useState([15, 35, 35, 15]);
 
-    const mouseMoveHandler = function (e) {
-      // How far the mouse has been moved
-      const dx = e.clientX - x;
-      const dy = e.clientY - y;
-      if (resizer && resizer.parentElement) {
-        const newLeftWidth =
-          ((leftWidth + dx) * 100) /
-          resizer.parentElement.getBoundingClientRect().width;
-        if (leftSide) {
-          leftSide.style.width = `${newLeftWidth}%`;
-        }
-      }
-    };
+  const [startX, setStartX] = useState(0); // [startX, setStartX
+  const totalWidth = window.innerWidth;
 
-    const mouseUpHandler = function () {
-      resizer.style.removeProperty('cursor');
-      document.body.style.removeProperty('cursor');
-      if (leftSide) {
-        leftSide.style.removeProperty('user-select');
-        leftSide.style.removeProperty('pointer-events');
-      }
+  const handleDragStart = (event: any) => {
+    setStartX(event.clientX);
+  };
 
-      if (rightSide) {
-        rightSide.style.removeProperty('user-select');
-        rightSide.style.removeProperty('pointer-events');
-      }
+  const handleDrag = (index: number, event: any) => {
+    if (index == 3) {
+      return;
+    } // do nothing with the last division.
 
-      // Remove the handlers of `mousemove` and `mouseup`
-      document.removeEventListener('mousemove', mouseMoveHandler);
-      document.removeEventListener('mouseup', mouseUpHandler);
-    };
-  }
+    const preWidthforCurrent = widths[index];
+    const preWidthforNextOne = widths[index + 1];
+    const pixelDiff = event.clientX - startX;
+    const diff = (pixelDiff / totalWidth) * 100;
+    console.log('diff: ' + diff);
+
+    const newWidths = [...widths];
+    newWidths[index] = preWidthforCurrent + (diff / totalWidth) * 100;
+    newWidths[index + 1] = preWidthforNextOne - (diff / totalWidth) * 100;
+    if (newWidths[3] < 15) {
+      return;
+    }
+    setWidths(newWidths);
+  };
 
   return (
     <>
@@ -79,20 +56,32 @@ export default function App() {
           path="/query"
           element={
             <div className="wrapper">
-              <div className="docNavigation">
-                <DocNavigation />
-              </div>
-              <div className="resizer" id="dragMe"></div>
-              <div className="docWindow">
-                <DocWindow />
-              </div>
-              <div className="chatWindow">
-                <Conversation />
-              </div>
-              <div className="chatNavigation">
-                {' '}
-                <Navigation navState={navState} setNavState={setNavState} />
-              </div>
+              {widths.map((width, index) => (
+                <Draggable
+                  axis="x"
+                  bounds={{ right: window.innerWidth }}
+                  position={{ x: widths[index], y: 0 }}
+                  onStart={(e: any) => handleDragStart(e)}
+                  onDrag={(e: any) => handleDrag(index, e)}
+                  key={index}
+                >
+                  <div
+                    style={{
+                      width: `${width}%`,
+                    }}
+                  >
+                    {index === 0 && <DocNavigation />}
+                    {index === 1 && <DocWindow />}
+                    {index === 2 && <Conversation />}
+                    {index === 3 && (
+                      <Navigation
+                        navState={navState}
+                        setNavState={setNavState}
+                      />
+                    )}
+                  </div>
+                </Draggable>
+              ))}
             </div>
           }
         />

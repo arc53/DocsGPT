@@ -95,7 +95,7 @@ export default function Conversation() {
         </div>
       )}
       {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-      <div className="queryBar w-4/12">
+      <div className="queryBar w-11/12">
         <div className="flex w-full">
           <div
             ref={inputRef}

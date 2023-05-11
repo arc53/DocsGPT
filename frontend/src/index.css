@@ -377,6 +377,7 @@ template {
 
 .wrapper {
   display: flex;
+  /* grid-template-columns: 15% 35% 35% 15%; */
 }
 
 .docNavigation {
@@ -453,4 +454,10 @@ template {
 
 .userInfo {
   background-color: green;
+}
+
+
+.column {
+  border-right: gray 1px solid;
+  border-left: gray 1px solid;
 }
