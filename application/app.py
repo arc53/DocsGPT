@@ -104,20 +104,24 @@ vectors_collection = db["vectors"]
 users = db['users']
 fs = GridFS(db)
 
+
 def async_generate(chain, question, chat_history):
     result = chain({"question": question, "chat_history": chat_history})
     return result
+
 
 def run_async_chain(chain, question, chat_history):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     result = {}
     try:
-        answer = loop.run_until_complete(async_generate(chain, question, chat_history))
+        answer = loop.run_until_complete(
+            async_generate(chain, question, chat_history))
     finally:
         loop.close()
     result["answer"] = answer
     return result
+
 
 @celery.task(bind=True, name="app.ingest")
 def ingest(self, directory, formats, name_job, filename, user):
@@ -166,13 +170,17 @@ def api_answer():
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
         if embeddings_choice == "openai_text-embedding-ada-002":
-            docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
+            docsearch = FAISS.load_local(
+                vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
         elif embeddings_choice == "huggingface_sentence-transformers/all-mpnet-base-v2":
-            docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
+            docsearch = FAISS.load_local(
+                vectorstore, HuggingFaceHubEmbeddings())
         elif embeddings_choice == "huggingface_hkunlp/instructor-large":
-            docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
+            docsearch = FAISS.load_local(
+                vectorstore, HuggingFaceInstructEmbeddings())
         elif embeddings_choice == "cohere_medium":
-            docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
+            docsearch = FAISS.load_local(
+                vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
 
         # create a prompt template
         if history:
@@ -191,27 +199,34 @@ def api_answer():
             # llm = ChatOpenAI(openai_api_key=api_key, model_name="gpt-4")
             llm = ChatOpenAI(openai_api_key=api_key)
             messages_combine = [
-                SystemMessagePromptTemplate.from_template(chat_combine_template),
+                SystemMessagePromptTemplate.from_template(
+                    chat_combine_template),
                 HumanMessagePromptTemplate.from_template("{question}")
             ]
             p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
             messages_reduce = [
-                SystemMessagePromptTemplate.from_template(chat_reduce_template),
+                SystemMessagePromptTemplate.from_template(
+                    chat_reduce_template),
                 HumanMessagePromptTemplate.from_template("{question}")
             ]
             p_chat_reduce = ChatPromptTemplate.from_messages(messages_reduce)
         elif llm_choice == "openai":
             llm = OpenAI(openai_api_key=api_key, temperature=0)
         elif llm_choice == "manifest":
-            llm = ManifestWrapper(client=manifest, llm_kwargs={"temperature": 0.001, "max_tokens": 2048})
+            llm = ManifestWrapper(client=manifest, llm_kwargs={
+                                  "temperature": 0.001, "max_tokens": 2048})
         elif llm_choice == "huggingface":
-            llm = HuggingFaceHub(repo_id="bigscience/bloom", huggingfacehub_api_token=api_key)
+            llm = HuggingFaceHub(repo_id="bigscience/bloom",
+                                 huggingfacehub_api_token=api_key)
         elif llm_choice == "cohere":
-            llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+            llm = Cohere(model="command-xlarge-nightly",
+                         cohere_api_key=api_key)
 
         if llm_choice == "openai_chat":
-            question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
-            doc_chain = load_qa_with_sources_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
+            question_generator = LLMChain(
+                llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
+            doc_chain = load_qa_with_sources_chain(
+                llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
             chain = ConversationalRetrievalChain(
                 retriever=docsearch.as_retriever(k=2),
                 question_generator=question_generator,
@@ -219,13 +234,14 @@ def api_answer():
                 return_source_documents=True
             )
             chat_history = []
-            #result = chain({"question": question, "chat_history": chat_history})
+            # result = chain({"question": question, "chat_history": chat_history})
             # generate async with async generate method
             result = async_generate(chain, question, chat_history)
         else:
             qa_chain = load_qa_with_sources_chain(llm=llm, chain_type="map_reduce",
-                                     combine_prompt=c_prompt, question_prompt=q_prompt)
-            chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
+                                                  combine_prompt=c_prompt, question_prompt=q_prompt)
+            chain = VectorDBQA(combine_documents_chain=qa_chain,
+                               vectorstore=docsearch, k=3)
             result = chain({"query": question})
 
         print(result)
@@ -348,7 +364,8 @@ def combined_json():
             "location": "local"
         })
 
-    data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
+    data_remote = requests.get(
+        "https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
     for index in data_remote:
         index['location'] = "remote"
         data.append(index)
@@ -372,11 +389,9 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         return {"status": 'no file name'}
-    
 
     date = datetime.datetime.now()
     file_id = fs.put(file, file_name=file.filename, user_id=user, date=date)
-
 
     if file:
         filename = secure_filename(file.filename)
@@ -390,13 +405,15 @@ def upload_file():
         file.save(os.path.join(save_dir, filename))
         print("Size of file is :", file.tell(), "bytes")
         print('save the file into: ' + os.path.join(save_dir, filename))
-        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".html"], job_name, filename, user)
+        task = ingest.delay(
+            'temp', [".rst", ".md", ".pdf", ".html"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": 'ok', "task_id": task_id}
     else:
         return {"status": 'error'}
-    
+
+
 @app.route('/api/get_docs', methods=['POST'])
 def serve_html():
     user = secure_filename(request.json['user'])
@@ -406,6 +423,103 @@ def serve_html():
     print(save_dir)
     return send_from_directory(save_dir, filename)
 
+
+@app.route('/api/get_index', methods=['POST'])
+def serve_index():
+    user = secure_filename(request.json['user'])
+    data = [
+        {
+            "title": "Working in the garage",
+            "navigation_links": [
+                {
+                    "text": "Garage Tasks",
+                    "url": "tasks/garagetaskoverview.html",
+                    "sub_links": [
+                        {
+                            "text": "Changing the oil in your car",
+                            "url": "tasks/changingtheoil.html"
+                        },
+                        {
+                            "text": "Organizing the workbench and tools",
+                            "url": "tasks/organizing.html"
+                        },
+                        {
+                            "text": "Shovelling snow",
+                            "url": "tasks/shovellingsnow.html"
+                        },
+                        {
+                            "text": "Spray painting",
+                            "url": "tasks/spraypainting.html"
+                        },
+                        {
+                            "text": "Taking out the garbage",
+                            "url": "tasks/takinggarbage.html"
+                        },
+                        {
+                            "text": "Washing the car",
+                            "url": "tasks/washingthecar.html"
+                        }
+                    ]
+                },
+                {
+                    "text": "Garage Concepts",
+                    "url": "concepts/garageconceptsoverview.html",
+                    "sub_links": [
+                        {
+                            "text": "Lawnmower",
+                            "url": "concepts/lawnmower.html"
+                        },
+                        {
+                            "text": "Oil",
+                            "url": "concepts/oil.html"
+                        },
+                        {
+                            "text": "Paint",
+                            "url": "concepts/paint.html"
+                        },
+                        {
+                            "text": "Shelving",
+                            "url": "concepts/shelving.html"
+                        },
+                        {
+                            "text": "Snow shovel",
+                            "url": "concepts/snowshovel.html"
+                        },
+                        {
+                            "text": "Tool box",
+                            "url": "concepts/toolbox.html"
+                        },
+                        {
+                            "text": "Tools",
+                            "url": "concepts/tools.html"
+                        },
+                        {
+                            "text": "Water hose",
+                            "url": "concepts/waterhose.html"
+                        },
+                        {
+                            "text": "Wheel barrow",
+                            "url": "concepts/wheelbarrow.html"
+                        },
+                        {
+                            "text": "Workbench",
+                            "url": "concepts/workbench.html"
+                        },
+                        {
+                            "text": "Windshield washer fluid",
+                            "url": "concepts/wwfluid.html"
+                        }
+                    ]
+                }
+            ]
+        }
+
+    ]
+
+    json_data = json.dumps(data)
+    return json_data
+
+
 @app.route('/api/register', methods=['POST'])
 def register():
     username = request.json['username']
@@ -413,13 +527,12 @@ def register():
 
     user = users.find_one({'username': username})
 
-    if user: 
+    if user:
         return {'status': 'user already exists'}
     else:
         user = users.insert_one({'username': username, 'password': password})
-    
-    return {'status': 'ok'}
 
+    return {'status': 'ok'}
 
 
 @app.route('/api/login', methods=['POST'])
@@ -432,7 +545,7 @@ def login():
         return {"status": 'no user name'}
     if password != user['password']:
         return {'status': 'password incorrect'}
-    
+
     return {'status': 'ok'}
 
 
@@ -445,7 +558,7 @@ def task_status():
     return {"status": task.status, "result": task_meta}
 
 
-### Backgound task api
+# Backgound task api
 @app.route('/api/upload_index', methods=['POST'])
 def upload_index_files():
     """Upload two files(index.faiss, index.pkl) to the user's folder."""
@@ -522,8 +635,10 @@ def delete_old():
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers',
+                         'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods',
+                         'GET,PUT,POST,DELETE,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
 
