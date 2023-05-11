@@ -33,7 +33,8 @@
     "react-markdown": "^8.0.7",
     "react-redux": "^8.0.5",
     "react-router-dom": "^6.8.1",
-    "react-syntax-highlighter": "^15.5.0"
+    "react-syntax-highlighter": "^15.5.0",
+    "update": "^0.7.4"
   },
   "devDependencies": {
     "@types/node": "^20.1.2",
