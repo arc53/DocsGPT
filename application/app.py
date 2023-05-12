@@ -90,9 +90,11 @@ mongo = MongoClient(app.config['MONGO_URI'])
 db = mongo["docsgpt"]
 vectors_collection = db["vectors"]
 
+
 async def async_generate(chain, question, chat_history):
     result = await chain.arun({"question": question, "chat_history": chat_history})
     return result
+
 
 def run_async_chain(chain, question, chat_history):
     loop = asyncio.new_event_loop()
@@ -104,6 +106,7 @@ def run_async_chain(chain, question, chat_history):
         loop.close()
     result["answer"] = answer
     return result
+
 
 @celery.task(bind=True)
 def ingest(self, directory, formats, name_job, filename, user):
@@ -206,7 +209,7 @@ def api_answer():
                 combine_docs_chain=doc_chain,
             )
             chat_history = []
-            #result = chain({"question": question, "chat_history": chat_history})
+            # result = chain({"question": question, "chat_history": chat_history})
             # generate async with async generate method
             result = run_async_chain(chain, question, chat_history)
         else:

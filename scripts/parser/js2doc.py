@@ -11,6 +11,7 @@ def find_files(directory):
                 files_list.append(os.path.join(root, file))
     return files_list
 
+
 def extract_functions(file_path):
     with open(file_path, 'r') as file:
         source_code = file.read()
@@ -38,6 +39,7 @@ def extract_functions(file_path):
                                 functions[func_name] = escodegen.generate(declaration.init)
         return functions
 
+
 def extract_classes(file_path):
     with open(file_path, 'r') as file:
         source_code = file.read()
@@ -52,6 +54,7 @@ def extract_classes(file_path):
                         function_names.append(subnode.key.name)
                 classes[class_name] = ", ".join(function_names)
     return classes
+
 
 def extract_functions_and_classes(directory):
     files = find_files(directory)

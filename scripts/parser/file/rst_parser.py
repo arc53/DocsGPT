@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from parser.file.base_parser import BaseParser
 import tiktoken
 
+
 class RstParser(BaseParser):
     """reStructuredText parser.
 
@@ -19,17 +20,17 @@ class RstParser(BaseParser):
     """
 
     def __init__(
-        self,
-        *args: Any,
-        remove_hyperlinks: bool = True,
-        remove_images: bool = True,
-        remove_table_excess: bool = True,
-        remove_interpreters: bool = True,
-        remove_directives: bool = True,
-        remove_whitespaces_excess: bool = True,
-        #Be carefull with remove_characters_excess, might cause data loss
-        remove_characters_excess: bool = True,
-        **kwargs: Any,
+            self,
+            *args: Any,
+            remove_hyperlinks: bool = True,
+            remove_images: bool = True,
+            remove_table_excess: bool = True,
+            remove_interpreters: bool = True,
+            remove_directives: bool = True,
+            remove_whitespaces_excess: bool = True,
+            # Be carefull with remove_characters_excess, might cause data loss
+            remove_characters_excess: bool = True,
+            **kwargs: Any,
     ) -> None:
         """Init params."""
         super().__init__(*args, **kwargs)
@@ -40,7 +41,6 @@ class RstParser(BaseParser):
         self._remove_directives = remove_directives
         self._remove_whitespaces_excess = remove_whitespaces_excess
         self._remove_characters_excess = remove_characters_excess
-
 
     def rst_to_tups(self, rst_text: str) -> List[Tuple[Optional[str], str]]:
         """Convert a reStructuredText file to a dictionary.
@@ -56,7 +56,8 @@ class RstParser(BaseParser):
 
         for i, line in enumerate(lines):
             header_match = re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", line)
-            if header_match and i > 0 and (len(lines[i - 1].strip()) == len(header_match.group().strip()) or lines[i - 2] == lines[i - 2]):
+            if header_match and i > 0 and (
+                    len(lines[i - 1].strip()) == len(header_match.group().strip()) or lines[i - 2] == lines[i - 2]):
                 if current_header is not None:
                     if current_text == "" or None:
                         continue
@@ -72,7 +73,7 @@ class RstParser(BaseParser):
 
         rst_tups.append((current_header, current_text))
 
-        #TODO: Format for rst
+        # TODO: Format for rst
         #
         # if current_header is not None:
         #     # pass linting, assert keys are defined
@@ -136,7 +137,7 @@ class RstParser(BaseParser):
         return {}
 
     def parse_tups(
-        self, filepath: Path, errors: str = "ignore"
+            self, filepath: Path, errors: str = "ignore"
     ) -> List[Tuple[Optional[str], str]]:
         """Parse file into tuples."""
         with open(filepath, "r") as f:
@@ -159,7 +160,7 @@ class RstParser(BaseParser):
         return rst_tups
 
     def parse_file(
-        self, filepath: Path, errors: str = "ignore"
+            self, filepath: Path, errors: str = "ignore"
     ) -> Union[str, List[str]]:
         """Parse file into string."""
         tups = self.parse_tups(filepath, errors=errors)

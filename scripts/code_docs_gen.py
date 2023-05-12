@@ -11,9 +11,9 @@ import tiktoken
 import sys
 from argparse import ArgumentParser
 import ast
+import json
 
 dotenv.load_dotenv()
-
 
 ps = list(Path("inputs").glob("**/*.py"))
 data = []
@@ -22,7 +22,6 @@ for p in ps:
     with open(p) as f:
         data.append(f.read())
     sources.append(p)
-
 
 
 # with open('inputs/client.py', 'r') as f:
@@ -64,10 +63,8 @@ for code in data:
     c1 += 1
 
 # save the structure dict as json
-import json
 with open('structure_dict.json', 'w') as f:
     json.dump(structure_dict, f)
-
 
 # llm = OpenAI(temperature=0)
 # prompt = PromptTemplate(
@@ -119,8 +116,3 @@ for source, classes in structure_dict.items():
             else:
                 with open(f"outputs/{source_w}", "a") as f:
                     f.write(f"\n\nFunction: {functions[function]}, \nDocumentation: {response}")
-
-
-
-
-
