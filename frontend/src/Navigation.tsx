@@ -48,6 +48,37 @@ export default function Navigation({
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
+  const indexData = {
+    user: 'local',
+  };
+
+  const getIndex = () => {
+    fetch('http://localhost:5001/api/get_index', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(indexData),
+      mode: 'cors',
+    })
+      .then((res) => {
+        if (res.status === 200) {
+          console.log(res);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        console.log(data);
+      })
+      .catch((error) => {
+        console.error('Error:', error);
+      });
+  };
+
+  const updateDocNav = () => {
+    console.log('Update nav window');
+  };
+
   const handleDeleteClick = (index: number, doc: Doc) => {
     const docPath = 'indexes/' + 'local' + '/' + doc.name;
 
@@ -170,6 +201,7 @@ export default function Navigation({
                           onClick={() => {
                             dispatch(setSelectedDocs(doc));
                             setIsDocsListOpen(false);
+                            getIndex();
                           }}
                           className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
                         >

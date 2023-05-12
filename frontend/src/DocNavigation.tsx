@@ -1,3 +1,7 @@
+import React, { useState } from 'react';
+
 export default function DocNavigation() {
-  return <div>DocNavigation</div>;
+  const [index, setIndex] = useState('');
+
+  return <div>Doc Navigation</div>;
 }
