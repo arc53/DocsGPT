@@ -630,6 +630,8 @@ def delete_old():
         pass
     return {"status": 'ok'}
 
+
+# This code will be deleted after the test.
 @app.route('/api/getdoctest', methods=['get'])
 def sendhtml():
     print("hello")
