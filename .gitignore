@@ -160,6 +160,7 @@ frontend/*.sln
 frontend/*.sw?
 frontend/.env.production
 frontend/.env.development
+frontend/.env.local
 
 application/vectors/
 

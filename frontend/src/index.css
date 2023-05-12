@@ -425,6 +425,7 @@ template {
   background-image: url('./assets/207.jpeg');
   background-size: cover;
   background-position-x: -22em;
+  width: 35%;
 }
 
 .loginTitle {
@@ -432,10 +433,26 @@ template {
 }
 
 .loginPane {
-  height: 75vh;
+  height: 768px;
+  float: center;
+  width: 65%;
 }
 
 .userInfo {
   float: right;
   height: 2.8vh;
+}
+
+.login-wrapper {
+  width: 70%;
+  margin-left: auto;
+  margin-right: auto;
+  height: 768px;
+  margin-top: 5em;
+}
+
+.loginForm {
+  width: 80%;
+  margin-left: 10%;
+  margin-right: 10%;
 }

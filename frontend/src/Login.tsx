@@ -41,20 +41,27 @@ export default function Login() {
     <>
       {' '}
       <section className="gradient-form h-full justify-center bg-neutral-100 dark:bg-neutral-700">
-        <div className="container mx-auto h-full w-7/12 justify-center p-10">
-          <div className="g-6 flex h-full flex-wrap items-center justify-center text-neutral-800 dark:text-neutral-200">
+        <div className="container mx-auto justify-center">
+          <div className="g-6 flex flex-wrap items-center justify-center text-neutral-800 dark:text-neutral-200">
             <div className="w-full">
-              <div className="block rounded-lg bg-white shadow-lg dark:bg-neutral-800 ">
+              <div className="login-wrapper block rounded-lg bg-white shadow-lg dark:bg-neutral-800 ">
                 <div className="g-0 lg:flex lg:flex-wrap">
-                  <div className="loginAbout flex items-center lg:w-5/12 lg:rounded-bl-none"></div>
-                  <div className="loginPane justify-center px-4 md:px-0 lg:w-7/12">
-                    <div className="md:mx-6 md:p-12">
-                      <div className="text-center">
-                        <h4 className="loginTitle mb-8 mt-10 pb-1 font-semibold">
+                  <div className="loginAbout flex items-center lg:rounded-bl-none"></div>
+                  <div className="loginPane justify-center">
+                    <div className="md:mx-6 md:p-6">
+                      <div className="justify-center text-center">
+                        <h4 className="loginTitle mb-8 mt-10 font-semibold">
                           Document Genius
                         </h4>
+                        <p className="text-md mb-10">
+                          Lorem ipsum dolor sit amet, consectetur adipisicing
+                          elit, sed do eiusmod tempor incididunt ut labore et
+                          dolore magna aliqua. Ut enim ad minim veniam, quis
+                          nostrud exercitation ullamco laboris nisi ut aliquip
+                          ex ea commodo consequat.
+                        </p>
                       </div>
-                      <div id="loginForm">
+                      <div id="loginForm" className="loginForm">
                         <SignIn
                           appearance={{
                             layout: {
@@ -65,15 +72,6 @@ export default function Login() {
                             },
                           }}
                         />
-
-                        {/* <p className="text-md mb-8">
-                        Lorem ipsum dolor sit amet, consectetur adipisicing
-                        elit, sed do eiusmod tempor incididunt ut labore et
-                        dolore magna aliqua. Ut enim ad minim veniam, quis
-                        nostrud exercitation ullamco laboris nisi ut aliquip ex
-                        ea commodo consequat.
-                      </p>
-                      <hr></hr> */}
 
                         {/* <form onSubmit={handleSubmit}>
                           <p className="text-md mb-4 mt-8">
