@@ -631,17 +631,26 @@ def delete_old():
     return {"status": 'ok'}
 
 
+# This code will be deleted after the test.
+@app.route('/api/getdoctest', methods=['get'])
+def sendhtml():
+    print("hello")
+    print("Current working directory: ", {os.getcwd()})
+
+    filename = 'test.html'
+    directory = os.path.join(app.root_path, 'inputs/local/temp/')
+
+    return send_from_directory(directory, filename)
+
+
 # handling CORS
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers',
-                         'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods',
-                         'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Access-Control-Allow-Origin,Access-Control-Allow-Methods,Access-Control-Allow-Credentials')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
