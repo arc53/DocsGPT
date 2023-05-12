@@ -3,16 +3,15 @@ import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
 import Login from './Login';
 import { ClerkProvider, SignedIn, SignedOut } from '@clerk/clerk-react';
-import Query from './query';
+import Query from './Query';
 
 inject();
 
-// if (!process.env.REACT_APP_CLERK_PUBLISHABLE_KEY) {
-//   throw 'Missing Publishable Key';
-// }
+if (!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
+  throw 'Missing Publishable Key';
+}
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-// const clerkPubKey = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
 
 export default function App() {
   //TODO : below media query is disjoint from tailwind. Please wire it together.
