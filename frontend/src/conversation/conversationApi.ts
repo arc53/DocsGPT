@@ -49,10 +49,22 @@ export function fetchAnswerApi(
       }
     })
     .then((data) => {
-      const result = data.answer;
+      let result = data.answer;
       const sources = data.sources;
+      const titlesSet = new Set<string>();
+      if (sources) {
+        result += '\n\n**For more information, please check:** \n';
+        sources.forEach((item: { title: string; source: string }) => {
+          if (!titlesSet.has(item.title)) {
+            titlesSet.add(item.title);
+            const formattedString =
+              '\n' + `[${item.title}](${item.source})` + '\n';
+            result += formattedString;
+          }
+        });
+      }
 
-      return { answer: result, sources: sources, query: question, result };
+      return { answer: result, query: question, result };
     });
 }
 

@@ -123,6 +123,21 @@ def run_async_chain(chain, question, chat_history):
     return result
 
 
+def extract_metadata(metadata):
+    result = {}
+    path, filename = os.path.split(metadata['source'])
+    print('after split')
+    print(path)
+    # Remove the first two path elements
+    new_path = os.path.join(*path.split(os.path.sep)[2:])
+    new_path = os.path.join(new_path, filename)
+    print(new_path)
+    # Add the metadata to the result list
+    result['source'] = new_path
+    result['title'] = metadata['title']
+    return result
+
+
 @celery.task(bind=True, name="app.ingest")
 def ingest(self, directory, formats, name_job, filename, user):
     resp = ingest_worker(self, directory, formats, name_job, filename, user)
@@ -137,6 +152,32 @@ def home():
 
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
+    # Sample data, use it for testing
+    # data = {
+    #     "answer": "To change the oil in your car, follow these steps:\n\n1. Remove the old oil filter.\n2. Drain the old oil.\n3. Install a new oil filter and gasket.\n4. Add new oil to the engine.\n\nHere's a breakdown of each step:\n\n1. Locate the oil filter and use an oil filter wrench to remove it. Be sure to have a basin or container beneath the filter to catch any oil that may spill out.\n\n2. Locate the drain plug on the oil pan beneath your car. Place a container large enough to hold all of the old oil beneath the drain plug. Remove the drain plug and let the oil drain completely.\n\n3. Install a new oil filter using the recommended torque specifications. Be sure to use a new gasket as well.\n\n4. Add new oil to the engine using a funnel and the specified amount of oil recommended by the manufacturer. Double check the oil level with the dipstick.\n\nRemember to consult your car's owner's manual for specific instructions and recommendations, including the type of oil to use. Also, keep in mind that motor oil should be changed every 6000 kilometers.",
+    #     "sources": [
+    #         {
+    #             "source": "ditawithdirectory.zip\\tasks\\changingtheoil.html",
+    #             "title": "Changing the oil in your car"
+    #         },
+    #         {
+    #             "source": "ditawithdirectory.zip\\tasks\\changingtheoil.html",
+    #             "title": "Changing the oil in your car"
+    #         },
+    #         {
+    #             "source": "ditawithdirectory.zip\\concepts\\oil.html",
+    #             "title": "Oil"
+    #         },
+    #         {
+    #             "source": "ditawithdirectory.zip\\concepts\\oil.html",
+    #             "title": "Oil"
+    #         }
+    #     ]
+    # }
+
+    # json_data = json.dumps(data)
+
+    # return (json_data)
     data = request.get_json()
     question = data["question"]
     history = data["history"]
@@ -262,11 +303,21 @@ def api_answer():
         # }
 
         print('test')
-        print(result['source_documents'])
+        sources = []
+        if result['source_documents']:
+            print(result['source_documents'])
+            for doc in result['source_documents']:
+                metadata = extract_metadata(doc.metadata)
+                sources.append(metadata)
+                print('metadata')
+                print(metadata)
+            return jsonify(
+                answer=result['answer'],
+                sources=sources,
+            )
 
         return jsonify(
-            answer=result['answer'],
-            sources=result['source_documents'][0].metadata['source'],
+            answer=result['answer']
         )
 
     except Exception as e:
@@ -416,9 +467,14 @@ def upload_file():
 
 @app.route('/api/get_docs', methods=['POST'])
 def serve_html():
+    print(request.json)
     user = secure_filename(request.json['user'])
-    path = request.json['path']
-    filename = secure_filename(request.json['filename'])
+    rawPath = os.path.normpath(request.json['path'])
+    path, filename = os.path.split(rawPath)
+    print(user)
+    print(app.config['UPLOAD_FOLDER'])
+    print(path)
+    print(filename)
     save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, path)
     print(save_dir)
     return send_from_directory(save_dir, filename)
@@ -647,10 +703,13 @@ def sendhtml():
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Access-Control-Allow-Origin,Access-Control-Allow-Methods,Access-Control-Allow-Credentials')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers',
+                         'Content-Type,Authorization,Access-Control-Allow-Origin,Access-Control-Allow-Methods,Access-Control-Allow-Credentials')
+    response.headers.add('Access-Control-Allow-Methods',
+                         'GET,PUT,POST,DELETE,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

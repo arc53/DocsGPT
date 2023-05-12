@@ -14,6 +14,7 @@ import Spinner from './../assets/spinner.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import { IoSend } from 'react-icons/io5';
+import { handleClick } from '../helper/getDocsHelper';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -26,6 +27,24 @@ export default function Conversation() {
     () => endMessageRef?.current?.scrollIntoView({ behavior: 'smooth' }),
     [queries.length, queries[queries.length - 1]],
   );
+
+  useEffect(() => {
+    const anchors = endMessageRef?.current?.querySelectorAll('a');
+
+    if (anchors) {
+      anchors.forEach((anchor) => {
+        anchor.addEventListener('click', handleClick);
+      });
+    }
+
+    return () => {
+      if (anchors) {
+        anchors.forEach((anchor) => {
+          anchor.removeEventListener('click', handleClick);
+        });
+      }
+    };
+  }, [queries.length, queries[queries.length - 1]]);
 
   const handleQuestion = (question: string) => {
     dispatch(addQuery({ prompt: question }));

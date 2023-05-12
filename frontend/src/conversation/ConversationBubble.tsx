@@ -6,6 +6,7 @@ import { ReactComponent as Dislike } from './../assets/dislike.svg';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import '../conversation.css';
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,
@@ -52,7 +53,7 @@ const ConversationBubble = forwardRef<
             <img src={Alert} alt="alert" className="mr-2 inline" />
           )}
           <ReactMarkdown
-            className="whitespace-pre-wrap break-words"
+            className="link whitespace-pre-wrap break-words"
             components={{
               code({ node, inline, className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
