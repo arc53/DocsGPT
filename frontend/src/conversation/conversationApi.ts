@@ -51,6 +51,7 @@ export function fetchAnswerApi(
     .then((data) => {
       const result = data.answer;
       const sources = data.sources;
+
       return { answer: result, sources: sources, query: question, result };
     });
 }
