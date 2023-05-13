@@ -1,19 +1,37 @@
 import React, { useEffect, useState } from 'react';
+import { globalSetFilepath } from './helper/getDocsHelper';
 
-export default function DocWindow(props: { sources: string[] }) {
-  if (props.sources === undefined) {
-    return <div>Here is the section to show the document the answer from.</div>;
-  } else {
-    return <div> Good News. Conversation give you the file name.</div>;
+export default function DocWindow() {
+  if (globalSetFilepath === 'a') {
+    return <div>File not found</div>;
   }
 
+  const [filepath, setFilepath] = useState(globalSetFilepath);
   const [html, setHtml] = useState('');
-  useEffect(() => {
-    console.log(props.sources);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (globalSetFilepath !== filepath) {
+        setFilepath(globalSetFilepath);
+      }
+    }, 500);
+    return () => clearInterval(intervalId);
+  }, [filepath]);
+
+  const data = {
+    user: 'local',
+    path: filepath,
+  };
+  // console.log("GLOBAL" + globalSetFilepath);
+
+  useEffect(() => {
     async function getHtml() {
-      fetch('http://localhost:5001/api/getdoctest', {
-        method: 'GET',
+      fetch('http://localhost:5001/api/get_docs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
         mode: 'cors',
       })
         .then((response) => response.text())
@@ -21,7 +39,7 @@ export default function DocWindow(props: { sources: string[] }) {
         .catch((error) => console.error(error));
     }
     getHtml();
-  }, [props.sources]);
+  }, [filepath]);
 
   return (
     <div dangerouslySetInnerHTML={{ __html: html }} />
