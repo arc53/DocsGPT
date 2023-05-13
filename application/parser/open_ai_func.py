@@ -1,32 +1,32 @@
 import os
-import faiss
-import pickle
+
 import tiktoken
-from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
-
-#from langchain.embeddings import HuggingFaceEmbeddings
-#from langchain.embeddings import HuggingFaceInstructEmbeddings
-#from langchain.embeddings import CohereEmbeddings
-
+from langchain.vectorstores import FAISS
 from retry import retry
 
 
+# from langchain.embeddings import HuggingFaceEmbeddings
+# from langchain.embeddings import HuggingFaceInstructEmbeddings
+# from langchain.embeddings import CohereEmbeddings
+
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
-# Function to convert string to tokens and estimate user cost.
+    # Function to convert string to tokens and estimate user cost.
     encoding = tiktoken.get_encoding(encoding_name)
     num_tokens = len(encoding.encode(string))
-    total_price = ((num_tokens/1000) * 0.0004)
+    total_price = ((num_tokens / 1000) * 0.0004)
     return num_tokens, total_price
+
 
 @retry(tries=10, delay=60)
 def store_add_texts_with_retry(store, i):
     store.add_texts([i.page_content], metadatas=[i.metadata])
-    #store_pine.add_texts([i.page_content], metadatas=[i.metadata])
+    # store_pine.add_texts([i.page_content], metadatas=[i.metadata])
+
 
 def call_openai_api(docs, folder_name, task_status):
-# Function to create a vector store from the documents and save it to disk.
+    # Function to create a vector store from the documents and save it to disk.
 
     # create output folder if it doesn't exist
     if not os.path.exists(f"{folder_name}"):
@@ -44,7 +44,8 @@ def call_openai_api(docs, folder_name, task_status):
     # hf = HuggingFaceEmbeddings(model_name=model_name)
     # store = FAISS.from_documents(docs_test, hf)
     s1 = len(docs)
-    for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs), bar_format='{l_bar}{bar}| Time Left: {remaining}'):
+    for i in tqdm(docs, desc="Embedding 🦖", unit="docs", total=len(docs),
+                  bar_format='{l_bar}{bar}| Time Left: {remaining}'):
         try:
             task_status.update_state(state='PROGRESS', meta={'current': int((c1 / s1) * 100)})
             store_add_texts_with_retry(store, i)
@@ -58,20 +59,20 @@ def call_openai_api(docs, folder_name, task_status):
         c1 += 1
     store.save_local(f"{folder_name}")
 
+
 def get_user_permission(docs, folder_name):
-# Function to ask user permission to call the OpenAI api and spend their OpenAI funds.
+    # Function to ask user permission to call the OpenAI api and spend their OpenAI funds.
     # Here we convert the docs list to a string and calculate the number of OpenAI tokens the string represents.
-    #docs_content = (" ".join(docs))
+    # docs_content = (" ".join(docs))
     docs_content = ""
     for doc in docs:
         docs_content += doc.page_content
-
 
     tokens, total_price = num_tokens_from_string(string=docs_content, encoding_name="cl100k_base")
     # Here we print the number of tokens and the approx user cost with some visually appealing formatting.
     print(f"Number of Tokens = {format(tokens, ',d')}")
     print(f"Approx Cost = ${format(total_price, ',.2f')}")
-    #Here we check for user permission before calling the API.
+    # Here we check for user permission before calling the API.
     user_input = input("Price Okay? (Y/N) \n").lower()
     if user_input == "y":
         call_openai_api(docs, folder_name)

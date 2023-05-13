@@ -1,19 +1,19 @@
 import os
 import sys
-import nltk
-import dotenv
-import typer
-
 from collections import defaultdict
 from typing import List, Optional
 
+import dotenv
+import nltk
+import typer
+
 from parser.file.bulk import SimpleDirectoryReader
-from parser.schema.base import Document
-from parser.open_ai_func import call_openai_api, get_user_permission
-from parser.py2doc import transform_to_docs
-from parser.py2doc import extract_functions_and_classes as extract_py
-from parser.js2doc import extract_functions_and_classes as extract_js
 from parser.java2doc import extract_functions_and_classes as extract_java
+from parser.js2doc import extract_functions_and_classes as extract_js
+from parser.open_ai_func import call_openai_api, get_user_permission
+from parser.py2doc import extract_functions_and_classes as extract_py
+from parser.py2doc import transform_to_docs
+from parser.schema.base import Document
 from parser.token_func import group_split
 
 dotenv.load_dotenv()
@@ -38,7 +38,8 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
            limit: Optional[int] = typer.Option(None, help="Maximum number of files to read."),
            formats: Optional[List[str]] = typer.Option([".rst", ".md"],
                                                        help="""List of required extensions (list with .)
-                                                        Currently supported: .rst, .md, .pdf, .docx, .csv, .epub, .html, .mdx"""),
+                                                        Currently supported: 
+                                                        .rst, .md, .pdf, .docx, .csv, .epub, .html, .mdx"""),
            exclude: Optional[bool] = typer.Option(True, help="Whether to exclude hidden files (dotfiles)."),
            sample: Optional[bool] = typer.Option(False,
                                                  help="Whether to output sample of the first 5 split documents."),
@@ -65,7 +66,7 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
         # docs = text_splitter.split_documents(raw_docs)
 
         # Sample feature
-        if sample == True:
+        if sample:
             for i in range(min(5, len(raw_docs))):
                 print(raw_docs[i].text)
 

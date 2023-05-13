@@ -1,18 +1,17 @@
-import requests
-import nltk
 import os
-
-from parser.file.bulk import SimpleDirectoryReader
-from parser.schema.base import Document
-from parser.open_ai_func import call_openai_api
-from parser.token_func import group_split
-from urllib.parse import urljoin
-from core.settings import settings
-
-
+import shutil
 import string
 import zipfile
-import shutil
+from urllib.parse import urljoin
+
+import nltk
+import requests
+
+from core.settings import settings
+from parser.file.bulk import SimpleDirectoryReader
+from parser.open_ai_func import call_openai_api
+from parser.schema.base import Document
+from parser.token_func import group_split
 
 try:
     nltk.download('punkt', quiet=True)
@@ -50,7 +49,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     with open(full_path + '/' + filename, 'wb') as f:
         f.write(file)
 
-    #check if file is .zip and extract it
+    # check if file is .zip and extract it
     if filename.endswith('.zip'):
         with zipfile.ZipFile(full_path + '/' + filename, 'r') as zip_ref:
             zip_ref.extractall(full_path)
@@ -68,7 +67,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     call_openai_api(docs, full_path, self)
     self.update_state(state='PROGRESS', meta={'current': 100})
 
-    if sample == True:
+    if sample:
         for i in range(min(5, len(raw_docs))):
             print(raw_docs[i].text)
 

@@ -77,13 +77,13 @@ class PandasCSVParser(BaseParser):
     """
 
     def __init__(
-        self,
-        *args: Any,
-        concat_rows: bool = True,
-        col_joiner: str = ", ",
-        row_joiner: str = "\n",
-        pandas_config: dict = {},
-        **kwargs: Any
+            self,
+            *args: Any,
+            concat_rows: bool = True,
+            col_joiner: str = ", ",
+            row_joiner: str = "\n",
+            pandas_config: dict = {},
+            **kwargs: Any
     ) -> None:
         """Init params."""
         super().__init__(*args, **kwargs)

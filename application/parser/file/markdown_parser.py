@@ -7,8 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from parser.file.base_parser import BaseParser
 import tiktoken
+from parser.file.base_parser import BaseParser
 
 
 class MarkdownParser(BaseParser):
@@ -20,13 +20,13 @@ class MarkdownParser(BaseParser):
     """
 
     def __init__(
-        self,
-        *args: Any,
-        remove_hyperlinks: bool = True,
-        remove_images: bool = True,
-        max_tokens: int = 2048,
-        # remove_tables: bool = True,
-        **kwargs: Any,
+            self,
+            *args: Any,
+            remove_hyperlinks: bool = True,
+            remove_images: bool = True,
+            max_tokens: int = 2048,
+            # remove_tables: bool = True,
+            **kwargs: Any,
     ) -> None:
         """Init params."""
         super().__init__(*args, **kwargs)
@@ -35,8 +35,8 @@ class MarkdownParser(BaseParser):
         self._max_tokens = max_tokens
         # self._remove_tables = remove_tables
 
-
-    def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str], current_text: str):
+    def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str],
+                          current_text: str):
         """Append to tups chunk."""
         num_tokens = len(tiktoken.get_encoding("cl100k_base").encode(current_text))
         if num_tokens > self._max_tokens:
@@ -46,6 +46,7 @@ class MarkdownParser(BaseParser):
         else:
             tups.append((current_header, current_text))
         return tups
+
     def markdown_to_tups(self, markdown_text: str) -> List[Tuple[Optional[str], str]]:
         """Convert a markdown file to a dictionary.
 
@@ -115,7 +116,7 @@ class MarkdownParser(BaseParser):
         return {}
 
     def parse_tups(
-        self, filepath: Path, errors: str = "ignore"
+            self, filepath: Path, errors: str = "ignore"
     ) -> List[Tuple[Optional[str], str]]:
         """Parse file into tuples."""
         with open(filepath, "r") as f:
@@ -130,7 +131,7 @@ class MarkdownParser(BaseParser):
         return markdown_tups
 
     def parse_file(
-        self, filepath: Path, errors: str = "ignore"
+            self, filepath: Path, errors: str = "ignore"
     ) -> Union[str, List[str]]:
         """Parse file into string."""
         tups = self.parse_tups(filepath, errors=errors)

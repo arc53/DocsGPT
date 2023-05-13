@@ -1,15 +1,14 @@
 import os
-import faiss
-import pickle
+
 import tiktoken
-from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from retry import retry
+
 
 # from langchain.embeddings import HuggingFaceEmbeddings
 # from langchain.embeddings import HuggingFaceInstructEmbeddings
 # from langchain.embeddings import CohereEmbeddings
-
-from retry import retry
 
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:

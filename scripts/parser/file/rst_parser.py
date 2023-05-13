@@ -5,10 +5,9 @@ Contains parser for md files.
 """
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from parser.file.base_parser import BaseParser
-import tiktoken
 
 
 class RstParser(BaseParser):

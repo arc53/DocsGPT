@@ -1,17 +1,19 @@
-import requests
-import dotenv
 import os
-import json
 import pprint
+
+import dotenv
+import requests
+from flask import Flask, request
 
 dotenv.load_dotenv()
 docsgpt_url = os.getenv("docsgpt_url")
 chatwoot_url = os.getenv("chatwoot_url")
 docsgpt_key = os.getenv("docsgpt_key")
 chatwoot_token = os.getenv("chatwoot_token")
-#account_id = os.getenv("account_id")
-#assignee_id = os.getenv("assignee_id")
+# account_id = os.getenv("account_id")
+# assignee_id = os.getenv("assignee_id")
 label_stop = "human-requested"
+
 
 def send_to_bot(sender, message):
     data = {
@@ -43,7 +45,6 @@ def send_to_chatwoot(account, conversation, message):
     return r.json()
 
 
-from flask import Flask, request
 app = Flask(__name__)
 
 
@@ -74,7 +75,7 @@ def docsgpt():
     # elif str(assignee) != str(assignee_id):
     #     return "Not the right assignee"
 
-    if(message_type == "incoming"):
+    if (message_type == "incoming"):
         bot_response = send_to_bot(contact, message)
         create_message = send_to_chatwoot(
             account, conversation, bot_response)
@@ -82,6 +83,7 @@ def docsgpt():
         return "Not an incoming message"
 
     return create_message
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80)
