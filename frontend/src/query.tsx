@@ -9,6 +9,12 @@ export default function Query() {
   const [navState, setNavState] = useState<ActiveState>(
     window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
   );
+  const [html, setHtml] = useState<string>('');
+
+  const handleHtmlChange = (newHtml: string) => {
+    setHtml(newHtml);
+  };
+
   return (
     <>
       <div className="wrapper">
@@ -16,10 +22,10 @@ export default function Query() {
           <DocNavigation />
         </div>
         <div className="docWindow">
-          <DocWindow />
+          <DocWindow html={html} />
         </div>
         <div className="chatWindow">
-          <Conversation />
+          <Conversation onLinkClicked={handleHtmlChange} />
         </div>
         <div className="chatNavigation">
           {' '}

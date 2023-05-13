@@ -15,8 +15,11 @@ import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import { IoSend } from 'react-icons/io5';
 import { handleClick } from '../helper/getDocsHelper';
+interface ConversationProps {
+  onLinkClicked: (data: string) => void;
+}
 
-export default function Conversation() {
+export default function Conversation(props: ConversationProps) {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
   const dispatch = useDispatch<AppDispatch>();
@@ -33,14 +36,18 @@ export default function Conversation() {
 
     if (anchors) {
       anchors.forEach((anchor) => {
-        anchor.addEventListener('click', handleClick);
+        anchor.addEventListener('click', (event) => {
+          handleClick(event, props.onLinkClicked);
+        });
       });
     }
 
     return () => {
       if (anchors) {
         anchors.forEach((anchor) => {
-          anchor.removeEventListener('click', handleClick);
+          anchor.removeEventListener('click', (event) => {
+            handleClick(event, props.onLinkClicked);
+          });
         });
       }
     };

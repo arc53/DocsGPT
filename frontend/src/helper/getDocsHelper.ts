@@ -1,4 +1,11 @@
-export const handleClick = (event: MouseEvent) => {
+export const handleClick = (
+  event: MouseEvent,
+  onLinkClicked: {
+    (data: string): void;
+    (data: string): void;
+    (arg0: string): void;
+  },
+) => {
   event.preventDefault();
   const anchor = event.target as HTMLAnchorElement;
   const url = new URL(anchor.href.replace(/%5C/g, '/'));
@@ -21,7 +28,10 @@ export const handleClick = (event: MouseEvent) => {
     .then((response) => {
       return response.text();
     })
-    .then((data) => console.log(data))
+    .then((data) => {
+      console.log(data);
+      onLinkClicked(data);
+    })
     .catch((error) => {
       console.log('Error: ', error);
     });
