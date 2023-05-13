@@ -2,12 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { globalSetFilepath } from './helper/getDocsHelper';
 
 export default function DocWindow() {
-  if (globalSetFilepath === 'a') {
-    return <div>File not found</div>;
-  }
-
   const [filepath, setFilepath] = useState(globalSetFilepath);
   const [html, setHtml] = useState('');
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (globalSetFilepath !== filepath) {
+        setFilepath(globalSetFilepath);
+      }
+    }, 500);
+    return () => clearInterval(intervalId);
+  }, [filepath]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -40,6 +45,10 @@ export default function DocWindow() {
     }
     getHtml();
   }, [filepath]);
+
+  if (globalSetFilepath === 'a') {
+    return <div>File not found</div>;
+  }
 
   return (
     <div dangerouslySetInnerHTML={{ __html: html }} />
