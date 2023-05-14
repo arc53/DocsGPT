@@ -55,7 +55,8 @@ export const updateNavigation = (
       return res.json();
     })
     .then((data) => {
-      setIndexState(data);
+      const stringData = JSON.stringify(data);
+      setIndexState(stringData);
       console.log(data);
     })
     .catch((error) => {

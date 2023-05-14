@@ -50,30 +50,6 @@ export default function Navigation({
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
-  // const getIndex = () => {
-  //   fetch('http://localhost:5001/api/get_index', {
-  //     method: 'POST',
-  //     headers: {
-  //       'Content-Type': 'application/json',
-  //     },
-  //     body: JSON.stringify(indexData),
-  //     mode: 'cors',
-  //   })
-  //     .then((res) => {
-  //       if (res.status === 200) {
-  //         console.log(res);
-  //       }
-  //       return res.json();
-  //     })
-  //     .then((data) => {
-  //       setIndexState(data);
-  //       console.log(data);
-  //     })
-  //     .catch((error) => {
-  //       console.error('Error:', error);
-  //     });
-  // };
-
   const handleDeleteClick = (index: number, doc: Doc) => {
     const docPath = 'indexes/' + 'local' + '/' + doc.name;
 
@@ -236,21 +212,8 @@ export default function Navigation({
               </div>
             )}
           </div>
-
           <p className="ml-6 mt-3 font-bold text-jet">Source Docs</p>
         </div>
-        {/* <div className="flex flex-col gap-2 border-b-2 py-2">
-          <div
-            className="mx-4 my-auto flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
-            onClick={() => {
-              setApiKeyModalState('ACTIVE');
-            }}
-          >
-            <img src={Key} alt="key" className="ml-2 w-6" />
-            <p className="my-auto text-eerie-black">Reset Key</p>
-          </div>
-        </div> */}
-
         <div className="chatNavigation-links mt-3">
           <div
             className="mx-3 my-auto flex h-10 cursor-pointer gap-4 rounded-md hover:bg-gray-200"
