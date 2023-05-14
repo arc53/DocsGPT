@@ -10,6 +10,7 @@ export default function Query() {
     window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
   );
   const [html, setHtml] = useState<string>('');
+  const [index, setIndex] = useState<string>('');
 
   const handleHtmlChange = (newHtml: string) => {
     setHtml(newHtml);
@@ -19,7 +20,7 @@ export default function Query() {
     <>
       <div className="wrapper">
         <div className="docNavigation">
-          <DocNavigation />
+          <DocNavigation index={index} />
         </div>
         <div className="docWindow">
           <DocWindow html={html} />
@@ -29,7 +30,11 @@ export default function Query() {
         </div>
         <div className="chatNavigation">
           {' '}
-          <Navigation navState={navState} setNavState={setNavState} />
+          <Navigation
+            navState={navState}
+            setNavState={setNavState}
+            indexState={index}
+          />
         </div>
       </div>
     </>

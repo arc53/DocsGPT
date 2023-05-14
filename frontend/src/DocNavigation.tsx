@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+export default function DocNavigation(props: { index: string }) {
+  if (props.index === '') {
+    return <div>Here is the section to show the doc navigation.</div>;
+  }
 
-export default function DocNavigation() {
-  const [index, setIndex] = useState('');
-
-  return <div>Doc Navigation</div>;
+  return (
+    <>
+      <div dangerouslySetInnerHTML={{ __html: props.index }} />
+    </>
+  );
 }

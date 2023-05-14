@@ -21,13 +21,20 @@ import { FaCloudUploadAlt } from 'react-icons/fa';
 import { UserButton, useUser } from '@clerk/clerk-react';
 import { BsFillChatRightTextFill } from 'react-icons/bs';
 
-export default function Navigation({
-  navState,
-  setNavState,
-}: {
-  navState: ActiveState;
-  setNavState: React.Dispatch<React.SetStateAction<ActiveState>>;
-}) {
+export default function Navigation(
+  {
+    navState,
+    setNavState,
+  }: {
+    navState: ActiveState;
+    setNavState: React.Dispatch<React.SetStateAction<ActiveState>>;
+  },
+  {
+    indexState,
+  }: {
+    indexState: string;
+  },
+) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
