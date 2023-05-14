@@ -31,8 +31,10 @@ export default function Navigation(
   },
   {
     indexState,
+    setIndexState,
   }: {
     indexState: string;
+    setIndexState: string;
   },
 ) {
   const dispatch = useDispatch();
@@ -75,6 +77,7 @@ export default function Navigation(
         return res.json();
       })
       .then((data) => {
+        setIndexState(data);
         console.log(data);
       })
       .catch((error) => {
