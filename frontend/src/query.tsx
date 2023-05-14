@@ -33,7 +33,7 @@ export default function Query() {
           <Navigation
             navState={navState}
             setNavState={setNavState}
-            indexState={index}
+            setIndexState={setIndex}
           />
         </div>
       </div>

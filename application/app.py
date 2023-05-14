@@ -153,31 +153,31 @@ def home():
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
     # Sample data, use it for testing
-    # data = {
-    #     "answer": "To change the oil in your car, follow these steps:\n\n1. Remove the old oil filter.\n2. Drain the old oil.\n3. Install a new oil filter and gasket.\n4. Add new oil to the engine.\n\nHere's a breakdown of each step:\n\n1. Locate the oil filter and use an oil filter wrench to remove it. Be sure to have a basin or container beneath the filter to catch any oil that may spill out.\n\n2. Locate the drain plug on the oil pan beneath your car. Place a container large enough to hold all of the old oil beneath the drain plug. Remove the drain plug and let the oil drain completely.\n\n3. Install a new oil filter using the recommended torque specifications. Be sure to use a new gasket as well.\n\n4. Add new oil to the engine using a funnel and the specified amount of oil recommended by the manufacturer. Double check the oil level with the dipstick.\n\nRemember to consult your car's owner's manual for specific instructions and recommendations, including the type of oil to use. Also, keep in mind that motor oil should be changed every 6000 kilometers.",
-    #     "sources": [
-    #         {
-    #             "source": "ditawithdirectory.zip\\tasks\\changingtheoil.html",
-    #             "title": "Changing the oil in your car"
-    #         },
-    #         {
-    #             "source": "ditawithdirectory.zip\\tasks\\changingtheoil.html",
-    #             "title": "Changing the oil in your car"
-    #         },
-    #         {
-    #             "source": "ditawithdirectory.zip\\concepts\\oil.html",
-    #             "title": "Oil"
-    #         },
-    #         {
-    #             "source": "ditawithdirectory.zip\\concepts\\oil.html",
-    #             "title": "Oil"
-    #         }
-    #     ]
-    # }
+    data = {
+        "answer": "To change the oil in your car, follow these steps:\n\n1. Remove the old oil filter.\n2. Drain the old oil.\n3. Install a new oil filter and gasket.\n4. Add new oil to the engine.\n\nHere's a breakdown of each step:\n\n1. Locate the oil filter and use an oil filter wrench to remove it. Be sure to have a basin or container beneath the filter to catch any oil that may spill out.\n\n2. Locate the drain plug on the oil pan beneath your car. Place a container large enough to hold all of the old oil beneath the drain plug. Remove the drain plug and let the oil drain completely.\n\n3. Install a new oil filter using the recommended torque specifications. Be sure to use a new gasket as well.\n\n4. Add new oil to the engine using a funnel and the specified amount of oil recommended by the manufacturer. Double check the oil level with the dipstick.\n\nRemember to consult your car's owner's manual for specific instructions and recommendations, including the type of oil to use. Also, keep in mind that motor oil should be changed every 6000 kilometers.",
+        "sources": [
+            {
+                "source": "ditawithdirectory.zip\\tasks\\changingtheoil.html",
+                "title": "Changing the oil in your car"
+            },
+            {
+                "source": "ditawithdirectory.zip\\tasks\\changingtheoil.html",
+                "title": "Changing the oil in your car"
+            },
+            {
+                "source": "ditawithdirectory.zip\\concepts\\oil.html",
+                "title": "Oil"
+            },
+            {
+                "source": "ditawithdirectory.zip\\concepts\\oil.html",
+                "title": "Oil"
+            }
+        ]
+    }
 
-    # json_data = json.dumps(data)
+    json_data = json.dumps(data)
 
-    # return (json_data)
+    return (json_data)
     data = request.get_json()
     question = data["question"]
     history = data["history"]

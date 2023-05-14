@@ -35,3 +35,30 @@ export const handleClick = (
       console.log('Error: ', error);
     });
 };
+
+export const updateNavigation = (
+  indexData: { user: string },
+  setIndexState: (arg0: string) => void,
+) => {
+  fetch('http://localhost:5001/api/get_index', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(indexData),
+    mode: 'cors',
+  })
+    .then((res) => {
+      if (res.status === 200) {
+        console.log(res);
+      }
+      return res.json();
+    })
+    .then((data) => {
+      setIndexState(data);
+      console.log(data);
+    })
+    .catch((error) => {
+      console.error('Error:', error);
+    });
+};

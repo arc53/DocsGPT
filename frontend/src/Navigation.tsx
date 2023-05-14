@@ -20,23 +20,16 @@ import { Doc } from './preferences/preferenceApi';
 import { FaCloudUploadAlt } from 'react-icons/fa';
 import { UserButton, useUser } from '@clerk/clerk-react';
 import { BsFillChatRightTextFill } from 'react-icons/bs';
-
-export default function Navigation(
-  {
-    navState,
-    setNavState,
-  }: {
-    navState: ActiveState;
-    setNavState: React.Dispatch<React.SetStateAction<ActiveState>>;
-  },
-  {
-    indexState,
-    setIndexState,
-  }: {
-    indexState: string;
-    setIndexState: string;
-  },
-) {
+import { updateNavigation } from './helper/getDocsHelper';
+export default function Navigation({
+  navState,
+  setNavState,
+  setIndexState,
+}: {
+  navState: ActiveState;
+  setNavState: React.Dispatch<React.SetStateAction<ActiveState>>;
+  setIndexState: React.Dispatch<React.SetStateAction<string>>;
+}) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -57,37 +50,29 @@ export default function Navigation(
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
-  const indexData = {
-    user: 'local',
-  };
-
-  const getIndex = () => {
-    fetch('http://localhost:5001/api/get_index', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(indexData),
-      mode: 'cors',
-    })
-      .then((res) => {
-        if (res.status === 200) {
-          console.log(res);
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setIndexState(data);
-        console.log(data);
-      })
-      .catch((error) => {
-        console.error('Error:', error);
-      });
-  };
-
-  const updateDocNav = () => {
-    console.log('Update nav window');
-  };
+  // const getIndex = () => {
+  //   fetch('http://localhost:5001/api/get_index', {
+  //     method: 'POST',
+  //     headers: {
+  //       'Content-Type': 'application/json',
+  //     },
+  //     body: JSON.stringify(indexData),
+  //     mode: 'cors',
+  //   })
+  //     .then((res) => {
+  //       if (res.status === 200) {
+  //         console.log(res);
+  //       }
+  //       return res.json();
+  //     })
+  //     .then((data) => {
+  //       setIndexState(data);
+  //       console.log(data);
+  //     })
+  //     .catch((error) => {
+  //       console.error('Error:', error);
+  //     });
+  // };
 
   const handleDeleteClick = (index: number, doc: Doc) => {
     const docPath = 'indexes/' + 'local' + '/' + doc.name;
@@ -133,6 +118,16 @@ export default function Navigation(
       }
     });
   }, []);
+
+  const indexData = {
+    user: 'local',
+  };
+
+  useEffect(() => {
+    if (uploadModalState === 'INACTIVE') {
+      updateNavigation(indexData, setIndexState);
+    }
+  }, [uploadModalState]);
 
   const { isLoaded, isSignedIn, user } = useUser();
 
@@ -211,7 +206,6 @@ export default function Navigation(
                           onClick={() => {
                             dispatch(setSelectedDocs(doc));
                             setIsDocsListOpen(false);
-                            getIndex();
                           }}
                           className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
                         >
