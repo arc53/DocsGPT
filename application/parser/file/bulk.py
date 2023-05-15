@@ -52,17 +52,17 @@ class SimpleDirectoryReader(BaseReader):
     """
 
     def __init__(
-        self,
-        input_dir: Optional[str] = None,
-        input_files: Optional[List] = None,
-        exclude_hidden: bool = True,
-        errors: str = "ignore",
-        recursive: bool = True,
-        required_exts: Optional[List[str]] = None,
-        file_extractor: Optional[Dict[str, BaseParser]] = None,
-        num_files_limit: Optional[int] = None,
-        file_metadata: Optional[Callable[[str], Dict]] = None,
-        chunk_size_max: int = 2048,
+            self,
+            input_dir: Optional[str] = None,
+            input_files: Optional[List] = None,
+            exclude_hidden: bool = True,
+            errors: str = "ignore",
+            recursive: bool = True,
+            required_exts: Optional[List[str]] = None,
+            file_extractor: Optional[Dict[str, BaseParser]] = None,
+            num_files_limit: Optional[int] = None,
+            file_metadata: Optional[Callable[[str], Dict]] = None,
+            chunk_size_max: int = 2048,
     ) -> None:
         """Initialize with parameters."""
         super().__init__()
@@ -102,8 +102,8 @@ class SimpleDirectoryReader(BaseReader):
             elif self.exclude_hidden and input_file.name.startswith("."):
                 continue
             elif (
-                self.required_exts is not None
-                and input_file.suffix not in self.required_exts
+                    self.required_exts is not None
+                    and input_file.suffix not in self.required_exts
             ):
                 continue
             else:
@@ -114,7 +114,7 @@ class SimpleDirectoryReader(BaseReader):
             new_input_files.extend(sub_input_files)
 
         if self.num_files_limit is not None and self.num_files_limit > 0:
-            new_input_files = new_input_files[0 : self.num_files_limit]
+            new_input_files = new_input_files[0: self.num_files_limit]
 
         # print total number of files added
         logging.debug(
