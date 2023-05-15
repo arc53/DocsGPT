@@ -5,7 +5,7 @@ import Conversation from './conversation/Conversation';
 import { ActiveState } from './models/misc';
 import { useState } from 'react';
 
-export default function Query() {
+export default function QueryPage() {
   const [navState, setNavState] = useState<ActiveState>(
     window.matchMedia('(min-width: 768px)').matches ? 'ACTIVE' : 'INACTIVE',
   );

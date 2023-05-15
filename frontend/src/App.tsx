@@ -3,7 +3,7 @@ import { ActiveState } from './models/misc';
 import { inject } from '@vercel/analytics';
 import Login from './Login';
 import { ClerkProvider, SignedIn, SignedOut } from '@clerk/clerk-react';
-import Query from './Query';
+import QueryPage from './QueryPage';
 
 inject();
 
@@ -22,7 +22,7 @@ export default function App() {
   return (
     <ClerkProvider publishableKey={clerkPubKey}>
       <SignedIn>
-        <Query />
+        <QueryPage />
       </SignedIn>
       <SignedOut>
         <Login />
