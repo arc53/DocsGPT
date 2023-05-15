@@ -1,6 +1,7 @@
 import os
-import esprima
+
 import escodegen
+import esprima
 
 
 def find_files(directory):
@@ -10,6 +11,7 @@ def find_files(directory):
             if file.endswith('.js'):
                 files_list.append(os.path.join(root, file))
     return files_list
+
 
 def extract_functions(file_path):
     with open(file_path, 'r') as file:
@@ -26,7 +28,6 @@ def extract_functions(file_path):
                         func_name = declaration.id.name if declaration.id else '<anonymous>'
                         functions[func_name] = escodegen.generate(declaration.init)
             elif node.type == 'ClassDeclaration':
-                class_name = node.id.name
                 for subnode in node.body.body:
                     if subnode.type == 'MethodDefinition':
                         func_name = subnode.key.name
@@ -37,6 +38,7 @@ def extract_functions(file_path):
                                 func_name = declaration.id.name if declaration.id else '<anonymous>'
                                 functions[func_name] = escodegen.generate(declaration.init)
         return functions
+
 
 def extract_classes(file_path):
     with open(file_path, 'r') as file:
@@ -52,6 +54,7 @@ def extract_classes(file_path):
                         function_names.append(subnode.key.name)
                 classes[class_name] = ", ".join(function_names)
     return classes
+
 
 def extract_functions_and_classes(directory):
     files = find_files(directory)

@@ -1,5 +1,7 @@
 import os
+
 import javalang
+
 
 def find_files(directory):
     files_list = []
@@ -8,6 +10,7 @@ def find_files(directory):
             if file.endswith('.java'):
                 files_list.append(os.path.join(root, file))
     return files_list
+
 
 def extract_functions(file_path):
     with open(file_path, "r") as file:
@@ -28,6 +31,7 @@ def extract_functions(file_path):
             methods[method_name] = method_source_code
     return methods
 
+
 def extract_classes(file_path):
     with open(file_path, 'r') as file:
         source_code = file.read()
@@ -46,6 +50,7 @@ def extract_classes(file_path):
             class_string = "Declarations: " + ", ".join(declarations) + "\n  Method name: " + ", ".join(methods)
             classes[class_name] = class_string
     return classes
+
 
 def extract_functions_and_classes(directory):
     files = find_files(directory)

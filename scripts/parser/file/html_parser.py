@@ -24,12 +24,11 @@ class HTMLParser(BaseParser):
             Union[str, List[str]]: a string or a List of strings.
         """
         try:
-            import unstructured
+            from unstructured.partition.html import partition_html
+            from unstructured.staging.base import convert_to_isd
+            from unstructured.cleaners.core import clean
         except ImportError:
             raise ValueError("unstructured package is required to parse HTML files.")
-        from unstructured.partition.html import partition_html
-        from unstructured.staging.base import convert_to_isd
-        from unstructured.cleaners.core import clean
 
         # Using the unstructured library to convert the html to isd format
         # isd sample : isd = [
@@ -70,7 +69,8 @@ class HTMLParser(BaseParser):
                 Chunks.append([])
             Chunks[-1].append(isd_el['text'])
 
-        # Removing all the chunks with sum of lenth of all the strings in the chunk < 25 #TODO: This value can be an user defined variable
+        # Removing all the chunks with sum of lenth of all the strings in the chunk < 25
+        # TODO: This value can be a user defined variable
         for chunk in Chunks:
             # sum of lenth of all the strings in the chunk
             sum = 0

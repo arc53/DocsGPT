@@ -1,9 +1,9 @@
 import re
-import tiktoken
-
-from typing import List
-from parser.schema.base import Document
 from math import ceil
+from typing import List
+
+import tiktoken
+from parser.schema.base import Document
 
 
 def separate_header_and_body(text):
@@ -59,16 +59,16 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
 
 
 def group_split(documents: List[Document], max_tokens: int = 2000, min_tokens: int = 150, token_check: bool = True):
-    if token_check == False:
+    if not token_check:
         return documents
     print("Grouping small documents")
     try:
         documents = group_documents(documents=documents, min_tokens=min_tokens, max_tokens=max_tokens)
-    except:
+    except Exception:
         print("Grouping failed, try running without token_check")
     print("Separating large documents")
     try:
         documents = split_documents(documents=documents, max_tokens=max_tokens)
-    except:
+    except Exception:
         print("Grouping failed, try running without token_check")
     return documents

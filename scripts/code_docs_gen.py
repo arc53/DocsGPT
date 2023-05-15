@@ -1,17 +1,10 @@
-from pathlib import Path
-from langchain.text_splitter import CharacterTextSplitter
-import faiss
-from langchain.vectorstores import FAISS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.llms import OpenAI
-from langchain.prompts import PromptTemplate
-import pickle
-import dotenv
-import tiktoken
-import sys
-from argparse import ArgumentParser
 import ast
 import json
+from pathlib import Path
+
+import dotenv
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
 
 dotenv.load_dotenv()
 
@@ -22,12 +15,6 @@ for p in ps:
     with open(p) as f:
         data.append(f.read())
     sources.append(p)
-
-
-# with open('inputs/client.py', 'r') as f:
-#     tree = ast.parse(f.read())
-
-# print(tree)
 
 
 def get_functions_in_class(node):
@@ -65,16 +52,6 @@ for code in data:
 # save the structure dict as json
 with open('structure_dict.json', 'w') as f:
     json.dump(structure_dict, f)
-
-# llm = OpenAI(temperature=0)
-# prompt = PromptTemplate(
-#     input_variables=["code"],
-#     template="Code: {code}, Documentation: ",
-# )
-#
-# print(prompt.format(code="print('hello world')"))
-# print(llm(prompt.format(code="print('hello world')")))
-
 
 if not Path("outputs").exists():
     Path("outputs").mkdir()

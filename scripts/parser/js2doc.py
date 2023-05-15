@@ -1,6 +1,7 @@
 import os
-import esprima
+
 import escodegen
+import esprima
 
 
 def find_files(directory):
@@ -27,7 +28,6 @@ def extract_functions(file_path):
                         func_name = declaration.id.name if declaration.id else '<anonymous>'
                         functions[func_name] = escodegen.generate(declaration.init)
             elif node.type == 'ClassDeclaration':
-                class_name = node.id.name
                 for subnode in node.body.body:
                     if subnode.type == 'MethodDefinition':
                         func_name = subnode.key.name

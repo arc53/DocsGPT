@@ -3,7 +3,6 @@ from abc import abstractmethod
 from typing import Any, List
 
 from langchain.docstore.document import Document as LCDocument
-
 from parser.schema.base import Document
 
 
