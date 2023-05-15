@@ -124,7 +124,6 @@ typing-inspect==0.8.0
 typing_extensions==4.4.0
 unstructured==0.4.11
 urllib3==1.26.14
-Werkzeug==2.2.3
 wrapt==1.14.1
 XlsxWriter==3.0.8
 xxhash==3.2.0
