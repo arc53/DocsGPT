@@ -10,7 +10,7 @@ import datetime
 from gridfs import GridFS
 from celery import Celery
 from celery.result import AsyncResult
-from flask import Flask, request, render_template, send_from_directory, jsonify
+from flask import Flask, request, redirect, send_from_directory, jsonify
 from langchain import FAISS
 from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
@@ -146,8 +146,12 @@ def ingest(self, directory, formats, name_job, filename, user):
 
 @app.route("/")
 def home():
-    return render_template("index.html", api_key_set=api_key_set, llm_choice=llm_choice,
-                           embeddings_choice=embeddings_choice)
+    return redirect("/static/index.html", code=302)
+
+
+@app.route('/assets/<path:path>')
+def send_asset(path):
+    return send_from_directory('static/assets', path)
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -712,4 +716,4 @@ def after_request(response):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=process.env.VITE_PORT)

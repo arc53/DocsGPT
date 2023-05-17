@@ -1,0 +1,35 @@
+FROM python:3.10-slim-bullseye as builder
+
+# Tiktoken requires Rust toolchain, so build it in a separate stage
+RUN apt-get update && apt-get install -y gcc curl
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && apt-get install --reinstall libc6-dev -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN pip install --upgrade pip && pip install tiktoken==0.3.3
+COPY application/requirements.txt .
+RUN pip install -r requirements.txt
+RUN ls /usr/local/lib/python3.10/site-packages/
+
+FROM node:18-alpine3.14 as nodebuilder
+
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend .
+RUN npm run build
+
+FROM python:3.10-slim-bullseye
+# Copy pre-built packages from builder stage
+COPY --from=builder /usr/local/lib/python3.10/site-packages/ /usr/local/lib/python3.10/site-packages/
+RUN pip install gunicorn==20.1.0
+RUN pip install celery==5.2.7
+RUN pip install pymongo
+WORKDIR /app
+COPY application /app
+RUN rm -rf /app/static/dist
+COPY --from=nodebuilder /frontend/dist /app/static
+ENV FLASK_APP=app.py
+
+
+EXPOSE 5001
+
+CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:5001", "wsgi:app"]
