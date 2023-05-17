@@ -24,6 +24,9 @@ nltk.download('punkt', quiet=True)
 nltk.download('averaged_perceptron_tagger', quiet=True)
 
 
+def metadata_from_filename(title):
+    return {'title': title}
+
 # Splits all files in specified folder to documents
 @app.command()
 def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
@@ -55,7 +58,7 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
     def process_one_docs(directory, folder_name):
         raw_docs = SimpleDirectoryReader(input_dir=directory, input_files=file, recursive=recursive,
                                          required_exts=formats, num_files_limit=limit,
-                                         exclude_hidden=exclude).load_data()
+                                         exclude_hidden=exclude, file_metadata=metadata_from_filename).load_data()
 
         # Here we split the documents, as needed, into smaller chunks.
         # We do this due to the context limits of the LLMs.

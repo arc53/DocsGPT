@@ -19,6 +19,8 @@ try:
 except FileExistsError:
     pass
 
+def metadata_from_filename(title):
+    return {'title': title}
 
 def generate_random_string(length):
     return ''.join([string.ascii_letters[i % 52] for i in range(length)])
@@ -59,7 +61,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     raw_docs = SimpleDirectoryReader(input_dir=full_path, input_files=input_files, recursive=recursive,
                                      required_exts=formats, num_files_limit=limit,
-                                     exclude_hidden=exclude).load_data()
+                                     exclude_hidden=exclude, file_metadata=metadata_from_filename).load_data()
     raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
 
     docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
