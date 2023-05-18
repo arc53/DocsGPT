@@ -177,7 +177,7 @@ def api_answer():
             ]
             if history:
                 tokens_current_history = 0
-                tokens_max_history = 1000
+                tokens_max_history = 500
                 #count tokens in history
                 for i in history:
                     if "prompt" in i and "response" in i:
@@ -185,7 +185,7 @@ def api_answer():
                         if tokens_current_history + tokens_batch < tokens_max_history:
                             tokens_current_history += tokens_batch
                             messages_combine.append(HumanMessagePromptTemplate.from_template(i["prompt"]))
-                            messages_combine.append(SystemMessagePromptTemplate.from_template(i["response"]))
+                            messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))
 
             p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
         elif settings.LLM_NAME == "openai":
@@ -213,7 +213,7 @@ def api_answer():
             result = run_async_chain(chain, question, chat_history)
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
-                                     combine_prompt=c_prompt, question_prompt=q_prompt)
+                                     combine_prompt=chat_combine_template, question_prompt=q_prompt)
             chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
             result = chain({"query": question})
 
