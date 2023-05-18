@@ -7,6 +7,7 @@ export function fetchAnswerApi(
   question: string,
   apiKey: string,
   selectedDocs: Doc,
+  history: Array<any> = [],
 ): Promise<Answer> {
   let namePath = selectedDocs.name;
   if (selectedDocs.language === namePath) {
@@ -37,7 +38,7 @@ export function fetchAnswerApi(
       question: question,
       api_key: apiKey,
       embeddings_key: apiKey,
-      history: localStorage.getItem('chatHistory'),
+      history: history,
       active_docs: docPath,
     }),
   })

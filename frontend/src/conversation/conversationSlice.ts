@@ -19,6 +19,7 @@ export const fetchAnswer = createAsyncThunk<
     question,
     state.preference.apiKey,
     state.preference.selectedDocs!,
+    state.conversation.queries,
   );
   return answer;
 });
