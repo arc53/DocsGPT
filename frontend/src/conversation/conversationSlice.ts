@@ -1,7 +1,8 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
 import { fetchAnswerApi } from './conversationApi';
-import { Answer, ConversationState, Query } from './conversationModels';
+import { ConversationState, Query } from './conversationModels';
+import { Dispatch } from 'react';
 
 const initialState: ConversationState = {
   queries: [],
@@ -9,18 +10,35 @@ const initialState: ConversationState = {
 };
 
 export const fetchAnswer = createAsyncThunk<
-  Answer,
+  void,
   { question: string },
-  { state: RootState }
->('fetchAnswer', async ({ question }, { getState }) => {
+  { dispatch: Dispatch; state: RootState }
+>('fetchAnswer', ({ question }, { dispatch, getState }) => {
   const state = getState();
 
-  const answer = await fetchAnswerApi(
+  fetchAnswerApi(
     question,
     state.preference.apiKey,
     state.preference.selectedDocs!,
+    (event) => {
+      const data = JSON.parse(event.data);
+      console.log(data);
+
+      // check if the 'end' event has been received
+      if (data.type === 'end') {
+        // set status to 'idle'
+        dispatch(conversationSlice.actions.setStatus('idle'));
+      } else {
+        const result = JSON.stringify(data.answer);
+        dispatch(
+          updateQuery({
+            index: state.conversation.queries.length - 1,
+            query: { response: result },
+          }),
+        );
+      }
+    },
   );
-  return answer;
 });
 
 export const conversationSlice = createSlice({
@@ -35,10 +53,18 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
       const index = action.payload.index;
-      state.queries[index] = {
-        ...state.queries[index],
-        ...action.payload.query,
-      };
+      if (action.payload.query.response) {
+        state.queries[index].response =
+          (state.queries[index].response || '') + action.payload.query.response;
+      } else {
+        state.queries[index] = {
+          ...state.queries[index],
+          ...action.payload.query,
+        };
+      }
+    },
+    setStatus(state, action: PayloadAction<string>) {
+      state.status = action.payload;
     },
   },
   extraReducers(builder) {

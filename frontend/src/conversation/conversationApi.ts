@@ -7,6 +7,7 @@ export function fetchAnswerApi(
   question: string,
   apiKey: string,
   selectedDocs: Doc,
+  onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   let namePath = selectedDocs.name;
   if (selectedDocs.language === namePath) {
@@ -28,30 +29,23 @@ export function fetchAnswerApi(
       '/';
   }
 
-  return fetch(apiHost + '/api/answer', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      question: question,
-      api_key: apiKey,
-      embeddings_key: apiKey,
-      history: localStorage.getItem('chatHistory'),
-      active_docs: docPath,
-    }),
-  })
-    .then((response) => {
-      if (response.ok) {
-        return response.json();
-      } else {
-        Promise.reject(response);
-      }
-    })
-    .then((data) => {
-      const result = data.answer;
-      return { answer: result, query: question, result };
-    });
+  return new Promise<Answer>((resolve, reject) => {
+    const url = new URL(apiHost + '/stream');
+    url.searchParams.append('question', question);
+    url.searchParams.append('api_key', apiKey);
+    url.searchParams.append('embeddings_key', apiKey);
+    url.searchParams.append('history', localStorage.getItem('chatHistory'));
+    url.searchParams.append('active_docs', docPath);
+
+    const eventSource = new EventSource(url.href);
+
+    eventSource.onmessage = onEvent;
+
+    eventSource.onerror = (error) => {
+      console.log('Connection failed.');
+      eventSource.close();
+    };
+  });
 }
 
 export function sendFeedback(

@@ -9,7 +9,7 @@ import dotenv
 import requests
 from celery import Celery
 from celery.result import AsyncResult
-from flask import Flask, request, render_template, send_from_directory, jsonify
+from flask import Flask, request, render_template, send_from_directory, jsonify, Response
 from langchain import FAISS
 from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
@@ -118,6 +118,21 @@ def ingest(self, directory, formats, name_job, filename, user):
 def home():
     return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
                            embeddings_choice=settings.EMBEDDINGS_NAME)
+
+
+def complete_stream(input):
+    import time
+    for i in range(10):
+        data = json.dumps({"answer": i})
+        #data = {"answer": str(i)}
+        yield f"data: {data}\n\n"
+        time.sleep(0.05)
+    # send data.type = "end" to indicate that the stream has ended as json
+    data = json.dumps({"type": "end"})
+    yield f"data: {data}\n\n"
+@app.route("/stream", methods=['POST', 'GET'])
+def stream():
+    return Response(complete_stream("hi"), mimetype='text/event-stream')
 
 
 @app.route("/api/answer", methods=["POST"])
