@@ -1,8 +1,5 @@
 """Simple reader that reads files of different formats from a directory."""
 import logging
-from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
-
 from parser.file.base import BaseReader
 from parser.file.base_parser import BaseParser
 from parser.file.docs_parser import DocxParser, PDFParser
@@ -12,6 +9,8 @@ from parser.file.markdown_parser import MarkdownParser
 from parser.file.rst_parser import RstParser
 from parser.file.tabular_parser import PandasCSVParser
 from parser.schema.base import Document
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Union
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".pdf": PDFParser(),
@@ -151,10 +150,15 @@ class SimpleDirectoryReader(BaseReader):
                     data = f.read()
             if isinstance(data, List):
                 data_list.extend(data)
+                if self.file_metadata is not None:
+                    for _ in range(len(data)):
+                        metadata_list.append(self.file_metadata(str(input_file)))
             else:
                 data_list.append(str(data))
-            if self.file_metadata is not None:
-                metadata_list.append(self.file_metadata(str(input_file)))
+                if self.file_metadata is not None:
+                    metadata_list.append(self.file_metadata(str(input_file)))
+
+            
 
         if concatenate:
             return [Document("\n".join(data_list))]
