@@ -171,13 +171,10 @@ def api_answer():
                                   template_format="jinja2")
         if settings.LLM_NAME == "openai_chat":
             llm = ChatOpenAI(openai_api_key=api_key)  # optional parameter: model_name="gpt-4"
-            messages_combine = [
-                SystemMessagePromptTemplate.from_template(chat_combine_template),
-                HumanMessagePromptTemplate.from_template("{question}")
-            ]
+            messages_combine = [SystemMessagePromptTemplate.from_template(chat_combine_template)]
             if history:
                 tokens_current_history = 0
-                tokens_max_history = 500
+                tokens_max_history = 1000
                 #count tokens in history
                 for i in history:
                     if "prompt" in i and "response" in i:
@@ -186,7 +183,9 @@ def api_answer():
                             tokens_current_history += tokens_batch
                             messages_combine.append(HumanMessagePromptTemplate.from_template(i["prompt"]))
                             messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))
-
+            messages_combine.append(HumanMessagePromptTemplate.from_template("{question}"))
+            import sys
+            print(messages_combine, file=sys.stderr)
             p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
         elif settings.LLM_NAME == "openai":
             llm = OpenAI(openai_api_key=api_key, temperature=0)
