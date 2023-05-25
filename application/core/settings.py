@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
+    MODEL_PATH: str = "./models/gpt4all-model.bin"
 
     API_URL: str = "http://localhost:5001"  # backend url for celery worker
 

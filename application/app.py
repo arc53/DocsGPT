@@ -197,8 +197,7 @@ def api_answer():
         elif settings.LLM_NAME == "cohere":
             llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
         elif settings.LLM_NAME == "gpt4all":
-            llm = GPT4All(model="/Users/alextu/Library/Application Support/nomic.ai/GPT4All/",
-                          backend='gpt4all-j-v1.3-groovy')
+            llm = GPT4All(model=settings.MODEL_PATH)
         else:
             raise ValueError("unknown LLM model")
 
