@@ -176,6 +176,7 @@ def api_answer():
                 tokens_current_history = 0
                 tokens_max_history = 1000
                 #count tokens in history
+                history.reverse()
                 for i in history:
                     if "prompt" in i and "response" in i:
                         tokens_batch = llm.get_num_tokens(i["prompt"]) + llm.get_num_tokens(i["response"])
