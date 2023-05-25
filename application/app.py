@@ -27,6 +27,7 @@ from langchain.prompts.chat import (
 )
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
+from langchain.llms import GPT4All
 
 from core.settings import settings
 from error import bad_request
@@ -196,6 +197,8 @@ def api_answer():
             llm = HuggingFaceHub(repo_id="bigscience/bloom", huggingfacehub_api_token=api_key)
         elif settings.LLM_NAME == "cohere":
             llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+        elif settings.LLM_NAME == "gpt4all":
+            llm = GPT4All(model=settings.MODEL_PATH)
         else:
             raise ValueError("unknown LLM model")
 
@@ -211,6 +214,19 @@ def api_answer():
             # result = chain({"question": question, "chat_history": chat_history})
             # generate async with async generate method
             result = run_async_chain(chain, question, chat_history)
+        elif settings.LLM_NAME == "gpt4all":
+            question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
+            doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
+            chain = ConversationalRetrievalChain(
+                retriever=docsearch.as_retriever(k=2),
+                question_generator=question_generator,
+                combine_docs_chain=doc_chain,
+            )
+            chat_history = []
+            # result = chain({"question": question, "chat_history": chat_history})
+            # generate async with async generate method
+            result = run_async_chain(chain, question, chat_history)
+
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
                                      combine_prompt=chat_combine_template, question_prompt=q_prompt)
