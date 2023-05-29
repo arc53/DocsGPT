@@ -5,6 +5,7 @@ import json
 import os
 import traceback
 
+import openai
 import dotenv
 import requests
 from celery import Celery
@@ -119,20 +120,38 @@ def home():
     return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
                            embeddings_choice=settings.EMBEDDINGS_NAME)
 
+def complete_stream(question):
+    import sys
+    openai.api_key = settings.API_KEY
+    docsearch = FAISS.load_local("", OpenAIEmbeddings(openai_api_key=settings.EMBEDDINGS_KEY))
+    docs = docsearch.similarity_search(question, k=2)
+    # join all page_content together with a newline
+    docs_together = "\n".join([doc.page_content for doc in docs])
 
-def complete_stream(input):
-    import time
-    for i in range(10):
-        data = json.dumps({"answer": i})
-        #data = {"answer": str(i)}
-        yield f"data: {data}\n\n"
-        time.sleep(0.05)
+    # swap {summaries} in chat_combine_template with the summaries from the docs
+    p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
+        {"role": "system", "content": p_chat_combine},
+        {"role": "user", "content": question},
+    ], stream=True, max_tokens=1000, temperature=0)
+
+    for line in completion:
+        print(line, file=sys.stderr)
+        if 'content' in line['choices'][0]['delta']:
+            # check if the delta contains content
+            data = json.dumps({"answer": str(line['choices'][0]['delta']['content'])})
+            yield f"data: {data}\n\n"
     # send data.type = "end" to indicate that the stream has ended as json
     data = json.dumps({"type": "end"})
     yield f"data: {data}\n\n"
 @app.route("/stream", methods=['POST', 'GET'])
 def stream():
-    return Response(complete_stream("hi"), mimetype='text/event-stream')
+    #data = request.get_json()
+    #question = data["question"]
+    # get parameter from url question
+    question = request.args.get('question')
+    #question = "Hi"
+    return Response(complete_stream(question), mimetype='text/event-stream')
 
 
 @app.route("/api/answer", methods=["POST"])

@@ -29,7 +29,7 @@ export const fetchAnswer = createAsyncThunk<
         // set status to 'idle'
         dispatch(conversationSlice.actions.setStatus('idle'));
       } else {
-        const result = JSON.stringify(data.answer);
+        const result = data.answer;
         dispatch(
           updateQuery({
             index: state.conversation.queries.length - 1,
@@ -53,6 +53,7 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
       const index = action.payload.index;
+      console.log('updating query');
       if (action.payload.query.response) {
         state.queries[index].response =
           (state.queries[index].response || '') + action.payload.query.response;
