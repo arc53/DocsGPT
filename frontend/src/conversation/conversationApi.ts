@@ -7,6 +7,58 @@ export function fetchAnswerApi(
   question: string,
   apiKey: string,
   selectedDocs: Doc,
+  history: Array<any> = [],
+): Promise<Answer> {
+  let namePath = selectedDocs.name;
+  if (selectedDocs.language === namePath) {
+    namePath = '.project';
+  }
+
+  let docPath = 'default';
+  if (selectedDocs.location === 'local') {
+    docPath = 'local' + '/' + selectedDocs.name + '/';
+  } else if (selectedDocs.location === 'remote') {
+    docPath =
+      selectedDocs.language +
+      '/' +
+      namePath +
+      '/' +
+      selectedDocs.version +
+      '/' +
+      selectedDocs.model +
+      '/';
+  }
+
+  return fetch(apiHost + '/api/answer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      question: question,
+      api_key: apiKey,
+      embeddings_key: apiKey,
+      history: history,
+      active_docs: docPath,
+    }),
+  })
+    .then((response) => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        Promise.reject(response);
+      }
+    })
+    .then((data) => {
+      const result = data.answer;
+      return { answer: result, query: question, result };
+    });
+}
+
+export function fetchAnswerSteaming(
+  question: string,
+  apiKey: string,
+  selectedDocs: Doc,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   let namePath = selectedDocs.name;

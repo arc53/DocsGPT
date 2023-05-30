@@ -136,7 +136,6 @@ def complete_stream(question):
     ], stream=True, max_tokens=1000, temperature=0)
 
     for line in completion:
-        print(line, file=sys.stderr)
         if 'content' in line['choices'][0]['delta']:
             # check if the delta contains content
             data = json.dumps({"answer": str(line['choices'][0]['delta']['content'])})
@@ -197,16 +196,9 @@ def api_answer():
         elif settings.EMBEDDINGS_NAME == "cohere_medium":
             docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
 
-        # create a prompt template
-        if history:
-            history = json.loads(history)
-            template_temp = template_hist.replace("{historyquestion}", history[0]).replace("{historyanswer}",
-                                                                                           history[1])
-            c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template_temp,
-                                      template_format="jinja2")
-        else:
-            c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template,
-                                      template_format="jinja2")
+
+        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template,
+                                  template_format="jinja2")
 
         q_prompt = PromptTemplate(input_variables=["context", "question"], template=template_quest,
                                   template_format="jinja2")

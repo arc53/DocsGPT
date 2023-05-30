@@ -1,7 +1,7 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
-import { fetchAnswerApi } from './conversationApi';
-import { ConversationState, Query } from './conversationModels';
+import { fetchAnswerApi, fetchAnswerSteaming } from './conversationApi';
+import { Answer, ConversationState, Query } from './conversationModels';
 import { Dispatch } from 'react';
 
 const initialState: ConversationState = {
@@ -9,36 +9,58 @@ const initialState: ConversationState = {
   status: 'idle',
 };
 
+const API_STREAMING = import.meta.env.API_STREAMING || false;
+
 export const fetchAnswer = createAsyncThunk<
-  void,
+  Answer | void,
   { question: string },
-  { dispatch: Dispatch; state: RootState }
->('fetchAnswer', ({ question }, { dispatch, getState }) => {
+  { dispatch: Dispatch<any>; state: RootState }
+>('fetchAnswer', async ({ question }, { dispatch, getState }) => {
   const state = getState();
 
-  fetchAnswerApi(
-    question,
-    state.preference.apiKey,
-    state.preference.selectedDocs!,
-    (event) => {
-      const data = JSON.parse(event.data);
-      console.log(data);
+  if (API_STREAMING) {
+    fetchAnswerSteaming(
+      question,
+      state.preference.apiKey,
+      state.preference.selectedDocs!,
+      (event) => {
+        const data = JSON.parse(event.data);
+        console.log(data);
 
-      // check if the 'end' event has been received
-      if (data.type === 'end') {
-        // set status to 'idle'
-        dispatch(conversationSlice.actions.setStatus('idle'));
-      } else {
-        const result = data.answer;
-        dispatch(
-          updateQuery({
-            index: state.conversation.queries.length - 1,
-            query: { response: result },
-          }),
-        );
-      }
-    },
-  );
+        // check if the 'end' event has been received
+        if (data.type === 'end') {
+          // set status to 'idle'
+          dispatch(conversationSlice.actions.setStatus('idle'));
+        } else {
+          const result = data.answer;
+          dispatch(
+            updateStreamingQuery({
+              index: state.conversation.queries.length - 1,
+              query: { response: result },
+            }),
+          );
+        }
+      },
+    );
+  } else {
+    const answer = await fetchAnswerApi(
+      question,
+      state.preference.apiKey,
+      state.preference.selectedDocs!,
+      state.conversation.queries,
+    );
+    dispatch(
+      // conversationSlice.actions.addQuery({
+      //   question: question,
+      //   response: answer,
+      // }),
+      updateQuery({
+        index: state.conversation.queries.length - 1,
+        query: { response: answer.answer },
+      }),
+    );
+    dispatch(conversationSlice.actions.setStatus('idle'));
+  }
 });
 
 export const conversationSlice = createSlice({
@@ -48,7 +70,7 @@ export const conversationSlice = createSlice({
     addQuery(state, action: PayloadAction<Query>) {
       state.queries.push(action.payload);
     },
-    updateQuery(
+    updateStreamingQuery(
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
@@ -63,6 +85,16 @@ export const conversationSlice = createSlice({
           ...action.payload.query,
         };
       }
+    },
+    updateQuery(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const index = action.payload.index;
+      state.queries[index] = {
+        ...state.queries[index],
+        ...action.payload.query,
+      };
     },
     setStatus(state, action: PayloadAction<string>) {
       state.status = action.payload;
@@ -92,5 +124,6 @@ export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
 
-export const { addQuery, updateQuery } = conversationSlice.actions;
+export const { addQuery, updateQuery, updateStreamingQuery } =
+  conversationSlice.actions;
 export default conversationSlice.reducer;
