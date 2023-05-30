@@ -46,7 +46,7 @@ export function fetchAnswerApi(
       if (response.ok) {
         return response.json();
       } else {
-        Promise.reject(response);
+        return Promise.reject(new Error(response.statusText));
       }
     })
     .then((data) => {

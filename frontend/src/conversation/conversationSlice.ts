@@ -9,57 +9,57 @@ const initialState: ConversationState = {
   status: 'idle',
 };
 
-const API_STREAMING = import.meta.env.API_STREAMING || false;
+const API_STREAMING = import.meta.env.API_STREAMING || true;
 
 export const fetchAnswer = createAsyncThunk<
-  Answer | void,
+  Answer,
   { question: string },
   { dispatch: Dispatch<any>; state: RootState }
 >('fetchAnswer', async ({ question }, { dispatch, getState }) => {
   const state = getState();
 
-  if (API_STREAMING) {
-    fetchAnswerSteaming(
-      question,
-      state.preference.apiKey,
-      state.preference.selectedDocs!,
-      (event) => {
-        const data = JSON.parse(event.data);
-        console.log(data);
+  if (state.preference) {
+    if (API_STREAMING) {
+      fetchAnswerSteaming(
+        question,
+        state.preference.apiKey,
+        state.preference.selectedDocs!,
+        (event) => {
+          const data = JSON.parse(event.data);
+          console.log(data);
 
-        // check if the 'end' event has been received
-        if (data.type === 'end') {
-          // set status to 'idle'
-          dispatch(conversationSlice.actions.setStatus('idle'));
-        } else {
-          const result = data.answer;
-          dispatch(
-            updateStreamingQuery({
-              index: state.conversation.queries.length - 1,
-              query: { response: result },
-            }),
-          );
-        }
-      },
-    );
-  } else {
-    const answer = await fetchAnswerApi(
-      question,
-      state.preference.apiKey,
-      state.preference.selectedDocs!,
-      state.conversation.queries,
-    );
-    dispatch(
-      // conversationSlice.actions.addQuery({
-      //   question: question,
-      //   response: answer,
-      // }),
-      updateQuery({
-        index: state.conversation.queries.length - 1,
-        query: { response: answer.answer },
-      }),
-    );
-    dispatch(conversationSlice.actions.setStatus('idle'));
+          // check if the 'end' event has been received
+          if (data.type === 'end') {
+            // set status to 'idle'
+            dispatch(conversationSlice.actions.setStatus('idle'));
+          } else {
+            const result = data.answer;
+            dispatch(
+              updateStreamingQuery({
+                index: state.conversation.queries.length - 1,
+                query: { response: result },
+              }),
+            );
+          }
+        },
+      );
+    } else {
+      const answer = await fetchAnswerApi(
+        question,
+        state.preference.apiKey,
+        state.preference.selectedDocs!,
+        state.conversation.queries,
+      );
+      if (answer) {
+        dispatch(
+          updateQuery({
+            index: state.conversation.queries.length - 1,
+            query: { response: answer.answer },
+          }),
+        );
+        dispatch(conversationSlice.actions.setStatus('idle'));
+      }
+    }
   }
 });
 
