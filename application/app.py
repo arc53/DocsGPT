@@ -150,7 +150,6 @@ def home():
                            embeddings_choice=settings.EMBEDDINGS_NAME)
 
 def complete_stream(question, docsearch, chat_history, api_key):
-    import sys
     openai.api_key = api_key
     docs = docsearch.similarity_search(question, k=2)
     # join all page_content together with a newline
@@ -194,7 +193,8 @@ def stream():
 
 
     #question = "Hi"
-    return Response(complete_stream(question, docsearch, chat_history= history, api_key=api_key), mimetype='text/event-stream')
+    return Response(complete_stream(question, docsearch,
+                                    chat_history= history, api_key=api_key), mimetype='text/event-stream')
 
 
 @app.route("/api/answer", methods=["POST"])
