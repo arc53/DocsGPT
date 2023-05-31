@@ -24,9 +24,11 @@ from langchain.prompts.chat import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
+    AIMessagePromptTemplate,
 )
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
+from langchain.llms import GPT4All
 
 from core.settings import settings
 from error import bad_request
@@ -108,6 +110,7 @@ def run_async_chain(chain, question, chat_history):
     result["answer"] = answer
     return result
 
+
 def get_vectorstore(data):
     if "active_docs" in data:
         if data["active_docs"].split("/")[0] == "local":
@@ -133,6 +136,7 @@ def get_docsearch(vectorstore, embeddings_key):
     elif settings.EMBEDDINGS_NAME == "cohere_medium":
         docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
     return docsearch
+
 
 @celery.task(bind=True)
 def ingest(self, directory, formats, name_job, filename, user):
@@ -216,17 +220,26 @@ def api_answer():
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
         docsearch = get_docsearch(vectorstore, embeddings_key)
 
-        c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template,
-                                  template_format="jinja2")
-
         q_prompt = PromptTemplate(input_variables=["context", "question"], template=template_quest,
                                   template_format="jinja2")
         if settings.LLM_NAME == "openai_chat":
             llm = ChatOpenAI(openai_api_key=api_key)  # optional parameter: model_name="gpt-4"
-            messages_combine = [
-                SystemMessagePromptTemplate.from_template(chat_combine_template),
-                HumanMessagePromptTemplate.from_template("{question}")
-            ]
+            messages_combine = [SystemMessagePromptTemplate.from_template(chat_combine_template)]
+            if history:
+                tokens_current_history = 0
+                tokens_max_history = 1000
+                #count tokens in history
+                history.reverse()
+                for i in history:
+                    if "prompt" in i and "response" in i:
+                        tokens_batch = llm.get_num_tokens(i["prompt"]) + llm.get_num_tokens(i["response"])
+                        if tokens_current_history + tokens_batch < tokens_max_history:
+                            tokens_current_history += tokens_batch
+                            messages_combine.append(HumanMessagePromptTemplate.from_template(i["prompt"]))
+                            messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))
+            messages_combine.append(HumanMessagePromptTemplate.from_template("{question}"))
+            import sys
+            print(messages_combine, file=sys.stderr)
             p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
         elif settings.LLM_NAME == "openai":
             llm = OpenAI(openai_api_key=api_key, temperature=0)
@@ -236,6 +249,8 @@ def api_answer():
             llm = HuggingFaceHub(repo_id="bigscience/bloom", huggingfacehub_api_token=api_key)
         elif settings.LLM_NAME == "cohere":
             llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+        elif settings.LLM_NAME == "gpt4all":
+            llm = GPT4All(model=settings.MODEL_PATH)
         else:
             raise ValueError("unknown LLM model")
 
@@ -251,9 +266,22 @@ def api_answer():
             # result = chain({"question": question, "chat_history": chat_history})
             # generate async with async generate method
             result = run_async_chain(chain, question, chat_history)
+        elif settings.LLM_NAME == "gpt4all":
+            question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
+            doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
+            chain = ConversationalRetrievalChain(
+                retriever=docsearch.as_retriever(k=2),
+                question_generator=question_generator,
+                combine_docs_chain=doc_chain,
+            )
+            chat_history = []
+            # result = chain({"question": question, "chat_history": chat_history})
+            # generate async with async generate method
+            result = run_async_chain(chain, question, chat_history)
+
         else:
             qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
-                                     combine_prompt=c_prompt, question_prompt=q_prompt)
+                                     combine_prompt=chat_combine_template, question_prompt=q_prompt)
             chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
             result = chain({"query": question})
 
