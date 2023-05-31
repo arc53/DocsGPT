@@ -8,22 +8,20 @@ const initialState: ConversationState = {
   status: 'idle',
 };
 
-const API_STREAMING = import.meta.env.API_STREAMING || false;
+const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
 
 export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
   'fetchAnswer',
   async ({ question }, { dispatch, getState }) => {
     const state = getState() as RootState;
-
     if (state.preference) {
       if (API_STREAMING) {
-        fetchAnswerSteaming(
+        await fetchAnswerSteaming(
           question,
           state.preference.apiKey,
           state.preference.selectedDocs!,
           (event) => {
             const data = JSON.parse(event.data);
-            console.log(data);
 
             // check if the 'end' event has been received
             if (data.type === 'end') {
@@ -74,7 +72,6 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
       const index = action.payload.index;
-      console.log('updating query');
       if (action.payload.query.response) {
         state.queries[index].response =
           (state.queries[index].response || '') + action.payload.query.response;

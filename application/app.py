@@ -108,6 +108,31 @@ def run_async_chain(chain, question, chat_history):
     result["answer"] = answer
     return result
 
+def get_vectorstore(data):
+    if "active_docs" in data:
+        if data["active_docs"].split("/")[0] == "local":
+            if data["active_docs"].split("/")[1] == "default":
+                vectorstore = ""
+            else:
+                vectorstore = "indexes/" + data["active_docs"]
+        else:
+            vectorstore = "vectors/" + data["active_docs"]
+        if data['active_docs'] == "default":
+            vectorstore = ""
+    else:
+        vectorstore = ""
+    return vectorstore
+
+def get_docsearch(vectorstore, embeddings_key):
+    if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
+        docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
+    elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
+        docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
+    elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
+        docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
+    elif settings.EMBEDDINGS_NAME == "cohere_medium":
+        docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
+    return docsearch
 
 @celery.task(bind=True)
 def ingest(self, directory, formats, name_job, filename, user):
@@ -120,10 +145,9 @@ def home():
     return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
                            embeddings_choice=settings.EMBEDDINGS_NAME)
 
-def complete_stream(question):
+def complete_stream(question, docsearch, chat_history, api_key):
     import sys
-    openai.api_key = settings.API_KEY
-    docsearch = FAISS.load_local("", OpenAIEmbeddings(openai_api_key=settings.EMBEDDINGS_KEY))
+    openai.api_key = api_key
     docs = docsearch.similarity_search(question, k=2)
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
@@ -145,13 +169,28 @@ def complete_stream(question):
     yield f"data: {data}\n\n"
 @app.route("/stream", methods=['POST', 'GET'])
 def stream():
-    #data = request.get_json()
-    #question = data["question"]
     # get parameter from url question
     question = request.args.get('question')
     history = request.args.get('history')
+    # check if active_docs is set
+
+    if not api_key_set:
+        api_key = request.args.get("api_key")
+    else:
+        api_key = settings.API_KEY
+    if not embeddings_key_set:
+        embeddings_key = request.args.get("embeddings_key")
+    else:
+        embeddings_key = settings.EMBEDDINGS_KEY
+    if "active_docs" in request.args:
+        vectorstore = get_vectorstore({"active_docs": request.args.get("active_docs")})
+    else:
+        vectorstore = ""
+    docsearch = get_docsearch(vectorstore, embeddings_key)
+
+
     #question = "Hi"
-    return Response(complete_stream(question), mimetype='text/event-stream')
+    return Response(complete_stream(question, docsearch, chat_history= history, api_key=api_key), mimetype='text/event-stream')
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -172,31 +211,10 @@ def api_answer():
     # use try and except  to check for exception
     try:
         # check if the vectorstore is set
-        if "active_docs" in data:
-            if data["active_docs"].split("/")[0] == "local":
-                if data["active_docs"].split("/")[1] == "default":
-                    vectorstore = ""
-                else:
-                    vectorstore = "indexes/" + data["active_docs"]
-            else:
-                vectorstore = "vectors/" + data["active_docs"]
-            if data['active_docs'] == "default":
-                vectorstore = ""
-        else:
-            vectorstore = ""
-        print(vectorstore)
-        # vectorstore = "outputs/inputs/"
+        vectorstore = get_vectorstore(data)
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-            docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
-        elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
-            docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-        elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
-            docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-        elif settings.EMBEDDINGS_NAME == "cohere_medium":
-            docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
-
+        docsearch = get_docsearch(vectorstore, embeddings_key)
 
         c_prompt = PromptTemplate(input_variables=["summaries", "question"], template=template,
                                   template_format="jinja2")
