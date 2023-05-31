@@ -1,67 +1,66 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
 import { fetchAnswerApi, fetchAnswerSteaming } from './conversationApi';
-import { Answer, ConversationState, Query } from './conversationModels';
-import { Dispatch } from 'react';
+import { Answer, ConversationState, Query, Status } from './conversationModels';
 
 const initialState: ConversationState = {
   queries: [],
   status: 'idle',
 };
 
-const API_STREAMING = import.meta.env.API_STREAMING || true;
+const API_STREAMING = import.meta.env.API_STREAMING || false;
 
-export const fetchAnswer = createAsyncThunk<
-  Answer,
-  { question: string },
-  { dispatch: Dispatch<any>; state: RootState }
->('fetchAnswer', async ({ question }, { dispatch, getState }) => {
-  const state = getState();
+export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
+  'fetchAnswer',
+  async ({ question }, { dispatch, getState }) => {
+    const state = getState() as RootState;
 
-  if (state.preference) {
-    if (API_STREAMING) {
-      fetchAnswerSteaming(
-        question,
-        state.preference.apiKey,
-        state.preference.selectedDocs!,
-        (event) => {
-          const data = JSON.parse(event.data);
-          console.log(data);
+    if (state.preference) {
+      if (API_STREAMING) {
+        fetchAnswerSteaming(
+          question,
+          state.preference.apiKey,
+          state.preference.selectedDocs!,
+          (event) => {
+            const data = JSON.parse(event.data);
+            console.log(data);
 
-          // check if the 'end' event has been received
-          if (data.type === 'end') {
-            // set status to 'idle'
-            dispatch(conversationSlice.actions.setStatus('idle'));
-          } else {
-            const result = data.answer;
-            dispatch(
-              updateStreamingQuery({
-                index: state.conversation.queries.length - 1,
-                query: { response: result },
-              }),
-            );
-          }
-        },
-      );
-    } else {
-      const answer = await fetchAnswerApi(
-        question,
-        state.preference.apiKey,
-        state.preference.selectedDocs!,
-        state.conversation.queries,
-      );
-      if (answer) {
-        dispatch(
-          updateQuery({
-            index: state.conversation.queries.length - 1,
-            query: { response: answer.answer },
-          }),
+            // check if the 'end' event has been received
+            if (data.type === 'end') {
+              // set status to 'idle'
+              dispatch(conversationSlice.actions.setStatus('idle'));
+            } else {
+              const result = data.answer;
+              dispatch(
+                updateStreamingQuery({
+                  index: state.conversation.queries.length - 1,
+                  query: { response: result },
+                }),
+              );
+            }
+          },
         );
-        dispatch(conversationSlice.actions.setStatus('idle'));
+      } else {
+        const answer = await fetchAnswerApi(
+          question,
+          state.preference.apiKey,
+          state.preference.selectedDocs!,
+          state.conversation.queries,
+        );
+        if (answer) {
+          dispatch(
+            updateQuery({
+              index: state.conversation.queries.length - 1,
+              query: { response: answer.answer },
+            }),
+          );
+          dispatch(conversationSlice.actions.setStatus('idle'));
+        }
       }
     }
-  }
-});
+    return { answer: '', query: question, result: '' };
+  },
+);
 
 export const conversationSlice = createSlice({
   name: 'conversation',
@@ -96,7 +95,7 @@ export const conversationSlice = createSlice({
         ...action.payload.query,
       };
     },
-    setStatus(state, action: PayloadAction<string>) {
+    setStatus(state, action: PayloadAction<Status>) {
       state.status = action.payload;
     },
   },
@@ -104,11 +103,6 @@ export const conversationSlice = createSlice({
     builder
       .addCase(fetchAnswer.pending, (state) => {
         state.status = 'loading';
-      })
-      .addCase(fetchAnswer.fulfilled, (state, action) => {
-        state.status = 'idle';
-        state.queries[state.queries.length - 1].response =
-          action.payload.answer;
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
         state.status = 'failed';

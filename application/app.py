@@ -149,6 +149,7 @@ def stream():
     #question = data["question"]
     # get parameter from url question
     question = request.args.get('question')
+    history = request.args.get('history')
     #question = "Hi"
     return Response(complete_stream(question), mimetype='text/event-stream')
 
