@@ -5,11 +5,12 @@ import json
 import os
 import traceback
 
+import openai
 import dotenv
 import requests
 from celery import Celery
 from celery.result import AsyncResult
-from flask import Flask, request, render_template, send_from_directory, jsonify
+from flask import Flask, request, render_template, send_from_directory, jsonify, Response
 from langchain import FAISS
 from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
@@ -109,7 +110,32 @@ def run_async_chain(chain, question, chat_history):
     result["answer"] = answer
     return result
 
-    
+
+def get_vectorstore(data):
+    if "active_docs" in data:
+        if data["active_docs"].split("/")[0] == "local":
+            if data["active_docs"].split("/")[1] == "default":
+                vectorstore = ""
+            else:
+                vectorstore = "indexes/" + data["active_docs"]
+        else:
+            vectorstore = "vectors/" + data["active_docs"]
+        if data['active_docs'] == "default":
+            vectorstore = ""
+    else:
+        vectorstore = ""
+    return vectorstore
+
+def get_docsearch(vectorstore, embeddings_key):
+    if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
+        docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
+    elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
+        docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
+    elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
+        docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
+    elif settings.EMBEDDINGS_NAME == "cohere_medium":
+        docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
+    return docsearch
 
 
 @celery.task(bind=True)
@@ -122,6 +148,53 @@ def ingest(self, directory, formats, name_job, filename, user):
 def home():
     return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
                            embeddings_choice=settings.EMBEDDINGS_NAME)
+
+def complete_stream(question, docsearch, chat_history, api_key):
+    openai.api_key = api_key
+    docs = docsearch.similarity_search(question, k=2)
+    # join all page_content together with a newline
+    docs_together = "\n".join([doc.page_content for doc in docs])
+
+    # swap {summaries} in chat_combine_template with the summaries from the docs
+    p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
+        {"role": "system", "content": p_chat_combine},
+        {"role": "user", "content": question},
+    ], stream=True, max_tokens=1000, temperature=0)
+
+    for line in completion:
+        if 'content' in line['choices'][0]['delta']:
+            # check if the delta contains content
+            data = json.dumps({"answer": str(line['choices'][0]['delta']['content'])})
+            yield f"data: {data}\n\n"
+    # send data.type = "end" to indicate that the stream has ended as json
+    data = json.dumps({"type": "end"})
+    yield f"data: {data}\n\n"
+@app.route("/stream", methods=['POST', 'GET'])
+def stream():
+    # get parameter from url question
+    question = request.args.get('question')
+    history = request.args.get('history')
+    # check if active_docs is set
+
+    if not api_key_set:
+        api_key = request.args.get("api_key")
+    else:
+        api_key = settings.API_KEY
+    if not embeddings_key_set:
+        embeddings_key = request.args.get("embeddings_key")
+    else:
+        embeddings_key = settings.EMBEDDINGS_KEY
+    if "active_docs" in request.args:
+        vectorstore = get_vectorstore({"active_docs": request.args.get("active_docs")})
+    else:
+        vectorstore = ""
+    docsearch = get_docsearch(vectorstore, embeddings_key)
+
+
+    #question = "Hi"
+    return Response(complete_stream(question, docsearch,
+                                    chat_history= history, api_key=api_key), mimetype='text/event-stream')
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -142,32 +215,11 @@ def api_answer():
     # use try and except  to check for exception
     try:
         # check if the vectorstore is set
-        if "active_docs" in data:
-            if data["active_docs"].split("/")[0] == "local":
-                if data["active_docs"].split("/")[1] == "default":
-                    vectorstore = ""
-                else:
-                    vectorstore = "indexes/" + data["active_docs"]
-            else:
-                vectorstore = "vectors/" + data["active_docs"]
-            if data['active_docs'] == "default":
-                vectorstore = ""
-        else:
-            vectorstore = ""
-        print(vectorstore)
-        # vectorstore = "outputs/inputs/"
+        vectorstore = get_vectorstore(data)
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-            docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
-        elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
-            docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-        elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
-            docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-        elif settings.EMBEDDINGS_NAME == "cohere_medium":
-            docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
+        docsearch = get_docsearch(vectorstore, embeddings_key)
 
-        # create a prompt template
         q_prompt = PromptTemplate(input_variables=["context", "question"], template=template_quest,
                                   template_format="jinja2")
         if settings.LLM_NAME == "openai_chat":

@@ -5,6 +5,7 @@ services:
     build: ./frontend
     environment:
       - VITE_API_HOST=http://localhost:5001
+      - VITE_API_STREAMING=$VITE_API_STREAMING
     ports:
       - "5173:5173"
     depends_on:

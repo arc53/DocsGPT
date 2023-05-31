@@ -46,13 +46,58 @@ export function fetchAnswerApi(
       if (response.ok) {
         return response.json();
       } else {
-        Promise.reject(response);
+        return Promise.reject(new Error(response.statusText));
       }
     })
     .then((data) => {
       const result = data.answer;
       return { answer: result, query: question, result };
     });
+}
+
+export function fetchAnswerSteaming(
+  question: string,
+  apiKey: string,
+  selectedDocs: Doc,
+  onEvent: (event: MessageEvent) => void,
+): Promise<Answer> {
+  let namePath = selectedDocs.name;
+  if (selectedDocs.language === namePath) {
+    namePath = '.project';
+  }
+
+  let docPath = 'default';
+  if (selectedDocs.location === 'local') {
+    docPath = 'local' + '/' + selectedDocs.name + '/';
+  } else if (selectedDocs.location === 'remote') {
+    docPath =
+      selectedDocs.language +
+      '/' +
+      namePath +
+      '/' +
+      selectedDocs.version +
+      '/' +
+      selectedDocs.model +
+      '/';
+  }
+
+  return new Promise<Answer>((resolve, reject) => {
+    const url = new URL(apiHost + '/stream');
+    url.searchParams.append('question', question);
+    url.searchParams.append('api_key', apiKey);
+    url.searchParams.append('embeddings_key', apiKey);
+    url.searchParams.append('history', localStorage.getItem('chatHistory'));
+    url.searchParams.append('active_docs', docPath);
+
+    const eventSource = new EventSource(url.href);
+
+    eventSource.onmessage = onEvent;
+
+    eventSource.onerror = (error) => {
+      console.log('Connection failed.');
+      eventSource.close();
+    };
+  });
 }
 
 export function sendFeedback(
