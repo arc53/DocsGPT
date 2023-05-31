@@ -151,16 +151,25 @@ def home():
 
 def complete_stream(question, docsearch, chat_history, api_key):
     openai.api_key = api_key
+    llm = ChatOpenAI(openai_api_key=api_key)
     docs = docsearch.similarity_search(question, k=2)
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
-
-    # swap {summaries} in chat_combine_template with the summaries from the docs
     p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
-    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[
-        {"role": "system", "content": p_chat_combine},
-        {"role": "user", "content": question},
-    ], stream=True, max_tokens=1000, temperature=0)
+    messages_combine = [{"role": "system", "content": p_chat_combine}]
+    if len(chat_history) > 1:
+        tokens_current_history = 0
+        # count tokens in history
+        chat_history.reverse()
+        for i in chat_history:
+            if "prompt" in i and "response" in i:
+                tokens_batch = llm.get_num_tokens(i["prompt"]) + llm.get_num_tokens(i["response"])
+                if tokens_current_history + tokens_batch < settings.TOKENS_MAX_HISTORY:
+                    tokens_current_history += tokens_batch
+                    messages_combine.append({"role": "user", "content": i["prompt"]})
+                    messages_combine.append({"role": "system", "content": i["response"]})
+    messages_combine.append({"role": "user", "content": question})
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages_combine, stream=True, max_tokens=1000, temperature=0)
 
     for line in completion:
         if 'content' in line['choices'][0]['delta']:
@@ -175,6 +184,9 @@ def stream():
     # get parameter from url question
     question = request.args.get('question')
     history = request.args.get('history')
+    # history to json object from string
+    history = json.loads(history)
+
     # check if active_docs is set
 
     if not api_key_set:
@@ -227,13 +239,12 @@ def api_answer():
             messages_combine = [SystemMessagePromptTemplate.from_template(chat_combine_template)]
             if history:
                 tokens_current_history = 0
-                tokens_max_history = 1000
                 #count tokens in history
                 history.reverse()
                 for i in history:
                     if "prompt" in i and "response" in i:
                         tokens_batch = llm.get_num_tokens(i["prompt"]) + llm.get_num_tokens(i["response"])
-                        if tokens_current_history + tokens_batch < tokens_max_history:
+                        if tokens_current_history + tokens_batch < settings.TOKENS_MAX_HISTORY:
                             tokens_current_history += tokens_batch
                             messages_combine.append(HumanMessagePromptTemplate.from_template(i["prompt"]))
                             messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))

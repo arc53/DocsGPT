@@ -20,6 +20,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           question,
           state.preference.apiKey,
           state.preference.selectedDocs!,
+          state.conversation.queries,
           (event) => {
             const data = JSON.parse(event.data);
 

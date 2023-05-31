@@ -79,11 +79,7 @@ export default function Conversation() {
               <Fragment key={index}>
                 <ConversationBubble
                   ref={endMessageRef}
-                  className={`${
-                    index === queries.length - 1 && status === 'loading'
-                      ? 'mb-24'
-                      : 'mb-7'
-                  }`}
+                  className={'mb-7'}
                   key={`${index}QUESTION`}
                   message={query.prompt}
                   type="QUESTION"

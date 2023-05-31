@@ -59,6 +59,7 @@ export function fetchAnswerSteaming(
   question: string,
   apiKey: string,
   selectedDocs: Doc,
+  history: Array<any> = [],
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   let namePath = selectedDocs.name;
@@ -86,8 +87,8 @@ export function fetchAnswerSteaming(
     url.searchParams.append('question', question);
     url.searchParams.append('api_key', apiKey);
     url.searchParams.append('embeddings_key', apiKey);
-    url.searchParams.append('history', localStorage.getItem('chatHistory'));
     url.searchParams.append('active_docs', docPath);
+    url.searchParams.append('history', JSON.stringify(history));
 
     const eventSource = new EventSource(url.href);
 
