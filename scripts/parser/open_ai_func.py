@@ -11,7 +11,7 @@ from retry import retry
 # from langchain.embeddings import CohereEmbeddings
 
 
-def num_tokens_from_string(string: str, encoding_name: str) -> tuple[int, float]:
+def num_tokens_from_string(string: str, encoding_name: str) -> int:
     # Function to convert string to tokens and estimate user cost.
     encoding = tiktoken.get_encoding(encoding_name)
     num_tokens = len(encoding.encode(string))
@@ -45,16 +45,7 @@ def call_openai_api(docs, folder_name):
     #     environment="us-east1-gcp"  # next to api key in console
     # )
     # index_name = "pandas"
-    if (  # azure
-        os.environ.get("OPENAI_API_BASE")
-        and os.environ.get("OPENAI_API_VERSION")
-        and os.environ.get("AZURE_DEPLOYMENT_NAME")
-    ):
-        os.environ["OPENAI_API_TYPE"] = "azure"
-        openai_embeddings = OpenAIEmbeddings(model=os.environ.get("AZURE_EMBEDDINGS_DEPLOYMENT_NAME"))
-    else:
-        openai_embeddings = OpenAIEmbeddings()
-    store = FAISS.from_documents(docs_test, openai_embeddings)
+    store = FAISS.from_documents(docs_test, OpenAIEmbeddings())
     # store_pine = Pinecone.from_documents(docs_test, OpenAIEmbeddings(), index_name=index_name)
 
     # Uncomment for MPNet embeddings
