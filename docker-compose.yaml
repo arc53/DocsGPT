@@ -19,6 +19,9 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - OPENAI_API_BASE=$OPENAI_API_BASE
+      - OPENAI_API_VERSION=$OPENAI_API_VERSION
+      - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
     ports:
       - "5001:5001"
     volumes:
@@ -39,6 +42,9 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:5001
+      - OPENAI_API_BASE=$OPENAI_API_BASE
+      - OPENAI_API_VERSION=$OPENAI_API_VERSION
+      - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
     depends_on:
         - redis
         - mongo
