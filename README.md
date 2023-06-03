@@ -55,7 +55,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 Note: Make sure you have docker installed
 
 1. Open dowload this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. Create .env file in your root directory and set your OPENAI_API_KEY with your openai api key
+2. Create .env file in your root directory and set your OPENAI_API_KEY with your openai api key and  VITE_API_STREAMING to true or false if you dont want streaming answers
 3. Run `docker-compose build && docker-compose up`
 4. Navigate to http://localhost:5173/
 
