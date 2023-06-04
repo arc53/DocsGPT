@@ -167,10 +167,9 @@ def complete_stream(question, docsearch, chat_history, api_key):
                     messages_combine.append({"role": "user", "content": i["prompt"]})
                     messages_combine.append({"role": "system", "content": i["response"]})
     messages_combine.append({"role": "user", "content": question})
-    completion = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo", messages=messages_combine, stream=True, max_tokens=1000, temperature=0
-    )
-
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+                                              messages=messages_combine, stream=True, max_tokens=500, temperature=0)
+    
     for line in completion:
         if "content" in line["choices"][0]["delta"]:
             # check if the delta contains content
