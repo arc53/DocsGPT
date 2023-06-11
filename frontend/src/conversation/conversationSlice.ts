@@ -65,7 +65,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
         }
       }
     }
-    return { answer: '', query: question, result: '' };
+    return { answer: '', query: question, result: '', sources: [] };
   },
 );
 
