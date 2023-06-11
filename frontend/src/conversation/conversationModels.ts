@@ -16,6 +16,7 @@ export interface Answer {
   answer: string;
   query: string;
   result: string;
+  sources: { title: string; text: string }[];
 }
 
 export interface Query {
@@ -23,4 +24,5 @@ export interface Query {
   response?: string;
   feedback?: FEEDBACK;
   error?: string;
+  sources?: { title: string; text: string }[];
 }

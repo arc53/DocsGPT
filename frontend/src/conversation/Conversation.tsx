@@ -60,6 +60,7 @@ export default function Conversation() {
           key={`${index}ANSWER`}
           message={query.response}
           type={'ANSWER'}
+          sources={query.sources}
           feedback={query.feedback}
           handleFeedback={(feedback: FEEDBACK) =>
             handleFeedback(query, feedback, index)
@@ -83,6 +84,7 @@ export default function Conversation() {
                   key={`${index}QUESTION`}
                   message={query.prompt}
                   type="QUESTION"
+                  sources={query.sources}
                 ></ConversationBubble>
                 {prepResponseView(query, index)}
               </Fragment>
