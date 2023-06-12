@@ -29,11 +29,21 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
               // set status to 'idle'
               dispatch(conversationSlice.actions.setStatus('idle'));
             } else if (data.type === 'source') {
-              const result = data.doc;
+              // check if data.metadata exists
+              let result;
+              if (data.metadata && data.metadata.title) {
+                const titleParts = data.metadata.title.split('/');
+                result = {
+                  title: titleParts[titleParts.length - 1],
+                  text: data.doc,
+                };
+              } else {
+                result = { title: data.doc, text: data.doc };
+              }
               dispatch(
                 updateStreamingSource({
                   index: state.conversation.queries.length - 1,
-                  query: { sources: [{ title: result, text: result }] },
+                  query: { sources: [result] },
                 }),
               );
             } else {
@@ -55,10 +65,22 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.conversation.queries,
         );
         if (answer) {
+          let sourcesPrepped = [];
+          sourcesPrepped = answer.sources.map((source) => {
+            if (source && source.title) {
+              const titleParts = source.title.split('/');
+              return {
+                ...source,
+                title: titleParts[titleParts.length - 1],
+              };
+            }
+            return source;
+          });
+
           dispatch(
             updateQuery({
               index: state.conversation.queries.length - 1,
-              query: { response: answer.answer, sources: answer.sources },
+              query: { response: answer.answer, sources: sourcesPrepped },
             }),
           );
           dispatch(conversationSlice.actions.setStatus('idle'));

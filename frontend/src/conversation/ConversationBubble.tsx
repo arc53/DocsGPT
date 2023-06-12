@@ -154,7 +154,9 @@ const ConversationBubble = forwardRef<
 
         {sources && openSource !== null && sources[openSource] && (
           <div className="ml-8 mt-2 w-3/4 rounded-xl bg-blue-200 p-2">
-            <p className="w-3/4 truncate text-xs text-gray-500">Source:</p>
+            <p className="w-3/4 truncate text-xs text-gray-500">
+              Source: {sources[openSource].title}
+            </p>
 
             <div className="rounded-xl border-2 border-gray-200 bg-white p-2">
               <p className="text-xs text-gray-500 ">
