@@ -5,8 +5,8 @@ import json
 import os
 import traceback
 
-import openai
 import dotenv
+import openai
 import requests
 from celery import Celery
 from celery.result import AsyncResult
@@ -16,9 +16,14 @@ from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
 from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
 from langchain.chains.question_answering import load_qa_chain
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceHubEmbeddings, CohereEmbeddings, \
-    HuggingFaceInstructEmbeddings
+from langchain.chat_models import ChatOpenAI, AzureChatOpenAI
+from langchain.embeddings import (
+    OpenAIEmbeddings,
+    HuggingFaceHubEmbeddings,
+    CohereEmbeddings,
+    HuggingFaceInstructEmbeddings,
+)
+from langchain.llms import GPT4All
 from langchain.prompts import PromptTemplate
 from langchain.prompts.chat import (
     ChatPromptTemplate,
@@ -28,7 +33,6 @@ from langchain.prompts.chat import (
 )
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
-from langchain.llms import GPT4All
 
 from core.settings import settings
 from error import bad_request
@@ -40,10 +44,7 @@ if settings.LLM_NAME == "manifest":
     from manifest import Manifest
     from langchain.llms.manifest import ManifestWrapper
 
-    manifest = Manifest(
-        client_name="huggingface",
-        client_connection="http://127.0.0.1:5000"
-    )
+    manifest = Manifest(client_name="huggingface", client_connection="http://127.0.0.1:5000")
 
 # Redirect PosixPath to WindowsPath on Windows
 import platform
@@ -73,23 +74,17 @@ with open("prompts/chat_combine_prompt.txt", "r") as f:
 with open("prompts/chat_reduce_prompt.txt", "r") as f:
     chat_reduce_template = f.read()
 
-if settings.API_KEY is not None:
-    api_key_set = True
-else:
-    api_key_set = False
-if settings.EMBEDDINGS_KEY is not None:
-    embeddings_key_set = True
-else:
-    embeddings_key_set = False
+api_key_set = settings.API_KEY is not None
+embeddings_key_set = settings.EMBEDDINGS_KEY is not None
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER = "inputs"
-app.config['CELERY_BROKER_URL'] = settings.CELERY_BROKER_URL
-app.config['CELERY_RESULT_BACKEND'] = settings.CELERY_RESULT_BACKEND
-app.config['MONGO_URI'] = settings.MONGO_URI
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER = "inputs"
+app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
+app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
+app.config["MONGO_URI"] = settings.MONGO_URI
 celery = Celery()
-celery.config_from_object('celeryconfig')
-mongo = MongoClient(app.config['MONGO_URI'])
+celery.config_from_object("celeryconfig")
+mongo = MongoClient(app.config["MONGO_URI"])
 db = mongo["docsgpt"]
 vectors_collection = db["vectors"]
 
@@ -120,11 +115,12 @@ def get_vectorstore(data):
                 vectorstore = "indexes/" + data["active_docs"]
         else:
             vectorstore = "vectors/" + data["active_docs"]
-        if data['active_docs'] == "default":
+        if data["active_docs"] == "default":
             vectorstore = ""
     else:
         vectorstore = ""
     return vectorstore
+
 
 def get_docsearch(vectorstore, embeddings_key):
     if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
@@ -146,8 +142,10 @@ def ingest(self, directory, formats, name_job, filename, user):
 
 @app.route("/")
 def home():
-    return render_template("index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME,
-                           embeddings_choice=settings.EMBEDDINGS_NAME)
+    return render_template(
+        "index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME, embeddings_choice=settings.EMBEDDINGS_NAME
+    )
+
 
 def complete_stream(question, docsearch, chat_history, api_key):
     openai.api_key = api_key
@@ -178,20 +176,22 @@ def complete_stream(question, docsearch, chat_history, api_key):
     messages_combine.append({"role": "user", "content": question})
     completion = openai.ChatCompletion.create(model="gpt-3.5-turbo",
                                               messages=messages_combine, stream=True, max_tokens=500, temperature=0)
-
+    
     for line in completion:
-        if 'content' in line['choices'][0]['delta']:
+        if "content" in line["choices"][0]["delta"]:
             # check if the delta contains content
-            data = json.dumps({"answer": str(line['choices'][0]['delta']['content'])})
+            data = json.dumps({"answer": str(line["choices"][0]["delta"]["content"])})
             yield f"data: {data}\n\n"
     # send data.type = "end" to indicate that the stream has ended as json
     data = json.dumps({"type": "end"})
     yield f"data: {data}\n\n"
-@app.route("/stream", methods=['POST', 'GET'])
+
+
+@app.route("/stream", methods=["POST", "GET"])
 def stream():
     # get parameter from url question
-    question = request.args.get('question')
-    history = request.args.get('history')
+    question = request.args.get("question")
+    history = request.args.get("history")
     # history to json object from string
     history = json.loads(history)
 
@@ -211,10 +211,10 @@ def stream():
         vectorstore = ""
     docsearch = get_docsearch(vectorstore, embeddings_key)
 
-
-    #question = "Hi"
-    return Response(complete_stream(question, docsearch,
-                                    chat_history= history, api_key=api_key), mimetype='text/event-stream')
+    # question = "Hi"
+    return Response(
+        complete_stream(question, docsearch, chat_history=history, api_key=api_key), mimetype="text/event-stream"
+    )
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -222,7 +222,7 @@ def api_answer():
     data = request.get_json()
     question = data["question"]
     history = data["history"]
-    print('-' * 5)
+    print("-" * 5)
     if not api_key_set:
         api_key = data["api_key"]
     else:
@@ -240,14 +240,23 @@ def api_answer():
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
         docsearch = get_docsearch(vectorstore, embeddings_key)
 
-        q_prompt = PromptTemplate(input_variables=["context", "question"], template=template_quest,
-                                  template_format="jinja2")
+        q_prompt = PromptTemplate(
+            input_variables=["context", "question"], template=template_quest, template_format="jinja2"
+        )
         if settings.LLM_NAME == "openai_chat":
-            llm = ChatOpenAI(openai_api_key=api_key)  # optional parameter: model_name="gpt-4"
+            if settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME:  # azure
+                llm = AzureChatOpenAI(
+                    openai_api_key=api_key,
+                    openai_api_base=settings.OPENAI_API_BASE,
+                    openai_api_version=settings.OPENAI_API_VERSION,
+                    deployment_name=settings.AZURE_DEPLOYMENT_NAME,
+                )
+            else:
+                llm = ChatOpenAI(openai_api_key=api_key)  # optional parameter: model_name="gpt-4"
             messages_combine = [SystemMessagePromptTemplate.from_template(chat_combine_template)]
             if history:
                 tokens_current_history = 0
-                #count tokens in history
+                # count tokens in history
                 history.reverse()
                 for i in history:
                     if "prompt" in i and "response" in i:
@@ -258,6 +267,7 @@ def api_answer():
                             messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))
             messages_combine.append(HumanMessagePromptTemplate.from_template("{question}"))
             import sys
+
             print(messages_combine, file=sys.stderr)
             p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
         elif settings.LLM_NAME == "openai":
@@ -299,8 +309,9 @@ def api_answer():
             result = run_async_chain(chain, question, chat_history)
 
         else:
-            qa_chain = load_qa_chain(llm=llm, chain_type="map_reduce",
-                                     combine_prompt=chat_combine_template, question_prompt=q_prompt)
+            qa_chain = load_qa_chain(
+                llm=llm, chain_type="map_reduce", combine_prompt=chat_combine_template, question_prompt=q_prompt
+            )
             chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
             result = chain({"query": question})
 
@@ -308,10 +319,10 @@ def api_answer():
 
         # some formatting for the frontend
         if "result" in result:
-            result['answer'] = result['result']
-        result['answer'] = result['answer'].replace("\\n", "\n")
+            result["answer"] = result["result"]
+        result["answer"] = result["answer"].replace("\\n", "\n")
         try:
-            result['answer'] = result['answer'].split("SOURCES:")[0]
+            result["answer"] = result["answer"].split("SOURCES:")[0]
         except Exception:
             pass
 
@@ -343,16 +354,16 @@ def check_docs():
     data = request.get_json()
     # split docs on / and take first part
     if data["docs"].split("/")[0] == "local":
-        return {"status": 'exists'}
+        return {"status": "exists"}
     vectorstore = "vectors/" + data["docs"]
-    base_path = 'https://raw.githubusercontent.com/arc53/DocsHUB/main/'
+    base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
-        return {"status": 'exists'}
+        return {"status": "exists"}
     else:
         r = requests.get(base_path + vectorstore + "index.faiss")
 
         if r.status_code != 200:
-            return {"status": 'null'}
+            return {"status": "null"}
         else:
             if not os.path.exists(vectorstore):
                 os.makedirs(vectorstore)
@@ -364,7 +375,7 @@ def check_docs():
             with open(vectorstore + "index.pkl", "wb") as f:
                 f.write(r.content)
 
-        return {"status": 'loaded'}
+        return {"status": "loaded"}
 
 
 @app.route("/api/feedback", methods=["POST"])
@@ -374,187 +385,190 @@ def api_feedback():
     answer = data["answer"]
     feedback = data["feedback"]
 
-    print('-' * 5)
+    print("-" * 5)
     print("Question: " + question)
     print("Answer: " + answer)
     print("Feedback: " + feedback)
-    print('-' * 5)
+    print("-" * 5)
     response = requests.post(
         url="https://86x89umx77.execute-api.eu-west-2.amazonaws.com/docsgpt-feedback",
         headers={
             "Content-Type": "application/json; charset=utf-8",
         },
-        data=json.dumps({
-            "answer": answer,
-            "question": question,
-            "feedback": feedback
-        })
+        data=json.dumps({"answer": answer, "question": question, "feedback": feedback}),
     )
-    return {"status": http.client.responses.get(response.status_code, 'ok')}
+    return {"status": http.client.responses.get(response.status_code, "ok")}
 
 
-@app.route('/api/combine', methods=['GET'])
+@app.route("/api/combine", methods=["GET"])
 def combined_json():
-    user = 'local'
+    user = "local"
     """Provide json file with combined available indexes."""
     # get json from https://d3dg1063dc54p9.cloudfront.net/combined.json
 
-    data = [{
-        "name": 'default',
-        "language": 'default',
-        "version": '',
-        "description": 'default',
-        "fullName": 'default',
-        "date": 'default',
-        "docLink": 'default',
-        "model": settings.EMBEDDINGS_NAME,
-        "location": "local"
-    }]
+    data = [
+        {
+            "name": "default",
+            "language": "default",
+            "version": "",
+            "description": "default",
+            "fullName": "default",
+            "date": "default",
+            "docLink": "default",
+            "model": settings.EMBEDDINGS_NAME,
+            "location": "local",
+        }
+    ]
     # structure: name, language, version, description, fullName, date, docLink
     # append data from vectors_collection
-    for index in vectors_collection.find({'user': user}):
-        data.append({
-            "name": index['name'],
-            "language": index['language'],
-            "version": '',
-            "description": index['name'],
-            "fullName": index['name'],
-            "date": index['date'],
-            "docLink": index['location'],
-            "model": settings.EMBEDDINGS_NAME,
-            "location": "local"
-        })
+    for index in vectors_collection.find({"user": user}):
+        data.append(
+            {
+                "name": index["name"],
+                "language": index["language"],
+                "version": "",
+                "description": index["name"],
+                "fullName": index["name"],
+                "date": index["date"],
+                "docLink": index["location"],
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "local",
+            }
+        )
 
     data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
     for index in data_remote:
-        index['location'] = "remote"
+        index["location"] = "remote"
         data.append(index)
 
     return jsonify(data)
 
 
-@app.route('/api/upload', methods=['POST'])
+@app.route("/api/upload", methods=["POST"])
 def upload_file():
     """Upload a file to get vectorized and indexed."""
-    if 'user' not in request.form:
-        return {"status": 'no user'}
-    user = secure_filename(request.form['user'])
-    if 'name' not in request.form:
-        return {"status": 'no name'}
-    job_name = secure_filename(request.form['name'])
+    if "user" not in request.form:
+        return {"status": "no user"}
+    user = secure_filename(request.form["user"])
+    if "name" not in request.form:
+        return {"status": "no name"}
+    job_name = secure_filename(request.form["name"])
     # check if the post request has the file part
-    if 'file' not in request.files:
-        print('No file part')
-        return {"status": 'no file'}
-    file = request.files['file']
-    if file.filename == '':
-        return {"status": 'no file name'}
+    if "file" not in request.files:
+        print("No file part")
+        return {"status": "no file"}
+    file = request.files["file"]
+    if file.filename == "":
+        return {"status": "no file name"}
 
     if file:
         filename = secure_filename(file.filename)
         # save dir
-        save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
+        save_dir = os.path.join(app.config["UPLOAD_FOLDER"], user, job_name)
         # create dir if not exists
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay('temp', [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay("temp", [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
-        return {"status": 'ok', "task_id": task_id}
+        return {"status": "ok", "task_id": task_id}
     else:
-        return {"status": 'error'}
+        return {"status": "error"}
 
 
-@app.route('/api/task_status', methods=['GET'])
+@app.route("/api/task_status", methods=["GET"])
 def task_status():
     """Get celery job status."""
-    task_id = request.args.get('task_id')
+    task_id = request.args.get("task_id")
     task = AsyncResult(task_id)
     task_meta = task.info
     return {"status": task.status, "result": task_meta}
 
 
 ### Backgound task api
-@app.route('/api/upload_index', methods=['POST'])
+@app.route("/api/upload_index", methods=["POST"])
 def upload_index_files():
     """Upload two files(index.faiss, index.pkl) to the user's folder."""
-    if 'user' not in request.form:
-        return {"status": 'no user'}
-    user = secure_filename(request.form['user'])
-    if 'name' not in request.form:
-        return {"status": 'no name'}
-    job_name = secure_filename(request.form['name'])
-    if 'file_faiss' not in request.files:
-        print('No file part')
-        return {"status": 'no file'}
-    file_faiss = request.files['file_faiss']
-    if file_faiss.filename == '':
-        return {"status": 'no file name'}
-    if 'file_pkl' not in request.files:
-        print('No file part')
-        return {"status": 'no file'}
-    file_pkl = request.files['file_pkl']
-    if file_pkl.filename == '':
-        return {"status": 'no file name'}
+    if "user" not in request.form:
+        return {"status": "no user"}
+    user = secure_filename(request.form["user"])
+    if "name" not in request.form:
+        return {"status": "no name"}
+    job_name = secure_filename(request.form["name"])
+    if "file_faiss" not in request.files:
+        print("No file part")
+        return {"status": "no file"}
+    file_faiss = request.files["file_faiss"]
+    if file_faiss.filename == "":
+        return {"status": "no file name"}
+    if "file_pkl" not in request.files:
+        print("No file part")
+        return {"status": "no file"}
+    file_pkl = request.files["file_pkl"]
+    if file_pkl.filename == "":
+        return {"status": "no file name"}
 
     # saves index files
-    save_dir = os.path.join('indexes', user, job_name)
+    save_dir = os.path.join("indexes", user, job_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-    file_faiss.save(os.path.join(save_dir, 'index.faiss'))
-    file_pkl.save(os.path.join(save_dir, 'index.pkl'))
+    file_faiss.save(os.path.join(save_dir, "index.faiss"))
+    file_pkl.save(os.path.join(save_dir, "index.pkl"))
     # create entry in vectors_collection
-    vectors_collection.insert_one({
-        "user": user,
-        "name": job_name,
-        "language": job_name,
-        "location": save_dir,
-        "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "model": settings.EMBEDDINGS_NAME,
-        "type": "local"
-    })
-    return {"status": 'ok'}
+    vectors_collection.insert_one(
+        {
+            "user": user,
+            "name": job_name,
+            "language": job_name,
+            "location": save_dir,
+            "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "model": settings.EMBEDDINGS_NAME,
+            "type": "local",
+        }
+    )
+    return {"status": "ok"}
 
 
-@app.route('/api/download', methods=['get'])
+@app.route("/api/download", methods=["get"])
 def download_file():
-    user = secure_filename(request.args.get('user'))
-    job_name = secure_filename(request.args.get('name'))
-    filename = secure_filename(request.args.get('file'))
-    save_dir = os.path.join(app.config['UPLOAD_FOLDER'], user, job_name)
+    user = secure_filename(request.args.get("user"))
+    job_name = secure_filename(request.args.get("name"))
+    filename = secure_filename(request.args.get("file"))
+    save_dir = os.path.join(app.config["UPLOAD_FOLDER"], user, job_name)
     return send_from_directory(save_dir, filename, as_attachment=True)
 
 
-@app.route('/api/delete_old', methods=['get'])
+@app.route("/api/delete_old", methods=["get"])
 def delete_old():
     """Delete old indexes."""
     import shutil
-    path = request.args.get('path')
-    dirs = path.split('/')
+
+    path = request.args.get("path")
+    dirs = path.split("/")
     dirs_clean = []
     for i in range(1, len(dirs)):
         dirs_clean.append(secure_filename(dirs[i]))
     # check that path strats with indexes or vectors
-    if dirs[0] not in ['indexes', 'vectors']:
-        return {"status": 'error'}
-    path_clean = '/'.join(dirs)
-    vectors_collection.delete_one({'location': path})
+    if dirs[0] not in ["indexes", "vectors"]:
+        return {"status": "error"}
+    path_clean = "/".join(dirs)
+    vectors_collection.delete_one({"location": path})
     try:
         shutil.rmtree(path_clean)
     except FileNotFoundError:
         pass
-    return {"status": 'ok'}
+    return {"status": "ok"}
 
 
 # handling CORS
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
+    response.headers.add("Access-Control-Allow-Credentials", "true")
     return response
 
 
