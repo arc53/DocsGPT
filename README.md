@@ -24,6 +24,10 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
 
+## Our Livestream coming up on 17th of June at 6pm UK time
+[DocsGPT Live: Gen AI in business and Fine tuning models](https://discord.gg/pbCTxb8z?event=1117425466681335808)
+
+
 ## Features
 
 ![Group 9](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
