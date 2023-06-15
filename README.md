@@ -38,7 +38,7 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please don't hesitate contributing or creating issues, it helps us make DocsGPT better!
 
-
+## [DocsGPT-7B](https://huggingface.co/Arc53/DocsGPT-7B) Our finetuned model to help you keep your data private, fine-tuned on top on MPT-7b
 
 ## [Live preview](https://docsgpt.arc53.com/)
 
