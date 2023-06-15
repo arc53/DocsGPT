@@ -8,17 +8,15 @@ RUN pip install --upgrade pip && pip install tiktoken==0.3.3
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-
 FROM python:3.10-slim-bullseye
-# Copy pre-built packages from builder stage
-COPY --from=builder /usr/local/lib/python3.10/site-packages/ /usr/local/lib/python3.10/site-packages/
-RUN pip install gunicorn==20.1.0
-RUN pip install celery==5.2.7
+
+# Copy pre-built packages and binaries from builder stage
+COPY --from=builder /usr/local/ /usr/local/
+
 WORKDIR /app
 COPY . /app
 ENV FLASK_APP=app.py
 ENV FLASK_DEBUG=true
-
 
 EXPOSE 5001
 

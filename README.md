@@ -73,30 +73,50 @@ To stop just run Ctrl + C
 
 ## Development environments
 
-Spin up only 2 containers from docker-compose.yaml (by deleting all services except for redis and mongo)
+### Spin up mongo and redis
+For development only 2 containers are used from docker-compose.yaml (by deleting all services except for redis and mongo). 
+See file [docker-compose-dev.yaml](./docker-compose-dev.yaml).
 
-Make sure you have python 3.10 or 3.11 installed
+Run
+```
+docker compose -f docker-compose-dev.yaml build
+docker compose -f docker-compose-dev.yaml up -d
+```
 
-1. Navigate to `/application` folder
-2. Run `docker-compose -f docker-compose-dev.yaml build && docker-compose -f docker-compose-dev.yaml up -d`
-3. Export required variables              
-`export CELERY_BROKER_URL=redis://localhost:6379/0`   
-`export CELERY_RESULT_BACKEND=redis://localhost:6379/1`
-`export MONGO_URI=mongodb://localhost:27017/docsgpt`
-4. Install dependencies
-`pip install -r requirements.txt`
-5. Prepare .env file
-Copy .env_sample and create .env with your openai api token
-6. Run the app
+### Run the backend
+
+Make sure you have Python 3.10 or 3.11 installed.
+
+1. Export required environment variables
+```commandline
+export CELERY_BROKER_URL=redis://localhost:6379/0   
+export CELERY_RESULT_BACKEND=redis://localhost:6379/1
+export MONGO_URI=mongodb://localhost:27017/docsgpt
+```
+2. Prepare .env file
+Copy `.env_sample` and create `.env` with your OpenAI API token
+3. (optional) Create a python virtual environment
+```commandline
+python -m venv venv
+. venv/bin/activate
+```
+4. Change to `application/` subdir and install dependencies for the backend
+```commandline
+cd application/ 
+pip install -r requirements.txt
+```
+5 . Run the app
 `python wsgi.py`
-7. Start worker with `celery -A app.celery worker -l INFO`
+6. Start worker with `celery -A app.celery worker -l INFO`
 
-To start frontend
+### Start frontend 
+Make sure you have Node version 16+
+
 1. Navigate to `/frontend` folder
 2. Install dependencies
 `npm install`
-3. Run the app
-4. `npm run dev`
+3. Run the app 
+`npm run dev`
 
 
 [How to install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
