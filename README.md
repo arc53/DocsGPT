@@ -110,7 +110,7 @@ pip install -r requirements.txt
 6. Start worker with `celery -A app.celery worker -l INFO`
 
 ### Start frontend 
-Make sure you have Node version 14+
+Make sure you have Node version 16+
 
 1. Navigate to `/frontend` folder
 2. Install dependencies
