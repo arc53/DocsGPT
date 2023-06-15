@@ -41,7 +41,7 @@ Jinja2==3.1.2
 jmespath==1.0.1
 joblib==1.2.0
 kombu==5.2.4
-langchain==0.0.179
+langchain==0.0.200
 loguru==0.6.0
 lxml==4.9.2
 MarkupSafe==2.1.2
@@ -55,7 +55,7 @@ networkx==3.0
 nltk==3.8.1
 numcodecs==0.11.0
 numpy==1.24.2
-openai==0.27.0
+openai==0.27.8
 packaging==23.0
 pathos==0.3.0
 Pillow==9.4.0

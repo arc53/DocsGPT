@@ -28,6 +28,10 @@ export function fetchAnswerApi(
       selectedDocs.model +
       '/';
   }
+  //in history array remove all keys except prompt and response
+  history = history.map((item) => {
+    return { prompt: item.prompt, response: item.response };
+  });
 
   return fetch(apiHost + '/api/answer', {
     method: 'POST',
@@ -81,6 +85,10 @@ export function fetchAnswerSteaming(
       selectedDocs.model +
       '/';
   }
+
+  history = history.map((item) => {
+    return { prompt: item.prompt, response: item.response };
+  });
 
   return new Promise<Answer>((resolve, reject) => {
     const url = new URL(apiHost + '/stream');
