@@ -266,9 +266,6 @@ def api_answer():
                             messages_combine.append(HumanMessagePromptTemplate.from_template(i["prompt"]))
                             messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))
             messages_combine.append(HumanMessagePromptTemplate.from_template("{question}"))
-            import sys
-
-            print(messages_combine, file=sys.stderr)
             p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
         elif settings.LLM_NAME == "openai":
             llm = OpenAI(openai_api_key=api_key, temperature=0)
