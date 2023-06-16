@@ -105,9 +105,8 @@ python -m venv venv
 cd application/ 
 pip install -r requirements.txt
 ```
-5 . Run the app
-`python wsgi.py`
-6. Start worker with `celery -A app.celery worker -l INFO`
+5. Run the app `python wsgi.py`
+7. Start worker with `celery -A app.celery worker -l INFO`
 
 ### Start frontend 
 Make sure you have Node version 16+
