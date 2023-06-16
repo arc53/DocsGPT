@@ -35,7 +35,7 @@ gunicorn==20.1.0
 greenlet==2.0.2
 gpt4all==0.1.7
 hub==3.0.1
-huggingface-hub==0.12.1
+huggingface-hub==0.15.1
 humbug==0.2.8
 idna==3.4
 itsdangerous==2.1.2
@@ -89,7 +89,7 @@ rsa==4.9
 s3transfer==0.6.0
 scikit-learn==1.2.2
 scipy==1.10.1
-sentence-transformers==2.2.2
+sentence-transformers
 sentencepiece
 six==1.16.0
 SQLAlchemy==1.4.46
@@ -100,7 +100,7 @@ tiktoken
 torch==2.0.0
 torchvision==0.15.1
 tqdm==4.65.0
-transformers==4.27.2
+transformers==4.30.0
 typer==0.7.0
 typing-inspect==0.8.0
 typing_extensions==4.5.0
