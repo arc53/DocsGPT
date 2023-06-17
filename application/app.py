@@ -159,6 +159,10 @@ def complete_stream(question, docsearch, chat_history, api_key):
     openai.api_key = api_key
     if is_azure_configured():
         logger.debug("in Azure")
+        openai.api_type = "azure"
+        openai.api_version = settings.OPENAI_API_VERSION
+        openai.api_base = settings.OPENAI_API_BASE
+        openai.engine = settings.AZURE_DEPLOYMENT_NAME
         llm = AzureChatOpenAI(
             openai_api_key=api_key,
             openai_api_base=settings.OPENAI_API_BASE,
