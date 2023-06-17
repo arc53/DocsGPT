@@ -127,7 +127,12 @@ def get_vectorstore(data):
 
 def get_docsearch(vectorstore, embeddings_key):
     if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-        docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
+        if is_azure_configured():
+            os.environ["OPENAI_API_TYPE"] = "azure"
+            openai_embeddings = OpenAIEmbeddings(model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
+        else:
+            openai_embeddings = OpenAIEmbeddings(openai_api_key=embeddings_key)
+        docsearch = FAISS.load_local(vectorstore, openai_embeddings)
     elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
         docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
     elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
@@ -152,7 +157,17 @@ def home():
 
 def complete_stream(question, docsearch, chat_history, api_key):
     openai.api_key = api_key
-    llm = ChatOpenAI(openai_api_key=api_key)
+    if is_azure_configured():
+        logger.debug("in Azure")
+        llm = AzureChatOpenAI(
+            openai_api_key=api_key,
+            openai_api_base=settings.OPENAI_API_BASE,
+            openai_api_version=settings.OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_DEPLOYMENT_NAME,
+        )
+    else:
+        logger.debug("plain OpenAI")
+        llm = ChatOpenAI(openai_api_key=api_key)
     docs = docsearch.similarity_search(question, k=2)
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])

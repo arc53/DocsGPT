@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     EMBEDDINGS_KEY: str = None  # api key for embeddings (if using openai, just copy API_KEY
     OPENAI_API_BASE: str = None  # azure openai api base url
     OPENAI_API_VERSION: str = None  # azure openai api version
-    AZURE_DEPLOYMENT_NAME: str = None  # azure deployment name
+    AZURE_DEPLOYMENT_NAME: str = None  # azure deployment name for answering
+    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: str = None  # azure deployment name for embeddings
 
 
 path = Path(__file__).parent.parent.absolute()
