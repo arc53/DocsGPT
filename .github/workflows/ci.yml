@@ -8,6 +8,7 @@ on:
 
 jobs:
   deploy:
+    if: github.repository == 'arc53/DocsGPT'
     runs-on: ubuntu-latest
     permissions:
       contents: read
