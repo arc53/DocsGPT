@@ -2,9 +2,10 @@ import asyncio
 import datetime
 import http.client
 import json
-import os
-import traceback
 import logging
+import os
+import platform
+import traceback
 
 import dotenv
 import openai
@@ -50,7 +51,6 @@ if settings.LLM_NAME == "manifest":
     manifest = Manifest(client_name="huggingface", client_connection="http://127.0.0.1:5000")
 
 # Redirect PosixPath to WindowsPath on Windows
-import platform
 
 if platform.system() == "Windows":
     import pathlib
