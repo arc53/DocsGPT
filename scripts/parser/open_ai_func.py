@@ -49,6 +49,7 @@ def call_openai_api(docs, folder_name):
         os.environ.get("OPENAI_API_BASE")
         and os.environ.get("OPENAI_API_VERSION")
         and os.environ.get("AZURE_DEPLOYMENT_NAME")
+        and os.environ.get("AZURE_EMBEDDINGS_DEPLOYMENT_NAME")
     ):
         os.environ["OPENAI_API_TYPE"] = "azure"
         openai_embeddings = OpenAIEmbeddings(model=os.environ.get("AZURE_EMBEDDINGS_DEPLOYMENT_NAME"))
