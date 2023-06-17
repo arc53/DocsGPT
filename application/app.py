@@ -162,7 +162,6 @@ def complete_stream(question, docsearch, chat_history, api_key):
         openai.api_type = "azure"
         openai.api_version = settings.OPENAI_API_VERSION
         openai.api_base = settings.OPENAI_API_BASE
-        openai.engine = settings.AZURE_DEPLOYMENT_NAME
         llm = AzureChatOpenAI(
             openai_api_key=api_key,
             openai_api_base=settings.OPENAI_API_BASE,
@@ -196,7 +195,7 @@ def complete_stream(question, docsearch, chat_history, api_key):
                     messages_combine.append({"role": "user", "content": i["prompt"]})
                     messages_combine.append({"role": "system", "content": i["response"]})
     messages_combine.append({"role": "user", "content": question})
-    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", engine=settings.AZURE_DEPLOYMENT_NAME,
                                               messages=messages_combine, stream=True, max_tokens=500, temperature=0)
 
     for line in completion:
