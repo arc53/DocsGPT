@@ -19,8 +19,10 @@ try:
 except FileExistsError:
     pass
 
+
 def metadata_from_filename(title):
     return {'title': title}
+
 
 def generate_random_string(length):
     return ''.join([string.ascii_letters[i % 52] for i in range(length)])
