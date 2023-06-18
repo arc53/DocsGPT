@@ -14,7 +14,7 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 ## [Our recent Livestream](https://www.youtube.com/watch?v=Idv418FMrWU)
 
-<div align="center">](https://www.youtube.com/watch?v=Idv418FMrWU)
+<div align="center">
   
   <a href="https://discord.gg/n5BX8dh8rU">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
