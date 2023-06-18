@@ -2,7 +2,9 @@ import asyncio
 import datetime
 import http.client
 import json
+import logging
 import os
+import platform
 import traceback
 
 import dotenv
@@ -40,6 +42,8 @@ from worker import ingest_worker
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 
+logger = logging.getLogger(__name__)
+
 if settings.LLM_NAME == "manifest":
     from manifest import Manifest
     from langchain.llms.manifest import ManifestWrapper
@@ -47,7 +51,6 @@ if settings.LLM_NAME == "manifest":
     manifest = Manifest(client_name="huggingface", client_connection="http://127.0.0.1:5000")
 
 # Redirect PosixPath to WindowsPath on Windows
-import platform
 
 if platform.system() == "Windows":
     import pathlib
@@ -124,7 +127,12 @@ def get_vectorstore(data):
 
 def get_docsearch(vectorstore, embeddings_key):
     if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-        docsearch = FAISS.load_local(vectorstore, OpenAIEmbeddings(openai_api_key=embeddings_key))
+        if is_azure_configured():
+            os.environ["OPENAI_API_TYPE"] = "azure"
+            openai_embeddings = OpenAIEmbeddings(model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
+        else:
+            openai_embeddings = OpenAIEmbeddings(openai_api_key=embeddings_key)
+        docsearch = FAISS.load_local(vectorstore, openai_embeddings)
     elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
         docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
     elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
@@ -149,7 +157,20 @@ def home():
 
 def complete_stream(question, docsearch, chat_history, api_key):
     openai.api_key = api_key
-    llm = ChatOpenAI(openai_api_key=api_key)
+    if is_azure_configured():
+        logger.debug("in Azure")
+        openai.api_type = "azure"
+        openai.api_version = settings.OPENAI_API_VERSION
+        openai.api_base = settings.OPENAI_API_BASE
+        llm = AzureChatOpenAI(
+            openai_api_key=api_key,
+            openai_api_base=settings.OPENAI_API_BASE,
+            openai_api_version=settings.OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_DEPLOYMENT_NAME,
+        )
+    else:
+        logger.debug("plain OpenAI")
+        llm = ChatOpenAI(openai_api_key=api_key)
     docs = docsearch.similarity_search(question, k=2)
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
@@ -174,9 +195,9 @@ def complete_stream(question, docsearch, chat_history, api_key):
                     messages_combine.append({"role": "user", "content": i["prompt"]})
                     messages_combine.append({"role": "system", "content": i["response"]})
     messages_combine.append({"role": "user", "content": question})
-    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", engine=settings.AZURE_DEPLOYMENT_NAME,
                                               messages=messages_combine, stream=True, max_tokens=500, temperature=0)
-    
+
     for line in completion:
         if "content" in line["choices"][0]["delta"]:
             # check if the delta contains content
@@ -217,6 +238,10 @@ def stream():
     )
 
 
+def is_azure_configured():
+    return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
+
+
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
     data = request.get_json()
@@ -244,7 +269,8 @@ def api_answer():
             input_variables=["context", "question"], template=template_quest, template_format="jinja2"
         )
         if settings.LLM_NAME == "openai_chat":
-            if settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME:  # azure
+            if is_azure_configured():
+                logger.debug("in Azure")
                 llm = AzureChatOpenAI(
                     openai_api_key=api_key,
                     openai_api_base=settings.OPENAI_API_BASE,
@@ -252,6 +278,7 @@ def api_answer():
                     deployment_name=settings.AZURE_DEPLOYMENT_NAME,
                 )
             else:
+                logger.debug("plain OpenAI")
                 llm = ChatOpenAI(openai_api_key=api_key)  # optional parameter: model_name="gpt-4"
             messages_combine = [SystemMessagePromptTemplate.from_template(chat_combine_template)]
             if history:

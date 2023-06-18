@@ -64,7 +64,7 @@ Note: Make sure you have docker installed
    OPENAI_API_KEY=Yourkey
    VITE_API_STREAMING=true
    ```
-3. Run `docker-compose build && docker-compose up`
+3. Run `./run-with-docker-compose.sh`
 4. Navigate to http://localhost:5173/
 
 To stop just run Ctrl + C
