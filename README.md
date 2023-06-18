@@ -12,9 +12,9 @@
 Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
 
-## [[Join us for a Livestream today!](https://www.youtube.com/watch?v=7RLu2k-llCM&pp=ygUFQXJjNTM=)
+## [Our recent Livestream](https://www.youtube.com/watch?v=Idv418FMrWU)
 
-<div align="center">](https://www.youtube.com/watch?v=Idv418FMrWU)
+<div align="center">
   
   <a href="https://discord.gg/n5BX8dh8rU">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
@@ -24,10 +24,6 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 </div>
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
-
-
-## Our Livestream coming up on 17th of June at 6pm UK time
-[DocsGPT Live: Gen AI in business and Fine tuning models](https://discord.gg/pbCTxb8z?event=1117425466681335808)
 
 
 ## Features
