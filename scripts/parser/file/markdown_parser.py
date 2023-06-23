@@ -119,8 +119,12 @@ class MarkdownParser(BaseParser):
             self, filepath: Path, errors: str = "ignore"
     ) -> List[Tuple[Optional[str], str]]:
         """Parse file into tuples."""
-        with open(filepath, "r") as f:
-            content = f.read()
+        with open(filepath, "r", encoding='utf8') as f:
+            try:
+                content = f.read()
+            except (Exception,) as e:
+                print(f'Error a file: "{filepath}"')
+                raise e
         if self._remove_hyperlinks:
             content = self.remove_hyperlinks(content)
         if self._remove_images:
