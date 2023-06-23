@@ -4,7 +4,7 @@ services:
   frontend:
     build: ./frontend
     environment:
-      - VITE_API_HOST=http://localhost:5001
+      - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
     ports:
       - "5173:5173"
@@ -20,14 +20,14 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
     ports:
-      - "5001:5001"
+      - "7091:7091"
     volumes:
       - ./application/indexes:/app/indexes
       - ./application/inputs:/app/inputs
       - ./application/vectors:/app/vectors
     depends_on:
-        - redis
-        - mongo
+      - redis
+      - mongo
 
   worker:
     build: ./application
@@ -38,10 +38,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
-      - API_URL=http://backend:5001
+      - API_URL=http://backend:7091
     depends_on:
-        - redis
-        - mongo
+      - redis
+      - mongo
 
   redis:
     image: redis:6-alpine
@@ -54,8 +54,6 @@ services:
       - 27017:27017
     volumes:
       - mongodb_data_container:/data/db
-
-
 
 volumes:
   mongodb_data_container:

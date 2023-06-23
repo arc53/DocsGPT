@@ -1,4 +1,4 @@
-const API_ENDPOINT = "http://localhost:5001/api/answer"; // Replace with your API endpoint
+const API_ENDPOINT = "http://localhost:7091/api/answer"; // Replace with your API endpoint
 
 const widgetInitMessage = document.getElementById("docsgpt-init-message");
 const widgetAnswerMessage = document.getElementById("docsgpt-answer");

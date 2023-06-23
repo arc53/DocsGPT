@@ -4,7 +4,7 @@ services:
   frontend:
     build: ./frontend
     environment:
-      - VITE_API_HOST=http://localhost:5001
+      - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
     ports:
       - "5173:5173"
@@ -25,7 +25,7 @@ services:
       - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
       - AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$AZURE_EMBEDDINGS_DEPLOYMENT_NAME
     ports:
-      - "5001:5001"
+      - "7091:7091"
     volumes:
       - ./application/indexes:/app/indexes
       - ./application/inputs:/app/inputs
@@ -43,7 +43,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
-      - API_URL=http://backend:5001
+      - API_URL=http://backend:7091
       - OPENAI_API_KEY=$OPENAI_API_KEY
       - OPENAI_API_BASE=$OPENAI_API_BASE
       - OPENAI_API_VERSION=$OPENAI_API_VERSION
