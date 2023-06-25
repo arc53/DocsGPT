@@ -43,7 +43,10 @@ from worker import ingest_worker
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 
 logger = logging.getLogger(__name__)
-gpt_model = 'gpt-3.5-turbo' # gpt-4
+if settings.LLM_NAME == "gpt4":
+    gpt_model = 'gpt-4'
+else:
+    gpt_model = 'gpt-3.5-turbo'
 
 if settings.LLM_NAME == "manifest":
     from manifest import Manifest
