@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     MODEL_PATH: str = "./models/gpt4all-model.bin"
     TOKENS_MAX_HISTORY: int = 150
 
-    API_URL: str = "http://localhost:5001"  # backend url for celery worker
+    API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
     API_KEY: str = None  # LLM api key
     EMBEDDINGS_KEY: str = None  # api key for embeddings (if using openai, just copy API_KEY

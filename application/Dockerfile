@@ -18,6 +18,6 @@ COPY . /app
 ENV FLASK_APP=app.py
 ENV FLASK_DEBUG=true
 
-EXPOSE 5001
+EXPOSE 7091
 
-CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:5001", "wsgi:app"]
+CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:7091", "wsgi:app"]
