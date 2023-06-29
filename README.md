@@ -44,21 +44,21 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 
 
 ## Project structure
-- Application - flask app (main application)
+- Application - Flask app (main application)
 
-- Extensions - chrome extension
+- Extensions - Chrome extension
 
-- Scripts - script that creates similarity search index and store for other libraries. 
+- Scripts - Script that creates similarity search index and store for other libraries. 
 
-- frontend - frontend in vite and
+- Frontend - Frontend uses Vite and React
 
 ## QuickStart
 
 Note: Make sure you have docker installed
 
-1. Open dowload this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. Create .env file in your root directory and set your OPENAI_API_KEY with your openai api key and  VITE_API_STREAMING to true or false if you dont want streaming answers
-   Should look like this inside
+1. Dowload and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
+2. Create an .env file in your root directory and set the env variable OPENAI_API_KEY with your openai api key and  VITE_API_STREAMING to true or false, depending on if you want streaming answers or not
+   It should look like this inside:
    
    ```
    OPENAI_API_KEY=Yourkey
@@ -107,7 +107,7 @@ pip install -r requirements.txt
 6. Start worker with `celery -A app.celery worker -l INFO`
 
 ### Start frontend 
-Make sure you have Node version 16+
+Make sure you have Node version 16 or higher.
 
 1. Navigate to `/frontend` folder
 2. Install dependencies
