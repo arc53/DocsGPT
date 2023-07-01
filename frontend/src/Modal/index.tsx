@@ -34,7 +34,7 @@ const Modal = (props: ModalProps) => {
           )}
         </div>
         {props.isError && (
-          <p className="mr-auto text-sm text-red-500">
+          <p className="mx-auto mt-2 mr-auto text-sm text-red-500">
             Please enter a valid API key
           </p>
         )}
