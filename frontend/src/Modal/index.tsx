@@ -7,6 +7,7 @@ interface ModalProps {
   render: () => JSX.Element;
   modalState: string;
   isError: boolean;
+  errorMessage?: string;
 }
 const Modal = (props: ModalProps) => {
   return (
@@ -35,7 +36,7 @@ const Modal = (props: ModalProps) => {
         </div>
         {props.isError && (
           <p className="mx-auto mt-2 mr-auto text-sm text-red-500">
-            Please enter a valid API key
+            {props.errorMessage}
           </p>
         )}
       </div>
