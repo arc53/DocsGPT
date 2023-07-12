@@ -46,8 +46,8 @@ def call_openai_api(docs, folder_name):
     # )
     # index_name = "pandas"
     if (  # azure
-        os.environ.get("OPENAI_API_BASE")
-        and os.environ.get("OPENAI_API_VERSION")
+        os.environ.get("AZURE_OPENAI_API_BASE")
+        and os.environ.get("AZURE_OPENAI_API_VERSION")
         and os.environ.get("AZURE_DEPLOYMENT_NAME")
         and os.environ.get("AZURE_EMBEDDINGS_DEPLOYMENT_NAME")
     ):
