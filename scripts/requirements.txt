@@ -77,7 +77,7 @@ pycares==4.3.0
 pycparser==2.21
 pycryptodomex==3.17
 pydantic==1.10.4
-Pygments==2.14.0
+Pygments==2.15.0
 PyJWT==2.6.0
 PyPDF2==3.0.1
 python-dateutil==2.8.2
