@@ -4,7 +4,6 @@ from typing import List
 
 import tiktoken
 from parser.schema.base import Document
-import sys
 
 def separate_header_and_body(text):
     header_pattern = r"^(.*?\n){3}"
@@ -17,7 +16,6 @@ def separate_header_and_body(text):
 def group_documents(documents: List[Document], min_tokens: int, max_tokens: int) -> List[Document]:
     docs = []
     current_group = None
-    print("Grouping", len(documents), "documents", file=sys.stderr)
 
     for doc in documents:
         doc_len = len(tiktoken.get_encoding("cl100k_base").encode(doc.text))
@@ -59,7 +57,6 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
                                    embedding=doc.embedding,
                                    extra_info=doc.extra_info)
                 docs.append(new_doc)
-    print("split into", len(docs), "documents", file=sys.stderr)
     return docs
 
 

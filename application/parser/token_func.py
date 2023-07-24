@@ -47,7 +47,6 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
         else:
             header, body = separate_header_and_body(doc.text)
             if len(tiktoken.get_encoding("cl100k_base").encode(header)) > max_tokens:
-                print("header too long, skipping", file=sys.stderr)
                 body = doc.text
                 header = ""
             num_body_parts = ceil(token_length / max_tokens)
