@@ -13,6 +13,7 @@ const store = configureStore({
     preference: {
       apiKey: key ?? '',
       selectedDocs: doc !== null ? JSON.parse(doc) : null,
+      conversations: null,
       sourceDocs: [
         {
           location: '',

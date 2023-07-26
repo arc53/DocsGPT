@@ -19,10 +19,17 @@ import {
   selectSelectedDocsStatus,
   selectSourceDocs,
   setSelectedDocs,
+  selectConversations,
+  setConversations,
+  selectConversationId,
 } from './preferences/preferenceSlice';
+import {
+  setConversation,
+  updateConversationId,
+} from './conversation/conversationSlice';
 import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
-import { Doc } from './preferences/preferenceApi';
+import { Doc, getConversations } from './preferences/preferenceApi';
 
 export default function Navigation({
   navState,
@@ -34,6 +41,8 @@ export default function Navigation({
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
+  const conversations = useSelector(selectConversations);
+  const conversationId = useSelector(selectConversationId);
 
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
 
@@ -51,6 +60,33 @@ export default function Navigation({
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
+  useEffect(() => {
+    if (!conversations) {
+      getConversations()
+        .then((fetchedConversations) => {
+          dispatch(setConversations(fetchedConversations));
+        })
+        .catch((error) => {
+          console.error('Failed to fetch conversations: ', error);
+        });
+    }
+  }, [conversations, dispatch]);
+
+  const handleDeleteConversation = (id: string) => {
+    fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
+      method: 'POST',
+    })
+      .then(() => {
+        // remove the image element from the DOM
+        const imageElement = document.querySelector(
+          `#img-${id}`,
+        ) as HTMLElement;
+        const parentElement = imageElement.parentNode as HTMLElement;
+        parentElement.parentNode?.removeChild(parentElement);
+      })
+      .catch((error) => console.error(error));
+  };
+
   const handleDeleteClick = (index: number, doc: Doc) => {
     const docPath = 'indexes/' + 'local' + '/' + doc.name;
 
@@ -66,6 +102,22 @@ export default function Navigation({
         parentElement.parentNode?.removeChild(parentElement);
       })
       .catch((error) => console.error(error));
+  };
+
+  const handleConversationClick = (index: string) => {
+    // fetch the conversation from the server and setConversation in the store
+    fetch(`${apiHost}/api/get_single_conversation?id=${index}`, {
+      method: 'GET',
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        dispatch(setConversation(data));
+        dispatch(
+          updateConversationId({
+            query: { conversationId: index },
+          }),
+        );
+      });
   };
   useOutsideAlerter(
     navRef,
@@ -121,15 +173,56 @@ export default function Navigation({
         </div>
         <NavLink
           to={'/'}
+          onClick={() => {
+            dispatch(setConversation([]));
+            dispatch(updateConversationId({ query: { conversationId: null } }));
+          }}
           className={({ isActive }) =>
             `${
-              isActive ? 'bg-gray-3000' : ''
+              isActive && conversationId === null ? 'bg-gray-3000' : ''
             } my-auto mx-4 mt-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100`
           }
         >
           <img src={Message} className="ml-2 w-5"></img>
-          <p className="my-auto text-eerie-black">Chat</p>
+          <p className="my-auto text-eerie-black">New Chat</p>
         </NavLink>
+        <div className="conversations-container max-h-[25rem] overflow-y-auto">
+          {conversations
+            ? conversations.map((conversation) => {
+                return (
+                  <div
+                    key={conversation.id}
+                    onClick={() => {
+                      handleConversationClick(conversation.id);
+                    }}
+                    className={`my-auto mx-4 mt-4 flex h-12 cursor-pointer items-center justify-between gap-4 rounded-md hover:bg-gray-100 ${
+                      conversationId === conversation.id ? 'bg-gray-100' : ''
+                    }`}
+                  >
+                    <div className="flex gap-4">
+                      <img src={Message} className="ml-2 w-5"></img>
+                      <p className="my-auto text-eerie-black">
+                        {conversation.name}
+                      </p>
+                    </div>
+
+                    {conversationId === conversation.id ? (
+                      <img
+                        src={Exit}
+                        alt="Exit"
+                        className="mr-4 h-3 w-3 cursor-pointer hover:opacity-50"
+                        id={`img-${conversation.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDeleteConversation(conversation.id);
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })
+            : null}
+        </div>
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-col-reverse border-b-2">

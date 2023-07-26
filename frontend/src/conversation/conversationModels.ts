@@ -10,6 +10,7 @@ export interface Message {
 export interface ConversationState {
   queries: Query[];
   status: Status;
+  conversationId: string | null;
 }
 
 export interface Answer {
@@ -17,6 +18,8 @@ export interface Answer {
   query: string;
   result: string;
   sources: { title: string; text: string }[];
+  conversationId: string | null;
+  title: string | null;
 }
 
 export interface Query {
@@ -25,4 +28,6 @@ export interface Query {
   feedback?: FEEDBACK;
   error?: string;
   sources?: { title: string; text: string }[];
+  conversationId?: string | null;
+  title?: string | null;
 }
