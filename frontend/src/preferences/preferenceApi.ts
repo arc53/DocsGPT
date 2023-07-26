@@ -33,6 +33,29 @@ export async function getDocs(): Promise<Doc[] | null> {
   }
 }
 
+export async function getConversations(): Promise<
+  { name: string; id: string }[] | null
+> {
+  try {
+    const apiHost =
+      import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+
+    const response = await fetch(apiHost + '/api/get_conversations');
+    const data = await response.json();
+
+    const conversations: { name: string; id: string }[] = [];
+
+    data.forEach((conversation: object) => {
+      conversations.push(conversation as { name: string; id: string });
+    });
+
+    return conversations;
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+}
+
 export function getLocalApiKey(): string | null {
   const key = localStorage.getItem('DocsGPTApiKey');
   return key;

@@ -33,12 +33,14 @@ from langchain.prompts.chat import (
     HumanMessagePromptTemplate,
     AIMessagePromptTemplate,
 )
+from langchain.schema import HumanMessage, AIMessage
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 
 from core.settings import settings
 from error import bad_request
 from worker import ingest_worker
+from bson.objectid import ObjectId
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
 
@@ -94,6 +96,7 @@ celery.config_from_object("celeryconfig")
 mongo = MongoClient(app.config["MONGO_URI"])
 db = mongo["docsgpt"]
 vectors_collection = db["vectors"]
+conversations_collection = db["conversations"]
 
 
 async def async_generate(chain, question, chat_history):
@@ -159,7 +162,7 @@ def home():
     )
 
 
-def complete_stream(question, docsearch, chat_history, api_key):
+def complete_stream(question, docsearch, chat_history, api_key, conversation_id):
     openai.api_key = api_key
     if is_azure_configured():
         logger.debug("in Azure")
@@ -180,11 +183,14 @@ def complete_stream(question, docsearch, chat_history, api_key):
     docs_together = "\n".join([doc.page_content for doc in docs])
     p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
     messages_combine = [{"role": "system", "content": p_chat_combine}]
+    source_log_docs = []
     for doc in docs:
         if doc.metadata:
             data = json.dumps({"type": "source", "doc": doc.page_content, "metadata": doc.metadata})
+            source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
         else:
             data = json.dumps({"type": "source", "doc": doc.page_content})
+            source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
         yield f"data:{data}\n\n"
 
     if len(chat_history) > 1:
@@ -201,13 +207,42 @@ def complete_stream(question, docsearch, chat_history, api_key):
     messages_combine.append({"role": "user", "content": question})
     completion = openai.ChatCompletion.create(model=gpt_model, engine=settings.AZURE_DEPLOYMENT_NAME,
                                               messages=messages_combine, stream=True, max_tokens=500, temperature=0)
-
+    reponse_full = ""
     for line in completion:
         if "content" in line["choices"][0]["delta"]:
             # check if the delta contains content
             data = json.dumps({"answer": str(line["choices"][0]["delta"]["content"])})
+            reponse_full += str(line["choices"][0]["delta"]["content"])
             yield f"data: {data}\n\n"
+    # save conversation to database
+    if conversation_id is not None:
+        conversations_collection.update_one(
+            {"_id": ObjectId(conversation_id)},
+            {"$push": {"queries": {"prompt": question, "response": reponse_full, "sources": source_log_docs}}},
+        )
+
+    else:
+        # create new conversation
+        # generate summary
+        messages_summary = [{"role": "assistant", "content": "Summarise following conversation in no more than 3 "
+                                                             "words, respond ONLY with the summary, use the same "
+                                                             "language as the system \n\nUser: " + question+ "\n\nAI: " +
+                                                             reponse_full},
+                            {"role": "user", "content": "Summarise following conversation in no more than 3 words, "
+                                                        "respond ONLY with the summary, use the same language as the "
+                                                        "system"}]
+        completion = openai.ChatCompletion.create(model='gpt-3.5-turbo', engine=settings.AZURE_DEPLOYMENT_NAME,
+                                                  messages=messages_summary, max_tokens=30, temperature=0)
+        conversation_id = conversations_collection.insert_one(
+            {"user": "local",
+             "date": datetime.datetime.utcnow(),
+             "name": completion["choices"][0]["message"]["content"],
+             "queries": [{"prompt": question, "response": reponse_full, "sources": source_log_docs}]}
+        ).inserted_id
+
     # send data.type = "end" to indicate that the stream has ended as json
+    data = json.dumps({"type": "id", "id": str(conversation_id)})
+    yield f"data: {data}\n\n"
     data = json.dumps({"type": "end"})
     yield f"data: {data}\n\n"
 
@@ -220,6 +255,7 @@ def stream():
     history = data["history"]
     # history to json object from string
     history = json.loads(history)
+    conversation_id = data["conversation_id"]
 
     # check if active_docs is set
 
@@ -239,7 +275,7 @@ def stream():
 
     # question = "Hi"
     return Response(
-        complete_stream(question, docsearch, chat_history=history, api_key=api_key), mimetype="text/event-stream"
+        complete_stream(question, docsearch, chat_history=history, api_key=api_key, conversation_id=conversation_id), mimetype="text/event-stream"
     )
 
 
@@ -252,6 +288,10 @@ def api_answer():
     data = request.get_json()
     question = data["question"]
     history = data["history"]
+    if "conversation_id" not in data:
+        conversation_id = None
+    else:
+        conversation_id = data["conversation_id"]
     print("-" * 5)
     if not api_key_set:
         api_key = data["api_key"]
@@ -363,6 +403,37 @@ def api_answer():
             else:
                 sources_doc.append({'title': doc.page_content, 'text': doc.page_content})
         result['sources'] = sources_doc
+
+        # generate conversationId
+        if conversation_id is not None:
+            conversations_collection.update_one(
+                {"_id": ObjectId(conversation_id)},
+                {"$push": {"queries": {"prompt": question, "response": result["answer"], "sources": result['sources']}}},
+            )
+
+        else:
+            # create new conversation
+            # generate summary
+            messages_summary = [AIMessage(content="Summarise following conversation in no more than 3 " +
+                                                  "words, respond ONLY with the summary, use the same " +
+                                                  "language as the system \n\nUser: " + question + "\n\nAI: " +
+                                                  result["answer"]),
+                                HumanMessage(content="Summarise following conversation in no more than 3 words, " +
+                                                     "respond ONLY with the summary, use the same language as the " +
+                                                     "system")]
+
+
+            # completion = openai.ChatCompletion.create(model='gpt-3.5-turbo', engine=settings.AZURE_DEPLOYMENT_NAME,
+            #                                           messages=messages_summary, max_tokens=30, temperature=0)
+            completion = llm.predict_messages(messages_summary)
+            conversation_id = conversations_collection.insert_one(
+                {"user": "local",
+                 "date": datetime.datetime.utcnow(),
+                 "name": completion.content,
+                 "queries": [{"prompt": question, "response": result["answer"], "sources": result['sources']}]}
+            ).inserted_id
+
+        result["conversation_id"] = str(conversation_id)
 
         # mock result
         # result = {
@@ -588,6 +659,39 @@ def delete_old():
         shutil.rmtree(path_clean)
     except FileNotFoundError:
         pass
+    return {"status": "ok"}
+
+
+@app.route("/api/get_conversations", methods=["get"])
+def get_conversations():
+    # provides a list of conversations
+    conversations = conversations_collection.find().sort("date", -1)
+    list_conversations = []
+    for conversation in conversations:
+        list_conversations.append({"id": str(conversation["_id"]), "name": conversation["name"]})
+
+    #list_conversations = [{"id": "default", "name": "default"}, {"id": "jeff", "name": "jeff"}]
+
+    return jsonify(list_conversations)
+
+@app.route("/api/get_single_conversation", methods=["get"])
+def get_single_conversation():
+    # provides data for a conversation
+    conversation_id = request.args.get("id")
+    conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
+    return jsonify(conversation['queries'])
+
+@app.route("/api/delete_conversation", methods=["POST"])
+def delete_conversation():
+    # deletes a conversation from the database
+    conversation_id = request.args.get("id")
+    # write to mongodb
+    conversations_collection.delete_one(
+        {
+            "_id": ObjectId(conversation_id),
+        }
+    )
+
     return {"status": "ok"}
 
 

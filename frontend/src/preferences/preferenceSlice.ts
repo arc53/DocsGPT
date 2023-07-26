@@ -10,6 +10,7 @@ interface Preference {
   apiKey: string;
   selectedDocs: Doc | null;
   sourceDocs: Doc[] | null;
+  conversations: { name: string; id: string }[] | null;
 }
 
 const initialState: Preference = {
@@ -26,6 +27,7 @@ const initialState: Preference = {
     model: 'openai_text-embedding-ada-002',
   } as Doc,
   sourceDocs: null,
+  conversations: null,
 };
 
 export const prefSlice = createSlice({
@@ -41,10 +43,14 @@ export const prefSlice = createSlice({
     setSourceDocs: (state, action) => {
       state.sourceDocs = action.payload;
     },
+    setConversations: (state, action) => {
+      state.conversations = action.payload;
+    },
   },
 });
 
-export const { setApiKey, setSelectedDocs, setSourceDocs } = prefSlice.actions;
+export const { setApiKey, setSelectedDocs, setSourceDocs, setConversations } =
+  prefSlice.actions;
 export default prefSlice.reducer;
 
 export const prefListenerMiddleware = createListenerMiddleware();
@@ -74,3 +80,7 @@ export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
 export const selectSelectedDocs = (state: RootState) =>
   state.preference.selectedDocs;
+export const selectConversations = (state: RootState) =>
+  state.preference.conversations;
+export const selectConversationId = (state: RootState) =>
+  state.conversation.conversationId;

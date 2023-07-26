@@ -2,10 +2,13 @@ import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
 import { fetchAnswerApi, fetchAnswerSteaming } from './conversationApi';
 import { Answer, ConversationState, Query, Status } from './conversationModels';
+import { getConversations } from '../preferences/preferenceApi';
+import { setConversations } from '../preferences/preferenceSlice';
 
 const initialState: ConversationState = {
   queries: [],
   status: 'idle',
+  conversationId: null,
 };
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
@@ -21,6 +24,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.preference.apiKey,
           state.preference.selectedDocs!,
           state.conversation.queries,
+          state.conversation.conversationId,
           (event) => {
             const data = JSON.parse(event.data);
 
@@ -28,6 +32,13 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
             if (data.type === 'end') {
               // set status to 'idle'
               dispatch(conversationSlice.actions.setStatus('idle'));
+              getConversations()
+                .then((fetchedConversations) => {
+                  dispatch(setConversations(fetchedConversations));
+                })
+                .catch((error) => {
+                  console.error('Failed to fetch conversations: ', error);
+                });
             } else if (data.type === 'source') {
               // check if data.metadata exists
               let result;
@@ -44,6 +55,12 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 updateStreamingSource({
                   index: state.conversation.queries.length - 1,
                   query: { sources: [result] },
+                }),
+              );
+            } else if (data.type === 'id') {
+              dispatch(
+                updateConversationId({
+                  query: { conversationId: data.id },
                 }),
               );
             } else {
@@ -63,10 +80,11 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.preference.apiKey,
           state.preference.selectedDocs!,
           state.conversation.queries,
+          state.conversation.conversationId,
         );
         if (answer) {
           let sourcesPrepped = [];
-          sourcesPrepped = answer.sources.map((source) => {
+          sourcesPrepped = answer.sources.map((source: { title: string }) => {
             if (source && source.title) {
               const titleParts = source.title.split('/');
               return {
@@ -83,11 +101,30 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
               query: { response: answer.answer, sources: sourcesPrepped },
             }),
           );
+          dispatch(
+            updateConversationId({
+              query: { conversationId: answer.conversationId },
+            }),
+          );
           dispatch(conversationSlice.actions.setStatus('idle'));
+          getConversations()
+            .then((fetchedConversations) => {
+              dispatch(setConversations(fetchedConversations));
+            })
+            .catch((error) => {
+              console.error('Failed to fetch conversations: ', error);
+            });
         }
       }
     }
-    return { answer: '', query: question, result: '', sources: [] };
+    return {
+      conversationId: null,
+      title: null,
+      answer: '',
+      query: question,
+      result: '',
+      sources: [],
+    };
   },
 );
 
@@ -97,6 +134,9 @@ export const conversationSlice = createSlice({
   reducers: {
     addQuery(state, action: PayloadAction<Query>) {
       state.queries.push(action.payload);
+    },
+    setConversation(state, action: PayloadAction<Query[]>) {
+      state.queries = action.payload;
     },
     updateStreamingQuery(
       state,
@@ -112,6 +152,12 @@ export const conversationSlice = createSlice({
           ...action.payload.query,
         };
       }
+    },
+    updateConversationId(
+      state,
+      action: PayloadAction<{ query: Partial<Query> }>,
+    ) {
+      state.conversationId = action.payload.query.conversationId ?? null;
     },
     updateStreamingSource(
       state,
@@ -161,6 +207,8 @@ export const {
   addQuery,
   updateQuery,
   updateStreamingQuery,
+  updateConversationId,
   updateStreamingSource,
+  setConversation,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;
