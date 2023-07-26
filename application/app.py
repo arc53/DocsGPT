@@ -226,7 +226,8 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
         # generate summary
         messages_summary = [{"role": "assistant", "content": "Summarise following conversation in no more than 3 "
                                                              "words, respond ONLY with the summary, use the same "
-                                                             "language as the system \n\nUser: " + question+ "\n\nAI: " +
+                                                             "language as the system \n\nUser: " + question + "\n\n" +
+                                                             "AI: " +
                                                              reponse_full},
                             {"role": "user", "content": "Summarise following conversation in no more than 3 words, "
                                                         "respond ONLY with the summary, use the same language as the "
@@ -275,7 +276,9 @@ def stream():
 
     # question = "Hi"
     return Response(
-        complete_stream(question, docsearch, chat_history=history, api_key=api_key, conversation_id=conversation_id), mimetype="text/event-stream"
+        complete_stream(question, docsearch,
+                        chat_history=history, api_key=api_key,
+                        conversation_id=conversation_id), mimetype="text/event-stream"
     )
 
 
@@ -408,7 +411,8 @@ def api_answer():
         if conversation_id is not None:
             conversations_collection.update_one(
                 {"_id": ObjectId(conversation_id)},
-                {"$push": {"queries": {"prompt": question, "response": result["answer"], "sources": result['sources']}}},
+                {"$push": {"queries": {"prompt": question,
+                                       "response": result["answer"], "sources": result['sources']}}},
             )
 
         else:
