@@ -16,8 +16,8 @@ class Settings(BaseSettings):
 
     API_KEY: str = None  # LLM api key
     EMBEDDINGS_KEY: str = None  # api key for embeddings (if using openai, just copy API_KEY
-    AZURE_OPENAI_API_BASE: str = None  # azure openai api base url
-    AZURE_OPENAI_API_VERSION: str = None  # azure openai api version
+    OPENAI_API_BASE: str = None  # azure openai api base url
+    OPENAI_API_VERSION: str = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: str = None  # azure deployment name for answering
     AZURE_EMBEDDINGS_DEPLOYMENT_NAME: str = None  # azure deployment name for embeddings
 
