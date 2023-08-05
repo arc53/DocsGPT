@@ -71,6 +71,12 @@ export default function Conversation() {
     return responseView;
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  };
+
   return (
     <div className="flex justify-center p-4">
       {queries.length > 0 && (
@@ -98,6 +104,7 @@ export default function Conversation() {
           <div
             ref={inputRef}
             contentEditable
+            onPaste={handlePaste}
             className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white py-2 pl-4 pr-9 leading-7 opacity-100 focus:outline-none`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
