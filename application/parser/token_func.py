@@ -25,7 +25,7 @@ def group_documents(documents: List[Document], min_tokens: int, max_tokens: int)
             current_group = Document(text=doc.text, doc_id=doc.doc_id, embedding=doc.embedding,
                                      extra_info=doc.extra_info)
         elif len(tiktoken.get_encoding("cl100k_base").encode(
-                current_group.text)) + doc_len < max_tokens and doc_len >= min_tokens:
+                current_group.text)) + doc_len < max_tokens and doc_len < min_tokens:
             current_group.text += " " + doc.text
         else:
             docs.append(current_group)
