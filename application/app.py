@@ -167,12 +167,12 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
     if is_azure_configured():
         logger.debug("in Azure")
         openai.api_type = "azure"
-        openai.api_version = settings.AZURE_OPENAI_API_VERSION
-        openai.api_base = settings.AZURE_OPENAI_API_BASE
+        openai.api_version = settings.OPENAI_API_VERSION
+        openai.api_base = settings.OPENAI_API_BASE
         llm = AzureChatOpenAI(
             openai_api_key=api_key,
-            openai_api_base=settings.AZURE_OPENAI_API_BASE,
-            openai_api_version=settings.AZURE_OPENAI_API_VERSION,
+            openai_api_base=settings.OPENAI_API_BASE,
+            openai_api_version=settings.OPENAI_API_VERSION,
             deployment_name=settings.AZURE_DEPLOYMENT_NAME,
         )
     else:
@@ -283,7 +283,7 @@ def stream():
 
 
 def is_azure_configured():
-    return settings.AZURE_OPENAI_API_BASE and settings.AZURE_OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
+    return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -321,8 +321,8 @@ def api_answer():
                 logger.debug("in Azure")
                 llm = AzureChatOpenAI(
                     openai_api_key=api_key,
-                    openai_api_base=settings.AZURE_OPENAI_API_BASE,
-                    openai_api_version=settings.AZURE_OPENAI_API_VERSION,
+                    openai_api_base=settings.OPENAI_API_BASE,
+                    openai_api_version=settings.OPENAI_API_VERSION,
                     deployment_name=settings.AZURE_DEPLOYMENT_NAME,
                 )
             else:
