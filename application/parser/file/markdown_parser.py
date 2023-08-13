@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import tiktoken
-from parser.file.base_parser import BaseParser
+from application.parser.file.base_parser import BaseParser
 
 
 class MarkdownParser(BaseParser):

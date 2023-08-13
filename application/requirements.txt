@@ -73,6 +73,7 @@ pymongo==4.3.3
 pyowm==3.3.0
 PyPDF2==3.0.1
 PySocks==1.7.1
+pytest
 python-dateutil==2.8.2
 python-dotenv==1.0.0
 python-jose==3.3.0

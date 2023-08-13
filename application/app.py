@@ -37,9 +37,9 @@ from langchain.schema import HumanMessage, AIMessage
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 
-from core.settings import settings
-from error import bad_request
-from worker import ingest_worker
+from application.core.settings import settings
+from application.error import bad_request
+from application.worker import ingest_worker
 from bson.objectid import ObjectId
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"

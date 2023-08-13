@@ -6,7 +6,7 @@ Contains parsers for epub files.
 from pathlib import Path
 from typing import Dict
 
-from parser.file.base_parser import BaseParser
+from application.parser.file.base_parser import BaseParser
 
 
 class EpubParser(BaseParser):
