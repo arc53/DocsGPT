@@ -13,7 +13,6 @@ services:
 
   backend:
     build: ./application
-    working_dir: /application
     environment:
       - API_KEY=$OPENAI_API_KEY
       - EMBEDDINGS_KEY=$OPENAI_API_KEY
@@ -28,16 +27,15 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ./application/indexes:/application/indexes
-      - ./application/inputs:/application/inputs
-      - ./application/vectors:/application/vectors
+      - ./application/indexes:/app/application/indexes
+      - ./application/inputs:/app/application/inputs
+      - ./application/vectors:/app/application/vectors
     depends_on:
         - redis
         - mongo
 
   worker:
     build: ./application
-    working_dir: /application
     command: celery -A application.app.celery worker -l INFO
     environment:
       - API_KEY=$OPENAI_API_KEY

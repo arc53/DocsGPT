@@ -14,10 +14,10 @@ FROM python:3.10-slim-bullseye
 COPY --from=builder /usr/local/ /usr/local/
 
 WORKDIR /app
-COPY . /app
+COPY . /app/application
 ENV FLASK_APP=app.py
 ENV FLASK_DEBUG=true
 
 EXPOSE 7091
 
-CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:7091", "wsgi:app"]
+CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:7091", "application.wsgi:app"]
