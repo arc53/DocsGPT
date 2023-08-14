@@ -37,9 +37,9 @@ from langchain.schema import HumanMessage, AIMessage
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 
-from core.settings import settings
-from error import bad_request
-from worker import ingest_worker
+from application.core.settings import settings
+from application.error import bad_request
+from application.worker import ingest_worker
 from bson.objectid import ObjectId
 
 # os.environ["LANGCHAIN_HANDLER"] = "langchain"
@@ -68,19 +68,20 @@ if platform.system() == "Windows":
 dotenv.load_dotenv()
 
 # load the prompts
-with open("prompts/combine_prompt.txt", "r") as f:
+current_dir = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(current_dir, "prompts", "combine_prompt.txt"), "r") as f:
     template = f.read()
 
-with open("prompts/combine_prompt_hist.txt", "r") as f:
+with open(os.path.join(current_dir, "prompts", "combine_prompt_hist.txt"), "r") as f:
     template_hist = f.read()
 
-with open("prompts/question_prompt.txt", "r") as f:
+with open(os.path.join(current_dir, "prompts", "question_prompt.txt"), "r") as f:
     template_quest = f.read()
 
-with open("prompts/chat_combine_prompt.txt", "r") as f:
+with open(os.path.join(current_dir, "prompts", "chat_combine_prompt.txt"), "r") as f:
     chat_combine_template = f.read()
 
-with open("prompts/chat_reduce_prompt.txt", "r") as f:
+with open(os.path.join(current_dir, "prompts", "chat_reduce_prompt.txt"), "r") as f:
     chat_reduce_template = f.read()
 
 api_key_set = settings.API_KEY is not None
@@ -92,7 +93,7 @@ app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
 app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
 app.config["MONGO_URI"] = settings.MONGO_URI
 celery = Celery()
-celery.config_from_object("celeryconfig")
+celery.config_from_object("application.celeryconfig")
 mongo = MongoClient(app.config["MONGO_URI"])
 db = mongo["docsgpt"]
 vectors_collection = db["vectors"]
@@ -129,6 +130,7 @@ def get_vectorstore(data):
             vectorstore = ""
     else:
         vectorstore = ""
+    vectorstore = os.path.join("application", vectorstore)
     return vectorstore
 
 

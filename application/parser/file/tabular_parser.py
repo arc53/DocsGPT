@@ -6,7 +6,7 @@ Contains parsers for tabular data files.
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-from parser.file.base_parser import BaseParser
+from application.parser.file.base_parser import BaseParser
 
 
 class CSVParser(BaseParser):

@@ -3,15 +3,15 @@ import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
-from parser.file.base import BaseReader
-from parser.file.base_parser import BaseParser
-from parser.file.docs_parser import DocxParser, PDFParser
-from parser.file.epub_parser import EpubParser
-from parser.file.html_parser import HTMLParser
-from parser.file.markdown_parser import MarkdownParser
-from parser.file.rst_parser import RstParser
-from parser.file.tabular_parser import PandasCSVParser
-from parser.schema.base import Document
+from application.parser.file.base import BaseReader
+from application.parser.file.base_parser import BaseParser
+from application.parser.file.docs_parser import DocxParser, PDFParser
+from application.parser.file.epub_parser import EpubParser
+from application.parser.file.html_parser import HTMLParser
+from application.parser.file.markdown_parser import MarkdownParser
+from application.parser.file.rst_parser import RstParser
+from application.parser.file.tabular_parser import PandasCSVParser
+from application.parser.schema.base import Document
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".pdf": PDFParser(),

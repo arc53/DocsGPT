@@ -7,11 +7,11 @@ from urllib.parse import urljoin
 import nltk
 import requests
 
-from core.settings import settings
-from parser.file.bulk import SimpleDirectoryReader
-from parser.open_ai_func import call_openai_api
-from parser.schema.base import Document
-from parser.token_func import group_split
+from application.core.settings import settings
+from application.parser.file.bulk import SimpleDirectoryReader
+from application.parser.open_ai_func import call_openai_api
+from application.parser.schema.base import Document
+from application.parser.token_func import group_split
 
 try:
     nltk.download('punkt', quiet=True)
