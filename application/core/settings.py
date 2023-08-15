@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MODEL_PATH: str = "./models/gpt4all-model.bin"
     TOKENS_MAX_HISTORY: int = 150
+    SELF_HOSTED_MODEL: bool = False
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 

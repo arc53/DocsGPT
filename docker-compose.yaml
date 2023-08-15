@@ -19,6 +19,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - SELF_HOSTED_MODEL=$SELF_HOSTED_MODEL
     ports:
       - "7091:7091"
     volumes:
