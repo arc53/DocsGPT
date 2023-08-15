@@ -12,8 +12,6 @@
 Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
 
-## [Our recent Livestream](https://www.youtube.com/watch?v=Idv418FMrWU)
-
 <div align="center">
   
   <a href="https://discord.gg/n5BX8dh8rU">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
@@ -25,22 +23,39 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
+## Roadmap
+
+You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please don't hesitate contributing or creating issues, it helps us make DocsGPT better!
+
+## Our open source models optimised for DocsGPT:
+
+| Name              | Base Model | Requirements (or similar)                        |
+|-------------------|------------|----------------------------------------------------------|
+| [Docsgpt-7b-falcon](https://huggingface.co/Arc53/docsgpt-7b-falcon)  | Falcon-7b  |  1xA10G gpu   |
+| [Docsgpt-14b](https://huggingface.co/Arc53/docsgpt-14b)              | llama-2    | 2xA10 gpu's   |
+| [Docsgpt-40b](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon     | 8xA10G gpu's  |
+
+
+If you don't have enough resources to run it you can use bitsnbytes to quantize
+
 
 ## Features
 
 ![Group 9](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
 
 
+## Useful links
+ [Live preview](https://docsgpt.arc53.com/)
+ 
+ [Join Our Discord](https://discord.gg/n5BX8dh8rU)
+ 
+ [Guides](https://github.com/arc53/docsgpt/wiki)
 
-## Roadmap
+ [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
-You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, please don't hesitate contributing or creating issues, it helps us make DocsGPT better!
+ [How to use any other documentation](https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation)
 
-## [DocsGPT-7B](https://huggingface.co/Arc53/DocsGPT-7B) Our finetuned model to help you keep your data private, fine-tuned on top on MPT-7b
-
-## [Live preview](https://docsgpt.arc53.com/)
-
-## [Join Our Discord](https://discord.gg/n5BX8dh8rU)
+ [How to host it locally (so all data will stay on-premises)](https://github.com/arc53/DocsGPT/wiki/How-to-use-different-LLM's#hosting-everything-locally)
 
 
 ## Project structure
@@ -116,16 +131,6 @@ Make sure you have Node version 16 or higher.
 `npm run dev`
 
 
-[How to install the Chrome extension](https://github.com/arc53/docsgpt/wiki#launch-chrome-extension)
-
-
-## [Guides](https://github.com/arc53/docsgpt/wiki)
-
-## [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
-
-## [How to use any other documentation](https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation)
-
-## [How to host it locally (so all data will stay on-premises)](https://github.com/arc53/DocsGPT/wiki/How-to-use-different-LLM's#hosting-everything-locally)
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
 
