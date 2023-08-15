@@ -14,7 +14,7 @@ from celery import Celery
 from celery.result import AsyncResult
 from flask import Flask, request, render_template, send_from_directory, jsonify, Response
 from langchain import FAISS
-from langchain import VectorDBQA, HuggingFaceHub, Cohere, OpenAI
+from langchain import VectorDBQA, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
 from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
 from langchain.chains.question_answering import load_qa_chain
@@ -50,7 +50,7 @@ else:
     gpt_model = 'gpt-3.5-turbo'
 
 
-if settings.SELF_HOSTED_MODEL == True:
+if settings.SELF_HOSTED_MODEL:
     from langchain.llms import HuggingFacePipeline
     from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
