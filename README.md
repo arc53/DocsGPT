@@ -33,7 +33,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here, pleas
 |-------------------|------------|----------------------------------------------------------|
 | [Docsgpt-7b-falcon](https://huggingface.co/Arc53/docsgpt-7b-falcon)  | Falcon-7b  |  1xA10G gpu   |
 | [Docsgpt-14b](https://huggingface.co/Arc53/docsgpt-14b)              | llama-2-14b    | 2xA10 gpu's   |
-| [Docsgpt-40b](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon-40b     | 8xA10G gpu's  |
+| [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon-40b     | 8xA10G gpu's  |
 
 
 If you don't have enough resources to run it you can use bitsnbytes to quantize
