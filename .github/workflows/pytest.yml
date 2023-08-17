@@ -3,8 +3,11 @@ name: Run python tests with pytest
 on: [push, pull_request]
 
 jobs:
-  build:
-
+  pytest_and_coverage:
+    name: Run tests and count coverage
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -19,9 +22,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pytest-cov
           cd application
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Test with pytest
         run: |
-          python -m pytest
+          python -m pytest --cov=application --cov=scripts --cov=extensions --cov-report xml:/tmp/coverage.xml
+      - name: Coverage
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.11'
+        uses: orgoro/coverage@v3
+        with:
+          coverageFile: /tmp/coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          thresholdAll: 0.1
+          thresholdNew: 0.01
+          thresholdModified: 0.01
