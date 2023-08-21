@@ -18,7 +18,8 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
   <a href="https://discord.gg/n5BX8dh8rU">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/discord/1070046503302877216)</a>
-  <img alt="Twitter Follow" src="https://img.shields.io/twitter/follow/ATushynski">
+  <a href="https://twitter.com/ATushynski">![Twitter Follow](https://img.shields.io/twitter/follow/ATushynski)</a>
+
 
   
 </div>
