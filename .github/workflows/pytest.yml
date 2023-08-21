@@ -1,14 +1,13 @@
-name: Run Python tests with pytest
+name: Run python tests with pytest
 
 on: [push, pull_request]
-
-permissions:
-  pull-requests: write
 
 jobs:
   pytest_and_coverage:
     name: Run tests and count coverage
-
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     strategy:
       matrix:
