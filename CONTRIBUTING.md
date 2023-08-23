@@ -26,8 +26,9 @@ Please try to follow guidelines
 
 
 ### If you are looking to contribute to Backend (🐍Python):
-Check out our issues, and contribute to /application or /scripts (ignore old  ingest_rst.py ingest_rst_sphinx.py files, they will be deprecated soon)
-Currently we don't have any tests(which would be useful😉) but before submitting you PR make sure that after you ingested some test data its queryable
+* Check out our issues, and contribute to /application or /scripts (ignore old  ingest_rst.py ingest_rst_sphinx.py files, they will be deprecated soon)
+* All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [/tests](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
+* Before submitting your PR make sure that after you ingested some test data it is queryable.
 
 ### Workflow:
 Create a fork, make changes on your forked repository, submit changes in a form of pull request
@@ -35,4 +36,4 @@ Create a fork, make changes on your forked repository, submit changes in a form 
 ## Questions / collaboration
 Please join our [Discord](https://discord.gg/n5BX8dh8rU) don't hesitate, we are very friendly and welcoming to new contributors.
 
-# Thank you so much for considering to contribute to DocsGPT!🙏
+# Thank you so much for considering contributing to DocsGPT!🙏
