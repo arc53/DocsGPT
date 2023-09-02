@@ -6,7 +6,7 @@ import logging
 import os
 import platform
 import traceback
-
+from litellm import completion
 import dotenv
 import openai
 import requests
@@ -215,10 +215,11 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
                     messages_combine.append({"role": "user", "content": i["prompt"]})
                     messages_combine.append({"role": "system", "content": i["response"]})
     messages_combine.append({"role": "user", "content": question})
-    completion = openai.ChatCompletion.create(model=gpt_model, engine=settings.AZURE_DEPLOYMENT_NAME,
-                                              messages=messages_combine, stream=True, max_tokens=500, temperature=0)
+    if settings.AZURE_DEPLOYMENT_NAME:
+        gpt_model="azure/" + settings.AZURE_DEPLOYMENT_NAME
+    response = completion(model=gpt_model, messages=messages_combine, stream=True, max_tokens=500, temperature=0)
     reponse_full = ""
-    for line in completion:
+    for line in response:
         if "content" in line["choices"][0]["delta"]:
             # check if the delta contains content
             data = json.dumps({"answer": str(line["choices"][0]["delta"]["content"])})
@@ -242,12 +243,13 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
                             {"role": "user", "content": "Summarise following conversation in no more than 3 words, "
                                                         "respond ONLY with the summary, use the same language as the "
                                                         "system"}]
-        completion = openai.ChatCompletion.create(model='gpt-3.5-turbo', engine=settings.AZURE_DEPLOYMENT_NAME,
-                                                  messages=messages_summary, max_tokens=30, temperature=0)
+        if settings.AZURE_DEPLOYMENT_NAME:
+            gpt_model="azure/" + settings.AZURE_DEPLOYMENT_NAME
+        response = completion(model=gpt_model, messages=messages_summary, stream=True, max_tokens=500, temperature=0)
         conversation_id = conversations_collection.insert_one(
             {"user": "local",
              "date": datetime.datetime.utcnow(),
-             "name": completion["choices"][0]["message"]["content"],
+             "name": response["choices"][0]["message"]["content"],
              "queries": [{"prompt": question, "response": reponse_full, "sources": source_log_docs}]}
         ).inserted_id
 
@@ -432,9 +434,6 @@ def api_answer():
                                                      "respond ONLY with the summary, use the same language as the " +
                                                      "system")]
 
-
-            # completion = openai.ChatCompletion.create(model='gpt-3.5-turbo', engine=settings.AZURE_DEPLOYMENT_NAME,
-            #                                           messages=messages_summary, max_tokens=30, temperature=0)
             completion = llm.predict_messages(messages_summary)
             conversation_id = conversations_collection.insert_one(
                 {"user": "local",
