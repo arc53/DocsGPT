@@ -1,5 +1,5 @@
 name: Run python tests with pytest
-on: [push, pull_request]
+on: [push]
 jobs:
   pytest_and_coverage:
     name: Run tests and count coverage
@@ -21,4 +21,4 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Test with pytest and generate coverage report
         run: |
-          python -m pytest --cov=application --cov=scripts --cov=extensions --cov-report xml:/tmp/coverage.xml
+          python -m pytest
