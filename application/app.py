@@ -95,6 +95,9 @@ with open(os.path.join(current_dir, "prompts", "chat_reduce_prompt.txt"), "r") a
 api_key_set = settings.API_KEY is not None
 embeddings_key_set = settings.EMBEDDINGS_KEY is not None
 
+def add_num (a, b):
+    return a + b
+
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER = "inputs"
 app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
