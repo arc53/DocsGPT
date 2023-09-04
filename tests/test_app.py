@@ -28,5 +28,5 @@ def test_complex_active_docs():
     assert get_vectorstore(data) == os.path.join("application", "indexes/local/other/path")
 
 
-def test_is_asure_configured():
+def test_is_azure_configured():
     assert not is_azure_configured()
