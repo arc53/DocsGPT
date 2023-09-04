@@ -1,4 +1,4 @@
-from application.app import get_vectorstore
+from application.app import get_vectorstore, is_azure_configured
 import os
 
 
@@ -26,3 +26,7 @@ def test_default_active_docs():
 def test_complex_active_docs():
     data = {"active_docs": "local/other/path"}
     assert get_vectorstore(data) == os.path.join("application", "indexes/local/other/path")
+
+
+def test_is_asure_configured():
+    assert not is_azure_configured()
