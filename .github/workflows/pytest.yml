@@ -22,3 +22,8 @@ jobs:
       - name: Test with pytest and generate coverage report
         run: |
           python -m pytest --cov=application --cov=scripts --cov=extensions --cov-report xml:/tmp/coverage.xml
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
