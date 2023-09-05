@@ -171,6 +171,9 @@ def home():
         "index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME, embeddings_choice=settings.EMBEDDINGS_NAME
     )
 
+def llm_call(model, messages, stream, max_tokens, temperature):
+    response = completion(model=model, messages=messages, stream=stream, max_tokens=max_tokens, temperature=temperature)
+    return response
 
 def complete_stream(question, docsearch, chat_history, api_key, conversation_id):
     openai.api_key = api_key
@@ -217,7 +220,7 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
     messages_combine.append({"role": "user", "content": question})
     if settings.AZURE_DEPLOYMENT_NAME:
         gpt_model="azure/" + settings.AZURE_DEPLOYMENT_NAME
-    response = completion(model=gpt_model, messages=messages_combine, stream=True, max_tokens=500, temperature=0)
+    response = llm_call(model=gpt_model, messages=messages_combine, stream=True, max_tokens=500, temperature=0)
     reponse_full = ""
     for line in response:
         if "content" in line["choices"][0]["delta"]:
@@ -245,7 +248,7 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
                                                         "system"}]
         if settings.AZURE_DEPLOYMENT_NAME:
             gpt_model="azure/" + settings.AZURE_DEPLOYMENT_NAME
-        response = completion(model=gpt_model, messages=messages_summary, stream=True, max_tokens=500, temperature=0)
+        response = llm_call(model=gpt_model, messages=messages_summary, stream=True, max_tokens=500, temperature=0)
         conversation_id = conversations_collection.insert_one(
             {"user": "local",
              "date": datetime.datetime.utcnow(),
