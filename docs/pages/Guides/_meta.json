@@ -1,0 +1,18 @@
+{
+  "Customising-prompts": {
+    "title": "🏗️️ Customising Prompts",
+    "href": "/Guides/Customising-prompts"
+  },
+  "How-to-train-on-other-documentation": {
+    "title": "📥 Training on docs",
+    "href": "/Guides/How-to-train-on-other-documentation"
+  },
+  "How-to-use-different-LLM": {
+    "title": "⚙️️ How to use different LLM's",
+    "href": "/Guides/How-to-use-different-LLM"
+  },
+  "My-AI-answers-questions-using-external-knowledge": {
+    "title": "💭️ Avoiding hallucinations",
+    "href": "/Guides/My-AI-answers-questions-using-external-knowledge"
+  }
+}

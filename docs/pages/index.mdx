@@ -1,0 +1,32 @@
+---
+title: 'Home'
+---
+import { Cards, Card } from 'nextra/components'
+import deployingGuides from './Deploying/_meta.json';
+import developingGuides from './Developing/_meta.json';
+import extensionGuides from './Extensions/_meta.json';
+import mainGuides from './Guides/_meta.json';
+
+export const allGuides = {
+  ...mainGuides,
+  ...developingGuides,
+  ...deployingGuides,
+  ...extensionGuides,
+};
+
+###  **DocsGPT 🦖**
+
+DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖. Eliminate lengthy manual searches 🔍 and enhance your documentation experience with DocsGPT, and consider contributing to its AI-powered future 🚀.
+
+
+
+<Cards
+      num={3}
+      children={Object.keys(allGuides).map((key, i) => (
+        <Card
+          key={i}
+          title={allGuides[key].title}
+          href={allGuides[key].href}
+        />
+      ))}
+    />
