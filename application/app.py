@@ -12,7 +12,7 @@ import openai
 import requests
 from celery import Celery
 from celery.result import AsyncResult
-from flask import Flask, request, render_template, send_from_directory, jsonify, Response
+from flask import Flask, request, send_from_directory, jsonify, Response, redirect
 from langchain import FAISS
 from langchain import VectorDBQA, Cohere, OpenAI
 from langchain.chains import LLMChain, ConversationalRetrievalChain
@@ -167,9 +167,16 @@ def ingest(self, directory, formats, name_job, filename, user):
 
 @app.route("/")
 def home():
-    return render_template(
-        "index.html", api_key_set=api_key_set, llm_choice=settings.LLM_NAME, embeddings_choice=settings.EMBEDDINGS_NAME
-    )
+    """
+    The frontend source code lives in the /frontend directory of the repository.
+    """
+    if request.remote_addr in ('0.0.0.0', '127.0.0.1', 'localhost', '172.18.0.1'):
+        # If users locally try to access DocsGPT running in Docker,
+        # they will be redirected to the Frontend application.
+        return redirect('http://localhost:5173')
+    else:
+        # Handle other cases or render the default page
+        return 'Welcome to DocsGPT Backend!'
 
 
 def complete_stream(question, docsearch, chat_history, api_key, conversation_id):
