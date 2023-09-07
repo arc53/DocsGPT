@@ -22,7 +22,7 @@ const Logo = ({ height, width }) => {
 };
 
 const config = {
-  docsRepositoryBase: `${github}/blob/main`,
+  docsRepositoryBase: `${github}/blob/main/docs`,
   chat: {
     link: 'https://discord.com/invite/n5BX8dh8rU',
   },

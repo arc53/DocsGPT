@@ -51,13 +51,13 @@ If you don't have enough resources to run it you can use bitsnbytes to quantize
  
  [Join Our Discord](https://discord.gg/n5BX8dh8rU)
  
- [Guides](https://github.com/arc53/docsgpt/wiki)
+ [Guides](https://docs.docsgpt.co.uk/)
 
  [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
- [How to use any other documentation](https://github.com/arc53/docsgpt/wiki/How-to-train-on-other-documentation)
+ [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
 
- [How to host it locally (so all data will stay on-premises)](https://github.com/arc53/DocsGPT/wiki/How-to-use-different-LLM's#hosting-everything-locally)
+ [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
 
 
 ## Project structure
