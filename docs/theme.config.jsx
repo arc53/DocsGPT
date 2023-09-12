@@ -115,7 +115,6 @@ const config = {
           name="apple-mobile-web-app-title"
           content="DocsGPT Documentation"
         />
-          <DocsGPTWidget />
 
       </>
     );
