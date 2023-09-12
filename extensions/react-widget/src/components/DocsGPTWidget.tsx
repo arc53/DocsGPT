@@ -48,6 +48,7 @@ function fetchAnswerStreaming({
       active_docs: docPath,
       history: JSON.stringify(history),
       conversation_id: conversationId,
+      model: 'default'
     };
 
     fetch(apiHost + '/stream', {
@@ -106,14 +107,12 @@ function fetchAnswerStreaming({
   });
 }
 
-export const DocsGPTWidget = ({ apiHost = 'http://localhost:7091' }) => {
+export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public'}) => {
     // processing states
     const [chatState, setChatState] = useState<ChatStates>(ChatStates.Init);
     const [answer, setAnswer] = useState<string>('');
 
-    const selectDocs = 'local/1706.03762.pdf/'
-    //const selectDocs = 'default'
-    //const apiHost = 'http://localhost:7091'
+    //const selectDocs = 'local/1706.03762.pdf/'
     const answerRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
@@ -133,13 +132,13 @@ export const DocsGPTWidget = ({ apiHost = 'http://localhost:7091' }) => {
         setChatState(ChatStates.Processing)
         setTimeout(() => {
             setChatState(ChatStates.Answer)
-        }, 2000)
+        }, 800)
         const inputElement = e.currentTarget[0] as HTMLInputElement;
         const questionValue = inputElement.value;
 
         fetchAnswerStreaming({
           question: questionValue,
-          apiKey: '',
+          apiKey: apiKey,
           selectedDocs: selectDocs,
           history: [],
           conversationId: null,

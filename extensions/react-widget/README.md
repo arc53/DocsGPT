@@ -20,6 +20,17 @@ npm install  docsgpt
     };
 ```
 
+To link the widget to your api and your documents you can pass parameters to the <DocsGPTWidget /> component.
+
+```javascript
+    import { DocsGPTWidget } from "docsgpt";
+    import "docsgpt/dist/style.css";
+
+    const App = () => {
+      return <DocsGPTWidget apiHost="http://localhost:7001" selectDocs='default' apiKey=''/>;
+    };
+```
+
 
 ## Our github
 
