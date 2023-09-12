@@ -1,7 +1,5 @@
 import Image from 'next/image'
 import { Analytics } from '@vercel/analytics/react';
-import { DocsGPTWidget } from "docsgpt";
-import "docsgpt/dist/style.css";
 
 const github = 'https://github.com/arc53/DocsGPT';
 
