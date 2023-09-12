@@ -109,7 +109,9 @@ function fetchAnswerStreaming({
 
 export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public'}) => {
     // processing states
-    const [chatState, setChatState] = useState<ChatStates>(ChatStates.Init);
+    const [chatState, setChatState] = useState<ChatStates>(
+    () => localStorage.getItem('docsGPTChatState') as ChatStates || ChatStates.Init
+    );
     const [answer, setAnswer] = useState<string>('');
 
     //const selectDocs = 'local/1706.03762.pdf/'
@@ -121,6 +123,12 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             element.scrollTop = element.scrollHeight;
         }
     }, [answer]);
+
+    useEffect(() => {
+        if (chatState === ChatStates.Init || chatState === ChatStates.Minimized) {
+          localStorage.setItem('docsGPTChatState', chatState);
+        }
+    }, [chatState]);
 
 
 
