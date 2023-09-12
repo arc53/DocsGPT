@@ -6,6 +6,10 @@ import deployingGuides from './Deploying/_meta.json';
 import developingGuides from './Developing/_meta.json';
 import extensionGuides from './Extensions/_meta.json';
 import mainGuides from './Guides/_meta.json';
+import { DocsGPTWidget } from "docsgpt";
+import "docsgpt/dist/style.css";
+
+
 
 export const allGuides = {
   ...mainGuides,
@@ -18,7 +22,7 @@ export const allGuides = {
 
 DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖. Eliminate lengthy manual searches 🔍 and enhance your documentation experience with DocsGPT, and consider contributing to its AI-powered future 🚀.
 
-
+<DocsGPTWidget />
 
 <Cards
       num={3}
