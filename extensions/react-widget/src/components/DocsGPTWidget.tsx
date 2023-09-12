@@ -129,9 +129,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
     }, [answer]);
 
     useEffect(() => {
-        if (chatState === ChatStates.Init || chatState === ChatStates.Minimized) {
-            localStorage.setItem('docsGPTChatState', chatState);
-        }
+        localStorage.setItem('docsGPTChatState', chatState);
     }, [chatState]);
 
 

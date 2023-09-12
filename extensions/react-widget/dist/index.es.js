@@ -52,10 +52,10 @@ function fr() {
       {
         for (var r = arguments.length, t = new Array(r > 1 ? r - 1 : 0), n = 1; n < r; n++)
           t[n - 1] = arguments[n];
-        z("error", e, t);
+        B("error", e, t);
       }
     }
-    function z(e, r, t) {
+    function B(e, r, t) {
       {
         var n = O.ReactDebugCurrentFrame, o = n.getStackAddendum();
         o !== "" && (r += "%s", t = t.concat([o]));
@@ -65,10 +65,10 @@ function fr() {
         s.unshift("Warning: " + r), Function.prototype.apply.call(console[e], console, s);
       }
     }
-    var N = !1, B = !1, Ne = !1, Ae = !1, Fe = !1, ae;
+    var N = !1, z = !1, Ne = !1, Ae = !1, Fe = !1, ae;
     ae = Symbol.for("react.module.reference");
     function Ie(e) {
-      return !!(typeof e == "string" || typeof e == "function" || e === u || e === S || Fe || e === E || e === v || e === m || Ae || e === p || N || B || Ne || typeof e == "object" && e !== null && (e.$$typeof === x || e.$$typeof === h || e.$$typeof === T || e.$$typeof === b || e.$$typeof === d || // This needs to include all possible module reference object
+      return !!(typeof e == "string" || typeof e == "function" || e === u || e === S || Fe || e === E || e === v || e === m || Ae || e === p || N || z || Ne || typeof e == "object" && e !== null && (e.$$typeof === x || e.$$typeof === h || e.$$typeof === T || e.$$typeof === b || e.$$typeof === d || // This needs to include all possible module reference object
       // types supported by any Flight configuration anywhere since
       // we don't know which Flight build this will end up being used
       // with.
@@ -368,14 +368,14 @@ function fr() {
       if (Je(e))
         return g("The provided key is an unsupported type %s. This value must be coerced to a string before before using it here.", qe(e)), ge(e);
     }
-    var W = O.ReactCurrentOwner, ze = {
+    var W = O.ReactCurrentOwner, Be = {
       key: !0,
       ref: !0,
       __self: !0,
       __source: !0
     }, be, Ee, Q;
     Q = {};
-    function Be(e) {
+    function ze(e) {
       if (G.call(e, "ref")) {
         var r = Object.getOwnPropertyDescriptor(e, "ref").get;
         if (r && r.isReactWarning)
@@ -451,9 +451,9 @@ function fr() {
     function er(e, r, t, n, o) {
       {
         var s, i = {}, a = null, y = null;
-        t !== void 0 && (ye(t), a = "" + t), He(r) && (ye(r.key), a = "" + r.key), Be(r) && (y = r.ref, Ke(r, o));
+        t !== void 0 && (ye(t), a = "" + t), He(r) && (ye(r.key), a = "" + r.key), ze(r) && (y = r.ref, Ke(r, o));
         for (s in r)
-          G.call(r, s) && !ze.hasOwnProperty(s) && (i[s] = r[s]);
+          G.call(r, s) && !Be.hasOwnProperty(s) && (i[s] = r[s]);
         if (e && e.defaultProps) {
           var c = e.defaultProps;
           for (s in c)
@@ -668,16 +668,16 @@ function dr({
           return;
         }
         R += 1;
-        const z = p.decode(O).split(`
+        const B = p.decode(O).split(`
 `);
-        for (let N of z) {
+        for (let N of B) {
           if (N.trim() == "")
             continue;
           N.startsWith("data:") && (N = N.substring(5));
-          const B = new MessageEvent("message", {
+          const z = new MessageEvent("message", {
             data: N
           });
-          T(B);
+          T(z);
         }
         x.read().then(j).catch(v);
       };
@@ -695,7 +695,7 @@ const pr = ({ apiHost: D = "https://gptcloud.arc53.com", selectDocs: w = "defaul
       v.scrollTop = v.scrollHeight;
     }
   }, [S]), Pe(() => {
-    (u === "init" || u === "minimized") && localStorage.setItem("docsGPTChatState", u);
+    localStorage.setItem("docsGPTChatState", u);
   }, [u]);
   const d = (v) => {
     T(""), v.preventDefault(), E(
