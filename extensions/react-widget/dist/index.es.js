@@ -688,10 +688,7 @@ function dr({
   });
 }
 const pr = ({ apiHost: D = "https://gptcloud.arc53.com", selectDocs: w = "default", apiKey: C = "docsgpt-public" }) => {
-  const [u, E] = ke(
-    () => localStorage.getItem("docsGPTChatState") || "init"
-    /* Init */
-  ), [S, T] = ke(""), b = ur(null);
+  const [u, E] = ke(() => typeof window < "u" && localStorage.getItem("docsGPTChatState") || "init"), [S, T] = ke(""), b = ur(null);
   Pe(() => {
     if (b.current) {
       const v = b.current;
