@@ -5,7 +5,7 @@ export default function MyApp({ Component, pageProps }) {
   return (
     <>
       <Component {...pageProps} />
-        <DocsGPTWidget />
+        <DocsGPTWidget selectDocs="local/docsgpt-sep.zip/"/>
     </>
   )
 }
