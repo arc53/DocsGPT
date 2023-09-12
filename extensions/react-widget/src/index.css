@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+#docsgpt-answer {
+    max-height: 50vh; /* 50% of the viewport height */
+    overflow-y: auto; /* Adds a vertical scrollbar if the content exceeds the container height */
+}
+
+.widget-container {
+  position: fixed;   /* fixed positioning */
+  right: 10px;       /* from the right edge */
+  bottom: 10px;      /* from the bottom edge */
+  z-index: 1000;     /* to ensure it appears on top of other content, if any */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+  @keyframes dotBounce {
+    0%, 80%, 100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-5px);
+    }
+  }
+
+  .dot-animation {
+    display: inline-block;
+    animation: dotBounce 1s infinite ease-in-out;
+  }
+
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .delay-400 {
+    animation-delay: 400ms;
+  }
+
+  .white-filter {
+    filter: invert(1) brightness(2);
+}
