@@ -1,5 +1,7 @@
 import Image from 'next/image'
 import { Analytics } from '@vercel/analytics/react';
+import { DocsGPTWidget } from "docsgpt";
+import "docsgpt/dist/style.css";
 
 const github = 'https://github.com/arc53/DocsGPT';
 
@@ -113,6 +115,8 @@ const config = {
           name="apple-mobile-web-app-title"
           content="DocsGPT Documentation"
         />
+          <DocsGPTWidget />
+
       </>
     );
   },
