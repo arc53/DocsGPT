@@ -115,6 +115,7 @@ const config = {
           name="apple-mobile-web-app-title"
           content="DocsGPT Documentation"
         />
+          <DocsGPTWidget />
 
       </>
     );
@@ -127,13 +128,12 @@ const config = {
           <Logo height={10} width={10} />
           {title}
             <Analytics />
-            <DocsGPTWidget />
         </div>
 
       ) : (
         <>{title}
         <Analytics />
-        <DocsGPTWidget /></>
+        </>
 
       ),
   },
