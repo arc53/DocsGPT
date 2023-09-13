@@ -1,4 +1,4 @@
-import De, { useState as ke, useRef as ur, useEffect as Pe } from "react";
+import Ne, { useState as ke, useRef as ur, useEffect as Pe } from "react";
 var ne = { exports: {} }, Y = {};
 /**
  * @license React
@@ -14,7 +14,7 @@ function cr() {
   if (Ce)
     return Y;
   Ce = 1;
-  var D = De, w = Symbol.for("react.element"), C = Symbol.for("react.fragment"), u = Object.prototype.hasOwnProperty, E = D.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentOwner, S = { key: !0, ref: !0, __self: !0, __source: !0 };
+  var N = Ne, w = Symbol.for("react.element"), C = Symbol.for("react.fragment"), u = Object.prototype.hasOwnProperty, E = N.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentOwner, S = { key: !0, ref: !0, __self: !0, __source: !0 };
   function T(b, d, v) {
     var m, h = {}, x = null, p = null;
     v !== void 0 && (x = "" + v), d.key !== void 0 && (x = "" + d.key), d.ref !== void 0 && (p = d.ref);
@@ -40,14 +40,14 @@ var L = {};
 var Oe;
 function fr() {
   return Oe || (Oe = 1, process.env.NODE_ENV !== "production" && function() {
-    var D = De, w = Symbol.for("react.element"), C = Symbol.for("react.portal"), u = Symbol.for("react.fragment"), E = Symbol.for("react.strict_mode"), S = Symbol.for("react.profiler"), T = Symbol.for("react.provider"), b = Symbol.for("react.context"), d = Symbol.for("react.forward_ref"), v = Symbol.for("react.suspense"), m = Symbol.for("react.suspense_list"), h = Symbol.for("react.memo"), x = Symbol.for("react.lazy"), p = Symbol.for("react.offscreen"), R = Symbol.iterator, j = "@@iterator";
+    var N = Ne, w = Symbol.for("react.element"), C = Symbol.for("react.portal"), u = Symbol.for("react.fragment"), E = Symbol.for("react.strict_mode"), S = Symbol.for("react.profiler"), T = Symbol.for("react.provider"), b = Symbol.for("react.context"), d = Symbol.for("react.forward_ref"), v = Symbol.for("react.suspense"), m = Symbol.for("react.suspense_list"), h = Symbol.for("react.memo"), x = Symbol.for("react.lazy"), p = Symbol.for("react.offscreen"), R = Symbol.iterator, j = "@@iterator";
     function J(e) {
       if (e === null || typeof e != "object")
         return null;
       var r = R && e[R] || e[j];
       return typeof r == "function" ? r : null;
     }
-    var O = D.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+    var O = N.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
     function g(e) {
       {
         for (var r = arguments.length, t = new Array(r > 1 ? r - 1 : 0), n = 1; n < r; n++)
@@ -65,10 +65,10 @@ function fr() {
         s.unshift("Warning: " + r), Function.prototype.apply.call(console[e], console, s);
       }
     }
-    var N = !1, z = !1, Ne = !1, Ae = !1, Fe = !1, ae;
+    var D = !1, z = !1, De = !1, Ae = !1, Fe = !1, ae;
     ae = Symbol.for("react.module.reference");
     function Ie(e) {
-      return !!(typeof e == "string" || typeof e == "function" || e === u || e === S || Fe || e === E || e === v || e === m || Ae || e === p || N || z || Ne || typeof e == "object" && e !== null && (e.$$typeof === x || e.$$typeof === h || e.$$typeof === T || e.$$typeof === b || e.$$typeof === d || // This needs to include all possible module reference object
+      return !!(typeof e == "string" || typeof e == "function" || e === u || e === S || Fe || e === E || e === v || e === m || Ae || e === p || D || z || De || typeof e == "object" && e !== null && (e.$$typeof === x || e.$$typeof === h || e.$$typeof === T || e.$$typeof === b || e.$$typeof === d || // This needs to include all possible module reference object
       // types supported by any Flight configuration anywhere since
       // we don't know which Flight build this will end up being used
       // with.
@@ -627,7 +627,7 @@ Check the top-level render call using <` + t + ">.");
 process.env.NODE_ENV === "production" ? ne.exports = cr() : ne.exports = fr();
 var l = ne.exports;
 function dr({
-  question: D = "",
+  question: N = "",
   apiKey: w = "",
   selectedDocs: C = "",
   history: u = [],
@@ -640,7 +640,7 @@ function dr({
   let b = "default";
   return C && (b = C), new Promise((d, v) => {
     const m = {
-      question: D,
+      question: N,
       api_key: w,
       embeddings_key: w,
       active_docs: b,
@@ -670,12 +670,12 @@ function dr({
         R += 1;
         const B = p.decode(O).split(`
 `);
-        for (let N of B) {
-          if (N.trim() == "")
+        for (let D of B) {
+          if (D.trim() == "")
             continue;
-          N.startsWith("data:") && (N = N.substring(5));
+          D.startsWith("data:") && (D = D.substring(5));
           const z = new MessageEvent("message", {
-            data: N
+            data: D
           });
           T(z);
         }
@@ -687,7 +687,7 @@ function dr({
     });
   });
 }
-const pr = ({ apiHost: D = "https://gptcloud.arc53.com", selectDocs: w = "default", apiKey: C = "docsgpt-public" }) => {
+const pr = ({ apiHost: N = "https://gptcloud.arc53.com", selectDocs: w = "default", apiKey: C = "docsgpt-public" }) => {
   const [u, E] = ke(() => typeof window < "u" && localStorage.getItem("docsGPTChatState") || "init"), [S, T] = ke(""), b = ur(null);
   Pe(() => {
     if (b.current) {
@@ -714,7 +714,7 @@ const pr = ({ apiHost: D = "https://gptcloud.arc53.com", selectDocs: w = "defaul
       selectedDocs: w,
       history: [],
       conversationId: null,
-      apiHost: D,
+      apiHost: N,
       onEvent: (x) => {
         const p = JSON.parse(x.data);
         if (p.type === "end")
@@ -768,7 +768,7 @@ const pr = ({ apiHost: D = "https://gptcloud.arc53.com", selectDocs: w = "defaul
           {
             src: "https://d3dg1063dc54p9.cloudfront.net/exit.svg",
             alt: "Exit",
-            className: "cursor-pointer hover:opacity-50 h-3 absolute top-0 right-0 m-2 white-filter",
+            className: "cursor-pointer hover:opacity-50 h-2 absolute top-0 right-0 m-2 white-filter",
             onClick: (v) => {
               v.stopPropagation(), E(
                 "minimized"
@@ -779,7 +779,7 @@ const pr = ({ apiHost: D = "https://gptcloud.arc53.com", selectDocs: w = "defaul
         ),
         /* @__PURE__ */ l.jsxs("div", { className: "flex items-center gap-2 p-3", children: [
           /* @__PURE__ */ l.jsxs("div", { className: `${u === "init" || u === "processing" || u === "typing" ? "" : "hidden"} flex-1`, children: [
-            /* @__PURE__ */ l.jsx("h3", { className: "text-sm font-bold text-gray-700 dark:text-gray-200", children: "Looking for help with documentation?" }),
+            /* @__PURE__ */ l.jsx("h3", { className: "text-sm font-bold text-gray-700 dark:text-gray-200", children: "Need help with documentation?" }),
             /* @__PURE__ */ l.jsx("p", { className: "mt-1 text-xs text-gray-400 dark:text-gray-500", children: "DocsGPT AI assistant will help you with docs" })
           ] }),
           /* @__PURE__ */ l.jsx("div", { id: "docsgpt-answer", ref: b, className: `${u !== "answer" ? "hidden" : ""}`, children: /* @__PURE__ */ l.jsx("p", { className: "mt-1 text-sm text-gray-600 dark:text-white text-left", children: S }) })

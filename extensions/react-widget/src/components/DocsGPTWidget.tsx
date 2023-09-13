@@ -202,7 +202,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
           <img
                         src="https://d3dg1063dc54p9.cloudfront.net/exit.svg"
                         alt="Exit"
-                        className="cursor-pointer hover:opacity-50 h-3 absolute top-0 right-0 m-2 white-filter"
+                        className="cursor-pointer hover:opacity-50 h-2 absolute top-0 right-0 m-2 white-filter"
                         onClick={(event) => {
                           event.stopPropagation();
                           setChatState(ChatStates.Minimized);
@@ -213,7 +213,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
                                 chatState === 'processing' ? '' : 
                                 chatState === 'typing' ? '' :     
                                'hidden'} flex-1`}>
-              <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200">Looking for help with documentation?</h3>
+              <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200">Need help with documentation?</h3>
               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">DocsGPT AI assistant will help you with docs</p>
             </div>
             <div id="docsgpt-answer" ref={answerRef} className={`${chatState !== 'answer' ? 'hidden' : ''}`}>
