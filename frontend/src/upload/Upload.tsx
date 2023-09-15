@@ -162,6 +162,7 @@ export default function Upload({
       'text/x-rst': ['.rst'],
       'text/x-markdown': ['.md'],
       'application/zip': ['.zip'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
     },
   });
 
