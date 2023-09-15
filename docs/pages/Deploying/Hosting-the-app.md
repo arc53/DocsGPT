@@ -46,45 +46,67 @@ Once it has finished cloning the repository, it is time to download the package 
 
 `sudo apt update`
 
-#### Install python3
+#### Install Docker and Docker Compose
 
-DocsGPT backend uses python, which means it needs to be installed in order to use it.
+DocsGPT backend and worker use python, Frontend is written on React and the whole application is containerized using Docker. To install Docker and Docker Compose, enter the following commands:
 
-`sudo apt install python3-pip`
+`sudo apt install docker.io`
+
+And now install docker-compose:
+
+`sudo apt install docker-compose`
 
 #### Access the DocsGPT folder
 
-Enter the following command to access the folder in which DocsGPT application was installed.
+Enter the following command to access the folder in which DocsGPT docker-compose file is.
 
-`cd DocsGPT/application`
+`cd DocsGPT/`
 
-#### Install the required dependencies
+#### Prepare the environment
 
-Inside the applications folder there's a .txt file with a list of all dependencies required to run DocsGPT.
+Inside the DocsGPT folder create a .env file and copy the contents of .env_sample into it.
 
-`pip3 install -r requirements.txt`
+`nano .env`
+
+Make sure your .env file looks like this:
+
+```
+OPENAI_API_KEY=(Your OpenAI API key)
+VITE_API_STREAMING=true
+SELF_HOSTED_MODEL=false
+```
+
+To save the file, press CTRL+X, then Y and then ENTER.
+
+Next we need to set a correct IP for our Backend. To do so, open the docker-compose.yml file:
+
+`nano docker-compose.yml`
+
+And change this line 7 `VITE_API_HOST=http://localhost:7091`
+to this `VITE_API_HOST=http://<your instance public IP>:7091`
+
+This will allow the frontend to connect to the backend.
 
 #### Running the app
 
 You're almost there! Now that all the necessary bits and pieces have been installed, it is time to run the application. To do so, use the following command:
 
-`tmux new`
+`sudo docker-compose up -d`
 
-And then:
-
-`python3 -m flask run --host 0.0.0.0 --port 5000`
+If you launch it for the first time it will take a few minutes to download all the necessary dependencies and build.
 
 Once this is done you can go ahead and close the terminal window.
 
-#### Enabling port 5000
+#### Enabling ports 
 
 Before you being able to access your live instance, you must first enable the port which it is using.
 
 Open your Lightsail instance and head to "Networking".
 
-Then click on "Add rule" under "IPv4 Firewall", enter 5000 as your your port and hit "Create". 
+Then click on "Add rule" under "IPv4 Firewall", enter 5173 as your your port and hit "Create". 
+Repeat the process for port 7091.
 
 #### Access your instance
 
-Your instance will now be available under your Public IP Address and port 5000. Enjoy!
+Your instance will now be available under your Public IP Address and port 5173. Enjoy!
 
