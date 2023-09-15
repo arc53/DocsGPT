@@ -175,7 +175,7 @@ export default function Upload({
       <>
         <p className="text-xl text-jet">Upload New Documentation</p>
         <p className="mb-3 text-xs text-gray-4000">
-          Please upload .pdf, .txt, .rst, .md, .zip limited to 25mb
+          Please upload .pdf, .txt, .rst, .docx, .md, .zip limited to 25mb
         </p>
         <input
           type="text"
