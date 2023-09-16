@@ -4,7 +4,7 @@ App currently has two main api endpoints:
 Its a POST request that sends a JSON in body with 4 values. Here is a JavaScript fetch example
 It will recieve an answer for a user provided question
 
-```
+```js
 // answer (POST http://127.0.0.1:5000/api/answer)
 fetch("http://127.0.0.1:5000/api/answer", {
       "method": "POST",
@@ -20,7 +20,7 @@ fetch("http://127.0.0.1:5000/api/answer", {
 
 In response you will get a json document like this one:
 
-```
+```json
 {
   "answer": " Hi there! How can I help you?\n",
   "query": "Hi",
@@ -32,7 +32,7 @@ In response you will get a json document like this one:
 It will make sure documentation is loaded on a server (just run it everytime user is switching between libraries (documentations)
 Its a POST request that sends a JSON in body with 1 value. Here is a JavaScript fetch example
 
-```
+```js
 // answer (POST http://127.0.0.1:5000/api/docs_check)
 fetch("http://127.0.0.1:5000/api/docs_check", {
       "method": "POST",
@@ -46,7 +46,7 @@ fetch("http://127.0.0.1:5000/api/docs_check", {
 ```
 
 In response you will get a json document like this one:
-```
+```json
 {
   "status": "exists"
 }
@@ -67,7 +67,7 @@ Example of json in Docshub and local:
 Uploads file that needs to be trained, response is json with task id, which can be used to check on tasks progress
 HTML example:
 
-```
+```html
 <form action="/api/upload" method="post" enctype="multipart/form-data" class="mt-2">
                 <input type="file" name="file" class="py-4" id="file-upload">
                 <input type="text" name="user" value="local" hidden>
@@ -81,7 +81,7 @@ HTML example:
 ```
 
 Response:
-```
+```json
 {
   "status": "ok",
   "task_id": "b2684988-9047-428b-bd47-08518679103c"
@@ -91,7 +91,7 @@ Response:
 
 ### /api/task_status
 Gets task status (task_id) from /api/upload
-```
+```js
 // Task status (Get http://127.0.0.1:5000/api/task_status)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
       "method": "GET",
@@ -106,7 +106,7 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 Responses:
 There are two types of repsonses:
 1. while task it still running, where "current" will show progress from 0 - 100
-```
+```json
 {
   "result": {
     "current": 1
@@ -116,7 +116,7 @@ There are two types of repsonses:
 ```
 
 2. When task is completed
-```
+```json
 {
   "result": {
     "directory": "temp",
@@ -135,7 +135,7 @@ There are two types of repsonses:
 
 ### /api/delete_old
 deletes old vecotstores
-```
+```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
       "method": "GET",
@@ -148,6 +148,6 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 ```
 response:
 
-```
-{"status": 'ok'}
+```json
+{ "status": "ok" }
 ```
