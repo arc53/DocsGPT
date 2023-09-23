@@ -61,7 +61,7 @@ export default function APIKeyModal({
       isError={isError}
       render={() => {
         return (
-          <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
+          <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-t-lg bg-white p-6 shadow-lg">
             <p className="text-xl text-jet">Select Source Documentation</p>
             <p className="text-lg leading-5 text-gray-500">
               Please select the library of documentation that you would like to

@@ -17,11 +17,11 @@ const Modal = (props: ModalProps) => {
       } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
       {props.render()}
-      <div className=" mx-auto flex w-[90vw] max-w-lg flex-row-reverse rounded-lg bg-white pb-5 pr-5  shadow-lg">
+      <div className=" mx-auto flex w-[90vw] max-w-lg flex-row-reverse rounded-b-lg bg-white pb-5 pr-5  shadow-lg">
         <div>
           <button
             onClick={() => props.handleSubmit()}
-            className="ml-auto h-10 w-20 rounded-lg bg-violet-800 text-white transition-all hover:bg-violet-700"
+            className="ml-auto h-10 w-20 rounded-3xl bg-violet-800 text-white transition-all hover:bg-violet-700"
           >
             Save
           </button>
