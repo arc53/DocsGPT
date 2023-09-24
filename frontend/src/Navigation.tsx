@@ -11,7 +11,6 @@ import Link from './assets/link.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
-import SelectDocsModal from './preferences/SelectDocsModal';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   selectApiKeyStatus,
@@ -30,6 +29,7 @@ import {
 import { useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc, getConversations } from './preferences/preferenceApi';
+import SelectDocsModal from './preferences/SelectDocsModal';
 
 export default function Navigation({
   navState,
@@ -180,10 +180,10 @@ export default function Navigation({
           className={({ isActive }) =>
             `${
               isActive && conversationId === null ? 'bg-gray-3000' : ''
-            } my-auto mx-4 mt-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100`
+            } my-auto mx-4 mt-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100`
           }
         >
-          <img src={Message} className="ml-2 w-5"></img>
+          <img src={Message} className="ml-4 w-5"></img>
           <p className="my-auto text-eerie-black">New Chat</p>
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
@@ -195,7 +195,7 @@ export default function Navigation({
                     onClick={() => {
                       handleConversationClick(conversation.id);
                     }}
-                    className={`my-auto mx-4 mt-4 flex h-12 cursor-pointer items-center justify-between gap-4 rounded-md hover:bg-gray-100 ${
+                    className={`my-auto mx-4 mt-4 flex h-12 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
                       conversationId === conversation.id ? 'bg-gray-100' : ''
                     }`}
                   >
@@ -228,7 +228,7 @@ export default function Navigation({
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
-              className="flex h-12 w-full cursor-pointer justify-between rounded-md border-2 bg-white"
+              className="flex h-12 w-full cursor-pointer justify-between rounded-3xl rounded-md border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
@@ -241,7 +241,7 @@ export default function Navigation({
                 alt="arrow"
                 className={`${
                   isDocsListOpen ? 'rotate-0' : 'rotate-180'
-                } mr-3 w-3 transition-all`}
+                } ml-auto mr-3 w-3 transition-all`}
               />
             </div>
             <img
@@ -294,7 +294,7 @@ export default function Navigation({
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <div
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
             onClick={() => {
               setApiKeyModalState('ACTIVE');
             }}
@@ -308,7 +308,7 @@ export default function Navigation({
           <NavLink
             to="/about"
             className={({ isActive }) =>
-              `my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100 ${
+              `my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
                 isActive ? 'bg-gray-3000' : ''
               }`
             }
@@ -321,7 +321,7 @@ export default function Navigation({
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Discord</p>
@@ -331,7 +331,7 @@ export default function Navigation({
             href="https://github.com/arc53/DocsGPT"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-md hover:bg-gray-100"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Github</p>

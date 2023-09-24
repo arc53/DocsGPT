@@ -60,7 +60,7 @@ export default function APIKeyModal({
         return (
           <article
             ref={modalRef}
-            className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg"
+            className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-t-lg bg-white p-6 shadow-lg"
           >
             <p className="text-xl text-jet">OpenAI API Key</p>
             <p className="text-md leading-6 text-gray-500">
