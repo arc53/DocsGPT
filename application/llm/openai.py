@@ -15,12 +15,18 @@ class OpenAILLM(BaseLLM):
         openai.api_key = self.api_key
         return openai
 
-    def gen(self, *args, **kwargs):
-        # This is just a stub. In the real implementation, you'd hit the OpenAI API or any other service.
-        return "Non-streaming response from OpenAI."
+    def gen(self, model, engine, messages, stream=False, **kwargs):
+        response = openai.ChatCompletion.create(
+            model=model,
+            engine=engine,
+            messages=messages,
+            stream=stream,
+            **kwargs
+        )
+
+        return response["choices"][0]["message"]["content"]
 
     def gen_stream(self, model, engine, messages, stream=True, **kwargs):
-        # openai = self._get_openai()  # Get the openai module with the API key set
         response = openai.ChatCompletion.create(
             model=model,
             engine=engine,
@@ -32,3 +38,19 @@ class OpenAILLM(BaseLLM):
         for line in response:
             if "content" in line["choices"][0]["delta"]:
                 yield line["choices"][0]["delta"]["content"]
+
+
+class AzureOpenAILLM(OpenAILLM):
+
+    def __init__(self, openai_api_key, openai_api_base, openai_api_version, deployment_name):
+        super().__init__(openai_api_key)
+        self.api_base = openai_api_base
+        self.api_version = openai_api_version
+        self.deployment_name = deployment_name
+
+    def _get_openai(self):
+        openai = super()._get_openai()
+        openai.api_base = self.api_base
+        openai.api_version = self.api_version
+        openai.api_type = "azure"
+        return openai
