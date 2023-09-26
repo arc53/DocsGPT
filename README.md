@@ -27,6 +27,8 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 
 When deploying your DocsGPT to a live environment, we're eager to provide personalized assistance. Reach out to us via email [here]( mailto:contact@arc53.com?subject=DocsGPT%20Enterprise&body=Hi%20we%20are%20%3CCompany%20name%3E%20and%20we%20want%20to%20build%20%3CSolution%3E%20with%20DocsGPT) to discuss your project further, and our team will connect with you shortly.
 
+### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
+
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
 
