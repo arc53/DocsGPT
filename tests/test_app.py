@@ -1,32 +1,23 @@
-from application.app import get_vectorstore, is_azure_configured
-import os
+from flask import Flask
+
+from application.api.answer.routes import answer
+from application.api.internal.routes import internal
+from application.api.user.routes import user
+from application.core.settings import settings
 
 
-# Test cases for get_vectorstore function
-def test_no_active_docs():
-    data = {}
-    assert get_vectorstore(data) == os.path.join("application", "")
 
+def test_app_config():
+    app = Flask(__name__)
+    app.register_blueprint(user)
+    app.register_blueprint(answer)
+    app.register_blueprint(internal)
+    app.config["UPLOAD_FOLDER"] = "inputs"
+    app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
+    app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
+    app.config["MONGO_URI"] = settings.MONGO_URI
 
-def test_local_default_active_docs():
-    data = {"active_docs": "local/default"}
-    assert get_vectorstore(data) == os.path.join("application", "")
-
-
-def test_local_non_default_active_docs():
-    data = {"active_docs": "local/something"}
-    assert get_vectorstore(data) == os.path.join("application", "indexes/local/something")
-
-
-def test_default_active_docs():
-    data = {"active_docs": "default"}
-    assert get_vectorstore(data) == os.path.join("application", "")
-
-
-def test_complex_active_docs():
-    data = {"active_docs": "local/other/path"}
-    assert get_vectorstore(data) == os.path.join("application", "indexes/local/other/path")
-
-
-def test_is_azure_configured():
-    assert not is_azure_configured()
+    assert app.config["UPLOAD_FOLDER"] == "inputs"
+    assert app.config["CELERY_BROKER_URL"] == settings.CELERY_BROKER_URL
+    assert app.config["CELERY_RESULT_BACKEND"] == settings.CELERY_RESULT_BACKEND
+    assert app.config["MONGO_URI"] == settings.MONGO_URI

@@ -27,6 +27,7 @@ def metadata_from_filename(title):
 def generate_random_string(length):
     return ''.join([string.ascii_letters[i % 52] for i in range(length)])
 
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def ingest_worker(self, directory, formats, name_job, filename, user):
     # directory = 'inputs' or 'temp'
@@ -43,9 +44,13 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     min_tokens = 150
     max_tokens = 1250
     full_path = directory + '/' + user + '/' + name_job
+    import sys
+    print(full_path, file=sys.stderr)
     # check if API_URL env variable is set
     file_data = {'name': name_job, 'file': filename, 'user': user}
     response = requests.get(urljoin(settings.API_URL, "/api/download"), params=file_data)
+    # check if file is in the response
+    print(response, file=sys.stderr)
     file = response.content
 
     if not os.path.exists(full_path):

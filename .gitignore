@@ -170,3 +170,4 @@ application/vectors/
 **/yarn.lock
 
 node_modules/
+.vscode/settings.json
