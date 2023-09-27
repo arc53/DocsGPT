@@ -1,4 +1,6 @@
 FROM node:18-alpine3.14
+UPGRADE to node:20.6.1-bullseye-slim
+
 
 WORKDIR /app
 COPY package*.json ./
