@@ -33,11 +33,17 @@ class BaseVectorStore(ABC):
         if embeddings_name == "openai_text-embedding-ada-002":
             if self.is_azure_configured():
                 os.environ["OPENAI_API_TYPE"] = "azure"
-                embedding_instance = embeddings_factory[embeddings_name](model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
+                embedding_instance = embeddings_factory[embeddings_name](
+                    model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME
+                )
             else:
-                embedding_instance = embeddings_factory[embeddings_name](openai_api_key=embeddings_key)
+                embedding_instance = embeddings_factory[embeddings_name](
+                    openai_api_key=embeddings_key
+                )
         elif embeddings_name == "cohere_medium":
-            embedding_instance = embeddings_factory[embeddings_name](cohere_api_key=embeddings_key)
+            embedding_instance = embeddings_factory[embeddings_name](
+                cohere_api_key=embeddings_key
+            )
         else:
             embedding_instance = embeddings_factory[embeddings_name]()
             

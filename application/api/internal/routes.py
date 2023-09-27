@@ -1,7 +1,6 @@
 import os
 import datetime
-from flask import Blueprint, request, jsonify, send_from_directory
-import requests
+from flask import Blueprint, request, send_from_directory
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 

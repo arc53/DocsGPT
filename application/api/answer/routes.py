@@ -329,17 +329,20 @@ def api_answer():
         else:
             # create new conversation
             # generate summary
-            messages_summary = [{"role": "assistant", "content": "Summarise following conversation in no more than 3 "
-                                                                "words, respond ONLY with the summary, use the same "
-                                                                "language as the system \n\nUser: " + question + "\n\n" +
-                                                                "AI: " +
-                                                                result["answer"]},
-                                {"role": "user", "content": "Summarise following conversation in no more than 3 words, "
-                                                            "respond ONLY with the summary, use the same language as the "
-                                                            "system"}]
+            messages_summary = [
+                {"role": "assistant", "content": "Summarise following conversation in no more than 3 words, "
+                    "respond ONLY with the summary, use the same language as the system \n\n"
+                    "User: " + question + "\n\n" + "AI: " + result["answer"]},
+                {"role": "user", "content": "Summarise following conversation in no more than 3 words, "
+                    "respond ONLY with the summary, use the same language as the system"}
+            ]
 
-            completion = llm.gen(model=gpt_model, engine=settings.AZURE_DEPLOYMENT_NAME,
-                                messages=messages_summary, max_tokens=30)
+            completion = llm.gen(
+                model=gpt_model,
+                engine=settings.AZURE_DEPLOYMENT_NAME,
+                messages=messages_summary,
+                max_tokens=30
+            )
             conversation_id = conversations_collection.insert_one(
                 {"user": "local",
                 "date": datetime.datetime.utcnow(),
