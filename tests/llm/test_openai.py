@@ -1,8 +1,8 @@
 # FILEPATH: /Users/alextu/Documents/GitHub/DocsGPT/tests/llm/test_openai.py
 
 import unittest
-from unittest.mock import patch, Mock
-from application.llm.openai import OpenAILLM, AzureOpenAILLM
+from unittest.mock import patch
+from application.llm.openai import OpenAILLM
 
 class TestOpenAILLM(unittest.TestCase):
 
