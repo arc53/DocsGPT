@@ -12,7 +12,7 @@ def test_app_config():
     app.register_blueprint(user)
     app.register_blueprint(answer)
     app.register_blueprint(internal)
-    app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER = "inputs"
+    app.config["UPLOAD_FOLDER"] = "inputs"
     app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
     app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
     app.config["MONGO_URI"] = settings.MONGO_URI

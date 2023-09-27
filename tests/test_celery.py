@@ -1,5 +1,4 @@
-from celery import Celery
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from application.core.settings import settings
 from application.celery import make_celery
 
