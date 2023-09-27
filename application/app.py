@@ -34,17 +34,8 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER = "inputs"
 app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
 app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
 app.config["MONGO_URI"] = settings.MONGO_URI
-#celery = Celery()
 celery.config_from_object("application.celeryconfig")
 
-
-
-
-
-# @celery.task(bind=True)
-# def ingest(self, directory, formats, name_job, filename, user):
-#     resp = ingest_worker(self, directory, formats, name_job, filename, user)
-#     return resp
 
 
 @app.route("/")
@@ -59,9 +50,6 @@ def home():
     else:
         # Handle other cases or render the default page
         return 'Welcome to DocsGPT Backend!'
-
-
-
 
 
 
