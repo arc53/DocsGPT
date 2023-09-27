@@ -1,10 +1,9 @@
 from celery import Celery
-from app import create_app
+from application.core.settings import settings
 
 def make_celery(app_name=__name__):
-    app = create_app()
-    celery = Celery(app_name, broker=app.config['CELERY_BROKER_URL'])
-    celery.conf.update(app.config)
+    celery = Celery(app_name, broker=settings.CELERY_BROKER_URL)
+    celery.conf.update(settings)
     return celery
 
 celery = make_celery()

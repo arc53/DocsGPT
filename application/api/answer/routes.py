@@ -1,42 +1,23 @@
 import asyncio
 import os
-from flask import Blueprint, request, jsonify, Response
-import requests
+from flask import Blueprint, request, Response
 import json
 import datetime
 import logging
 import traceback
-from celery.result import AsyncResult
 
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from transformers import GPT2TokenizerFast
 
-from langchain import FAISS
-from langchain import VectorDBQA, Cohere, OpenAI
-from langchain.chains import LLMChain, ConversationalRetrievalChain
-from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
-from langchain.chains.question_answering import load_qa_chain
-from langchain.chat_models import ChatOpenAI, AzureChatOpenAI
-from langchain.embeddings import (
-    OpenAIEmbeddings,
-    HuggingFaceHubEmbeddings,
-    CohereEmbeddings,
-    HuggingFaceInstructEmbeddings,
-)
-from langchain.prompts import PromptTemplate
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-    AIMessagePromptTemplate,
-)
-from langchain.schema import HumanMessage, AIMessage
+
 
 from application.core.settings import settings
-from application.llm.openai import OpenAILLM
-from application.core.settings import settings
+from application.llm.openai import OpenAILLM, AzureOpenAILLM
+from application.vectorstore.faiss import FaissStore
 from application.error import bad_request
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -125,21 +106,21 @@ def get_vectorstore(data):
     return vectorstore
 
 
-def get_docsearch(vectorstore, embeddings_key):
-    if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-        if is_azure_configured():
-            os.environ["OPENAI_API_TYPE"] = "azure"
-            openai_embeddings = OpenAIEmbeddings(model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
-        else:
-            openai_embeddings = OpenAIEmbeddings(openai_api_key=embeddings_key)
-        docsearch = FAISS.load_local(vectorstore, openai_embeddings)
-    elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
-        docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-    elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
-        docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-    elif settings.EMBEDDINGS_NAME == "cohere_medium":
-        docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
-    return docsearch
+# def get_docsearch(vectorstore, embeddings_key):
+#     if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
+#         if is_azure_configured():
+#             os.environ["OPENAI_API_TYPE"] = "azure"
+#             openai_embeddings = OpenAIEmbeddings(model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
+#         else:
+#             openai_embeddings = OpenAIEmbeddings(openai_api_key=embeddings_key)
+#         docsearch = FAISS.load_local(vectorstore, openai_embeddings)
+#     elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
+#         docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
+#     elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
+#         docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
+#     elif settings.EMBEDDINGS_NAME == "cohere_medium":
+#         docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
+#     return docsearch
 
 
 def is_azure_configured():
@@ -148,7 +129,7 @@ def is_azure_configured():
 
 def complete_stream(question, docsearch, chat_history, api_key, conversation_id):
     if is_azure_configured():
-        llm = AzureChatOpenAI(
+        llm = AzureOpenAILLM(
             openai_api_key=api_key,
             openai_api_base=settings.OPENAI_API_BASE,
             openai_api_version=settings.OPENAI_API_VERSION,
@@ -158,7 +139,7 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
         logger.debug("plain OpenAI")
         llm = OpenAILLM(api_key=api_key)
 
-    docs = docsearch.similarity_search(question, k=2)
+    docs = docsearch.search(question, k=2)
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
     p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
@@ -253,9 +234,8 @@ def stream():
         vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
     else:
         vectorstore = ""
-    docsearch = get_docsearch(vectorstore, embeddings_key)
+    docsearch = FaissStore(vectorstore, embeddings_key)
 
-    # question = "Hi"
     return Response(
         complete_stream(question, docsearch,
                         chat_history=history, api_key=api_key,
@@ -288,97 +268,55 @@ def api_answer():
         vectorstore = get_vectorstore(data)
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        docsearch = get_docsearch(vectorstore, embeddings_key)
+        docsearch = FaissStore(vectorstore, embeddings_key)
 
-        q_prompt = PromptTemplate(
-            input_variables=["context", "question"], template=template_quest, template_format="jinja2"
-        )
-        if settings.LLM_NAME == "openai_chat":
-            if is_azure_configured():
-                logger.debug("in Azure")
-                llm = AzureChatOpenAI(
-                    openai_api_key=api_key,
-                    openai_api_base=settings.OPENAI_API_BASE,
-                    openai_api_version=settings.OPENAI_API_VERSION,
-                    deployment_name=settings.AZURE_DEPLOYMENT_NAME,
-                )
-            else:
-                logger.debug("plain OpenAI")
-                llm = ChatOpenAI(openai_api_key=api_key, model_name=gpt_model)  # optional parameter: model_name="gpt-4"
-            messages_combine = [SystemMessagePromptTemplate.from_template(chat_combine_template)]
-            if history:
-                tokens_current_history = 0
-                # count tokens in history
-                history.reverse()
-                for i in history:
-                    if "prompt" in i and "response" in i:
-                        tokens_batch = count_tokens(i["prompt"]) + count_tokens(i["response"])
-                        if tokens_current_history + tokens_batch < settings.TOKENS_MAX_HISTORY:
-                            tokens_current_history += tokens_batch
-                            messages_combine.append(HumanMessagePromptTemplate.from_template(i["prompt"]))
-                            messages_combine.append(AIMessagePromptTemplate.from_template(i["response"]))
-            messages_combine.append(HumanMessagePromptTemplate.from_template("{question}"))
-            p_chat_combine = ChatPromptTemplate.from_messages(messages_combine)
-        elif settings.LLM_NAME == "openai":
-            llm = OpenAI(openai_api_key=api_key, temperature=0)
-        elif settings.SELF_HOSTED_MODEL:
-            llm = hf
-        elif settings.LLM_NAME == "cohere":
-            llm = Cohere(model="command-xlarge-nightly", cohere_api_key=api_key)
+        if is_azure_configured():
+            llm = AzureOpenAILLM(
+                openai_api_key=api_key,
+                openai_api_base=settings.OPENAI_API_BASE,
+                openai_api_version=settings.OPENAI_API_VERSION,
+                deployment_name=settings.AZURE_DEPLOYMENT_NAME,
+            )
         else:
-            raise ValueError("unknown LLM model")
+            logger.debug("plain OpenAI")
+            llm = OpenAILLM(api_key=api_key)
 
-        if settings.LLM_NAME == "openai_chat":
-            question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
-            doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
-            chain = ConversationalRetrievalChain(
-                retriever=docsearch.as_retriever(k=2),
-                question_generator=question_generator,
-                combine_docs_chain=doc_chain,
-            )
-            chat_history = []
-            # result = chain({"question": question, "chat_history": chat_history})
-            # generate async with async generate method
-            result = run_async_chain(chain, question, chat_history)
-        elif settings.SELF_HOSTED_MODEL:
-            question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
-            doc_chain = load_qa_chain(llm, chain_type="map_reduce", combine_prompt=p_chat_combine)
-            chain = ConversationalRetrievalChain(
-                retriever=docsearch.as_retriever(k=2),
-                question_generator=question_generator,
-                combine_docs_chain=doc_chain,
-            )
-            chat_history = []
-            # result = chain({"question": question, "chat_history": chat_history})
-            # generate async with async generate method
-            result = run_async_chain(chain, question, chat_history)
 
-        else:
-            qa_chain = load_qa_chain(
-                llm=llm, chain_type="map_reduce", combine_prompt=chat_combine_template, question_prompt=q_prompt
-            )
-            chain = VectorDBQA(combine_documents_chain=qa_chain, vectorstore=docsearch, k=3)
-            result = chain({"query": question})
 
-        print(result)
-
-        # some formatting for the frontend
-        if "result" in result:
-            result["answer"] = result["result"]
-        result["answer"] = result["answer"].replace("\\n", "\n")
-        try:
-            result["answer"] = result["answer"].split("SOURCES:")[0]
-        except Exception:
-            pass
-
-        sources = docsearch.similarity_search(question, k=2)
-        sources_doc = []
-        for doc in sources:
+        docs = docsearch.search(question, k=2)
+        # join all page_content together with a newline
+        docs_together = "\n".join([doc.page_content for doc in docs])
+        p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+        messages_combine = [{"role": "system", "content": p_chat_combine}]
+        source_log_docs = []
+        for doc in docs:
             if doc.metadata:
-                sources_doc.append({'title': doc.metadata['title'], 'text': doc.page_content})
+                source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
             else:
-                sources_doc.append({'title': doc.page_content, 'text': doc.page_content})
-        result['sources'] = sources_doc
+                source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
+        # join all page_content together with a newline
+
+
+        if len(history) > 1:
+            tokens_current_history = 0
+            # count tokens in history
+            history.reverse()
+            for i in history:
+                if "prompt" in i and "response" in i:
+                    tokens_batch = count_tokens(i["prompt"]) + count_tokens(i["response"])
+                    if tokens_current_history + tokens_batch < settings.TOKENS_MAX_HISTORY:
+                        tokens_current_history += tokens_batch
+                        messages_combine.append({"role": "user", "content": i["prompt"]})
+                        messages_combine.append({"role": "system", "content": i["response"]})
+        messages_combine.append({"role": "user", "content": question})
+
+
+        completion = llm.gen(model=gpt_model, engine=settings.AZURE_DEPLOYMENT_NAME,
+                                    messages=messages_combine)
+
+
+        result = {"answer": completion, "sources": source_log_docs}
+        logger.debug(result)
 
         # generate conversationId
         if conversation_id is not None:
@@ -391,22 +329,22 @@ def api_answer():
         else:
             # create new conversation
             # generate summary
-            messages_summary = [AIMessage(content="Summarise following conversation in no more than 3 " +
-                                                  "words, respond ONLY with the summary, use the same " +
-                                                  "language as the system \n\nUser: " + question + "\n\nAI: " +
-                                                  result["answer"]),
-                                HumanMessage(content="Summarise following conversation in no more than 3 words, " +
-                                                     "respond ONLY with the summary, use the same language as the " +
-                                                     "system")]
+            messages_summary = [{"role": "assistant", "content": "Summarise following conversation in no more than 3 "
+                                                                "words, respond ONLY with the summary, use the same "
+                                                                "language as the system \n\nUser: " + question + "\n\n" +
+                                                                "AI: " +
+                                                                result["answer"]},
+                                {"role": "user", "content": "Summarise following conversation in no more than 3 words, "
+                                                            "respond ONLY with the summary, use the same language as the "
+                                                            "system"}]
 
-            # completion = openai.ChatCompletion.create(model='gpt-3.5-turbo', engine=settings.AZURE_DEPLOYMENT_NAME,
-            #                                           messages=messages_summary, max_tokens=30, temperature=0)
-            completion = llm.predict_messages(messages_summary)
+            completion = llm.gen(model=gpt_model, engine=settings.AZURE_DEPLOYMENT_NAME,
+                                messages=messages_summary, max_tokens=30)
             conversation_id = conversations_collection.insert_one(
                 {"user": "local",
-                 "date": datetime.datetime.utcnow(),
-                 "name": completion.content,
-                 "queries": [{"prompt": question, "response": result["answer"], "sources": result['sources']}]}
+                "date": datetime.datetime.utcnow(),
+                "name": completion,
+                "queries": [{"prompt": question, "response": result["answer"], "sources": source_log_docs}]}
             ).inserted_id
 
         result["conversation_id"] = str(conversation_id)

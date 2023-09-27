@@ -6,6 +6,9 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.utils import secure_filename
 import http.client
+from celery.result import AsyncResult
+
+from application.api.user.tasks import ingest
 
 from application.core.settings import settings
 mongo = MongoClient(settings.MONGO_URI)
@@ -13,6 +16,8 @@ db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
 user = Blueprint('user', __name__)
+
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 @user.route("/api/delete_conversation", methods=["POST"])
 def delete_conversation():
@@ -111,13 +116,13 @@ def upload_file():
     if file:
         filename = secure_filename(file.filename)
         # save dir
-        save_dir = os.path.join(app.config["UPLOAD_FOLDER"], user, job_name)
+        save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
         # create dir if not exists
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay("temp", [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": "ok", "task_id": task_id}

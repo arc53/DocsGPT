@@ -12,13 +12,16 @@ db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
 
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 internal = Blueprint('internal', __name__)
 @internal.route("/api/download", methods=["get"])
 def download_file():
     user = secure_filename(request.args.get("user"))
     job_name = secure_filename(request.args.get("name"))
     filename = secure_filename(request.args.get("file"))
-    save_dir = os.path.join(app.config["UPLOAD_FOLDER"], user, job_name)
+    save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
     return send_from_directory(save_dir, filename, as_attachment=True)
 
 
@@ -46,7 +49,7 @@ def upload_index_files():
         return {"status": "no file name"}
 
     # saves index files
-    save_dir = os.path.join("indexes", user, job_name)
+    save_dir = os.path.join(current_dir, "indexes", user, job_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     file_faiss.save(os.path.join(save_dir, "index.faiss"))

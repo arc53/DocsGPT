@@ -2,15 +2,14 @@ import platform
 
 
 import dotenv
-from celery import Celery
+from application.celery import celery
 from flask import Flask, request, redirect
 
-from pymongo import MongoClient
 
 from application.core.settings import settings
-from application.worker import ingest_worker
 from application.api.user.routes import user
 from application.api.answer.routes import answer
+from application.api.internal.routes import internal
 
 
 
@@ -30,21 +29,22 @@ dotenv.load_dotenv()
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)
+app.register_blueprint(internal)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER = "inputs"
 app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
 app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
 app.config["MONGO_URI"] = settings.MONGO_URI
-celery = Celery()
+#celery = Celery()
 celery.config_from_object("application.celeryconfig")
 
 
 
 
 
-@celery.task(bind=True)
-def ingest(self, directory, formats, name_job, filename, user):
-    resp = ingest_worker(self, directory, formats, name_job, filename, user)
-    return resp
+# @celery.task(bind=True)
+# def ingest(self, directory, formats, name_job, filename, user):
+#     resp = ingest_worker(self, directory, formats, name_job, filename, user)
+#     return resp
 
 
 @app.route("/")
