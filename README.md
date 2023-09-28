@@ -116,6 +116,8 @@ Make sure you have Python 3.10 or 3.11 installed.
 export CELERY_BROKER_URL=redis://localhost:6379/0   
 export CELERY_RESULT_BACKEND=redis://localhost:6379/1
 export MONGO_URI=mongodb://localhost:27017/docsgpt
+export FLASK_APP=app.py
+export FLASK_DEBUG=true
 ```
 2. Prepare .env file
 Copy `.env_sample` and create `.env` with your OpenAI API token
@@ -129,8 +131,8 @@ python -m venv venv
 cd application/ 
 pip install -r requirements.txt
 ```
-5. Run the app `python wsgi.py`
-6. Start worker with `celery -A app.celery worker -l INFO`
+5. Run the app `flask run --host=0.0.0.0 --port=7091`
+6. Start worker with `celery -A application.app.celery worker -l INFO` from the directory above
 
 ### Start frontend 
 Make sure you have Node version 16 or higher.
