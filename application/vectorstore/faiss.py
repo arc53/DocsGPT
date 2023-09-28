@@ -8,8 +8,11 @@ class FaissStore(BaseVectorStore):
         super().__init__()
         self.path = path
         self.docsearch = FAISS.load_local(
-            self.path, self._get_docsearch(settings.EMBEDDINGS_NAME, settings.EMBEDDINGS_KEY)
+            self.path, self._get_embeddings(settings.EMBEDDINGS_NAME, settings.EMBEDDINGS_KEY)
         )
 
     def search(self, *args, **kwargs):
         return self.docsearch.similarity_search(*args, **kwargs)
+
+    def add_texts(self, *args, **kwargs):
+        return self.docsearch.add_texts(*args, **kwargs)

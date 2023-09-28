@@ -22,6 +22,7 @@ decorator==5.1.1
 dill==0.3.6
 dnspython==2.3.0
 ecdsa==0.18.0
+elasticsearch==8.9.0
 entrypoints==0.4
 faiss-cpu==1.7.3
 filelock==3.9.0

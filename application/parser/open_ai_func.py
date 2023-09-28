@@ -1,8 +1,7 @@
 import os
 
 import tiktoken
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from application.vectorstore.faiss import FaissStore
 from retry import retry
 
 
@@ -33,11 +32,9 @@ def call_openai_api(docs, folder_name, task_status):
         os.makedirs(f"{folder_name}")
 
     from tqdm import tqdm
-    docs_test = [docs[0]]
-    docs.pop(0)
     c1 = 0
 
-    store = FAISS.from_documents(docs_test, OpenAIEmbeddings(openai_api_key=os.getenv("EMBEDDINGS_KEY")))
+    store = FaissStore(path=f"{folder_name}", embeddings_key=os.getenv("EMBEDDINGS_KEY"))
 
     # Uncomment for MPNet embeddings
     # model_name = "sentence-transformers/all-mpnet-base-v2"
