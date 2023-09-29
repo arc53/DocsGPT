@@ -4,7 +4,7 @@ from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
-    LLM_NAME: str = "openai_chat"
+    LLM_NAME: str = "openai"
     EMBEDDINGS_NAME: str = "openai_text-embedding-ada-002"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
