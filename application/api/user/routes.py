@@ -11,6 +11,8 @@ from celery.result import AsyncResult
 from application.api.user.tasks import ingest
 
 from application.core.settings import settings
+from application.vectorstore.vector_creator import VectorCreator
+
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
@@ -90,10 +92,17 @@ def delete_old():
         return {"status": "error"}
     path_clean = "/".join(dirs)
     vectors_collection.delete_one({"location": path})
-    try:
-        shutil.rmtree(path_clean)
-    except FileNotFoundError:
-        pass
+    if settings.VECTOR_STORE == "faiss":
+        try:
+            shutil.rmtree(os.path.join(current_dir, path_clean))
+        except FileNotFoundError:
+            pass
+    else:
+        vetorstore = VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, path=os.path.join(current_dir, path_clean)
+        )
+        vetorstore.delete_index()
+        
     return {"status": "ok"}
 
 @user.route("/api/upload", methods=["POST"])
@@ -173,11 +182,11 @@ def combined_json():
                 "location": "local",
             }
         )
-
-    data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
-    for index in data_remote:
-        index["location"] = "remote"
-        data.append(index)
+    if settings.VECTOR_STORE == "faiss":
+        data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
+        for index in data_remote:
+            index["location"] = "remote"
+            data.append(index)
 
     return jsonify(data)
 

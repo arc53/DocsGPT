@@ -1,7 +1,8 @@
 import os
 
 import tiktoken
-from application.vectorstore.faiss import FaissStore
+from application.vectorstore.vector_creator import VectorCreator
+from application.core.settings import settings
 from retry import retry
 
 
@@ -33,9 +34,22 @@ def call_openai_api(docs, folder_name, task_status):
 
     from tqdm import tqdm
     c1 = 0
+    if settings.VECTOR_STORE == "faiss":
+        docs_init = [docs[0]]
+        docs.pop(0)
 
-    store = FaissStore(path=f"{folder_name}", embeddings_key=os.getenv("EMBEDDINGS_KEY"))
-
+        store = VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE,
+            docs_init = docs_init,
+            path=f"{folder_name}",
+            embeddings_key=os.getenv("EMBEDDINGS_KEY")
+        )
+    else:
+        store = VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE,
+            path=f"{folder_name}",
+            embeddings_key=os.getenv("EMBEDDINGS_KEY")
+        )
     # Uncomment for MPNet embeddings
     # model_name = "sentence-transformers/all-mpnet-base-v2"
     # hf = HuggingFaceEmbeddings(model_name=model_name)
@@ -54,7 +68,8 @@ def call_openai_api(docs, folder_name, task_status):
             store.save_local(f"{folder_name}")
             break
         c1 += 1
-    store.save_local(f"{folder_name}")
+    if settings.VECTOR_STORE == "faiss":
+        store.save_local(f"{folder_name}")
 
 
 def get_user_permission(docs, folder_name):

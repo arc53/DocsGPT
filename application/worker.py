@@ -83,11 +83,15 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
     file_data = {'name': name_job, 'user': user}
-    files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
-             'file_pkl': open(full_path + '/index.pkl', 'rb')}
-    response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
+    if settings.VECTOR_STORE == "faiss":
+        files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
+                'file_pkl': open(full_path + '/index.pkl', 'rb')}
+        response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
+        response = requests.get(urljoin(settings.API_URL, "/api/delete_old?path=" + full_path))
+    else:
+        response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
 
-    response = requests.get(urljoin(settings.API_URL, "/api/delete_old?path="))
+    
     # delete local
     shutil.rmtree(full_path)
 

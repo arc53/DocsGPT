@@ -34,25 +34,26 @@ def upload_index_files():
     if "name" not in request.form:
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
-    if "file_faiss" not in request.files:
-        print("No file part")
-        return {"status": "no file"}
-    file_faiss = request.files["file_faiss"]
-    if file_faiss.filename == "":
-        return {"status": "no file name"}
-    if "file_pkl" not in request.files:
-        print("No file part")
-        return {"status": "no file"}
-    file_pkl = request.files["file_pkl"]
-    if file_pkl.filename == "":
-        return {"status": "no file name"}
-
-    # saves index files
     save_dir = os.path.join(current_dir, "indexes", user, job_name)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    file_faiss.save(os.path.join(save_dir, "index.faiss"))
-    file_pkl.save(os.path.join(save_dir, "index.pkl"))
+    if settings.VECTOR_STORE == "faiss":
+        if "file_faiss" not in request.files:
+            print("No file part")
+            return {"status": "no file"}
+        file_faiss = request.files["file_faiss"]
+        if file_faiss.filename == "":
+            return {"status": "no file name"}
+        if "file_pkl" not in request.files:
+            print("No file part")
+            return {"status": "no file"}
+        file_pkl = request.files["file_pkl"]
+        if file_pkl.filename == "":
+            return {"status": "no file name"}
+        # saves index files
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        file_faiss.save(os.path.join(save_dir, "index.faiss"))
+        file_pkl.save(os.path.join(save_dir, "index.pkl"))
     # create entry in vectors_collection
     vectors_collection.insert_one(
         {

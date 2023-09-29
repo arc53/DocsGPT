@@ -14,7 +14,7 @@ from transformers import GPT2TokenizerFast
 
 from application.core.settings import settings
 from application.llm.openai import OpenAILLM, AzureOpenAILLM
-from application.vectorstore.faiss import FaissStore
+from application.vectorstore.vector_creator import VectorCreator
 from application.error import bad_request
 
 
@@ -234,7 +234,7 @@ def stream():
         vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
     else:
         vectorstore = ""
-    docsearch = FaissStore(vectorstore, embeddings_key)
+    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
 
     return Response(
         complete_stream(question, docsearch,
@@ -268,7 +268,7 @@ def api_answer():
         vectorstore = get_vectorstore(data)
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        docsearch = FaissStore(vectorstore, embeddings_key)
+        docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
 
         if is_azure_configured():
             llm = AzureOpenAILLM(
