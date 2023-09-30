@@ -1,4 +1,5 @@
 from application.llm.base import BaseLLM
+from application.core.settings import settings
 
 class OpenAILLM(BaseLLM):
 
@@ -44,9 +45,9 @@ class AzureOpenAILLM(OpenAILLM):
 
     def __init__(self, openai_api_key, openai_api_base, openai_api_version, deployment_name):
         super().__init__(openai_api_key)
-        self.api_base = openai_api_base
-        self.api_version = openai_api_version
-        self.deployment_name = deployment_name
+        self.api_base = settings.OPENAI_API_BASE,
+        self.api_version = settings.OPENAI_API_VERSION,
+        self.deployment_name = settings.AZURE_DEPLOYMENT_NAME,
 
     def _get_openai(self):
         openai = super()._get_openai()
