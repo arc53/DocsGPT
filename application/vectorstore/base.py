@@ -19,7 +19,7 @@ class BaseVectorStore(ABC):
     def is_azure_configured(self):
         return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
-    def _get_docsearch(self, embeddings_name, embeddings_key=None):
+    def _get_embeddings(self, embeddings_name, embeddings_key=None):
         embeddings_factory = {
             "openai_text-embedding-ada-002": OpenAIEmbeddings,
             "huggingface_sentence-transformers/all-mpnet-base-v2": HuggingFaceHubEmbeddings,

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     TOKENS_MAX_HISTORY: int = 150
     SELF_HOSTED_MODEL: bool = False
     UPLOAD_FOLDER: str = "inputs"
+    VECTOR_STORE: str = "elasticsearch"  # "faiss" or "elasticsearch"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
@@ -22,6 +23,13 @@ class Settings(BaseSettings):
     OPENAI_API_VERSION: str = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: str = None  # azure deployment name for answering
     AZURE_EMBEDDINGS_DEPLOYMENT_NAME: str = None  # azure deployment name for embeddings
+
+    # elasticsearch
+    ELASTIC_CLOUD_ID: str = None # cloud id for elasticsearch
+    ELASTIC_USERNAME: str = None # username for elasticsearch
+    ELASTIC_PASSWORD: str = None # password for elasticsearch
+    ELASTIC_URL: str = None # url for elasticsearch
+    ELASTIC_INDEX: str = "docsgpt" # index name for elasticsearch
 
 
 path = Path(__file__).parent.parent.absolute()
