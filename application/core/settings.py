@@ -25,11 +25,11 @@ class Settings(BaseSettings):
     AZURE_EMBEDDINGS_DEPLOYMENT_NAME: str = None  # azure deployment name for embeddings
 
     # elasticsearch
-    ELASTIC_CLOUD_ID: str = 'Docsgpt:ZXUtY2VudHJhbC0xLmF3cy5jbG91ZC5lcy5pbzo0NDMkYmNiZDYxZDE0ODE0NDNhMTkxNDU2YmI2MWViNzUxNTkkN2IwODMxZWYwMDI0NDFiOGJiNzgxZmQzYjI0MjIxYjA=' # cloud id for elasticsearch
-    ELASTIC_USERNAME: str = 'elastic' # username for elasticsearch
-    ELASTIC_PASSWORD: str = 'eSwoSbAhIWkXBsRdvhZxGPwc' # password for elasticsearch
+    ELASTIC_CLOUD_ID: str = None # cloud id for elasticsearch
+    ELASTIC_USERNAME: str = None # username for elasticsearch
+    ELASTIC_PASSWORD: str = None # password for elasticsearch
     ELASTIC_URL: str = None # url for elasticsearch
-    ELASTIC_INDEX: str = "docsgptbeta" # index name for elasticsearch
+    ELASTIC_INDEX: str = "docsgpt" # index name for elasticsearch
 
 
 path = Path(__file__).parent.parent.absolute()
