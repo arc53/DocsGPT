@@ -5,10 +5,13 @@ import elasticsearch
 class Document(str):
     """Class for storing a piece of text and associated metadata."""
 
-    page_content: str
-    """String text."""
-    metadata: dict
-    """Arbitrary metadata"""
+    def __new__(cls, page_content: str, metadata: dict):
+        instance = super().__new__(cls, page_content)
+        instance.page_content = page_content
+        instance.metadata = metadata
+        return instance
+
+
 
 
 class ElasticsearchStore(BaseVectorStore):
@@ -16,7 +19,7 @@ class ElasticsearchStore(BaseVectorStore):
 
     def __init__(self, path, embeddings_key, index_name=settings.ELASTIC_INDEX):
         super().__init__()
-        self.path = path.replace("application/indexes/", "")
+        self.path = path.replace("application/indexes/", "").rstrip("/")
         self.embeddings_key = embeddings_key
         self.index_name = index_name
         
@@ -86,7 +89,7 @@ class ElasticsearchStore(BaseVectorStore):
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
         vector = embeddings.embed_query(question)
         knn = {
-            "filter": [{"match": {"metadata.filename.keyword": self.path}}],
+            "filter": [{"match": {"metadata.store.keyword": self.path}}],
             "field": "vector",
             "k": k,
             "num_candidates": 100,
@@ -105,16 +108,13 @@ class ElasticsearchStore(BaseVectorStore):
                             }
                         }
                     ],
-                    "filter": [{"match": {"metadata.filename.keyword": self.path}}],
+                    "filter": [{"match": {"metadata.store.keyword": self.path}}],
                 }
             },
             "rank": {"rrf": {}},
         }
         resp = self.docsearch.search(index=self.index_name, query=full_query['query'], size=k, knn=full_query['knn'])
         # create Documnets objects from the results page_content ['_source']['text'], metadata ['_source']['metadata']
-        import sys
-        print(self.path, file=sys.stderr)
-        print(resp, file=sys.stderr)
         doc_list = []
         for hit in resp['hits']['hits']:
             
@@ -217,5 +217,5 @@ class ElasticsearchStore(BaseVectorStore):
 
     def delete_index(self):
         self._es_connection.delete_by_query(index=self.index_name, query={"match": {
-                                      "metadata.filename.keyword": self.path}},)
+                                      "metadata.store.keyword": self.path}},)
 

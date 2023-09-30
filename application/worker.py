@@ -21,7 +21,9 @@ except FileExistsError:
 
 
 def metadata_from_filename(title):
-    return {'title': title}
+    store = title.split('/')
+    store = store[1] + '/' + store[2]
+    return {'title': title, 'store': store}
 
 
 def generate_random_string(length):
