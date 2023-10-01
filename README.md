@@ -80,6 +80,14 @@ If you don't have enough resources to run it you can use bitsnbytes to quantize
 
 Note: Make sure you have Docker installed
 
+On Mac OS or Linux just write:
+
+`./setup.sh`
+
+It will install all the dependencies and give you an option to download local model or user OpenAI
+
+Otherwise refer to this Guide:
+
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
 2. Create a .env file in your root directory and set the env variable OPENAI_API_KEY with your OpenAI API key and  VITE_API_STREAMING to true or false, depending on if you want streaming answers or not
    It should look like this inside:
