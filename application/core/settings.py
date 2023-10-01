@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     TOKENS_MAX_HISTORY: int = 150
     SELF_HOSTED_MODEL: bool = False
     UPLOAD_FOLDER: str = "inputs"
-    VECTOR_STORE: str = "elasticsearch"  # "faiss" or "elasticsearch"
+    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
