@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Hero from '../Hero';
 import { AppDispatch } from '../store';
@@ -14,6 +14,7 @@ import Send from './../assets/send.svg';
 import Spinner from './../assets/spinner.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
+import ArrowDown from './../assets/arrow-down.svg';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -22,10 +23,42 @@ export default function Conversation() {
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
 
-  useEffect(
-    () => endMessageRef?.current?.scrollIntoView({ behavior: 'smooth' }),
-    [queries.length, queries[queries.length - 1]],
-  );
+  const [hasScrolledToLast, setHasScrolledToLast] = useState(false);
+
+  useEffect(() => {
+    scrollIntoView();
+  }, [queries.length, queries[queries.length - 1]]);
+
+  useEffect(() => {
+    const observerCallback: IntersectionObserverCallback = (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          setHasScrolledToLast(true);
+        } else {
+          setHasScrolledToLast(false);
+        }
+      });
+    };
+
+    const observer = new IntersectionObserver(observerCallback, {
+      root: null,
+      threshold: [1, 0.8],
+    });
+    if (endMessageRef.current) {
+      observer.observe(endMessageRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const scrollIntoView = () => {
+    endMessageRef?.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
 
   const handleQuestion = (question: string) => {
     dispatch(addQuery({ prompt: question }));
@@ -79,13 +112,26 @@ export default function Conversation() {
 
   return (
     <div className="flex justify-center p-4">
+      {queries.length > 0 && !hasScrolledToLast ? (
+        <button
+          onClick={scrollIntoView}
+          aria-label="scroll to bottom"
+          className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 md:h-9 md:w-9 md:bg-opacity-100 "
+        >
+          <img
+            src={ArrowDown}
+            alt="arrow down"
+            className="h4- w-4 opacity-50 md:h-5 md:w-5"
+          />
+        </button>
+      ) : null}
+
       {queries.length > 0 && (
         <div className="mt-20 flex flex-col transition-all md:w-3/4">
           {queries.map((query, index) => {
             return (
               <Fragment key={index}>
                 <ConversationBubble
-                  ref={endMessageRef}
                   className={'mb-7'}
                   key={`${index}QUESTION`}
                   message={query.prompt}
