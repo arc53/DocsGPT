@@ -34,13 +34,15 @@ download_locally() {
     source venv/bin/activate
     pip install -r application/requirements.txt
     pip install llama-cpp-python
+    pip install sentence-transformers
     export FLASK_APP=application/app.py
     export FLASK_DEBUG=true
     echo "The application is now running on http://localhost:5173"
     echo "You can stop the application by running the following command:"
     echo "Ctrl + C and then"
     echo "docker-compose down"
-    flask run --host=0.0.0.0 --port=7091
+    flask run --host=0.0.0.0 --port=7091 &
+    celery -A application.app.celery worker -l INFO
 }
 
 # Function to handle the choice to use the OpenAI API

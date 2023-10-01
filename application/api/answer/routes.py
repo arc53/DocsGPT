@@ -118,6 +118,8 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
     
 
     docs = docsearch.search(question, k=2)
+    if settings.LLM_NAME == "llama.cpp":
+        docs = [docs[0]]
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
     p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)

@@ -59,6 +59,7 @@ export default function Navigation({
 
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+  const embeddingsName = import.meta.env.VITE_EMBEDDINGS_NAME || 'openai_text-embedding-ada-002';
 
   useEffect(() => {
     if (!conversations) {
@@ -253,7 +254,7 @@ export default function Navigation({
               <div className="absolute top-12 left-0 right-6 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
                   docs.map((doc, index) => {
-                    if (doc.model === 'openai_text-embedding-ada-002') {
+                    if (doc.model === embeddingsName) {
                       return (
                         <div
                           key={index}
