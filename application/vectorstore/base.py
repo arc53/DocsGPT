@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import os
 from langchain.embeddings import (
     OpenAIEmbeddings,
-    HuggingFaceHubEmbeddings,
+    HuggingFaceEmbeddings,
     CohereEmbeddings,
     HuggingFaceInstructEmbeddings,
 )
@@ -22,7 +22,7 @@ class BaseVectorStore(ABC):
     def _get_docsearch(self, embeddings_name, embeddings_key=None):
         embeddings_factory = {
             "openai_text-embedding-ada-002": OpenAIEmbeddings,
-            "huggingface_sentence-transformers/all-mpnet-base-v2": HuggingFaceHubEmbeddings,
+            "huggingface_sentence-transformers/all-mpnet-base-v2": HuggingFaceEmbeddings,
             "huggingface_hkunlp/instructor-large": HuggingFaceInstructEmbeddings,
             "cohere_medium": CohereEmbeddings
         }

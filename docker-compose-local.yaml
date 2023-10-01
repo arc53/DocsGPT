@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  frontend:
+    build: ./frontend
+    environment:
+      - VITE_API_HOST=http://localhost:7091
+      - VITE_API_STREAMING=$VITE_API_STREAMING
+    ports:
+      - "5173:5173"
+
+  # backend:
+  #   build: ./application
+  #   environment:
+  #     - LLM_NAME=$LLM_NAME
+  #     - EMBEDDINGS_NAME=$EMBEDDINGS_NAME
+  #     - CELERY_BROKER_URL=redis://redis:6379/0
+  #     - CELERY_RESULT_BACKEND=redis://redis:6379/1
+  #     - MONGO_URI=mongodb://mongo:27017/docsgpt
+  #   ports:
+  #     - "7091:7091"
+  #   volumes:
+  #     - ./application/indexes:/app/application/indexes
+  #     - ./application/inputs:/app/application/inputs
+  #     - ./application/vectors:/app/application/vectors
+  #     - ./application/models:/app/application/models
+  #   depends_on:
+  #     - redis
+  #     - mongo
+
+  worker:
+    build: ./application
+    command: celery -A application.app.celery worker -l INFO
+    environment:
+      - LLM_NAME=$LLM_NAME
+      - EMBEDDINGS_NAME=$EMBEDDINGS_NAME
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - API_URL=http://backend:7091
+    depends_on:
+      - redis
+      - mongo
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/data/db
+
+volumes:
+  mongodb_data_container:

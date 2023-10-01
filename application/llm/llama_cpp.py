@@ -4,7 +4,10 @@ class LlamaCpp(BaseLLM):
 
     def __init__(self, api_key, llm_name='/Users/pavel/Desktop/docsgpt/application/models/orca-test.bin'):
         global llama
-        from llama_cpp import Llama
+        try:
+            from llama_cpp import Llama
+        except ImportError:
+            raise ImportError("Please install llama_cpp using pip install llama-cpp-python")
 
         llama = Llama(model_path=llm_name)
 
