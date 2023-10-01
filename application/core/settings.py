@@ -1,6 +1,8 @@
 from pathlib import Path
+import os
 
 from pydantic import BaseSettings
+current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class Settings(BaseSettings):
@@ -9,9 +11,8 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
-    MODEL_PATH: str = "./models/gpt4all-model.bin"
+    MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     TOKENS_MAX_HISTORY: int = 150
-    SELF_HOSTED_MODEL: bool = False
     UPLOAD_FOLDER: str = "inputs"
     VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch"
 

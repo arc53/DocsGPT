@@ -32,20 +32,6 @@ if settings.LLM_NAME == "gpt4":
 else:
     gpt_model = 'gpt-3.5-turbo'
 
-if settings.SELF_HOSTED_MODEL:
-    from langchain.llms import HuggingFacePipeline
-    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-
-    model_id = settings.LLM_NAME  # hf model id (Arc53/docsgpt-7b-falcon, Arc53/docsgpt-14b)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id)
-    pipe = pipeline(
-        "text-generation", model=model,
-        tokenizer=tokenizer, max_new_tokens=2000,
-        device_map="auto", eos_token_id=tokenizer.eos_token_id
-    )
-    hf = HuggingFacePipeline(pipeline=pipe)
-
 # load the prompts
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 with open(os.path.join(current_dir, "prompts", "combine_prompt.txt"), "r") as f:
