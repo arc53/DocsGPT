@@ -23,7 +23,7 @@ export default function Conversation() {
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
 
-  const [hasScrolledToLast, setHasScrolledToLast] = useState(false);
+  const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
 
   useEffect(() => {
     scrollIntoView();
@@ -51,7 +51,7 @@ export default function Conversation() {
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [endMessageRef.current]);
 
   const scrollIntoView = () => {
     endMessageRef?.current?.scrollIntoView({
