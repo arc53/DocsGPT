@@ -24,9 +24,9 @@ Options:
 LLM_NAME (openai, manifest, cohere, Arc53/docsgpt-14b, Arc53/docsgpt-7b-falcon)  
 EMBEDDINGS_NAME (openai_text-embedding-ada-002, huggingface_sentence-transformers/all-mpnet-base-v2, huggingface_hkunlp/instructor-large, cohere_medium)
 
-Thats it!
+That's it!
 
 ### Hosting everything locally and privately (for using our optimised open-source models)
 If you are working with important data and dont want anything to leave your premises.
 
-Make sure you set SELF_HOSTED_MODEL as true in you .env variable and for your LLM_NAME you can use anything thats on Huggingface 
+Make sure you set SELF_HOSTED_MODEL as true in you .env variable and for your LLM_NAME you can use anything that's on Huggingface 

@@ -27,7 +27,7 @@ class RstParser(BaseParser):
             remove_interpreters: bool = True,
             remove_directives: bool = True,
             remove_whitespaces_excess: bool = True,
-            # Be carefull with remove_characters_excess, might cause data loss
+            # Be careful with remove_characters_excess, might cause data loss
             remove_characters_excess: bool = True,
             **kwargs: Any,
     ) -> None:
