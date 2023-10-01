@@ -93,9 +93,8 @@ Otherwise refer to this Guide:
    It should look like this inside:
    
    ```
-   OPENAI_API_KEY=Yourkey
+   API_KEY=Yourkey
    VITE_API_STREAMING=true
-   SELF_HOSTED_MODEL=false
    ```
    See optional environment variables in the `/.env-template` and `/application/.env_sample` files.
 3. Run `./run-with-docker-compose.sh`
