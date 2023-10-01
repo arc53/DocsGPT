@@ -12,6 +12,10 @@ def test_make_celery(mock_celery):
     celery = make_celery(app_name)
 
     # Assert
-    mock_celery.assert_called_once_with(app_name, broker=settings.CELERY_BROKER_URL)
+    mock_celery.assert_called_once_with(
+        app_name, 
+        broker=settings.CELERY_BROKER_URL, 
+        backend=settings.CELERY_RESULT_BACKEND
+    )
     celery.conf.update.assert_called_once_with(settings)
     assert celery == mock_celery.return_value
