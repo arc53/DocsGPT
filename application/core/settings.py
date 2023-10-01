@@ -2,7 +2,7 @@ from pathlib import Path
 import os
 
 from pydantic import BaseSettings
-current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class Settings(BaseSettings):
