@@ -69,10 +69,10 @@ class HTMLParser(BaseParser):
                 Chunks.append([])
             Chunks[-1].append(isd_el['text'])
 
-        # Removing all the chunks with sum of lenth of all the strings in the chunk < 25
+        # Removing all the chunks with sum of length of all the strings in the chunk < 25
         # TODO: This value can be a user defined variable
         for chunk in Chunks:
-            # sum of lenth of all the strings in the chunk
+            # sum of length of all the strings in the chunk
             sum = 0
             sum += len(str(chunk))
             if sum < 25:

@@ -1,7 +1,7 @@
 ## Launching Web App
 Note: Make sure you have docker installed
 
-1. Open dowload this repository with `git clone https://github.com/arc53/DocsGPT.git`
+1. Open download this repository with `git clone https://github.com/arc53/DocsGPT.git`
 2. Create .env file in your root directory and set your `OPENAI_API_KEY` with your openai api key
 3. Run `docker-compose build && docker-compose up`
 4. Navigate to `http://localhost:5173/`

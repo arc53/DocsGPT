@@ -2,7 +2,7 @@ App currently has two main api endpoints:
 
 ### /api/answer 
 Its a POST request that sends a JSON in body with 4 values. Here is a JavaScript fetch example
-It will recieve an answer for a user provided question
+It will receive an answer for a user provided question
 
 ```js
 // answer (POST http://127.0.0.1:5000/api/answer)
@@ -29,7 +29,7 @@ In response you will get a json document like this one:
 ```
 
 ### /api/docs_check
-It will make sure documentation is loaded on a server (just run it everytime user is switching between libraries (documentations)
+It will make sure documentation is loaded on a server (just run it every time user is switching between libraries (documentations)
 Its a POST request that sends a JSON in body with 1 value. Here is a JavaScript fetch example
 
 ```js
@@ -104,7 +104,7 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 ```
 
 Responses:
-There are two types of repsonses:
+There are two types of responses:
 1. while task it still running, where "current" will show progress from 0 - 100
 ```json
 {
