@@ -23,23 +23,26 @@ download_locally() {
     # check if docsgpt-7b-f16.gguf does not exist
     if [ ! -f models/docsgpt-7b-f16.gguf ]; then
         echo "Downloading the model..."
-        wget -P models https://docsgpt.s3.eu-west-1.amazonaws.com/models/docsgpt-7b-f16.gguf
+        wget -P models https://d3dg1063dc54p9.cloudfront.net/models/docsgpt-7b-f16.gguf
         echo "Model downloaded to models directory."
     else
         echo "Model already exists."
     fi
    
     docker-compose -f docker-compose-local.yaml build && docker-compose -f docker-compose-local.yaml up -d
-    python -m venv venv
-    source venv/bin/activate
-    pip install -r application/requirements.txt
-    pip install llama-cpp-python
-    pip install sentence-transformers
+    #python -m venv venv
+    #source venv/bin/activate
+    #pip install -r application/requirements.txt
+    #pip install llama-cpp-python
+    #pip install sentence-transformers
     export FLASK_APP=application/app.py
     export FLASK_DEBUG=true
+    export CELERY_BROKER_URL=redis://localhost:6379/0
+    export CELERY_RESULT_BACKEND=redis://localhost:6379/1
     echo "The application is now running on http://localhost:5173"
     echo "You can stop the application by running the following command:"
     echo "Ctrl + C and then"
+    echo "Then pkill -f "flask run" and then"
     echo "docker-compose down"
     flask run --host=0.0.0.0 --port=7091 &
     celery -A application.app.celery worker -l INFO

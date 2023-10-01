@@ -142,7 +142,7 @@ def upload_file():
 def task_status():
     """Get celery job status."""
     task_id = request.args.get("task_id")
-    task = AsyncResult(task_id)
+    task = AsyncResult(task_id, backend=settings.CELERY_RESULT_BACKEND)
     task_meta = task.info
     return {"status": task.status, "result": task_meta}
 
