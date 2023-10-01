@@ -6,7 +6,6 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.utils import secure_filename
 import http.client
-from celery.result import AsyncResult
 
 from application.api.user.tasks import ingest
 
@@ -142,7 +141,8 @@ def upload_file():
 def task_status():
     """Get celery job status."""
     task_id = request.args.get("task_id")
-    task = AsyncResult(task_id, backend=settings.CELERY_RESULT_BACKEND)
+    from application.celery import celery
+    task = celery.AsyncResult(task_id)
     task_meta = task.info
     return {"status": task.status, "result": task_meta}
 

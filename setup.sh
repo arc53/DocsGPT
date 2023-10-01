@@ -35,6 +35,8 @@ download_locally() {
     #pip install -r application/requirements.txt
     #pip install llama-cpp-python
     #pip install sentence-transformers
+    export LLM_NAME=llama.cpp
+    export EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2
     export FLASK_APP=application/app.py
     export FLASK_DEBUG=true
     export CELERY_BROKER_URL=redis://localhost:6379/0
@@ -42,7 +44,7 @@ download_locally() {
     echo "The application is now running on http://localhost:5173"
     echo "You can stop the application by running the following command:"
     echo "Ctrl + C and then"
-    echo "Then pkill -f "flask run" and then"
+    echo "Then pkill -f 'flask run' and then"
     echo "docker-compose down"
     flask run --host=0.0.0.0 --port=7091 &
     celery -A application.app.celery worker -l INFO
