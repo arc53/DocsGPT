@@ -3,7 +3,7 @@ Note: Make sure you have docker installed
 
 On Mac OS or Linux just write:
 
-./setup.sh
+`./setup.sh`
 
 It will install all the dependencies and give you an option to download local model or use OpenAI
 
