@@ -25,6 +25,8 @@ Backend (🐍Python):
 
 Check out [Contributing Guidelines](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
+Once you have Created your PR and it was merged, please fill in this [form](https://airtable.com/appfkqFVjB0RpYCJh/shrXXM98xgRsbjO7s)
+
 
 Don't be shy! Hop into our [Discord](https://discord.gg/n5BX8dh8rU) Server. We're a friendly bunch and eager to assist newcomers.
 
