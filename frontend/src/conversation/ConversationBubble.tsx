@@ -60,7 +60,7 @@ const ConversationBubble = forwardRef<
         <div className="flex self-start">
           <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
           <div
-            className={`ml-2 mr-5 flex items-center rounded-3xl bg-gray-1000 p-3.5 ${
+            className={`ml-2 mr-5 flex flex-col items-center rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
                 ? ' rounded-lg border border-red-2000 bg-red-1000 p-2 text-red-3000'
                 : ''
@@ -100,6 +100,37 @@ const ConversationBubble = forwardRef<
             >
               {message}
             </ReactMarkdown>
+            <span className="mt-3 h-px w-full bg-[#DEDEDE]"></span>
+            <div className="mt-3 flex w-full flex-row items-center justify-center gap-2">
+              <div className="py-1 px-2 text-base font-semibold">Sources:</div>
+              <div className="flex grid w-1/2 grid-cols-3 flex-row flex-col items-center justify-start gap-2">
+                {DisableSourceFE
+                  ? null
+                  : sources?.map((source, index) => (
+                      <div
+                        key={index}
+                        className={`w-26 cursor-pointer rounded-xl py-1 px-2 ${
+                          openSource === index
+                            ? 'bg-[#007DFF]'
+                            : 'bg-[#D7EBFD] hover:bg-[#BFE1FF]'
+                        }`}
+                        onClick={() =>
+                          setOpenSource(openSource === index ? null : index)
+                        }
+                      >
+                        <p
+                          className={`truncate text-base font-medium ${
+                            openSource === index
+                              ? 'text-white'
+                              : 'text-[#007DFF]'
+                          }`}
+                        >
+                          {index + 1}. {source.title}
+                        </p>
+                      </div>
+                    ))}
+              </div>
+            </div>
           </div>
           <div
             className={`mr-2 flex items-center justify-center ${
@@ -133,23 +164,6 @@ const ConversationBubble = forwardRef<
               onClick={() => handleFeedback?.('DISLIKE')}
             ></Dislike>
           </div>
-        </div>
-        <div className="ml-8 mt-2 grid w-1/2 grid-cols-3 gap-2">
-          {DisableSourceFE
-            ? null
-            : sources?.map((source, index) => (
-                <div
-                  key={index}
-                  className="w-26 cursor-pointer rounded-xl border border-gray-200 py-1 px-2 hover:bg-gray-100"
-                  onClick={() =>
-                    setOpenSource(openSource === index ? null : index)
-                  }
-                >
-                  <p className="truncate text-xs text-gray-500">
-                    {index + 1}. {source.title}
-                  </p>
-                </div>
-              ))}
         </div>
 
         {sources && openSource !== null && sources[openSource] && (
