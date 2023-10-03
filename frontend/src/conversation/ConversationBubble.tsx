@@ -101,15 +101,15 @@ const ConversationBubble = forwardRef<
               {message}
             </ReactMarkdown>
             <span className="mt-3 h-px w-full bg-[#DEDEDE]"></span>
-            <div className="mt-3 flex w-full flex-row items-center justify-center gap-2">
+            <div className="mt-3 flex w-full flex-row flex-wrap items-center justify-start gap-2">
               <div className="py-1 px-2 text-base font-semibold">Sources:</div>
-              <div className="flex flex-row items-center justify-start gap-2">
+              <div className="flex flex-row flex-wrap items-center justify-start gap-2">
                 {DisableSourceFE
                   ? null
                   : sources?.map((source, index) => (
                       <div
                         key={index}
-                        className={`w-40 max-w-fit cursor-pointer rounded-[28px] py-1 px-2 ${
+                        className={`max-w-fit cursor-pointer rounded-[28px] py-1 px-4 ${
                           openSource === index
                             ? 'bg-[#007DFF]'
                             : 'bg-[#D7EBFD] hover:bg-[#BFE1FF]'
