@@ -232,7 +232,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
                 className="relative w-full m-0" style={{ opacity: 1 }}>
               <input type="text"
                      className="w-full bg-transparent px-5 py-3 pr-8 text-sm text-gray-700 dark:text-white focus:outline-none" placeholder="What do you want to do?" />
-              <button className="absolute text-gray-400 dark:text-gray-500 text-sm inset-y-0 right-2 -mx-2 px-2" type="submit" >Sumbit</button>
+              <button className="absolute text-gray-400 dark:text-gray-500 text-sm inset-y-0 right-2 -mx-2 px-2" type="submit" >Submit</button>
             </form>
           )}
           <p className={`${chatState !== 'processing' ? 'hidden' : ''} flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 rounded-b`}>
