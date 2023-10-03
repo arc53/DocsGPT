@@ -812,7 +812,7 @@ const pr = ({ apiHost: N = "https://gptcloud.arc53.com", selectDocs: w = "defaul
                   placeholder: "What do you want to do?"
                 }
               ),
-              /* @__PURE__ */ l.jsx("button", { className: "absolute text-gray-400 dark:text-gray-500 text-sm inset-y-0 right-2 -mx-2 px-2", type: "submit", children: "Sumbit" })
+              /* @__PURE__ */ l.jsx("button", { className: "absolute text-gray-400 dark:text-gray-500 text-sm inset-y-0 right-2 -mx-2 px-2", type: "submit", children: "Submit" })
             ]
           }
         ),
