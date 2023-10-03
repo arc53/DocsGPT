@@ -15,7 +15,7 @@ cffi==1.15.1
 charset-normalizer==3.2.0
 click==8.1.6
 cohere==4.19.2
-cryptography==41.0.3
+cryptography==41.0.4
 dataclasses-json==0.5.14
 decorator==5.1.1
 Deprecated==1.2.14
