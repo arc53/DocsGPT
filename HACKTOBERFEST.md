@@ -2,7 +2,7 @@
 
 Welcome, contributors! We're excited to announce that DocsGPT is participating in Hacktoberfest. Get involved by submitting a **meaningful** pull request, and earn a free shirt in return!
 
-All contributors with accepted PR's will recieve a cool holopin! 🤩 (Watchout for a reply in yout PR to collect it)
+All contributors with accepted PR's will receive a cool holopin! 🤩 (Watchout for a reply in your PR to collect it)
 
 📜 Here's How to Contribute:
 

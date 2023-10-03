@@ -62,7 +62,7 @@ use_openai() {
 
 
 
-    echo "The application is will runn on http://localhost:5173"
+    echo "The application will run on http://localhost:5173"
     echo "You can stop the application by running the following command:"
     echo "docker-compose down"
 }
