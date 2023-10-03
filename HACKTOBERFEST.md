@@ -1,6 +1,9 @@
-🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉
+# 🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉
 
 Welcome, contributors! We're excited to announce that DocsGPT is participating in Hacktoberfest. Get involved by submitting a **meaningful** pull request, and earn a free shirt in return!
+
+All contributors with accepted PR's will recieve a cool holopin! 🤩 (Watchout for a reply in yout PR to collect it)
+
 📜 Here's How to Contribute:
 
     🛠️ Code: This is the golden ticket! Make meaningful contributions through PRs.
@@ -26,7 +29,6 @@ Backend (🐍Python):
 Check out [Contributing Guidelines](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
 Once you have Created your PR and it was merged, please fill in this [form](https://airtable.com/appfkqFVjB0RpYCJh/shrXXM98xgRsbjO7s)
-
 
 Don't be shy! Hop into our [Discord](https://discord.gg/n5BX8dh8rU) Server. We're a friendly bunch and eager to assist newcomers.
 
