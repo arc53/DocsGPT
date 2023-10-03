@@ -155,9 +155,15 @@ export default function Conversation() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (inputRef.current?.textContent && status !== 'loading') {
-                  handleQuestion(inputRef.current.textContent);
-                  inputRef.current.textContent = '';
+                if (inputRef.current) {
+                  // Trim the input text to remove leading and trailing spaces
+                  const inputText = inputRef.current.textContent.trim();
+            
+                  if (inputText !== '' && status !== 'loading') {
+                    handleQuestion(inputText);
+                    // Clear the input field
+                    inputRef.current.textContent = '';
+                  }
                 }
               }
             }}
