@@ -1,5 +1,3 @@
-# FILEPATH: /Users/alextu/Documents/GitHub/DocsGPT/tests/test_error.py
-
 import pytest
 from flask import Flask
 from application.error import bad_request, response_error
