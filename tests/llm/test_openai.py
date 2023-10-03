@@ -1,5 +1,3 @@
-# FILEPATH: /Users/alextu/Documents/GitHub/DocsGPT/tests/llm/test_openai.py
-
 import unittest
 from unittest.mock import patch
 from application.llm.openai import OpenAILLM
