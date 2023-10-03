@@ -16,7 +16,7 @@ click==8.1.3
 click-didyoumean==0.3.0
 click-plugins==1.1.1
 click-repl==0.2.0
-cryptography==41.0.3
+cryptography==41.0.4
 dataclasses-json==0.5.7
 decorator==5.1.1
 dill==0.3.6
@@ -100,7 +100,7 @@ transformers==4.30.0
 typer==0.7.0
 typing-inspect==0.8.0
 typing_extensions==4.5.0
-urllib3==1.26.14
+urllib3==1.26.17
 vine==5.0.0
 wcwidth==0.2.6
 yarl==1.8.2
