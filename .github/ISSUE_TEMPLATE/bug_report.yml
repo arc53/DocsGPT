@@ -6,6 +6,7 @@ body:
   - type: markdown
     attributes:
       value: We value your time and your efforts to submit this bug report is appreciated. 🙏
+
   - type: textarea
     id: description
     validations:
@@ -14,6 +15,7 @@ body:
       label: "📜 Description"
       description: "A clear and concise description of what the bug is."
       placeholder: "It bugs out when ..."
+
   - type: textarea
     id: steps-to-reproduce
     validations:
@@ -25,6 +27,7 @@ body:
         2. Click on '....'
         3. Scroll down to '....'
         4. See error"
+
   - type: textarea
     id: expected-behavior
     validations:
@@ -33,6 +36,7 @@ body:
       label: "👍 Expected behavior"
       description: "What did you think should happen?"
       placeholder: "It should ..."
+
   - type: textarea
     id: actual-behavior
     validations:
@@ -41,6 +45,7 @@ body:
       label: "👎 Actual Behavior with Screenshots"
       description: "What did actually happen? Add screenshots, if applicable."
       placeholder: "It actually ..."
+
   - type: dropdown
     id: operating-system
     attributes:
@@ -53,6 +58,7 @@ body:
         - Something else
     validations:
       required: true
+
   - type: dropdown
     id: browsers
     attributes:
@@ -65,14 +71,25 @@ body:
         - Microsoft Edge
         - Something else
 
-  - type: input
-    id: node-version
+  - type: dropdown
+    id: dev-environment
     validations:
       required: true
     attributes:
-      label: "🤖 Node Version"
-      description: >
-        What Node version are you using?
+      label: "🤖 What development environment are you experiencing this bug on?"
+      options:
+        - Docker
+        - Local dev server
+
+  - type: textarea
+    id: env-vars
+    validations:
+      required: false
+    attributes:
+      label: "🔒 Did you set the correct environment variables in the right path? List the environment variable names (not values please!)"
+      description: "Please refer to the [Project setup instructions](https://github.com/arc53/DocsGPT#quickstart) if you are unsure."
+      placeholder: "It actually ..."
+
   - type: textarea
     id: additional-context
     validations:
@@ -81,14 +98,16 @@ body:
       label: "📃 Provide any additional context for the Bug."
       description: "Add any other context about the problem here."
       placeholder: "It actually ..."
+
   - type: textarea
     id: logs
     validations:
       required: false
     attributes:
-      label: Relevant log output
+      label: 📖 Relevant log output
       description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
       render: shell
+
   - type: checkboxes
     id: no-duplicate-issues
     attributes:
@@ -96,16 +115,18 @@ body:
       options:
         - label: "I checked and didn't find similar issue"
           required: true
+
   - type: dropdown
     attributes:
-      label: Are you willing to submit PR?
+      label: 🔗 Are you willing to submit PR?
       description:
         This is absolutely not required, but we are happy to guide you in the contribution process.
         - "Yes I am willing to submit a PR!"
+
   - type: checkboxes
     id: terms
     attributes:
-      label: Code of Conduct
+      label: 🧑‍⚖️ Code of Conduct
       description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/arc53/DocsGPT/blob/main/CODE_OF_CONDUCT.md)
       options:
         - label: I agree to follow this project's Code of Conduct
