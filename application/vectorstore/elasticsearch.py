@@ -114,7 +114,7 @@ class ElasticsearchStore(BaseVectorStore):
             "rank": {"rrf": {}},
         }
         resp = self.docsearch.search(index=self.index_name, query=full_query['query'], size=k, knn=full_query['knn'])
-        # create Documnets objects from the results page_content ['_source']['text'], metadata ['_source']['metadata']
+        # create Documents objects from the results page_content ['_source']['text'], metadata ['_source']['metadata']
         doc_list = []
         for hit in resp['hits']['hits']:
             
