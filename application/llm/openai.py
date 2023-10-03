@@ -4,20 +4,21 @@ from application.core.settings import settings
 class OpenAILLM(BaseLLM):
 
     def __init__(self, api_key):
-        global openai
-        import openai
-        openai.api_key = api_key
+        global litellm
+        import litellm
+
+        litellm.api_key = api_key
         self.api_key = api_key  # Save the API key to be used later
 
     def _get_openai(self):
         # Import openai when needed
-        import openai
-        # Set the API key every time you import openai
-        openai.api_key = self.api_key
-        return openai
+        import litellm
+        # Set the API key every time you import litellm
+        litellm.api_key = self.api_key
+        return litellm
 
     def gen(self, model, engine, messages, stream=False, **kwargs):
-        response = openai.ChatCompletion.create(
+        response = litellm.completion(
             model=model,
             engine=engine,
             messages=messages,
@@ -28,7 +29,7 @@ class OpenAILLM(BaseLLM):
         return response["choices"][0]["message"]["content"]
 
     def gen_stream(self, model, engine, messages, stream=True, **kwargs):
-        response = openai.ChatCompletion.create(
+        response = litellm.completion(
             model=model,
             engine=engine,
             messages=messages,
@@ -50,8 +51,8 @@ class AzureOpenAILLM(OpenAILLM):
         self.deployment_name = settings.AZURE_DEPLOYMENT_NAME,
 
     def _get_openai(self):
-        openai = super()._get_openai()
-        openai.api_base = self.api_base
-        openai.api_version = self.api_version
-        openai.api_type = "azure"
-        return openai
+        litellm = super()._get_openai()
+        litellm.api_base = self.api_base
+        litellm.api_version = self.api_version
+        litellm.api_type = "azure"
+        return litellm
