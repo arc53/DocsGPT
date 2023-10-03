@@ -59,7 +59,7 @@ numpy==1.24.2
 openai==0.27.8
 packaging==23.0
 pathos==0.3.0
-Pillow==9.4.0
+Pillow==10.0.1
 pox==0.3.2
 ppft==1.7.6.6
 prompt-toolkit==3.0.38
