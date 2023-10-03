@@ -319,6 +319,16 @@ export default function Navigation({
           </NavLink>
 
           <a
+            href="https://docs.docsgpt.co.uk/"
+            target="_blank"
+            rel="noreferrer"
+            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+          >
+            <img src={Link} alt="link" className="ml-2 w-5" />
+            <p className="my-auto text-eerie-black">Documentation</p>
+          </a>
+          
+          <a
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
             rel="noreferrer"
