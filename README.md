@@ -120,16 +120,11 @@ docker compose -f docker-compose-dev.yaml up -d
 
 Make sure you have Python 3.10 or 3.11 installed.
 
-1. Export required environment variables
-```commandline
-export CELERY_BROKER_URL=redis://localhost:6379/0   
-export CELERY_RESULT_BACKEND=redis://localhost:6379/1
-export MONGO_URI=mongodb://localhost:27017/docsgpt
-export FLASK_APP=application/app.py
-export FLASK_DEBUG=true
-```
-2. Prepare .env file
-Copy `.env_sample` and create `.env` with your OpenAI API token
+1. Export required environment variables or prep .env file in application folder
+Prepare .env file
+Copy `.env_sample` and create `.env` with your OpenAI API token for the API_KEY and EMBEDDINGS_KEY fields
+
+(check out application/core/settings.py if you want to see more config options)
 3. (optional) Create a Python virtual environment
 ```commandline
 python -m venv venv
