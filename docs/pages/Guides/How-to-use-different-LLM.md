@@ -29,4 +29,4 @@ That's it!
 ### Hosting everything locally and privately (for using our optimised open-source models)
 If you are working with important data and dont want anything to leave your premises.
 
-Make sure you set SELF_HOSTED_MODEL as true in you .env variable and for your LLM_NAME you can use anything that's on Huggingface 
+Make sure you set SELF_HOSTED_MODEL as true in you .env variable and for your LLM_NAME you can use anything that's on Hugging Face 
