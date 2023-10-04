@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { ActiveState } from '../models/misc';
 import { selectApiKey, setApiKey } from './preferenceSlice';
-import { useOutsideAlerter } from './../hooks';
+import { useMediaQuery, useOutsideAlerter } from './../hooks';
 import Modal from '../Modal';
 
 export default function APIKeyModal({
@@ -19,14 +19,12 @@ export default function APIKeyModal({
   const [key, setKey] = useState(apiKey);
   const [isError, setIsError] = useState(false);
   const modalRef = useRef(null);
+  const { isMobile } = useMediaQuery();
 
   useOutsideAlerter(
     modalRef,
     () => {
-      if (
-        window.matchMedia('(max-width: 768px)').matches &&
-        modalState === 'ACTIVE'
-      ) {
+      if (isMobile && modalState === 'ACTIVE') {
         setModalState('INACTIVE');
       }
     },

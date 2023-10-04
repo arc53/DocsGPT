@@ -26,23 +26,19 @@ import {
   setConversation,
   updateConversationId,
 } from './conversation/conversationSlice';
-import { useOutsideAlerter } from './hooks';
+import { useMediaQuery, useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc, getConversations } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
 
-export default function Navigation({
-  navState,
-  setNavState,
-}: {
-  navState: ActiveState;
-  setNavState: React.Dispatch<React.SetStateAction<ActiveState>>;
-}) {
+export default function Navigation() {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
+  const { isMobile } = useMediaQuery();
+  const [navOpen, setNavOpen] = useState(!isMobile);
 
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
 
@@ -59,7 +55,8 @@ export default function Navigation({
 
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-  const embeddingsName = import.meta.env.VITE_EMBEDDINGS_NAME || 'openai_text-embedding-ada-002';
+  const embeddingsName =
+    import.meta.env.VITE_EMBEDDINGS_NAME || 'openai_text-embedding-ada-002';
 
   useEffect(() => {
     if (!conversations) {
@@ -123,51 +120,46 @@ export default function Navigation({
   useOutsideAlerter(
     navRef,
     () => {
-      if (
-        window.matchMedia('(max-width: 768px)').matches &&
-        navState === 'ACTIVE' &&
-        apiKeyModalState === 'INACTIVE'
-      ) {
-        setNavState('INACTIVE');
+      if (isMobile && navOpen && apiKeyModalState === 'INACTIVE') {
+        setNavOpen(false);
         setIsDocsListOpen(false);
       }
     },
-    [navState, isDocsListOpen, apiKeyModalState],
+    [navOpen, isDocsListOpen, apiKeyModalState],
   );
 
   /*
     Needed to fix bug where if mobile nav was closed and then window was resized to desktop, nav would still be closed but the button to open would be gone, as per #1 on issue #146
   */
+
   useEffect(() => {
-    window.addEventListener('resize', () => {
-      if (window.matchMedia('(min-width: 768px)').matches) {
-        setNavState('ACTIVE');
-      } else {
-        setNavState('INACTIVE');
-      }
-    });
-  }, []);
+    if (isMobile) {
+      setNavOpen(false);
+      return;
+    }
+    setNavOpen(true);
+  }, [isMobile]);
 
   return (
     <>
       <div
         ref={navRef}
         className={`${
-          navState === 'INACTIVE' && '-ml-96 md:-ml-[14rem]'
+          !navOpen && '-ml-96 md:-ml-[14rem]'
         } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
       >
         <div className={'visible h-16 w-full border-b-2 md:hidden'}>
           <button
             className="float-right mr-5 mt-5 h-5 w-5"
-            onClick={() =>
-              setNavState(navState === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE')
-            }
+            onClick={() => {
+              setNavOpen(!navOpen);
+            }}
           >
             <img
               src={Arrow1}
               alt="menu toggle"
               className={`${
-                navState === 'INACTIVE' ? 'rotate-180' : 'rotate-0'
+                !navOpen ? 'rotate-180' : 'rotate-0'
               } m-auto w-3 transition-all duration-200`}
             />
           </button>
@@ -176,7 +168,11 @@ export default function Navigation({
           to={'/'}
           onClick={() => {
             dispatch(setConversation([]));
-            dispatch(updateConversationId({ query: { conversationId: null } }));
+            dispatch(
+              updateConversationId({
+                query: { conversationId: null },
+              }),
+            );
           }}
           className={({ isActive }) =>
             `${
@@ -327,7 +323,7 @@ export default function Navigation({
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
           </a>
-          
+
           <a
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
@@ -352,7 +348,7 @@ export default function Navigation({
       <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden">
         <button
           className="mt-5 ml-6 h-6 w-6 md:hidden"
-          onClick={() => setNavState('ACTIVE')}
+          onClick={() => setNavOpen(true)}
         >
           <img src={Hamburger} alt="menu toggle" className="w-7" />
         </button>
