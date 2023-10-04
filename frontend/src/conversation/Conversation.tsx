@@ -61,6 +61,8 @@ export default function Conversation() {
   };
 
   const handleQuestion = (question: string) => {
+    question = question.trim();
+    if (question === '') return;
     dispatch(addQuery({ prompt: question }));
     dispatch(fetchAnswer({ question }));
   };
