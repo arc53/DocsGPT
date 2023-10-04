@@ -84,13 +84,14 @@ def delete_old():
     path = request.args.get("path")
     dirs = path.split("/")
     dirs_clean = []
-    for i in range(1, len(dirs)):
+    for i in range(0, len(dirs)):
         dirs_clean.append(secure_filename(dirs[i]))
     # check that path strats with indexes or vectors
-    if dirs[0] not in ["indexes", "vectors"]:
+
+    if dirs_clean[0] not in ["indexes", "vectors"]:
         return {"status": "error"}
-    path_clean = "/".join(dirs)
-    vectors_collection.delete_one({"location": path})
+    path_clean = "/".join(dirs_clean)
+    vectors_collection.delete_one({"name": dirs_clean[-1], 'user': dirs_clean[-2]})
     if settings.VECTOR_STORE == "faiss":
         try:
             shutil.rmtree(os.path.join(current_dir, path_clean))
