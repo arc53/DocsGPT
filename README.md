@@ -146,6 +146,11 @@ Make sure you have Node version 16 or higher.
 3. Run the app 
 `npm run dev`
 
+## All Thanks To Our Contributors
+
+<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)">
+  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" />
+</a>
 
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
