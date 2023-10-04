@@ -47,7 +47,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Pleas
 | [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon-40b     | 8xA10G gpu's  |
 
 
-If you don't have enough resources to run it you can use bitsnbytes to quantize
+If you don't have enough resources to run it you can use [bitsnbytes](https://colab.research.google.com/drive/1VoYNfYDKcKRQRor98Zbf2-9VQTtGJ24k) to quantize
 
 
 ## Features
