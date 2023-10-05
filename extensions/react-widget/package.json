@@ -38,7 +38,7 @@
     "@types/react-dom": "^18.0.9",
     "@vitejs/plugin-react-swc": "^3.0.0",
     "autoprefixer": "^10.4.13",
-    "postcss": "^8.4.20",
+    "postcss": "^8.4.31",
     "typescript": "^4.9.3",
     "vite": "^4.0.0",
     "vite-plugin-dts": "^1.7.1"
