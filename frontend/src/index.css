@@ -358,3 +358,9 @@ template {
 [hidden] {
   display: none;
 }
+
+[contentEditable]:empty:before {
+  content: attr(placeholder);
+  color: #9ca3af;
+  opacity: 1;
+}

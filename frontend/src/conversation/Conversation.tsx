@@ -61,6 +61,8 @@ export default function Conversation() {
   };
 
   const handleQuestion = (question: string) => {
+    question = question.trim();
+    if (question === '') return;
     dispatch(addQuery({ prompt: question }));
     dispatch(fetchAnswer({ question }));
   };
@@ -149,6 +151,7 @@ export default function Conversation() {
         <div className="flex w-full">
           <div
             ref={inputRef}
+            placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
             className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white py-2 pl-4 pr-9 leading-7 opacity-100 focus:outline-none`}

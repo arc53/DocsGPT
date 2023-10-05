@@ -38,7 +38,7 @@ When deploying your DocsGPT to a live environment, we're eager to provide person
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Please don't hesitate to contribute or create issues, it helps us make DocsGPT better!
 
-## Our open source models optimised for DocsGPT:
+## Our Open-Source models optimised for DocsGPT:
 
 | Name              | Base Model | Requirements (or similar)                        |
 |-------------------|------------|----------------------------------------------------------|
@@ -120,16 +120,11 @@ docker compose -f docker-compose-dev.yaml up -d
 
 Make sure you have Python 3.10 or 3.11 installed.
 
-1. Export required environment variables
-```commandline
-export CELERY_BROKER_URL=redis://localhost:6379/0   
-export CELERY_RESULT_BACKEND=redis://localhost:6379/1
-export MONGO_URI=mongodb://localhost:27017/docsgpt
-export FLASK_APP=application/app.py
-export FLASK_DEBUG=true
-```
-2. Prepare .env file
-Copy `.env_sample` and create `.env` with your OpenAI API token
+1. Export required environment variables or prep .env file in application folder
+Prepare .env file
+Copy `.env_sample` and create `.env` with your OpenAI API token for the API_KEY and EMBEDDINGS_KEY fields
+
+(check out application/core/settings.py if you want to see more config options)
 3. (optional) Create a Python virtual environment
 ```commandline
 python -m venv venv
@@ -151,6 +146,11 @@ Make sure you have Node version 16 or higher.
 3. Run the app 
 `npm run dev`
 
+## All Thanks To Our Contributors
+
+<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)">
+  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" />
+</a>
 
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)

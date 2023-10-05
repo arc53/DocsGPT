@@ -12,9 +12,9 @@ Here's a step-by-step guide on how to setup an Amazon Lightsail instance to host
 
 ### 3. Create your instance
 
-The first step is to select the "Instance location". In most cases there's no need to switch locations as the default one will work well.
+The first step is to select the "Instance location". In most cases, there's no need to switch locations as the default one will work well.
 
-After that it is time to pick your Instance Image. We recommend using "Linux/Unix" as the image and "Ubuntu 20.04 LTS" for Operating System.
+After that, it is time to pick your Instance Image. We recommend using "Linux/Unix" as the image and "Ubuntu 20.04 LTS" as the Operating System.
 
 As for instance plan, it'll vary depending on your unique demands, but a "1 GB, 1vCPU, 40GB SSD and 2TB transfer" setup should cover most scenarios.
 
@@ -30,13 +30,13 @@ PS: Once you create your instance, it'll likely take a few minutes for the setup
 - 40GB SSD Hard Drive
 - 2TB transfer
 
-### Connecting to your the newly created instance
+### Connecting to your newly created instance
 
-Your instance will be ready for use a few minutes after being created. To access, just open it up and click on "Connect using SSH".
+Your instance will be ready for use a few minutes after being created. To access it, just open it up and click on "Connect using SSH".
 
 #### Clone the repository
 
-A terminal window will pop up, and the first step will be to clone DocsGPT git repository.
+A terminal window will pop up, and the first step will be to clone the DocsGPT git repository.
 
 `git clone https://github.com/arc53/DocsGPT.git`
 
@@ -48,7 +48,7 @@ Once it has finished cloning the repository, it is time to download the package 
 
 #### Install Docker and Docker Compose
 
-DocsGPT backend and worker use python, Frontend is written on React and the whole application is containerized using Docker. To install Docker and Docker Compose, enter the following commands:
+DocsGPT backend and worker use Python, Frontend is written on React and the whole application is containerized using Docker. To install Docker and Docker Compose, enter the following commands:
 
 `sudo apt install docker.io`
 
@@ -58,7 +58,7 @@ And now install docker-compose:
 
 #### Access the DocsGPT folder
 
-Enter the following command to access the folder in which DocsGPT docker-compose file is.
+Enter the following command to access the folder in which DocsGPT docker-compose file is present.
 
 `cd DocsGPT/`
 
@@ -76,9 +76,9 @@ VITE_API_STREAMING=true
 SELF_HOSTED_MODEL=false
 ```
 
-To save the file, press CTRL+X, then Y and then ENTER.
+To save the file, press CTRL+X, then Y, and then ENTER.
 
-Next we need to set a correct IP for our Backend. To do so, open the docker-compose.yml file:
+Next, we need to set a correct IP for our Backend. To do so, open the docker-compose.yml file:
 
 `nano docker-compose.yml`
 
@@ -93,17 +93,17 @@ You're almost there! Now that all the necessary bits and pieces have been instal
 
 `sudo docker-compose up -d`
 
-If you launch it for the first time it will take a few minutes to download all the necessary dependencies and build.
+Launching it for the first time will take a few minutes to download all the necessary dependencies and build.
 
 Once this is done you can go ahead and close the terminal window.
 
 #### Enabling ports 
 
-Before you being able to access your live instance, you must first enable the port which it is using.
+Before you are able to access your live instance, you must first enable the port that it is using.
 
 Open your Lightsail instance and head to "Networking".
 
-Then click on "Add rule" under "IPv4 Firewall", enter 5173 as your your port and hit "Create". 
+Then click on "Add rule" under "IPv4 Firewall", enter 5173 as your port, and hit "Create". 
 Repeat the process for port 7091.
 
 #### Access your instance
