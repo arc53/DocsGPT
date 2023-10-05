@@ -345,7 +345,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
           </a>
-
           <a
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
@@ -353,7 +352,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Discord} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Discord</p>
+            <p className="my-auto text-eerie-black">Visit our Discord</p>
           </a>
 
           <a
@@ -363,7 +362,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Github} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Github</p>
+            <p className="my-auto text-eerie-black">Visit our Github</p>
           </a>
         </div>
       </div>
