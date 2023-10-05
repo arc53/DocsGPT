@@ -113,7 +113,7 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex justify-center p-4">
+    <div className="flex flex-col justify-center p-4 md:flex-row">
       {queries.length > 0 && !hasScrolledToLast ? (
         <button
           onClick={scrollIntoView}
@@ -146,9 +146,11 @@ export default function Conversation() {
           })}
         </div>
       )}
-      {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-      <div className="fixed bottom-0 flex w-10/12 flex-col items-end self-center md:w-[50%]">
-        <div className="flex w-full">
+      {queries.length === 0 && (
+        <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
+      )}
+      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center md:fixed md:w-[50%]">
+        <div className="flex h-full w-full">
           <div
             ref={inputRef}
             placeholder="Type your message here..."
