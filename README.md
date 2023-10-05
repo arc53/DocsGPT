@@ -56,17 +56,19 @@ If you don't have enough resources to run it you can use bitsnbytes to quantize
 
 
 ## Useful links
- [Live preview](https://docsgpt.arc53.com/)
- 
- [Join Our Discord](https://discord.gg/n5BX8dh8rU)
- 
- [Guides](https://docs.docsgpt.co.uk/)
+ <img src="https://github.com/shelar1423/DocsGPT/assets/82649533/8131819f-7dd9-4869-966d-9d257200955c" alt="Audit" width="35" height="35"  align="center"> [Live preview](https://docsgpt.arc53.com/) 
 
- [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
- [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
+ <img src="https://github.com/shelar1423/DocsGPT/assets/82649533/bbd74228-f41f-4194-8fe2-531f7b29d61f" alt="Discord" width="35" height="35"  align="center"> [Join Our Discord](https://discord.gg/n5BX8dh8rU) 
 
- [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
+<img width="35" height="35" src="https://img.icons8.com/external-flaticons-lineal-color-flat-icons/64/external-guide-lifestyles-flaticons-lineal-color-flat-icons.png" alt="external-guide-lifestyles-flaticons-lineal-color-flat-icons" align="center"/> [Guides](https://docs.docsgpt.co.uk/)
+
+
+<img width="35" height="35" src="https://img.icons8.com/external-flaticons-lineal-color-flat-icons/25/external-contribution-achievements-flaticons-lineal-color-flat-icons-2.png" alt="external-contribution-achievements-flaticons-lineal-color-flat-icons-2" align="center"/>  [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
+
+<img width="35" height="35" src="https://img.icons8.com/color/48/document--v1.png" alt="document--v1" align="center"/>  [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
+
+<img width="35" height="35" src="https://img.icons8.com/officel/35/virtual-machine2.png" alt="virtual-machine2" align="center"/>  [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
 
 
 ## Project structure
