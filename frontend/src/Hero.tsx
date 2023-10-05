@@ -35,7 +35,7 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
 
-        <div className=" rounded-[50px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 py-1  md:rounded-none">
+        <div className=" rounded-[50px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 md:rounded-none  md:py-1">
           <div className="rounded-[45px] bg-white px-6 py-4 md:rounded-none">
             <img src="/lock.svg" alt="lock" className="h-[24px] w-[24px]" />
             <h2 className="mt-2 mb-3 text-lg font-bold">Secure Data Storage</h2>
