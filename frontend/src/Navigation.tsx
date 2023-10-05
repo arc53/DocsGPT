@@ -8,6 +8,8 @@ import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
 import Link from './assets/link.svg';
+import Discord from './assets/discord.svg';
+import Github from './assets/github.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
@@ -31,14 +33,18 @@ import Upload from './upload/Upload';
 import { Doc, getConversations } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
 
-export default function Navigation() {
+interface NavigationProps {
+  navOpen: boolean;
+  setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
   const { isMobile } = useMediaQuery();
-  const [navOpen, setNavOpen] = useState(!isMobile);
 
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
 
@@ -142,15 +148,31 @@ export default function Navigation() {
 
   return (
     <>
+      {!navOpen && (
+        <button
+          className="duration-25 absolute relative top-3 left-3 z-20 hidden transition-all md:block"
+          onClick={() => {
+            setNavOpen(!navOpen);
+          }}
+        >
+          <img
+            src={Arrow1}
+            alt="menu toggle"
+            className={`${
+              !navOpen ? 'rotate-180' : 'rotate-0'
+            } m-auto w-3 transition-all duration-200`}
+          />
+        </button>
+      )}
       <div
         ref={navRef}
         className={`${
-          !navOpen && '-ml-96 md:-ml-[14rem]'
+          !navOpen && '-ml-96 md:-ml-[18rem]'
         } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
       >
-        <div className={'visible h-16 w-full border-b-2 md:hidden'}>
+        <div className={'visible h-16 w-full border-b-2 md:h-12'}>
           <button
-            className="float-right mr-5 mt-5 h-5 w-5"
+            className="float-right mr-5 mt-5 h-5 w-5 md:mt-3"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
@@ -177,7 +199,7 @@ export default function Navigation() {
           className={({ isActive }) =>
             `${
               isActive && conversationId === null ? 'bg-gray-3000' : ''
-            } my-auto mx-4 mt-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100`
+            } my-auto mx-4 mt-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100`
           }
         >
           <img src={Message} className="ml-4 w-5"></img>
@@ -291,7 +313,7 @@ export default function Navigation() {
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <div
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
             onClick={() => {
               setApiKeyModalState('ACTIVE');
             }}
@@ -305,7 +327,7 @@ export default function Navigation() {
           <NavLink
             to="/about"
             className={({ isActive }) =>
-              `my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
+              `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
                 isActive ? 'bg-gray-3000' : ''
               }`
             }
@@ -318,7 +340,7 @@ export default function Navigation() {
             href="https://docs.docsgpt.co.uk/"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
@@ -328,9 +350,9 @@ export default function Navigation() {
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
-            <img src={Link} alt="link" className="ml-2 w-5" />
+            <img src={Discord} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Discord</p>
           </a>
 
@@ -338,9 +360,9 @@ export default function Navigation() {
             href="https://github.com/arc53/DocsGPT"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
-            <img src={Link} alt="link" className="ml-2 w-5" />
+            <img src={Github} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Github</p>
           </a>
         </div>
