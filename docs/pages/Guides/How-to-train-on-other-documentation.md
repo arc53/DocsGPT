@@ -3,14 +3,13 @@ This AI can use any documentation, but first it needs to be prepared for similar
 
 ![video-example-of-how-to-do-it](https://d3dg1063dc54p9.cloudfront.net/videos/how-to-vectorise.gif)
 
-Start by going to 
-`/scripts/` folder
+Start by going to `/scripts/` folder.
 
 If you open this file you will see that it uses RST files from the folder to create a `index.faiss` and `index.pkl`. 
 
-It currently uses OPEN_AI to create vector store, so make sure your documentation is not too big. Pandas cost me around 3-4$
+It currently uses OPEN_AI to create vector store, so make sure your documentation is not too big. Pandas cost me around 3-4$.
 
-You can usually find documentation on github in docs/ folder for most open-source projects.
+You can usually find documentation on github in `docs/` folder for most open-source projects.
 
 ### 1. Find documentation in .rst/.md and create a folder with it in your scripts directory
 Name it `inputs/`  
