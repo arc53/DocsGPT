@@ -38,7 +38,7 @@ When deploying your DocsGPT to a live environment, we're eager to provide person
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Please don't hesitate to contribute or create issues, it helps us make DocsGPT better!
 
-## Our open source models optimised for DocsGPT:
+## Our Open-Source models optimised for DocsGPT:
 
 | Name              | Base Model | Requirements (or similar)                        |
 |-------------------|------------|----------------------------------------------------------|
