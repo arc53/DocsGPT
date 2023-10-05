@@ -7,6 +7,7 @@ class HuggingFaceLLM(BaseLLM):
         
         from langchain.llms import HuggingFacePipeline
         if q:
+            import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, BitsAndBytesConfig
             tokenizer = AutoTokenizer.from_pretrained(llm_name)
             bnb_config = BitsAndBytesConfig(
