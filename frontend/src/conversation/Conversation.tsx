@@ -40,6 +40,7 @@ export default function Conversation() {
       });
     };
 
+    // Create an IntersectionObserver to detect scrolling to the last message.
     const observer = new IntersectionObserver(observerCallback, {
       root: null,
       threshold: [1, 0.8],
@@ -48,12 +49,14 @@ export default function Conversation() {
       observer.observe(endMessageRef.current);
     }
 
+    // Cleanup the observer when the component unmounts.
     return () => {
       observer.disconnect();
     };
   }, [endMessageRef.current]);
 
   const scrollIntoView = () => {
+    // Scroll to the last message when new messages arrive.
     endMessageRef?.current?.scrollIntoView({
       behavior: 'smooth',
       block: 'start',
@@ -61,6 +64,7 @@ export default function Conversation() {
   };
 
   const handleQuestion = (question: string) => {
+    // Trim and handle user input as a question.
     question = question.trim();
     if (question === '') return;
     dispatch(addQuery({ prompt: question }));
@@ -68,6 +72,7 @@ export default function Conversation() {
   };
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
+    // Handle user feedback for a query.
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
     sendFeedback(query.prompt, query.response!, feedback).catch(() =>
@@ -76,6 +81,7 @@ export default function Conversation() {
   };
 
   const prepResponseView = (query: Query, index: number) => {
+    // Prepare the view for query responses.
     let responseView;
     if (query.error) {
       responseView = (
@@ -107,6 +113,7 @@ export default function Conversation() {
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
+    // Handle pasting text into the input.
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
