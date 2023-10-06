@@ -231,7 +231,7 @@ export default function Navigation() {
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
-                <p className="my-3 mx-4 overflow-hidden text-ellipsis	whitespace-nowrap">
+                <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
                   {selectedDocs.name} {selectedDocs.version}
                 </p>
               )}
