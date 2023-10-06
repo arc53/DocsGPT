@@ -1,7 +1,7 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
-import { fetchAnswerApi, fetchAnswerSteaming } from './conversationApi';
-import { Answer, ConversationState, Query, Status } from './conversationModels';
+import { fetchAnswerApi, fetchAnswerSteaming, sendFeedback } from './conversationApi'; // Import sendFeedback function
+import { Answer, ConversationState, Query, Status, FEEDBACK } from './conversationModels'; // Import FEEDBACK type
 import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
 
@@ -28,9 +28,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           (event) => {
             const data = JSON.parse(event.data);
 
-            // check if the 'end' event has been received
             if (data.type === 'end') {
-              // set status to 'idle'
               dispatch(conversationSlice.actions.setStatus('idle'));
               getConversations()
                 .then((fetchedConversations) => {
@@ -40,7 +38,6 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                   console.error('Failed to fetch conversations: ', error);
                 });
             } else if (data.type === 'source') {
-              // check if data.metadata exists
               let result;
               if (data.metadata && data.metadata.title) {
                 const titleParts = data.metadata.title.split('/');
@@ -128,6 +125,19 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
   },
 );
 
+// Add a new action to handle feedback
+export const sendFeedbackAction = createAsyncThunk<void, { prompt: string, response: string, feedback: FEEDBACK }>(
+  'sendFeedback',
+  async ({ prompt, response, feedback }, { dispatch }) => {
+    try {
+      // Call the sendFeedback function to send feedback
+      await sendFeedback(prompt, response, feedback);
+    } catch (error) {
+      console.error('Failed to send feedback: ', error);
+    }
+  },
+);
+
 export const conversationSlice = createSlice({
   name: 'conversation',
   initialState,
@@ -197,6 +207,7 @@ export const conversationSlice = createSlice({
   },
 });
 
+// Define a RootState type
 type RootState = ReturnType<typeof store.getState>;
 
 export const selectQueries = (state: RootState) => state.conversation.queries;
@@ -211,4 +222,5 @@ export const {
   updateStreamingSource,
   setConversation,
 } = conversationSlice.actions;
+
 export default conversationSlice.reducer;
