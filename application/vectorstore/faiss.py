@@ -1,5 +1,5 @@
 from application.vectorstore.base import BaseVectorStore
-from langchain import FAISS
+from langchain.vectorstores import FAISS
 from application.core.settings import settings
 
 class FaissStore(BaseVectorStore):
