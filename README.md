@@ -21,7 +21,7 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
  
 </div>
 
-### Production Support/ Help for companies: 
+### Production Support / Help for companies: 
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 - [Schedule Demo 👋](https://cal.com/arc53/docsgpt-demo-b2b?date=2023-10-04&month=2023-10)
