@@ -26,6 +26,8 @@ const ConversationBubble = forwardRef<
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [openSource, setOpenSource] = useState<number | null>(null);
+
+  // Component to render ordered or unordered lists.
   const List = ({
     ordered,
     children,
@@ -36,9 +38,11 @@ const ConversationBubble = forwardRef<
     const Tag = ordered ? 'ol' : 'ul';
     return <Tag className="list-inside list-disc">{children}</Tag>;
   };
+
   let bubble;
 
   if (type === 'QUESTION') {
+    // Render a question message.
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
@@ -50,6 +54,7 @@ const ConversationBubble = forwardRef<
       </div>
     );
   } else {
+    // Render an answer or error message.
     bubble = (
       <div
         ref={ref}
@@ -76,6 +81,7 @@ const ConversationBubble = forwardRef<
                   const match = /language-(\w+)/.exec(className || '');
 
                   return !inline && match ? (
+                    // Syntax highlighting for code blocks.
                     <SyntaxHighlighter
                       PreTag="div"
                       language={match[1]}
