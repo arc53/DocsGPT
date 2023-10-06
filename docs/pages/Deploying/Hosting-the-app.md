@@ -4,7 +4,7 @@ Here's a step-by-step guide on how to setup an Amazon Lightsail instance to host
 
 ## Configuring your instance
 
-(If you know how to create a Lightsail instance, you can skip to the recommended configuration part by clicking here)
+(If you know how to create a Lightsail instance, you can skip to the recommended configuration part by clicking here).
 
 ### 1. Create an account or login to https://lightsail.aws.amazon.com
 
@@ -36,7 +36,7 @@ Your instance will be ready for use a few minutes after being created. To access
 
 #### Clone the repository
 
-A terminal window will pop up, and the first step will be to clone the DocsGPT git repository.
+A terminal window will pop up, and the first step will be to clone the DocsGPT git repository:
 
 `git clone https://github.com/arc53/DocsGPT.git`
 
@@ -64,11 +64,11 @@ Enter the following command to access the folder in which DocsGPT docker-compose
 
 #### Prepare the environment
 
-Inside the DocsGPT folder create a .env file and copy the contents of .env_sample into it.
+Inside the DocsGPT folder create a `.env` file and copy the contents of `.env_sample` into it.
 
 `nano .env`
 
-Make sure your .env file looks like this:
+Make sure your `.env` file looks like this:
 
 ```
 OPENAI_API_KEY=(Your OpenAI API key)
@@ -103,10 +103,10 @@ Before you are able to access your live instance, you must first enable the port
 
 Open your Lightsail instance and head to "Networking".
 
-Then click on "Add rule" under "IPv4 Firewall", enter 5173 as your port, and hit "Create". 
-Repeat the process for port 7091.
+Then click on "Add rule" under "IPv4 Firewall", enter `5173` as your port, and hit "Create". 
+Repeat the process for port `7091`.
 
 #### Access your instance
 
-Your instance will now be available under your Public IP Address and port 5173. Enjoy!
+Your instance will now be available under your Public IP Address and port `5173`. Enjoy!
 
