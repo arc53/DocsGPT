@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     ELASTIC_URL: str = None # url for elasticsearch
     ELASTIC_INDEX: str = "docsgpt" # index name for elasticsearch
 
+    # SageMaker config
+    SAGEMAKER_ENDPOINT: str = None # SageMaker endpoint name
+    SAGEMAKER_REGION: str = None # SageMaker region name
+    SAGEMAKER_ACCESS_KEY: str = None # SageMaker access key
+    SAGEMAKER_SECRET_KEY: str = None # SageMaker secret key
+
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
