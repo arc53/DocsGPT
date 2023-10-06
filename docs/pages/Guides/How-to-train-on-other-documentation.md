@@ -35,7 +35,7 @@ It will tell you how much it will cost
 Once you run it will use new context that is relevant to your documentation
 Make sure you select default in the dropdown in the UI
 
-## Customisation 
+## Customization 
 You can learn more about options while running ingest.py by running:
 
 `python ingest.py --help`
