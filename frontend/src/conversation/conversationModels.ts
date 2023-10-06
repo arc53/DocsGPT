@@ -14,6 +14,7 @@ export interface ConversationState {
 }
 
 export interface Answer {
+  id: string; // Unique identifier for the answer
   answer: string;
   query: string;
   result: string;
@@ -23,6 +24,7 @@ export interface Answer {
 }
 
 export interface Query {
+  id: string; // Unique identifier for the query
   prompt: string;
   response?: string;
   feedback?: FEEDBACK;
@@ -30,4 +32,5 @@ export interface Query {
   sources?: { title: string; text: string }[];
   conversationId?: string | null;
   title?: string | null;
+  timestamp: number; // Timestamp of when the query was made
 }
