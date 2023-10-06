@@ -38,7 +38,7 @@ When deploying your DocsGPT to a live environment, we're eager to provide person
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Please don't hesitate to contribute or create issues, it helps us make DocsGPT better!
 
-## Our Open-Source models optimised for DocsGPT:
+## Our Open-Source models optimized for DocsGPT:
 
 | Name              | Base Model | Requirements (or similar)                        |
 |-------------------|------------|----------------------------------------------------------|
@@ -47,7 +47,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Pleas
 | [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon-40b     | 8xA10G gpu's  |
 
 
-If you don't have enough resources to run it you can use bitsnbytes to quantize
+If you don't have enough resources to run it you can use bits bytes to quantize.
 
 
 ## Features
@@ -72,11 +72,11 @@ If you don't have enough resources to run it you can use bitsnbytes to quantize
 ## Project structure
 - Application - Flask app (main application)
 
-- Extensions - Chrome extension
+- Extensions - Chrome extension.
 
-- Scripts - Script that creates similarity search index and store for other libraries. 
+- Scripts - Script that creates similarity search index and stores for other libraries. 
 
-- Frontend - Frontend uses Vite and React
+- Frontend - Frontend uses Vite and React.
 
 ## QuickStart
 
@@ -86,9 +86,9 @@ On Mac OS or Linux just write:
 
 `./setup.sh`
 
-It will install all the dependencies and give you an option to download local model or use OpenAI
+It will install all the dependencies and give you the option to download the local model or use OpenAI
 
-Otherwise refer to this Guide:
+Otherwise, refer to this Guide:
 
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
 2. Create a .env file in your root directory and set the env variable OPENAI_API_KEY with your OpenAI API key and  VITE_API_STREAMING to true or false, depending on if you want streaming answers or not
@@ -107,12 +107,12 @@ To stop just run Ctrl + C
 ## Development environments
 
 ### Spin up mongo and redis
-For development only 2 containers are used from docker-compose.yaml (by deleting all services except for Redis and Mongo). 
+For development, only 2 containers are used from docker-compose.yaml (by deleting all services except for Redis and Mongo). 
 See file [docker-compose-dev.yaml](./docker-compose-dev.yaml).
 
 Run
 ```
-docker compose -f docker-compose-dev.yaml build
+docker-compose -f docker-compose-dev.yaml build
 docker compose -f docker-compose-dev.yaml up -d
 ```
 
@@ -120,18 +120,18 @@ docker compose -f docker-compose-dev.yaml up -d
 
 Make sure you have Python 3.10 or 3.11 installed.
 
-1. Export required environment variables or prep .env file in application folder
+1. Export required environment variables or prep .env file in the application folder
 Prepare .env file
 Copy `.env_sample` and create `.env` with your OpenAI API token for the API_KEY and EMBEDDINGS_KEY fields
 
 (check out application/core/settings.py if you want to see more config options)
 3. (optional) Create a Python virtual environment
-```commandline
+```command line
 python -m venv venv
 . venv/bin/activate
 ```
-4. Change to `application/` subdir and install dependencies for the backend
-```commandline
+4. Change to the `application/` sub dir and install dependencies for the backend
+```command-line
 pip install -r application/requirements.txt
 ```
 5. Run the app `flask run --host=0.0.0.0 --port=7091`
@@ -140,11 +140,18 @@ pip install -r application/requirements.txt
 ### Start frontend 
 Make sure you have Node version 16 or higher.
 
-1. Navigate to `/frontend` folder
+1. Navigate to the `/frontend` folder
 2. Install dependencies
 `npm install`
 3. Run the app 
 `npm run dev`
+
+## Contributing
+
+Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information about how to get involved. We welcome issues, questions, and pull requests. 
+
+## Code Of Conduct
+We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
 
 ## All Thanks To Our Contributors
 
@@ -152,6 +159,8 @@ Make sure you have Node version 16 or higher.
   <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" />
 </a>
 
+## License
+The source code license is MIT, as described in the LICENSE file.
 
-Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
+## Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
 
