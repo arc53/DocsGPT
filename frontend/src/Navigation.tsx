@@ -8,6 +8,8 @@ import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
 import Link from './assets/link.svg';
+import Discord from './assets/discord.svg';
+import Github from './assets/github.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
@@ -225,11 +227,11 @@ export default function Navigation() {
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
-              className="flex h-12 w-full cursor-pointer justify-between rounded-3xl rounded-md border-2 bg-white"
+              className="flex h-12 min-w-[85%] cursor-pointer justify-between rounded-3xl rounded-md border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
-                <p className="my-3 mx-4">
+                <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
                   {selectedDocs.name} {selectedDocs.version}
                 </p>
               )}
@@ -323,26 +325,26 @@ export default function Navigation() {
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
           </a>
-
-          <a
-            href="https://discord.gg/WHJdfbQDR4"
-            target="_blank"
-            rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
-          >
-            <img src={Link} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Discord</p>
-          </a>
-
-          <a
-            href="https://github.com/arc53/DocsGPT"
-            target="_blank"
-            rel="noreferrer"
-            className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
-          >
-            <img src={Link} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Github</p>
-          </a>
+          <div className="border-t-2">
+            <a
+              href="https://discord.gg/WHJdfbQDR4"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            >
+              <img src={Discord} alt="link" className="ml-2 w-5" />
+              <p className="my-auto text-eerie-black">Visit our Discord</p>
+            </a>
+            <a
+              href="https://github.com/arc53/DocsGPT"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto mx-4 flex h-12 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            >
+              <img src={Github} alt="link" className="ml-2 w-5" />
+              <p className="my-auto text-eerie-black">Visit our GitHub</p>
+            </a>
+          </div>
         </div>
       </div>
       <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden">

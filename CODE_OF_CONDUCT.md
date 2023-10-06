@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We as members, contributors, and leaders pledge to make participation in our
+We as members, contributors, and leaders, pledge to make participation in our
 community a harassment-free experience for everyone, regardless of age, body
 size, visible or invisible disability, ethnicity, sex characteristics, gender
 identity and expression, level of experience, education, socio-economic status,
@@ -10,20 +10,20 @@ nationality, personal appearance, race, religion, or sexual identity
 and orientation.
 
 We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+diverse, inclusive, and a healthy community.
 
 ## Our Standards
 
-Examples of behavior that contributes to a positive environment for our
+Examples of behavior that contribute to a positive environment for our
 community include:
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
+* Demonstrating empathy and kindness towards other people
+* Being respectful and open to differing opinions, viewpoints, and experiences
 * Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
+* Taking accountability and offering apologies to those who have been impacted by our errors,
+  while also gaining insights from the situation
 * Focusing on what is best not just for us as individuals, but for the
-  overall community
+  community as a whole
 
 Examples of unacceptable behavior include:
 
@@ -31,7 +31,7 @@ Examples of unacceptable behavior include:
   advances of any kind
 * Trolling, insulting or derogatory comments, and personal or political attacks
 * Public or private harassment
-* Publishing others' private information, such as a physical or email
+* Publishing other's private information, such as a physical or email
   address, without their explicit permission
 * Other conduct which could reasonably be considered inappropriate in a
   professional setting
@@ -74,7 +74,7 @@ the consequences for any action they deem in violation of this Code of Conduct:
 ### 1. Correction
 
 **Community Impact**: Use of inappropriate language or other behavior deemed
-unprofessional or unwelcome in the community.
+unprofessional or unwelcome in the community space.
 
 **Consequence**: A private, written warning from community leaders, providing
 clarity around the nature of the violation and an explanation of why the
@@ -107,7 +107,7 @@ Violating these terms may lead to a permanent ban.
 
 **Community Impact**: Demonstrating a pattern of violation of community
 standards, including sustained inappropriate behavior,  harassment of an
-individual, or aggression toward or disparagement of classes of individuals.
+individual, or aggression towards or disparagement of classes of individuals.
 
 **Consequence**: A permanent ban from any sort of public interaction within
 the community.
