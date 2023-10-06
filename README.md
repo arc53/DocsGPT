@@ -18,14 +18,12 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
   <a href="https://github.com/arc53/DocsGPT">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/discord/1070046503302877216)</a>
-
-
-  
+ 
 </div>
 
 ### Production Support/ Help for companies: 
 
-When deploying your DocsGPT to a live environment, we're eager to provide personalized assistance.
+We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 - [Schedule Demo 👋](https://cal.com/arc53/docsgpt-demo-b2b?date=2023-10-04&month=2023-10)
 - [Send Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
   
@@ -36,7 +34,7 @@ When deploying your DocsGPT to a live environment, we're eager to provide person
 
 ## Roadmap
 
-You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Please don't hesitate to contribute or create issues, it helps us make DocsGPT better!
+You can find our roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
 ## Our Open-Source models optimized for DocsGPT:
 
@@ -47,7 +45,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Pleas
 | [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon-40b     | 8xA10G gpu's  |
 
 
-If you don't have enough resources to run it you can use [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) to quantize.
+If you don't have enough resources to run it, you can use bitsnbytes to quantize.
 
 
 ## Features
@@ -58,7 +56,7 @@ If you don't have enough resources to run it you can use [bitsandbytes](https://
 ## Useful links
  [Live preview](https://docsgpt.arc53.com/)
  
- [Join Our Discord](https://discord.gg/n5BX8dh8rU)
+ [Join our Discord](https://discord.gg/n5BX8dh8rU)
  
  [Guides](https://docs.docsgpt.co.uk/)
 
@@ -70,28 +68,28 @@ If you don't have enough resources to run it you can use [bitsandbytes](https://
 
 
 ## Project structure
-- Application - Flask app (main application)
+- Application - Flask app (main application).
 
-- Extensions - Chrome extension
+- Extensions - Chrome extension.
 
-- Scripts - Script that creates similarity search index and store for other libraries. 
+- Scripts - Script that creates similarity search index and stores for other libraries. 
 
-- Frontend - Frontend uses Vite and React
+- Frontend - Frontend uses Vite and React.
 
 ## QuickStart
 
 Note: Make sure you have Docker installed
 
-On Mac OS or Linux just write:
+On Mac OS or Linux, write:
 
 `./setup.sh`
 
-It will install all the dependencies and give you an option to download local model or use OpenAI
+It will install all the dependencies and allow you to download the local model or use OpenAI.
 
-Otherwise refer to this Guide:
+Otherwise, refer to this Guide:
 
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. Create a .env file in your root directory and set the env variable OPENAI_API_KEY with your OpenAI API key and  VITE_API_STREAMING to true or false, depending on if you want streaming answers or not
+2. Create a `.env` file in your root directory and set the env variable `OPENAI_API_KEY` with your OpenAI API key and  `VITE_API_STREAMING` to true or false, depending on if you want streaming answers or not.
    It should look like this inside:
    
    ```
@@ -99,15 +97,15 @@ Otherwise refer to this Guide:
    VITE_API_STREAMING=true
    ```
    See optional environment variables in the `/.env-template` and `/application/.env_sample` files.
-3. Run `./run-with-docker-compose.sh`
-4. Navigate to http://localhost:5173/
+3. Run `./run-with-docker-compose.sh`.
+4. Navigate to http://localhost:5173/.
 
-To stop just run Ctrl + C
+To stop, just run `Ctrl + C`.
 
 ## Development environments
 
 ### Spin up mongo and redis
-For development only 2 containers are used from docker-compose.yaml (by deleting all services except for Redis and Mongo). 
+For development, only two containers are used from `docker-compose.yaml` (by deleting all services except for Redis and Mongo). 
 See file [docker-compose-dev.yaml](./docker-compose-dev.yaml).
 
 Run
@@ -120,33 +118,32 @@ docker compose -f docker-compose-dev.yaml up -d
 
 Make sure you have Python 3.10 or 3.11 installed.
 
-1. Export required environment variables or prep .env file in application folder
-Prepare .env file
-Copy `.env_sample` and create `.env` with your OpenAI API token for the API_KEY and EMBEDDINGS_KEY fields
+1. Export required environment variables or prepare a `.env` file in the `/application` folder:
+   - Copy `.env_sample` and create `.env` with your OpenAI API token for the `API_KEY` and `EMBEDDINGS_KEY` fields.
 
-(check out application/core/settings.py if you want to see more config options)
-3. (optional) Create a Python virtual environment
+(check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
+
+2. (optional) Create a Python virtual environment:
 ```commandline
 python -m venv venv
 . venv/bin/activate
 ```
-4. Change to `application/` subdir and install dependencies for the backend
+3. Change to the `application/` subdir and install dependencies for the backend:
 ```commandline
 pip install -r application/requirements.txt
 ```
-5. Run the app `flask run --host=0.0.0.0 --port=7091`
-6. Start worker with `celery -A application.app.celery worker -l INFO`
+4. Run the app using `flask run --host=0.0.0.0 --port=7091`.
+5. Start worker with `celery -A application.app.celery worker -l INFO`.
 
 ### Start frontend 
+
 Make sure you have Node version 16 or higher.
 
-1. Navigate to `/frontend` folder
-2. Install dependencies
-`npm install`
-3. Run the app 
-`npm run dev`
+1. Navigate to the `/frontend` folder.
+2. Install dependencies by running `npm install`.
+3. Run the app using `npm run dev`.
 
-## All Thanks To Our Contributors
+## Many Thanks To Our Contributors
 
 <a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)">
   <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" />
@@ -154,4 +151,3 @@ Make sure you have Node version 16 or higher.
 
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
-
