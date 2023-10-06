@@ -57,7 +57,7 @@ class HTMLParser(BaseParser):
         title_indexes = [i for i, isd_el in enumerate(isd) if isd_el['type'] == 'Title']
 
         # Creating 'Chunks' - List of lists of strings 
-        # each list starting with with isd_el['type'] = 'Title' and all the data till the next 'Title'
+        # each list starting with isd_el['type'] = 'Title' and all the data till the next 'Title'
         # Each Chunk can be thought of as an individual set of data, which can be sent to the model
         # Where Each Title is grouped together with the data under it
 
