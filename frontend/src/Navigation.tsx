@@ -201,7 +201,9 @@ export default function Navigation() {
                     <div className="flex gap-4">
                       <img src={Message} className="ml-2 w-5"></img>
                       <p className="my-auto text-eerie-black">
-                        {conversation.name}
+                        {conversation.name.length > 45
+                          ? conversation.name.substring(0, 45) + '...'
+                          : conversation.name}
                       </p>
                     </div>
 
