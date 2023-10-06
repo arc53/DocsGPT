@@ -64,9 +64,9 @@ class SagemakerAPILLM(BaseLLM):
         import boto3
         runtime = boto3.client(
             'runtime.sagemaker',
-            aws_access_key_id=settings.SAGEMAKER_ACCESS_KEY,
-            aws_secret_access_key=settings.SAGEMAKER_SECRET_KEY,
-            region_name=settings.SAGEMAKER_REGION
+            aws_access_key_id='xxx',
+            aws_secret_access_key='xxx',
+            region_name='us-west-2'
         )
 
         
