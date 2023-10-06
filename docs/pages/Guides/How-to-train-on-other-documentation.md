@@ -12,9 +12,9 @@ It currently uses OPEN_AI to create vector store, so make sure your documentatio
 You can usually find documentation on github in `docs/` folder for most open-source projects.
 
 ### 1. Find documentation in .rst/.md and create a folder with it in your scripts directory
-Name it `inputs/`  
-Put all your .rst/.md files in there  
-The search is recursive, so you don't need to flatten them
+- Name it `inputs/`  
+- Put all your .rst/.md files in there  
+- The search is recursive, so you don't need to flatten them
 
 If there are no .rst/.md files just convert whatever you find to txt and feed it. (don't forget to change the extension in script)
 
