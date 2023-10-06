@@ -48,7 +48,7 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
         <div className=" rounded-[50px] bg-gradient-to-l from-[#6EE7B7]/80 via-[#3B82F6] to-[#9333EA]/50 p-1  md:rounded-tl-none md:rounded-bl-none">
-          <div className="rounded-[45px] bg-white px-6 py-4 lg:rounded-tl-none lg:rounded-bl-none">
+          <div className="rounded-[45px] bg-white px-6 p-6 lg:rounded-tl-none lg:rounded-bl-none">
             <img
               src="/message-programming.svg"
               alt="lock"
