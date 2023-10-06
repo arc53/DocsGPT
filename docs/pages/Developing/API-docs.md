@@ -133,7 +133,7 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-Deletes old vecotstores:
+Deletes old vectorstores:
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {

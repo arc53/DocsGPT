@@ -38,7 +38,7 @@ When deploying your DocsGPT to a live environment, we're eager to provide person
 
 You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Please don't hesitate to contribute or create issues, it helps us make DocsGPT better!
 
-## Our Open-Source models optimised for DocsGPT:
+## Our Open-Source models optimized for DocsGPT:
 
 | Name              | Base Model | Requirements (or similar)                        |
 |-------------------|------------|----------------------------------------------------------|
@@ -47,7 +47,7 @@ You can find our [Roadmap](https://github.com/orgs/arc53/projects/2) here. Pleas
 | [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon)       | falcon-40b     | 8xA10G gpu's  |
 
 
-If you don't have enough resources to run it you can use bitsnbytes to quantize
+If you don't have enough resources to run it you can use [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) to quantize.
 
 
 ## Features
