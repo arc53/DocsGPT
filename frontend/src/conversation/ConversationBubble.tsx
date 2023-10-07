@@ -4,7 +4,9 @@ import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
+import { ReactComponent as Copy } from './../assets/copy.svg';
 import ReactMarkdown from 'react-markdown';
+import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
@@ -145,6 +147,11 @@ const ConversationBubble = forwardRef<
                 : 'md:invisible'
             }`}
           >
+            <Copy
+              className={`hover:fill-gray-4000' } cursor-pointer
+              stroke-gray-4000`}
+              onClick={() => copy(message)}
+            ></Copy>
             <Like
               className={`cursor-pointer ${
                 feedback === 'LIKE'
