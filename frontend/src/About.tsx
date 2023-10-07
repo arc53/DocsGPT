@@ -55,7 +55,7 @@ export default function About() {
           information relevant to <span className= "text-blue-950 font-medium">DocsGPT</span> . If you want to train it on different
           documentation - please follow
           <a
-            className="text-blue-500 "
+            className="text-blue-500"
             href="https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation"
             target="_blank"
             rel="noreferrer"
