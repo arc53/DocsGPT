@@ -1,27 +1,27 @@
 # Welcome to DocsGPT Contributing Guidelines
 
-Thank you for choosing this project to contribute to. We are all very grateful!
+Thank you for choosing to contribute to our project! We greatly appreciate your help!
 
 ### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
 
 # We accept different types of contributions
 
-📣 Discussions - where you can start a new topic or answer some questions
+📣 Discussions - Engage in conversations, start new topics, or help answer questions.
 
-🐞 Issues - This is how we track tasks, sometimes it is bugs that need fixing, and sometimes it is new features
+🐞 Issues - This is where we keep track of tasks. It could be bug fixes or suggestions for new features.
 
-🛠️ Pull requests - This is how you can suggest changes to our repository, to work on existing issues or add new features
+🛠️ Pull requests - Suggest changes to our repository, either by working on existing issues or adding new features.
 
-📚 Wiki - where we have our documentation
+📚 Wiki - This is where our documentation resides.
 
 
 ## 🐞 Issues and Pull requests
 
-We value contributions to our issues in the form of discussion or suggestions. We recommend that you check out existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
+We highly value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
 
-If you want to contribute by writing code, there are a few things that you should know before doing it:
+If you're interested in contributing code, here are some important things to know:
 
-We have a frontend in React (Vite) and backend in Python.
+We have a frontend built with React (Vite) and a backend in Python.
 
 ### If you are looking to contribute to frontend (⚛️React, Vite):
 
@@ -32,10 +32,10 @@ We have a frontend in React (Vite) and backend in Python.
 Please try to follow the guidelines.
 
 ### If you are looking to contribute to Backend (🐍 Python):
-- Check out our issues and contribute to `/application` or `/scripts` (ignore old `ingest_rst.py` `ingest_rst_sphinx.py` files; they will be deprecated soon).
+- Review our issues and contribute to /application or /scripts (please disregard old ingest_rst.py and ingest_rst_sphinx.py files; they will be phased out soon).
 - All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
-- Before submitting your PR, ensure it is queryable after ingesting some test data.
-
+- Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
+  
 ### Testing
 
 To run unit tests from the root of the repository, execute:
@@ -44,9 +44,8 @@ python -m pytest
 ```
 
 ### Workflow:
-Create a fork, make changes on your forked repository, and submit changes as a pull request.
+Fork the repository, make your changes on your forked version, and then submit those changes as a pull request.
 
 ## Questions/collaboration
-Please join our [Discord](https://discord.gg/n5BX8dh8rU). Don't hesitate; we are very friendly and welcoming to new contributors.
-
+Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 # Thank you so much for considering contributing to DocsGPT!🙏
