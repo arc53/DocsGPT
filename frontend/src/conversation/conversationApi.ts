@@ -142,6 +142,7 @@ export function fetchAnswerSteaming(
         '/' +
         selectedDocs.model +
         '/';
+    }
 }
 
 export function sendFeedback(
