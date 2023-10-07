@@ -131,7 +131,7 @@ const ConversationBubble = forwardRef<
                               : 'text-[#007DFF]'
                           }`}
                         >
-                          {index + 1}. {source.title}
+                          {index + 1}. {source.title.substring(0, 45)}
                         </p>
                       </div>
                     ))}
@@ -173,15 +173,13 @@ const ConversationBubble = forwardRef<
         </div>
 
         {sources && openSource !== null && sources[openSource] && (
-          <div className="ml-8 mt-2 w-3/4 rounded-xl bg-blue-200 p-2">
-            <p className="w-3/4 truncate text-xs text-gray-500">
+          <div className="ml-10 mt-2 max-w-[800px] rounded-xl bg-blue-200 p-2">
+            <p className="m-1 w-3/4 truncate text-xs text-gray-500">
               Source: {sources[openSource].title}
             </p>
 
-            <div className="rounded-xl border-2 border-gray-200 bg-white p-2">
-              <p className="text-xs text-gray-500 ">
-                {sources[openSource].text}
-              </p>
+            <div className="m-2 rounded-xl border-2 border-gray-200 bg-white p-2">
+              <p className="text-black">{sources[openSource].text}</p>
             </div>
           </div>
         )}
