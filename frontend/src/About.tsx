@@ -12,7 +12,7 @@ export default function About() {
         <p className="mt-4">
           Find the information in your documentation through AI-powered
           <a
-            className="text-blue-500 underline decoration-blue-200 decoration-dotted"
+            className="text-blue-500"
             href="https://github.com/arc53/DocsGPT"
             target="_blank"
             rel="noreferrer"
@@ -55,7 +55,7 @@ export default function About() {
           information relevant to <span className= "text-blue-950 font-medium">DocsGPT</span> . If you want to train it on different
           documentation - please follow
           <a
-            className="text-blue-500 underline decoration-blue-200 decoration-dotted"
+            className="text-blue-500 "
             href="https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation"
             target="_blank"
             rel="noreferrer"
@@ -69,7 +69,7 @@ export default function About() {
         <p className="mt-4 text-left">
           If you want to launch it on your own server - follow
           <a
-            className="text-blue-500 underline decoration-blue-200 decoration-dotted"
+            className="text-blue-500"
             href="https://github.com/arc53/DocsGPT/wiki/Hosting-the-app"
             target="_blank"
             rel="noreferrer"
