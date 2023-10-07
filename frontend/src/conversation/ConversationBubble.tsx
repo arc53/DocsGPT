@@ -42,7 +42,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-blue-1000 p-3.5 text-white">
+        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-purple-30 p-3.5 text-white">
           <ReactMarkdown className="whitespace-pre-wrap break-all">
             {message}
           </ReactMarkdown>
@@ -148,7 +148,7 @@ const ConversationBubble = forwardRef<
             <Like
               className={`cursor-pointer ${
                 feedback === 'LIKE'
-                  ? 'fill-blue-1000 stroke-blue-1000'
+                  ? 'fill-purple-30 stroke-purple-30'
                   : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
               }`}
               onClick={() => handleFeedback?.('LIKE')}
