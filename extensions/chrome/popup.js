@@ -3,7 +3,7 @@ document.getElementById("message-form").addEventListener("submit", function(even
     var message = document.getElementById("message-input").value;
     chrome.runtime.sendMessage({msg: "sendMessage", message: message}, function(response) {
       console.log(response.response);
-      msg_html = '<div class="bg-blue-500 text-white p-2 rounded-lg mb-2 self-end"><p class="text-sm">'
+      msg_html = '<div class="bg-purple-30 text-white p-2 rounded-lg mb-2 self-end"><p class="text-sm">'
       msg_html += message
       msg_html += '</p></div>'
       document.getElementById("messages").innerHTML += msg_html;
