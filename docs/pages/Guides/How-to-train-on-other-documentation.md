@@ -41,7 +41,7 @@ You can learn more about options while running ingest.py by running:
 `python ingest.py --help`
 |              Options             |                                                                                                                                |
 |:--------------------------------:|:------------------------------------------------------------------------------------------------------------------------------:|
-|            **ingest**            | Runs 'ingest' function converting documentation to to Faiss plus Index format                                                  |
+|            **ingest**            | Runs 'ingest' function converting documentation to Faiss plus Index format                                                  |
 | --dir TEXT                       | List of paths to directory for index creation. E.g. --dir inputs --dir inputs2 [default: inputs]                               |
 | --file TEXT                      | File paths to use (Optional; overrides directory) E.g. --files inputs/1.md --files inputs/2.md                                 |
 | --recursive / --no-recursive     | Whether to recursively search in subdirectories [default: recursive]                                                           |
