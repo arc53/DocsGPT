@@ -24,7 +24,7 @@ Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> 
 ### Production Support / Help for companies: 
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
-- [Schedule Demo 👋](https://cal.com/arc53/docsgpt-demo-b2b?date=2023-10-04&month=2023-10)
+- [Get Support 👋](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
 - [Send Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
   
 ### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
