@@ -137,7 +137,7 @@ python -m venv venv
  venv/Scripts/activate
 ```
 
-4. Change to the `application/` subdir and install dependencies for the backend:
+3. Change to the `application/` subdir and install dependencies for the backend:
 ```commandline
 pip install -r application/requirements.txt
 ```
