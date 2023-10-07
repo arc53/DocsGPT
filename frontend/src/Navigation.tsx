@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
 import Exit from './assets/exit.svg';
@@ -60,6 +60,8 @@ export default function Navigation() {
   const embeddingsName =
     import.meta.env.VITE_EMBEDDINGS_NAME || 'openai_text-embedding-ada-002';
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     if (!conversations) {
       getConversations()
@@ -111,6 +113,7 @@ export default function Navigation() {
     })
       .then((response) => response.json())
       .then((data) => {
+        navigate('/');
         dispatch(setConversation(data));
         dispatch(
           updateConversationId({
