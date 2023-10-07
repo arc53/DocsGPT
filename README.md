@@ -126,7 +126,7 @@ Copy `.env_sample` and create `.env` with your OpenAI API token for the API_KEY 
 
 (check out application/core/settings.py if you want to see more config options)
 3. (optional) Create a Python virtual environment
-```command line
+```commandline
 python -m venv venv
 . venv/bin/activate
 ```
