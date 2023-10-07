@@ -6,13 +6,13 @@ Thank you for choosing this project to contribute to. We are all very grateful!
 
 # We accept different types of contributions
 
-📣 Discussions - where you can start a new topic or answer some questions
+📣 **Discussions** - where you can start a new topic or answer some questions
 
-🐞 Issues - This is how we track tasks, sometimes it is bugs that need fixing, and sometimes it is new features
+🐞 **Issues** - This is how we track tasks, sometimes it is bugs that need fixing, and sometimes it is new features
 
-🛠️ Pull requests - This is how you can suggest changes to our repository, to work on existing issues or add new features
+🛠️ **Pull requests** - This is how you can suggest changes to our repository, to work on existing issues or add new features
 
-📚 Wiki - where we have our documentation
+📚 **Wiki** - where we have our documentation
 
 
 ## 🐞 Issues and Pull requests
