@@ -21,8 +21,12 @@ By default, we use OpenAI's models but if you want to change it or even run it l
 You don't need to provide keys if you are happy with users providing theirs, so make sure you set `LLM_NAME` and `EMBEDDINGS_NAME`.
 
 Options:  
-LLM_NAME (openai, manifest, cohere, Arc53/docsgpt-14b, Arc53/docsgpt-7b-falcon)  
+LLM_NAME (openai, manifest, cohere, Arc53/docsgpt-14b, Arc53/docsgpt-7b-falcon, llama.cpp)  
 EMBEDDINGS_NAME (openai_text-embedding-ada-002, huggingface_sentence-transformers/all-mpnet-base-v2, huggingface_hkunlp/instructor-large, cohere_medium)
+
+If using Llama, set the `EMBEDDINGS_NAME` to `huggingface_sentence-transformers/all-mpnet-base-v2`.
+
+Alternatively, if you wish to run Llama locally, you can run `setup.sh` and choose option 1 when prompted.
 
 That's it!
 
