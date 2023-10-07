@@ -134,7 +134,7 @@ export default function Conversation() {
             return (
               <Fragment key={index}>
                 <ConversationBubble
-                  className={'mb-7'}
+                  className={'mb-7 last:mb-24'}
                   key={`${index}QUESTION`}
                   message={query.prompt}
                   type="QUESTION"
@@ -144,7 +144,6 @@ export default function Conversation() {
               </Fragment>
             );
           })}
-          {hasScrolledToLast && <div className="h-40 w-full" />}
         </div>
       )}
       {queries.length === 0 && (
