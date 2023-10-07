@@ -134,7 +134,7 @@ export default function Conversation() {
             return (
               <Fragment key={index}>
                 <ConversationBubble
-                  className={'mb-7 last:mb-24'}
+                  className={'mb-7'}
                   key={`${index}QUESTION`}
                   message={query.prompt}
                   type="QUESTION"
