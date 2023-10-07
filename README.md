@@ -2,10 +2,9 @@
   <img src="https://github.com/arc53/DocsGPT/blob/main/Readme%20Logo.png" alt="DocsGPT Banner"> 
 </h1>
 
-
-<p align="center">
-  <strong>Open-Source Documentation Assistant</strong>
-</p>
+<h1 align="center">
+  <strong><b>Open-Source Documentation Assistant</b></strong>
+</h1>
 
 
 <p align="center">
