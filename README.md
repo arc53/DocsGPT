@@ -124,7 +124,8 @@ Make sure you have Python 3.10 or 3.11 installed.
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
 2. (optional) Create a Python virtual environment:
- On Mac OS or Linux 
+
+On Mac OS or Linux 
 ```commandline
 python -m venv venv
 . venv/bin/activate
