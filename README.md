@@ -112,7 +112,7 @@ See file [docker-compose-dev.yaml](./docker-compose-dev.yaml).
 
 Run
 ```
-docker-compose -f docker-compose-dev.yaml build
+docker compose -f docker-compose-dev.yaml build
 docker compose -f docker-compose-dev.yaml up -d
 ```
 
