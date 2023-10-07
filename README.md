@@ -126,17 +126,6 @@ Make sure you have Python 3.10 or 3.11 installed.
 2. (optional) Create a Python virtual environment:
 You can follow the official Python documentation for virtual environments [here](https://docs.python.org/3/tutorial/venv.html).
 
-On Mac OS or Linux 
-```commandline
-python -m venv venv
-. venv/bin/activate
-```
-On Windows
-```commandline
-python -m venv venv
-venv/Scripts/activate
-```
-
 3. Change to the `application/` subdir and install dependencies for the backend:
 ```commandline
 pip install -r application/requirements.txt
