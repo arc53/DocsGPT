@@ -144,6 +144,7 @@ export default function Conversation() {
               </Fragment>
             );
           })}
+          {hasScrolledToLast && <div className="h-40 w-full" />}
         </div>
       )}
       {queries.length === 0 && (
