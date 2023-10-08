@@ -5,6 +5,7 @@ import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
 import { ReactComponent as Copy } from './../assets/copy.svg';
+import { ReactComponent as Checkmark } from './../assets/checkmark.svg';
 import ReactMarkdown from 'react-markdown';
 import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -28,6 +29,17 @@ const ConversationBubble = forwardRef<
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [openSource, setOpenSource] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyClick = (text: string) => {
+    copy(text);
+    setCopied(true);
+    // Reset copied to false after a few seconds
+    setTimeout(() => {
+      setCopied(false);
+    }, 2000);
+  };
+
   const List = ({
     ordered,
     children,
@@ -142,15 +154,27 @@ const ConversationBubble = forwardRef<
           </div>
           <div
             className={`mr-2 flex items-center justify-center ${
+              type !== 'ERROR' && showFeedback ? '' : 'md:invisible'
+            }`}
+          >
+            {copied ? (
+              <Checkmark />
+            ) : (
+              <Copy
+                className={`cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
+                onClick={() => {
+                  handleCopyClick(message);
+                }}
+              ></Copy>
+            )}
+          </div>
+          <div
+            className={`mr-2 flex items-center justify-center ${
               feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
                 ? ''
                 : 'md:invisible'
             }`}
           >
-            <Copy
-              className={`mx-4 cursor-pointer stroke-gray-4000 hover:fill-gray-4000`}
-              onClick={() => copy(message)}
-            ></Copy>
             <Like
               className={`cursor-pointer ${
                 feedback === 'LIKE'
