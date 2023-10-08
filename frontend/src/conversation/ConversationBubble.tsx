@@ -148,8 +148,7 @@ const ConversationBubble = forwardRef<
             }`}
           >
             <Copy
-              className={`hover:fill-gray-4000' } cursor-pointer
-              stroke-gray-4000`}
+              className={`cursor-pointer  stroke-gray-4000 hover:fill-gray-4000`}
               onClick={() => copy(message)}
             ></Copy>
             <Like
