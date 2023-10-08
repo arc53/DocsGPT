@@ -55,18 +55,18 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ## Useful links
 
+ - 🔍🔥 [Live preview](https://docsgpt.arc53.com/)
+ 
+ - <img src="https://github.com/shelar1423/DocsGPT/assets/82649533/bbd74228-f41f-4194-8fe2-531f7b29d61f" alt="Discord" width="20" height="20"  align="center"> [Join our Discord](https://discord.gg/n5BX8dh8rU)
+ 
+ - 📚😎 [Guides](https://docs.docsgpt.co.uk/)
 
+ - 👩‍💻👨‍💻💪 [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
- <img src="https://github.com/shelar1423/DocsGPT/assets/82649533/bbd74228-f41f-4194-8fe2-531f7b29d61f" alt="Discord" width="35" height="35"  align="center"> [Join Our Discord](https://discord.gg/n5BX8dh8rU) 
+ - 🗂️🚀 [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
 
-<img width="35" height="35" src="https://github.com/shelar1423/DocsGPT/assets/82649533/4f45f889-2e80-4ad5-97c6-fe6d3e4ce72e" alt="external-guide-lifestyles-flaticons-lineal-color-flat-icons" align="center"/>[Guides](https://docs.docsgpt.co.uk/)
+ - 🏠💾🔐 [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
 
-
-<img width="35" height="35" src="https://github.com/shelar1423/DocsGPT/assets/82649533/7dfa707c-0714-40d2-a407-a31e7ca5ca6f" alt="external-contribution-achievements-flaticons-lineal-color-flat-icons-2" align="center"/>  [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
-
-<img width="35" height="35" src="https://github.com/shelar1423/DocsGPT/assets/82649533/1fd7a188-8fa2-4305-a027-b89bc987ad97" alt="document--v1" align="center"/>  [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
-
-<img width="35" height="35" src="https://github.com/shelar1423/DocsGPT/assets/82649533/5d7ded6f-6fdb-4a65-a1dd-6304e935af9a" alt="virtual-machine2" align="center"/>  [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
 
 
 
