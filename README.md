@@ -7,9 +7,9 @@
 </p>
 
 <p align="left">
-  <strong>DocsGPT</strong> is a cutting-edge open-source solution that streamlines the process of finding information in project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
+  <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
   
-Say goodbye to time-consuming manual searches, and let <strong>DocsGPT</strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
+Say goodbye to time-consuming manual searches, and let <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
 
 <div align="center">
@@ -89,15 +89,15 @@ It will install all the dependencies and allow you to download the local model o
 Otherwise, refer to this Guide:
 
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. Create a `.env` file in your root directory and set the env variable `OPENAI_API_KEY` with your OpenAI API key and  `VITE_API_STREAMING` to true or false, depending on if you want streaming answers or not.
+2. Create a `.env` file in your root directory and set the env variable `OPENAI_API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys) and  `VITE_API_STREAMING` to true or false, depending on if you want streaming answers or not.
    It should look like this inside:
    
    ```
    API_KEY=Yourkey
    VITE_API_STREAMING=true
    ```
-   See optional environment variables in the `/.env-template` and `/application/.env_sample` files.
-3. Run `./run-with-docker-compose.sh`.
+   See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
+3. Run [./run-with-docker-compose.sh](https://github.com/arc53/DocsGPT/blob/main/run-with-docker-compose.sh).
 4. Navigate to http://localhost:5173/.
 
 To stop, just run `Ctrl + C`.
@@ -105,7 +105,7 @@ To stop, just run `Ctrl + C`.
 ## Development environments
 
 ### Spin up mongo and redis
-For development, only two containers are used from `docker-compose.yaml` (by deleting all services except for Redis and Mongo). 
+For development, only two containers are used from [docker-compose.yaml](https://github.com/arc53/DocsGPT/blob/main/docker-compose.yaml) (by deleting all services except for Redis and Mongo). 
 See file [docker-compose-dev.yaml](./docker-compose-dev.yaml).
 
 Run
@@ -119,7 +119,7 @@ docker compose -f docker-compose-dev.yaml up -d
 Make sure you have Python 3.10 or 3.11 installed.
 
 1. Export required environment variables or prepare a `.env` file in the `/application` folder:
-   - Copy `.env_sample` and create `.env` with your OpenAI API token for the `API_KEY` and `EMBEDDINGS_KEY` fields.
+   - Copy [.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) and create `.env` with your OpenAI API token for the `API_KEY` and `EMBEDDINGS_KEY` fields.
 
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
@@ -148,7 +148,7 @@ pip install -r application/requirements.txt
 
 Make sure you have Node version 16 or higher.
 
-1. Navigate to the `/frontend` folder.
+1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
 2. Install dependencies by running `npm install`.
 3. Run the app using `npm run dev`.
 
