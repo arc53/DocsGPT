@@ -73,7 +73,7 @@ HTML example:
     <input type="text" name="user" value="local" hidden>
     <input type="text" name="name" placeholder="Name:">
     
-    <button type="submit" class="py-2 px-4 text-white bg-blue-500 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+    <button type="submit" class="py-2 px-4 text-white bg-purple-30 rounded-md hover:bg-purple-30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-30">
         Upload
     </button>
 </form>
