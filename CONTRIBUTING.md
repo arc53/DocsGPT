@@ -1,6 +1,6 @@
 # Welcome to DocsGPT Contributing Guidelines
 
-Thank you for choosing to contribute to DocsGPT! We greatly appreciate your help!
+Thank you for choosing to contribute to DocsGPT! We are all very grateful! 
 
 ### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
 
@@ -8,7 +8,7 @@ Thank you for choosing to contribute to DocsGPT! We greatly appreciate your help
 
 📣 Discussions - Engage in conversations, start new topics, or help answer questions.
 
-🐞 Issues - This is where we keep track of tasks. It could be bug,fixes or suggestions for new features.
+🐞 Issues - This is where we keep track of tasks. It could be bugs,fixes or suggestions for new features.
 
 🛠️ Pull requests - Suggest changes to our repository, either by working on existing issues or adding new features.
 
