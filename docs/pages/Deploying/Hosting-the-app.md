@@ -18,7 +18,7 @@ After that, it is time to pick your Instance Image. We recommend using "Linux/Un
 
 As for instance plan, it'll vary depending on your unique demands, but a "1 GB, 1vCPU, 40GB SSD and 2TB transfer" setup should cover most scenarios.
 
-Lastly, Identify your instance by giving it a unique name and then hit "Create instance".
+Lastly, identify your instance by giving it a unique name and then hit "Create instance".
 
 PS: Once you create your instance, it'll likely take a few minutes for the setup to be completed.
 
@@ -42,7 +42,7 @@ A terminal window will pop up, and the first step will be to clone the DocsGPT g
 
 #### Download the package information
 
-Once it has finished cloning the repository, it is time to download the package information from all sources. To do so simply enter the following command:
+Once it has finished cloning the repository, it is time to download the package information from all sources. To do so, simply enter the following command:
 
 `sudo apt update`
 
@@ -64,7 +64,7 @@ Enter the following command to access the folder in which DocsGPT docker-compose
 
 #### Prepare the environment
 
-Inside the DocsGPT folder create a `.env` file and copy the contents of `.env_sample` into it.
+Inside the DocsGPT folder, create a `.env` file and copy the contents of `.env_sample` into it.
 
 `nano .env`
 
@@ -95,7 +95,7 @@ You're almost there! Now that all the necessary bits and pieces have been instal
 
 Launching it for the first time will take a few minutes to download all the necessary dependencies and build.
 
-Once this is done you can go ahead and close the terminal window.
+Once this is done, you can go ahead and close the terminal window.
 
 #### Enabling ports 
 
