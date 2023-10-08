@@ -13,7 +13,7 @@ chatwoot_token=<from part 2>
 
 5. Start with `flask run` command.
 
-If you want for bot to stop responding to questions for a specific user or session just add label `human-requested` in your conversation.
+If you want for bot to stop responding to questions for a specific user or session, just add a label `human-requested` in your conversation.
 
 
 ### Optional (extra validation)
