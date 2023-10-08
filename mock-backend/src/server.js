@@ -6,6 +6,8 @@ const server = jsonServer.create();
 const router = jsonServer.router("./src/mocks/db.json");
 const middlewares = jsonServer.defaults();
 
+const localStorage = [];
+
 server.use(middlewares);
 
 server.use((req, res, next) => {
@@ -14,7 +16,7 @@ server.use((req, res, next) => {
       req.method = "DELETE";
     } else if (req.url === "/upload") {
       const taskId = uuid();
-      localStorage.setItem(taskId, true);
+      localStorage.push(taskId);
     }
   }
   next();
@@ -27,7 +29,7 @@ router.render = (req, res) => {
     res.status(200).jsonp({ status: "ok" });
   } else if (req.url.includes("/task_status")) {
     const taskId = req.query["task_id"];
-    const taskIdExists = localStorage.getItem(taskId);
+    const taskIdExists = localStorage.includes(taskId);
     if (taskIdExists) {
       res.status(200).jsonp({
         result: {
@@ -40,7 +42,7 @@ router.render = (req, res) => {
         status: "SUCCESS",
       });
     } else {
-      res.status(404);
+      res.status(404).jsonp({});
     }
   }
 };
