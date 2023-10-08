@@ -1,231 +1,229 @@
 {
-    "combine": [
-        {
-          "date": "default",
-          "description": "default",
-          "docLink": "default",
-          "fullName": "default",
-          "language": "default",
-          "location": "local",
-          "model": "openai_text-embedding-ada-002",
-          "name": "default",
-          "version": ""
-        },
-        {
-          "date": "13/02/2023",
-          "description": "Serverless Framework, the serverless application framework for building web, mobile and IoT applications on AWS Lambda, Azure Functions, Google CloudFunctions & more!",
-          "docLink": "https://serverless.com/framework/docs/",
-          "fullName": "Serverless Framework",
-          "language": "serverless",
-          "location": "remote",
-          "name": "serverless framework",
-          "version": "3.27.0"
-        },
-        {
-          "date": "15/02/2023",
-          "description": "Machine Learning in Python",
-          "docLink": "https://scikit-learn.org/stable/",
-          "fullName": "scikit-learn",
-          "language": "python",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "scikit-learn",
-          "version": "1.2.1"
-        },
-        {
-          "date": "07/02/2023",
-          "description": "Machine Learning in Python",
-          "docLink": "https://scikit-learn.org/stable/",
-          "fullName": "scikit-learn",
-          "language": "python",
-          "location": "remote",
-          "name": "scikit-learn",
-          "version": "1.2.1"
-        },
-        {
-          "date": "07/02/2023",
-          "description": "Pandas is alibrary providing high-performance, easy-to-use data structures and data analysis tools for the Python programming language.",
-          "docLink": "https://pandas.pydata.org/docs/",
-          "fullName": "Pandas",
-          "language": "python",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "pandas",
-          "version": "1.5.3"
-        },
-        {
-          "date": "07/02/2023",
-          "description": "Pandas is alibrary providing high-performance, easy-to-use data structures and data analysis tools for the Python programming language.",
-          "docLink": "https://pandas.pydata.org/docs/",
-          "fullName": "Pandas",
-          "language": "python",
-          "location": "remote",
-          "name": "pandas",
-          "version": "1.5.3"
-        },
-        {
-          "date": "29/02/2023",
-          "description": "Python is a programming language that lets you work quickly and integrate systems more effectively.",
-          "docLink": "https://docs.python.org/3/",
-          "fullName": "Python",
-          "language": "python",
-          "location": "remote",
-          "model": "huggingface_sentence-transformers-all-mpnet-base-v2",
-          "name": "python",
-          "version": "3.11.1"
-        },
-        {
-          "date": "15/02/2023",
-          "description": "Python is a programming language that lets you work quickly and integrate systems more effectively.",
-          "docLink": "https://docs.python.org/3/",
-          "fullName": "Python",
-          "language": "python",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "python",
-          "version": "3.11.1"
-        },
-        {
-          "date": "07/02/2023",
-          "description": "Python is a programming language that lets you work quickly and integrate systems more effectively.",
-          "docLink": "https://docs.python.org/3/",
-          "fullName": "Python",
-          "language": "python",
-          "location": "remote",
-          "name": "python",
-          "version": "3.11.1"
-        },
-        {
-          "date": "08/02/2023",
-          "description": "GPT Index is a project consisting of a set of data structures designed to make it easier to use large external knowledge bases with LLMs.",
-          "docLink": "https://gpt-index.readthedocs.io/en/latest/index.html",
-          "fullName": "LangChain",
-          "language": "python",
-          "location": "remote",
-          "name": "gpt-index",
-          "version": "0.4.0"
-        },
-        {
-          "date": "15/02/2023",
-          "description": "Large language models (LLMs) are emerging as a transformative technology, enabling developers to build applications that they previously could not.",
-          "docLink": "https://langchain.readthedocs.io/en/latest/index.html",
-          "fullName": "LangChain",
-          "language": "python",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "langchain",
-          "version": "0.0.87"
-        },
-        {
-          "date": "07/02/2023",
-          "description": "Large language models (LLMs) are emerging as a transformative technology, enabling developers to build applications that they previously could not.",
-          "docLink": "https://langchain.readthedocs.io/en/latest/index.html",
-          "fullName": "LangChain",
-          "language": "python",
-          "location": "remote",
-          "name": "langchain",
-          "version": "0.0.79"
-        },
-        {
-          "date": "13/03/2023",
-          "description": "Large language models (LLMs) are emerging as a transformative technology, enabling developers to build applications that they previously could not.",
-          "docLink": "https://langchain.readthedocs.io/en/latest/index.html",
-          "fullName": "LangChain",
-          "language": "python",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "langchain",
-          "version": "0.0.109"
-        },
-        {
-          "date": "16/03/2023",
-          "description": "A JavaScript library for building user interfaces\nGet Started\n",
-          "docLink": "https://reactjs.org/",
-          "fullName": "React",
-          "language": "javascript",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "react",
-          "version": "v18.2.0"
-        },
-        {
-          "date": "15/02/2023",
-          "description": "is a lightweight, interpreted, or just-in-time compiled programming language with first-class functions.",
-          "docLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
-          "fullName": "JavaScript",
-          "language": "javascript",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "javascript",
-          "version": "ES2015"
-        },
-        {
-          "date": "16/03/2023",
-          "description": "An approachable, performant and versatile framework for building web user interfaces. ",
-          "docLink": "https://vuejs.org/",
-          "fullName": "Vue.js",
-          "language": "javascript",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "vuejs",
-          "version": "v3.3.0"
-        },
-        {
-          "date": "16/03/2023",
-          "description": "Get ready for a development environment that can finally catch up with you.",
-          "docLink": "https://vitejs.dev/",
-          "fullName": "Vite",
-          "language": "javascript",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "vitejs",
-          "version": "v4.2.0"
-        },
-        {
-          "date": "15/02/2023",
-          "description": "Solidity is an object-oriented, high-level language for implementing smart contracts.",
-          "docLink": "https://docs.soliditylang.org/en/v0.8.18/",
-          "fullName": "Solidity",
-          "language": "ethereum",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "solidity",
-          "version": "0.8.18"
-        },
-        {
-          "date": "07/02/2023",
-          "description": "Solidity is an object-oriented, high-level language for implementing smart contracts.",
-          "docLink": "https://docs.soliditylang.org/en/v0.8.18/",
-          "fullName": "Solidity",
-          "language": "ethereum",
-          "location": "remote",
-          "name": "solidity",
-          "version": "0.8.18"
-        },
-        {
-          "date": "28/02/2023",
-          "description": "GPT-powered chat for documentation search & assistance. ",
-          "docLink": "https://github.com/arc53/DocsGPT/wiki",
-          "fullName": "DocsGPT",
-          "language": "docsgpt",
-          "location": "remote",
-          "model": "huggingface_sentence-transformers-all-mpnet-base-v2",
-          "name": "docsgpt",
-          "version": "0.1.0"
-        },
-        {
-          "date": "28/02/2023",
-          "description": "GPT-powered chat for documentation search & assistance. ",
-          "docLink": "https://github.com/arc53/DocsGPT/wiki",
-          "fullName": "DocsGPT",
-          "language": "docsgpt",
-          "location": "remote",
-          "model": "openai_text-embedding-ada-002",
-          "name": "docsgpt",
-          "version": "0.1.0"
-        }
-      ]
-    ,
-    "conversations": [
-    ]
-  }
+  "combine": [
+    {
+      "date": "default",
+      "description": "default",
+      "docLink": "default",
+      "fullName": "default",
+      "language": "default",
+      "location": "local",
+      "model": "openai_text-embedding-ada-002",
+      "name": "default",
+      "version": ""
+    },
+    {
+      "date": "13/02/2023",
+      "description": "Serverless Framework, the serverless application framework for building web, mobile and IoT applications on AWS Lambda, Azure Functions, Google CloudFunctions & more!",
+      "docLink": "https://serverless.com/framework/docs/",
+      "fullName": "Serverless Framework",
+      "language": "serverless",
+      "location": "remote",
+      "name": "serverless framework",
+      "version": "3.27.0"
+    },
+    {
+      "date": "15/02/2023",
+      "description": "Machine Learning in Python",
+      "docLink": "https://scikit-learn.org/stable/",
+      "fullName": "scikit-learn",
+      "language": "python",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "scikit-learn",
+      "version": "1.2.1"
+    },
+    {
+      "date": "07/02/2023",
+      "description": "Machine Learning in Python",
+      "docLink": "https://scikit-learn.org/stable/",
+      "fullName": "scikit-learn",
+      "language": "python",
+      "location": "remote",
+      "name": "scikit-learn",
+      "version": "1.2.1"
+    },
+    {
+      "date": "07/02/2023",
+      "description": "Pandas is alibrary providing high-performance, easy-to-use data structures and data analysis tools for the Python programming language.",
+      "docLink": "https://pandas.pydata.org/docs/",
+      "fullName": "Pandas",
+      "language": "python",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "pandas",
+      "version": "1.5.3"
+    },
+    {
+      "date": "07/02/2023",
+      "description": "Pandas is alibrary providing high-performance, easy-to-use data structures and data analysis tools for the Python programming language.",
+      "docLink": "https://pandas.pydata.org/docs/",
+      "fullName": "Pandas",
+      "language": "python",
+      "location": "remote",
+      "name": "pandas",
+      "version": "1.5.3"
+    },
+    {
+      "date": "29/02/2023",
+      "description": "Python is a programming language that lets you work quickly and integrate systems more effectively.",
+      "docLink": "https://docs.python.org/3/",
+      "fullName": "Python",
+      "language": "python",
+      "location": "remote",
+      "model": "huggingface_sentence-transformers-all-mpnet-base-v2",
+      "name": "python",
+      "version": "3.11.1"
+    },
+    {
+      "date": "15/02/2023",
+      "description": "Python is a programming language that lets you work quickly and integrate systems more effectively.",
+      "docLink": "https://docs.python.org/3/",
+      "fullName": "Python",
+      "language": "python",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "python",
+      "version": "3.11.1"
+    },
+    {
+      "date": "07/02/2023",
+      "description": "Python is a programming language that lets you work quickly and integrate systems more effectively.",
+      "docLink": "https://docs.python.org/3/",
+      "fullName": "Python",
+      "language": "python",
+      "location": "remote",
+      "name": "python",
+      "version": "3.11.1"
+    },
+    {
+      "date": "08/02/2023",
+      "description": "GPT Index is a project consisting of a set of data structures designed to make it easier to use large external knowledge bases with LLMs.",
+      "docLink": "https://gpt-index.readthedocs.io/en/latest/index.html",
+      "fullName": "LangChain",
+      "language": "python",
+      "location": "remote",
+      "name": "gpt-index",
+      "version": "0.4.0"
+    },
+    {
+      "date": "15/02/2023",
+      "description": "Large language models (LLMs) are emerging as a transformative technology, enabling developers to build applications that they previously could not.",
+      "docLink": "https://langchain.readthedocs.io/en/latest/index.html",
+      "fullName": "LangChain",
+      "language": "python",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "langchain",
+      "version": "0.0.87"
+    },
+    {
+      "date": "07/02/2023",
+      "description": "Large language models (LLMs) are emerging as a transformative technology, enabling developers to build applications that they previously could not.",
+      "docLink": "https://langchain.readthedocs.io/en/latest/index.html",
+      "fullName": "LangChain",
+      "language": "python",
+      "location": "remote",
+      "name": "langchain",
+      "version": "0.0.79"
+    },
+    {
+      "date": "13/03/2023",
+      "description": "Large language models (LLMs) are emerging as a transformative technology, enabling developers to build applications that they previously could not.",
+      "docLink": "https://langchain.readthedocs.io/en/latest/index.html",
+      "fullName": "LangChain",
+      "language": "python",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "langchain",
+      "version": "0.0.109"
+    },
+    {
+      "date": "16/03/2023",
+      "description": "A JavaScript library for building user interfaces\nGet Started\n",
+      "docLink": "https://reactjs.org/",
+      "fullName": "React",
+      "language": "javascript",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "react",
+      "version": "v18.2.0"
+    },
+    {
+      "date": "15/02/2023",
+      "description": "is a lightweight, interpreted, or just-in-time compiled programming language with first-class functions.",
+      "docLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+      "fullName": "JavaScript",
+      "language": "javascript",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "javascript",
+      "version": "ES2015"
+    },
+    {
+      "date": "16/03/2023",
+      "description": "An approachable, performant and versatile framework for building web user interfaces. ",
+      "docLink": "https://vuejs.org/",
+      "fullName": "Vue.js",
+      "language": "javascript",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "vuejs",
+      "version": "v3.3.0"
+    },
+    {
+      "date": "16/03/2023",
+      "description": "Get ready for a development environment that can finally catch up with you.",
+      "docLink": "https://vitejs.dev/",
+      "fullName": "Vite",
+      "language": "javascript",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "vitejs",
+      "version": "v4.2.0"
+    },
+    {
+      "date": "15/02/2023",
+      "description": "Solidity is an object-oriented, high-level language for implementing smart contracts.",
+      "docLink": "https://docs.soliditylang.org/en/v0.8.18/",
+      "fullName": "Solidity",
+      "language": "ethereum",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "solidity",
+      "version": "0.8.18"
+    },
+    {
+      "date": "07/02/2023",
+      "description": "Solidity is an object-oriented, high-level language for implementing smart contracts.",
+      "docLink": "https://docs.soliditylang.org/en/v0.8.18/",
+      "fullName": "Solidity",
+      "language": "ethereum",
+      "location": "remote",
+      "name": "solidity",
+      "version": "0.8.18"
+    },
+    {
+      "date": "28/02/2023",
+      "description": "GPT-powered chat for documentation search & assistance. ",
+      "docLink": "https://github.com/arc53/DocsGPT/wiki",
+      "fullName": "DocsGPT",
+      "language": "docsgpt",
+      "location": "remote",
+      "model": "huggingface_sentence-transformers-all-mpnet-base-v2",
+      "name": "docsgpt",
+      "version": "0.1.0"
+    },
+    {
+      "date": "28/02/2023",
+      "description": "GPT-powered chat for documentation search & assistance. ",
+      "docLink": "https://github.com/arc53/DocsGPT/wiki",
+      "fullName": "DocsGPT",
+      "language": "docsgpt",
+      "location": "remote",
+      "model": "openai_text-embedding-ada-002",
+      "name": "docsgpt",
+      "version": "0.1.0"
+    }
+  ],
+  "conversations": []
+}

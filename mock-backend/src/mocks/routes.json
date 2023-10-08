@@ -1,4 +1,7 @@
 {
     "/api/*": "/$1",
-    "/get_conversations": "/conversations"
+    "/get_conversations": "/conversations",
+    "/get_single_conversation?id=:id": "/conversations/:id",
+    "/delete_conversation?id=:id": "/conversations/:id",
+    "/conversations?id=:id": "/conversations/:id"
 }

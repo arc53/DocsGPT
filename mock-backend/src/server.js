@@ -7,8 +7,17 @@ const router = jsonServer.router('./src/mocks/db.json');
 const middlewares = jsonServer.defaults();
 
 server.use(middlewares);
-server.use(jsonServer.rewriter(routes));
 
+server.use((req, res, next) => {
+  if (req.method === 'POST') {
+    if (req.url.includes('/delete_conversation')) {
+      req.method = 'DELETE';
+    }
+  }
+  next()
+})
+
+server.use(jsonServer.rewriter(routes));
 
 server.use(router);
 
