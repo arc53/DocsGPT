@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import Arrow1 from './assets/arrow.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
 import Exit from './assets/exit.svg';
@@ -64,6 +64,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const embeddingsName =
     import.meta.env.VITE_EMBEDDINGS_NAME || 'openai_text-embedding-ada-002';
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     if (!conversations) {
       getConversations()
@@ -115,6 +117,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     })
       .then((response) => response.json())
       .then((data) => {
+        navigate('/');
         dispatch(setConversation(data));
         dispatch(
           updateConversationId({
@@ -221,7 +224,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     <div className="flex gap-4">
                       <img src={Message} className="ml-2 w-5"></img>
                       <p className="my-auto text-eerie-black">
-                        {conversation.name}
+                        {conversation.name.length > 45
+                          ? conversation.name.substring(0, 45) + '...'
+                          : conversation.name}
                       </p>
                     </div>
 
@@ -247,11 +252,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
-              className="flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
+              className="flex h-12 min-w-[85%] cursor-pointer justify-between rounded-3xl rounded-md border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
-                <p className="my-3 mx-4">
+                <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
                   {selectedDocs.name} {selectedDocs.version}
                 </p>
               )}
@@ -345,7 +350,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img src={Link} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
           </a>
-
           <a
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
@@ -353,7 +357,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Discord} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Discord</p>
+            <p className="my-auto text-eerie-black">Visit our Discord</p>
           </a>
 
           <a
@@ -363,7 +367,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Github} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Github</p>
+            <p className="my-auto text-eerie-black">Visit our Github</p>
           </a>
         </div>
       </div>

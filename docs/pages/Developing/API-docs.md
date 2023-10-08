@@ -1,8 +1,8 @@
-App currently has two main api endpoints:
+Currently, the application provides the following main API endpoints:
 
 ### /api/answer 
-Its a POST request that sends a JSON in body with 4 values. Here is a JavaScript fetch example
-It will receive an answer for a user provided question
+It's a POST request that sends a JSON in body with 4 values. It will receive an answer for a user provided question.
+Here is a JavaScript fetch example:
 
 ```js
 // answer (POST http://127.0.0.1:5000/api/answer)
@@ -29,8 +29,8 @@ In response you will get a json document like this one:
 ```
 
 ### /api/docs_check
-It will make sure documentation is loaded on a server (just run it every time user is switching between libraries (documentations)
-Its a POST request that sends a JSON in body with 1 value. Here is a JavaScript fetch example
+It will make sure documentation is loaded on a server (just run it every time user is switching between libraries (documentations)).
+It's a POST request that sends a JSON in body with 1 value. Here is a JavaScript fetch example:
 
 ```js
 // answer (POST http://127.0.0.1:5000/api/docs_check)
@@ -54,10 +54,10 @@ In response you will get a json document like this one:
 
 
 ### /api/combine
-Provides json that tells UI which vectors are available and where they are located with a simple get request
+Provides json that tells UI which vectors are available and where they are located with a simple get request.
 
-Respsonse will include:
-date, description, docLink, fullName, language, location (local or docshub), model, name, version
+Response will include:
+`date`, `description`, `docLink`, `fullName`, `language`, `location` (local or docshub), `model`, `name`, `version`.
 
 Example of json in Docshub and local:
 <img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
@@ -69,15 +69,14 @@ HTML example:
 
 ```html
 <form action="/api/upload" method="post" enctype="multipart/form-data" class="mt-2">
-                <input type="file" name="file" class="py-4" id="file-upload">
-                <input type="text" name="user" value="local" hidden>
-                <input type="text" name="name" placeholder="Name:">
-
-
-              <button type="submit" class="py-2 px-4 text-white bg-blue-500 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                Upload
-              </button>
-            </form>
+    <input type="file" name="file" class="py-4" id="file-upload">
+    <input type="text" name="user" value="local" hidden>
+    <input type="text" name="name" placeholder="Name:">
+    
+    <button type="submit" class="py-2 px-4 text-white bg-purple-30 rounded-md hover:bg-purple-30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-30">
+        Upload
+    </button>
+</form>
 ```
 
 Response:
@@ -90,7 +89,7 @@ Response:
 ```
 
 ### /api/task_status
-Gets task status (task_id) from /api/upload
+Gets task status (`task_id`) from `/api/upload`:
 ```js
 // Task status (Get http://127.0.0.1:5000/api/task_status)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
@@ -105,7 +104,7 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 
 Responses:
 There are two types of responses:
-1. while task it still running, where "current" will show progress from 0 - 100
+1. while task it still running, where "current" will show progress from 0 to 100
 ```json
 {
   "result": {
@@ -134,7 +133,7 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-deletes old vecotstores
+Deletes old vectorstores:
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
@@ -146,7 +145,8 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 .then((res) => res.text())
 .then(console.log.bind(console))
 ```
-response:
+
+Response:
 
 ```json
 { "status": "ok" }

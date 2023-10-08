@@ -4,7 +4,7 @@
 export default function About() {
   return (
     <div className="mx-5 grid min-h-screen md:mx-36">
-      <article className=" place-items-left mx-auto my-auto flex w-full max-w-6xl flex-col gap-6 rounded-3xl bg-gray-100 p-6 pt-14 pb-14 text-jet lg:p-10 xl:p-16">
+      <article className="place-items-left mx-auto my-auto flex w-full max-w-6xl flex-col gap-6 rounded-3xl bg-gray-100 p-6 mt-20 text-jet lg:p-10 xl:p-16">
         <div className="flex items-center">
           <p className="mr-2 text-3xl">About DocsGPT</p>
           <p className="text-[21px]">🦖</p>
@@ -51,8 +51,8 @@ export default function About() {
         </div>
 
         <p>
-          Currently It uses DocsGPT documentation, so it will respond to
-          information relevant to DocsGPT. If you want to train it on different
+          Currently It uses <span className= "text-blue-950 font-medium">DocsGPT</span> documentation, so it will respond to 
+          information relevant to <span className= "text-blue-950 font-medium">DocsGPT</span> . If you want to train it on different
           documentation - please follow
           <a
             className="text-blue-500"

@@ -3,14 +3,13 @@ This AI can use any documentation, but first it needs to be prepared for similar
 
 ![video-example-of-how-to-do-it](https://d3dg1063dc54p9.cloudfront.net/videos/how-to-vectorise.gif)
 
-Start by going to 
-`/scripts/` folder
+Start by going to `/scripts/` folder.
 
 If you open this file you will see that it uses RST files from the folder to create a `index.faiss` and `index.pkl`. 
 
-It currently uses OPEN_AI to create vector store, so make sure your documentation is not too big. Pandas cost me around 3-4$
+It currently uses OPEN_AI to create vector store, so make sure your documentation is not too big. Pandas cost me around 3-4$.
 
-You can usually find documentation on github in docs/ folder for most open-source projects.
+You can usually find documentation on github in `docs/` folder for most open-source projects.
 
 ### 1. Find documentation in .rst/.md and create a folder with it in your scripts directory
 Name it `inputs/`  
@@ -36,13 +35,13 @@ It will tell you how much it will cost
 Once you run it will use new context that is relevant to your documentation
 Make sure you select default in the dropdown in the UI
 
-## Customisation 
+## Customization 
 You can learn more about options while running ingest.py by running:
 
 `python ingest.py --help`
 |              Options             |                                                                                                                                |
 |:--------------------------------:|:------------------------------------------------------------------------------------------------------------------------------:|
-|            **ingest**            | Runs 'ingest' function converting documentation to to Faiss plus Index format                                                  |
+|            **ingest**            | Runs 'ingest' function converting documentation to Faiss plus Index format                                                  |
 | --dir TEXT                       | List of paths to directory for index creation. E.g. --dir inputs --dir inputs2 [default: inputs]                               |
 | --file TEXT                      | File paths to use (Optional; overrides directory) E.g. --files inputs/1.md --files inputs/2.md                                 |
 | --recursive / --no-recursive     | Whether to recursively search in subdirectories [default: recursive]                                                           |
