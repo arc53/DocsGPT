@@ -1,0 +1,4 @@
+{
+    "/api/*": "/$1",
+    "/get_conversations": "/conversations"
+}
