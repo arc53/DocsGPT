@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
 import Message from '../assets/message.svg';
+import CheckMark from '../assets/checkMark.svg';
 
 import { selectConversationId } from '../preferences/preferenceSlice';
 
@@ -20,12 +21,26 @@ export default function ConversationTile({
   onSave,
 }: ConversationTileProps) {
   const conversationId = useSelector(selectConversationId);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState(conversation.name);
 
   function handleEditConversation() {
     setIsEdit(true);
+    // inputRef?.current?.focus();
+  }
+  function handleSaveConversation(changedConversation: any) {
+    onSave(changedConversation);
+    setIsEdit(false);
+  }
+  function handleBlur() {
+    if (conversation.name !== conversationName) {
+      handleSaveConversation({
+        id: conversationId,
+        name: conversationName,
+      });
+    }
   }
   return (
     <div
@@ -40,9 +55,12 @@ export default function ConversationTile({
         <img src={Message} className="ml-2 w-5"></img>
         {isEdit ? (
           <input
+            ref={inputRef}
+            autoFocus
             type="text"
-            className="h-10 w-full border-b-2 border-jet focus:outline-none"
+            className="h-6 w-full px-1 outline-blue-400 focus:outline-1"
             value={conversationName}
+            onBlur={handleBlur}
             onChange={(e) => setConversationsName(e.target.value)}
           />
         ) : (
@@ -56,14 +74,17 @@ export default function ConversationTile({
       {conversationId === conversation.id ? (
         <>
           <img
-            src={isEdit ? Exit : Edit}
+            src={isEdit ? CheckMark : Edit}
             alt="Edit"
             className="mr-px h-4 w-4 cursor-pointer hover:opacity-50"
             id={`img-${conversation.id}`}
             onClick={(event) => {
               event.stopPropagation();
               isEdit
-                ? onSave({ id: conversationId, name: conversationName })
+                ? handleSaveConversation({
+                    id: conversationId,
+                    name: conversationName,
+                  })
                 : handleEditConversation();
             }}
           />
