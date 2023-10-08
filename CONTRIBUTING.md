@@ -1,6 +1,6 @@
 # Welcome to DocsGPT Contributing Guidelines
 
-Thank you for choosing to contribute to our project! We greatly appreciate your help!
+Thank you for choosing to contribute to DocsGPT! We greatly appreciate your help!
 
 ### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
 
@@ -8,7 +8,7 @@ Thank you for choosing to contribute to our project! We greatly appreciate your 
 
 📣 Discussions - Engage in conversations, start new topics, or help answer questions.
 
-🐞 Issues - This is where we keep track of tasks. It could be bug fixes or suggestions for new features.
+🐞 Issues - This is where we keep track of tasks. It could be bug,fixes or suggestions for new features.
 
 🛠️ Pull requests - Suggest changes to our repository, either by working on existing issues or adding new features.
 
@@ -17,7 +17,7 @@ Thank you for choosing to contribute to our project! We greatly appreciate your 
 
 ## 🐞 Issues and Pull requests
 
-We highly value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
+We value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
 
 If you're interested in contributing code, here are some important things to know:
 
@@ -32,7 +32,7 @@ We have a frontend built with React (Vite) and a backend in Python.
 Please try to follow the guidelines.
 
 ### If you are looking to contribute to Backend (🐍 Python):
-- Review our issues and contribute to /application or /scripts (please disregard old ingest_rst.py and ingest_rst_sphinx.py files; they will be phased out soon).
+- Review our issues and contribute to /application or /scripts (please disregard old ingest_rst.py and ingest_rst_sphinx.py files; they will be deprecated soon).
 - All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
 - Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
   
