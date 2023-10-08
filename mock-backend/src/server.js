@@ -25,6 +25,23 @@ server.use(jsonServer.rewriter(routes));
 router.render = (req, res) => {
   if (req.url === "/feedback") {
     res.status(200).jsonp({ status: "ok" });
+  } else if (req.url.includes("/task_status")) {
+    const taskId = req.query["task_id"];
+    const taskIdExists = localStorage.getItem(taskId);
+    if (taskIdExists) {
+      res.status(200).jsonp({
+        result: {
+          directory: "temp",
+          filename: "install.rst",
+          formats: [".rst", ".md", ".pdf"],
+          name_job: "somename",
+          user: "local",
+        },
+        status: "SUCCESS",
+      });
+    } else {
+      res.status(404);
+    }
   }
 };
 
