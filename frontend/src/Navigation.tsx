@@ -247,7 +247,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
-              className="flex h-12 w-full cursor-pointer justify-between rounded-3xl rounded-md border-2 bg-white"
+              className="flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
