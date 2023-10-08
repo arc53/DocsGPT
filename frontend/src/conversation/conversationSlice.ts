@@ -142,14 +142,14 @@ export const conversationSlice = createSlice({
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
-      const index = action.payload.index;
-      if (action.payload.query.response) {
+      const { index, query } = action.payload;
+      if (query.response) {
         state.queries[index].response =
-          (state.queries[index].response || '') + action.payload.query.response;
+          (state.queries[index].response || '') + query.response;
       } else {
         state.queries[index] = {
           ...state.queries[index],
-          ...action.payload.query,
+          ...query,
         };
       }
     },
@@ -163,21 +163,21 @@ export const conversationSlice = createSlice({
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
-      const index = action.payload.index;
+      const { index, query } = action.payload;
       if (!state.queries[index].sources) {
-        state.queries[index].sources = [action.payload.query.sources![0]];
+        state.queries[index].sources = [query.sources![0]];
       } else {
-        state.queries[index].sources!.push(action.payload.query.sources![0]);
+        state.queries[index].sources!.push(query.sources![0]);
       }
     },
     updateQuery(
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
-      const index = action.payload.index;
+      const { index, query } = action.payload;
       state.queries[index] = {
         ...state.queries[index],
-        ...action.payload.query,
+        ...query,
       };
     },
     setStatus(state, action: PayloadAction<Status>) {

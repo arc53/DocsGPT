@@ -4,7 +4,10 @@ import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
+import { ReactComponent as Copy } from './../assets/copy.svg';
+import { ReactComponent as Checkmark } from './../assets/checkmark.svg';
 import ReactMarkdown from 'react-markdown';
+import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
@@ -26,6 +29,17 @@ const ConversationBubble = forwardRef<
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [openSource, setOpenSource] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyClick = (text: string) => {
+    copy(text);
+    setCopied(true);
+    // Reset copied to false after a few seconds
+    setTimeout(() => {
+      setCopied(false);
+    }, 2000);
+  };
+
   const List = ({
     ordered,
     children,
@@ -42,7 +56,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-blue-1000 p-3.5 text-white">
+        <div className="mr-2 ml-10 flex items-center rounded-3xl bg-purple-30 p-3.5 text-white">
           <ReactMarkdown className="whitespace-pre-wrap break-all">
             {message}
           </ReactMarkdown>
@@ -131,12 +145,28 @@ const ConversationBubble = forwardRef<
                               : 'text-[#007DFF]'
                           }`}
                         >
-                          {index + 1}. {source.title}
+                          {index + 1}. {source.title.substring(0, 45)}
                         </p>
                       </div>
                     ))}
               </div>
             </div>
+          </div>
+          <div
+            className={`mr-2 flex items-center justify-center ${
+              type !== 'ERROR' && showFeedback ? '' : 'md:invisible'
+            }`}
+          >
+            {copied ? (
+              <Checkmark />
+            ) : (
+              <Copy
+                className={`cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
+                onClick={() => {
+                  handleCopyClick(message);
+                }}
+              ></Copy>
+            )}
           </div>
           <div
             className={`mr-2 flex items-center justify-center ${
@@ -148,7 +178,7 @@ const ConversationBubble = forwardRef<
             <Like
               className={`cursor-pointer ${
                 feedback === 'LIKE'
-                  ? 'fill-blue-1000 stroke-blue-1000'
+                  ? 'fill-purple-30 stroke-purple-30'
                   : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
               }`}
               onClick={() => handleFeedback?.('LIKE')}
@@ -173,15 +203,13 @@ const ConversationBubble = forwardRef<
         </div>
 
         {sources && openSource !== null && sources[openSource] && (
-          <div className="ml-8 mt-2 w-3/4 rounded-xl bg-blue-200 p-2">
-            <p className="w-3/4 truncate text-xs text-gray-500">
+          <div className="ml-10 mt-2 max-w-[800px] rounded-xl bg-blue-200 p-2">
+            <p className="m-1 w-3/4 truncate text-xs text-gray-500">
               Source: {sources[openSource].title}
             </p>
 
-            <div className="rounded-xl border-2 border-gray-200 bg-white p-2">
-              <p className="text-xs text-gray-500 ">
-                {sources[openSource].text}
-              </p>
+            <div className="m-2 rounded-xl border-2 border-gray-200 bg-white p-2">
+              <p className="text-black">{sources[openSource].text}</p>
             </div>
           </div>
         )}
