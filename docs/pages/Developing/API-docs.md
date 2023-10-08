@@ -91,7 +91,7 @@ Response:
 ### /api/task_status
 Gets task status (`task_id`) from `/api/upload`:
 ```js
-// Task status (Get http://127.0.0.1:5000/api/task_status)
+// Find task status (Get http://127.0.0.1:5000/api/task_status)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
       "method": "GET",
       "headers": {
@@ -104,7 +104,7 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 
 Responses:
 There are two types of responses:
-1. while task it still running, where "current" will show progress from 0 to 100
+1. While the task is still running, the 'current' value will show progress from 0 to 100.
 ```json
 {
   "result": {
@@ -134,6 +134,9 @@ There are two types of responses:
 
 ### /api/delete_old
 Deletes old vectorstores:
+
+In this section, you may come across the term "vectorstores". If you're unfamiliar with what Vector Stores are, you can find more information in this [article](https://python.langchain.com/docs/modules/data_connection/vectorstores/) that provides a detailed explanation.
+
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
@@ -144,7 +147,6 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 })
 .then((res) => res.text())
 .then(console.log.bind(console))
-```
 
 Response:
 
