@@ -114,7 +114,7 @@ There are two types of responses:
 }
 ```
 
-2. When task is completed
+2. When task is completed:
 ```json
 {
   "result": {
@@ -133,9 +133,7 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-Deletes old vectorstores:
-
-In this section, you may come across the term "vectorstores". If you're unfamiliar with what Vector Stores are, you can find more information in this [article](https://python.langchain.com/docs/modules/data_connection/vectorstores/) that provides a detailed explanation.
+Deletes old [Vector Stores]('https://python.langchain.com/docs/modules/data_connection/vectorstores/'):
 
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
