@@ -94,6 +94,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ) as HTMLElement;
         const parentElement = imageElement.parentNode as HTMLElement;
         parentElement.parentNode?.removeChild(parentElement);
+        fetchConversations();
       })
       .catch((error) => console.error(error));
   };
