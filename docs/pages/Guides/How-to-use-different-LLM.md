@@ -24,9 +24,9 @@ Options:
 LLM_NAME (openai, manifest, cohere, Arc53/docsgpt-14b, Arc53/docsgpt-7b-falcon, llama.cpp)  
 EMBEDDINGS_NAME (openai_text-embedding-ada-002, huggingface_sentence-transformers/all-mpnet-base-v2, huggingface_hkunlp/instructor-large, cohere_medium)
 
-If using Llama, set the `EMBEDDINGS_NAME` to `huggingface_sentence-transformers/all-mpnet-base-v2`.
+If using Llama, set the `EMBEDDINGS_NAME` to `huggingface_sentence-transformers/all-mpnet-base-v2` and be sure to download [this model](https://d3dg1063dc54p9.cloudfront.net/models/docsgpt-7b-f16.gguf) into the `models/` folder: `https://d3dg1063dc54p9.cloudfront.net/models/docsgpt-7b-f16.gguf`. 
 
-Alternatively, if you wish to run Llama locally, you can run `setup.sh` and choose option 1 when prompted.
+Alternatively, if you wish to run Llama locally, you can run `setup.sh` and choose option 1 when prompted. You do not need to manually add the DocsGPT model mentioned above to your `models/` folder if you use `setup.sh`, as the script will manage that step for you.
 
 That's it!
 
