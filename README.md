@@ -140,9 +140,9 @@ python -m venv venv
  venv/Scripts/activate
 ```
 
-3. Change to the `application/` subdir and install dependencies for the backend:
+3. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
 ```commandline
-pip install -r application/requirements.txt
+pip install -r requirements.txt
 ```
 4. Run the app using `flask run --host=0.0.0.0 --port=7091`.
 5. Start worker with `celery -A application.app.celery worker -l INFO`.
@@ -152,8 +152,13 @@ pip install -r application/requirements.txt
 Make sure you have Node version 16 or higher.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
-2. Install dependencies by running `npm install`.
-3. Run the app using `npm run dev`.
+2. Install required packages `husky` and `vite` (ignore if installed).
+```commandline
+npm install husky -g
+npm install vite -g
+```
+3. Install dependencies by running `npm install --include=dev`.
+4. Run the app using `npm run dev`.
 
 
 ## Contributing
