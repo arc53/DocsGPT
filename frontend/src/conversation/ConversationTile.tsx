@@ -74,7 +74,7 @@ export default function ConversationTile({
     >
       <div
         className={`flex ${
-          conversationId === conversation.id ? 'w-[75%]' : 'w-full'
+          conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
         } gap-4`}
       >
         <img src={Message} className="ml-2 w-5"></img>
