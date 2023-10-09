@@ -17,11 +17,11 @@ Thank you for choosing to contribute to DocsGPT! We are all very grateful!
 
 ## 🐞 Issues and Pull requests
 
-We value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
+- We value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
 
-If you're interested in contributing code, here are some important things to know:
+- If you're interested in contributing code, here are some important things to know:
 
-We have a frontend built with React (Vite) and a backend in Python.
+- We have a frontend built on React (Vite) and a backend in Python.
 
 ### If you are looking to contribute to frontend (⚛️React, Vite):
 
