@@ -120,7 +120,7 @@ def convert(dir: Optional[str] = typer.Option("inputs",
     if formats in extraction_functions:
         functions_dict, classes_dict = extraction_functions[formats](dir)
     else:
-         raise Exception("Sorry, language not supported yet")                                   
+        raise Exception("Sorry, language not supported yet")                                   
     transform_to_docs(functions_dict, classes_dict, formats, dir)
 
 
