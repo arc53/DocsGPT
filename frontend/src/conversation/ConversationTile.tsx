@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
@@ -9,11 +9,15 @@ import Trash from '../assets/trash.svg';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { useOutsideAlerter } from '../hooks';
 
+interface ConversationProps {
+  name: string;
+  id: string;
+}
 interface ConversationTileProps {
-  conversation: { name: string; id: string };
+  conversation: ConversationProps;
   selectConversation: (arg1: string) => void;
   onDeleteConversation: (arg1: string) => void;
-  onSave: ({ name, id }: { name: string; id: string }) => void;
+  onSave: ({ name, id }: ConversationProps) => void;
 }
 
 export default function ConversationTile({
@@ -45,10 +49,7 @@ export default function ConversationTile({
     setIsEdit(true);
   }
 
-  function handleSaveConversation(changedConversation: {
-    name: string;
-    id: string;
-  }) {
+  function handleSaveConversation(changedConversation: ConversationProps) {
     if (changedConversation.name.trim().length) {
       onSave(changedConversation);
       setIsEdit(false);
@@ -71,7 +72,11 @@ export default function ConversationTile({
         conversationId === conversation.id ? 'bg-gray-100' : ''
       }`}
     >
-      <div className="flex w-[75%] gap-4">
+      <div
+        className={`flex ${
+          conversationId === conversation.id ? 'w-[75%]' : 'w-full'
+        } gap-4`}
+      >
         <img src={Message} className="ml-2 w-5"></img>
         {isEdit ? (
           <input
