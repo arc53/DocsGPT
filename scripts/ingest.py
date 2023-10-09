@@ -78,13 +78,11 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
         # Here we check for command line arguments for bot calls.
         # If no argument exists or the yes is not True, then the
         # user permission is requested to call the API.
-        if len(sys.argv) > 1:
-            if yes:
-                call_openai_api(docs, folder_name)
-            else:
-                get_user_permission(docs, folder_name)
+        if len(sys.argv) > 1 and yes:
+            call_openai_api(docs, folder_name)
         else:
             get_user_permission(docs, folder_name)
+
 
     folder_counts = defaultdict(int)
     folder_names = []
