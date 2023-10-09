@@ -60,7 +60,7 @@ const ConversationBubble = forwardRef<
         <div className="flex self-start">
           <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
           <div
-            className={`ml-2 mr-5 flex flex-col items-center rounded-3xl bg-gray-1000 p-3.5 ${
+            className={`ml-2 mr-5 flex flex-col items-center rounded-3xl bg-gray-1000  p-3.5 ${
               type === 'ERROR'
                 ? ' rounded-lg border border-red-2000 bg-red-1000 p-2 text-red-3000'
                 : ''
@@ -70,7 +70,7 @@ const ConversationBubble = forwardRef<
               <img src={Alert} alt="alert" className="mr-2 inline" />
             )}
             <ReactMarkdown
-              className="whitespace-pre-wrap break-words"
+              className="max-w-screen-md whitespace-pre-wrap break-words"
               components={{
                 code({ node, inline, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || '');
