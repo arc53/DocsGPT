@@ -59,8 +59,8 @@ def update_conversation_name():
     data = request.get_json()
     id = data["id"]
     name = data["name"]
-    conversation = conversations_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
-    return {"status": "ok","result":conversation}
+    conversations_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    return {"status": "ok"}
 
 
 @user.route("/api/feedback", methods=["POST"])
