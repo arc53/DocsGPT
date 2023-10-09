@@ -69,15 +69,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   useEffect(() => {
     if (!conversations) {
-      getConversations()
-        .then((fetchedConversations) => {
-          dispatch(setConversations(fetchedConversations));
-        })
-        .catch((error) => {
-          console.error('Failed to fetch conversations: ', error);
-        });
+      fetchConversations();
     }
   }, [conversations, dispatch]);
+
+  async function fetchConversations() {
+    return await getConversations()
+      .then((fetchedConversations) => {
+        dispatch(setConversations(fetchedConversations));
+      })
+      .catch((error) => {
+        console.error('Failed to fetch conversations: ', error);
+      });
+  }
 
   const handleDeleteConversation = (id: string) => {
     fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
@@ -128,8 +132,27 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       });
   };
 
-  function updateConversationName(updatedConversation: object) {
-    console.log(updatedConversation);
+  async function updateConversationName(updatedConversation: {
+    name: string;
+    id: string;
+  }) {
+    await fetch(`${apiHost}/api/update_conversation_name`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updatedConversation),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data) {
+          navigate('/');
+          fetchConversations();
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+      });
   }
   useOutsideAlerter(
     navRef,
