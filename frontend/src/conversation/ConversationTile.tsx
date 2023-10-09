@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
 import Message from '../assets/message.svg';
-import CheckMark from '../assets/checkMark.svg';
+import CheckMark from '../assets/checkmark.svg';
 import Trash from '../assets/trash.svg';
 
 import { selectConversationId } from '../preferences/preferenceSlice';
@@ -82,7 +82,7 @@ export default function ConversationTile({
           <input
             autoFocus
             type="text"
-            className="h-6 w-full px-1 text-sm font-normal leading-6 outline-blue-400 focus:outline-1"
+            className="h-6 w-full px-1 text-sm font-normal leading-6 outline-[#0075FF] focus:outline-1"
             value={conversationName}
             onChange={(e) => setConversationsName(e.target.value)}
           />
