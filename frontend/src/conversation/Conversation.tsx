@@ -81,7 +81,7 @@ export default function Conversation() {
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-24' : 'mb-7'}`}
+          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ERROR`}
           message={query.error}
           type="ERROR"
@@ -91,7 +91,7 @@ export default function Conversation() {
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-24' : 'mb-7'}`}
+          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
           type={'ANSWER'}
@@ -134,7 +134,7 @@ export default function Conversation() {
             return (
               <Fragment key={index}>
                 <ConversationBubble
-                  className={'mb-7'}
+                  className={'last:mb-27 mb-7'}
                   key={`${index}QUESTION`}
                   message={query.prompt}
                   type="QUESTION"
@@ -149,14 +149,14 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
-      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center md:fixed md:w-[50%]">
+      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white pt-3 md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
           <div
             ref={inputRef}
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
-            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-xl border bg-white py-2 pl-4 pr-9 leading-7 opacity-100 focus:outline-none`}
+            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-3xl border bg-white py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
