@@ -57,16 +57,15 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
  - 🔍🔥 [Live preview](https://docsgpt.arc53.com/)
  
- - <img src="https://github.com/shelar1423/DocsGPT/assets/82649533/bbd74228-f41f-4194-8fe2-531f7b29d61f" alt="Discord" width="20" height="20"  align="center"> [Join our Discord](https://discord.gg/n5BX8dh8rU)
+ - 💬🎉[Join our Discord](https://discord.gg/n5BX8dh8rU)
  
  - 📚😎 [Guides](https://docs.docsgpt.co.uk/)
 
- - 👩‍💻👨‍💻💪 [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
+ - 👩‍💻👨‍💻 [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
  - 🗂️🚀 [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
 
- - 🏠💾🔐 [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
-
+ - 🏠🔐  [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
 
 
 
