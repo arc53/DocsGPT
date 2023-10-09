@@ -108,14 +108,19 @@ def convert(dir: Optional[str] = typer.Option("inputs",
             Creates documentation linked to original functions from specified location.
             By default /inputs folder is used, .py is parsed.
     """
-    if formats == 'py':
-        functions_dict, classes_dict = extract_py(dir)
-    elif formats == 'js':
-        functions_dict, classes_dict = extract_js(dir)
-    elif formats == 'java':
-        functions_dict, classes_dict = extract_java(dir)
+    # Using a dictionary to map between the formats and their respective extraction functions
+    # makes the code more scalable. When adding more formats in the future, 
+    # you only need to update the extraction_functions dictionary.
+    extraction_functions = {
+    'py': extract_py,
+    'js': extract_js,
+    'java': extract_java
+    }
+
+    if formats in extraction_functions:
+        functions_dict, classes_dict = extraction_functions[formats](dir)
     else:
-        raise Exception("Sorry, language not supported yet")
+         raise Exception("Sorry, language not supported yet")                                   
     transform_to_docs(functions_dict, classes_dict, formats, dir)
 
 
