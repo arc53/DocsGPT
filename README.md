@@ -24,7 +24,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 ### Production Support / Help for companies: 
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
-- [Get Support 👋](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
+- [Get Support 👋](https://cal.com/arc53/docsgpt-demo-b2b)
 - [Send Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
   
 ### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
@@ -54,17 +54,20 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 
 ## Useful links
- [Live preview](https://docsgpt.arc53.com/)
+
+ - 🔍🔥 [Live preview](https://docsgpt.arc53.com/)
  
- [Join our Discord](https://discord.gg/n5BX8dh8rU)
+ - 💬🎉[Join our Discord](https://discord.gg/n5BX8dh8rU)
  
- [Guides](https://docs.docsgpt.co.uk/)
+ - 📚😎 [Guides](https://docs.docsgpt.co.uk/)
 
- [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
+ - 👩‍💻👨‍💻 [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
- [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
+ - 🗂️🚀 [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
 
- [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
+ - 🏠🔐  [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
+
+
 
 
 ## Project structure
