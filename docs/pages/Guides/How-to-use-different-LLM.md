@@ -1,4 +1,4 @@
-Fortunately there are many providers for LLM's and some of them can even be ran locally
+Fortunately, there are many providers for LLM's and some of them can even be run locally
 
 There are two models used in the app:
 1. Embeddings.
@@ -29,4 +29,4 @@ That's it!
 ### Hosting everything locally and privately (for using our optimised open-source models)
 If you are working with important data and don't want anything to leave your premises.
 
-Make sure you set `SELF_HOSTED_MODEL` as true in you `.env` variable and for your `LLM_NAME` you can use anything that's on Hugging Face.
+Make sure you set `SELF_HOSTED_MODEL` as true in your `.env` variable and for your `LLM_NAME` you can use anything that's on Hugging Face.

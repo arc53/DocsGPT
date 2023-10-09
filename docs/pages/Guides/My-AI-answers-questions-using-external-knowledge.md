@@ -1,4 +1,4 @@
-If your AI uses external knowledge and is not explicit enough it is ok, because we try to make docsgpt friendly.
+If your AI uses external knowledge and is not explicit enough, it is ok, because we try to make docsgpt friendly.
 
 But if you want to adjust it, here is a simple way.
 

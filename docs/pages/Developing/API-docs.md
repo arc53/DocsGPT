@@ -18,7 +18,7 @@ fetch("http://127.0.0.1:5000/api/answer", {
 .then(console.log.bind(console))
 ```
 
-In response you will get a json document like this one:
+In response, you will get a JSON document like this one:
 
 ```json
 {
@@ -30,7 +30,7 @@ In response you will get a json document like this one:
 
 ### /api/docs_check
 It will make sure documentation is loaded on a server (just run it every time user is switching between libraries (documentations)).
-It's a POST request that sends a JSON in body with 1 value. Here is a JavaScript fetch example:
+It's a POST request that sends a JSON in a body with 1 value. Here is a JavaScript fetch example:
 
 ```js
 // answer (POST http://127.0.0.1:5000/api/docs_check)
@@ -45,7 +45,7 @@ fetch("http://127.0.0.1:5000/api/docs_check", {
 .then(console.log.bind(console))
 ```
 
-In response you will get a json document like this one:
+In response, you will get a JSON document like this one:
 ```json
 {
   "status": "exists"
@@ -54,17 +54,17 @@ In response you will get a json document like this one:
 
 
 ### /api/combine
-Provides json that tells UI which vectors are available and where they are located with a simple get request.
+Provides JSON that tells UI which vectors are available and where they are located with a simple get request.
 
 Response will include:
 `date`, `description`, `docLink`, `fullName`, `language`, `location` (local or docshub), `model`, `name`, `version`.
 
-Example of json in Docshub and local:
+Example of JSON in Docshub and local:
 <img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
 
 
 ### /api/upload
-Uploads file that needs to be trained, response is json with task id, which can be used to check on tasks progress
+Uploads file that needs to be trained, response is JSON with task ID, which can be used to check on task's progress
 HTML example:
 
 ```html
@@ -104,7 +104,7 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 
 Responses:
 There are two types of responses:
-1. while task it still running, where "current" will show progress from 0 to 100
+1. While task is still running, where "current" will show progress from 0 to 100
 ```json
 {
   "result": {
