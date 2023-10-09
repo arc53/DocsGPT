@@ -133,7 +133,7 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-Deletes old [Vector stores](https://python.langchain.com/docs/modules/data_connection/vectorstores/):
+Deletes old Vector stores:
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
