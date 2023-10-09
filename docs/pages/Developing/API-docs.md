@@ -91,7 +91,7 @@ Response:
 ### /api/task_status
 Gets task status (`task_id`) from `/api/upload`:
 ```js
-// Find task status (Get http://127.0.0.1:5000/api/task_status)
+// Task status (Get http://127.0.0.1:5000/api/task_status)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
       "method": "GET",
       "headers": {
