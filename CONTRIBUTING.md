@@ -45,8 +45,8 @@ python -m pytest
 ```
 
 ### Workflow 📈 :
-- Fork repository <br>
-- Make the required changes on your forked version <br>
+- Fork repository
+- Make the required changes on your forked version 
 - Commit those changes and submit those as a pull request so that it reflects on thr main repository.<br>
 
 ## Questions/collaboration
