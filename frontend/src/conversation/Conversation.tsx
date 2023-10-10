@@ -33,9 +33,6 @@ export default function Conversation() {
     const element = document.getElementById('inputbox') as HTMLInputElement;
     if (element) {
       element.focus();
-      console.log("Element with ID 'inputbox' found");
-    } else {
-      console.log("Element with ID 'inputbox' not found");
     }
   }, []);
 
