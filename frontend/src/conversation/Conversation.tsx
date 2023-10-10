@@ -30,6 +30,13 @@ export default function Conversation() {
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
+    const element = document.getElementById('inputbox') as HTMLInputElement;
+    if (element) {
+      element.focus();
+    }
+  }, []);
+
+  useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -152,7 +159,9 @@ export default function Conversation() {
       <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white pt-3 md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
           <div
+            id="inputbox"
             ref={inputRef}
+            tabIndex={1}
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
