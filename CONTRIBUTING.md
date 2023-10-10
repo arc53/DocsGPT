@@ -48,5 +48,6 @@ python -m pytest
 Fork the repository, make your changes on your forked version, and then submit those changes as a pull request.
 
 ## Questions/collaboration
-Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
+Feel free to join our  ![image](https://github.com/arc53/DocsGPT/assets/98145879/6dc999f4-34d0-4344-a3bc-a5a5bf7ad9a0)
+[Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 # Thank you so much for considering contributing to DocsGPT!🙏
