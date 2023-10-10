@@ -151,15 +151,15 @@ const ConversationBubble = forwardRef<
             )}
           </div>
           <div
-            className={`mr-2 flex items-center justify-center ${
+            className={`relative mr-2 flex items-center justify-center ${
               type !== 'ERROR' && showFeedback ? '' : 'md:invisible'
             }`}
           >
             {copied ? (
-              <Checkmark />
+              <Checkmark className="absolute left-2 top-4" />
             ) : (
               <Copy
-                className={`cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
+                className={`absolute left-2 top-4 cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
                 onClick={() => {
                   handleCopyClick(message);
                 }}
@@ -167,14 +167,14 @@ const ConversationBubble = forwardRef<
             )}
           </div>
           <div
-            className={`mr-2 flex items-center justify-center ${
+            className={`relative mr-2 flex items-center justify-center ${
               feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
                 ? ''
                 : 'md:invisible'
             }`}
           >
             <Like
-              className={`cursor-pointer ${
+              className={`absolute left-6  top-4 cursor-pointer ${
                 feedback === 'LIKE'
                   ? 'fill-purple-30 stroke-purple-30'
                   : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
@@ -183,14 +183,14 @@ const ConversationBubble = forwardRef<
             ></Like>
           </div>
           <div
-            className={`mr-10 flex items-center justify-center ${
+            className={`relative mr-10 flex items-center justify-center ${
               feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
                 ? ''
                 : 'md:invisible'
             }`}
           >
             <Dislike
-              className={`cursor-pointer ${
+              className={`absolute left-10 top-4 cursor-pointer ${
                 feedback === 'DISLIKE'
                   ? 'fill-red-2000 stroke-red-2000'
                   : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
