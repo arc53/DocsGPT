@@ -88,12 +88,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       method: 'POST',
     })
       .then(() => {
-        // remove the image element from the DOM
-        const imageElement = document.querySelector(
-          `#img-${id}`,
-        ) as HTMLElement;
-        const parentElement = imageElement.parentNode as HTMLElement;
-        parentElement.parentNode?.removeChild(parentElement);
         fetchConversations();
       })
       .catch((error) => console.error(error));
@@ -239,9 +233,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
           {conversations
-            ? conversations.map((conversation, index) => (
+            ? conversations.map((conversation) => (
                 <ConversationTile
-                  key={index}
+                  key={conversation.id}
                   conversation={conversation}
                   selectConversation={(id) => handleConversationClick(id)}
                   onDeleteConversation={(id) => handleDeleteConversation(id)}
