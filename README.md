@@ -53,7 +53,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 ![Group 9](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
 
 
-## Useful links
+## Useful links:
 
  - 🔍🔥 [Live preview](https://docsgpt.arc53.com/)
  
@@ -127,14 +127,14 @@ Make sure you have Python 3.10 or 3.11 installed.
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
 2. (optional) Create a Python virtual environment:
-You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments .
+You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
-a) On Mac OS and Linux
+a) On Mac OS and Linux:
 ```commandline
 python -m venv venv
 . venv/bin/activate
 ```
-b) On Windows
+b) On Windows:
 ```commandline
 python -m venv venv
  venv/Scripts/activate
@@ -176,4 +176,4 @@ We as members, contributors, and leaders, pledge to make participation in our co
 ## License
 The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
-Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
+Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain).
