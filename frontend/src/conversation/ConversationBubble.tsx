@@ -30,6 +30,8 @@ const ConversationBubble = forwardRef<
   const [showFeedback, setShowFeedback] = useState(false);
   const [openSource, setOpenSource] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [activeLike, setActiveLike] = useState(false);
+  const [activeDislike, setActiveDislike] = useState(false);
 
   const handleCopyClick = (text: string) => {
     copy(text);
@@ -38,6 +40,17 @@ const ConversationBubble = forwardRef<
     setTimeout(() => {
       setCopied(false);
     }, 2000);
+  };
+
+  const isLiked = () => {
+    handleFeedback?.('LIKE');
+    setActiveLike(true);
+    setActiveDislike(false);
+  };
+  const isDisliked = () => {
+    handleFeedback?.('DISLIKE');
+    setActiveDislike(true);
+    setActiveLike(false);
   };
 
   const List = ({
@@ -152,7 +165,9 @@ const ConversationBubble = forwardRef<
           </div>
           <div
             className={`relative mr-2 flex items-center justify-center ${
-              type !== 'ERROR' && showFeedback ? '' : 'md:invisible'
+              activeLike || activeDislike || (type !== 'ERROR' && showFeedback)
+                ? ''
+                : 'md:invisible'
             }`}
           >
             {copied ? (
@@ -166,38 +181,50 @@ const ConversationBubble = forwardRef<
               ></Copy>
             )}
           </div>
-          <div
-            className={`relative mr-2 flex items-center justify-center ${
-              feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
-                ? ''
-                : 'md:invisible'
-            }`}
-          >
-            <Like
-              className={`absolute left-6  top-4 cursor-pointer ${
-                feedback === 'LIKE'
-                  ? 'fill-purple-30 stroke-purple-30'
-                  : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
+          {activeDislike ? null : (
+            <div
+              className={`relative mr-2 flex items-center justify-center ${
+                activeLike ||
+                feedback === 'LIKE' ||
+                (type !== 'ERROR' && showFeedback)
+                  ? ''
+                  : 'md:invisible'
               }`}
-              onClick={() => handleFeedback?.('LIKE')}
-            ></Like>
-          </div>
-          <div
-            className={`relative mr-10 flex items-center justify-center ${
-              feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
-                ? ''
-                : 'md:invisible'
-            }`}
-          >
-            <Dislike
-              className={`absolute left-10 top-4 cursor-pointer ${
-                feedback === 'DISLIKE'
-                  ? 'fill-red-2000 stroke-red-2000'
-                  : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
+            >
+              <Like
+                className={`absolute left-6  top-4 cursor-pointer ${
+                  activeLike || feedback === 'LIKE'
+                    ? 'fill-blue-3000 stroke-blue-3000'
+                    : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
+                }`}
+                onClick={() => {
+                  isLiked();
+                }}
+              ></Like>
+            </div>
+          )}
+          {activeLike ? null : (
+            <div
+              className={`relative mr-10 flex items-center justify-center ${
+                activeDislike ||
+                feedback === 'DISLIKE' ||
+                (type !== 'ERROR' && showFeedback)
+                  ? ''
+                  : 'md:invisible'
               }`}
-              onClick={() => handleFeedback?.('DISLIKE')}
-            ></Dislike>
-          </div>
+            >
+              <Dislike
+                className={`absolute left-10 top-4 cursor-pointer ${
+                  activeDislike || feedback === 'DISLIKE'
+                    ? 'fill-red-2000 stroke-red-2000'
+                    : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
+                }`}
+                onClick={() => {
+                  isDisliked();
+                }}
+              ></Dislike>
+            </div>
+          )}
         </div>
 
         {sources && openSource !== null && sources[openSource] && (
