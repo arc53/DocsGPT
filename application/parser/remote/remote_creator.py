@@ -1,13 +1,13 @@
-# from sitemap_loader import SitemapLoader
-# from crawler_loader import CrawlerLoader
+from application.parser.remote.sitemap_loader import SitemapLoader
+from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.remote.web_loader import WebLoader
 
 
 class RemoteCreator:
     loaders = {
         'url': WebLoader,
-        # 'sitemap': SitemapLoader,
-        # 'crawler': CrawlerLoader
+        'sitemap': SitemapLoader,
+        'crawler': CrawlerLoader
     }
 
     @classmethod

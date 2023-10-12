@@ -6,5 +6,15 @@ class WebLoader(BaseRemote):
         self.loader = WebBaseLoader
 
     def load_data(self, urls):
-        loader = self.loader(urls)
-        return loader.load()
+        if isinstance(urls, str):
+            urls = [urls] # Convert string to list if a single URL is passed
+
+        documents = []
+        for url in urls:
+            try:
+                loader = self.loader([url])  # Process URLs one by one
+                documents.extend(loader.load())
+            except Exception as e:
+                print(f"Error processing URL {url}: {e}")
+                continue  # Continue with the next URL if an error occurs
+        return documents

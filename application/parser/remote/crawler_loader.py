@@ -6,47 +6,53 @@ from application.parser.remote.base import BaseRemote
 class CrawlerLoader(BaseRemote):
     def __init__(self, limit=10):
         from langchain.document_loaders import WebBaseLoader
-        self.loader = WebBaseLoader
-        #No pages scraped limit, set None for no limit
-        self.limit = limit
+        self.loader = WebBaseLoader  # Initialize the document loader
+        self.limit = limit  # Set the limit for the number of pages to scrape
 
     def load_data(self, url):
-        # Create a set to store visited URLs to avoid revisiting the same page
-        visited_urls = set()
+        # Check if the input is a list and if it is, use the first element
+        if isinstance(url, list) and url:
+            url = url[0]
 
-        # Extract the base URL to ensure we only fetch URLs from the same domain
-        base_url = urlparse(url).scheme + "://" + urlparse(url).hostname
+        # Check if the URL scheme is provided, if not, assume http
+        if not urlparse(url).scheme:
+            url = "http://" + url
 
-        # Initialize a list with the initial URL
-        urls_to_visit = [url]
+        visited_urls = set()  # Keep track of URLs that have been visited
+        base_url = urlparse(url).scheme + "://" + urlparse(url).hostname  # Extract the base URL
+        urls_to_visit = [url]  # List of URLs to be visited, starting with the initial URL
+        loaded_content = []  # Store the loaded content from each URL
 
+        # Continue crawling until there are no more URLs to visit
         while urls_to_visit:
-            current_url = urls_to_visit.pop(0)
-            visited_urls.add(current_url)
+            current_url = urls_to_visit.pop(0)  # Get the next URL to visit
+            visited_urls.add(current_url)  # Mark the URL as visited
 
-            # Fetch the content of the current URL
-            response = requests.get(current_url)
-            if response.status_code != 200:
-                print(f"Failed to fetch URL: {current_url}")
+            # Try to load and process the content from the current URL
+            try:
+                response = requests.get(current_url)  # Fetch the content of the current URL
+                response.raise_for_status()  # Raise an exception for HTTP errors
+                loader = self.loader([current_url])  # Initialize the document loader for the current URL
+                loaded_content.extend(loader.load())  # Load the content and add it to the loaded_content list
+            except Exception as e:
+                # Print an error message if loading or processing fails and continue with the next URL
+                print(f"Error processing URL {current_url}: {e}")
                 continue
 
-            # Parse the HTML content
+            # Parse the HTML content to extract all links
             soup = BeautifulSoup(response.text, 'html.parser')
+            all_links = [
+                urljoin(current_url, a['href'])
+                for a in soup.find_all('a', href=True)
+                if base_url in urljoin(current_url, a['href'])  # Ensure links are from the same domain
+            ]
 
-            # Extract all links from the HTML content
-            all_links = [urljoin(current_url, a['href']) for a in soup.find_all('a', href=True) if base_url in urljoin(current_url, a['href'])]
-
-            # Add the new links to the urls_to_visit list if they haven't been visited yet
+            # Add new links to the list of URLs to visit if they haven't been visited yet
             urls_to_visit.extend([link for link in all_links if link not in visited_urls])
+            urls_to_visit = list(set(urls_to_visit))  # Remove duplicate URLs
 
-            # Remove duplicates
-            urls_to_visit = list(set(urls_to_visit))
-
-            # Stop if the limit is reached
+            # Stop crawling if the limit of pages to scrape is reached
             if self.limit is not None and len(visited_urls) >= self.limit:
                 break
 
-        #TODO: Optimize this section to parse pages as they are being crawled
-        loaded_content = self.loader(list(visited_urls)).load()
-
-        return loaded_content
+        return loaded_content  # Return the loaded content from all visited URLs

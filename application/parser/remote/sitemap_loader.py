@@ -1,27 +1,74 @@
 import requests
+import re  # Import regular expression library
 import xml.etree.ElementTree as ET
 from application.parser.remote.base import BaseRemote
 
 class SitemapLoader(BaseRemote):
-    def __init__(self):
+    def __init__(self, limit=20):
         from langchain.document_loaders import WebBaseLoader
         self.loader = WebBaseLoader
+        self.limit = limit  # Adding limit to control the number of URLs to process
 
     def load_data(self, sitemap_url):
-        # Fetch the sitemap content
+        urls = self._extract_urls(sitemap_url)
+        if not urls:
+            print(f"No URLs found in the sitemap: {sitemap_url}")
+            return []
+
+        # Load content of extracted URLs
+        documents = []
+        processed_urls = 0  # Counter for processed URLs
+        for url in urls:
+            if self.limit is not None and processed_urls >= self.limit:
+                break  # Stop processing if the limit is reached
+
+            try:
+                loader = self.loader([url])
+                documents.extend(loader.load())
+                processed_urls += 1  # Increment the counter after processing each URL
+            except Exception as e:
+                print(f"Error processing URL {url}: {e}")
+                continue
+
+        return documents
+
+    def _extract_urls(self, sitemap_url):
         response = requests.get(sitemap_url)
         if response.status_code != 200:
             print(f"Failed to fetch sitemap: {sitemap_url}")
-            return None
+            return []
 
-        # Parse the sitemap XML
-        root = ET.fromstring(response.content)
+        # Determine if this is a sitemap or a URL
+        if self._is_sitemap(response):
+            # It's a sitemap, so parse it and extract URLs
+            return self._parse_sitemap(response.content)
+        else:
+            # It's not a sitemap, return the URL itself
+            return [sitemap_url]
 
-        # Extract URLs from the sitemap
-        # The namespace with "loc" tag might be needed to extract URLs
-        ns = {'s': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-        urls = [loc.text for loc in root.findall('s:url/s:loc', ns)]
+    def _is_sitemap(self, response):
+        content_type = response.headers.get('Content-Type', '')
+        if 'xml' in content_type or response.url.endswith('.xml'):
+            return True
 
-        # Use your existing loader to load content of extracted URLs
-        loader = self.loader(urls)
-        return loader.load()
+        if '<sitemapindex' in response.text or '<urlset' in response.text:
+            return True
+
+        return False
+
+    def _parse_sitemap(self, sitemap_content):
+        # Remove namespaces
+        sitemap_content = re.sub(' xmlns="[^"]+"', '', sitemap_content.decode('utf-8'), count=1)
+
+        root = ET.fromstring(sitemap_content)
+
+        urls = []
+        for loc in root.findall('.//url/loc'):
+            urls.append(loc.text)
+
+        # Check for nested sitemaps
+        for sitemap in root.findall('.//sitemap/loc'):
+            nested_sitemap_url = sitemap.text
+            urls.extend(self._extract_urls(nested_sitemap_url))
+
+        return urls
