@@ -44,8 +44,10 @@ To run unit tests from the root of the repository, execute:
 python -m pytest
 ```
 
-### Workflow:
-Fork the repository, make your changes on your forked version, and then submit those changes as a pull request.
+### Workflow 📈 :
+- Fork repository
+- Make the required changes on your forked version 
+- Commit those changes and submit those as a pull request so that it reflects on thr main repository.
 
 ## Questions/collaboration
 Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
