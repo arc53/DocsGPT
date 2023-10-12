@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useDispatch } from 'react-redux';
@@ -188,7 +188,6 @@ export default function Upload({
           <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
         </div>
         <div {...getRootProps()}>
-          <span className="text-red-500">*  </span>
           <span className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer">
             <input type="button" {...getInputProps()} />
             Choose Files
@@ -206,7 +205,7 @@ export default function Upload({
         <div className="flex flex-row-reverse">
           <button
             onClick={uploadFile}
-            className={`ml-6 rounded-3xl ${files.length > 0 ? 'bg-purple-30 text-white' : 'bg-gray-500'
+            className={`ml-6 rounded-3xl bg-purple-30 text-white ${files.length > 0 ? '' : 'bg-opacity-75 text-opacity-80'
               } py-2 px-6`}
             disabled={files.length === 0}  // Disable the button if no file is selected
           >
