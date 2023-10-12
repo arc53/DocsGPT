@@ -7,7 +7,7 @@ Here's a step-by-step guide on how to setup an Amazon Lightsail instance to host
 (If you know how to create a Lightsail instance, you can skip to the recommended configuration part by clicking here).
 
 ### 1. Create an AWS Account: 
-If you haven't already, create or log in to your AWS account at lightsail.aws.amazon.com.
+If you haven't already, create or log in to your AWS account at https://lightsail.aws.amazon.com.
 
 ### 2. Create an Instance: 
 
@@ -35,11 +35,11 @@ A terminal window will pop up, and the first step will be to clone the DocsGPT G
 
 #### Download the package information
 
-Once it has finished cloning the repository, it is time to download the package information from all sources. To do so simply enter the following command:
+Once it has finished cloning the repository, it is time to download the package information from all sources. To do so, simply enter the following command:
 
 `sudo apt update`
 
-#### Installing Docker and Docker Compose
+#### Install Docker and Docker Compose
 
 DocsGPT backend and worker use Python, Frontend is written on React and the whole application is containerized using Docker. To install Docker and Docker Compose, enter the following commands:
 
