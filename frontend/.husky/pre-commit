@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# npm test
+# pnpm test
 cd frontend
-npx lint-staged
+pnpm exec lint-staged

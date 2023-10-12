@@ -152,13 +152,18 @@ pip install -r requirements.txt
 Make sure you have Node version 16 or higher.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
-2. Install required packages `husky` and `vite` (ignore if installed).
-```commandline
-npm install husky -g
-npm install vite -g
+2. You need to install dependencies using `pnpm`
+
+```bash
+npm i -g pnpm // ignore if you already have pnpm on your local machine
 ```
-3. Install dependencies by running `npm install --include=dev`.
-4. Run the app using `npm run dev`.
+3. Install required packages `husky` and `vite` (ignore if installed).
+```commandline
+pnpm add husky -g
+pnpm add vite -g
+```
+4. Install dependencies by running `pnpm i`.
+5. Run the app using `pnpm dev`.
 
 
 ## Contributing

@@ -14,8 +14,8 @@
   },
   "lint-staged": {
     "**/*.{js,jsx,ts,tsx}": [
-      "npm run lint-fix",
-      "npm run format"
+      "pnpm lint-fix",
+      "pnpm format"
     ]
   },
   "dependencies": {
