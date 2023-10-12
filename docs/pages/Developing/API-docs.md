@@ -133,7 +133,7 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-Deletes old [Vector Stores]():
+Deletes old Vector Stores:
 
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
