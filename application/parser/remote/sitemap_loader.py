@@ -33,9 +33,11 @@ class SitemapLoader(BaseRemote):
         return documents
 
     def _extract_urls(self, sitemap_url):
-        response = requests.get(sitemap_url)
-        if response.status_code != 200:
-            print(f"Failed to fetch sitemap: {sitemap_url}")
+        try:
+            response = requests.get(sitemap_url)
+            response.raise_for_status()  # Raise an exception for HTTP errors
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+            print(f"Failed to fetch sitemap: {sitemap_url}. Error: {e}")
             return []
 
         # Determine if this is a sitemap or a URL
