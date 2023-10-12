@@ -16,9 +16,12 @@ mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
-user = Blueprint('user', __name__)
+user = Blueprint("user", __name__)
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+
 
 @user.route("/api/delete_conversation", methods=["POST"])
 def delete_conversation():
@@ -33,15 +36,18 @@ def delete_conversation():
 
     return {"status": "ok"}
 
+
 @user.route("/api/get_conversations", methods=["get"])
 def get_conversations():
     # provides a list of conversations
     conversations = conversations_collection.find().sort("date", -1)
     list_conversations = []
     for conversation in conversations:
-        list_conversations.append({"id": str(conversation["_id"]), "name": conversation["name"]})
+        list_conversations.append(
+            {"id": str(conversation["_id"]), "name": conversation["name"]}
+        )
 
-    #list_conversations = [{"id": "default", "name": "default"}, {"id": "jeff", "name": "jeff"}]
+    # list_conversations = [{"id": "default", "name": "default"}, {"id": "jeff", "name": "jeff"}]
 
     return jsonify(list_conversations)
 
@@ -51,7 +57,8 @@ def get_single_conversation():
     # provides data for a conversation
     conversation_id = request.args.get("id")
     conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
-    return jsonify(conversation['queries'])
+    return jsonify(conversation["queries"])
+
 
 @user.route("/api/update_conversation_name", methods=["POST"])
 def update_conversation_name():
@@ -59,7 +66,7 @@ def update_conversation_name():
     data = request.get_json()
     id = data["id"]
     name = data["name"]
-    conversations_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    conversations_collection.update_one({"_id": ObjectId(id)}, {"$set": {"name": name}})
     return {"status": "ok"}
 
 
@@ -100,7 +107,7 @@ def delete_old():
     if dirs_clean[0] not in ["indexes", "vectors"]:
         return {"status": "error"}
     path_clean = "/".join(dirs_clean)
-    vectors_collection.delete_one({"name": dirs_clean[-1], 'user': dirs_clean[-2]})
+    vectors_collection.delete_one({"name": dirs_clean[-1], "user": dirs_clean[-2]})
     if settings.VECTOR_STORE == "faiss":
         try:
             shutil.rmtree(os.path.join(current_dir, path_clean))
@@ -111,8 +118,9 @@ def delete_old():
             settings.VECTOR_STORE, path=os.path.join(current_dir, path_clean)
         )
         vetorstore.delete_index()
-        
+
     return {"status": "ok"}
+
 
 @user.route("/api/upload", methods=["POST"])
 def upload_file():
@@ -140,18 +148,26 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay(
+            settings.UPLOAD_FOLDER,
+            [".rst", ".md", ".pdf", ".txt"],
+            job_name,
+            filename,
+            user,
+        )
         # task id
         task_id = task.id
         return {"status": "ok", "task_id": task_id}
     else:
         return {"status": "error"}
 
+
 @user.route("/api/task_status", methods=["GET"])
 def task_status():
     """Get celery job status."""
     task_id = request.args.get("task_id")
     from application.celery import celery
+
     task = celery.AsyncResult(task_id)
     task_meta = task.info
     return {"status": task.status, "result": task_meta}
@@ -192,11 +208,11 @@ def combined_json():
                 "location": "local",
             }
         )
-    if settings.VECTOR_STORE == "faiss":
-        data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
-        for index in data_remote:
-            index["location"] = "remote"
-            data.append(index)
+    # if settings.VECTOR_STORE == "faiss":
+    #     data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
+    #     for index in data_remote:
+    #         index["location"] = "remote"
+    #         data.append(index)
 
     return jsonify(data)
 
@@ -229,8 +245,3 @@ def check_docs():
                 f.write(r.content)
 
         return {"status": "loaded"}
-
-
-
-
-
