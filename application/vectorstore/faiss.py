@@ -24,3 +24,6 @@ class FaissStore(BaseVectorStore):
     
     def save_local(self, *args, **kwargs):
         return self.docsearch.save_local(*args, **kwargs)
+
+    def delete_index(self, *args, **kwargs):
+        return self.docsearch.delete(*args, **kwargs)
