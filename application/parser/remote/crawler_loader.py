@@ -7,6 +7,7 @@ class CrawlerLoader(BaseRemote):
     def __init__(self, limit=10):
         from langchain.document_loaders import WebBaseLoader
         self.loader = WebBaseLoader
+        #No pages scraped limit, set None for no limit
         self.limit = limit
 
     def load_data(self, url):
