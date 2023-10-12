@@ -20,8 +20,8 @@ export default function About() {
             {' '}
             open-source{' '}
           </a>
-          chatbot. Powered by <span className= "text-purple-950 font-semibold" >GPT-3</span>, <span className= "text-purple-950 font-semibold" >Faiss</span> 
-          and <span className= "text-purple-950 font-semibold" > LangChain</span>.
+          chatbot. Powered by <span className= "text-purple-950 font-semibold" >GPT-3</span>, <span className= "text-purple-950 font-semibold" >Faiss </span> 
+          and <span className= "text-purple-950 font-semibold" > LangChain </span>.
         </p>
 
         <div>
