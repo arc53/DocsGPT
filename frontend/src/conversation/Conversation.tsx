@@ -101,7 +101,7 @@ export default function Conversation() {
           ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
-          message={trimmedResponse.length > 0 ? trimmedResponse : 'No answer found.x'}
+          message={trimmedResponse.length > 0 ? trimmedResponse : 'No answer found.'}
           type={'ANSWER'}
           sources={query.sources}
           feedback={query.feedback}
