@@ -24,10 +24,13 @@ nltk.download('punkt', quiet=True)
 nltk.download('averaged_perceptron_tagger', quiet=True)
 
 
-def metadata_from_filename(title):
+def metadata_from_file_name(title):
     return {'title': title}
 
-# Splits all files in specified folder to documents
+def handle_error(error_message):
+    typer.secho(f"Error: {error_message}", fg=typer.colors.RED, bold=True)
+    sys.exit(1)
+
 @app.command()
 def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
                                     help="Whether to skip price confirmation"),
@@ -51,51 +54,43 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
            max_tokens: Optional[int] = typer.Option(2000, help="Maximum number of tokens to not split."),
            ):
     """
-        Creates index from specified location or files.
-        By default /inputs folder is used, .rst and .md are parsed.
+        Creates an index from specified location or files.
+        By default, the /inputs folder is used, .rst and .md are parsed.
     """
+    try:
+        def process_one_docs(directory, folder_name):
+            raw_docs = SimpleDirectoryReader(input_dir=directory, input_files=file, recursive=recursive,
+                                             required_exts=formats, num_files_limit=limit,
+                                             exclude_hidden=exclude, file_metadata=metadata_from_file_name).load_data()
 
-    def process_one_docs(directory, folder_name):
-        raw_docs = SimpleDirectoryReader(input_dir=directory, input_files=file, recursive=recursive,
-                                         required_exts=formats, num_files_limit=limit,
-                                         exclude_hidden=exclude, file_metadata=metadata_from_filename).load_data()
+            raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens,
+                                   token_check=token_check)
 
-        # Here we split the documents, as needed, into smaller chunks.
-        # We do this due to the context limits of the LLMs.
-        raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens,
-                               token_check=token_check)
-        # Old method
-        # text_splitter = RecursiveCharacterTextSplitter()
-        # docs = text_splitter.split_documents(raw_docs)
+            if sample:
+                for i in range(min(5, len(raw_docs))):
+                    print(raw_docs[i].text)
 
-        # Sample feature
-        if sample:
-            for i in range(min(5, len(raw_docs))):
-                print(raw_docs[i].text)
+            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
-        docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            if len(sys.argv) > 1 and yes:
+                call_openai_api(docs, folder_name)
+            else:
+                get_user_permission(docs, folder_name)
 
-        # Here we check for command line arguments for bot calls.
-        # If no argument exists or the yes is not True, then the
-        # user permission is requested to call the API.
-        if len(sys.argv) > 1 and yes:
-            call_openai_api(docs, folder_name)
-        else:
-            get_user_permission(docs, folder_name)
+        folder_counts = defaultdict(int)
+        folder_names = []
+        for dir_path in dir:
+            folder_name = os.path.basename(os.path.normpath(dir_path))
+            folder_counts[folder_name] += 1
+            if folder_counts[folder_name] > 1:
+                folder_name = f"{folder_name}_{folder_counts[folder_name]}"
+            folder_names.append(folder_name)
 
+        for directory, folder_name in zip(dir, folder_names):
+            process_one_docs(directory, folder_name)
 
-    folder_counts = defaultdict(int)
-    folder_names = []
-    for dir_path in dir:
-        folder_name = os.path.basename(os.path.normpath(dir_path))
-        folder_counts[folder_name] += 1
-        if folder_counts[folder_name] > 1:
-            folder_name = f"{folder_name}_{folder_counts[folder_name]}"
-        folder_names.append(folder_name)
-
-    for directory, folder_name in zip(dir, folder_names):
-        process_one_docs(directory, folder_name)
-
+    except Exception as e:
+        handle_error(str(e))
 
 @app.command()
 def convert(dir: Optional[str] = typer.Option("inputs",
@@ -106,23 +101,23 @@ def convert(dir: Optional[str] = typer.Option("inputs",
                                                         py, js, java supported for now""")):
     """
             Creates documentation linked to original functions from specified location.
-            By default /inputs folder is used, .py is parsed.
+            By default, /inputs folder is used, .py is parsed.
     """
-    # Using a dictionary to map between the formats and their respective extraction functions
-    # makes the code more scalable. When adding more formats in the future, 
-    # you only need to update the extraction_functions dictionary.
-    extraction_functions = {
-    'py': extract_py,
-    'js': extract_js,
-    'java': extract_java
-    }
+    try:
+        extraction_functions = {
+            'py': extract_py,
+            'js': extract_js,
+            'java': extract_java
+        }
 
-    if formats in extraction_functions:
-        functions_dict, classes_dict = extraction_functions[formats](dir)
-    else:
-        raise Exception("Sorry, language not supported yet")                                   
-    transform_to_docs(functions_dict, classes_dict, formats, dir)
+        if formats in extraction_functions:
+            functions_dict, classes_dict = extraction_functions[formats](dir)
+            transform_to_docs(functions_dict, classes_dict, formats, dir)
+        else:
+            handle_error("Sorry, the selected language is not supported yet")
 
+    except Exception as e:
+        handle_error(str(e))
 
 if __name__ == "__main__":
     app()
