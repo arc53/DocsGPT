@@ -211,7 +211,7 @@ const ConversationBubble = forwardRef<
             </div>
           </div>
         )}
-        <div className="ml-10 mt-2 max-w-[800px]">
+        <div className="ml-9 mt-2 max-w-[800px] p-2">
           <div className="rounded-full border-2 border-violet-500 text-left">
             <p className="m-1 truncate text-xs text-gray-500">
               suggested questions
