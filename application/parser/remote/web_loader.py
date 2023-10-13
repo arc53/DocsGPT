@@ -5,7 +5,9 @@ class WebLoader(BaseRemote):
         from langchain.document_loaders import WebBaseLoader
         self.loader = WebBaseLoader
 
-    def load_data(self, urls):
+    def load_data(self, inputs):
+        urls = inputs['data']
+
         if isinstance(urls, str):
             urls = [urls] # Convert string to list if a single URL is passed
 

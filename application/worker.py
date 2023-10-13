@@ -121,7 +121,7 @@ def remote_worker(self, inputs, name_job, user, directory = 'temp', loader = 'ur
     # inputs {"data": [url]} for url type task just urls
  
     # Use RemoteCreator to load data from URL
-    remote_loader = RemoteCreator.create_loader(loader, inputs['data'])
+    remote_loader = RemoteCreator.create_loader(loader, inputs)
     raw_docs = remote_loader.load_data()
 
     raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)

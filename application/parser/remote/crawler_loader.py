@@ -9,7 +9,8 @@ class CrawlerLoader(BaseRemote):
         self.loader = WebBaseLoader  # Initialize the document loader
         self.limit = limit  # Set the limit for the number of pages to scrape
 
-    def load_data(self, url):
+    def load_data(self, inputs):
+        url = inputs['data']
         # Check if the input is a list and if it is, use the first element
         if isinstance(url, list) and url:
             url = url[0]
