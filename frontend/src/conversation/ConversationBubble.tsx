@@ -212,9 +212,9 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         <div className="ml-9 mt-2 max-w-[800px] p-2">
-          <div className="rounded-full border-2 border-[#7D54D1] text-left hover:bg-[#7D54D1]">
-            <p className="m-1 truncate text-xs text-[#7D54D1] hover:text-white">
-              suggested questions
+          <div className="rounded-full border-2 border-[#7D54D1] py-1 px-2 text-left hover:bg-[#7D54D1]">
+            <p className="m-1 truncate text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
+              suggested questions lksjfs
             </p>
           </div>
         </div>
