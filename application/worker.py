@@ -106,7 +106,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
         'limited': False
     }
 
-def remote_worker(self, urls, name_job, user, directory = 'temp', loader = 'url'):
+def remote_worker(self, inputs, name_job, user, directory = 'temp', loader = 'url'):
     sample = False
     token_check = True
     min_tokens = 150
@@ -117,9 +117,11 @@ def remote_worker(self, urls, name_job, user, directory = 'temp', loader = 'url'
         os.makedirs(full_path)
 
     self.update_state(state='PROGRESS', meta={'current': 1})
-
+ 
+    # inputs {"data": [url]} for url type task just urls
+ 
     # Use RemoteCreator to load data from URL
-    remote_loader = RemoteCreator.create_loader(loader, urls)
+    remote_loader = RemoteCreator.create_loader(loader, inputs['data'])
     raw_docs = remote_loader.load_data()
 
     raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
@@ -146,7 +148,7 @@ def remote_worker(self, urls, name_job, user, directory = 'temp', loader = 'url'
     shutil.rmtree(full_path)
 
     return {
-        'urls': urls,
+        'urls': inputs['data'],
         'name_job': name_job,
         'user': user,
         'limited': False
