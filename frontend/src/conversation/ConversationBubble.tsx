@@ -12,6 +12,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
+const suggest = [{ id: 'dfsdfsd', query: 'ljglkjlkj kljsfd' }];
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,
@@ -22,9 +23,18 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     sources?: { title: string; text: string }[];
+    suggestions: { id: string; query: string }[];
   }
 >(function ConversationBubble(
-  { message, type, className, feedback, handleFeedback, sources },
+  {
+    message,
+    type,
+    className,
+    feedback,
+    handleFeedback,
+    sources,
+    suggestions = suggest,
+  },
   ref,
 ) {
   const [showFeedback, setShowFeedback] = useState(false);
@@ -38,6 +48,11 @@ const ConversationBubble = forwardRef<
     setTimeout(() => {
       setCopied(false);
     }, 2000);
+  };
+
+  const handleSuggestionClick = (e: any, suggestionId: string) => {
+    e.preventDefault();
+    console.log(suggestionId);
   };
 
   const List = ({
@@ -212,25 +227,17 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         <div className="ml-5 mt-2 flex max-w-[800px] flex-col gap-y-2">
-          <div className="hover: rounded-3xl border-2 border-[#7D54D1]  py-1 px-4 text-left transition-colors duration-300 ease-in-out hover:bg-[#7D54D1]">
-            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] transition-colors duration-300 ease-in-out hover:text-white">
-              suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
-              cfasdklfjalskf ckljsadlkfs suggested questions lksjfs
-              klsdjlfaslkfa flkasdjfalksdjfasdfa cfasdklfjalskf ckljsadlkfs
-            </p>
-          </div>
-          <div className="rounded-full border-2 border-[#7D54D1] py-1 px-2 text-left hover:bg-[#7D54D1]">
-            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
-              suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
-              cfasdklfjalskf ckljsadlkfs
-            </p>
-          </div>
-          <div className="rounded-full border-2 border-[#7D54D1] py-1 px-2 text-left hover:bg-[#7D54D1]">
-            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
-              suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
-              cfasdklfjalskf ckljsadlkfs
-            </p>
-          </div>
+          {suggestions.map((suggestion, index) => (
+            <div
+              key={index}
+              onClick={(e) => handleSuggestionClick(e, suggestion.id)}
+              className="hover: rounded-3xl border border-[#7D54D1]  py-1 px-4 text-left transition-colors duration-300 ease-in-out hover:bg-[#7D54D1]"
+            >
+              <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] transition-colors duration-300 ease-in-out hover:text-white">
+                {suggestion.query}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
     );
