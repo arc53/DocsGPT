@@ -165,11 +165,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   */
 
   useEffect(() => {
-    if (isMobile) {
-      setNavOpen(false);
-      return;
-    }
-    setNavOpen(true);
+    setNavOpen(!isMobile);
   }, [isMobile]);
 
   return (
@@ -232,19 +228,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <p className="my-auto text-eerie-black">New Chat</p>
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
-          {conversations
-            ? conversations.map((conversation) => (
-                <ConversationTile
-                  key={conversation.id}
-                  conversation={conversation}
-                  selectConversation={(id) => handleConversationClick(id)}
-                  onDeleteConversation={(id) => handleDeleteConversation(id)}
-                  onSave={(conversation) =>
-                    updateConversationName(conversation)
-                  }
-                />
-              ))
-            : null}
+          {conversations?.map((conversation) => (
+            <ConversationTile
+              key={conversation.id}
+              conversation={conversation}
+              selectConversation={(id) => handleConversationClick(id)}
+              onDeleteConversation={(id) => handleDeleteConversation(id)}
+              onSave={(conversation) => updateConversationName(conversation)}
+            />
+          ))}
         </div>
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
@@ -289,7 +281,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                           <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
                             {doc.name} {doc.version}
                           </p>
-                          {doc.location === 'local' ? (
+                          {doc.location === 'local' && (
                             <img
                               src={Exit}
                               alt="Exit"
@@ -300,7 +292,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                                 handleDeleteClick(index, doc);
                               }}
                             />
-                          ) : null}
+                          )}
                         </div>
                       );
                     }

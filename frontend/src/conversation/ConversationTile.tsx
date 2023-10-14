@@ -92,7 +92,7 @@ export default function ConversationTile({
           </p>
         )}
       </div>
-      {conversationId === conversation.id ? (
+      {conversationId === conversation.id && (
         <div className="flex">
           <img
             src={isEdit ? CheckMark : Edit}
@@ -122,7 +122,7 @@ export default function ConversationTile({
             }}
           />
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
