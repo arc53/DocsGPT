@@ -75,7 +75,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - Extensions - Chrome extension.
 
-- Scripts - Script that creates similarity search index and stores for other libraries. 
+- Scripts - Script that creates similarity search index for other libraries. 
 
 - Frontend - Frontend uses Vite and React.
 
