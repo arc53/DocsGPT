@@ -50,7 +50,10 @@ const ConversationBubble = forwardRef<
     }, 2000);
   };
 
-  const handleSuggestionClick = (e: any, suggestionId: string) => {
+  const handleSuggestionClick = (
+    e: React.MouseEvent<HTMLDivElement, MouseEvent>,
+    suggestionId: string,
+  ) => {
     e.preventDefault();
     console.log(suggestionId);
   };
