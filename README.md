@@ -77,7 +77,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - Scripts - Script that creates similarity search index and stores for other libraries. 
 
-- Frontend - Frontend uses Vite and React.
+- Frontend - Frontend uses Vite ,React and Angular can also be used.
 
 ## QuickStart
 
