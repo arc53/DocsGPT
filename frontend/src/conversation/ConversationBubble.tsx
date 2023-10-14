@@ -211,10 +211,24 @@ const ConversationBubble = forwardRef<
             </div>
           </div>
         )}
-        <div className="ml-5 mt-2 max-w-[800px] p-2">
+        <div className="ml-5 mt-2 flex max-w-[800px] flex-col gap-y-2">
+          <div className="rounded-3xl border-2 border-[#7D54D1] py-1 px-4 text-left hover:bg-[#7D54D1]">
+            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
+              suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
+              cfasdklfjalskf ckljsadlkfs suggested questions lksjfs
+              klsdjlfaslkfa flkasdjfalksdjfasdfa cfasdklfjalskf ckljsadlkfs
+            </p>
+          </div>
           <div className="rounded-full border-2 border-[#7D54D1] py-1 px-2 text-left hover:bg-[#7D54D1]">
             <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
-              suggested questions lksjfs
+              suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
+              cfasdklfjalskf ckljsadlkfs
+            </p>
+          </div>
+          <div className="rounded-full border-2 border-[#7D54D1] py-1 px-2 text-left hover:bg-[#7D54D1]">
+            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
+              suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
+              cfasdklfjalskf ckljsadlkfs
             </p>
           </div>
         </div>
