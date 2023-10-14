@@ -212,8 +212,8 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         <div className="ml-5 mt-2 flex max-w-[800px] flex-col gap-y-2">
-          <div className="rounded-3xl border-2 border-[#7D54D1] py-1 px-4 text-left hover:bg-[#7D54D1]">
-            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] hover:text-white">
+          <div className="hover: rounded-3xl border-2 border-[#7D54D1]  py-1 px-4 text-left transition-colors duration-300 ease-in-out hover:bg-[#7D54D1]">
+            <p className="m-1 text-sm font-semibold leading-6 text-[#7D54D1] transition-colors duration-300 ease-in-out hover:text-white">
               suggested questions lksjfs klsdjlfaslkfa flkasdjfalksdjfasdfa
               cfasdklfjalskf ckljsadlkfs suggested questions lksjfs
               klsdjlfaslkfa flkasdjfalksdjfasdfa cfasdklfjalskf ckljsadlkfs
