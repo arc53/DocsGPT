@@ -1,0 +1,23 @@
+repo:
+  - '*'
+
+github:
+  - .github/**/*
+
+application:
+  - application/**/*
+
+docs:
+  - docs/**/*
+
+extensions:
+  - extensions/**/*
+
+frontend:
+  - frontend/**/*
+
+scripts:
+  - scripts/**/*
+
+tests:
+  - tests/**/*

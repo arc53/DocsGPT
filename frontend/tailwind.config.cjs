@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       spacing: {
@@ -24,6 +25,7 @@ module.exports = {
         'blue-1000': '#7D54D1',
         'blue-2000': '#002B49',
         'blue-3000': '#4B02E2',
+        'purple-30': '#7D54D1',
         'blue-4000': 'rgba(0, 125, 255, 0.36)',
         'blue-5000': 'rgba(0, 125, 255)',
       },
