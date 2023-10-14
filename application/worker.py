@@ -21,8 +21,7 @@ except FileExistsError:
 
 
 def metadata_from_filename(title):
-    store = title.split('/')
-    store = store[1] + '/' + store[2]
+    store = '/'.join(title.split('/')[1:3])
     return {'title': title, 'store': store}
 
 

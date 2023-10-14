@@ -1,7 +1,7 @@
 ## Launching Web App
 Note: Make sure you have Docker installed
 
-On Mac OS or Linux just write:
+On macOS or Linux, just write:
 
 `./setup.sh`
 
@@ -10,11 +10,11 @@ It will install all the dependencies and give you an option to download the loca
 Otherwise, refer to this Guide:
 
 1. Open and download this repository with `git clone https://github.com/arc53/DocsGPT.git`.
-2. Create a `.env` file in your root directory and set your `API_KEY` with your [OpenAI api key](https://platform.openai.com/account/api-keys).
+2. Create a `.env` file in your root directory and set your `API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
 3. Run `docker-compose build && docker-compose up`.
 4. Navigate to `http://localhost:5173/`.
 
-To stop just run `Ctrl + C`.
+To stop, just run `Ctrl + C`.
 
 ### Chrome Extension
 

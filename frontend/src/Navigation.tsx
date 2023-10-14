@@ -32,6 +32,7 @@ import { useMediaQuery, useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc, getConversations } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
+import ConversationTile from './conversation/ConversationTile';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -68,27 +69,26 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   useEffect(() => {
     if (!conversations) {
-      getConversations()
-        .then((fetchedConversations) => {
-          dispatch(setConversations(fetchedConversations));
-        })
-        .catch((error) => {
-          console.error('Failed to fetch conversations: ', error);
-        });
+      fetchConversations();
     }
   }, [conversations, dispatch]);
+
+  async function fetchConversations() {
+    return await getConversations()
+      .then((fetchedConversations) => {
+        dispatch(setConversations(fetchedConversations));
+      })
+      .catch((error) => {
+        console.error('Failed to fetch conversations: ', error);
+      });
+  }
 
   const handleDeleteConversation = (id: string) => {
     fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
       method: 'POST',
     })
       .then(() => {
-        // remove the image element from the DOM
-        const imageElement = document.querySelector(
-          `#img-${id}`,
-        ) as HTMLElement;
-        const parentElement = imageElement.parentNode as HTMLElement;
-        parentElement.parentNode?.removeChild(parentElement);
+        fetchConversations();
       })
       .catch((error) => console.error(error));
   };
@@ -126,6 +126,29 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         );
       });
   };
+
+  async function updateConversationName(updatedConversation: {
+    name: string;
+    id: string;
+  }) {
+    await fetch(`${apiHost}/api/update_conversation_name`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updatedConversation),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data) {
+          navigate('/');
+          fetchConversations();
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }
   useOutsideAlerter(
     navRef,
     () => {
@@ -210,41 +233,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
           {conversations
-            ? conversations.map((conversation) => {
-                return (
-                  <div
-                    key={conversation.id}
-                    onClick={() => {
-                      handleConversationClick(conversation.id);
-                    }}
-                    className={`my-auto mx-4 mt-4 flex h-12 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
-                      conversationId === conversation.id ? 'bg-gray-100' : ''
-                    }`}
-                  >
-                    <div className="flex gap-4">
-                      <img src={Message} className="ml-2 w-5"></img>
-                      <p className="my-auto text-eerie-black">
-                        {conversation.name.length > 45
-                          ? conversation.name.substring(0, 45) + '...'
-                          : conversation.name}
-                      </p>
-                    </div>
-
-                    {conversationId === conversation.id ? (
-                      <img
-                        src={Exit}
-                        alt="Exit"
-                        className="mr-4 h-3 w-3 cursor-pointer hover:opacity-50"
-                        id={`img-${conversation.id}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleDeleteConversation(conversation.id);
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })
+            ? conversations.map((conversation) => (
+                <ConversationTile
+                  key={conversation.id}
+                  conversation={conversation}
+                  selectConversation={(id) => handleConversationClick(id)}
+                  onDeleteConversation={(id) => handleDeleteConversation(id)}
+                  onSave={(conversation) =>
+                    updateConversationName(conversation)
+                  }
+                />
+              ))
             : null}
         </div>
 
@@ -252,7 +251,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
-              className="flex h-12 min-w-[85%] cursor-pointer justify-between rounded-3xl rounded-md border-2 bg-white"
+              className="flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (

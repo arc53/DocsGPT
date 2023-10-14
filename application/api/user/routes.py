@@ -53,6 +53,15 @@ def get_single_conversation():
     conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
     return jsonify(conversation['queries'])
 
+@user.route("/api/update_conversation_name", methods=["POST"])
+def update_conversation_name():
+    # update data for a conversation
+    data = request.get_json()
+    id = data["id"]
+    name = data["name"]
+    conversations_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    return {"status": "ok"}
+
 
 @user.route("/api/feedback", methods=["POST"])
 def api_feedback():
