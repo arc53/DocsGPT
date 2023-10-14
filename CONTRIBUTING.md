@@ -58,3 +58,7 @@ python -m pytest
 ## Questions/collaboration
 Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 # Thank you so much for considering contributing to DocsGPT!🙏
+<p align="center">
+<img src="Assets/DocsGPT tee-front.jpeg" width="350" />
+<img src="Assets/DocsGPT tee-back.jpeg" width="350" />
+</p>
