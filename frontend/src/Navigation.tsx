@@ -229,7 +229,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }
         >
           <img src={Message} className="ml-4 w-5"></img>
-          <p className="my-auto text-eerie-black">New Chat</p>
+          <p className="my-auto text-sm text-eerie-black">New Chat</p>
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
           {conversations
