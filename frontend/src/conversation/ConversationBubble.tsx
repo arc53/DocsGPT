@@ -74,7 +74,7 @@ const ConversationBubble = forwardRef<
         <div className="flex self-start">
           <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
           <div
-            className={`ml-2 mr-5 flex flex-col items-center rounded-3xl bg-gray-1000 p-3.5 ${
+            className={`ml-2 mr-5 flex flex-col rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
                 ? 'flex-row rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'

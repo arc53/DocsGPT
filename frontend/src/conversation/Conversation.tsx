@@ -95,13 +95,12 @@ export default function Conversation() {
         ></ConversationBubble>
       );
     } else if (query.response) {
-      const trimmedResponse = query.response.trim();
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
-          message={trimmedResponse.length > 0 ? trimmedResponse : 'No answer found.'}
+          message={query.response}
           type={'ANSWER'}
           sources={query.sources}
           feedback={query.feedback}
