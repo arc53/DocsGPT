@@ -45,6 +45,7 @@ router.render = (req, res) => {
       res.status(404).jsonp({});
     }
   }
+  res.status(res.statusCode).jsonp(res.locals.data);
 };
 
 server.use(router);
