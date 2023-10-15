@@ -68,7 +68,7 @@ export default function ConversationTile({
       onClick={() => {
         selectConversation(conversation.id);
       }}
-      className={`my-auto mx-4 mt-4 flex h-12 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
+      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
         conversationId === conversation.id ? 'bg-gray-100' : ''
       }`}
     >
@@ -77,7 +77,7 @@ export default function ConversationTile({
           conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
         } gap-4`}
       >
-        <img src={Message} className="ml-2 w-5"></img>
+        <img src={Message} className="ml-4 w-5"></img>
         {isEdit ? (
           <input
             autoFocus
@@ -92,7 +92,7 @@ export default function ConversationTile({
           </p>
         )}
       </div>
-      {conversationId === conversation.id ? (
+      {conversationId === conversation.id && (
         <div className="flex">
           <img
             src={isEdit ? CheckMark : Edit}
@@ -122,7 +122,7 @@ export default function ConversationTile({
             }}
           />
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

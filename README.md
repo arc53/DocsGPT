@@ -75,7 +75,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - Extensions - Chrome extension.
 
-- Scripts - Script that creates similarity search index and stores for other libraries. 
+- Scripts - Script that creates similarity search index for other libraries. 
 
 - Frontend - Frontend uses Vite and React.
 
@@ -105,6 +105,10 @@ Otherwise, refer to this Guide:
 
 To stop, just run `Ctrl + C`.
 
+
+
+
+
 ## Development environments
 
 ### Spin up mongo and redis
@@ -127,7 +131,7 @@ Make sure you have Python 3.10 or 3.11 installed.
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
 2. (optional) Create a Python virtual environment:
-You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments .
+You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
 a) On Mac OS and Linux
 ```commandline
