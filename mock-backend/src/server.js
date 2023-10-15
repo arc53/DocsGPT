@@ -10,6 +10,8 @@ const localStorage = [];
 
 server.use(middlewares);
 
+server.use(jsonServer.rewriter(routes));
+
 server.use((req, res, next) => {
   if (req.method === "POST") {
     if (req.url.includes("/delete_conversation")) {
@@ -22,11 +24,14 @@ server.use((req, res, next) => {
   next();
 });
 
-server.use(jsonServer.rewriter(routes));
-
 router.render = (req, res) => {
   if (req.url === "/feedback") {
     res.status(200).jsonp({ status: "ok" });
+  } else if (req.url === '/upload') {
+    res.status(200).jsonp({
+      "status": "ok",
+      "task_id": localStorage[localStorage.length - 1]
+    })
   } else if (req.url.includes("/task_status")) {
     const taskId = req.query["task_id"];
     const taskIdExists = localStorage.includes(taskId);
@@ -44,8 +49,9 @@ router.render = (req, res) => {
     } else {
       res.status(404).jsonp({});
     }
+  }else {
+    res.status(res.statusCode).jsonp(res.locals.data);
   }
-  res.status(res.statusCode).jsonp(res.locals.data);
 };
 
 server.use(router);

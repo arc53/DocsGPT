@@ -225,5 +225,8 @@
       "version": "0.1.0"
     }
   ],
-  "conversations": []
+  "conversations": [],
+  "docs_check" : {
+    "status": "loaded"
+  }  
 }
