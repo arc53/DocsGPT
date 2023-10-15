@@ -46,9 +46,6 @@ class OpenAPI3Parser(BaseParser):
                 f"parameters: {path.parameters}\nmethods: {info}\n"
             )
             i += 1
-            if i == 2:
-                with open("reff.txt", "w") as f:
-                    f.write(str(path))
         with open("results.txt", "w") as f:
             f.write(results)
         return results
