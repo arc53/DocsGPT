@@ -10,7 +10,7 @@ class FaissStore(BaseVectorStore):
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
         if docs_init:
             self.docsearch = FAISS.from_documents(
-                docs_init, embeddings 
+                docs_init, embeddings
             )
         else:
             self.docsearch = FAISS.load_local(
