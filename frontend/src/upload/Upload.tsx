@@ -55,9 +55,8 @@ export default function Upload({
             setProgress(undefined);
             setModalState('INACTIVE');
           }}
-          className={`rounded-3xl bg-purple-30 px-4 py-2 text-sm font-medium text-white ${
-            isCancellable ? '' : 'hidden'
-          }`}
+          className={`rounded-3xl bg-purple-30 px-4 py-2 text-sm font-medium text-white ${isCancellable ? '' : 'hidden'
+            }`}
         >
           Finish
         </button>
@@ -206,7 +205,9 @@ export default function Upload({
         <div className="flex flex-row-reverse">
           <button
             onClick={uploadFile}
-            className="ml-6 rounded-3xl bg-purple-30 py-2 px-6 text-white"
+            className={`ml-6 rounded-3xl bg-purple-30 text-white ${files.length > 0 ? '' : 'bg-opacity-75 text-opacity-80'
+              } py-2 px-6`}
+            disabled={files.length === 0}  // Disable the button if no file is selected
           >
             Train
           </button>
@@ -227,9 +228,8 @@ export default function Upload({
 
   return (
     <article
-      className={`${
-        modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } absolute z-30  h-screen w-screen  bg-gray-alpha`}
+      className={`${modalState === 'ACTIVE' ? 'visible' : 'hidden'
+        } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
         {view}
