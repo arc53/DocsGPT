@@ -99,6 +99,8 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
      python -m pytest
      ```
 
+*Note: You should run the unit test only after making the changes to the backend code.*
+
 10. **Questions and Collaboration:**
     - Feel free to join our Discord. We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 
