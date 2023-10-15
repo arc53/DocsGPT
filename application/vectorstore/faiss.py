@@ -18,7 +18,8 @@ class FaissStore(BaseVectorStore):
                 self.path, embeddings
             )
             
-            # Check that the word_embedding_dimension of the index matches the word_embedding_dimension of the embeddings
+            # Check that the word_embedding_dimension of the index matches 
+            # the word_embedding_dimension of the embeddings
             if settings.EMBEDDINGS_NAME == HUGGINGFACE_MODEL_NAME:
                 try:
                     word_embedding_dimension = embeddings.client[1].word_embedding_dimension
