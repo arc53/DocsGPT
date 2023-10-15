@@ -4,7 +4,7 @@ from openapi_parser import parse
 
 try:
     from scripts.parser.file.base_parser import BaseParser
-except: 
+except ModuleNotFoundError:
     from base_parser import BaseParser
 
 
@@ -23,7 +23,7 @@ class OpenAPI3Parser(BaseParser):
 
     def get_info_from_paths(self, path):
         info = ""
-        if(path.operations):
+        if path.operations:
             for operation in path.operations:
                 info += (
                     f"\n{operation.method.value}="
@@ -46,7 +46,7 @@ class OpenAPI3Parser(BaseParser):
                 f"parameters: {path.parameters}\nmethods: {info}\n"
             )
             i += 1
-            if(i==2):
+            if i == 2:
                 with open("reff.txt", "w") as f:
                     f.write(str(path))
         with open("results.txt", "w") as f:
