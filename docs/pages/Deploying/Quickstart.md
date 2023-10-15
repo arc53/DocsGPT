@@ -19,7 +19,7 @@ If you prefer to follow manual steps, refer to this guide:
 
 To stop, simply press Ctrl + C.
 
-For WINDOWS:
+**For WINDOWS:**
 
 To run the setup on Windows, you have two options: using the Windows Subsystem for Linux (WSL) or using Git Bash or Command Prompt.
 
