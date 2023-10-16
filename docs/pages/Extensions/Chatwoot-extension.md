@@ -40,5 +40,3 @@
 
 ### Additional Notes:
 - For further details on training on other documentation, refer to our [wiki](https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation).
-
-Feel free to test it out, and let me know if there's anything more you'd like to add or adjust!
