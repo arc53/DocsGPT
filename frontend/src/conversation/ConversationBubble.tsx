@@ -27,7 +27,6 @@ const ConversationBubble = forwardRef<
   { message, type, className, feedback, handleFeedback, sources },
   ref,
 ) {
-  const [showFeedback, setShowFeedback] = useState(false);
   const [openSource, setOpenSource] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -65,12 +64,7 @@ const ConversationBubble = forwardRef<
     );
   } else {
     bubble = (
-      <div
-        ref={ref}
-        className={`flex self-start ${className} flex-col`}
-        onMouseEnter={() => setShowFeedback(true)}
-        onMouseLeave={() => setShowFeedback(false)}
-      >
+      <div ref={ref} className={`flex self-start ${className} group flex-col`}>
         <div className="flex self-start">
           <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
           <div
@@ -118,9 +112,7 @@ const ConversationBubble = forwardRef<
               <>
                 <span className="mt-3 h-px w-full bg-[#DEDEDE]"></span>
                 <div className="mt-3 flex w-full flex-row flex-wrap items-center justify-start gap-2">
-                  <div className="py-1 text-base font-semibold">
-                    Sources:
-                  </div>
+                  <div className="py-1 text-base font-semibold">Sources:</div>
                   <div className="flex flex-row flex-wrap items-center justify-start gap-2">
                     {sources?.map((source, index) => (
                       <div
@@ -151,8 +143,8 @@ const ConversationBubble = forwardRef<
             )}
           </div>
           <div
-            className={`relative mr-2 flex items-center justify-center ${
-              type !== 'ERROR' && showFeedback ? '' : 'md:invisible'
+            className={`relative mr-2 flex items-center justify-center md:invisible ${
+              type !== 'ERROR' ? 'group-hover:md:visible' : ''
             }`}
           >
             {copied ? (
@@ -167,10 +159,10 @@ const ConversationBubble = forwardRef<
             )}
           </div>
           <div
-            className={`relative mr-2 flex items-center justify-center ${
-              feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
-                ? ''
-                : 'md:invisible'
+            className={`relative mr-2 flex items-center justify-center md:invisible ${
+              feedback === 'LIKE' || type !== 'ERROR'
+                ? 'group-hover:md:visible'
+                : ''
             }`}
           >
             <Like
@@ -183,10 +175,10 @@ const ConversationBubble = forwardRef<
             ></Like>
           </div>
           <div
-            className={`relative mr-10 flex items-center justify-center ${
-              feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
-                ? ''
-                : 'md:invisible'
+            className={`relative mr-10 flex items-center justify-center md:invisible ${
+              feedback === 'DISLIKE' || type !== 'ERROR'
+                ? 'group-hover:md:visible'
+                : ''
             }`}
           >
             <Dislike
