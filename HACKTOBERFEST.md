@@ -34,6 +34,7 @@ Feel free to join our Discord server. We're here to help newcomers, so don't hes
 
 Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typo) could earn you a stylish new t-shirt as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
 
+Here is a preview of the shirts:
 <p align="center">
 <img src="Assets/DocsGPT tee-front.jpeg" width="350" />
 <img src="Assets/DocsGPT tee-back.jpeg" width="350" />
