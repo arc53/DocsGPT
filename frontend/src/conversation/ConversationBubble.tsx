@@ -1,6 +1,7 @@
 import { forwardRef, useState } from 'react';
 import Avatar from '../Avatar';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+import classes from './ConversationBubble.module.css';
 import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
@@ -40,16 +41,6 @@ const ConversationBubble = forwardRef<
     }, 2000);
   };
 
-  const List = ({
-    ordered,
-    children,
-  }: {
-    ordered?: boolean;
-    children: React.ReactNode;
-  }) => {
-    const Tag = ordered ? 'ol' : 'ul';
-    return <Tag className="list-inside list-disc">{children}</Tag>;
-  };
   let bubble;
 
   if (type === 'QUESTION') {
@@ -104,11 +95,23 @@ const ConversationBubble = forwardRef<
                     </code>
                   );
                 },
-                ul({ node, children }) {
-                  return <List>{children}</List>;
+                ul({ children }) {
+                  return (
+                    <ul
+                      className={`list-inside list-disc whitespace-normal pl-4 ${classes.list}`}
+                    >
+                      {children}
+                    </ul>
+                  );
                 },
-                ol({ node, children }) {
-                  return <List ordered>{children}</List>;
+                ol({ children }) {
+                  return (
+                    <ol
+                      className={`list-inside list-decimal whitespace-normal pl-4 ${classes.list}`}
+                    >
+                      {children}
+                    </ol>
+                  );
                 },
               }}
             >
@@ -118,9 +121,7 @@ const ConversationBubble = forwardRef<
               <>
                 <span className="mt-3 h-px w-full bg-[#DEDEDE]"></span>
                 <div className="mt-3 flex w-full flex-row flex-wrap items-center justify-start gap-2">
-                  <div className="py-1 text-base font-semibold">
-                    Sources:
-                  </div>
+                  <div className="py-1 text-base font-semibold">Sources:</div>
                   <div className="flex flex-row flex-wrap items-center justify-start gap-2">
                     {sources?.map((source, index) => (
                       <div
