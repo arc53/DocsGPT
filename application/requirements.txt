@@ -104,3 +104,4 @@ urllib3==1.26.17
 vine==5.0.0
 wcwidth==0.2.6
 yarl==1.8.2
+sentence-transformers==2.2.2
