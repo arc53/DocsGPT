@@ -108,8 +108,7 @@ HTML example:
 ```
 
 **Response:**
-This endpoint is used to get the JSON response with a status and a task ID that can be used to check the task's progress.
-
+JSON response with a status and a task ID that can be used to check the task's progress.
 
 
 ### /api/task_status
@@ -133,7 +132,7 @@ fetch("http://localhost:5001/api/task_status?task_id=YOUR_TASK_ID", {
 .then(console.log.bind(console))
 ```
 
-**Responses:**
+**Response:**
 There are two types of responses:
 
 1. While the task is still running, the 'current' value will show progress from 0 to 100.
