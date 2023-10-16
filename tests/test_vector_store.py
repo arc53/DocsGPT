@@ -1,3 +1,8 @@
+"""
+Tests regarding the vector store class, including checking
+compatibility between different transformers and local vector
+stores (index.faiss)
+"""
 import pytest
 from application.vectorstore.faiss import FaissStore
 from application.core.settings import settings
