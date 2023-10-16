@@ -107,7 +107,8 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
 Thank you for considering contributing to DocsGPT! 🙏
 
 ## Questions/collaboration
-Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
+Feel free to join our  ![image](https://github.com/arc53/DocsGPT/assets/98145879/6dc999f4-34d0-4344-a3bc-a5a5bf7ad9a0)
+[Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 # Thank you so much for considering contributing to DocsGPT!🙏
 <p align="center">
 <img src="Assets/DocsGPT tee-front.jpeg" width="350" />
