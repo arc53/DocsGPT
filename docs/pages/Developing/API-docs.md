@@ -3,10 +3,12 @@
 # API Endpoints Documentation
 
 ### /api/answer 
-**Description:**:
+**Description:**
+
 This endpoint is used to request answers to user-provided questions.
 
 **Request:**
+
 Method: POST
 Headers: Content-Type should be set to "application/json; charset=utf-8"
 Request Body: JSON object with the following fields:
@@ -30,7 +32,9 @@ fetch("http://127.0.0.1:5000/api/answer", {
 .then((res) => res.text())
 .then(console.log.bind(console))
 ```
+
 **Response**
+
 In response, you will get a JSON document containing the answer,query and the result:
 ```json
 {
@@ -41,10 +45,13 @@ In response, you will get a JSON document containing the answer,query and the re
 ```
 
 ### /api/docs_check
+
 **Description:**
+
 This endpoint will make sure documentation is loaded on the server (just run it every time user is switching between libraries (documentations)).
 
 **Request:**
+
 Headers: Content-Type should be set to "application/json; charset=utf-8"
 Request Body: JSON object with the field:
 * **docs:** The location of the documentation
@@ -62,6 +69,7 @@ fetch("http://127.0.0.1:5000/api/docs_check", {
 ```
 
 **Response:**
+
 In response, you will get a JSON document like this one indicating whether the documentation exists or not.:
 ```json
 {
@@ -72,24 +80,31 @@ In response, you will get a JSON document like this one indicating whether the d
 
 ### /api/combine
 **Description:**
+
 This endpoint provides information about available vectors and their locations with a simple GET request.
 
 **Request:**
+
 Method: GET
 
 **Response:**
+
 Response will include:
 `date`, `description`, `docLink`, `fullName`, `language`, `location` (local or docshub), `model`, `name`, `version`.
 
+
 Example of JSON in Docshub and local:
+
 <img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
 
 
 ### /api/upload
 **Description:**
+
 This endpoint is used to upload a file that needs to be trained, response is JSON with task ID, which can be used to check on task's progress.
 
 **Request:**
+
 Method: POST
 Request Body: A multipart/form-data form with file upload and additional fields, including "user" and "name."
 
@@ -108,11 +123,13 @@ HTML example:
 ```
 
 **Response:**
+
 JSON response with a status and a task ID that can be used to check the task's progress.
 
 
 ### /api/task_status
 **Description:**
+
 This endpoint is used to get the status of a task (`task_id`) from `/api/upload`
 
 **Request:**
@@ -133,6 +150,7 @@ fetch("http://localhost:5001/api/task_status?task_id=YOUR_TASK_ID", {
 ```
 
 **Response:**
+
 There are two types of responses:
 
 1. While the task is still running, the 'current' value will show progress from 0 to 100.
@@ -166,9 +184,11 @@ There are two types of responses:
 
 ### /api/delete_old
 **Description:**
+
 This endpoint is used to delete old Vector Stores.
 
 **Request:**
+
 Method: GET
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
@@ -183,6 +203,7 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 
 ```
 **Response:**
+
 JSON response indicating the status of the operation.
 ```json
 { "status": "ok" }
