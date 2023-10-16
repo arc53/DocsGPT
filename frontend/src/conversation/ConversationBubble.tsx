@@ -74,7 +74,7 @@ const ConversationBubble = forwardRef<
         <div className="flex self-start">
           <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
           <div
-            className={`ml-2 mr-5 flex flex-col items-center rounded-3xl bg-gray-1000 p-3.5 ${
+            className={`ml-2 mr-5 flex flex-col rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
                 ? 'flex-row rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
@@ -118,7 +118,7 @@ const ConversationBubble = forwardRef<
               <>
                 <span className="mt-3 h-px w-full bg-[#DEDEDE]"></span>
                 <div className="mt-3 flex w-full flex-row flex-wrap items-center justify-start gap-2">
-                  <div className="py-1 px-2 text-base font-semibold">
+                  <div className="py-1 text-base font-semibold">
                     Sources:
                   </div>
                   <div className="flex flex-row flex-wrap items-center justify-start gap-2">
