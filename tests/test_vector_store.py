@@ -1,6 +1,4 @@
 import pytest
-from flask import Flask
-from application.error import bad_request, response_error
 from application.vectorstore.faiss import FaissStore
 from application.core.settings import settings
 
