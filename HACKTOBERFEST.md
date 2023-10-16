@@ -32,4 +32,9 @@ Once you have created your PR and our maintainers have merged it, please fill in
 
 Feel free to join our Discord server. We're here to help newcomers, so don't hesitate to jump in! [Join us here](https://discord.gg/n5BX8dh8rU).
 
-Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions could earn you a stylish new t-shirt as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
+Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typo) could earn you a stylish new t-shirt as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
+
+<p align="center">
+<img src="Assets/DocsGPT tee-front.jpeg" width="350" />
+<img src="Assets/DocsGPT tee-back.jpeg" width="350" />
+</p>
