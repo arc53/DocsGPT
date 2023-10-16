@@ -1,5 +1,5 @@
-from application.vectorstore.base import BaseVectorStore
 from langchain.vectorstores import FAISS
+from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
 
 class FaissStore(BaseVectorStore):
@@ -23,11 +23,11 @@ class FaissStore(BaseVectorStore):
 
     def add_texts(self, *args, **kwargs):
         return self.docsearch.add_texts(*args, **kwargs)
-    
+
     def save_local(self, *args, **kwargs):
         return self.docsearch.save_local(*args, **kwargs)
 
-    def assert_embedding_dimensions(self, embeddings, *args, **kwargs):
+    def assert_embedding_dimensions(self, embeddings):
         """
         Check that the word embedding dimension of the docsearch index matches
         the dimension of the word embeddings used 
