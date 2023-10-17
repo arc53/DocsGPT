@@ -24,7 +24,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 ### Production Support / Help for companies: 
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
-- [Book Demo 👋](https://cal.com/arc53/docsgpt-demo-b2b)
+- [Book Demo 👋](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
 - [Send Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
   
 ### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
@@ -75,7 +75,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - Extensions - Chrome extension.
 
-- Scripts - Script that creates similarity search index and stores for other libraries. 
+- Scripts - Script that creates similarity search index for other libraries. 
 
 - Frontend - Frontend uses Vite and React.
 
@@ -105,6 +105,10 @@ Otherwise, refer to this Guide:
 
 To stop, just run `Ctrl + C`.
 
+
+
+
+
 ## Development environments
 
 ### Spin up mongo and redis
@@ -127,7 +131,7 @@ Make sure you have Python 3.10 or 3.11 installed.
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
 2. (optional) Create a Python virtual environment:
-You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments .
+You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
 a) On Mac OS and Linux
 ```commandline

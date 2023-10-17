@@ -39,11 +39,7 @@ export default function Conversation() {
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          setHasScrolledToLast(true);
-        } else {
-          setHasScrolledToLast(false);
-        }
+        setHasScrolledToLast(entry.isIntersecting);
       });
     };
 
@@ -121,7 +117,7 @@ export default function Conversation() {
 
   return (
     <div className="flex flex-col justify-center p-4 md:flex-row">
-      {queries.length > 0 && !hasScrolledToLast ? (
+      {queries.length > 0 && !hasScrolledToLast && (
         <button
           onClick={scrollIntoView}
           aria-label="scroll to bottom"
@@ -133,7 +129,7 @@ export default function Conversation() {
             className="h4- w-4 opacity-50 md:h-5 md:w-5"
           />
         </button>
-      ) : null}
+      )}
 
       {queries.length > 0 && (
         <div className="mt-20 flex flex-col transition-all md:w-3/4">

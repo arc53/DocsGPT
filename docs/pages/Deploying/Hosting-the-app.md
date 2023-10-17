@@ -6,37 +6,30 @@ Here's a step-by-step guide on how to setup an Amazon Lightsail instance to host
 
 (If you know how to create a Lightsail instance, you can skip to the recommended configuration part by clicking here).
 
-### 1. Create an account or login to https://lightsail.aws.amazon.com
+### 1. Create an AWS Account: 
+If you haven't already, create or log in to your AWS account at https://lightsail.aws.amazon.com.
 
-### 2. Click on "Create instance"
+### 2. Create an Instance: 
 
-### 3. Create your instance
+a. Click "Create Instance."
 
-The first step is to select the "Instance location". In most cases, there's no need to switch locations as the default one will work well.
+b. Select the "Instance location." In most cases, the default location works fine.
 
-After that, it is time to pick your Instance Image. We recommend using "Linux/Unix" as the image and "Ubuntu 20.04 LTS" as the Operating System.
+c. Choose "Linux/Unix" as the image and "Ubuntu 20.04 LTS" as the Operating System.
 
-As for instance plan, it'll vary depending on your unique demands, but a "1 GB, 1vCPU, 40GB SSD and 2TB transfer" setup should cover most scenarios.
+d. Configure the instance plan based on your requirements. A "1 GB, 1vCPU, 40GB SSD, and 2TB transfer" setup is recommended for most scenarios.
 
-Lastly, identify your instance by giving it a unique name and then hit "Create instance".
+e. Give your instance a unique name and click "Create Instance."
 
-PS: Once you create your instance, it'll likely take a few minutes for the setup to be completed.
+PS: It may take a few minutes for the instance setup to complete.
 
-#### The recommended configuration is as follows:
+### Connecting to Your newly created Instance
 
-- Ubuntu 20.04 LTS
-- 1GB RAM
-- 1vCPU
-- 40GB SSD Hard Drive
-- 2TB transfer
+Your instance will be ready a few minutes after creation. To access it, open the instance and click "Connect using SSH."
 
-### Connecting to your newly created instance
+#### Clone the DocsGPT Repository
 
-Your instance will be ready for use a few minutes after being created. To access it, just open it up and click on "Connect using SSH".
-
-#### Clone the repository
-
-A terminal window will pop up, and the first step will be to clone the DocsGPT git repository:
+A terminal window will pop up, and the first step will be to clone the DocsGPT Git repository:
 
 `git clone https://github.com/arc53/DocsGPT.git`
 
@@ -56,15 +49,15 @@ And now install docker-compose:
 
 `sudo apt install docker-compose`
 
-#### Access the DocsGPT folder
+#### Access the DocsGPT Folder
 
-Enter the following command to access the folder in which DocsGPT docker-compose file is present.
+Enter the following command to access the folder in which the DocsGPT docker-compose file is present.
 
 `cd DocsGPT/`
 
-#### Prepare the environment
+#### Prepare the Environment
 
-Inside the DocsGPT folder, create a `.env` file and copy the contents of `.env_sample` into it.
+Inside the DocsGPT folder create a `.env` file and copy the contents of `.env_sample` into it.
 
 `nano .env`
 
@@ -78,16 +71,16 @@ SELF_HOSTED_MODEL=false
 
 To save the file, press CTRL+X, then Y, and then ENTER.
 
-Next, we need to set a correct IP for our Backend. To do so, open the docker-compose.yml file:
+Next, set the correct IP for the Backend by opening the docker-compose.yml file:
 
 `nano docker-compose.yml`
 
-And change this line 7 `VITE_API_HOST=http://localhost:7091`
+And Change line 7 to: `VITE_API_HOST=http://localhost:7091`
 to this `VITE_API_HOST=http://<your instance public IP>:7091`
 
 This will allow the frontend to connect to the backend.
 
-#### Running the app
+#### Running the Application
 
 You're almost there! Now that all the necessary bits and pieces have been installed, it is time to run the application. To do so, use the following command:
 
@@ -95,18 +88,17 @@ You're almost there! Now that all the necessary bits and pieces have been instal
 
 Launching it for the first time will take a few minutes to download all the necessary dependencies and build.
 
-Once this is done, you can go ahead and close the terminal window.
+Once this is done you can go ahead and close the terminal window.
 
-#### Enabling ports 
+#### Enabling Ports 
 
-Before you are able to access your live instance, you must first enable the port that it is using.
+a. Before you are able to access your live instance, you must first enable the port that it is using.
 
-Open your Lightsail instance and head to "Networking".
+b. Open your Lightsail instance and head to "Networking".
 
-Then click on "Add rule" under "IPv4 Firewall", enter `5173` as your port, and hit "Create". 
+c. Then click on "Add rule" under "IPv4 Firewall", enter `5173` as your port, and hit "Create". 
 Repeat the process for port `7091`.
 
 #### Access your instance
 
-Your instance will now be available under your Public IP Address and port `5173`. Enjoy!
-
+Your instance is now available at your Public IP Address on port 5173. Enjoy using DocsGPT!

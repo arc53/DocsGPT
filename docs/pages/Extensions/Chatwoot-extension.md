@@ -17,9 +17,9 @@ If you want for bot to stop responding to questions for a specific user or sessi
 
 
 ### Optional (extra validation)
-In `app.py` uncomment lines 12-13 and 71-75
+1. In `app.py` uncomment lines 12-13 and 71-75
 
-in your `.env` file add:
+2. in your `.env` file add:
 
 ```
 account_id=(optional) 1

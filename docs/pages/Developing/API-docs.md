@@ -104,7 +104,9 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 
 Responses:
 There are two types of responses:
-1. While task is still running, where "current" will show progress from 0 to 100:
+
+1. While the task is still running, the 'current' value will show progress from 0 to 100.
+
 ```json
 {
   "result": {
@@ -133,7 +135,8 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-Deletes old Vector stores:
+Deletes old Vector Stores:
+
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
@@ -144,7 +147,6 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 })
 .then((res) => res.text())
 .then(console.log.bind(console))
-```
 
 Response:
 
