@@ -51,7 +51,7 @@ And now install docker-compose:
 
 #### Access the DocsGPT Folder
 
-Enter the following command to access the folder in which DocsGPT docker-compose file is present.
+Enter the following command to access the folder in which the DocsGPT docker-compose file is present.
 
 `cd DocsGPT/`
 
