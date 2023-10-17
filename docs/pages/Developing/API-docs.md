@@ -1,6 +1,7 @@
+# API Endpoints Documentation
+
 *Currently, the application provides the following main API endpoints:*
 
-# API Endpoints Documentation
 
 ### 1. /api/answer 
 **Description:**
