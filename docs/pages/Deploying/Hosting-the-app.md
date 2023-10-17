@@ -102,3 +102,7 @@ Repeat the process for port `7091`.
 #### Access your instance
 
 Your instance is now available at your Public IP Address on port 5173. Enjoy using DocsGPT!
+
+## Other Deployment Options
+
+- [Deploy DocsGPT on Civo Compute Cloud](https://dev.to/rutamhere/deploying-docsgpt-on-civo-compute-c)
