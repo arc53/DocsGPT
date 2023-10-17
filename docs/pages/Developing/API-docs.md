@@ -98,7 +98,7 @@ Example of JSON in Docshub and local:
 <img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
 
 
-### /api/upload
+### 4. /api/upload
 **Description:**
 
 This endpoint is used to upload a file that needs to be trained, response is JSON with task ID, which can be used to check on task's progress.
@@ -127,7 +127,7 @@ HTML example:
 JSON response with a status and a task ID that can be used to check the task's progress.
 
 
-### 4. /api/task_status
+### 5. /api/task_status
 **Description:**
 
 This endpoint is used to get the status of a task (`task_id`) from `/api/upload`
@@ -182,7 +182,7 @@ There are two types of responses:
 }
 ```
 
-### 5. /api/delete_old
+### 6. /api/delete_old
 **Description:**
 
 This endpoint is used to delete old Vector Stores.
