@@ -255,7 +255,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 src={Arrow2}
                 alt="arrow"
                 className={`${
-                  isDocsListOpen ? 'rotate-0' : 'rotate-180'
+                  !isDocsListOpen ? 'rotate-0' : 'rotate-180'
                 } ml-auto mr-3 w-3 transition-all`}
               />
             </div>
@@ -264,7 +264,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               src={UploadIcon}
               onClick={() => setUploadModalState('ACTIVE')}
             ></img>
-            {!isDocsListOpen && (
+            {isDocsListOpen && (
               <div className="absolute top-12 left-0 right-6 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
                   docs.map((doc, index) => {
@@ -274,7 +274,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                           key={index}
                           onClick={() => {
                             dispatch(setSelectedDocs(doc));
-                            setIsDocsListOpen(true);
+                            setIsDocsListOpen(false);
                           }}
                           className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
                         >
