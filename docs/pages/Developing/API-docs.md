@@ -2,7 +2,7 @@
 
 # API Endpoints Documentation
 
-### /api/answer 
+### 1. /api/answer 
 **Description:**
 
 This endpoint is used to request answers to user-provided questions.
@@ -44,7 +44,7 @@ In response, you will get a JSON document containing the answer,query and the re
 }
 ```
 
-### /api/docs_check
+### 2. /api/docs_check
 
 **Description:**
 
@@ -78,7 +78,7 @@ In response, you will get a JSON document like this one indicating whether the d
 ```
 
 
-### /api/combine
+### 3. /api/combine
 **Description:**
 
 This endpoint provides information about available vectors and their locations with a simple GET request.
@@ -127,7 +127,7 @@ HTML example:
 JSON response with a status and a task ID that can be used to check the task's progress.
 
 
-### /api/task_status
+### 4. /api/task_status
 **Description:**
 
 This endpoint is used to get the status of a task (`task_id`) from `/api/upload`
@@ -182,7 +182,7 @@ There are two types of responses:
 }
 ```
 
-### /api/delete_old
+### 5. /api/delete_old
 **Description:**
 
 This endpoint is used to delete old Vector Stores.
