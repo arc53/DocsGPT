@@ -8,7 +8,7 @@ export default function Avatar({
   className: string;
 }) {
   const styles = {
-    transform: 'scale(-1, 1)',
+    // transform: 'scale(-1, 1)',
   };
   return (
     <div style={styles} className={className}>

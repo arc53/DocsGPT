@@ -72,7 +72,9 @@ const ConversationBubble = forwardRef<
         onMouseLeave={() => setShowFeedback(false)}
       >
         <div className="flex self-start">
+          <div className='transform scale-x-[-1]'>
           <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
+          </div>
           <div
             className={`ml-2 mr-5 flex flex-col rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
@@ -150,16 +152,17 @@ const ConversationBubble = forwardRef<
               </>
             )}
           </div>
+          <div className = 'flex'>
           <div
-            className={`relative mr-2 flex items-center justify-center ${
+            className={`mr-2 flex items-center justify-center ${
               type !== 'ERROR' && showFeedback ? '' : 'md:invisible'
             }`}
           >
             {copied ? (
-              <Checkmark className="absolute left-2 top-4" />
+              <Checkmark className="" />
             ) : (
               <Copy
-                className={`absolute left-2 top-4 cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
+                className={`cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
                 onClick={() => {
                   handleCopyClick(message);
                 }}
@@ -167,14 +170,14 @@ const ConversationBubble = forwardRef<
             )}
           </div>
           <div
-            className={`relative mr-2 flex items-center justify-center ${
+            className={`mr-2 flex items-center justify-center ${
               feedback === 'LIKE' || (type !== 'ERROR' && showFeedback)
                 ? ''
                 : 'md:invisible'
             }`}
           >
             <Like
-              className={`absolute left-6  top-4 cursor-pointer ${
+              className={`cursor-pointer ${
                 feedback === 'LIKE'
                   ? 'fill-purple-30 stroke-purple-30'
                   : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
@@ -183,20 +186,21 @@ const ConversationBubble = forwardRef<
             ></Like>
           </div>
           <div
-            className={`relative mr-10 flex items-center justify-center ${
+            className={`mr-10 flex items-center justify-center ${
               feedback === 'DISLIKE' || (type !== 'ERROR' && showFeedback)
                 ? ''
                 : 'md:invisible'
             }`}
           >
             <Dislike
-              className={`absolute left-10 top-4 cursor-pointer ${
+              className={`cursor-pointer ${
                 feedback === 'DISLIKE'
                   ? 'fill-red-2000 stroke-red-2000'
                   : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
               }`}
               onClick={() => handleFeedback?.('DISLIKE')}
             ></Dislike>
+          </div>
           </div>
         </div>
 
