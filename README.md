@@ -55,7 +55,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ## Useful links
 
- - 🔍🔥 [Live preview](https://docsgpt.arc53.com/)
+ - 🔍🔥 [Live Preview](https://docsgpt.arc53.com/)
  
  - 💬🎉[Join our Discord](https://discord.gg/n5BX8dh8rU)
  
@@ -131,7 +131,7 @@ Make sure you have Python 3.10 or 3.11 installed.
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
 2. (optional) Create a Python virtual environment:
-You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
+You can refer to the [official Python documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
 a) On Mac OS and Linux
 ```commandline
@@ -156,7 +156,7 @@ pip install -r requirements.txt
 Make sure you have Node version 16 or higher.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
-2. Install required packages `husky` and `vite` (ignore if installed).
+2. Install the required packages `husky` and `vite` (ignore if already installed).
 ```commandline
 npm install husky -g
 npm install vite -g
@@ -173,8 +173,8 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 ## Many Thanks To Our Contributors
 
-<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)">
-  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" />
+<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)" alt="View Contributors">
+  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" alt="Contributors" />
 </a>
 
 ## License
