@@ -41,9 +41,9 @@ export default function Upload({
         <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p>
 
         <div className="mb-10 w-[50%]">
-          <div className="h-1 w-[100%] bg-blue-4000"></div>
+          <div className="h-1 w-[100%] bg-purple-30"></div>
           <div
-            className={`relative bottom-1 h-1 bg-blue-5000 transition-all`}
+            className={`relative bottom-1 h-1 bg-purple-30 transition-all`}
             style={{ width: `${progress?.percentage || 0}%` }}
           ></div>
         </div>
@@ -55,9 +55,8 @@ export default function Upload({
             setProgress(undefined);
             setModalState('INACTIVE');
           }}
-          className={`rounded-3xl bg-blue-3000 px-4 py-2 text-sm font-medium text-white ${
-            isCancellable ? '' : 'hidden'
-          }`}
+          className={`rounded-3xl bg-purple-30 px-4 py-2 text-sm font-medium text-white ${isCancellable ? '' : 'hidden'
+            }`}
         >
           Finish
         </button>
@@ -189,7 +188,7 @@ export default function Upload({
           <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
         </div>
         <div {...getRootProps()}>
-          <span className="rounded-3xl border border-blue-2000 px-4 py-2 font-medium text-blue-2000 hover:cursor-pointer">
+          <span className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer">
             <input type="button" {...getInputProps()} />
             Choose Files
           </span>
@@ -206,7 +205,9 @@ export default function Upload({
         <div className="flex flex-row-reverse">
           <button
             onClick={uploadFile}
-            className="ml-6 rounded-3xl bg-blue-3000 py-2 px-6 text-white"
+            className={`ml-6 rounded-3xl bg-purple-30 text-white ${files.length > 0 ? '' : 'bg-opacity-75 text-opacity-80'
+              } py-2 px-6`}
+            disabled={files.length === 0}  // Disable the button if no file is selected
           >
             Train
           </button>
@@ -227,9 +228,8 @@ export default function Upload({
 
   return (
     <article
-      className={`${
-        modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } absolute z-30  h-screen w-screen  bg-gray-alpha`}
+      className={`${modalState === 'ACTIVE' ? 'visible' : 'hidden'
+        } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
       <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
         {view}

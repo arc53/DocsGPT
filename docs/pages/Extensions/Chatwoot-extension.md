@@ -1,29 +1,42 @@
-### To start chatwoot extension:
-1. Prepare and start the DocsGPT itself (load your documentation too). Follow our [wiki](https://github.com/arc53/DocsGPT/wiki) to start it and to [ingest](https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation) data.
-2. Go to chatwoot, **Navigate** to your profile (bottom left), click on profile settings, scroll to the bottom and copy **Access Token**.
-3. Navigate to `/extensions/chatwoot`. Copy `.env_sample` and create `.env` file.
-4. Fill in the values.
+### To Start Chatwoot Extension:
 
-```
-docsgpt_url=<docsgpt_api_url>
-chatwoot_url=<chatwoot_url>
-docsgpt_key=<openai_api_key or other llm key>
-chatwoot_token=<from part 2>
-```
+1. **Prepare and Start DocsGPT:**
+   - Launch DocsGPT using the instructions in our [wiki](https://github.com/arc53/DocsGPT/wiki).
+   - Make sure to load your documentation.
 
-5. Start with `flask run` command.
+2. **Get Access Token from Chatwoot:**
+   - Navigate to Chatwoot.
+   - Go to your profile (bottom left), click on profile settings.
+   - Scroll to the bottom and copy the **Access Token**.
 
-If you want for bot to stop responding to questions for a specific user or session just add label `human-requested` in your conversation.
+3. **Set Up Chatwoot Extension:**
+   - Navigate to `/extensions/chatwoot`.
+   - Copy `.env_sample` and create a `.env` file.
+   - Fill in the values in the `.env` file:
 
+     ```env
+     docsgpt_url=<docsgpt_api_url>
+     chatwoot_url=<chatwoot_url>
+     docsgpt_key=<openai_api_key or other llm key>
+     chatwoot_token=<from part 2>
+     ```
 
-### Optional (extra validation)
-In `app.py` uncomment lines 12-13 and 71-75
+4. **Start the Extension:**
+   - Use the command `flask run` to start the extension.
 
-in your `.env` file add:
+5. **Optional: Extra Validation**
+   - In `app.py`, uncomment lines 12-13 and 71-75.
+   - Add the following lines to your `.env` file:
 
-```
-account_id=(optional) 1
-assignee_id=(optional) 1
-```
+     ```env
+     account_id=(optional) 1
+     assignee_id=(optional) 1
+     ```
 
-Those are chatwoot values and will allow you to check if you are responding to correct widget and responding to questions assigned to specific user.
+     These Chatwoot values help ensure you respond to the correct widget and handle questions assigned to a specific user.
+
+### Stopping Bot Responses for Specific User or Session:
+- If you want the bot to stop responding to questions for a specific user or session, add a label `human-requested` in your conversation.
+
+### Additional Notes:
+- For further details on training on other documentation, refer to our [wiki](https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation).

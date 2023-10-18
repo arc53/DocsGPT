@@ -41,7 +41,7 @@ Jinja2==3.1.2
 jmespath==1.0.1
 joblib==1.2.0
 kombu==5.2.4
-langchain==0.0.308
+langchain==0.0.312
 loguru==0.6.0
 lxml==4.9.2
 MarkupSafe==2.1.2
@@ -104,3 +104,4 @@ urllib3==1.26.17
 vine==5.0.0
 wcwidth==0.2.6
 yarl==1.8.2
+sentence-transformers==2.2.2

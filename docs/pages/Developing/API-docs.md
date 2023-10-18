@@ -18,7 +18,7 @@ fetch("http://127.0.0.1:5000/api/answer", {
 .then(console.log.bind(console))
 ```
 
-In response you will get a json document like this one:
+In response, you will get a JSON document like this one:
 
 ```json
 {
@@ -30,7 +30,7 @@ In response you will get a json document like this one:
 
 ### /api/docs_check
 It will make sure documentation is loaded on a server (just run it every time user is switching between libraries (documentations)).
-It's a POST request that sends a JSON in body with 1 value. Here is a JavaScript fetch example:
+It's a POST request that sends a JSON in a body with 1 value. Here is a JavaScript fetch example:
 
 ```js
 // answer (POST http://127.0.0.1:5000/api/docs_check)
@@ -45,7 +45,7 @@ fetch("http://127.0.0.1:5000/api/docs_check", {
 .then(console.log.bind(console))
 ```
 
-In response you will get a json document like this one:
+In response, you will get a JSON document like this one:
 ```json
 {
   "status": "exists"
@@ -54,17 +54,17 @@ In response you will get a json document like this one:
 
 
 ### /api/combine
-Provides json that tells UI which vectors are available and where they are located with a simple get request.
+Provides JSON that tells UI which vectors are available and where they are located with a simple get request.
 
 Response will include:
 `date`, `description`, `docLink`, `fullName`, `language`, `location` (local or docshub), `model`, `name`, `version`.
 
-Example of json in Docshub and local:
+Example of JSON in Docshub and local:
 <img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
 
 
 ### /api/upload
-Uploads file that needs to be trained, response is json with task id, which can be used to check on tasks progress
+Uploads file that needs to be trained, response is JSON with task ID, which can be used to check on task's progress
 HTML example:
 
 ```html
@@ -73,7 +73,7 @@ HTML example:
     <input type="text" name="user" value="local" hidden>
     <input type="text" name="name" placeholder="Name:">
     
-    <button type="submit" class="py-2 px-4 text-white bg-blue-500 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+    <button type="submit" class="py-2 px-4 text-white bg-purple-30 rounded-md hover:bg-purple-30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-30">
         Upload
     </button>
 </form>
@@ -104,7 +104,9 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 
 Responses:
 There are two types of responses:
-1. while task it still running, where "current" will show progress from 0 to 100
+
+1. While the task is still running, the 'current' value will show progress from 0 to 100.
+
 ```json
 {
   "result": {
@@ -114,7 +116,7 @@ There are two types of responses:
 }
 ```
 
-2. When task is completed
+2. When task is completed:
 ```json
 {
   "result": {
@@ -133,7 +135,8 @@ There are two types of responses:
 ```
 
 ### /api/delete_old
-Deletes old vectorstores:
+Deletes old Vector Stores:
+
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
@@ -144,7 +147,6 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 })
 .then((res) => res.text())
 .then(console.log.bind(console))
-```
 
 Response:
 

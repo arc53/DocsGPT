@@ -47,7 +47,7 @@ javalang==0.13.0
 Jinja2==3.1.2
 jmespath==1.0.1
 joblib==1.3.1
-langchain==0.0.308
+langchain==0.0.312
 lxml==4.9.3
 manifest-ml==0.1.8
 MarkupSafe==2.1.3
