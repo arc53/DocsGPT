@@ -1,0 +1,182 @@
+@import "https://unpkg.com/open-props/normalize.min.css";
+@import "https://unpkg.com/open-props/open-props.min.css";
+
+:root {
+  --lerp-0: 1; /* === sin(90deg) */
+  --lerp-1: calc(sin(30deg));
+  --lerp-2: calc(sin(20deg));
+  --lerp-3: calc(sin(10deg));
+  --lerp-4: 0;
+  --transition: ease;
+}
+
+*,
+*:after,
+*:before {
+  box-sizing: border-box;
+}
+
+h1 {
+  position: fixed;
+  top: var(--size-4);
+  right: var(--size-4);
+  margin: 0;
+  color: var(--gray-0);
+}
+
+body {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  font-family:  'Google Sans', sans-serif, system-ui;
+  background: var(--gradient-6);
+}
+
+/*:root {
+  --lerp-0: 1;
+  --lerp-1: 0.5625;
+  --lerp-2: 0.25;
+  --lerp-3: 0.0625;
+  --lerp-4: 0;
+}*/
+
+.block:nth-of-type(1){--hue: 10;}
+.block:nth-of-type(2){--hue: 210;}
+.block:nth-of-type(3){--hue: 290;}
+.block:nth-of-type(4){--hue: 340;}
+.block:nth-of-type(5){--hue: 30;}
+.block:nth-of-type(6){--hue: 220;}
+.block:nth-of-type(7){--hue: 320;}
+.block:nth-of-type(8){--hue: 280;}
+.block:nth-of-type(9){--hue: 240;}
+
+.blocks {
+  display: flex;
+  list-style-type: none;
+  padding: var(--size-2);
+  border-radius: var(--radius-3);
+  gap: var(--size-4);
+  background: hsl(0 0% 100% / 0.5);
+  box-shadow: 
+    0 2px 0 0 hsl(0 0% 100% / 0.5) inset,
+    0 2px 0 0 hsl(0 0% 25% / 0.5);
+  align-items: center;
+  justify-content: center;
+  align-content: center;
+  backdrop-filter: blur(10px);
+}
+
+.blocks:hover {
+  --show: 1;
+}
+
+.block {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  transition: all 0.2s;
+  flex: calc(0.2 + (var(--lerp, 0) * 1.5));
+  max-width: 100px;
+  position: relative;
+}
+
+.block:after {
+  content: '';
+  width: 5%;
+  aspect-ratio: 1;
+  background: var(--text-1);
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  border-radius: var(--radius-3);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+}
+
+.block:before {
+  content: '';
+  position: absolute;
+  width: calc(100% + var(--size-4));
+  bottom: 0;
+  aspect-ratio: 1 / 2;
+  left: 50%;
+  transition: transform 0.2s var(--transition);
+  transform-origin: 50% 100%;
+  transform: translateX(-50%) scaleY(var(--show, 0));
+  z-index: -1;
+}
+
+.block .block__item {
+  transition: outline 0.2s var(--transition);
+  outline: transparent var(--size-1) solid;
+}
+
+.block svg {
+  width: 80%;
+  transition: all 0.2s var(--transition);
+  stroke: var(--gray-1);
+}
+
+:is(.block:focus-visible) .block__item {
+  outline: var(--gray-1) var(--size-1) solid;
+  border-radius: var(--radius-3);
+}
+
+.block {
+  outline: none;
+}
+
+.block__item {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-2);
+  background:
+    linear-gradient(hsl(0 0% 100% / 0.1), transparent),
+    hsl(var(--hue, 10) 70% 60%);
+  display: grid;
+  place-items: center;
+  transition: all 0.2s var(--transition);
+  box-shadow:
+    0 2px 0 0 hsl(0 0% 100% / 0.5) inset,
+    0 2px 0 0 hsl(0 0% 25% / 0.5);
+  transform-origin: 50% 100%;
+  position: relative;
+  translate: 0 calc(var(--lerp) * -75%);
+}
+
+/*@media(prefers-color-scheme: dark) {
+}*/
+body {
+  background: var(--gradient-23);
+}
+.blocks {
+  background: hsl(0 0% 0% / 0.5);
+}
+
+
+:is(.block:hover, .block:focus-visible) {
+  --lerp: var(--lerp-0);
+  z-index: 5;
+}
+.block:has( + :is(.block:hover, .block:focus-visible)),
+:is(.block:hover, .block:focus-visible) + .block {
+  --lerp: var(--lerp-1);
+  z-index: 4;
+}
+.block:has( + .block + :is(.block:hover, .block:focus-visible)),
+:is(.block:hover, .block:focus-visible) + .block + .block {
+  --lerp: var(--lerp-2);
+  z-index: 3;
+}
+.block:has( + .block + .block + :is(.block:hover, .block:focus-visible)),
+:is(.block:hover, .block:focus-visible) + .block + .block + .block {
+  --lerp: var(--lerp-3);
+  z-index: 2;
+}
+.block:has( + .block + .block + .block + :is(.block:hover, .block:focus-visible)),
+:is(.block:hover, .block:focus-visible) + .block + .block + .block + .block {
+  --lerp: var(--lerp-4);
+  z-index: 1;
+}
