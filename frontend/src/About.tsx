@@ -4,7 +4,7 @@
 export default function About() {
   return (
     <div className="mx-5 grid min-h-screen md:mx-36">
-      <article className="place-items-left mx-auto my-auto mt-20 flex w-full max-w-6xl flex-col gap-6 rounded-3xl bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
+      <article className="place-items-left mx-auto my-auto my-10 mt-20 flex w-full max-w-6xl flex-col gap-6 rounded-3xl bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
         <div className="flex items-center">
           <p className="mr-2 text-3xl">About DocsGPT</p>
           <p className="text-[21px]">🦖</p>
