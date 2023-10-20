@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import Navigation from './Navigation';
 import Conversation from './conversation/Conversation';
 import About from './About';
+import PageNotFound from './PageNotFound';
 import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
 import { useState } from 'react';
@@ -25,6 +26,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Conversation />} />
           <Route path="/about" element={<About />} />
+          <Route path="*" element={<PageNotFound />} />
         </Routes>
       </div>
     </div>
