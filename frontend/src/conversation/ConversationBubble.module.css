@@ -1,0 +1,11 @@
+.list p {
+  display: inline;
+}
+
+.list li:not(:first-child) {
+  margin-top: 1em;
+}
+
+.list li > .list {
+  margin-top: 1em;
+}
