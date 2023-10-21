@@ -1,7 +1,7 @@
 ### How to set up react docsGPT widget on your website:
 
 ### Installation
-Got to your project and install a new dependency: `npm install docsgpt`.
+Go to your project and install a new dependency: `npm install docsgpt`.
 
 ### Usage
 Go to your project and in the file where you want to use the widget, import it: 
