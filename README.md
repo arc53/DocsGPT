@@ -156,7 +156,7 @@ pip install -r requirements.txt
 Make sure you have Node version 16 or higher.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
-2. Install required packages `husky` and `vite` (ignore if installed).
+2. Install the required packages `husky` and `vite` (ignore if already installed).
 
 ```commandline
 npm install husky -g
@@ -176,8 +176,8 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 ## Many Thanks To Our Contributors
 
-<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)">
-  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" />
+<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)" alt="View Contributors">
+  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" alt="Contributors" />
 </a>
 
 ## License
