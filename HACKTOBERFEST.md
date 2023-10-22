@@ -17,14 +17,14 @@ Familiarize yourself with the current contributions and our [Roadmap](https://gi
 Deciding to contribute with code? Here are some insights based on the area of your interest:
 
 - Frontend (⚛️React, Vite):
-    - Most of the code is located in `/frontend` folder. You can also check out our React extension in /extensions/react-widget.
+    - Most of the code is located in [`/frontend`](https://github.com/arc53/DocsGPT/tree/main/frontend) folder. You can also check out our React extension in [`/extensions/react-widget`](https://github.com/arc53/DocsGPT/tree/main/extensions/react-widget).
     - For design references, here's the [Figma](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).
     - Ensure you adhere to the established guidelines.
 
 - Backend (🐍Python):
-    - Focus on `/application` or `/scripts`. However, avoid the files ingest_rst.py and ingest_rst_sphinx.py, as they will soon be deprecated.
+    - Focus on [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) or [`/scripts`](https://github.com/arc53/DocsGPT/tree/main/scripts). However, avoid the files [`ingest_rst.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst.py) and [`ingest_rst_sphinx.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst_sphinx.py), as they will soon be deprecated.
     - Newly added code should come with relevant unit tests (pytest).
-    - Refer to the `/tests` folder for test suites.
+    - Refer to the [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder for test suites.
 
 Check out our [Contributing Guidelines](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
@@ -32,4 +32,10 @@ Once you have created your PR and our maintainers have merged it, please fill in
 
 Feel free to join our Discord server. We're here to help newcomers, so don't hesitate to jump in! [Join us here](https://discord.gg/n5BX8dh8rU).
 
-Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions could earn you a stylish new t-shirt as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
+Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typo) could earn you a stylish new t-shirt as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
+
+Here is a preview of the shirts:
+<p align="center">
+<img src="Assets/DocsGPT tee-front.jpeg" width="350" />
+<img src="Assets/DocsGPT tee-back.jpeg" width="350" />
+</p>

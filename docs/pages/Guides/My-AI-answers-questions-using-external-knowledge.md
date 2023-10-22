@@ -1,10 +1,10 @@
-If your AI uses external knowledge and is not explicit enough it is ok, because we try to make docsgpt friendly.
+If your AI uses external knowledge and is not explicit enough, it is ok, because we try to make DocsGPT friendly.
 
-But if you want to adjust it, here is a simple way.
+But if you want to adjust it, here is a simple way:-
 
-Got to `application/prompts/chat_combine_prompt.txt`
+- Got to `application/prompts/chat_combine_prompt.txt`
 
-And change it to
+- And change it to
 
 
 ```

@@ -17,8 +17,7 @@ When using code examples, use the following format:
 
 (code)
 {summaries}
-
-Thank you
+```
 
 
 
