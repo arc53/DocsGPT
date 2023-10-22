@@ -4,7 +4,7 @@ Here's a step-by-step guide on how to setup an Amazon Lightsail instance to host
 
 ## Configuring your instance
 
-(If you know how to create a Lightsail instance, you can skip to the recommended configuration part by clicking here).
+(If you know how to create a Lightsail instance, you can skip to the recommended configuration part by clicking [here](#connecting-to-your-newly-created-instance)).
 
 ### 1. Create an AWS Account: 
 If you haven't already, create or log in to your AWS account at https://lightsail.aws.amazon.com.
@@ -102,3 +102,7 @@ Repeat the process for port `7091`.
 #### Access your instance
 
 Your instance is now available at your Public IP Address on port 5173. Enjoy using DocsGPT!
+
+## Other Deployment Options
+
+- [Deploy DocsGPT on Civo Compute Cloud](https://dev.to/rutamhere/deploying-docsgpt-on-civo-compute-c)
