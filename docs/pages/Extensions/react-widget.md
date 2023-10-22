@@ -14,9 +14,9 @@ import "docsgpt/dist/style.css";
 Then you can use it like this: `<DocsGPTWidget />`
 
 DocsGPTWidget takes 3 props:
-- `apiHost` — URL of your DocsGPT API.
-- `selectDocs` — documentation that you want to use for your widget (e.g. `default` or `local/docs1.zip`).
-- `apiKey` — usually it's empty.
+1. `apiHost` — URL of your DocsGPT API.
+2. `selectDocs` — documentation that you want to use for your widget (e.g. `default` or `local/docs1.zip`).
+3. `apiKey` — usually it's empty.
 
 ### How to use DocsGPTWidget with [Nextra](https://nextra.site/) (Next.js + MDX)
 Install your widget as described above and then go to your `pages/` folder and create a new file `_app.js` with the following content:

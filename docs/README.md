@@ -67,4 +67,3 @@ With the local server running, you can access the documentation on your local en
 
 **Note:** This guide assumes that you have Node.js and npm installed on your machine. It involves setting up a local server using Yarn to access and edit the documentation offline. In case of any issues, please ensure that your Node.js and npm installations are correct and that Yarn is properly installed.
 
-Thanks! 🚀

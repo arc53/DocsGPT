@@ -1,10 +1,10 @@
-Fortunately, there are many providers for LLM's and some of them can even be run locally
+Fortunately, there are many providers for LLMs, and some of them can even be run locally.
 
 There are two models used in the app:
 1. Embeddings.
 2. Text generation.
 
-By default, we use OpenAI's models but if you want to change it or even run it locally, it's very simple!
+By default, we use OpenAI's models, but if you want to change it or even run it locally, it's very simple!
 
 ### Go to .env file or set environment variables:
 
@@ -31,6 +31,6 @@ Alternatively, if you wish to run Llama locally, you can run `setup.sh` and choo
 That's it!
 
 ### Hosting everything locally and privately (for using our optimised open-source models)
-If you are working with important data and don't want anything to leave your premises.
+If you are working with critical data and don't want anything to leave your premises.
 
-Make sure you set `SELF_HOSTED_MODEL` as true in your `.env` variable and for your `LLM_NAME` you can use anything that's on Hugging Face.
+Make sure you set `SELF_HOSTED_MODEL` as true in your `.env` variable, and for your `LLM_NAME`, you can use anything that is on Hugging Face.
