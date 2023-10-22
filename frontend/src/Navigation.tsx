@@ -255,7 +255,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 src={Arrow2}
                 alt="arrow"
                 className={`${
-                  isDocsListOpen ? 'rotate-0' : 'rotate-180'
+                  !isDocsListOpen ? 'rotate-0' : 'rotate-180'
                 } ml-auto mr-3 w-3 transition-all`}
               />
             </div>
@@ -362,7 +362,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </a>
         </div>
       </div>
-      <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden">
+      <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 md:hidden">
         <button
           className="mt-5 ml-6 h-6 w-6 md:hidden"
           onClick={() => setNavOpen(true)}
