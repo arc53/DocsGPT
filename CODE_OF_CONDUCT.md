@@ -2,8 +2,8 @@
 
 ## Our Pledge
 
-We as members, contributors and leaders pledge to make participation in our
-community, a harassment-free experience for everyone, regardless of age, body
+We as members,contributors and leaders pledge to make participation in our
+community as a harassment-free experience for everyone, regardless of age, body
 size, visible or invisible disability, ethnicity, sex characteristics, gender
 identity and expression, level of experience, education, socio-economic status,
 nationality, personal appearance, race, religion, or sexual identity
@@ -50,7 +50,7 @@ decisions when appropriate.
 
 ## Scope
 
-This Code of Conduct applies within all community spaces, and also applies when
+This Code of Conduct applies within all community spaces and also applies when
 an individual is officially representing the community in public spaces.
 Examples of representing our community include using an official e-mail address,
 posting via an official social media account, or acting as an appointed
@@ -103,7 +103,7 @@ Violating these terms may lead to a permanent ban.
 ### 4. Permanent Ban
 - **Community Impact**: Demonstrating a pattern of violation of community
 standards, including sustained inappropriate behavior,  harassment of an
-individual, or aggression towards or disparagement of classes of individuals.
+individual or aggression towards or disparagement of classes of individuals.
 
 - **Consequence**: A permanent ban from any sort of public interaction within
 the community.
