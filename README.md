@@ -76,7 +76,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ## QuickStart
 
-Note: Make sure you have [Docker](https://docs.docker.com/) installed
+Note: Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
 
 On Mac OS or Linux, write:
 
