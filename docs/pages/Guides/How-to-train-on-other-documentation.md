@@ -12,28 +12,28 @@ It currently uses OPEN_AI to create the vector store, so make sure your document
 You can usually find documentation on Github in `docs/` folder for most open-source projects.
 
 ### 1. Find documentation in .rst/.md and create a folder with it in your scripts directory
-- Name it `inputs/`  
-- Put all your .rst/.md files in there  
-- The search is recursive, so you don't need to flatten them
+- Name it `inputs/`.
+- Put all your .rst/.md files in there.  
+- The search is recursive, so you don't need to flatten them.
 
-If there are no .rst/.md files just convert whatever you find to .txt and feed it. (don't forget to change the extension in script)
+If there are no .rst/.md files just convert whatever you find to .txt file and feed it. (don't forget to change the extension in script)
 
 ### 2. Create .env file in `scripts/` folder
 And write your OpenAI API key inside
-`OPENAI_API_KEY=<your-api-key>`
+`OPENAI_API_KEY=<your-api-key>`.
 
 ### 3. Run scripts/ingest.py
 
 `python ingest.py ingest`
 
-It will tell you how much it will cost
+It will tell you how much it will cost.
 
 ### 4. Move `index.faiss` and `index.pkl` generated in `scripts/output` to `application/` folder. 
 
 
 ### 5. Run web app
-Once you run it will use new context that is relevant to your documentation  
-Make sure you select default in the dropdown in the UI
+Once you run it will use new context that is relevant to your documentation.  
+Make sure you select default in the dropdown in the UI.
 
 ## Customization 
 You can learn more about options while running ingest.py by running:

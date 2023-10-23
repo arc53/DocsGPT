@@ -27,6 +27,9 @@ class FaissStore(BaseVectorStore):
     def save_local(self, *args, **kwargs):
         return self.docsearch.save_local(*args, **kwargs)
 
+    def delete_index(self, *args, **kwargs):
+        return self.docsearch.delete(*args, **kwargs)
+
     def assert_embedding_dimensions(self, embeddings):
         """
         Check that the word embedding dimension of the docsearch index matches
@@ -41,4 +44,3 @@ class FaissStore(BaseVectorStore):
             if word_embedding_dimension != docsearch_index_dimension:
                 raise ValueError(f"word_embedding_dimension ({word_embedding_dimension}) " +
                                  f"!= docsearch_index_word_embedding_dimension ({docsearch_index_dimension})")
-

@@ -50,4 +50,4 @@ yarn dev
 
 - Now, you should be able to view the docs on your local environment by visiting `http://localhost:5000`. You can explore the different markdown files and make changes as you see fit.
 
-- Footnotes: This guide assumes you have Node.js and npm installed. The guide involves running a local server using yarn, and viewing the documentation offline. If you encounter any issues, it may be worth verifying your Node.js and npm installations and whether you have installed yarn correctly.
+- **Footnotes:** This guide assumes you have Node.js and npm installed. The guide involves running a local server using yarn, and viewing the documentation offline. If you encounter any issues, it may be worth verifying your Node.js and npm installations and whether you have installed yarn correctly.
