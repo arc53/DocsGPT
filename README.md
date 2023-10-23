@@ -104,7 +104,7 @@ Alternatively, consult this guide:
    API_KEY=Yourkey
    VITE_API_STREAMING=true
    ```
-   
+
    See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
 
 3. Run [./run-with-docker-compose.sh](https://github.com/arc53/DocsGPT/blob/main/run-with-docker-compose.sh).
