@@ -7,7 +7,7 @@
 </p>
 
 <p align="left">
-  Introducing <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong>: an advanced open-source tool designed to simplify the task of searching for information within project documentation. By harnessing the utilities of the powerful <strong>GPT</strong> models, developers can effortlessly inquire about project details and receive precise responses.
+  <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in the project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
   
 Bid goodbye to the arduous process of manual searches, and let <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> swiftly uncover the information you seek. Give it a try and witness the transformation it brings to your project documentation experience. 
 
@@ -26,11 +26,12 @@ Join us in contributing to its development and become a valued part of the promi
 
 ### Production Support / Help for companies: 
 
-We're excited to offer personalized assistance for the deployment of DocsGPT in your live environment.
-- [Book A Demo 👋](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
-- [Send An Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
-  
-### [🎉 Participate in Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
+We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
+
+- [Book Demo 👋](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
+- [Send Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
+
+### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
@@ -75,11 +76,11 @@ If you lack sufficient resources to operate it, you can employ bitsnbytes for qu
 
 ## Project structure
 
-- Application: The Flask app (main application).
+- Application: Flask app (main application).
 
 - Extensions: The Chrome extension.
 
-- Scripts: A script responsible for creating a similarity search index for other libraries.
+- Scripts - Script that creates similarity search index for other libraries.
 
 - Frontend: The frontend, which utilizes Vite and React.
 
@@ -96,17 +97,17 @@ This will install all the necessary dependencies and provide the option to eithe
 Alternatively, consult this guide:
 
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. In your main directory, establish a `.env` file and configure the environment variable `OPENAI_API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys), and set `VITE_API_STREAMING` to either 'true' or 'false' based on your preference for receiving streaming answers. It should look like this inside:
+2. Create a `.env` file in your root directory and set the env variable `OPENAI_API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys) and `VITE_API_STREAMING` to true or false, depending on whether you want streaming answers or not.
+   It should look like this inside:
 
    ```
    API_KEY=Yourkey
    VITE_API_STREAMING=true
    ```
   See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
-  
-4. Run [./run-with-docker-compose.sh](https://github.com/arc53/DocsGPT/blob/main/run-with-docker-compose.sh).
 
-5. Navigate to http://localhost:5173 in your web browser.
+3. Run [./run-with-docker-compose.sh](https://github.com/arc53/DocsGPT/blob/main/run-with-docker-compose.sh).
+4. Navigate to http://localhost:5173/.
 
 To stop, just run `Ctrl + C`.
 
@@ -136,9 +137,9 @@ Ensure you have Python 3.10 or 3.11 installed.
     (check out [`application/core/settings.py`](application/core/settings.py) for additional configuration options.)
 
 2. (optional) Create a Python virtual environment:
-You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for creating virtual environments.
+ You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
-a) On Mac OS and Linux:
+a) On Mac OS and Linux
 ```commandline
 python -m venv venv
 . venv/bin/activate
@@ -149,7 +150,7 @@ python -m venv venv
  venv/Scripts/activate
 ```
 
-3. Switch to the `application/` subdir using the command `cd application/` and proceed to install the necessary dependencies for the backend.
+3. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
 ```commandline
 pip install -r requirements.txt
 ```
@@ -160,18 +161,18 @@ pip install -r requirements.txt
 
 Ensure that your Node version is 16 or a more recent one.
 
-1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) directory.
-2. If you haven't already installed the required packages `husky` and `vite`, please do so. (ignore this step if they are already installed)
+1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
+2. Install the required packages `husky` and `vite` (ignore if already installed).
 ```commandline
 npm install husky -g
 npm install vite -g
 ```
-3. Install dependencies by executing `npm install --include=dev`.
-4. Launch the application by running `npm run dev`.
+3. Install dependencies by running `npm install --include=dev`.
+4. Run the app using `npm run dev`.
 
 
 ## Contributing
-For details on how to get involved, please consult the [CONTRIBUTING.md](CONTRIBUTING.md) document. We encourage the submission of issues, questions, and pull requests, and look forward to your involvement.
+Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information about how to get involved. We welcome issues, questions, and pull requests.
 
 ## Code Of Conduct
 We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
