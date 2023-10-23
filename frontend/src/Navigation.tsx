@@ -32,6 +32,7 @@ import { useMediaQuery, useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
 import { Doc, getConversations } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
+import ConversationTile from './conversation/ConversationTile';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -68,27 +69,26 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   useEffect(() => {
     if (!conversations) {
-      getConversations()
-        .then((fetchedConversations) => {
-          dispatch(setConversations(fetchedConversations));
-        })
-        .catch((error) => {
-          console.error('Failed to fetch conversations: ', error);
-        });
+      fetchConversations();
     }
   }, [conversations, dispatch]);
+
+  async function fetchConversations() {
+    return await getConversations()
+      .then((fetchedConversations) => {
+        dispatch(setConversations(fetchedConversations));
+      })
+      .catch((error) => {
+        console.error('Failed to fetch conversations: ', error);
+      });
+  }
 
   const handleDeleteConversation = (id: string) => {
     fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
       method: 'POST',
     })
       .then(() => {
-        // remove the image element from the DOM
-        const imageElement = document.querySelector(
-          `#img-${id}`,
-        ) as HTMLElement;
-        const parentElement = imageElement.parentNode as HTMLElement;
-        parentElement.parentNode?.removeChild(parentElement);
+        fetchConversations();
       })
       .catch((error) => console.error(error));
   };
@@ -126,6 +126,29 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         );
       });
   };
+
+  async function updateConversationName(updatedConversation: {
+    name: string;
+    id: string;
+  }) {
+    await fetch(`${apiHost}/api/update_conversation_name`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updatedConversation),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data) {
+          navigate('/');
+          fetchConversations();
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }
   useOutsideAlerter(
     navRef,
     () => {
@@ -142,11 +165,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   */
 
   useEffect(() => {
-    if (isMobile) {
-      setNavOpen(false);
-      return;
-    }
-    setNavOpen(true);
+    setNavOpen(!isMobile);
   }, [isMobile]);
 
   return (
@@ -171,7 +190,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
       >
         <div className={'visible h-16 w-full border-b-2 md:h-12'}>
           <button
@@ -206,46 +225,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }
         >
           <img src={Message} className="ml-4 w-5"></img>
-          <p className="my-auto text-eerie-black">New Chat</p>
+          <p className="my-auto text-sm text-eerie-black">New Chat</p>
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
-          {conversations
-            ? conversations.map((conversation) => {
-                return (
-                  <div
-                    key={conversation.id}
-                    onClick={() => {
-                      handleConversationClick(conversation.id);
-                    }}
-                    className={`my-auto mx-4 mt-4 flex h-12 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
-                      conversationId === conversation.id ? 'bg-gray-100' : ''
-                    }`}
-                  >
-                    <div className="flex gap-4">
-                      <img src={Message} className="ml-2 w-5"></img>
-                      <p className="my-auto text-eerie-black">
-                        {conversation.name.length > 45
-                          ? conversation.name.substring(0, 45) + '...'
-                          : conversation.name}
-                      </p>
-                    </div>
-
-                    {conversationId === conversation.id ? (
-                      <img
-                        src={Exit}
-                        alt="Exit"
-                        className="mr-4 h-3 w-3 cursor-pointer hover:opacity-50"
-                        id={`img-${conversation.id}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleDeleteConversation(conversation.id);
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })
-            : null}
+          {conversations?.map((conversation) => (
+            <ConversationTile
+              key={conversation.id}
+              conversation={conversation}
+              selectConversation={(id) => handleConversationClick(id)}
+              onDeleteConversation={(id) => handleDeleteConversation(id)}
+              onSave={(conversation) => updateConversationName(conversation)}
+            />
+          ))}
         </div>
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
@@ -264,7 +255,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 src={Arrow2}
                 alt="arrow"
                 className={`${
-                  isDocsListOpen ? 'rotate-0' : 'rotate-180'
+                  !isDocsListOpen ? 'rotate-0' : 'rotate-180'
                 } ml-auto mr-3 w-3 transition-all`}
               />
             </div>
@@ -290,7 +281,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                           <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
                             {doc.name} {doc.version}
                           </p>
-                          {doc.location === 'local' ? (
+                          {doc.location === 'local' && (
                             <img
                               src={Exit}
                               alt="Exit"
@@ -301,7 +292,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                                 handleDeleteClick(index, doc);
                               }}
                             />
-                          ) : null}
+                          )}
                         </div>
                       );
                     }
@@ -371,7 +362,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </a>
         </div>
       </div>
-      <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden">
+      <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 md:hidden">
         <button
           className="mt-5 ml-6 h-6 w-6 md:hidden"
           onClick={() => setNavOpen(true)}

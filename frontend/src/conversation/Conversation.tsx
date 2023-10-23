@@ -30,13 +30,16 @@ export default function Conversation() {
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
+    const element = document.getElementById('inputbox') as HTMLInputElement;
+    if (element) {
+      element.focus();
+    }
+  }, []);
+
+  useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          setHasScrolledToLast(true);
-        } else {
-          setHasScrolledToLast(false);
-        }
+        setHasScrolledToLast(entry.isIntersecting);
       });
     };
 
@@ -114,7 +117,7 @@ export default function Conversation() {
 
   return (
     <div className="flex flex-col justify-center p-4 md:flex-row">
-      {queries.length > 0 && !hasScrolledToLast ? (
+      {queries.length > 0 && !hasScrolledToLast && (
         <button
           onClick={scrollIntoView}
           aria-label="scroll to bottom"
@@ -126,7 +129,7 @@ export default function Conversation() {
             className="h4- w-4 opacity-50 md:h-5 md:w-5"
           />
         </button>
-      ) : null}
+      )}
 
       {queries.length > 0 && (
         <div className="mt-20 flex flex-col transition-all md:w-3/4">
@@ -152,7 +155,9 @@ export default function Conversation() {
       <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white pt-3 md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
           <div
+            id="inputbox"
             ref={inputRef}
+            tabIndex={1}
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
@@ -187,7 +192,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
-        <p className="w-[100vw] self-center bg-white p-5 text-center text-xs text-gray-2000">
+        <p className="w-[100vw] self-center bg-white p-5 text-center text-xs text-gray-2000 md:w-full">
           This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
           questions.
         </p>

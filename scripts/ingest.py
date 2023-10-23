@@ -78,13 +78,11 @@ def ingest(yes: bool = typer.Option(False, "-y", "--yes", prompt=False,
         # Here we check for command line arguments for bot calls.
         # If no argument exists or the yes is not True, then the
         # user permission is requested to call the API.
-        if len(sys.argv) > 1:
-            if yes:
-                call_openai_api(docs, folder_name)
-            else:
-                get_user_permission(docs, folder_name)
+        if len(sys.argv) > 1 and yes:
+            call_openai_api(docs, folder_name)
         else:
             get_user_permission(docs, folder_name)
+
 
     folder_counts = defaultdict(int)
     folder_names = []
@@ -110,14 +108,19 @@ def convert(dir: Optional[str] = typer.Option("inputs",
             Creates documentation linked to original functions from specified location.
             By default /inputs folder is used, .py is parsed.
     """
-    if formats == 'py':
-        functions_dict, classes_dict = extract_py(dir)
-    elif formats == 'js':
-        functions_dict, classes_dict = extract_js(dir)
-    elif formats == 'java':
-        functions_dict, classes_dict = extract_java(dir)
+    # Using a dictionary to map between the formats and their respective extraction functions
+    # makes the code more scalable. When adding more formats in the future, 
+    # you only need to update the extraction_functions dictionary.
+    extraction_functions = {
+    'py': extract_py,
+    'js': extract_js,
+    'java': extract_java
+    }
+
+    if formats in extraction_functions:
+        functions_dict, classes_dict = extraction_functions[formats](dir)
     else:
-        raise Exception("Sorry, language not supported yet")
+        raise Exception("Sorry, language not supported yet")                                   
     transform_to_docs(functions_dict, classes_dict, formats, dir)
 
 

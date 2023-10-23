@@ -53,6 +53,15 @@ def get_single_conversation():
     conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
     return jsonify(conversation['queries'])
 
+@user.route("/api/update_conversation_name", methods=["POST"])
+def update_conversation_name():
+    # update data for a conversation
+    data = request.get_json()
+    id = data["id"]
+    name = data["name"]
+    conversations_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    return {"status": "ok"}
+
 
 @user.route("/api/feedback", methods=["POST"])
 def api_feedback():
@@ -75,6 +84,19 @@ def api_feedback():
     )
     return {"status": http.client.responses.get(response.status_code, "ok")}
 
+@user.route("/api/delete_by_ids", methods=["get"])
+def delete_by_ids():
+    """Delete by ID. These are the IDs in the vectorstore"""
+
+    ids = request.args.get("path")
+    if not ids:
+        return {"status": "error"}
+
+    if settings.VECTOR_STORE == "faiss":
+        result = vectors_collection.delete_index(ids=ids)
+        if result:
+            return {"status": "ok"}
+    return {"status": "error"}
 
 @user.route("/api/delete_old", methods=["get"])
 def delete_old():
