@@ -12,7 +12,7 @@ module.exports = {
         'eerie-black': '#212121',
         'black-1000': '#343541',
         jet: '#343541',
-        'gray-alpha': 'rgba(0,0,0, .1)',
+        'gray-alpha': 'rgba(0,0,0, .64)',
         'gray-1000': '#F6F6F6',
         'gray-2000': 'rgba(0, 0, 0, 0.5)',
         'gray-3000': 'rgba(243, 243, 243, 1)',
