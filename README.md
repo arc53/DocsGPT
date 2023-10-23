@@ -76,7 +76,7 @@ If you lack sufficient resources to operate it, you can employ bitsnbytes for qu
 
 ## Project structure
 
-- Application: Flask app (main application).
+- Application - Flask app (main application).
 
 - Extensions: The Chrome extension.
 
@@ -104,6 +104,7 @@ Alternatively, consult this guide:
    API_KEY=Yourkey
    VITE_API_STREAMING=true
    ```
+   
   See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
 
 3. Run [./run-with-docker-compose.sh](https://github.com/arc53/DocsGPT/blob/main/run-with-docker-compose.sh).
@@ -137,7 +138,7 @@ Ensure you have Python 3.10 or 3.11 installed.
     (check out [`application/core/settings.py`](application/core/settings.py) for additional configuration options.)
 
 2. (optional) Create a Python virtual environment:
- You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
+    You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
 a) On Mac OS and Linux
 ```commandline
@@ -163,15 +164,18 @@ Ensure that your Node version is 16 or a more recent one.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
 2. Install the required packages `husky` and `vite` (ignore if already installed).
+
 ```commandline
 npm install husky -g
 npm install vite -g
 ```
+
 3. Install dependencies by running `npm install --include=dev`.
 4. Run the app using `npm run dev`.
 
 
 ## Contributing
+
 Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information about how to get involved. We welcome issues, questions, and pull requests.
 
 ## Code Of Conduct
