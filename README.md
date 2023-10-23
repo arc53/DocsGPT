@@ -105,7 +105,7 @@ Alternatively, consult this guide:
    VITE_API_STREAMING=true
    ```
    
-  See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
+   See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
 
 3. Run [./run-with-docker-compose.sh](https://github.com/arc53/DocsGPT/blob/main/run-with-docker-compose.sh).
 4. Navigate to http://localhost:5173/.
@@ -138,7 +138,7 @@ Ensure you have Python 3.10 or 3.11 installed.
     (check out [`application/core/settings.py`](application/core/settings.py) for additional configuration options.)
 
 2. (optional) Create a Python virtual environment:
-    You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
+   You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
 a) On Mac OS and Linux
 ```commandline
