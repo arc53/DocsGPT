@@ -7,7 +7,7 @@ import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
-import Link from './assets/link.svg';
+import Documentation from './assets/documentation.svg';
 import Discord from './assets/discord.svg';
 import Github from './assets/github.svg';
 import UploadIcon from './assets/upload.svg';
@@ -338,7 +338,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             rel="noreferrer"
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
-            <img src={Link} alt="link" className="ml-2 w-5" />
+            <img src={Documentation} alt="documentation" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
           </a>
           <a
@@ -362,7 +362,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </a>
         </div>
       </div>
+
       <div className="fixed h-16 w-full border-b-2 bg-gray-50 md:hidden z-10">
+
         <button
           className="mt-5 ml-6 h-6 w-6 md:hidden"
           onClick={() => setNavOpen(true)}
