@@ -25,8 +25,8 @@ Getting your hands on one of these awesome T-shirts is easy. Just follow these s
 Our T-shirts are designed with the Docsgpt logo and a stylish, comfortable fit. Here's a sneak peek of what you'll be getting:
 
 <p align="center">
-<img src="Assets/DocsGPT tee-front.jpeg" width="350" />
-<img src="Assets/DocsGPT tee-back.jpeg" width="350" />
+<img src="DocsGPT tee-front.jpeg" width="350" />
+<img src="DocsGPT tee-back.jpeg" width="350" />
 </p>
 
 ## Terms and Conditions
