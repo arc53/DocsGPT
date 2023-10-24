@@ -33,7 +33,7 @@ def test_get_info_from_paths():
 
 def test_parse_file():
     file_path = "tests/test_openapi3.yaml"
-    results_real = (
+    results_expected = (
         "Base URL:http://petstore.swagger.io,https://api.example.com\nPath1: "
         + "/pets\ndescription: None\nparameters: []\nmethods: \n"
         + "get=A paged array of pets\npost=Null "
@@ -43,7 +43,7 @@ def test_parse_file():
     )
     openapi_parser_test = OpenAPI3Parser()
     results = openapi_parser_test.parse_file(file_path)
-    assert results == results_real
+    assert results == results_expected
 
 
 if __name__ == "__main__":
