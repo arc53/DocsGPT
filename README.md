@@ -139,6 +139,15 @@ b) On Windows
 
 ```commandline
 python -m venv venv
+```
+
+CMD , Powershell Terminal
+```commandline
+venv/Scripts/activate
+```
+
+Gitbash Terminal
+```commandline
 source venv/Scripts/activate
 ```
 
