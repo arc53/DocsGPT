@@ -176,7 +176,7 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 ## Many Thanks To Our Contributors
 
-<a href="[https://github.com/arc53/DocsGPT/graphs/contributors](https://docsgpt.arc53.com/)" alt="View Contributors">
+<a href="https://github.com/arc53/DocsGPT/graphs/contributors" alt="View Contributors">
   <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" alt="Contributors" />
 </a>
 
