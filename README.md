@@ -139,7 +139,7 @@ b) On Windows
 
 ```commandline
 python -m venv venv
- venv/Scripts/activate
+source venv/Scripts/activate
 ```
 
 3. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
