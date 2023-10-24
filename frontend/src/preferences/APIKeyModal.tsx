@@ -64,7 +64,16 @@ export default function APIKeyModal({
             <p className="text-md leading-6 text-gray-500">
               Before you can start using DocsGPT we need you to provide an API
               key for llm. Currently, we support only OpenAI but soon many more.
-              You can find it here.
+              You can find it{' '}
+              <a
+                href="https://platform.openai.com/account/api-keys"
+                target="_blank"
+                className="underline"
+                rel="noreferrer"
+              >
+                here
+              </a>
+              .
             </p>
             <input
               type="text"
