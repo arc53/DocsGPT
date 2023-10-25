@@ -72,7 +72,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - Scripts - Script that creates similarity search index for other libraries.
 
-- Frontend - Frontend uses Vite and React.
+- Frontend - Frontend uses <a href="https://vitejs.dev/">Vite</a> and <a href="https://react.dev/">React</a>.
 
 ## QuickStart
 
