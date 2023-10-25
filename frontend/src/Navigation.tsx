@@ -173,7 +173,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     <>
       {!navOpen && (
         <button
-          className="duration-25 absolute left-3 top-3 z-20 hidden transition-all md:block"
+          className="duration-25 absolute sticky left-3 top-3 z-20 hidden transition-all md:block"
           onClick={() => {
             setNavOpen(!navOpen);
           }}
