@@ -63,42 +63,55 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
 1. **Fork the Repository:**
    - Click the "Fork" button at the top-right of this repository to create your fork.
 
-2. **Create and Switch to a New Branch:**
+2. **Clone the Forked Repository:**
+   - Clone the repository using:
+      ''' shell
+      git clone https://github.com/<your-github-username>/DocsGPT.git
+      '''
+
+3. **Keep your Fork in Sync:**
+   - Before you make any changes, make sure that your fork is in sync to avoid merge conflicts using:
+   '''shell
+   git remote add upstream https://github.com/arc53/DocsGPT.git
+   git pull upstream master
+   '''
+
+4. **Create and Switch to a New Branch:**
    - Create a new branch for your contribution using:
      ```shell
      git checkout -b your-branch-name
      ```
 
-3. **Make Changes:**
+5. **Make Changes:**
    - Make the required changes in your branch.
 
-4. **Add Changes to the Staging Area:**
+6. **Add Changes to the Staging Area:**
    - Add your changes to the staging area using:
      ```shell
      git add .
      ```
 
-5. **Commit Your Changes:**
+7. **Commit Your Changes:**
    - Commit your changes with a descriptive commit message using:
      ```shell
      git commit -m "Your descriptive commit message"
      ```
 
-6. **Push Your Changes to the Remote Repository:**
+8. **Push Your Changes to the Remote Repository:**
    - Push your branch with changes to your fork on GitHub using:
      ```shell
      git push origin your-branch-name
      ```
 
-7. **Submit a Pull Request (PR):**
+9. **Submit a Pull Request (PR):**
    - Create a Pull Request from your branch to the main repository. Make sure to include a detailed description of your changes and reference any related issues.
 
-8. **Collaborate:**
+10. **Collaborate:**
    - Be responsive to comments and feedback on your PR.
    - Make necessary updates as suggested.
    - Once your PR is approved, it will be merged into the main repository.
 
-9. **Testing:**
+11. **Testing:**
    - Before submitting a Pull Request, ensure your code passes all unit tests.
    - To run unit tests from the root of the repository, execute:
      ```shell
@@ -107,7 +120,7 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
 
 *Note: You should run the unit test only after making the changes to the backend code.*
 
-10. **Questions and Collaboration:**
+12. **Questions and Collaboration:**
     - Feel free to join our Discord. We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 
 Thank you for considering contributing to DocsGPT! 🙏
