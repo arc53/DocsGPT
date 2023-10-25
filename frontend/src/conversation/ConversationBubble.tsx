@@ -162,7 +162,7 @@ const ConversationBubble = forwardRef<
               <div
                 className="flex items-center justify-center rounded-full p-2"
                 style={{
-                  backgroundColor: isCopyHovered ? '#edeef0' : '#ffffff',
+                  backgroundColor: isCopyHovered ? '#EEEEEE' : '#ffffff',
                 }}
               >
                 {copied ? (
@@ -199,16 +199,16 @@ const ConversationBubble = forwardRef<
                 style={{
                   backgroundColor: isLikeHovered
                     ? isLikeClicked
-                      ? '#dfe3f5'
-                      : '#edeef0'
+                      ? '#7D54D1'
+                      : '#EEEEEE'
                     : isLikeClicked
-                    ? '#dfe3f5'
+                    ? '#7D54D1'
                     : '#ffffff',
                 }}
               >
                 <Like
                   className={`cursor-pointer ${
-                    feedback === 'LIKE'
+                    isLikeClicked || (feedback === 'LIKE')
                       ? 'fill-white-3000 stroke-purple-30'
                       : 'fill-none  stroke-gray-4000'
                   }`}
@@ -238,16 +238,16 @@ const ConversationBubble = forwardRef<
                 style={{
                   backgroundColor: isDislikeHovered
                     ? isDislikeClicked
-                      ? '#fceded'
-                      : '#edeef0'
+                      ? '#F87171'
+                      : '#EEEEEE'
                     : isDislikeClicked
-                    ? '#fceded'
+                    ? '#F87171'
                     : '#ffffff',
                 }}
               >
                 <Dislike
                   className={`cursor-pointer ${
-                    feedback === 'DISLIKE'
+                   isDislikeClicked || (feedback === 'DISLIKE')
                       ? 'fill-white-3000 stroke-red-2000'
                       : 'fill-none  stroke-gray-4000'
                   }`}
