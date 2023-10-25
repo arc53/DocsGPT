@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 from openapi_parser import parse
 
 try:
-    from scripts.parser.file.base_parser import BaseParser
+    from application.parser.file.base_parser import BaseParser
 except ModuleNotFoundError:
     from base_parser import BaseParser
 
