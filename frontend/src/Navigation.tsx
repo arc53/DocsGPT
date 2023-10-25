@@ -7,6 +7,7 @@ import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
+import SettingGear from './assets/settingGear.svg';
 import Documentation from './assets/documentation.svg';
 import Discord from './assets/discord.svg';
 import Github from './assets/github.svg';
@@ -320,6 +321,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
 
         <div className="flex flex-col gap-2 border-b-2 py-2">
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
+                isActive ? 'bg-gray-3000' : ''
+              }`
+            }
+          >
+            <img src={SettingGear} alt="info" className="ml-2 w-5 opacity-60" />
+            <p className="my-auto text-eerie-black">Settings</p>
+          </NavLink>
           <NavLink
             to="/about"
             className={({ isActive }) =>
