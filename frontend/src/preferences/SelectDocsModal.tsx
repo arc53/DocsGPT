@@ -81,7 +81,7 @@ export default function APIKeyModal({
                 )}
               </div>
               {isDocsListOpen && (
-                <div className="absolute top-10 left-0 max-h-52 w-full overflow-y-scroll bg-white">
+                <div className="absolute left-0 top-10 max-h-52 w-full overflow-y-scroll bg-white">
                   {docs ? (
                     docs.map((doc, index) => {
                       if (doc.model) {
