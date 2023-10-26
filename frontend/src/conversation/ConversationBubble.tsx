@@ -199,10 +199,10 @@ const ConversationBubble = forwardRef<
                 style={{
                   backgroundColor: isLikeHovered
                     ? isLikeClicked
-                      ? '#7D54D1'
+                      ? 'rgba(125, 84, 209, 0.3)'
                       : '#EEEEEE'
                     : isLikeClicked
-                    ? '#7D54D1'
+                    ? 'rgba(125, 84, 209, 0.3)'
                     : '#ffffff',
                 }}
               >
@@ -238,10 +238,10 @@ const ConversationBubble = forwardRef<
                 style={{
                   backgroundColor: isDislikeHovered
                     ? isDislikeClicked
-                      ? '#F87171'
+                      ? 'rgba(248, 113, 113, 0.3)'
                       : '#EEEEEE'
                     : isDislikeClicked
-                    ? '#F87171'
+                    ? 'rgba(248, 113, 113, 0.3)'
                     : '#ffffff',
                 }}
               >
