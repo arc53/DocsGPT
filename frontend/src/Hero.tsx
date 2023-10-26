@@ -1,4 +1,4 @@
-export default function Hero() {
+export default function Hero({ className = '' }: { className?: string }) {
   const isMobile = window.innerWidth <= 768;
   return (
     <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'}flex flex-col `}>
