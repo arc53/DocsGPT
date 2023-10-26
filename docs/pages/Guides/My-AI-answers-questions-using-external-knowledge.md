@@ -1,4 +1,4 @@
-## Avoiding hallucinations
+# Avoiding hallucinations
 
 If your AI uses external knowledge and is not explicit enough, it is ok, because we try to make DocsGPT friendly.
 
