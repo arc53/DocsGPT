@@ -170,11 +170,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }, [isMobile]);
 
     // Filter conversations based on the search query
-  const filteredConversations = conversations.filter((conversation) => {
-    const search = searchQuery.toLowerCase();
-    return conversation.name.toLowerCase().includes(search);
-  });
-
+const filteredConversations = conversations
+  ? conversations.filter((conversation) => {
+      const search = searchQuery.toLowerCase();
+      return conversation.name.toLowerCase().includes(search);
+    })
+  : [];
 
   return (
     <>
