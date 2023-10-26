@@ -224,7 +224,7 @@ b. Click on Deploy now .
 
   
 
-![Three Tabs will be there](Railway-selection.png)
+![Three Tabs will be there](/Railway-selection.png)
 
   
 
