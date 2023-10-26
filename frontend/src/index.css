@@ -33,6 +33,23 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Styling for the Search Bar */
+input[type="text"] {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 8px;
+  width: 100%;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Styling for the Search Bar Placeholder Text */
+input[type="text"]::placeholder {
+  color: #9ca3af; /* Placeholder text color */
+  opacity: 1; /* Placeholder text opacity */
+}
+
 /**
  * Render the `main` element consistently in IE.
  */
