@@ -82,7 +82,7 @@ On Mac OS or Linux, write:
 
 `./setup.sh`
 
-It will install all the dependencies and allow you to download the local model or use OpenAI.
+It will install all the dependencies and enable  you to download the local model or use OpenAI.
 
 Otherwise, refer to this Guide:
 
@@ -126,7 +126,7 @@ Make sure you have Python 3.10 or 3.11 installed.
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
 2. (optional) Create a Python virtual environment:
-   You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
+   You can refer  to   the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for guidance on setting up virtual environments.
 
 a) On Mac OS and Linux
 
@@ -182,6 +182,6 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 ## License
 
-The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
+The source code is licensed under the [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
