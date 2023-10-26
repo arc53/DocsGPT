@@ -1,6 +1,4 @@
-/* eslint-disable react/no-unescaped-entities */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function Hero({ className = '' }: { className?: string }) {
+export default function Hero() {
   const isMobile = window.innerWidth <= 768;
   return (
     <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'}flex flex-col `}>
@@ -12,7 +10,8 @@ export default function Hero({ className = '' }: { className?: string }) {
         <p className="mb-3 text-center leading-6 text-black-1000">
           Welcome to <span className="font-bold ">DocsGPT</span>, your technical
           documentation assistant! Start by entering your query in the input
-          field below, and we'll provide you with the most relevant answers.
+          field below, and we&apos;ll provide you with the most relevant
+          answers.
         </p>
       ) : (
         <>
