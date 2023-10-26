@@ -48,6 +48,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const { isMobile } = useMediaQuery();
 
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(''); // Added search query state
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
@@ -168,8 +169,21 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!isMobile);
   }, [isMobile]);
 
+    // Filter conversations based on the search query
+  const filteredConversations = conversations.filter((conversation) => {
+    const search = searchQuery.toLowerCase();
+    return conversation.name.toLowerCase().includes(search);
+  });
+
+
   return (
     <>
+      <input
+        type="text"
+        placeholder="Search..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+      />
       {!navOpen && (
         <button
           className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
@@ -228,16 +242,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <p className="my-auto text-sm text-eerie-black">New Chat</p>
         </NavLink>
         <div className="conversations-container max-h-[25rem] overflow-y-auto">
-          {conversations?.map((conversation) => (
-            <ConversationTile
-              key={conversation.id}
-              conversation={conversation}
-              selectConversation={(id) => handleConversationClick(id)}
-              onDeleteConversation={(id) => handleDeleteConversation(id)}
-              onSave={(conversation) => updateConversationName(conversation)}
-            />
-          ))}
-        </div>
+        {filteredConversations.map((conversation) => (
+          <ConversationTile
+            key={conversation.id}
+            conversation={conversation}
+            selectConversation={(id) => handleConversationClick(id)}
+            onDeleteConversation={(id) => handleDeleteConversation(id)}
+            onSave={(conversation) => updateConversationName(conversation)}
+          />
+        ))}
+      </div>
 
         <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-col-reverse border-b-2">
