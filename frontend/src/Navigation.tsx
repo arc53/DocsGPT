@@ -7,7 +7,7 @@ import Message from './assets/message.svg';
 import Hamburger from './assets/hamburger.svg';
 import Key from './assets/key.svg';
 import Info from './assets/info.svg';
-import Link from './assets/link.svg';
+import Documentation from './assets/documentation.svg';
 import Discord from './assets/discord.svg';
 import Github from './assets/github.svg';
 import UploadIcon from './assets/upload.svg';
@@ -172,7 +172,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     <>
       {!navOpen && (
         <button
-          className="duration-25 absolute relative top-3 left-3 z-20 hidden transition-all md:block"
+          className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
           onClick={() => {
             setNavOpen(!navOpen);
           }}
@@ -338,7 +338,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             rel="noreferrer"
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
-            <img src={Link} alt="link" className="ml-2 w-5" />
+            <img src={Documentation} alt="documentation" className="ml-2 w-5" />
             <p className="my-auto text-eerie-black">Documentation</p>
           </a>
           <a

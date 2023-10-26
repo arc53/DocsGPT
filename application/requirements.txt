@@ -57,6 +57,7 @@ nltk==3.8.1
 numcodecs==0.11.0
 numpy==1.24.2
 openai==0.27.8
+openapi3-parser==1.1.14
 packaging==23.0
 pathos==0.3.0
 Pillow==10.0.1

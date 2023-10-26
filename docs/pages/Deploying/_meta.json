@@ -6,5 +6,9 @@
   "Quickstart": {
     "title": "⚡️Quickstart",
     "href": "/Deploying/Quickstart"
+  },
+  "Railway-Deploying": {
+    "title": "🚂Deploying on Rainway",
+    "href": "/Deploying/Railway-Deploying"
   }
 }
