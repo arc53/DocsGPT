@@ -18,7 +18,7 @@ export default function Hero({ className = '' }: { className?: string }) {
         rest!
       </p>
       <div className="sections mt-8 flex flex-col items-center justify-center gap-1 sm:gap-0 lg:flex-row">
-        <div className="relative mb-4 h-[224px] rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-r-none">
+        <div className="relative mb-4 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-r-none">
           <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-r-none">
             <img
               src="/message-text.svg"
