@@ -69,7 +69,7 @@ const ConversationBubble = forwardRef<
           <div
             className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
-                ? 'flex-row rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
+                ? 'flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
             }`}
           >
@@ -208,7 +208,7 @@ const ConversationBubble = forwardRef<
               >
                 <Like
                   className={`cursor-pointer ${
-                    isLikeClicked || (feedback === 'LIKE')
+                    isLikeClicked || feedback === 'LIKE'
                       ? 'fill-white-3000 stroke-purple-30'
                       : 'fill-none  stroke-gray-4000'
                   }`}
@@ -247,7 +247,7 @@ const ConversationBubble = forwardRef<
               >
                 <Dislike
                   className={`cursor-pointer ${
-                   isDislikeClicked || (feedback === 'DISLIKE')
+                    isDislikeClicked || feedback === 'DISLIKE'
                       ? 'fill-white-3000 stroke-red-2000'
                       : 'fill-none  stroke-gray-4000'
                   }`}
