@@ -18,7 +18,7 @@ export default function Hero({ className = '' }: { className?: string }) {
         rest!
       </p>
       <div className="sections mt-8 flex flex-col items-center justify-center gap-1 sm:gap-0 lg:flex-row">
-        <div className="relative mb-4 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-r-none">
+        <div className="relative mb-4 h-60 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-r-none">
           <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-r-none">
             <img
               src="/message-text.svg"
@@ -35,7 +35,7 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
 
-        <div className="relative mb-4 rounded-[25px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-none lg:px-0">
+        <div className="relative mb-4 h-60 rounded-[25px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-none lg:px-0">
           <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-none">
             <img src="/lock.svg" alt="lock" className="h-[24px] w-[24px]" />
             <h2 className="mt-2 mb-3 text-lg font-bold">Secure Data Storage</h2>
@@ -47,7 +47,7 @@ export default function Hero({ className = '' }: { className?: string }) {
             </p>
           </div>
         </div>
-        <div className="relative mb-4 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 lg:rounded-l-none">
+        <div className="relative mb-4 h-60 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 lg:rounded-l-none">
           <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-l-none">
             <img
               src="/message-programming.svg"
