@@ -1,5 +1,8 @@
+import { useMediaQuery } from './hooks';
+
 export default function Hero({ className = '' }: { className?: string }) {
-  const isMobile = window.innerWidth <= 768;
+  // const isMobile = window.innerWidth <= 768;
+  const { isMobile } = useMediaQuery();
   return (
     <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'}flex flex-col `}>
       <div className=" mb-2 flex items-center justify-center sm:mb-10">
