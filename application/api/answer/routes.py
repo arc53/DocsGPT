@@ -29,6 +29,8 @@ answer = Blueprint('answer', __name__)
 
 if settings.LLM_NAME == "gpt4":
     gpt_model = 'gpt-4'
+elif settings.LLM_NAME == "anthropic":
+    gpt_model = 'claude-2'
 else:
     gpt_model = 'gpt-3.5-turbo'
 
