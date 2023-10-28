@@ -29,7 +29,7 @@ When deploying your DocsGPT to a live environment, we're eager to provide person
 - [Schedule Demo 👋](https://cal.com/arc53/docsgpt-demo-b2b?date=2023-10-04&month=2023-10)
 - [Send Email ✉️](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
   
-### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
+<h3 align=center><a href="https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md">🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉</a></h3>
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
