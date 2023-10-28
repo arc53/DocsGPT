@@ -6,6 +6,11 @@
   <strong>Open-Source Documentation Assistant</strong>
 </p>
 
+
+<p align="center">
+   <img src="https://readme-typing-svg.herokuapp.com?color=45ffaa&size=40&width=900&height=80&lines=Welcome-to-the-DocsGPT;Open-Source-Documentation-Assistant"/>
+</p>
+
 <p align="left">
   <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in the project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
   
