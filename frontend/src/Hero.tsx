@@ -1,9 +1,11 @@
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
+
 export default function Hero({ className = '' }: { className?: string }) {
   return (
     <div className={`mt-14 mb-12 flex flex-col `}>
       <div className="mb-10 flex items-center justify-center ">
         <p className="mr-2 text-4xl font-semibold">DocsGPT</p>
-        <p className="text-[27px]">🦖</p>
+        <img src={DocsGPT3} width="41px" height="41px" alt="DocsGPT" />
       </div>
       <p className="mb-3 text-center leading-6 text-black-1000">
         Welcome to DocsGPT, your technical documentation assistant!

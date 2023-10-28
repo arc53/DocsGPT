@@ -1,5 +1,6 @@
 //TODO - Add hyperlinks to text
 //TODO - Styling
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
 
 export default function About() {
   return (
@@ -7,7 +8,7 @@ export default function About() {
       <article className="place-items-left mx-auto my-auto flex w-full max-w-6xl flex-col gap-4 rounded-3xl bg-gray-100 p-6 text-jet lg:p-6 xl:p-10">
         <div className="flex items-center">
           <p className="mr-2 text-3xl">About DocsGPT</p>
-          <p className="text-[21px]">🦖</p>
+          <img src={DocsGPT3} width="41px" height="41px" alt="DocsGPT" />
         </div>
         <p className="mt-4">
           Find the information in your documentation through AI-powered
