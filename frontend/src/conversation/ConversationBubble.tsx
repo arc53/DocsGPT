@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -65,7 +66,10 @@ const ConversationBubble = forwardRef<
         className={`flex self-start ${className} group flex-col pr-20`}
       >
         <div className="flex self-start">
-          <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
+          <Avatar
+            className="mt-2"
+            avatar={<img src={DocsGPT3} alt="DocsGPT" />}
+          ></Avatar>
           <div
             className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
