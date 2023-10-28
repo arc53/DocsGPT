@@ -5,7 +5,7 @@ export default function Hero({ className = '' }: { className?: string }) {
     <div className={`mt-14 mb-12 flex flex-col `}>
       <div className="mb-10 flex items-center justify-center ">
         <p className="mr-2 text-4xl font-semibold">DocsGPT</p>
-        <img src={DocsGPT3} width="41px" height="41px" alt="DocsGPT" />
+        <img src={DocsGPT3} alt="DocsGPT" />
       </div>
       <p className="mb-3 text-center leading-6 text-black-1000">
         Welcome to DocsGPT, your technical documentation assistant!

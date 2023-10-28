@@ -210,8 +210,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className={`${
                 !navOpen ? 'rotate-180' : 'rotate-0'
               } m-auto transition-all duration-200`}
-              width="25px"
-              height="25px"
             />
           </button>
         </div>
