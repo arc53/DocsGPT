@@ -14,12 +14,12 @@ If you prefer to follow manual steps, refer to this guide:
 
 1. Open and download this repository with 
    ```
-   git clone https://github.com/arc53/DocsGPT.git`.
+   git clone https://github.com/arc53/DocsGPT.git.
    ```
 2. Create a `.env` file in your root directory and set your `API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
 3. Run the following commands:
    ```
-   docker-compose build && docker-compose up`.
+   docker-compose build && docker-compose up.
    ```
 4. Navigate to `http://localhost:5173/`.
 
