@@ -4,16 +4,15 @@
 
 ### 1. Clone the DocsGPT repository:
 
-```
+```bash
 git clone https://github.com/arc53/DocsGPT.git
-
 ```
 ### 2. Navigate to the docs folder:
 
-```
+```bash
 cd DocsGPT/docs
-
 ```
+
 The docs folder contains the markdown files that make up the documentation. The majority of the files are in the pages directory. Some notable files in this folder include:
 
 `index.mdx`: The main documentation file.
@@ -22,30 +21,29 @@ The docs folder contains the markdown files that make up the documentation. The 
 
 ### 3. Verify that you have Node.js and npm installed in your system. You can check by running:
 
-```
+```bash
 node --version
 npm --version
-
 ```
+
 ### 4. If not installed, download Node.js and npm from the respective official websites.
 
 ### 5. Once you have Node.js and npm running, proceed to install yarn - another package manager that helps to manage project dependencies:
 
-```
+```bash
 npm install --global yarn
-
 ```
+
 ### 6. Install the project dependencies using yarn:
 
-```
+```bash
 yarn install
-
 ```
+
 ### 7. After the successful installation of the project dependencies, start the local server:
 
-```
+```bash
 yarn dev
-
 ```
 
 - Now, you should be able to view the docs on your local environment by visiting `http://localhost:5000`. You can explore the different markdown files and make changes as you see fit.
