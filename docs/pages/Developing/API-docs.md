@@ -39,9 +39,9 @@ fetch("http://127.0.0.1:5000/api/answer", {
 In response, you will get a JSON document containing the answer,query and the result:
 ```json
 {
-  "answer": " Hi there! How can I help you?\n",
+  "answer": "Hi there! How can I help you?\n",
   "query": "Hi",
-  "result": " Hi there! How can I help you?\nSOURCES:"
+  "result": "Hi there! How can I help you?\nSOURCES:"
 }
 ```
 
