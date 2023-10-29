@@ -27,11 +27,11 @@ server.use((req, res, next) => {
 router.render = (req, res) => {
   if (req.url === "/feedback") {
     res.status(200).jsonp({ status: "ok" });
-  } else if (req.url === '/upload') {
+  } else if (req.url === "/upload") {
     res.status(200).jsonp({
-      "status": "ok",
-      "task_id": localStorage[localStorage.length - 1]
-    })
+      status: "ok",
+      task_id: localStorage[localStorage.length - 1],
+    });
   } else if (req.url.includes("/task_status")) {
     const taskId = req.query["task_id"];
     const taskIdExists = localStorage.includes(taskId);
@@ -49,7 +49,16 @@ router.render = (req, res) => {
     } else {
       res.status(404).jsonp({});
     }
-  }else {
+  } else if (req.url === "/stream") {
+    res.status(200).jsonp({
+      data: "The answer is 42",
+      sources: [
+        "https://en.wikipedia.org/wiki/42_(number)",
+        "https://en.wikipedia.org/wiki/42_(number)",
+      ],
+      conversation_id: "1234",
+    });
+  } else {
     res.status(res.statusCode).jsonp(res.locals.data);
   }
 };
