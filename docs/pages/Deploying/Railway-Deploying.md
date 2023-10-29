@@ -168,7 +168,7 @@ g. `git push git push --set-upstream origin master`
 Your local files will now be pushed to your GitHub Account. :)
   
 
-### 3. Create an Railway Account:
+### 3. Create a Railway Account:
 
   
 
@@ -192,7 +192,7 @@ b. Choose any from the list of options available (Recommended "**Deploy from Git
 
   
 
-c. Choose the required Repository from your Github.
+c. Choose the required Repository from your GitHub.
 
   
 
@@ -208,7 +208,7 @@ PS: It may take a few minutes for the account setup to complete.
 
   
 
-#### You will get A free trail of $5 (use it for trail and then purchase if satisfied and needed)
+#### You will get A free trial of $5 (use it for trial and then purchase if satisfied and needed)
 
   
 
@@ -220,7 +220,7 @@ a. Choose DocsGPT repo from the list of your GitHub repository that you want to 
 
   
 
-b. Click on Deploy now .
+b. Click on Deploy now.
 
   
 
