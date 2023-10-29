@@ -1,3 +1,4 @@
+<div id="top"></div>
 <h1 align="center">
   DocsGPT  🦖
 </h1>
@@ -185,3 +186,5 @@ We as members, contributors, and leaders, pledge to make participation in our co
 The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
 Built with [🦜️🔗 LangChain](https://github.com/hwchase17/langchain)
+
+<p align="right">(<a href="#top">🔼 Back to top</a>)</p>
