@@ -2,22 +2,28 @@
 **Note**: Make sure you have Docker installed
 
 **On macOS or Linux:**
-Just run the following command::
+Just run the following command:
 
-`./setup.sh`
+```
+./setup.sh
+```
 
 This command will install all the necessary dependencies and provide you with an option to download the local model or use OpenAI.
 
 If you prefer to follow manual steps, refer to this guide:
 
 1. Open and download this repository with 
-`git clone https://github.com/arc53/DocsGPT.git`.
+   ```
+   git clone https://github.com/arc53/DocsGPT.git`.
+   ```
 2. Create a `.env` file in your root directory and set your `API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
 3. Run the following commands:
-`docker-compose build && docker-compose up`.
+   ```
+   docker-compose build && docker-compose up`.
+   ```
 4. Navigate to `http://localhost:5173/`.
 
-To stop, simply press Ctrl + C.
+To stop, simply press **Ctrl + C**.
 
 **For WINDOWS:**
 
@@ -35,9 +41,11 @@ To run the setup on Windows, you have two options: using the Windows Subsystem f
    echo "VITE_API_STREAMING=true" >> .env
    ```
 4. Run the following command to start the setup with Docker Compose:
-    `./run-with-docker-compose.sh`
-5. Open your web browser and navigate to (http://localhost:5173/).
-6. To stop the setup, just press `Ctrl + C` in the WSL terminal
+   ```
+   ./run-with-docker-compose.sh
+   ```
+6. Open your web browser and navigate to (http://localhost:5173/).
+7. To stop the setup, just press **Ctrl + C** in the WSL terminal
 
 **Option 2: Using Git Bash or Command Prompt (CMD):**
 
@@ -50,10 +58,12 @@ To run the setup on Windows, you have two options: using the Windows Subsystem f
    echo "API_KEY=Yourkey" > .env
    echo "VITE_API_STREAMING=true" >> .env
    ```
-4.Run the following command to start the setup with Docker Compose:
-  `./run-with-docker-compose.sh`
-5.Open your web browser and navigate to (http://localhost:5173/).
-6.To stop the setup, just press Ctrl + C in the Git Bash or Command Prompt terminal.
+4. Run the following command to start the setup with Docker Compose:
+   ```
+   ./run-with-docker-compose.sh
+   ```
+5. Open your web browser and navigate to (http://localhost:5173/).
+6. To stop the setup, just press **Ctrl + C** in the Git Bash or Command Prompt terminal.
 
 These steps should help you set up and run the project on Windows using either WSL or Git Bash/Command Prompt. 
 **Important:** Ensure that Docker is installed and properly configured on your Windows system for these steps to work.
@@ -77,7 +87,7 @@ Option 1: Using Windows Subsystem for Linux (WSL):
 4. Run the following command to start the setup with Docker Compose:
     `./run-with-docker-compose.sh`
 5. Open your web browser and navigate to (http://localhost:5173/).
-6. To stop the setup, just press `Ctrl + C` in the WSL terminal
+6. To stop the setup, just press **Ctrl + C** in the WSL terminal.
 
 Option 2: Using Git Bash or Command Prompt (CMD):
 
@@ -90,10 +100,12 @@ Option 2: Using Git Bash or Command Prompt (CMD):
    echo "API_KEY=Yourkey" > .env
    echo "VITE_API_STREAMING=true" >> .env
    ```
-4.Run the following command to start the setup with Docker Compose:
-  `./run-with-docker-compose.sh`
-5.Open your web browser and navigate to (http://localhost:5173/).
-6.To stop the setup, just press Ctrl + C in the Git Bash or Command Prompt terminal.
+4. Run the following command to start the setup with Docker Compose:
+   ```
+   ./run-with-docker-compose.sh
+   ```
+5. Open your web browser and navigate to (http://localhost:5173/).
+6. To stop the setup, just press **Ctrl + C** in the Git Bash or Command Prompt terminal.
 
 These steps should help you set up and run the project on Windows using either WSL or Git Bash/Command Prompt. Make sure you have Docker installed and properly configured on your Windows system for this to work.
 
@@ -103,12 +115,12 @@ These steps should help you set up and run the project on Windows using either W
 #### Installing the Chrome extension:
 To enhance your DocsGPT experience, you can install the DocsGPT Chrome extension. Here's how:
 
-1. In the DocsGPT GitHub repository, click on the "Code" button and select "Download ZIP".
+1. In the DocsGPT GitHub repository, click on the **Code** button and select **Download ZIP**.
 2. Unzip the downloaded file to a location you can easily access.
 3. Open the Google Chrome browser and click on the three dots menu (upper right corner).
-4. Select "More Tools" and then "Extensions".
-5. Turn on the "Developer mode" switch in the top right corner of the Extensions page.
-6. Click on the "Load unpacked" button.
-7. Select the "Chrome" folder where the DocsGPT files have been unzipped (docsgpt-main > extensions > chrome).
+4. Select **More Tools** and then **Extensions**.
+5. Turn on the **Developer mode** switch in the top right corner of the **Extensions page**.
+6. Click on the **Load unpacked** button.
+7. Select the **Chrome** folder where the DocsGPT files have been unzipped (docsgpt-main > extensions > chrome).
 8. The extension should now be added to Google Chrome and can be managed on the Extensions page.
-9. To disable or remove the extension, simply turn off the toggle switch on the extension card or click the "Remove" button.
+9. To disable or remove the extension, simply turn off the toggle switch on the extension card or click the **Remove** button.
