@@ -1,5 +1,5 @@
 import { forwardRef, useState } from 'react';
-import Avatar from '../Avatar';
+import Avatar from '../components/Avatar';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import classes from './ConversationBubble.module.css';
 import Alert from './../assets/alert.svg';
@@ -66,7 +66,17 @@ const ConversationBubble = forwardRef<
         className={`flex self-start ${className} group flex-col pr-20`}
       >
         <div className="flex self-start">
-          <img src={DocsGPT3} alt="DocsGPT" />
+          <Avatar
+            className="mt-2 h-12 w-12 text-2xl"
+            avatar={
+              <img
+                src={DocsGPT3}
+                alt="DocsGPT"
+                className="h-full w-full object-cover"
+              />
+            }
+          />
+
           <div
             className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'

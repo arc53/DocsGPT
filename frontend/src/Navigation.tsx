@@ -191,11 +191,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 bg-light-gray-3000 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 transition-all`}
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
       >
-        <div className={'visible flex h-16 w-full justify-between md:h-12'}>
+        <div
+          className={'visible mt-2 flex h-16 w-full justify-between md:h-12'}
+        >
           <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
-            <img src={DocsGPT3} alt="" />
+            <img className="mb-2 h-10" src={DocsGPT3} alt="" />
             <p className="my-auto text-2xl font-semibold">DocsGPT</p>
           </div>
           <button
@@ -240,7 +242,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </NavLink>
         {conversations && (
           <div className="conversations-container max-h-[25rem] overflow-y-auto">
-            <p className="text-sm-eerie-black ml-6 mt-3 font-semibold">Chats</p>
+            <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
             {conversations?.map((conversation) => (
               <ConversationTile
                 key={conversation.id}
@@ -318,9 +320,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </div>
             )}
           </div>
-          <p className="ml-6 mt-3 text-sm font-semibold text-eerie-black">
-            Source Docs
-          </p>
+          <p className="ml-6 mt-3 text-sm font-semibold">Source Docs</p>
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <div

@@ -9,12 +9,5 @@ export default function Avatar({
   size?: 'SMALL' | 'MEDIUM' | 'LARGE';
   className: string;
 }) {
-  const styles = {
-    transform: 'scale(-1, 1)',
-  };
-  return (
-    <div style={styles} className={className}>
-      {avatar}
-    </div>
-  );
+  return <div className={`${className} flex-shrink-0`}>{avatar}</div>;
 }
