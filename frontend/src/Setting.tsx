@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import Arrow2 from './assets/dropdown-arrow.svg';
+import ArrowLeft from './assets/arrow-left.svg';
+import ArrowRight from './assets/arrow-right.svg';
 
 const Setting = () => {
   const list = ['General', 'Prompts', 'Documents', 'Widgets'];
@@ -11,21 +13,58 @@ const Setting = () => {
     else if (active === 'Widgets') return <Widgets />;
     else return <></>;
   };
+  const scrollableRef = useRef<HTMLDivElement | null>(null);
+  const scrollStep = 100;
+  const scrollLeft = () => {
+    if (scrollableRef.current) {
+      if (scrollableRef.current.scrollLeft > 0) {
+        scrollableRef.current.scrollLeft -= scrollStep; // Adjust the scroll amount as needed
+      }
+    }
+  };
+
+  const scrollRight = () => {
+    if (scrollableRef.current) {
+      scrollableRef.current.scrollLeft += scrollStep; // Adjust the scroll amount as needed
+    }
+  };
   return (
     <div className="pt-20 pl-2 md:p-12">
       <p className="text-2xl font-bold text-eerie-black">Settings</p>
-      <div className="mt-4 flex flex-row overflow-x-scroll md:overflow-x-hidden">
-        {list.map((item, index) => (
-          <div
-            key={index}
-            className={`my-auto mr-6 mb-5 flex h-9 cursor-pointer items-center gap-4 rounded-3xl px-4 font-bold text-purple-30 hover:bg-purple-3000 ${
-              active === item ? 'bg-purple-3000' : ''
-            }`}
-            onClick={() => setActive(item)}
-          >
-            {item}
+      <div className="flex flex-row items-center">
+        <div className="md:hidden " onClick={scrollLeft}>
+          <div className=" h-8 w-8 rounded-full border-2 border-purple-30 hover:bg-gray-100">
+            <img
+              src={ArrowLeft}
+              className="h-6 w-6 p-1"
+              style={{ marginTop: '2px' }}
+            />
           </div>
-        ))}
+        </div>
+        <div className="mt-4 flex flex-row overflow-hidden" ref={scrollableRef}>
+          {list.map((item, index) => (
+            <div
+              key={index}
+              className={`my-auto mr-6 mb-5 flex h-9 cursor-pointer items-center gap-4 rounded-3xl px-4 font-bold hover:text-purple-30 ${
+                active === item
+                  ? 'bg-purple-3000 text-purple-30'
+                  : 'text-gray-6000'
+              }`}
+              onClick={() => setActive(item)}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+        <div className="md:hidden " onClick={scrollRight}>
+          <div className=" h-8 w-8 rounded-full border-2 border-purple-30 hover:bg-gray-100">
+            <img
+              src={ArrowRight}
+              className="h-6 w-6 p-1"
+              style={{ marginTop: '2px', marginLeft: '3px' }}
+            />
+          </div>
+        </div>
       </div>
       {returnActiveTabs()}
     </div>
@@ -45,18 +84,18 @@ const General = () => {
         <p className="font-bold text-jet">Select Theme</p>
         <div className="relative my-4 flex gap-2 px-2">
           <div
-            className="flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
+            className="-ml-2 flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
             onClick={() => setIsThemeListOpen(!isThemeListOpen)}
           >
             {theme && (
-              <p className="my-3 mx-4 overflow-hidden text-ellipsis">{theme}</p>
+              <p className="my-3 mx-6 overflow-hidden text-ellipsis">{theme}</p>
             )}
             <img
               src={Arrow2}
               alt="arrow"
               className={`${
                 !isThemeListOpen ? 'rotate-0' : 'rotate-180'
-              } ml-auto mr-3 w-3 transition-all`}
+              } ml-auto mr-6 w-3 transition-all`}
             />
           </div>
           {isThemeListOpen && (
@@ -86,11 +125,11 @@ const General = () => {
         <p className="font-bold text-jet">Select Language</p>
         <div className="relative my-4 flex gap-2 px-2">
           <div
-            className="flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
+            className="-ml-2 flex h-12 w-full cursor-pointer justify-between rounded-3xl border-2 bg-white"
             onClick={() => setIsLanguageListOpen(!isLanguageListOpen)}
           >
             {language && (
-              <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
+              <p className="my-3 mx-6 overflow-hidden text-ellipsis whitespace-nowrap">
                 {language}
               </p>
             )}
@@ -99,7 +138,7 @@ const General = () => {
               alt="arrow"
               className={`${
                 !isLanguageListOpen ? 'rotate-0' : 'rotate-180'
-              } ml-auto mr-3 w-3 transition-all`}
+              } ml-auto mr-6 w-3 transition-all`}
             />
           </div>
           {isLanguageListOpen && (
