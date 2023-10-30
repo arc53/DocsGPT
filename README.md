@@ -17,6 +17,11 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
   <a href="https://github.com/arc53/DocsGPT">![example1](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
   <a href="https://github.com/arc53/DocsGPT">![example2](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![example3](https://img.shields.io/github/license/arc53/docsgpt)</a>
+  ![Visitors](https://api.visitorbadge.io/api/visitors?path=arc53%2Fdocsgpt%20&countColor=%23263759&style=flat)
+  ![GitHub contributors](https://img.shields.io/github/contributors/arc53/docsgpt)
+  ![GitHub last commit](https://img.shields.io/github/last-commit/arc53/docsgpt)
+
+  ![GitHub repo size](https://img.shields.io/github/repo-size/arc53/docsgpt)
   <a href="https://discord.gg/n5BX8dh8rU">![example3](https://img.shields.io/discord/1070046503302877216)</a>
  
 </div>
