@@ -7,6 +7,7 @@ from langchain.llms import OpenAI
 from langchain.prompts import PromptTemplate
 
 
+# Function to find all .py files in a directory and its subdirectories.
 def find_files(directory):
     files_list = []
     for root, dirs, files in os.walk(directory):
@@ -16,6 +17,7 @@ def find_files(directory):
     return files_list
 
 
+# Function to extract functions from a Python file.
 def extract_functions(file_path):
     with open(file_path, 'r') as file:
         source_code = file.read()
@@ -29,6 +31,7 @@ def extract_functions(file_path):
     return functions
 
 
+# Function to extract classes and their methods from a Python file.
 def extract_classes(file_path):
     with open(file_path, 'r') as file:
         source_code = file.read()
@@ -45,6 +48,7 @@ def extract_classes(file_path):
     return classes
 
 
+# Function to extract functions and classes from all .py files in a directory.
 def extract_functions_and_classes(directory):
     files = find_files(directory)
     functions_dict = {}
@@ -59,6 +63,7 @@ def extract_functions_and_classes(directory):
     return functions_dict, classes_dict
 
 
+# Function to parse and generate documentation for functions.
 def parse_functions(functions_dict, formats, dir):
     c1 = len(functions_dict)
     for i, (source, functions) in enumerate(functions_dict.items(), start=1):
@@ -80,6 +85,7 @@ def parse_functions(functions_dict, formats, dir):
                     f"\n\n# Function name: {name} \n\nFunction: \n```\n{function}\n```, \nDocumentation: \n{response}")
 
 
+# Function to parse and generate documentation for classes.
 def parse_classes(classes_dict, formats, dir):
     c1 = len(classes_dict)
     for i, (source, classes) in enumerate(classes_dict.items()):
@@ -100,6 +106,7 @@ def parse_classes(classes_dict, formats, dir):
                 f.write(f"\n\n# Class name: {name} \n\nFunctions: \n{function_names}, \nDocumentation: \n{response}")
 
 
+# Function to transform the extracted functions and classes into documentation.
 def transform_to_docs(functions_dict, classes_dict, formats, dir):
     docs_content = ''.join([str(key) + str(value) for key, value in functions_dict.items()])
     docs_content += ''.join([str(key) + str(value) for key, value in classes_dict.items()])
