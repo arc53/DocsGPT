@@ -66,10 +66,7 @@ const ConversationBubble = forwardRef<
         className={`flex self-start ${className} group flex-col pr-20`}
       >
         <div className="flex self-start">
-          <Avatar
-            className="mt-2"
-            avatar={<img src={DocsGPT3} alt="DocsGPT" />}
-          ></Avatar>
+          <img src={DocsGPT3} alt="DocsGPT" />
           <div
             className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
