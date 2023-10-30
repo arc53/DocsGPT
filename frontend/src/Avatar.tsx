@@ -1,9 +1,11 @@
+import { ReactNode } from 'react';
+
 export default function Avatar({
   avatar,
   size,
   className,
 }: {
-  avatar: string;
+  avatar: string | ReactNode;
   size?: 'SMALL' | 'MEDIUM' | 'LARGE';
   className: string;
 }) {

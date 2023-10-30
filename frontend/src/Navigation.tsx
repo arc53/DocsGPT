@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
-import Arrow1 from './assets/arrow.svg';
-import Arrow2 from './assets/dropdown-arrow.svg';
-import Exit from './assets/exit.svg';
-import Message from './assets/message.svg';
-import Hamburger from './assets/hamburger.svg';
-import Key from './assets/key.svg';
-import Info from './assets/info.svg';
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Documentation from './assets/documentation.svg';
 import Discord from './assets/discord.svg';
+import Arrow2 from './assets/dropdown-arrow.svg';
+import Expand from './assets/expand.svg';
+import Exit from './assets/exit.svg';
 import Github from './assets/github.svg';
+import Hamburger from './assets/hamburger.svg';
+import Info from './assets/info.svg';
+import Key from './assets/key.svg';
+import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
-import { useDispatch, useSelector } from 'react-redux';
 import {
   selectApiKeyStatus,
   selectSelectedDocs,
@@ -178,11 +179,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }}
         >
           <img
-            src={Arrow1}
+            src={Expand}
             alt="menu toggle"
             className={`${
               !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto w-3 transition-all duration-200`}
+            } m-auto transition-all duration-200`}
           />
         </button>
       )}
@@ -190,21 +191,25 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-gray-50 transition-all`}
+        } duration-20 bg-light-gray-3000 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 transition-all`}
       >
-        <div className={'visible h-16 w-full border-b-2 md:h-12'}>
+        <div className={'visible flex h-16 w-full justify-between md:h-12'}>
+          <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
+            <img src={DocsGPT3} alt="" />
+            <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+          </div>
           <button
-            className="float-right mr-5 mt-5 h-5 w-5 md:mt-3"
+            className="float-right mr-5"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
           >
             <img
-              src={Arrow1}
+              src={Expand}
               alt="menu toggle"
               className={`${
                 !navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto w-3 transition-all duration-200`}
+              } m-auto transition-all duration-200`}
             />
           </button>
         </div>
@@ -220,26 +225,34 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }}
           className={({ isActive }) =>
             `${
-              isActive && conversationId === null ? 'bg-gray-3000' : ''
-            } my-auto mx-4 mt-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100`
+              isActive ? 'bg-gray-3000' : ''
+            } group my-auto mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
           }
         >
-          <img src={Message} className="ml-4 w-5"></img>
-          <p className="my-auto text-sm text-eerie-black">New Chat</p>
+          <img
+            src={Add}
+            alt="new"
+            className="opacity-80 group-hover:opacity-100"
+          />
+          <p className="my-auto text-sm text-dove-gray group-hover:text-neutral-600">
+            New Chat
+          </p>
         </NavLink>
-        <div className="conversations-container max-h-[25rem] overflow-y-auto">
-          {conversations?.map((conversation) => (
-            <ConversationTile
-              key={conversation.id}
-              conversation={conversation}
-              selectConversation={(id) => handleConversationClick(id)}
-              onDeleteConversation={(id) => handleDeleteConversation(id)}
-              onSave={(conversation) => updateConversationName(conversation)}
-            />
-          ))}
-        </div>
+        {conversations && (
+          <div className="conversations-container max-h-[25rem] overflow-y-auto">
+            <p className="text-sm-eerie-black ml-6 mt-3 font-semibold">Chats</p>
+            {conversations?.map((conversation) => (
+              <ConversationTile
+                key={conversation.id}
+                conversation={conversation}
+                selectConversation={(id) => handleConversationClick(id)}
+                onDeleteConversation={(id) => handleDeleteConversation(id)}
+                onSave={(conversation) => updateConversationName(conversation)}
+              />
+            ))}
+          </div>
+        )}
 
-        <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
@@ -305,7 +318,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </div>
             )}
           </div>
-          <p className="ml-6 mt-3 font-bold text-jet">Source Docs</p>
+          <p className="ml-6 mt-3 text-sm font-semibold text-eerie-black">
+            Source Docs
+          </p>
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <div
@@ -315,7 +330,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             }}
           >
             <img src={Key} alt="key" className="ml-2 w-6" />
-            <p className="my-auto text-eerie-black">Reset Key</p>
+            <p className="my-auto text-sm text-eerie-black">Reset Key</p>
           </div>
         </div>
 
@@ -329,7 +344,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             }
           >
             <img src={Info} alt="info" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">About</p>
+            <p className="my-auto text-sm text-eerie-black">About</p>
           </NavLink>
 
           <a
@@ -339,7 +354,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Documentation} alt="documentation" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Documentation</p>
+            <p className="my-auto text-sm text-eerie-black">Documentation</p>
           </a>
           <a
             href="https://discord.gg/WHJdfbQDR4"
@@ -348,7 +363,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Discord} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Visit our Discord</p>
+            <p className="my-auto text-sm text-eerie-black">
+              Visit our Discord
+            </p>
           </a>
 
           <a
@@ -358,7 +375,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Github} alt="link" className="ml-2 w-5" />
-            <p className="my-auto text-eerie-black">Visit our Github</p>
+            <p className="my-auto text-sm text-eerie-black">Visit our Github</p>
           </a>
         </div>
       </div>
