@@ -21,7 +21,7 @@ If you prefer to follow manual steps, refer to this guide:
    ```bash
    docker-compose build && docker-compose up
    ```
-4. Navigate to `http://localhost:5173/`.
+4. Navigate to http://localhost:5173/.
 
 To stop, simply press **Ctrl + C**.
 
