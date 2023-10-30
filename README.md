@@ -17,6 +17,10 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
   <a href="https://github.com/arc53/DocsGPT">![link to main GitHub showing Stars number](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
   <a href="https://github.com/arc53/DocsGPT">![link to main GitHub showing Forks number](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![link to license file](https://img.shields.io/github/license/arc53/docsgpt)</a>
+  ![GitHub issues](https://img.shields.io/github/issues/arc53/docsgpt)
+![GitHub closed issues](https://img.shields.io/github/issues-closed-raw/arc53/docsgpt)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/arc53/docsgpt)
+![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/arc53/docsgpt)
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
  
 </div>
