@@ -232,19 +232,21 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <img src={Message} className="ml-4 w-5" />
           <p className="my-auto text-sm text-eerie-black">New Chat</p>
         </NavLink>
-        <div className="conversations-container max-h-[25rem] overflow-y-auto">
-          {conversations?.map((conversation) => (
-            <ConversationTile
-              key={conversation.id}
-              conversation={conversation}
-              selectConversation={(id) => handleConversationClick(id)}
-              onDeleteConversation={(id) => handleDeleteConversation(id)}
-              onSave={(conversation) => updateConversationName(conversation)}
-            />
-          ))}
-        </div>
+        {conversations && (
+          <div className="conversations-container max-h-[25rem] overflow-y-auto">
+            <p className="ml-6 mt-3 font-bold text-jet">Chats</p>
+            {conversations?.map((conversation) => (
+              <ConversationTile
+                key={conversation.id}
+                conversation={conversation}
+                selectConversation={(id) => handleConversationClick(id)}
+                onDeleteConversation={(id) => handleDeleteConversation(id)}
+                onSave={(conversation) => updateConversationName(conversation)}
+              />
+            ))}
+          </div>
+        )}
 
-        <div className="flex-grow border-b-2 border-gray-100"></div>
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
             <div
