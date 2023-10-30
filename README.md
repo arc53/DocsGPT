@@ -148,7 +148,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-4. Run the app using `flask run --host=0.0.0.0 --port=7091`.
+4. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
 5. Start worker with `celery -A application.app.celery worker -l INFO`.
 
 ### Start frontend
