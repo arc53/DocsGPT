@@ -33,13 +33,15 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Styling for the Search Bar */
 input[type="text"] {
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  width: 247px;
+  height: 43px;
+  top: -81px;
+  left: 4px;
+  border: 1px;
+  border-radius: 97px;
   padding: 8px;
-  width: 100%;
-  margin-top: 10px;
-  margin-bottom: 10px;
   box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.2);
 }
 
@@ -49,23 +51,6 @@ input[type="text"]::placeholder {
   opacity: 1; /* Placeholder text opacity */
 }
 
-/* Additional Styles for "Find a chat" Input */
-input[type="text"] {
-  width: 100%;
-  height: 40px; /* Adjust the height as needed */
-  font-size: 16px; /* Adjust the font size as needed */
-  border: 2px solid #007BFF; /* Adjust the border color as needed */
-  border-radius: 20px; /* Adjust the border radius as needed */
-  padding: 10px;
-  margin-top: 10px;
-  margin-bottom: 10px;
-  box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.2);
-}
-
-input[type="text"]::placeholder {
-  color: #9ca3af; /* Placeholder text color */
-  opacity: 0.7; /* Adjust the placeholder text opacity as needed */
-}
 
 /**
  * Render the `main` element consistently in IE.
