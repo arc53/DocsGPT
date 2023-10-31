@@ -6,7 +6,7 @@ import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
 import { ReactComponent as Copy } from './../assets/copy.svg';
-import { ReactComponent as Checkmark } from './../assets/checkmark.svg';
+import { ReactComponent as CheckMark } from './../assets/checkmark.svg';
 import ReactMarkdown from 'react-markdown';
 import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -177,7 +177,7 @@ const ConversationBubble = forwardRef<
                 }}
               >
                 {copied ? (
-                  <Checkmark
+                  <CheckMark
                     className="cursor-pointer stroke-green-2000"
                     onMouseEnter={() => setIsCopyHovered(true)}
                     onMouseLeave={() => setIsCopyHovered(false)}
