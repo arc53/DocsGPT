@@ -65,16 +65,16 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
 
 2. **Clone the Forked Repository:**
    - Clone the repository using:
-      ''' shell
+      ``` shell
       git clone https://github.com/<your-github-username>/DocsGPT.git
-      '''
+      ```
 
 3. **Keep your Fork in Sync:**
    - Before you make any changes, make sure that your fork is in sync to avoid merge conflicts using:
-   '''shell
-   git remote add upstream https://github.com/arc53/DocsGPT.git
-   git pull upstream master
-   '''
+     ```shell
+     git remote add upstream https://github.com/arc53/DocsGPT.git
+     git pull upstream master
+     ```
 
 4. **Create and Switch to a New Branch:**
    - Create a new branch for your contribution using:

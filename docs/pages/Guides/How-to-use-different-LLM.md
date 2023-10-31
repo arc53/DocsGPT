@@ -19,12 +19,12 @@ You can omit the keys if users provide their own. Ensure you set `LLM_NAME` and 
 ## Step 2: Choose Your Models
 
 **Options for `LLM_NAME`:**
-- openai
-- manifest
-- cohere
-- Arc53/docsgpt-14b
-- Arc53/docsgpt-7b-falcon
-- llama.cpp
+- OpenAI ([More details](https://platform.openai.com/docs/models))
+- manifest ([More details](https://python.langchain.com/docs/integrations/llms/manifest))
+- cohere ([More details](https://docs.cohere.com/docs/llmu))
+- Arc53/docsgpt-14b ([More details](https://huggingface.co/Arc53/docsgpt-14b))
+- Arc53/docsgpt-7b-falcon ([More details](https://huggingface.co/Arc53/docsgpt-7b-falcon))
+- llama.cpp ([More details](https://python.langchain.com/docs/integrations/llms/llamacpp))
 
 **Options for `EMBEDDINGS_NAME`:**
 - openai_text-embedding-ada-002

@@ -7,7 +7,6 @@ import CheckMark from '../assets/checkmark.svg';
 import Trash from '../assets/trash.svg';
 
 import { selectConversationId } from '../preferences/preferenceSlice';
-import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
   name: string;
@@ -31,15 +30,15 @@ export default function ConversationTile({
 
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
-  useOutsideAlerter(
-    tileRef,
-    () =>
-      handleSaveConversation({
-        id: conversationId || conversation.id,
-        name: conversationName,
-      }),
-    [conversationName],
-  );
+  // useOutsideAlerter(
+  //   tileRef,
+  //   () =>
+  //     handleSaveConversation({
+  //       id: conversationId || conversation.id,
+  //       name: conversationName,
+  //     }),
+  //   [conversationName],
+  // );
 
   useEffect(() => {
     setConversationsName(conversation.name);

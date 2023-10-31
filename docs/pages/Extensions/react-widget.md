@@ -43,4 +43,5 @@ export default function MyApp({ Component, pageProps }) {
 }
 ```  
 
+For more information about React, refer to this [link here](https://react.dev/learn)
 
