@@ -180,28 +180,44 @@ const filteredConversations = conversations
 
   return (
     <>
+    <div className="mt-4 ml-4">
+      <button
+        className="my-auto text-sm text-neutral-600 flex items-center gap-2.5 cursor-pointer"
+        onClick={() => {
+          setNavOpen(!navOpen);
+        }}
+      >
+        <img src={Add} alt="new" className="opacity-80 group-hover:opacity-100" />
+        New Chat
+      </button>
+    </div>
+
+    <div className="mt-4 ml-4">
       <input
         type="text"
-        placeholder="Search..."
+        placeholder="Find a chat"
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
+        className="w-48 h-10 px-3 rounded-3xl border-2 border-silver focus:border-rainy-gray focus:outline-none"
       />
-      {!navOpen && (
-        <button
-          className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
-          onClick={() => {
-            setNavOpen(!navOpen);
-          }}
-        >
-          <img
-            src={Expand}
-            alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
-          />
-        </button>
-      )}
+    </div>
+
+    {!navOpen && (
+      <button
+        className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
+        onClick={() => {
+          setNavOpen(!navOpen);
+        }}
+      >
+        <img
+          src={Expand}
+          alt="menu toggle"
+          className={`${
+            !navOpen ? 'rotate-180' : 'rotate-0'
+          } m-auto transition-all duration-200`}
+        />
+      </button>
+    )}
       <div
         ref={navRef}
         className={`${
@@ -395,27 +411,28 @@ const filteredConversations = conversations
         </div>
       </div>
       <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 md:hidden">
-        <button
-          className="mt-5 ml-6 h-6 w-6 md:hidden"
-          onClick={() => setNavOpen(true)}
-        >
-          <img src={Hamburger} alt="menu toggle" className="w-7" />
-        </button>
-      </div>
-      <SelectDocsModal
-        modalState={selectedDocsModalState}
-        setModalState={setSelectedDocsModalState}
-        isCancellable={isSelectedDocsSet}
-      />
-      <APIKeyModal
-        modalState={apiKeyModalState}
-        setModalState={setApiKeyModalState}
-        isCancellable={isApiKeySet}
-      />
-      <Upload
-        modalState={uploadModalState}
-        setModalState={setUploadModalState}
-      ></Upload>
+      <button
+        className="mt-5 ml-6 h-6 w-6 md:hidden"
+        onClick={() => setNavOpen(true)}
+      >
+        <img src={Hamburger} alt="menu toggle" className="w-7" />
+      </button>
+    </div>
+    
+    <SelectDocsModal
+      modalState={selectedDocsModalState}
+      setModalState={setSelectedDocsModalState}
+      isCancellable={isSelectedDocsSet}
+    />
+    <APIKeyModal
+      modalState={apiKeyModalState}
+      setModalState={setApiKeyModalState}
+      isCancellable={isApiKeySet}
+    />
+    <Upload
+      modalState={uploadModalState}
+      setModalState={setUploadModalState}
+    ></Upload>
     </>
   );
 }
