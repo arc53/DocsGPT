@@ -24,6 +24,7 @@ import {
 
 export default function App() {
   const radiusList = ['full'];
+  // const colors = ["secondary"];
   const [selectedKeys, setSelectedKeys] = React.useState(new Set(['text']));
 
   const selectedValue = React.useMemo(
@@ -32,7 +33,6 @@ export default function App() {
   );
 
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
-  const [selectedColor, setSelectedColor] = React.useState('default');
 
   return (
     <div className="inline-flex h-[120px] w-[529px] flex-col items-start justify-start gap-5 pb-2 pl-[69px] pt-[55px]">
@@ -43,7 +43,12 @@ export default function App() {
       </div>
       <div className="flex flex-wrap gap-4">
         {radiusList.map((radius) => (
-          <Tabs key={radius} radius={radius} aria-label="Tabs radius">
+          <Tabs
+            key={radius}
+            radius="full"
+            color="secondary"
+            aria-label="Tabs radius"
+          >
             <Tab key="general" title="General">
               <div className="mt-6 font-['Inter'] text-lg font-semibold leading-none text-black">
                 Select theme
@@ -97,7 +102,7 @@ export default function App() {
                   </Button>
                   <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
                     <ModalContent>
-                      {(onClose) => (
+                      {(onClose: any) => (
                         <>
                           <ModalHeader className="flex flex-col gap-1">
                             Add Prompt
@@ -141,7 +146,7 @@ export default function App() {
             <Tab key="documents" title="Documents">
               <div className="flex flex-col gap-3">
                 <Table
-                  color="secondarys"
+                  color="secondary"
                   selectionMode="single"
                   defaultSelectedKeys={['2']}
                   aria-label="Example static collection table"
@@ -175,7 +180,7 @@ export default function App() {
                 </Button>
                 <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
                   <ModalContent>
-                    {(onClose) => (
+                    {(onClose: any) => (
                       <>
                         <ModalHeader className="flex flex-col gap-1">
                           Upload New Documentation
@@ -259,7 +264,9 @@ export default function App() {
                   width={240}
                   src="https://nextui-docs-v2.vercel.app/images/album-cover.png"
                   alt="NextUI Album Cover"
-                  classNames="m-5"
+                  classNames={{
+                    img: 'm-5',
+                  }}
                 />
               </div>
             </Tab>
