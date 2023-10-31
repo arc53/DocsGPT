@@ -30,8 +30,6 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 - [Book Demo :wave:](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
 - [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
-### [:tada: Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! :tada:](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
-
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
 ## Roadmap
