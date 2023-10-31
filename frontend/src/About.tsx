@@ -1,13 +1,14 @@
 //TODO - Add hyperlinks to text
 //TODO - Styling
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
 
 export default function About() {
   return (
     <div className="mx-5 grid min-h-screen md:mx-36">
-      <article className="place-items-left mx-auto my-auto mt-20 flex w-full max-w-6xl flex-col gap-6 rounded-3xl bg-gray-100 p-6 text-jet lg:p-10 xl:p-16">
+      <article className="place-items-left mx-auto my-auto flex w-full max-w-6xl flex-col gap-4 rounded-3xl bg-gray-100 p-6 text-jet lg:p-6 xl:p-10">
         <div className="flex items-center">
           <p className="mr-2 text-3xl">About DocsGPT</p>
-          <p className="text-[21px]">🦖</p>
+          <img className="h14 mb-2" src={DocsGPT3} alt="DocsGPT" />
         </div>
         <p className="mt-4">
           Find the information in your documentation through AI-powered
@@ -54,7 +55,7 @@ export default function About() {
           Currently It uses{' '}
           <span className="text-blue-950 font-medium">DocsGPT</span>{' '}
           documentation, so it will respond to information relevant to{' '}
-          <span className="text-blue-950 font-medium">DocsGPT</span> . If you
+          <span className="text-blue-950 font-medium">DocsGPT</span>. If you
           want to train it on different documentation - please follow
           <a
             className="text-blue-500"

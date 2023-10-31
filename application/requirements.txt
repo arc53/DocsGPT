@@ -4,6 +4,7 @@ aiohttp-retry==2.8.3
 aiosignal==1.3.1
 aleph-alpha-client==2.16.1
 amqp==5.1.1
+anthropic==0.5.0
 async-timeout==4.0.2
 attrs==22.2.0
 billiard==3.6.4.0
@@ -57,6 +58,7 @@ nltk==3.8.1
 numcodecs==0.11.0
 numpy==1.24.2
 openai==0.27.8
+openapi3-parser==1.1.14
 packaging==23.0
 pathos==0.3.0
 Pillow==10.0.1
@@ -100,7 +102,7 @@ transformers==4.30.0
 typer==0.7.0
 typing-inspect==0.8.0
 typing_extensions==4.5.0
-urllib3==1.26.17
+urllib3==1.26.18
 vine==5.0.0
 wcwidth==0.2.6
 yarl==1.8.2
