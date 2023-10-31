@@ -116,6 +116,7 @@ This endpoint is used to upload a file that needs to be trained, response is JSO
 **Request:**
 
 **Method**: `POST`
+
 **Request Body**: A multipart/form-data form with file upload and additional fields, including `user` and `name`.
 
 HTML example:
@@ -143,7 +144,9 @@ JSON response with a status and a task ID that can be used to check the task's p
 This endpoint is used to get the status of a task (`task_id`) from `/api/upload`
 
 **Request:**
-**Method**: `GE`T
+
+**Method**: `GET`
+
 **Query Parameter**: `task_id` (task ID to check)
 
 **Sample JavaScript Fetch Request:**
