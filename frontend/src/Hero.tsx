@@ -1,4 +1,5 @@
 import { useMediaQuery } from './hooks';
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
 
 export default function Hero({ className = '' }: { className?: string }) {
   // const isMobile = window.innerWidth <= 768;
@@ -7,7 +8,7 @@ export default function Hero({ className = '' }: { className?: string }) {
     <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'}flex flex-col `}>
       <div className=" mb-2 flex items-center justify-center sm:mb-10">
         <p className="mr-2 text-4xl font-semibold">DocsGPT</p>
-        <p className="text-[27px]">🦖</p>
+        <img className="mb-2 h-14" src={DocsGPT3} alt="DocsGPT" />
       </div>
       {isMobile ? (
         <p className="mb-3 text-center leading-6 text-black-1000">

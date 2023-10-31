@@ -18,6 +18,8 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
   <a href="https://github.com/arc53/DocsGPT">![link to main GitHub showing Forks number](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![link to license file](https://img.shields.io/github/license/arc53/docsgpt)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
+  <a href="https://twitter.com/ATushynski">![X (formerly Twitter) URL](https://img.shields.io/twitter/url?url=https%3A%2F%2Ftwitter.com%2FATushynski)</a>
+
  
 </div>
 
@@ -148,7 +150,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-4. Run the app using `flask run --host=0.0.0.0 --port=7091`.
+4. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
 5. Start worker with `celery -A application.app.celery worker -l INFO`.
 
 ### Start frontend
