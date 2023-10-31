@@ -55,6 +55,8 @@ This endpoint will make sure documentation is loaded on the server (just run it 
 
 **Request:**
 
+**Method**: `POST`
+
 **Headers**: Content-Type should be set to `application/json; charset=utf-8`
 
 **Request Body**: JSON object with the field:
