@@ -176,7 +176,7 @@ Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information abou
 
 We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
 
-## Many Thanks To Our Contributors
+## Many Thanks To Our Contributors⚡
 
 <a href="https://github.com/arc53/DocsGPT/graphs/contributors" alt="View Contributors">
   <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" alt="Contributors" />
