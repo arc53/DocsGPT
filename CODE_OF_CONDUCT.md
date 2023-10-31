@@ -63,7 +63,7 @@ reported to the community leaders responsible for enforcement at
 contact@arc53.com.
 All complaints will be reviewed and investigated promptly and fairly.
 
-All community leaders are obligated to respectful towards the privacy and security of the
+All community leaders are obligated to be respectful towards the privacy and security of the
 reporter of any incident.
 
 ## Enforcement Guidelines

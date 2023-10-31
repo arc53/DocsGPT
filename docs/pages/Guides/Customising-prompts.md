@@ -2,7 +2,7 @@
 
 To customize the main prompt for DocsGPT, follow these steps:
 
-1. Navigate to `/application/prompt/combine_prompt.txt`.
+1. Navigate to `/application/prompts/combine_prompt.txt`.
 
 2. Edit the `combine_prompt.txt` file to modify the prompt text. You can experiment with different phrasings and structures to see how the model responds.
 

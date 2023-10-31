@@ -1,5 +1,5 @@
 import { forwardRef, useState } from 'react';
-import Avatar from '../Avatar';
+import Avatar from '../components/Avatar';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import classes from './ConversationBubble.module.css';
 import Alert from './../assets/alert.svg';
@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -65,11 +66,21 @@ const ConversationBubble = forwardRef<
         className={`flex self-start ${className} group flex-col pr-20`}
       >
         <div className="flex self-start">
-          <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
+          <Avatar
+            className="mt-2 h-12 w-12 text-2xl"
+            avatar={
+              <img
+                src={DocsGPT3}
+                alt="DocsGPT"
+                className="h-full w-full object-cover"
+              />
+            }
+          />
+
           <div
             className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
-                ? 'flex-row rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
+                ? 'flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
             }`}
           >
@@ -199,16 +210,16 @@ const ConversationBubble = forwardRef<
                 style={{
                   backgroundColor: isLikeHovered
                     ? isLikeClicked
-                      ? '#7D54D1'
+                      ? 'rgba(125, 84, 209, 0.3)'
                       : '#EEEEEE'
                     : isLikeClicked
-                    ? '#7D54D1'
+                    ? 'rgba(125, 84, 209, 0.3)'
                     : '#ffffff',
                 }}
               >
                 <Like
                   className={`cursor-pointer ${
-                    isLikeClicked || (feedback === 'LIKE')
+                    isLikeClicked || feedback === 'LIKE'
                       ? 'fill-white-3000 stroke-purple-30'
                       : 'fill-none  stroke-gray-4000'
                   }`}
@@ -238,16 +249,16 @@ const ConversationBubble = forwardRef<
                 style={{
                   backgroundColor: isDislikeHovered
                     ? isDislikeClicked
-                      ? '#F87171'
+                      ? 'rgba(248, 113, 113, 0.3)'
                       : '#EEEEEE'
                     : isDislikeClicked
-                    ? '#F87171'
+                    ? 'rgba(248, 113, 113, 0.3)'
                     : '#ffffff',
                 }}
               >
                 <Dislike
                   className={`cursor-pointer ${
-                   isDislikeClicked || (feedback === 'DISLIKE')
+                    isDislikeClicked || feedback === 'DISLIKE'
                       ? 'fill-white-3000 stroke-red-2000'
                       : 'fill-none  stroke-gray-4000'
                   }`}

@@ -1,9 +1,11 @@
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
+
 export default function Hero({ className = '' }: { className?: string }) {
   return (
     <div className={`mt-14 mb-12 flex flex-col `}>
       <div className="mb-10 flex items-center justify-center ">
         <p className="mr-2 text-4xl font-semibold">DocsGPT</p>
-        <p className="text-[27px]">🦖</p>
+        <img className="mb-2 h-14" src={DocsGPT3} alt="DocsGPT" />
       </div>
       <p className="mb-3 text-center leading-6 text-black-1000">
         Welcome to DocsGPT, your technical documentation assistant!
@@ -17,9 +19,9 @@ export default function Hero({ className = '' }: { className?: string }) {
         Start by entering your query in the input field below and we will do the
         rest!
       </p>
-      <div className="sections mt-8 flex flex-wrap items-center justify-center sm:gap-1 md:gap-0  ">
-        <div className="mr-4 mb-4 h-[224px] rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1">
-          <div className="h-full rounded-[21px] bg-white p-6">
+      <div className="sections mt-8 flex flex-col items-center justify-center gap-1 sm:gap-0 lg:flex-row">
+        <div className="relative mb-4 h-60 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-r-none">
+          <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-r-none">
             <img
               src="/message-text.svg"
               alt="lock"
@@ -35,8 +37,8 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
 
-        <div className="mr-4 mb-4 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1">
-          <div className="h-full rounded-[21px] bg-white p-6">
+        <div className="relative mb-4 h-60 rounded-[25px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 sm:mr-0 lg:rounded-none lg:px-0">
+          <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-none">
             <img src="/lock.svg" alt="lock" className="h-[24px] w-[24px]" />
             <h2 className="mt-2 mb-3 text-lg font-bold">Secure Data Storage</h2>
             <p className=" w-[250px] text-xs text-gray-500">
@@ -47,8 +49,8 @@ export default function Hero({ className = '' }: { className?: string }) {
             </p>
           </div>
         </div>
-        <div className="mb-4 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1">
-          <div className="h-full rounded-[21px] bg-white p-6">
+        <div className="relative mb-4 h-60 rounded-[25px] bg-gradient-to-l from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 lg:rounded-l-none">
+          <div className="h-full rounded-[21px] bg-white p-6 lg:rounded-l-none">
             <img
               src="/message-programming.svg"
               alt="lock"
