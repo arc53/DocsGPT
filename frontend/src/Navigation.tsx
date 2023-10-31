@@ -193,13 +193,28 @@ const filteredConversations = conversations
     </div>
 
     <div className="mt-4 ml-4">
-      <input
-        type="text"
-        placeholder="Find a chat"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-48 h-10 px-3 rounded-3xl border-2 border-silver focus:border-rainy-gray focus:outline-none"
-      />
+      <button className="my-auto text-sm text-neutral-600 flex items-center gap-2.5 cursor-pointer">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          fill="#9ca3af"
+          className="bi bi-search"
+          viewBox="0 0 16 16"
+        >
+          <path
+            fillRule="evenodd"
+            d="M10.742 9.742a6.5 6.5 0 111.414-1.414L14 12l-2.672 2.672a1 1 0 01-1.414-1.414l2.672-2.672zM11 6.5a5.5 5.5 0 10-11 0 5.5 5.5 0 0011 0z"
+          />
+        </svg>
+        <input
+          type="text"
+          placeholder="Find a chat"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-247 h-43 px-3 rounded-97px border-1 border-silver focus:border-rainy-gray focus:outline-none"
+        />
+      </button>
     </div>
 
     {!navOpen && (
