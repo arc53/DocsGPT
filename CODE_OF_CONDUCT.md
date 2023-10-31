@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We as members, contributors and leaders pledge to make participation in our
+We as members, contributors, and leaders pledge to make participation in our
 community, a harassment-free experience for everyone, regardless of age, body
 size, visible or invisible disability, ethnicity, sex characteristics, gender
 identity and expression, level of experience, education, socio-economic status,
@@ -33,7 +33,7 @@ Examples of unacceptable behavior include:
 3. Public or private harassment
 4. Publishing other's private information, such as a physical or email
   address, without their explicit permission
-5. Other conduct which could reasonably be considered inappropriate in a
+5. Other conduct that could reasonably be considered inappropriate in a
   professional setting
 
 ## Enforcement Responsibilities
@@ -45,7 +45,7 @@ or harmful.
 
 Community leaders have the right and responsibility to remove, edit, or reject
 comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct and will communicate reasons for moderation
+not aligned with this Code of Conduct and will communicate reasons for moderation
 decisions when appropriate.
 
 ## Scope
@@ -63,7 +63,7 @@ reported to the community leaders responsible for enforcement at
 contact@arc53.com.
 All complaints will be reviewed and investigated promptly and fairly.
 
-All community leaders are obligated to be respectful towards the privacy and security of the
+All community leaders are obligated to be respectful of the privacy and security of the
 reporter of any incident.
 
 ## Enforcement Guidelines
@@ -102,7 +102,7 @@ Violating these terms may lead to a permanent ban.
 
 ### 4. Permanent Ban
 * **Community Impact**: Demonstrating a pattern of violation of community
-standards, including sustained inappropriate behavior,harassment of an
+standards, including sustained inappropriate behavior, harassment of an
 individual or aggression towards or disparagement of classes of individuals.
 
 * **Consequence**: A permanent ban from any sort of public interaction within
