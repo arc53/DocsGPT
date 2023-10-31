@@ -80,7 +80,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 Note: Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
 
-On Mac OS or Linux, write:
+On macOS or Linux, write:
 
 `./setup.sh`
 
@@ -130,7 +130,7 @@ Make sure you have Python 3.10 or 3.11 installed.
 2. (optional) Create a Python virtual environment:
    You can follow the [Python official documentation](https://docs.python.org/3/tutorial/venv.html) for virtual environments.
 
-a) On Mac OS and Linux
+a) On macOS and Linux
 
 ```commandline
 python -m venv venv
