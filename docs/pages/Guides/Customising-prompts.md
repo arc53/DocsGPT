@@ -2,9 +2,9 @@
 
 Customizing the main prompt for DocsGPT gives you the ability to tailor the AI's responses to your specific requirements. By modifying the prompt text, you can achieve more accurate and relevant answers. Here's how you can do it:
 
-**Step 1:** Navigate to `/application/prompts/combine_prompt.txt`.
+1. Navigate to `/application/prompts/combine_prompt.txt`.
 
-**Step 2:** Open the combine_prompt.txt file and modify the prompt text to suit your needs. You can experiment with different phrasings and structures to observe how the model responds. The main prompt serves as guidance to the AI model on how to generate responses.
+2. Open the combine_prompt.txt file and modify the prompt text to suit your needs. You can experiment with different phrasings and structures to observe how the model responds. The main prompt serves as guidance to the AI model on how to generate responses.
 
 ## Example Prompt Modification
 
