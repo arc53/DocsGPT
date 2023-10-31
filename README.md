@@ -23,7 +23,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
  
 </div>
 
-### Production Support / Help for companies:
+### Production Support / Help for Companies:
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
@@ -38,7 +38,7 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 
 You can find our roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
-## Our Open-Source models optimized for DocsGPT:
+## Our Open-Source Models Optimized for DocsGPT:
 
 | Name                                                                  | Base Model  | Requirements (or similar) |
 | --------------------------------------------------------------------- | ----------- | ------------------------- |
@@ -52,7 +52,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ![Main features of DocsGPT showcasing six main features](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
 
-## Useful links
+## Useful Links
 
 - :mag: :fire: [Live preview](https://docsgpt.arc53.com/)
 
@@ -66,7 +66,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - :house: :closed_lock_with_key: [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
 
-## Project structure
+## Project Structure
 
 - Application - Flask app (main application).
 
@@ -104,9 +104,9 @@ Otherwise, refer to this Guide:
 
 To stop, just run `Ctrl + C`.
 
-## Development environments
+## Development Environments
 
-### Spin up mongo and redis
+### Spin up Mongo and Redis
 
 For development, only two containers are used from [docker-compose.yaml](https://github.com/arc53/DocsGPT/blob/main/docker-compose.yaml) (by deleting all services except for Redis and Mongo).
 See file [docker-compose-dev.yaml](./docker-compose-dev.yaml).
@@ -118,7 +118,7 @@ docker compose -f docker-compose-dev.yaml build
 docker compose -f docker-compose-dev.yaml up -d
 ```
 
-### Run the backend
+### Run the Backend
 
 Make sure you have Python 3.10 or 3.11 installed.
 
@@ -153,7 +153,7 @@ pip install -r requirements.txt
 4. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
 5. Start worker with `celery -A application.app.celery worker -l INFO`.
 
-### Start frontend
+### Start Frontend
 
 Make sure you have Node version 16 or higher.
 
