@@ -10,14 +10,16 @@ This endpoint is used to request answers to user-provided questions.
 
 **Request:**
 
-Method: POST
-Headers: Content-Type should be set to "application/json; charset=utf-8"
-Request Body: JSON object with the following fields:
-* **question:** The user's question
-* **history:** (Optional) Previous conversation history
-* **api_key:** Your API key
-* **embeddings_key:** Your embeddings key
-* **active_docs:** The location of active documentation
+**Method**: `POST`
+
+**Headers**: Content-Type should be set to `application/json; charset=utf-8`
+
+**Request Body**: JSON object with the following fields:
+* `question` — The user's question.
+* `history`  —  (Optional) Previous conversation history.
+* `api_key`— Your API key.
+* `embeddings_key`  —  Your embeddings key.
+* `active_docs` — The location of active documentation.
 
 Here is a JavaScript Fetch Request example:
 ```js
@@ -36,12 +38,12 @@ fetch("http://127.0.0.1:5000/api/answer", {
 
 **Response**
 
-In response, you will get a JSON document containing the answer,query and the result:
+In response, you will get a JSON document containing the `answer`, `query` and `result`:
 ```json
 {
-  "answer": " Hi there! How can I help you?\n",
+  "answer": "Hi there! How can I help you?\n",
   "query": "Hi",
-  "result": " Hi there! How can I help you?\nSOURCES:"
+  "result": "Hi there! How can I help you?\nSOURCES:"
 }
 ```
 
@@ -53,9 +55,12 @@ This endpoint will make sure documentation is loaded on the server (just run it 
 
 **Request:**
 
-Headers: Content-Type should be set to "application/json; charset=utf-8"
-Request Body: JSON object with the field:
-* **docs:** The location of the documentation
+**Method**: `POST`
+
+**Headers**: Content-Type should be set to `application/json; charset=utf-8`
+
+**Request Body**: JSON object with the field:
+* `docs` — The location of the documentation:
 ```js
 // answer (POST http://127.0.0.1:5000/api/docs_check)
 fetch("http://127.0.0.1:5000/api/docs_check", {
@@ -71,7 +76,7 @@ fetch("http://127.0.0.1:5000/api/docs_check", {
 
 **Response:**
 
-In response, you will get a JSON document like this one indicating whether the documentation exists or not.:
+In response, you will get a JSON document like this one indicating whether the documentation exists or not:
 ```json
 {
   "status": "exists"
@@ -86,18 +91,24 @@ This endpoint provides information about available vectors and their locations w
 
 **Request:**
 
-Method: GET
+**Method**: `GET`
 
 **Response:**
 
 Response will include:
-`date`, `description`, `docLink`, `fullName`, `language`, `location` (local or docshub), `model`, `name`, `version`.
-
+* `date`
+* `description`
+* `docLink`
+* `fullName`
+* `language`
+* `location` (local or docshub)
+* `model`
+* `name`
+* `version`
 
 Example of JSON in Docshub and local:
 
 <img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
-
 
 ### 4. /api/upload
 **Description:**
@@ -106,8 +117,9 @@ This endpoint is used to upload a file that needs to be trained, response is JSO
 
 **Request:**
 
-Method: POST
-Request Body: A multipart/form-data form with file upload and additional fields, including "user" and "name."
+**Method**: `POST`
+
+**Request Body**: A multipart/form-data form with file upload and additional fields, including `user` and `name`.
 
 HTML example:
 
@@ -134,8 +146,10 @@ JSON response with a status and a task ID that can be used to check the task's p
 This endpoint is used to get the status of a task (`task_id`) from `/api/upload`
 
 **Request:**
-Method: GET
-Query Parameter: task_id (task ID to check)
+
+**Method**: `GET`
+
+**Query Parameter**: `task_id` (task ID to check)
 
 **Sample JavaScript Fetch Request:**
 ```js
@@ -155,33 +169,32 @@ fetch("http://localhost:5001/api/task_status?task_id=YOUR_TASK_ID", {
 There are two types of responses:
 
 1. While the task is still running, the 'current' value will show progress from 0 to 100.
-
-```json
-{
-  "result": {
-    "current": 1
-  },
-  "status": "PROGRESS"
-}
-```
+   ```json
+   {
+     "result": {
+       "current": 1
+     },
+     "status": "PROGRESS"
+   }
+   ```
 
 2. When task is completed:
-```json
-{
-  "result": {
-    "directory": "temp",
-    "filename": "install.rst",
-    "formats": [
-      ".rst",
-      ".md",
-      ".pdf"
-    ],
-    "name_job": "somename",
-    "user": "local"
-  },
-  "status": "SUCCESS"
-}
-```
+   ```json
+   {
+     "result": {
+       "directory": "temp",
+       "filename": "install.rst",
+       "formats": [
+         ".rst",
+         ".md",
+         ".pdf"
+       ],
+       "name_job": "somename",
+       "user": "local"
+     },
+     "status": "SUCCESS"
+   }
+   ```
 
 ### 6. /api/delete_old
 **Description:**
@@ -190,7 +203,8 @@ This endpoint is used to delete old Vector Stores.
 
 **Request:**
 
-Method: GET
+**Method**: `GET`
+
 ```js
 // Task status (GET http://127.0.0.1:5000/api/docs_check)
 fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
@@ -205,7 +219,8 @@ fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4f
 ```
 **Response:**
 
-JSON response indicating the status of the operation.
+JSON response indicating the status of the operation:
+
 ```json
 { "status": "ok" }
 ```

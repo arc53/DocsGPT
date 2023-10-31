@@ -1,6 +1,6 @@
 # Self-hosting DocsGPT on Amazon Lightsail
 
-Here's a step-by-step guide on how to setup an Amazon Lightsail instance to host DocsGPT.
+Here's a step-by-step guide on how to set up an Amazon Lightsail instance to host DocsGPT.
 
 ## Configuring your instance
 

@@ -1,16 +1,17 @@
 import { forwardRef, useState } from 'react';
-import Avatar from '../Avatar';
+import Avatar from '../components/Avatar';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import classes from './ConversationBubble.module.css';
 import Alert from './../assets/alert.svg';
 import { ReactComponent as Like } from './../assets/like.svg';
 import { ReactComponent as Dislike } from './../assets/dislike.svg';
 import { ReactComponent as Copy } from './../assets/copy.svg';
-import { ReactComponent as Checkmark } from './../assets/checkmark.svg';
+import { ReactComponent as CheckMark } from './../assets/checkmark.svg';
 import ReactMarkdown from 'react-markdown';
 import copy from 'copy-to-clipboard';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -37,8 +38,13 @@ const ConversationBubble = forwardRef<
     // Reset copied to false after a few seconds
     setTimeout(() => {
       setCopied(false);
-    }, 2000);
+    }, 3000);
   };
+  const [isCopyHovered, setIsCopyHovered] = useState(false);
+  const [isLikeHovered, setIsLikeHovered] = useState(false);
+  const [isDislikeHovered, setIsDislikeHovered] = useState(false);
+  const [isLikeClicked, setIsLikeClicked] = useState(false);
+  const [isDislikeClicked, setIsDislikeClicked] = useState(false);
 
   let bubble;
 
@@ -55,13 +61,26 @@ const ConversationBubble = forwardRef<
     );
   } else {
     bubble = (
-      <div ref={ref} className={`flex self-start ${className} group flex-col`}>
+      <div
+        ref={ref}
+        className={`flex self-start ${className} group flex-col pr-20`}
+      >
         <div className="flex self-start">
-          <Avatar className="mt-2 text-2xl" avatar="🦖"></Avatar>
+          <Avatar
+            className="mt-2 h-12 w-12 text-2xl"
+            avatar={
+              <img
+                src={DocsGPT3}
+                alt="DocsGPT"
+                className="h-full w-full object-cover"
+              />
+            }
+          />
+
           <div
             className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
               type === 'ERROR'
-                ? 'flex-row rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
+                ? 'flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
             }`}
           >
@@ -146,52 +165,113 @@ const ConversationBubble = forwardRef<
             )}
           </div>
           <div
-            className={`relative mr-2 flex items-center justify-center md:invisible ${
+            className={`relative mr-5 flex items-center justify-center md:invisible ${
               type !== 'ERROR' ? 'group-hover:md:visible' : ''
             }`}
           >
-            {copied ? (
-              <Checkmark className="absolute left-2 top-4" />
-            ) : (
-              <Copy
-                className={`absolute left-2 top-4 cursor-pointer fill-gray-4000 hover:stroke-gray-4000`}
-                onClick={() => {
-                  handleCopyClick(message);
+            <div className="absolute left-2 top-4">
+              <div
+                className="flex items-center justify-center rounded-full p-2"
+                style={{
+                  backgroundColor: isCopyHovered ? '#EEEEEE' : '#ffffff',
                 }}
-              ></Copy>
-            )}
+              >
+                {copied ? (
+                  <CheckMark
+                    className="cursor-pointer stroke-green-2000"
+                    onMouseEnter={() => setIsCopyHovered(true)}
+                    onMouseLeave={() => setIsCopyHovered(false)}
+                  />
+                ) : (
+                  <Copy
+                    className={`cursor-pointer fill-none`}
+                    onClick={() => {
+                      handleCopyClick(message);
+                    }}
+                    onMouseEnter={() => setIsCopyHovered(true)}
+                    onMouseLeave={() => setIsCopyHovered(false)}
+                  ></Copy>
+                )}
+              </div>
+            </div>
           </div>
           <div
-            className={`relative mr-2 flex items-center justify-center md:invisible ${
+            className={`relative mr-5 flex items-center justify-center ${
+              !isLikeClicked ? 'md:invisible' : ''
+            } ${
               feedback === 'LIKE' || type !== 'ERROR'
                 ? 'group-hover:md:visible'
                 : ''
             }`}
           >
-            <Like
-              className={`absolute left-6  top-4 cursor-pointer ${
-                feedback === 'LIKE'
-                  ? 'fill-purple-30 stroke-purple-30'
-                  : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
-              }`}
-              onClick={() => handleFeedback?.('LIKE')}
-            ></Like>
+            <div className="absolute left-6 top-4">
+              <div
+                className="flex items-center justify-center rounded-full p-2"
+                style={{
+                  backgroundColor: isLikeHovered
+                    ? isLikeClicked
+                      ? 'rgba(125, 84, 209, 0.3)'
+                      : '#EEEEEE'
+                    : isLikeClicked
+                    ? 'rgba(125, 84, 209, 0.3)'
+                    : '#ffffff',
+                }}
+              >
+                <Like
+                  className={`cursor-pointer ${
+                    isLikeClicked || feedback === 'LIKE'
+                      ? 'fill-white-3000 stroke-purple-30'
+                      : 'fill-none  stroke-gray-4000'
+                  }`}
+                  onClick={() => {
+                    handleFeedback?.('LIKE');
+                    setIsLikeClicked(true);
+                    setIsDislikeClicked(false);
+                  }}
+                  onMouseEnter={() => setIsLikeHovered(true)}
+                  onMouseLeave={() => setIsLikeHovered(false)}
+                ></Like>
+              </div>
+            </div>
           </div>
           <div
-            className={`relative mr-10 flex items-center justify-center md:invisible ${
+            className={`mr-13 relative flex items-center justify-center ${
+              !isDislikeClicked ? 'md:invisible' : ''
+            } ${
               feedback === 'DISLIKE' || type !== 'ERROR'
                 ? 'group-hover:md:visible'
                 : ''
             }`}
           >
-            <Dislike
-              className={`absolute left-10 top-4 cursor-pointer ${
-                feedback === 'DISLIKE'
-                  ? 'fill-red-2000 stroke-red-2000'
-                  : 'fill-none  stroke-gray-4000 hover:fill-gray-4000'
-              }`}
-              onClick={() => handleFeedback?.('DISLIKE')}
-            ></Dislike>
+            <div className="absolute left-10 top-4">
+              <div
+                className="flex items-center justify-center rounded-full p-2"
+                style={{
+                  backgroundColor: isDislikeHovered
+                    ? isDislikeClicked
+                      ? 'rgba(248, 113, 113, 0.3)'
+                      : '#EEEEEE'
+                    : isDislikeClicked
+                    ? 'rgba(248, 113, 113, 0.3)'
+                    : '#ffffff',
+                }}
+              >
+                <Dislike
+                  className={`cursor-pointer ${
+                    isDislikeClicked || feedback === 'DISLIKE'
+                      ? 'fill-white-3000 stroke-red-2000'
+                      : 'fill-none  stroke-gray-4000'
+                  }`}
+                  onClick={() => {
+                    handleFeedback?.('DISLIKE');
+                    setIsDislikeClicked(true);
+                    setIsLikeClicked(false);
+                  }}
+                  onMouseEnter={() => setIsDislikeHovered(true)}
+                  onMouseLeave={() => setIsDislikeHovered(false)}
+                ></Dislike>
+              </div>
+            </div>
           </div>
         </div>
 
