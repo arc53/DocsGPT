@@ -290,16 +290,18 @@ const filteredConversations = conversations
         {filteredConversations && (
           <div className="conversations-container max-h-[25rem] overflow-y-auto">
             <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
-        {filteredConversations.map((conversation) => (
-          <ConversationTile
-            key={conversation.id}
-            conversation={conversation}
-            selectConversation={(id) => handleConversationClick(id)}
-            onDeleteConversation={(id) => handleDeleteConversation(id)}
-            onSave={(conversation) => updateConversationName(conversation)}
-          />
-        ))}
-      </div>
+            {filteredConversations.map((conversation) => (
+              <ConversationTile
+                key={conversation.id}
+                conversation={conversation}
+                selectConversation={(id) => handleConversationClick(id)}
+                onDeleteConversation={(id) => handleDeleteConversation(id)}
+                onSave={(conversation) => updateConversationName(conversation)}
+              />
+            ))}
+          </div>
+        )}
+        
 
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
