@@ -364,3 +364,17 @@ template {
   color: #9ca3af;
   opacity: 1;
 }
+
+/* third container laylout for Firefox */
+@-moz-document url-prefix() {
+  .firefox{
+    padding: 32px;
+  }
+}
+
+/* For screens with a maximum width of 768px (mobile) */
+@media (max-width: 768px) {
+  .firefox {
+    padding: 16px;
+  }
+}
