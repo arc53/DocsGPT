@@ -73,7 +73,7 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
    - Before you make any changes, make sure that your fork is in sync to avoid merge conflicts using:
      ```shell
      git remote add upstream https://github.com/arc53/DocsGPT.git
-     git pull upstream master
+     git pull upstream main
      ```
 
 4. **Create and Switch to a New Branch:**
