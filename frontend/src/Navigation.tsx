@@ -10,6 +10,7 @@ import Exit from './assets/exit.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
+import settings from './assets/settings.svg';
 import Key from './assets/key.svg';
 import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
@@ -173,7 +174,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     <>
       {!navOpen && (
         <button
-          className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
+          className="duration-25 absolute sticky left-3 top-3 z-20 hidden transition-all md:block"
           onClick={() => {
             setNavOpen(!navOpen);
           }}
@@ -196,7 +197,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div
           className={'visible mt-2 flex h-16 w-full justify-between md:h-12'}
         >
-          <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
+          <div className="mx-4 my-auto flex cursor-pointer gap-1.5">
             <img className="mb-2 h-10" src={DocsGPT3} alt="" />
             <p className="my-auto text-2xl font-semibold">DocsGPT</p>
           </div>
@@ -228,7 +229,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-gray-3000' : ''
-            } group my-auto mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+            } group mx-4 my-auto mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
           }
         >
           <img
@@ -262,7 +263,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               onClick={() => setIsDocsListOpen(!isDocsListOpen)}
             >
               {selectedDocs && (
-                <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
+                <p className="mx-4 my-3 overflow-hidden text-ellipsis whitespace-nowrap">
                   {selectedDocs.name} {selectedDocs.version}
                 </p>
               )}
@@ -280,7 +281,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               onClick={() => setUploadModalState('ACTIVE')}
             ></img>
             {isDocsListOpen && (
-              <div className="absolute top-12 left-0 right-6 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
+              <div className="absolute left-0 right-6 top-12 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
                   docs.map((doc, index) => {
                     if (doc.model === embeddingsName) {
@@ -324,7 +325,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <div
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
             onClick={() => {
               setApiKeyModalState('ACTIVE');
             }}
@@ -336,9 +337,21 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
         <div className="flex flex-col gap-2 border-b-2 py-2">
           <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `${
+                isActive ? 'bg-gray-3000' : ''
+              } mx-2 my-auto mt-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100`
+            }
+          >
+            <img src={settings} className="ml-4 w-5" alt="settings" />
+            <p className="my-auto text-eerie-black">Settings</p>
+          </NavLink>
+
+          <NavLink
             to="/about"
             className={({ isActive }) =>
-              `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
+              `mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
                 isActive ? 'bg-gray-3000' : ''
               }`
             }
@@ -351,7 +364,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             href="https://docs.docsgpt.co.uk/"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Documentation} alt="documentation" className="ml-2 w-5" />
             <p className="my-auto text-sm text-eerie-black">Documentation</p>
@@ -360,7 +373,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             href="https://discord.gg/WHJdfbQDR4"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Discord} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-sm text-eerie-black">
@@ -372,7 +385,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             href="https://github.com/arc53/DocsGPT"
             target="_blank"
             rel="noreferrer"
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            className="mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
             <img src={Github} alt="link" className="ml-2 w-5" />
             <p className="my-auto text-sm text-eerie-black">Visit our Github</p>
@@ -381,7 +394,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       </div>
       <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 md:hidden">
         <button
-          className="mt-5 ml-6 h-6 w-6 md:hidden"
+          className="ml-6 mt-5 h-6 w-6 md:hidden"
           onClick={() => setNavOpen(true)}
         >
           <img src={Hamburger} alt="menu toggle" className="w-7" />

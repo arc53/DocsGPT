@@ -29,23 +29,23 @@ export default function About() {
             If you want to add your own documentation, please follow the
             instruction below:
           </p>
-          <p className="mt-4 ml-2">
+          <p className="ml-2 mt-4">
             1. Navigate to{' '}
             <span className="bg-gray-200 italic"> /application</span> folder
           </p>
-          <p className="mt-4 ml-2">
+          <p className="ml-2 mt-4">
             2. Install dependencies from{' '}
             <span className="bg-gray-200 italic">
               pip install -r requirements.txt
             </span>
           </p>
-          <p className="mt-4 ml-2">
+          <p className="ml-2 mt-4">
             3. Prepare a <span className="bg-gray-200 italic">.env</span> file.
             Copy <span className="bg-gray-200 italic">.env_sample</span> and
             create <span className="bg-gray-200 italic">.env</span> with your
             OpenAI API token
           </p>
-          <p className="mt-4 ml-2">
+          <p className="ml-2 mt-4">
             4. Run the app with{' '}
             <span className="bg-gray-200 italic">python app.py</span>
           </p>
@@ -53,9 +53,9 @@ export default function About() {
 
         <p>
           Currently It uses{' '}
-          <span className="text-blue-950 font-medium">DocsGPT</span>{' '}
+          <span className="font-medium text-blue-950">DocsGPT</span>{' '}
           documentation, so it will respond to information relevant to{' '}
-          <span className="text-blue-950 font-medium">DocsGPT</span>. If you
+          <span className="font-medium text-blue-950">DocsGPT</span>. If you
           want to train it on different documentation - please follow
           <a
             className="text-blue-500"

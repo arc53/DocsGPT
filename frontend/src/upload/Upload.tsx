@@ -208,7 +208,7 @@ export default function Upload({
             onClick={uploadFile}
             className={`ml-6 rounded-3xl bg-purple-30 text-white ${
               files.length > 0 ? '' : 'bg-opacity-75 text-opacity-80'
-            } py-2 px-6`}
+            } px-6 py-2`}
             disabled={files.length === 0} // Disable the button if no file is selected
           >
             Train

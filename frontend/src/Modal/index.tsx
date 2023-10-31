@@ -35,7 +35,7 @@ const Modal = (props: ModalProps) => {
           )}
         </div>
         {props.isError && (
-          <p className="mx-auto mt-2 mr-auto text-sm text-red-500">
+          <p className="mx-auto mr-auto mt-2 text-sm text-red-500">
             {props.errorMessage}
           </p>
         )}

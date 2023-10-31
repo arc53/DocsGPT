@@ -3,6 +3,7 @@ import Navigation from './Navigation';
 import Conversation from './conversation/Conversation';
 import About from './About';
 import PageNotFound from './PageNotFound';
+import Settings from './Settings';
 import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
 import { useState } from 'react';
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/" element={<Conversation />} />
           <Route path="/about" element={<About />} />
           <Route path="*" element={<PageNotFound />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>
     </div>
