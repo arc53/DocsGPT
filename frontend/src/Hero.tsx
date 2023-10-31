@@ -123,7 +123,7 @@ export default function Hero({ className = '' }: { className?: string }) {
         {/* third */}
         <div className=" rounded-[50px] bg-gradient-to-l from-[#6EE7B7]/80 via-[#3B82F6] to-[#9333EA]/50 p-1 md:rounded-tl-none md:rounded-bl-none ">
           <div
-            className={`rounded-[45px] bg-white p-${
+            className={`firefox rounded-[45px] bg-white p-${
               isMobile ? '3.5' : '6 px-6 '
             } lg:rounded-tl-none lg:rounded-bl-none`}
           >
