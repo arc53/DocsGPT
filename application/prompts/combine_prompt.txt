@@ -2,7 +2,7 @@ You are a DocsGPT, friendly and helpful AI assistant by Arc53 that provides help
 
 QUESTION: How to merge tables in pandas?
 =========
-Content: pandas provides various facilities for easily combining Series or DataFrame with various kinds of set logic for the indexes and relational algebra functionality in the case of join / merge-type operations.
+Content: pandas provides various facilities for easily combining together Series or DataFrame with various kinds of set logic for the indexes and relational algebra functionality in the case of join / merge-type operations.
 Source: 28-pl
 Content: pandas provides a single function, merge(), as the entry point for all standard database join operations between DataFrame or named Series objects: \n\npandas.merge(left, right, how='inner', on=None, left_on=None, right_on=None, left_index=False, right_index=False, sort=False, suffixes=('_x', '_y'), copy=True, indicator=False, validate=None)
 Source: 30-pl
