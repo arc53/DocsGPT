@@ -11,7 +11,6 @@ import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
-import Key from './assets/key.svg';
 import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
@@ -229,7 +228,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-gray-3000' : ''
-            } group my-auto mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+            } group mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
           }
         >
           <img
@@ -241,9 +240,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             New Chat
           </p>
         </NavLink>
+        <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
         {conversations && (
-          <div className="conversations-container max-h-[25rem] overflow-y-auto">
-            <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
+          <div className="conversations-container mb-auto max-h-[25rem] overflow-y-auto">
             {conversations?.map((conversation) => (
               <ConversationTile
                 key={conversation.id}
@@ -324,18 +323,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <p className="ml-6 mt-3 text-sm font-semibold">Source Docs</p>
         </div>
         <div className="flex flex-col gap-2 border-b-2 py-2">
-          <div
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
-            onClick={() => {
-              setApiKeyModalState('ACTIVE');
-            }}
-          >
-            <img src={Key} alt="key" className="ml-2 w-6" />
-            <p className="my-auto text-sm text-eerie-black">Reset Key</p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2 border-b-2 py-2">
           <NavLink
             to="/settings"
             className={({ isActive }) =>
@@ -347,6 +334,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img src={SettingGear} alt="info" className="ml-2 w-5 opacity-60" />
             <p className="my-auto text-eerie-black">Settings</p>
           </NavLink>
+        </div>
+
+        <div className="flex flex-col gap-2 border-b-2 py-2">
           <NavLink
             to="/about"
             className={({ isActive }) =>
