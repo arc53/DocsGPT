@@ -367,7 +367,7 @@ template {
 
 /* third container laylout for Firefox */
 @-moz-document url-prefix() {
-  .firefox{
+  .firefox {
     padding: 32px;
   }
 }

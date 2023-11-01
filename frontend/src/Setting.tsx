@@ -74,9 +74,9 @@ const Setting = () => {
 const General = () => {
   const [theme, setTheme] = useState('Light');
   const [isThemeListOpen, setIsThemeListOpen] = useState(false);
-  const themes = ['Light', 'Dark'];
+  const themes = ['Light', 'Dark (WIP)'];
   const [language, setLanguage] = useState('English');
-  const languages = ['English', 'French'];
+  const languages = ['English'];
   const [isLanguageListOpen, setIsLanguageListOpen] = useState(false);
   return (
     <>
@@ -165,12 +165,12 @@ const General = () => {
   );
 };
 const Prompts = () => {
-  return <div>This is prompts</div>;
+  return <div>This is prompts WIP</div>;
 };
 const Documents = () => {
-  return <div>This is Documents</div>;
+  return <div>This is Documents WIP</div>;
 };
 const Widgets = () => {
-  return <div>This is widgets</div>;
+  return <div>This is widgets WIP</div>;
 };
 export default Setting;
