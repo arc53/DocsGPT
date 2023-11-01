@@ -33,32 +33,57 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
-/* Styling for the Search Bar */
-input[type="text"].custom-search-input {
+/* Styling for the Search Bar Container */
+.search-icon-container {
+  width: 13.98px;
+  height: 13.98px;
+  top: 5px;
+  left: 5px;
+  background: #C4C4C4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-right: 10px; /* Add spacing to the right of the search icon */
+}
+
+/* Styling for the Search Bar Input */
+.search-input-container {
   width: 247px;
   height: 43px;
   top: -81px;
   left: 4px;
-  border: 1px solid #C4C4C4; /* Updated border style */
+  padding: 9px 133px 9px 10px; /* Adjusted padding for left and right */
   border-radius: 97px;
-  padding: 10px 133px 9px 10px; /* Updated padding */
-  box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.2);
-  background: linear-gradient(0deg, #C4C4C4, #C4C4C4),
-              linear-gradient(0deg, #FFFFFF, #FFFFFF);
-  display: flex; /* Added display flex to allow aligning the icon and input */
-  align-items: center; /* Center align items in the container */
+  background: #FFFFFF;
+  border: 1px solid #C4C4C4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Styling for the Search Bar Input Field */
+.search-input-container input[type="text"] {
+  flex: 1;
+  height: 100%;
+  border: none;
+  font-family: 'Inter';
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 17px;
+  letter-spacing: 0em;
+  text-align: left;
+  background: #FFFFFF;
 }
 
 /* Styling for the Search Bar Placeholder Text */
-input[type="text"].custom-search-input::placeholder {
-  color: #9ca3af; /* Placeholder text color */
-  opacity: 1; /* Placeholder text opacity */
+.search-input-container input[type="text"]::placeholder {
+  color: #C4C4C4;
+  background: #C4C4C4;
+  opacity: 1;
+  padding-left: 5px; /* Adjust the padding for the placeholder */
 }
 
-/* Styling for the Search Icon */
-input[type="text"].custom-search-input img {
-  margin-right: 10px; /* Add spacing between the icon and the input */
-}
 
 
 
