@@ -12,6 +12,7 @@ import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
 import Key from './assets/key.svg';
 import Add from './assets/add.svg';
+import Search from './assets/icons8-search.svg'
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
@@ -260,6 +261,22 @@ const filteredConversations = conversations
               } m-auto transition-all duration-200`}
             />
           </button>
+        </div>
+        <div className="mt-4 ml-4">
+          <div className="my-auto text-sm text-neutral-600 flex items-center gap-2.5 cursor-pointer">
+            <img
+              src={Search} // Use your Search icon source
+              alt="search"
+              className="opacity-80 group-hover:opacity-100"
+            />
+            <input
+              type="text"
+              placeholder="Find a chat"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="custom-search-input"
+            />
+          </div>
         </div>
         <NavLink
           to={'/'}
