@@ -264,20 +264,25 @@ const filteredConversations = conversations
         </div>
         <div className="mt-4 ml-4">
           <div className="my-auto text-sm text-neutral-600 flex items-center gap-2.5 cursor-pointer">
-            <img
-              src={Search} // Use your Search icon source
-              alt="search"
-              className="opacity-80 group-hover:opacity-100"
-            />
-            <input
-              type="text"
-              placeholder="Find a chat"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="custom-search-input"
-            />
+            <div className="search-icon-container">
+              <img
+                src={Search}
+                alt="search"
+                className="opacity-80 group-hover:opacity-100"
+              />
+            </div>
+            <div className="search-input-container">
+              <input
+                type="text"
+                placeholder="Find a chat"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-247 h-43 px-3 rounded-97px border-1 border-silver focus:border-rainy-gray focus:outline-none"
+              />
+            </div>
           </div>
         </div>
+
         <NavLink
           to={'/'}
           onClick={() => {
