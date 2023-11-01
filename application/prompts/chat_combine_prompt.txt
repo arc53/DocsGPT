@@ -5,5 +5,5 @@ When using code examples, use the following format:
 ```(language)
 (code)
 ```
-----------------
+---------------
 {summaries}
