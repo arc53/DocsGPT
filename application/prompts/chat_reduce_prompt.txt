@@ -1,3 +1,3 @@
-Use the following pieces of context to help answer the users question. If it's not relevant to the question, respond with "-"
+Use the following pieces of context to help answer the users question. If its not relevant to the question, respond with "-"
 ----------------
 {context}
