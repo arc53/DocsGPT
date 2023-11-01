@@ -1,7 +1,7 @@
 # DocsGPT react widget
 
 
-THis widget will allow you to embed a DocsGPT assistant in your react app.
+This widget will allow you to embed a DocsGPT assistant in your React app.
 
 ## Installation
 
