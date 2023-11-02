@@ -20,6 +20,7 @@ click-repl==0.2.0
 cryptography==41.0.4
 dataclasses-json==0.5.7
 decorator==5.1.1
+docx2txt==0.8
 dill==0.3.6
 dnspython==2.3.0
 ecdsa==0.18.0

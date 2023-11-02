@@ -280,7 +280,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               onClick={() => setUploadModalState('ACTIVE')}
             ></img>
             {isDocsListOpen && (
-              <div className="absolute top-12 left-0 right-6 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
+              <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
                 {docs ? (
                   docs.map((doc, index) => {
                     if (doc.model === embeddingsName) {
