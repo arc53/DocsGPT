@@ -2,8 +2,6 @@
 
 Thank you for choosing to contribute to DocsGPT! We are all very grateful! 
 
-### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
-
 # We accept different types of contributions
 
 📣 **Discussions** - Engage in conversations, start new topics, or help answer questions.
