@@ -7,7 +7,7 @@ Here's a step-by-step guide on how to host DocsGPT on Railway App.
 
   
 
-At first Clone and setup the project locally to run , test and Modify.
+At first Clone and set up the project locally to run , test and Modify.
 
   
 

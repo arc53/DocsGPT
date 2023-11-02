@@ -2,8 +2,6 @@
 
 Thank you for choosing to contribute to DocsGPT! We are all very grateful! 
 
-### [🎉 Join the Hacktoberfest with DocsGPT and Earn a Free T-shirt! 🎉](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md)
-
 # We accept different types of contributions
 
 📣 **Discussions** - Engage in conversations, start new topics, or help answer questions.
@@ -73,7 +71,7 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
    - Before you make any changes, make sure that your fork is in sync to avoid merge conflicts using:
      ```shell
      git remote add upstream https://github.com/arc53/DocsGPT.git
-     git pull upstream master
+     git pull upstream main
      ```
 
 4. **Create and Switch to a New Branch:**

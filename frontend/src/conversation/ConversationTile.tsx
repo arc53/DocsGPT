@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
 import Message from '../assets/message.svg';
-import CheckMark from '../assets/checkmark.svg';
+import CheckMark2 from '../assets/checkMark2.svg';
 import Trash from '../assets/trash.svg';
 
 import { selectConversationId } from '../preferences/preferenceSlice';
@@ -94,7 +94,7 @@ export default function ConversationTile({
       {conversationId === conversation.id && (
         <div className="flex">
           <img
-            src={isEdit ? CheckMark : Edit}
+            src={isEdit ? CheckMark2 : Edit}
             alt="Edit"
             className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50"
             id={`img-${conversation.id}`}
