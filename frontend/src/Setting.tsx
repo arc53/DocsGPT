@@ -22,9 +22,44 @@ const Setting: React.FC = () => {
   const [selectedPrompt, setSelectedPrompt] = useState('');
   const [newPromptName, setNewPromptName] = useState('');
   const [isAddPromptModalOpen, setAddPromptModalOpen] = useState(false);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [isAddDocumentModalOpen, setAddDocumentModalOpen] = useState(false);
+  const [newDocument, setNewDocument] = useState<Document>({
+    name: '',
+    vectorDate: '',
+    vectorLocation: '',
+  });
   const onDeletePrompt = (name: string) => {
     setPrompts(prompts.filter((prompt) => prompt !== name));
     setSelectedPrompt(''); // Clear the selected prompt
+  };
+
+  // Function to add a new document
+  const addDocument = () => {
+    if (
+      newDocument.name &&
+      newDocument.vectorDate &&
+      newDocument.vectorLocation
+    ) {
+      setDocuments([...documents, newDocument]);
+      setNewDocument({
+        name: '',
+        vectorDate: '',
+        vectorLocation: '',
+      });
+      toggleAddDocumentModal();
+    }
+  };
+
+  // Function to toggle the Add Document modal
+  const toggleAddDocumentModal = () => {
+    setAddDocumentModalOpen(!isAddDocumentModalOpen);
+  };
+
+  const handleDeleteDocument = (index: number) => {
+    const updatedDocuments = [...documents];
+    updatedDocuments.splice(index, 1);
+    setDocuments(updatedDocuments);
   };
 
   return (
@@ -64,6 +99,15 @@ const Setting: React.FC = () => {
         </div>
       </div>
       {renderActiveTab()}
+
+      {isAddDocumentModalOpen && (
+        <AddDocumentModal
+          newDocument={newDocument}
+          onNewDocumentChange={setNewDocument}
+          onAddDocument={addDocument}
+          onClose={toggleAddDocumentModal}
+        />
+      )}
     </div>
   );
 
@@ -97,7 +141,15 @@ const Setting: React.FC = () => {
           />
         );
       case 'Documents':
-        return <Documents />;
+        return (
+          <Documents
+            documents={documents}
+            isAddDocumentModalOpen={isAddDocumentModalOpen}
+            newDocument={newDocument}
+            handleDeleteDocument={handleDeleteDocument}
+            toggleAddDocumentModal={toggleAddDocumentModal}
+          />
+        );
       case 'Widgets':
         return <Widgets />;
       default:
@@ -185,7 +237,7 @@ const Prompts: React.FC<PromptProps> = ({
       <div>
         <button
           onClick={openAddPromptModal}
-          className="rounded-lg bg-purple-500 px-4 py-2 font-bold text-white hover:bg-purple-600"
+          className="rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
         >
           Add New Prompt
         </button>
@@ -204,7 +256,7 @@ const Prompts: React.FC<PromptProps> = ({
       <div className="mt-4">
         <button
           onClick={handleDeletePrompt}
-          className="rounded-lg bg-red-600 px-4 py-2 font-bold text-white hover:text-zinc-800"
+          className="rounded-lg bg-red-300 px-4 py-2 font-bold text-white transition-all hover:bg-red-600 hover:text-zinc-800"
         >
           Delete Prompt
         </button>
@@ -289,7 +341,7 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
         />
         <button
           onClick={onAddPrompt}
-          className="rounded-lg bg-purple-500 px-4 py-2 font-bold text-white hover:bg-purple-600"
+          className="rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
         >
           Save
         </button>
@@ -304,10 +356,144 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
   );
 };
 
-const Documents: React.FC = () => {
+type DocumentsProps = {
+  documents: Document[];
+  isAddDocumentModalOpen: boolean;
+  newDocument: Document;
+  handleDeleteDocument: (index: number) => void;
+  toggleAddDocumentModal: () => void;
+};
+
+const Documents: React.FC<DocumentsProps> = ({
+  documents,
+  isAddDocumentModalOpen,
+  newDocument,
+  handleDeleteDocument,
+  toggleAddDocumentModal,
+}) => {
   return (
     <div className="mt-8">
-      <p>This is the Documents section.</p>
+      <div className="flex flex-col">
+        {/* <h2 className="text-xl font-semibold">Documents</h2> */}
+
+        <div className="mt-[27px] overflow-x-auto">
+          <table className="block w-full table-auto content-center justify-center">
+            <thead>
+              <tr>
+                <th className="border px-4 py-2">Document Name</th>
+                <th className="border px-4 py-2">Vector Date</th>
+                <th className="border px-4 py-2">Vector Location</th>
+                <th className="border px-4 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.map((document, index) => (
+                <tr key={index}>
+                  <td className="border px-4 py-2">{document.name}</td>
+                  <td className="border px-4 py-2">{document.vectorDate}</td>
+                  <td className="border px-4 py-2">
+                    {document.vectorLocation}
+                  </td>
+                  <td className="border px-4 py-2">
+                    <button
+                      className="rounded-lg bg-red-600 px-2 py-1 font-bold text-white hover:bg-red-800"
+                      onClick={() => handleDeleteDocument(index)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <button
+          onClick={toggleAddDocumentModal}
+          className="mt-10 w-32 rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
+        >
+          Add New
+        </button>
+      </div>
+
+      {/* {isAddDocumentModalOpen && (
+        <AddDocumentModal
+          newDocument={newDocument}
+          onNewDocumentChange={setNewDocument}
+          onAddDocument={addDocument}
+          onClose={toggleAddDocumentModal}
+        />
+      )} */}
+    </div>
+  );
+};
+
+type Document = {
+  name: string;
+  vectorDate: string;
+  vectorLocation: string;
+};
+
+// Modal for adding a new document
+type AddDocumentModalProps = {
+  newDocument: Document;
+  onNewDocumentChange: (document: Document) => void;
+  onAddDocument: () => void;
+  onClose: () => void;
+};
+
+const AddDocumentModal: React.FC<AddDocumentModalProps> = ({
+  newDocument,
+  onNewDocumentChange,
+  onAddDocument,
+  onClose,
+}) => {
+  return (
+    <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
+      <div className="w-[50%] rounded-lg bg-white p-4">
+        <p className="mb-2 text-2xl font-bold text-jet">Add New Document</p>
+        <input
+          type="text"
+          placeholder="Document Name"
+          value={newDocument.name}
+          onChange={(e) =>
+            onNewDocumentChange({ ...newDocument, name: e.target.value })
+          }
+          className="mb-4 w-full rounded-lg border-2 p-2"
+        />
+        <input
+          type="text"
+          placeholder="Vector Date"
+          value={newDocument.vectorDate}
+          onChange={(e) =>
+            onNewDocumentChange({ ...newDocument, vectorDate: e.target.value })
+          }
+          className="mb-4 w-full rounded-lg border-2 p-2"
+        />
+        <input
+          type="text"
+          placeholder="Vector Location"
+          value={newDocument.vectorLocation}
+          onChange={(e) =>
+            onNewDocumentChange({
+              ...newDocument,
+              vectorLocation: e.target.value,
+            })
+          }
+          className="mb-4 w-full rounded-lg border-2 p-2"
+        />
+        <button
+          onClick={onAddDocument}
+          className="rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
+        >
+          Save
+        </button>
+        <button
+          onClick={onClose}
+          className="mt-4 rounded-lg px-4 py-2 font-bold text-red-500"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 };
