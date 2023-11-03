@@ -188,7 +188,7 @@ const filteredConversations = conversations
                 className="my-auto text-sm text-neutral-600 flex items-center gap-2.5 cursor-pointer"
                 onClick={() => {
                   setNavOpen(!navOpen);
-                }
+                }}
               >
               <img src={Add} alt="new" className="opacity-80 group-hover:opacity-100" />
               New Chat
@@ -473,6 +473,6 @@ const filteredConversations = conversations
       modalState={uploadModalState}
       setModalState={setUploadModalState}
     ></Upload>
-    </>
   );
 }
+</>
