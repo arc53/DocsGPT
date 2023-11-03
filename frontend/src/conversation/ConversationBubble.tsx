@@ -1,5 +1,6 @@
 import { forwardRef, useState } from 'react';
 import Avatar from '../components/Avatar';
+import remarkGfm from 'remark-gfm';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import classes from './ConversationBubble.module.css';
 import Alert from './../assets/alert.svg';
@@ -89,6 +90,7 @@ const ConversationBubble = forwardRef<
             )}
             <ReactMarkdown
               className="max-w-screen-md whitespace-pre-wrap break-words"
+              remarkPlugins={[remarkGfm]}
               components={{
                 code({ node, inline, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || '');
@@ -125,6 +127,35 @@ const ConversationBubble = forwardRef<
                       {children}
                     </ol>
                   );
+                },
+                table({ children }) {
+                  return (
+                    <div className="relative overflow-x-auto rounded-lg border">
+                      <table className="w-full text-left text-sm text-gray-700">
+                        {children}
+                      </table>
+                    </div>
+                  );
+                },
+                thead({ children }) {
+                  return (
+                    <thead className="text-xs uppercase text-gray-900 [&>.table-row]:bg-gray-50">
+                      {children}
+                    </thead>
+                  );
+                },
+                tr({ children }) {
+                  return (
+                    <tr className="table-row border-b odd:bg-white even:bg-gray-50">
+                      {children}
+                    </tr>
+                  );
+                },
+                td({ children }) {
+                  return <td className="px-6 py-3">{children}</td>;
+                },
+                th({ children }) {
+                  return <th className="px-6 py-3">{children}</th>;
                 },
               }}
             >
