@@ -153,7 +153,9 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
+        ".csv", ".epub", ".html", ".mdx"],
+         job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": "ok", "task_id": task_id}
