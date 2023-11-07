@@ -28,8 +28,6 @@ Deciding to contribute with code? Here are some insights based on the area of yo
 
 Check out our [Contributing Guidelines](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
-Once you have created your PR and our maintainers have merged it, please fill in this [form](https://airtable.com/appfkqFVjB0RpYCJh/shrXXM98xgRsbjO7s).
-
 Feel free to join our Discord server. We're here to help newcomers, so don't hesitate to jump in! [Join us here](https://discord.gg/n5BX8dh8rU).
 
 Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typo) could earn you a stylish new t-shirt as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
