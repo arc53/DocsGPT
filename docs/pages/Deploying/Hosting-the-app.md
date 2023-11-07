@@ -106,3 +106,4 @@ Your instance is now available at your Public IP Address on port 5173. Enjoy usi
 ## Other Deployment Options
 
 - [Deploy DocsGPT on Civo Compute Cloud](https://dev.to/rutamhere/deploying-docsgpt-on-civo-compute-c)
+- [Deploy DocsGPT on DigitalOcean Droplet](https://dev.to/rutamhere/deploying-docsgpt-on-digitalocean-droplet-50ea)
