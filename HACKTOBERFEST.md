@@ -4,6 +4,73 @@ Welcome, contributors! We're excited to announce that DocsGPT is participating i
 
 All contributors with accepted PRs will receive a cool Holopin! 🤩 (Watch out for a reply in your PR to collect it).
 
+We wanted to take a moment to say a HUGE thank you to everyone involved in this year's Hacktoberfest! 🎉
+
+You all made it such an amazing event! It's been terrific seeing the incredible contributions from this community. Our project has grown and improved thanks to your efforts! 🙌
+
+We originally expected to give away 20 shirts, but we will do 40 as we had many more meaningful contributions.
+
+The following people have won shirts for their contributions (Github nicknames):
+
+@0xrahul6
+@adarsh-jha-dev
+@adeyinkaezra123
+@adityagupta19
+@akash0708
+@Ankit-Matth
+@ankur0904
+@Archit-Kohli
+@ArnabBCA
+@asoderlind
+@beKoool
+@CBID2
+@daniel-shuy
+@Exterminator11
+@GuptaPratik02
+@HeetVekariya
+@hirenchauhan2
+@iamakhileshmishra
+@jbampton
+@krabbi
+@lakshmi930
+@ManishMadan2882
+@mishmanners
+@MSaiKiran9
+@outlivo
+@parthrc
+@rahul0x00
+@ratishjain12
+@robbiebusinessacc
+@Rutam21
+@SamsShow
+@shelar1423
+@shivanandmn
+@siiddhantt
+@Smartmind12 
+@SoumyadiptoPal
+@staticGuru
+@THEGAMECHANGER416
+@varundhand
+@Yash-sudo-web
+
+Congratulations to all! 🥳👏
+
+We will also give 3 shirts to our special contributors!
+@TaylorS15
+@ajaythapliyal
+@larinam
+
+❗️Important! ❗️
+We will reach out to the winners via email to collect your phone number for shirt delivery and to ensure we have the correct address. Our hope is that these shirts will reach you by mid to end of November. 📬👕
+
+In addition, all contributors from this Hacktoberfest will receive exclusive holopins! 😃🎁
+
+If you haven't done so already, please message in the ⁠💬︱𝖩ust-𝖢hat  channel with your GitHub nickname and we will grant you the contributor role on Discord. 
+
+For those who didn't win a shirt, please don't be downhearted! Your contributions are still very much appreciated. And remember, we will have more events and opportunities for rewards in the future.
+
+Once again, thank you all for participating. Let's continue to keep this community awesome and look forward to more great things ahead! 🎈🎊
+
 📜 Here's How to Contribute:
 
     🛠️ Code: This is the golden ticket! Make meaningful contributions through PRs.
