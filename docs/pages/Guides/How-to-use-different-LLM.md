@@ -24,8 +24,11 @@ You can omit the keys if users provide their own. Ensure you set `LLM_NAME` and 
 - manifest ([More details](https://python.langchain.com/docs/integrations/llms/manifest))
 - cohere ([More details](https://docs.cohere.com/docs/llmu))
 - llama.cpp ([More details](https://python.langchain.com/docs/integrations/llms/llamacpp))
-- huggingface (Choose any model inside application/llm/huggingface.py or pass llm_name on init, loads Arc53/DocsGPT-7B by default)
+- huggingface (Arc53/DocsGPT-7B by default)
 - sagemaker ([Mode details](https://aws.amazon.com/sagemaker/))
+
+
+Note: for huggingface you can choose any model inside application/llm/huggingface.py or pass llm_name on init, loads   
 
 **Options for `EMBEDDINGS_NAME`:**
 - openai_text-embedding-ada-002
