@@ -36,7 +36,9 @@ Note: for huggingface you can choose any model inside application/llm/huggingfac
 - huggingface_hkunlp/instructor-large
 - cohere_medium
 
-If using Llama, set `EMBEDDINGS_NAME` to `huggingface_sentence-transformers/all-mpnet-base-v2`. Download the required model and place it in the `models/` folder.
+If you want to be completely local, set `EMBEDDINGS_NAME` to `huggingface_sentence-transformers/all-mpnet-base-v2`. 
+
+For llama.cpp Download the required model and place it in the `models/` folder.
 
 Alternatively, for local Llama setup, run `setup.sh` and choose option 1. The script handles the DocsGPT model addition.
 
