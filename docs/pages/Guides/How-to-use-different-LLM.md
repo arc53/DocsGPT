@@ -44,5 +44,5 @@ Alternatively, for local Llama setup, run `setup.sh` and choose option 1. The sc
 
 ## Step 3: Local Hosting for Privacy
 
-If working with sensitive data, host everything locally by setting `SELF_HOSTED_MODEL` to true in your `.env`. For `LLM_NAME`, use any model available on Hugging Face.
+If working with sensitive data, host everything locally by setting `LLM_NAME`, llama.cpp or huggingface, use any model available on Hugging Face, for llama.cpp you need to convert it into gguf format.
 That's it! Your app is now configured for local and private hosting, ensuring optimal security for critical data.
