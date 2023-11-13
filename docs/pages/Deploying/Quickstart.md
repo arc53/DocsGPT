@@ -65,7 +65,7 @@ To run the setup on Windows, you have two options: using the Windows Subsystem f
 5. Open your web browser and navigate to http://localhost:5173/.
 6. To stop the setup, just press **Ctrl + C** in the Git Bash or Command Prompt terminal.
 
-These steps should help you set up and run the project on Windows using either WSL or Git Bash/Command Prompt. **IMPORTANT**: Ensure that Docker is installed and properly configured on your Windows system for these steps to work.
+These steps should help you set up and run the project on Windows using either WSL or Git Bash/Command Prompt. **Important**: Ensure that Docker is installed and properly configured on your Windows system for these steps to work.
 
 
 For WINDOWS:
