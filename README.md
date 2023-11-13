@@ -76,7 +76,8 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ## QuickStart
 
-Note: Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
+> [!Note]
+> Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
 
 On Mac OS or Linux, write:
 
@@ -118,7 +119,8 @@ docker compose -f docker-compose-dev.yaml up -d
 
 ### Run the Backend
 
-Make sure you have Python 3.10 or 3.11 installed.
+> [!Note]
+> Make sure you have Python 3.10 or 3.11 installed.
 
 1. Export required environment variables or prepare a `.env` file in the `/application` folder:
    - Copy [.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) and create `.env` with your OpenAI API token for the `API_KEY` and `EMBEDDINGS_KEY` fields.
@@ -153,7 +155,8 @@ pip install -r requirements.txt
 
 ### Start Frontend
 
-Make sure you have Node version 16 or higher.
+> [!Note]
+> Make sure you have Node version 16 or higher.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
 2. Install the required packages `husky` and `vite` (ignore if already installed).
