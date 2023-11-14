@@ -244,8 +244,8 @@ const ConversationBubble = forwardRef<
                       ? 'rgba(125, 84, 209, 0.3)'
                       : '#EEEEEE'
                     : isLikeClicked
-                    ? 'rgba(125, 84, 209, 0.3)'
-                    : '#ffffff',
+                      ? 'rgba(125, 84, 209, 0.3)'
+                      : '#ffffff',
                 }}
               >
                 <Like
@@ -283,8 +283,8 @@ const ConversationBubble = forwardRef<
                       ? 'rgba(248, 113, 113, 0.3)'
                       : '#EEEEEE'
                     : isDislikeClicked
-                    ? 'rgba(248, 113, 113, 0.3)'
-                    : '#ffffff',
+                      ? 'rgba(248, 113, 113, 0.3)'
+                      : '#ffffff',
                 }}
               >
                 <Dislike
