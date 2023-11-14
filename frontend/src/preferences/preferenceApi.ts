@@ -6,7 +6,7 @@ export type Doc = {
   version: string;
   description: string;
   fullName: string;
-  dat: string;
+  date: string;
   docLink: string;
   model: string;
 };

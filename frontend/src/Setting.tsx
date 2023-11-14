@@ -1,70 +1,112 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import Arrow2 from './assets/dropdown-arrow.svg';
 import ArrowLeft from './assets/arrow-left.svg';
 import ArrowRight from './assets/arrow-right.svg';
+import Trash from './assets/trash.svg';
+import {
+  selectPrompt,
+  setPrompt,
+  selectSourceDocs,
+} from './preferences/preferenceSlice';
+import { Doc } from './preferences/preferenceApi';
 
 type PromptProps = {
-  prompts: string[];
-  selectedPrompt: string;
-  onSelectPrompt: (prompt: string) => void;
+  prompts: { name: string; id: string; type: string }[];
+  selectedPrompt: { name: string; id: string };
+  onSelectPrompt: (name: string, id: string) => void;
   onAddPrompt: (name: string) => void;
   newPromptName: string;
   onNewPromptNameChange: (name: string) => void;
   isAddPromptModalOpen: boolean;
   onToggleAddPromptModal: () => void;
-  onDeletePrompt: (name: string) => void;
+  onDeletePrompt: (name: string, id: string) => void;
 };
 
 const Setting: React.FC = () => {
-  const tabs = ['General', 'Prompts', 'Documents', 'Widgets'];
+  const tabs = ['General', 'Prompts', 'Documents'];
+  //const tabs = ['General', 'Prompts', 'Documents', 'Widgets'];
+
   const [activeTab, setActiveTab] = useState('General');
-  const [prompts, setPrompts] = useState<string[]>(['Prompt 1', 'Prompt 2']);
-  const [selectedPrompt, setSelectedPrompt] = useState('');
+  const [prompts, setPrompts] = useState<
+    { name: string; id: string; type: string }[]
+  >([]);
+  const selectedPrompt = useSelector(selectPrompt);
   const [newPromptName, setNewPromptName] = useState('');
   const [isAddPromptModalOpen, setAddPromptModalOpen] = useState(false);
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const documents = useSelector(selectSourceDocs);
   const [isAddDocumentModalOpen, setAddDocumentModalOpen] = useState(false);
   const [newDocument, setNewDocument] = useState<Document>({
     name: '',
     vectorDate: '',
     vectorLocation: '',
   });
-  const onDeletePrompt = (name: string) => {
-    setPrompts(prompts.filter((prompt) => prompt !== name));
-    setSelectedPrompt(''); // Clear the selected prompt
-  };
+  const dispatch = useDispatch();
+
+  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
   const [widgetScreenshot, setWidgetScreenshot] = useState<File | null>(null);
 
   const updateWidgetScreenshot = (screenshot: File | null) => {
     setWidgetScreenshot(screenshot);
   };
 
-  // Function to add a new document
-  const addDocument = () => {
-    if (
-      newDocument.name &&
-      newDocument.vectorDate &&
-      newDocument.vectorLocation
-    ) {
-      setDocuments([...documents, newDocument]);
-      setNewDocument({
-        name: '',
-        vectorDate: '',
-        vectorLocation: '',
-      });
-      toggleAddDocumentModal();
-    }
-  };
-
   // Function to toggle the Add Document modal
   const toggleAddDocumentModal = () => {
     setAddDocumentModalOpen(!isAddDocumentModalOpen);
   };
+  useEffect(() => {
+    const fetchPrompts = async () => {
+      try {
+        const response = await fetch(`${apiHost}/api/get_prompts`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch prompts');
+        }
+        const promptsData = await response.json();
+        setPrompts(promptsData);
+      } catch (error) {
+        console.error(error);
+      }
+    };
 
-  const handleDeleteDocument = (index: number) => {
-    const updatedDocuments = [...documents];
-    updatedDocuments.splice(index, 1);
-    setDocuments(updatedDocuments);
+    fetchPrompts();
+  }, []);
+
+  const onDeletePrompt = (name: string, id: string) => {
+    setPrompts(prompts.filter((prompt) => prompt.id !== id));
+
+    fetch(`${apiHost}/api/delete_prompt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // send id in body only
+      body: JSON.stringify({ id: id }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to delete prompt');
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  };
+
+  const handleDeleteClick = (index: number, doc: Doc) => {
+    const docPath = 'indexes/' + 'local' + '/' + doc.name;
+
+    fetch(`${apiHost}/api/delete_old?path=${docPath}`, {
+      method: 'GET',
+    })
+      .then(() => {
+        // remove the image element from the DOM
+        const imageElement = document.querySelector(
+          `#img-${index}`,
+        ) as HTMLElement;
+        const parentElement = imageElement.parentNode as HTMLElement;
+        parentElement.parentNode?.removeChild(parentElement);
+      })
+      .catch((error) => console.error(error));
   };
 
   return (
@@ -105,15 +147,6 @@ const Setting: React.FC = () => {
       </div>
       {renderActiveTab()}
 
-      {isAddDocumentModalOpen && (
-        <AddDocumentModal
-          newDocument={newDocument}
-          onNewDocumentChange={setNewDocument}
-          onAddDocument={addDocument}
-          onClose={toggleAddDocumentModal}
-        />
-      )}
-
       {/* {activeTab === 'Widgets' && (
         <Widgets
           widgetScreenshot={widgetScreenshot}
@@ -139,7 +172,9 @@ const Setting: React.FC = () => {
           <Prompts
             prompts={prompts}
             selectedPrompt={selectedPrompt}
-            onSelectPrompt={setSelectedPrompt}
+            onSelectPrompt={(name, id) =>
+              dispatch(setPrompt({ name: name, id: id }))
+            }
             onAddPrompt={addPrompt}
             newPromptName={''}
             onNewPromptNameChange={function (name: string): void {
@@ -156,10 +191,7 @@ const Setting: React.FC = () => {
         return (
           <Documents
             documents={documents}
-            isAddDocumentModalOpen={isAddDocumentModalOpen}
-            newDocument={newDocument}
-            handleDeleteDocument={handleDeleteDocument}
-            toggleAddDocumentModal={toggleAddDocumentModal}
+            handleDeleteDocument={handleDeleteClick}
           />
         );
       case 'Widgets':
@@ -176,7 +208,6 @@ const Setting: React.FC = () => {
 
   function addPrompt(name: string) {
     if (name) {
-      setPrompts([...prompts, name]);
       setNewPromptName('');
       toggleAddPromptModal();
     }
@@ -188,8 +219,8 @@ const Setting: React.FC = () => {
 };
 
 const General: React.FC = () => {
-  const themes = ['Light', 'Dark'];
-  const languages = ['English', 'French', 'Hindi'];
+  const themes = ['Light'];
+  const languages = ['English'];
   const [selectedTheme, setSelectedTheme] = useState(themes[0]);
   const [selectedLanguage, setSelectedLanguage] = useState(languages[0]);
 
@@ -235,30 +266,40 @@ const Prompts: React.FC<PromptProps> = ({
     setAddPromptModalOpen(false);
   };
 
-  const handleDeletePrompt = () => {
-    if (selectedPrompt) {
-      onDeletePrompt(selectedPrompt); // Remove the selected prompt
+  const handleSelectPrompt = (name: string) => {
+    const selected = prompts.find((prompt) => prompt.name === name);
+    if (selected) {
+      onSelectPrompt(selected.name, selected.id);
+    }
+  };
+
+  const handleDeletePrompt = (name: string) => {
+    const selected = prompts.find((prompt) => prompt.name === name);
+    if (selected) {
+      onDeletePrompt(selected.name, selected.id);
     }
   };
 
   return (
     <div className="mt-[59px]">
       <div className="mb-4">
-        <p className="font-bold text-jet">Select Prompt</p>
-        <Dropdown
+        <p className="font-bold text-jet">Active Prompt</p>
+        <DropdownPrompt
           options={prompts}
-          selectedValue={selectedPrompt}
-          onSelect={onSelectPrompt}
+          selectedValue={selectedPrompt.name}
+          onSelect={handleSelectPrompt}
+          showDelete={true}
+          onDelete={handleDeletePrompt}
         />
       </div>
-      <div>
+      {/* <div>
         <button
           onClick={openAddPromptModal}
           className="rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
         >
           Add New Prompt
         </button>
-      </div>
+      </div> */}
       {isAddPromptModalOpen && (
         <AddPromptModal
           newPromptName={newPromptName}
@@ -270,34 +311,30 @@ const Prompts: React.FC<PromptProps> = ({
           onClose={closeAddPromptModal}
         />
       )}
-      <div className="mt-4">
-        <button
-          onClick={handleDeletePrompt}
-          className="rounded-lg bg-red-300 px-4 py-2 font-bold text-white transition-all hover:bg-red-600 hover:text-zinc-800"
-        >
-          Delete Prompt
-        </button>
-      </div>
     </div>
   );
 };
 
-function Dropdown({
+function DropdownPrompt({
   options,
   selectedValue,
   onSelect,
+  showDelete,
+  onDelete,
 }: {
-  options: string[];
+  options: { name: string; id: string; type: string }[];
   selectedValue: string;
   onSelect: (value: string) => void;
+  showDelete?: boolean;
+  onDelete: (value: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="relative mt-2 h-[43.33px] w-[342px]">
+    <div className="relative mt-2 w-32">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-3xl border-2 bg-white p-3"
+        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3"
       >
         <span className="flex-1 overflow-hidden text-ellipsis">
           {selectedValue}
@@ -307,23 +344,93 @@ function Dropdown({
           alt="arrow"
           className={`transform ${
             isOpen ? 'rotate-180' : 'rotate-0'
-          } h-4 w-4 transition-transform`}
+          } h-3 w-3 transition-transform`}
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 top-12 z-50 mt-2 bg-white p-2 shadow-lg">
+        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white shadow-lg">
           {options.map((option, index) => (
             <div
               key={index}
-              onClick={() => {
-                onSelect(option);
-                setIsOpen(false);
-              }}
-              className="flex cursor-pointer items-center justify-between border-b-2 py-3 hover:bg-gray-100"
+              className="flex cursor-pointer items-center justify-between hover:bg-gray-100"
             >
-              <span className="flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap">
+              <span
+                onClick={() => {
+                  onSelect(option.name);
+                  setIsOpen(false);
+                }}
+                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
+              >
+                {option.name}
+              </span>
+              {showDelete && option.type === 'private' && (
+                <button onClick={() => onDelete(option.name)} className="p-2">
+                  {/* Icon or text for delete button */}
+                  Delete
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dropdown({
+  options,
+  selectedValue,
+  onSelect,
+  showDelete,
+  onDelete,
+}: {
+  options: string[];
+  selectedValue: string;
+  onSelect: (value: string) => void;
+  showDelete?: boolean; // optional
+  onDelete?: (value: string) => void; // optional
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative mt-2 w-32">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3"
+      >
+        <span className="flex-1 overflow-hidden text-ellipsis">
+          {selectedValue}
+        </span>
+        <img
+          src={Arrow2}
+          alt="arrow"
+          className={`transform ${
+            isOpen ? 'rotate-180' : 'rotate-0'
+          } h-3 w-3 transition-transform`}
+        />
+      </button>
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white shadow-lg">
+          {options.map((option, index) => (
+            <div
+              key={index}
+              className="flex cursor-pointer items-center justify-between hover:bg-gray-100"
+            >
+              <span
+                onClick={() => {
+                  onSelect(option);
+                  setIsOpen(false);
+                }}
+                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
+              >
                 {option}
               </span>
+              {showDelete && onDelete && (
+                <button onClick={() => onDelete(option)} className="p-2">
+                  {/* Icon or text for delete button */}
+                  Delete
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -347,24 +454,24 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
 }) => {
   return (
     <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
-      <div className="rounded-lg bg-white p-4">
+      <div className="rounded-3xl bg-white p-4">
         <p className="mb-2 text-2xl font-bold text-jet">Add New Prompt</p>
         <input
           type="text"
           placeholder="Enter Prompt Name"
           value={newPromptName}
           onChange={(e) => onNewPromptNameChange(e.target.value)}
-          className="mb-4 w-full rounded-lg border-2 p-2"
+          className="mb-4 w-full rounded-3xl border-2 p-2"
         />
         <button
           onClick={onAddPrompt}
-          className="rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
+          className="rounded-3xl bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
         >
           Save
         </button>
         <button
           onClick={onClose}
-          className="mt-4 rounded-lg px-4 py-2 font-bold text-red-500"
+          className="mt-4 rounded-3xl px-4 py-2 font-bold text-red-500"
         >
           Cancel
         </button>
@@ -374,19 +481,13 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
 };
 
 type DocumentsProps = {
-  documents: Document[];
-  isAddDocumentModalOpen: boolean;
-  newDocument: Document;
-  handleDeleteDocument: (index: number) => void;
-  toggleAddDocumentModal: () => void;
+  documents: Doc[] | null;
+  handleDeleteDocument: (index: number, document: Doc) => void;
 };
 
 const Documents: React.FC<DocumentsProps> = ({
   documents,
-  isAddDocumentModalOpen,
-  newDocument,
   handleDeleteDocument,
-  toggleAddDocumentModal,
 }) => {
   return (
     <div className="mt-8">
@@ -394,42 +495,51 @@ const Documents: React.FC<DocumentsProps> = ({
         {/* <h2 className="text-xl font-semibold">Documents</h2> */}
 
         <div className="mt-[27px] overflow-x-auto">
-          <table className="block w-full table-auto content-center justify-center">
+          <table className="block w-full table-auto content-center justify-center text-center">
             <thead>
               <tr>
                 <th className="border px-4 py-2">Document Name</th>
                 <th className="border px-4 py-2">Vector Date</th>
-                <th className="border px-4 py-2">Vector Location</th>
-                <th className="border px-4 py-2">Actions</th>
+                <th className="border px-4 py-2">Type</th>
+                <th className="border px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {documents.map((document, index) => (
-                <tr key={index}>
-                  <td className="border px-4 py-2">{document.name}</td>
-                  <td className="border px-4 py-2">{document.vectorDate}</td>
-                  <td className="border px-4 py-2">
-                    {document.vectorLocation}
-                  </td>
-                  <td className="border px-4 py-2">
-                    <button
-                      className="rounded-lg bg-red-600 px-2 py-1 font-bold text-white hover:bg-red-800"
-                      onClick={() => handleDeleteDocument(index)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {documents &&
+                documents.map((document, index) => (
+                  <tr key={index}>
+                    <td className="border px-4 py-2">{document.name}</td>
+                    <td className="border px-4 py-2">{document.date}</td>
+                    <td className="border px-4 py-2">
+                      {document.location === 'remote'
+                        ? 'Pre-loaded'
+                        : 'Private'}
+                    </td>
+                    <td className="border px-4 py-2">
+                      {document.location !== 'remote' && (
+                        <img
+                          src={Trash}
+                          alt="Delete"
+                          className="h-4 w-4 cursor-pointer hover:opacity-50"
+                          id={`img-${index}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleDeleteDocument(index, document);
+                          }}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
-        <button
+        {/* <button
           onClick={toggleAddDocumentModal}
           className="mt-10 w-32 rounded-lg bg-purple-300 px-4 py-2 font-bold text-white transition-all hover:bg-purple-600"
         >
           Add New
-        </button>
+        </button> */}
       </div>
 
       {/* {isAddDocumentModalOpen && (

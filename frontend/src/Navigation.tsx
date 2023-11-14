@@ -6,7 +6,7 @@ import Documentation from './assets/documentation.svg';
 import Discord from './assets/discord.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
 import Expand from './assets/expand.svg';
-import Exit from './assets/exit.svg';
+import Trash from './assets/trash.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
@@ -228,7 +228,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-gray-3000' : ''
-            } group mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+            } group my-auto mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
           }
         >
           <img
@@ -240,9 +240,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             New Chat
           </p>
         </NavLink>
-        <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
         {conversations && (
-          <div className="conversations-container mb-auto max-h-[25rem] overflow-y-auto">
+          <div className="conversations-container max-h-[25rem] overflow-y-auto">
+            <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
             {conversations?.map((conversation) => (
               <ConversationTile
                 key={conversation.id}
@@ -298,9 +298,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                           </p>
                           {doc.location === 'local' && (
                             <img
-                              src={Exit}
-                              alt="Exit"
-                              className="mr-4 h-3 w-3 cursor-pointer hover:opacity-50"
+                              src={Trash}
+                              alt="Delete"
+                              className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
                               id={`img-${index}`}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -332,7 +332,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             }
           >
             <img src={SettingGear} alt="info" className="ml-2 w-5 opacity-60" />
-            <p className="my-auto text-eerie-black">Settings</p>
+            <p className="my-auto text-sm text-eerie-black">Settings</p>
           </NavLink>
         </div>
 
