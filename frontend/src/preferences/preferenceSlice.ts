@@ -8,6 +8,7 @@ import { RootState } from '../store';
 
 interface Preference {
   apiKey: string;
+  prompt: { name: string; id: string };
   selectedDocs: Doc | null;
   sourceDocs: Doc[] | null;
   conversations: { name: string; id: string }[] | null;
@@ -15,6 +16,7 @@ interface Preference {
 
 const initialState: Preference = {
   apiKey: 'xxx',
+  prompt: { name: 'default', id: 'default' },
   selectedDocs: {
     name: 'default',
     language: 'default',
@@ -22,7 +24,7 @@ const initialState: Preference = {
     version: 'default',
     description: 'default',
     fullName: 'default',
-    dat: 'default',
+    date: 'default',
     docLink: 'default',
     model: 'openai_text-embedding-ada-002',
   } as Doc,
@@ -46,11 +48,19 @@ export const prefSlice = createSlice({
     setConversations: (state, action) => {
       state.conversations = action.payload;
     },
+    setPrompt: (state, action) => {
+      state.prompt = action.payload;
+    },
   },
 });
 
-export const { setApiKey, setSelectedDocs, setSourceDocs, setConversations } =
-  prefSlice.actions;
+export const {
+  setApiKey,
+  setSelectedDocs,
+  setSourceDocs,
+  setConversations,
+  setPrompt,
+} = prefSlice.actions;
 export default prefSlice.reducer;
 
 export const prefListenerMiddleware = createListenerMiddleware();
@@ -84,3 +94,4 @@ export const selectConversations = (state: RootState) =>
   state.preference.conversations;
 export const selectConversationId = (state: RootState) =>
   state.conversation.conversationId;
+export const selectPrompt = (state: RootState) => state.preference.prompt;
