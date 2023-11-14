@@ -6,7 +6,7 @@ import Documentation from './assets/documentation.svg';
 import Discord from './assets/discord.svg';
 import Arrow2 from './assets/dropdown-arrow.svg';
 import Expand from './assets/expand.svg';
-import Exit from './assets/exit.svg';
+import Trash from './assets/trash.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
@@ -298,9 +298,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                           </p>
                           {doc.location === 'local' && (
                             <img
-                              src={Exit}
-                              alt="Exit"
-                              className="mr-4 h-3 w-3 cursor-pointer hover:opacity-50"
+                              src={Trash}
+                              alt="Delete"
+                              className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
                               id={`img-${index}`}
                               onClick={(event) => {
                                 event.stopPropagation();

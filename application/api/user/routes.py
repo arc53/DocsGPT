@@ -16,6 +16,7 @@ mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
+prompts_collection = db["prompts"]
 user = Blueprint('user', __name__)
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -188,7 +189,7 @@ def combined_json():
             "date": "default",
             "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
-            "location": "local",
+            "location": "remote",
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
@@ -244,6 +245,59 @@ def check_docs():
                 f.write(r.content)
 
         return {"status": "loaded"}
+
+@user.route("/api/create_prompt", methods=["POST"])
+def create_prompt():
+    data = request.get_json()
+    prompt = data["prompt"]
+    name = data["name"]
+    user = "local"
+    # write to mongodb
+    prompts_collection.insert_one(
+        {
+            "name": name,
+            "prompt": prompt,
+            "user": user,
+        }
+    )
+    return {"status": "ok"}
+
+@user.route("/api/get_prompts", methods=["GET"])
+def get_prompts():
+    user = "local"
+    prompts = prompts_collection.find({"user": user})
+    list_prompts = []
+    list_prompts.append({"id": "default", "name": "default", "type": "public"})
+    list_prompts.append({"id": "creative", "name": "creative", "type": "public"})
+    list_prompts.append({"id": "precise", "name": "precise", "type": "public"})
+    for prompt in prompts:
+        list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], type: "private"})
+
+    return jsonify(list_prompts)
+
+@user.route("/api/get_single_prompt", methods=["GET"])
+def get_single_prompt():
+    prompt_id = request.args.get("id")
+    prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
+    return jsonify(prompt['prompt'])
+
+@user.route("/api/delete_prompt", methods=["POST"])
+def delete_prompt():
+    prompt_id = request.args.get("id")
+    prompts_collection.delete_one(
+        {
+            "_id": ObjectId(prompt_id),
+        }
+    )
+    return {"status": "ok"}
+
+@user.route("/api/update_prompt_name", methods=["POST"])
+def update_prompt_name():
+    data = request.get_json()
+    id = data["id"]
+    name = data["name"]
+    prompts_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    return {"status": "ok"}
 
 
 

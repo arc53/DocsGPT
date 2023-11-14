@@ -36,20 +36,17 @@ else:
 
 # load the prompts
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-with open(os.path.join(current_dir, "prompts", "combine_prompt.txt"), "r") as f:
-    template = f.read()
-
-with open(os.path.join(current_dir, "prompts", "combine_prompt_hist.txt"), "r") as f:
-    template_hist = f.read()
-
-with open(os.path.join(current_dir, "prompts", "question_prompt.txt"), "r") as f:
-    template_quest = f.read()
-
-with open(os.path.join(current_dir, "prompts", "chat_combine_prompt.txt"), "r") as f:
+with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
     chat_combine_template = f.read()
 
 with open(os.path.join(current_dir, "prompts", "chat_reduce_prompt.txt"), "r") as f:
     chat_reduce_template = f.read()
+
+with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
+    chat_reduce_creative = f.read()
+
+with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
+    chat_reduce_strict = f.read()    
 
 api_key_set = settings.API_KEY is not None
 embeddings_key_set = settings.EMBEDDINGS_KEY is not None
@@ -115,8 +112,17 @@ def is_azure_configured():
     return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
 
-def complete_stream(question, docsearch, chat_history, api_key, conversation_id):
+def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conversation_id):
     llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=api_key)
+
+    if prompt_id == 'default':
+        prompt = chat_reduce_template
+    elif prompt_id == 'creative':
+        prompt = chat_reduce_creative
+    elif prompt_id == 'strict':
+        prompt = chat_reduce_strict
+    else:
+        prompt = chat_reduce_template
     
 
     docs = docsearch.search(question, k=2)
@@ -124,7 +130,7 @@ def complete_stream(question, docsearch, chat_history, api_key, conversation_id)
         docs = [docs[0]]
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
-    p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+    p_chat_combine = prompt.replace("{summaries}", docs_together)
     messages_combine = [{"role": "system", "content": p_chat_combine}]
     source_log_docs = []
     for doc in docs:
@@ -201,6 +207,10 @@ def stream():
     # history to json object from string
     history = json.loads(history)
     conversation_id = data["conversation_id"]
+    if 'prompt_id' in data:
+        prompt_id = data["prompt_id"]
+    else:
+        prompt_id = 'default'
 
     # check if active_docs is set
 
@@ -221,6 +231,7 @@ def stream():
     return Response(
         complete_stream(question, docsearch,
                         chat_history=history, api_key=api_key,
+                        prompt_id=prompt_id,
                         conversation_id=conversation_id), mimetype="text/event-stream"
     )
 
