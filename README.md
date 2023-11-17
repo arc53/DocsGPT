@@ -147,7 +147,7 @@ python -m venv venv
 3. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
 
 ```commandline
-pip install -r /application/requirements.txt
+pip install -r application/requirements.txt
 ```
 
 4. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
