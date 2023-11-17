@@ -76,7 +76,7 @@ def run_async_chain(chain, question, chat_history):
 
 def get_vectorstore(data):
     if "active_docs" in data:
-        if data["active_docs"].split("/")[1] == "default":
+        if data["active_docs"].split("/")[0] == "default":
                 vectorstore = ""
         elif data["active_docs"].split("/")[0] == "local":
             vectorstore = "indexes/" + data["active_docs"]
