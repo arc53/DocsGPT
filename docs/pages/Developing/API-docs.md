@@ -62,7 +62,7 @@ This endpoint will make sure documentation is loaded on the server (just run it 
 **Request Body**: JSON object with the field:
 * `docs` — The location of the documentation:
 ```js
-// answer (POST http://127.0.0.1:5000/api/docs_check)
+// docs_check (POST http://127.0.0.1:5000/api/docs_check)
 fetch("http://127.0.0.1:5000/api/docs_check", {
       "method": "POST",
       "headers": {
@@ -205,9 +205,12 @@ This endpoint is used to delete old Vector Stores.
 
 **Method**: `GET`
 
+**Query Parameter**: `task_id`
+
+**Sample JavaScript Fetch Request:**
 ```js
-// Task status (GET http://127.0.0.1:5000/api/docs_check)
-fetch("http://localhost:5001/api/task_status?task_id=b2d2a0f4-387c-44fd-a443-e4fe2e7454d1", {
+// delete_old (GET http://127.0.0.1:5000/api/delete_old)
+fetch("http://localhost:5001/api/delete_old?task_id=YOUR_TASK_ID", {
       "method": "GET",
       "headers": {
             "Content-Type": "application/json; charset=utf-8"
