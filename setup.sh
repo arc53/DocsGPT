@@ -30,8 +30,8 @@ download_locally() {
     fi
    
     docker-compose -f docker-compose-local.yaml build && docker-compose -f docker-compose-local.yaml up -d
-    python -m venv venv
-    source venv/bin/activate
+    #python -m venv venv
+    #source venv/bin/activate
     pip install -r application/requirements.txt
     pip install llama-cpp-python
     pip install sentence-transformers
