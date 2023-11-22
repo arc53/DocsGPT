@@ -1,5 +1,5 @@
 aiodns==3.0.0
-aiohttp==3.8.5
+aiohttp==3.8.6
 aiohttp-retry==2.8.3
 aiosignal==1.3.1
 aleph-alpha-client==2.16.1
