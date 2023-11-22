@@ -1,11 +1,9 @@
 import os
 from flask import Blueprint, request, jsonify
 import requests
-import json
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.utils import secure_filename
-import http.client
 
 from application.api.user.tasks import ingest
 
