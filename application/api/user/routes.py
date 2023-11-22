@@ -17,6 +17,7 @@ db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
+feedback_collection = db["feedback"]
 user = Blueprint('user', __name__)
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -71,19 +72,15 @@ def api_feedback():
     answer = data["answer"]
     feedback = data["feedback"]
 
-    print("-" * 5)
-    print("Question: " + question)
-    print("Answer: " + answer)
-    print("Feedback: " + feedback)
-    print("-" * 5)
-    response = requests.post(
-        url="https://86x89umx77.execute-api.eu-west-2.amazonaws.com/docsgpt-feedback",
-        headers={
-            "Content-Type": "application/json; charset=utf-8",
-        },
-        data=json.dumps({"answer": answer, "question": question, "feedback": feedback}),
+
+    feedback_collection.insert_one(
+        {
+            "question": question,
+            "answer": answer,
+            "feedback": feedback,
+        }
     )
-    return {"status": http.client.responses.get(response.status_code, "ok")}
+    return {"status": "ok"}
 
 @user.route("/api/delete_by_ids", methods=["get"])
 def delete_by_ids():
