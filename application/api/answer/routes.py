@@ -25,6 +25,7 @@ mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
+prompts_collection = db["prompts"]
 answer = Blueprint('answer', __name__)
 
 if settings.LLM_NAME == "gpt4":
@@ -43,10 +44,10 @@ with open(os.path.join(current_dir, "prompts", "chat_reduce_prompt.txt"), "r") a
     chat_reduce_template = f.read()
 
 with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
-    chat_reduce_creative = f.read()
+    chat_combine_creative = f.read()
 
 with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
-    chat_reduce_strict = f.read()    
+    chat_combine_strict = f.read()    
 
 api_key_set = settings.API_KEY is not None
 embeddings_key_set = settings.EMBEDDINGS_KEY is not None
@@ -90,23 +91,6 @@ def get_vectorstore(data):
     return vectorstore
 
 
-# def get_docsearch(vectorstore, embeddings_key):
-#     if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-#         if is_azure_configured():
-#             os.environ["OPENAI_API_TYPE"] = "azure"
-#             openai_embeddings = OpenAIEmbeddings(model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
-#         else:
-#             openai_embeddings = OpenAIEmbeddings(openai_api_key=embeddings_key)
-#         docsearch = FAISS.load_local(vectorstore, openai_embeddings)
-#     elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
-#         docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-#     elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
-#         docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-#     elif settings.EMBEDDINGS_NAME == "cohere_medium":
-#         docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
-#     return docsearch
-
-
 def is_azure_configured():
     return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
@@ -115,13 +99,16 @@ def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conve
     llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=api_key)
 
     if prompt_id == 'default':
-        prompt = chat_reduce_template
+        prompt = chat_combine_template
     elif prompt_id == 'creative':
-        prompt = chat_reduce_creative
+        prompt = chat_combine_creative
     elif prompt_id == 'strict':
-        prompt = chat_reduce_strict
+        prompt = chat_combine_strict
     else:
-        prompt = chat_reduce_template
+        prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})["content"]
+    import sys
+    print(prompt_id, file=sys.stderr)
+    print(prompt, file=sys.stderr)
     
 
     docs = docsearch.search(question, k=2)
@@ -253,6 +240,19 @@ def api_answer():
         embeddings_key = data["embeddings_key"]
     else:
         embeddings_key = settings.EMBEDDINGS_KEY
+    if 'prompt_id' in data:
+        prompt_id = data["prompt_id"]
+    else:
+        prompt_id = 'default'
+
+    if prompt_id == 'default':
+        prompt = chat_combine_template
+    elif prompt_id == 'creative':
+        prompt = chat_combine_creative
+    elif prompt_id == 'strict':
+        prompt = chat_combine_strict
+    else:
+        prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})["content"]
 
     # use try and except  to check for exception
     try:
@@ -270,7 +270,7 @@ def api_answer():
         docs = docsearch.search(question, k=2)
         # join all page_content together with a newline
         docs_together = "\n".join([doc.page_content for doc in docs])
-        p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+        p_chat_combine = prompt.replace("{summaries}", docs_together)
         messages_combine = [{"role": "system", "content": p_chat_combine}]
         source_log_docs = []
         for doc in docs:

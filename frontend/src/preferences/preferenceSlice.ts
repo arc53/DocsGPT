@@ -8,7 +8,7 @@ import { RootState } from '../store';
 
 interface Preference {
   apiKey: string;
-  prompt: { name: string; id: string };
+  prompt: { name: string; id: string; type: string };
   selectedDocs: Doc | null;
   sourceDocs: Doc[] | null;
   conversations: { name: string; id: string }[] | null;
@@ -16,7 +16,7 @@ interface Preference {
 
 const initialState: Preference = {
   apiKey: 'xxx',
-  prompt: { name: 'default', id: 'default' },
+  prompt: { name: 'default', id: 'default', type: 'public' },
   selectedDocs: {
     name: 'default',
     language: 'default',

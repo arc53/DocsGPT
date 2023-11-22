@@ -246,18 +246,21 @@ def check_docs():
 @user.route("/api/create_prompt", methods=["POST"])
 def create_prompt():
     data = request.get_json()
-    prompt = data["prompt"]
+    content = data["content"]
     name = data["name"]
+    if name == "":
+        return {"status": "error"}
     user = "local"
     # write to mongodb
-    prompts_collection.insert_one(
+    resp = prompts_collection.insert_one(
         {
             "name": name,
-            "prompt": prompt,
+            "content": content,
             "user": user,
         }
     )
-    return {"status": "ok"}
+    new_id = str(resp.inserted_id)
+    return {"id": new_id, "name": name, "content": content}
 
 @user.route("/api/get_prompts", methods=["GET"])
 def get_prompts():
@@ -268,32 +271,51 @@ def get_prompts():
     list_prompts.append({"id": "creative", "name": "creative", "type": "public"})
     list_prompts.append({"id": "precise", "name": "precise", "type": "public"})
     for prompt in prompts:
-        list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], type: "private"})
+        list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"})
 
     return jsonify(list_prompts)
 
 @user.route("/api/get_single_prompt", methods=["GET"])
 def get_single_prompt():
     prompt_id = request.args.get("id")
+    if prompt_id == 'default':
+        with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
+            chat_combine_template = f.read()
+        return jsonify({"content": chat_combine_template})
+    elif prompt_id == 'creative':
+        with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
+            chat_reduce_creative = f.read()
+        return jsonify({"content": chat_reduce_creative})
+    elif prompt_id == 'strict':
+        with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
+            chat_reduce_strict = f.read()   
+        return jsonify({"content": chat_reduce_strict})
+
+
     prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
-    return jsonify(prompt['prompt'])
+    return jsonify({"content": prompt["content"]})
 
 @user.route("/api/delete_prompt", methods=["POST"])
 def delete_prompt():
-    prompt_id = request.args.get("id")
+    data = request.get_json()
+    id = data["id"]
     prompts_collection.delete_one(
         {
-            "_id": ObjectId(prompt_id),
+            "_id": ObjectId(id),
         }
     )
     return {"status": "ok"}
 
-@user.route("/api/update_prompt_name", methods=["POST"])
+@user.route("/api/update_prompt", methods=["POST"])
 def update_prompt_name():
     data = request.get_json()
     id = data["id"]
     name = data["name"]
-    prompts_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    content = data["content"]
+    # check if name is null
+    if name == "":
+        return {"status": "error"}
+    prompts_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name, "content": content}})
     return {"status": "ok"}
 
 

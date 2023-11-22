@@ -25,6 +25,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.preference.selectedDocs!,
           state.conversation.queries,
           state.conversation.conversationId,
+          state.preference.prompt.id,
           (event) => {
             const data = JSON.parse(event.data);
 
@@ -81,6 +82,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.preference.selectedDocs!,
           state.conversation.queries,
           state.conversation.conversationId,
+          state.preference.prompt.id,
         );
         if (answer) {
           let sourcesPrepped = [];
