@@ -13,7 +13,7 @@ const store = configureStore({
     preference: {
       apiKey: key ?? '',
       selectedDocs: doc !== null ? JSON.parse(doc) : null,
-      prompt: { name: 'default', id: 'default' },
+      prompt: { name: 'default', id: 'default', type: 'private' },
       conversations: null,
       sourceDocs: [
         {
