@@ -48,7 +48,7 @@ export default function Login() {
           </button>
           <div className="flex w-full justify-center  text-sm">
             <h2 className="flex gap-1 text-right  text-[#5F5F5F]">
-              Don't have an account ?
+              Don&apos;t have an account ?
               <h2
                 className="text-center font-medium text-white hover:cursor-pointer"
                 onClick={() => navigate('/register')}
