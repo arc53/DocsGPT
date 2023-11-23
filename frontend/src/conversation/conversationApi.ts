@@ -9,6 +9,7 @@ export function fetchAnswerApi(
   selectedDocs: Doc,
   history: Array<any> = [],
   conversationId: string | null,
+  promptId: string | null,
 ): Promise<
   | {
       result: any;
@@ -62,6 +63,7 @@ export function fetchAnswerApi(
       history: history,
       active_docs: docPath,
       conversation_id: conversationId,
+      prompt_id: promptId,
     }),
   })
     .then((response) => {
@@ -89,6 +91,7 @@ export function fetchAnswerSteaming(
   selectedDocs: Doc,
   history: Array<any> = [],
   conversationId: string | null,
+  promptId: string | null,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   let namePath = selectedDocs.name;
@@ -123,6 +126,7 @@ export function fetchAnswerSteaming(
       active_docs: docPath,
       history: JSON.stringify(history),
       conversation_id: conversationId,
+      prompt_id: promptId,
     };
 
     fetch(apiHost + '/stream', {
