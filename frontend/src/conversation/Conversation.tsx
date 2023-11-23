@@ -133,7 +133,7 @@ export default function Conversation() {
 
       {queries.length > 0 && (
         <div className="mt-20 flex flex-col transition-all md:w-3/4">
-          {queries.map((query, index) => {
+          {queries.map((query: Query, index: number) => {
             return (
               <Fragment key={index}>
                 <ConversationBubble
@@ -192,6 +192,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
+
         <p className="text-gray-595959 w-[100vw] self-center bg-white p-5 text-center text-xs md:w-full">
           This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
           questions.

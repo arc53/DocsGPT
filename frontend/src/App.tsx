@@ -21,7 +21,11 @@ export default function App() {
   const location = useLocation();
 
   // Checking for the login page
-  const isLogin = location.pathname === '/login';
+  const isLogin =
+    location.pathname === '/login' ||
+    location.pathname === '/register' ||
+    location.pathname === '/Forgot' ||
+    location.pathname === '/ResetPassword';
 
   return (
     <div className="min-h-full min-w-full">

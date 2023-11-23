@@ -168,20 +168,6 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
       </div>
-      <div className="mt-[1vh] flex w-full items-center justify-center gap-[4vh]">
-        <button
-          className="rounded-xl bg-[#7D54D1] p-[2vh] font-medium  text-white transition-transform hover:scale-105"
-          onClick={() => navigate('/login')}
-        >
-          Sign up
-        </button>
-        <button
-          className="rounded-xl bg-[#7D54D1] p-[2vh] font-medium  text-white transition-transform hover:scale-105"
-          onClick={() => navigate('/register')}
-        >
-          Sign in
-        </button>
-      </div>
     </div>
   );
 }

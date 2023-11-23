@@ -39,7 +39,7 @@ export default function Login() {
           />
           <h2
             className="text-right text-sm text-[#5F5F5F] hover:cursor-pointer"
-            onClick={() => navigate('/Resetpass')}
+            onClick={() => navigate('/Forgot')}
           >
             Forgot your password?
           </h2>
