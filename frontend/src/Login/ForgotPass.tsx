@@ -1,7 +1,7 @@
 import React from 'react';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import { useNavigate } from 'react-router-dom';
-export default function forgotPass() {
+export default function ForgotPass() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     console.log('login');
