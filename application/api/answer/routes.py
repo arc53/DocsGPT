@@ -106,10 +106,6 @@ def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conve
         prompt = chat_combine_strict
     else:
         prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})["content"]
-    import sys
-    print(prompt_id, file=sys.stderr)
-    print(prompt, file=sys.stderr)
-    
 
     docs = docsearch.search(question, k=2)
     if settings.LLM_NAME == "llama.cpp":
