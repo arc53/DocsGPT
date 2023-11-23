@@ -255,10 +255,13 @@ const Prompts: React.FC<PromptProps> = ({
       }
       const newPrompt = await response.json();
       if (setPrompts) {
-        setPrompts([...prompts, newPrompt]);
+        setPrompts([
+          ...prompts,
+          { name: newPromptName, id: newPrompt.id, type: 'private' },
+        ]);
       }
-      onSelectPrompt(newPrompt.name, newPrompt.id, newPrompt.type);
-      setNewPromptName(newPrompt.name);
+      onSelectPrompt(newPromptName, newPrompt.id, newPromptContent);
+      setNewPromptName(newPromptName);
     } catch (error) {
       console.error(error);
     }

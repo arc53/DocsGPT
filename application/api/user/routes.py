@@ -249,7 +249,6 @@ def create_prompt():
     if name == "":
         return {"status": "error"}
     user = "local"
-    # write to mongodb
     resp = prompts_collection.insert_one(
         {
             "name": name,
@@ -258,7 +257,7 @@ def create_prompt():
         }
     )
     new_id = str(resp.inserted_id)
-    return {"id": new_id, "name": name, "content": content}
+    return {"id": new_id}
 
 @user.route("/api/get_prompts", methods=["GET"])
 def get_prompts():
