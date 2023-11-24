@@ -266,7 +266,7 @@ def get_prompts():
     list_prompts = []
     list_prompts.append({"id": "default", "name": "default", "type": "public"})
     list_prompts.append({"id": "creative", "name": "creative", "type": "public"})
-    list_prompts.append({"id": "precise", "name": "precise", "type": "public"})
+    list_prompts.append({"id": "strict", "name": "strict", "type": "public"})
     for prompt in prompts:
         list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"})
 
