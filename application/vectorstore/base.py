@@ -34,7 +34,7 @@ class BaseVectorStore(ABC):
             if self.is_azure_configured():
                 os.environ["OPENAI_API_TYPE"] = "azure"
                 embedding_instance = embeddings_factory[embeddings_name](
-                    model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME
+                    deployment=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME
                 )
             else:
                 embedding_instance = embeddings_factory[embeddings_name](
