@@ -215,45 +215,49 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             />
           </button>
         </div>
-        <NavLink
-          to={'/'}
-          onClick={() => {
-            dispatch(setConversation([]));
-            dispatch(
-              updateConversationId({
-                query: { conversationId: null },
-              }),
-            );
-          }}
-          className={({ isActive }) =>
-            `${
-              isActive ? 'bg-gray-3000' : ''
-            } group my-auto mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
-          }
-        >
-          <img
-            src={Add}
-            alt="new"
-            className="opacity-80 group-hover:opacity-100"
-          />
-          <p className="my-auto text-sm text-dove-gray group-hover:text-neutral-600">
-            New Chat
-          </p>
-        </NavLink>
-        {conversations && (
-          <div className="conversations-container max-h-[25rem] overflow-y-auto">
-            <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
-            {conversations?.map((conversation) => (
-              <ConversationTile
-                key={conversation.id}
-                conversation={conversation}
-                selectConversation={(id) => handleConversationClick(id)}
-                onDeleteConversation={(id) => handleDeleteConversation(id)}
-                onSave={(conversation) => updateConversationName(conversation)}
-              />
-            ))}
-          </div>
-        )}
+        <div className="mb-auto">
+          <NavLink
+            to={'/'}
+            onClick={() => {
+              dispatch(setConversation([]));
+              dispatch(
+                updateConversationId({
+                  query: { conversationId: null },
+                }),
+              );
+            }}
+            className={({ isActive }) =>
+              `${
+                isActive ? 'bg-gray-3000' : ''
+              } group mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+            }
+          >
+            <img
+              src={Add}
+              alt="new"
+              className="opacity-80 group-hover:opacity-100"
+            />
+            <p className=" text-sm text-dove-gray group-hover:text-neutral-600">
+              New Chat
+            </p>
+          </NavLink>
+          {conversations && (
+            <div className="conversations-container max-h-[25rem] overflow-y-auto">
+              <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
+              {conversations?.map((conversation) => (
+                <ConversationTile
+                  key={conversation.id}
+                  conversation={conversation}
+                  selectConversation={(id) => handleConversationClick(id)}
+                  onDeleteConversation={(id) => handleDeleteConversation(id)}
+                  onSave={(conversation) =>
+                    updateConversationName(conversation)
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-col-reverse border-b-2">
           <div className="relative my-4 flex gap-2 px-2">
