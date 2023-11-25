@@ -12,7 +12,9 @@ export default function ForgotPass() {
   return (
     <div className="z-30 flex h-full min-h-screen  w-full items-center justify-center bg-[#1D1D1D]">
       <div className=" flex flex-col items-center px-[5vw] md:w-fit md:p-0">
-        <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
+        <div className=" cursor-pointer" onClick={() => navigate('/')}>
+          <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
+        </div>
         <div className="font-bold md:flex md:gap-2 ">
           <h1 className="text-white">Log in to </h1>
           <h1 className="bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-transparent">
@@ -38,7 +40,12 @@ export default function ForgotPass() {
             // onChange={onchange}
           />
 
-          <button className="h-[7vh] rounded-lg bg-[#7D54D1] text-sm font-medium text-white">
+          <button
+            className="h-[7vh] rounded-lg bg-[#7D54D1] text-sm font-medium text-white hover:bg-[#8A62DC]"
+            onClick={() => {
+              navigate('/ResetPassword');
+            }}
+          >
             Request password reset
           </button>
         </form>
@@ -46,7 +53,7 @@ export default function ForgotPass() {
           <h2 className="gap-1 text-right text-[#5F5F5F]  md:flex">
             Don&apos;t have an account ?
             <h2
-              className="text-center font-medium text-white hover:cursor-pointer"
+              className="text-center font-medium text-white hover:cursor-pointer hover:underline"
               onClick={() => navigate('/register')}
             >
               Sign up

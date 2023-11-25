@@ -5,7 +5,10 @@ import { useNavigate } from 'react-router-dom';
 export default function Signup() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log('login');
+
+    alert('Signup Successful ');
+
+    navigate('/login');
   };
 
   const navigate = useNavigate();
@@ -13,7 +16,9 @@ export default function Signup() {
   return (
     <div className="z-30 flex h-full min-h-screen  w-full items-center justify-center bg-[#1D1D1D]">
       <div className=" flex flex-col items-center md:w-fit">
-        <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
+        <div className=" cursor-pointer" onClick={() => navigate('/')}>
+          <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
+        </div>
         <div className="font-bold md:flex md:gap-2">
           <h1 className="text-white">Create</h1>
           <h1 className="bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-transparent">
@@ -39,17 +44,17 @@ export default function Signup() {
             className="w-full rounded-lg border-none bg-[#2B2B2B] p-4 text-sm font-medium  text-white focus:outline-none md:min-w-[25vw]"
             // onChange={onchange}
           />
-          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white">
+          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white hover:bg-[#8A62DC]">
             Create Account
           </button>
           <div className="flex w-full justify-center  text-sm">
             <h2 className="flex gap-1 text-right  text-[#5F5F5F]">
               Already have an account ?
               <h2
-                className="text-center font-medium text-white hover:cursor-pointer"
+                className="text-center font-medium text-white hover:cursor-pointer hover:underline"
                 onClick={() => navigate('/login')}
               >
-                log in
+                Log in
               </h2>
             </h2>
           </div>

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Hero from '../Hero';
+import { useNavigate } from 'react-router-dom';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import {
@@ -115,6 +116,8 @@ export default function Conversation() {
     document.execCommand('insertText', false, text);
   };
 
+  const navigate = useNavigate();
+
   return (
     <div className="flex flex-col justify-center p-4 md:flex-row">
       {queries.length > 0 && !hasScrolledToLast && (
@@ -152,8 +155,23 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
+
       <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white pt-3 md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
+          <div className="mt-[1vh] flex w-full items-center justify-center gap-[1vh]">
+            <button
+              className="mr-4 flex items-center justify-center rounded-full bg-blue-1000 py-2 px-4 text-white hover:bg-blue-3000"
+              onClick={() => navigate('/register')}
+            >
+              Sign Up
+            </button>
+            <button
+              className="mr-4 flex items-center justify-center rounded-full bg-blue-1000 py-2 px-4 text-white hover:bg-blue-3000"
+              onClick={() => navigate('/login')}
+            >
+              Sign in
+            </button>
+          </div>
           <div
             id="inputbox"
             ref={inputRef}
