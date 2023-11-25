@@ -10,23 +10,18 @@ export default function Signup() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    //email validation
     if (email.length === 0 || password.length === 0) {
-      if (password.length === 0) {
-        setshowalert('Password is required');
-        return;
-      } else {
-        setshowalert('Email is required');
-      }
-      return;
-    } else {
-      setshowalert('');
-    }
-    if (password.length === 0) {
-      setshowalert('Password is required');
+      setshowalert('Both fields are required');
       return;
     }
 
+    //email validation
+    if (!email.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
+      setshowalert('Please enter a valid email address');
+      return;
+    }
+
+    setshowalert('');
     alert('Signup Successful ');
 
     navigate('/login');
@@ -69,7 +64,7 @@ export default function Signup() {
             }}
             className="w-full rounded-lg border-none bg-[#2B2B2B] p-4 text-sm font-medium  text-white focus:outline-none md:min-w-[25vw]"
           />
-          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white">
+          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white hover:bg-[#8A62DC]">
             Create Account
           </button>
           {showalert.length > 0 && (
@@ -79,7 +74,7 @@ export default function Signup() {
             <h2 className="flex gap-1 text-right  text-[#5F5F5F]">
               Already have an account ?
               <h2
-                className="text-center font-medium text-white hover:cursor-pointer"
+                className="text-center font-medium text-white hover:cursor-pointer hover:underline"
                 onClick={() => navigate('/login')}
               >
                 log in
