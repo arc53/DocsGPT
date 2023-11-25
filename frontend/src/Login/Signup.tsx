@@ -1,10 +1,31 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import { useNavigate } from 'react-router-dom';
 
 export default function Signup() {
+  const [showalert, setshowalert] = useState<string>('');
+  const [email, setemail] = useState('');
+  const [password, setpassword] = useState('');
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    //email validation
+    if (email.length === 0 || password.length === 0) {
+      if (password.length === 0) {
+        setshowalert('Password is required');
+        return;
+      } else {
+        setshowalert('Email is required');
+      }
+      return;
+    } else {
+      setshowalert('');
+    }
+    if (password.length === 0) {
+      setshowalert('Password is required');
+      return;
+    }
 
     alert('Signup Successful ');
 
@@ -34,27 +55,34 @@ export default function Signup() {
             type="email"
             name="Name"
             placeholder="Email"
+            onChange={(e) => {
+              setemail(e.target.value);
+            }}
             className="w-full rounded-lg border-none bg-[#2B2B2B] p-4 text-sm font-medium text-white focus:outline-none md:min-w-[25vw]"
-            // onChange={onchange}
           />
           <input
             type="password"
             name="Name"
             placeholder="Password"
+            onChange={(e) => {
+              setpassword(e.target.value);
+            }}
             className="w-full rounded-lg border-none bg-[#2B2B2B] p-4 text-sm font-medium  text-white focus:outline-none md:min-w-[25vw]"
-            // onChange={onchange}
           />
-          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white hover:bg-[#8A62DC]">
+          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white">
             Create Account
           </button>
+          {showalert.length > 0 && (
+            <div className="text-red-500">{showalert}</div>
+          )}
           <div className="flex w-full justify-center  text-sm">
             <h2 className="flex gap-1 text-right  text-[#5F5F5F]">
               Already have an account ?
               <h2
-                className="text-center font-medium text-white hover:cursor-pointer hover:underline"
+                className="text-center font-medium text-white hover:cursor-pointer"
                 onClick={() => navigate('/login')}
               >
-                Log in
+                log in
               </h2>
             </h2>
           </div>
