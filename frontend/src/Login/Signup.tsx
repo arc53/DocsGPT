@@ -31,16 +31,16 @@ export default function Signup() {
 
   return (
     <div className="z-30 flex h-full min-h-screen  w-full items-center justify-center bg-[#1D1D1D]">
-      <div className=" flex flex-col items-center md:w-fit">
+      <div className=" flex flex-col items-center px-[2vh] md:w-fit md:px-0">
         <div className=" cursor-pointer" onClick={() => navigate('/')}>
           <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
         </div>
-        <div className="font-bold md:flex md:gap-2">
-          <h1 className="text-white">Create</h1>
-          <h1 className="bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-transparent">
+        <div className="mt-[2vh] flex flex-wrap items-center justify-center gap-2 font-bold ">
+          <h1 className="mt-0 text-[4vh] text-white">Create</h1>
+          <h1 className="mt-0 bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-[4vh] text-transparent">
             DocsGPT
           </h1>
-          <h1 className="text-white">Account</h1>
+          <h1 className="mt-0 text-[4vh] text-white">Account</h1>
         </div>
         <form
           onSubmit={handleSubmit}

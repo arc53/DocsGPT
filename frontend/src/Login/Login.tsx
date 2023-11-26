@@ -65,9 +65,9 @@ export default function Login() {
         <div className=" cursor-pointer" onClick={() => navigate('/')}>
           <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
         </div>
-        <div className="font-bold md:flex md:gap-2">
-          <h1 className="text-white">Log in to </h1>
-          <h1 className="bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-transparent">
+        <div className="mt-[2vh] flex w-full flex-wrap items-center justify-center gap-2 font-bold ">
+          <h1 className="mt-0 text-[4vh] text-white">Log in to</h1>
+          <h1 className="mt-0 bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-[4vh] text-transparent">
             DocsGPT
           </h1>
         </div>
