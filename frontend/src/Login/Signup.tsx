@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import { IoEye } from 'react-icons/io5';
+import { IoMdEyeOff } from 'react-icons/io';
 import { useNavigate } from 'react-router-dom';
 
 export default function Signup() {
   const [showalert, setshowalert] = useState<string>('');
   const [email, setemail] = useState('');
   const [password, setpassword] = useState('');
+  const [isVisible, setisVisible] = useState(false);
+  const [ispasswordVisible, setispasswordVisible] = useState(false);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -28,6 +32,27 @@ export default function Signup() {
   };
 
   const navigate = useNavigate();
+
+  // Toogle Password
+
+  const togglePassword = () => {
+    setispasswordVisible(!ispasswordVisible);
+
+    const el = document.getElementById('password') as HTMLInputElement;
+    if (el.type === 'password') {
+      el.type = 'text';
+    } else {
+      el.type = 'password';
+    }
+  };
+
+  useEffect(() => {
+    if (password) {
+      setisVisible(true);
+    } else {
+      setisVisible(false);
+    }
+  }, [password]);
 
   return (
     <div className="z-30 flex h-full min-h-screen  w-full items-center justify-center bg-[#1D1D1D]">
@@ -57,15 +82,37 @@ export default function Signup() {
             }}
             className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
           />
-          <input
-            type="password"
-            name="Name"
-            placeholder="Password"
-            onChange={(e) => {
-              setpassword(e.target.value);
-            }}
-            className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
-          />
+          <div className="relative flex">
+            <input
+              type="password"
+              id="password"
+              name="Name"
+              placeholder="Password"
+              onChange={(e) => {
+                setpassword(e.target.value);
+              }}
+              className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
+              // onChange={onchange}
+            />
+            {isVisible &&
+              (!ispasswordVisible ? (
+                <button
+                  onClick={() => togglePassword()}
+                  type="button"
+                  className="absolute top-[2.2vh] right-[2vh] text-[2vh] text-white md:text-[3vh]"
+                >
+                  <IoEye />
+                </button>
+              ) : (
+                <button
+                  onClick={() => togglePassword()}
+                  type="button"
+                  className="absolute top-[2.2vh] right-[2vh] text-[2vh] text-white md:text-[3vh]"
+                >
+                  <IoMdEyeOff />
+                </button>
+              ))}
+          </div>
           <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-semibold text-white hover:bg-[#8A62DC]">
             Create Account
           </button>
