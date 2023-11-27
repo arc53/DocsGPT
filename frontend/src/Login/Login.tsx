@@ -61,13 +61,15 @@ export default function Login() {
 
   return (
     <div className="z-30 flex h-full min-h-screen  w-full items-center justify-center bg-[#1D1D1D]">
-      <div className=" flex flex-col items-center md:w-fit">
-        <div className=" cursor-pointer" onClick={() => navigate('/')}>
+      <div className="flex flex-col items-center md:w-fit">
+        <div className="text- cursor-pointer" onClick={() => navigate('/')}>
           <img src={DocsGPT3} alt="Logo" className="h-[10vh]" />
         </div>
         <div className="mt-[2vh] flex w-full flex-wrap items-center justify-center gap-2 font-bold ">
-          <h1 className="mt-0 text-[4vh] text-white">Log in to</h1>
-          <h1 className="mt-0 bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-[4vh] text-transparent">
+          <h1 className="mt-0 text-[3vh] text-white md:text-[3.5vh]">
+            Log in to
+          </h1>
+          <h1 className="mt-0 bg-gradient-to-r from-[#56B3CB] via-[#CD2AA0] to-[#EA635C] bg-clip-text text-[3vh] text-transparent md:text-[3.5vh]">
             DocsGPT
           </h1>
         </div>
@@ -82,9 +84,10 @@ export default function Login() {
             onChange={(e) => {
               setemail(e.target.value);
             }}
-            className="w-full rounded-lg border-none bg-[#2B2B2B] p-4 text-sm font-medium text-white focus:outline-none md:min-w-[25vw]"
+            className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
             // onChange={onchange}
           />
+          <div></div>
           <input
             type="password"
             name="Name"
@@ -92,16 +95,16 @@ export default function Login() {
             onChange={(e) => {
               setpassword(e.target.value);
             }}
-            className="w-full rounded-lg border-none bg-[#2B2B2B] p-4 text-sm font-medium  text-white focus:outline-none md:min-w-[25vw]"
+            className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
             // onChange={onchange}
           />
           <h2
-            className="text-right text-sm text-[#5F5F5F] hover:cursor-pointer hover:text-white"
+            className="text-right text-sm text-[#5F5F5F] hover:cursor-pointer hover:text-gray-400"
             onClick={() => navigate('/Forgot')}
           >
             Forgot your password?
           </h2>
-          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-medium text-white hover:bg-[#8A62DC]">
+          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-semibold text-white hover:bg-[#8A62DC]">
             Log in
           </button>
           {showalert.length > 0 && (
@@ -109,9 +112,9 @@ export default function Login() {
           )}
           <div className="flex w-full justify-center  text-sm">
             <h2 className="flex gap-1 text-right  text-[#5F5F5F]">
-              Don&apos;t have an account ?
+              Don&apos;t have an account?
               <h2
-                className="text-center font-medium text-white hover:cursor-pointer hover:underline"
+                className="text-center font-bold text-white hover:cursor-pointer hover:underline"
                 onClick={() => navigate('/register')}
               >
                 Sign up

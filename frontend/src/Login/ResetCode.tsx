@@ -48,7 +48,7 @@ export default function ResetCode() {
         </form>
         <div className="mt-[2vh] flex w-full justify-center text-sm">
           <h2 className="gap-1 text-right text-[#5F5F5F]  md:flex">
-            Don&apos;t have an account ?
+            Don&apos;t have an account?
             <h2
               className="text-center font-medium text-white hover:cursor-pointer hover:underline"
               onClick={() => navigate('/register')}
