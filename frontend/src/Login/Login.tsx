@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import { useNavigate } from 'react-router-dom';
+import { IoEye } from 'react-icons/io5';
+import { IoMdEyeOff } from 'react-icons/io';
 export default function Login() {
   const [showalert, setshowalert] = useState<string>('');
   const [email, setemail] = useState('');
   const [password, setpassword] = useState('');
+  const [isVisible, setisVisible] = useState(false);
+  const [ispasswordVisible, setispasswordVisible] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
+  const handleSubmit = () => {
     //email validation
     if (email.length === 0 || password.length === 0) {
       if (password.length === 0) {
@@ -59,6 +61,27 @@ export default function Login() {
 
   const navigate = useNavigate();
 
+  // Toogle Password
+
+  const togglePassword = () => {
+    setispasswordVisible(!ispasswordVisible);
+
+    const el = document.getElementById('password') as HTMLInputElement;
+    if (el.type === 'password') {
+      el.type = 'text';
+    } else {
+      el.type = 'password';
+    }
+  };
+
+  useEffect(() => {
+    if (password) {
+      setisVisible(true);
+    } else {
+      setisVisible(false);
+    }
+  }, [password]);
+
   return (
     <div className="z-30 flex h-full min-h-screen  w-full items-center justify-center bg-[#1D1D1D]">
       <div className="flex flex-col items-center md:w-fit">
@@ -73,10 +96,7 @@ export default function Login() {
             DocsGPT
           </h1>
         </div>
-        <form
-          onSubmit={handleSubmit}
-          className="flex w-full flex-col gap-[3vh] md:w-fit"
-        >
+        <form className="flex w-full flex-col gap-[3vh] md:w-fit">
           <input
             type="email"
             name="Name"
@@ -87,24 +107,49 @@ export default function Login() {
             className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
             // onChange={onchange}
           />
-          <div></div>
-          <input
-            type="password"
-            name="Name"
-            placeholder="Password"
-            onChange={(e) => {
-              setpassword(e.target.value);
-            }}
-            className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
-            // onChange={onchange}
-          />
+          <div className="relative flex">
+            <input
+              type="password"
+              id="password"
+              name="Name"
+              placeholder="Password"
+              onChange={(e) => {
+                setpassword(e.target.value);
+              }}
+              className="w-[90vw] cursor-pointer rounded-lg  border-red-400 bg-[#2B2B2B]  p-4 text-sm font-medium text-white hover:bg-[#383838] focus:border-2 focus:border-[#715c9d] focus:outline-none md:w-full  md:min-w-[25vw]"
+              // onChange={onchange}
+            />
+            {isVisible &&
+              (!ispasswordVisible ? (
+                <button
+                  onClick={() => togglePassword()}
+                  type="button"
+                  className="absolute top-[2.2vh] right-[2vh] text-[2vh] text-white md:text-[3vh]"
+                >
+                  <IoEye />
+                </button>
+              ) : (
+                <button
+                  onClick={() => togglePassword()}
+                  type="button"
+                  className="absolute top-[2.2vh] right-[2vh] text-[2vh] text-white md:text-[3vh]"
+                >
+                  <IoMdEyeOff />
+                </button>
+              ))}
+          </div>
+
           <h2
             className="text-right text-sm text-[#5F5F5F] hover:cursor-pointer hover:text-gray-400"
             onClick={() => navigate('/Forgot')}
           >
             Forgot your password?
           </h2>
-          <button className="h-[7vh] rounded-lg bg-[#7D54D1] font-semibold text-white hover:bg-[#8A62DC]">
+          <button
+            onClick={() => handleSubmit()}
+            type="button"
+            className="h-[7vh] rounded-lg bg-[#7D54D1] font-semibold text-white hover:bg-[#8A62DC]"
+          >
             Log in
           </button>
           {showalert.length > 0 && (
