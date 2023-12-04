@@ -81,6 +81,16 @@ prefListenerMiddleware.startListening({
   },
 });
 
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setPrompt),
+  effect: (action, listenerApi) => {
+    localStorage.setItem(
+      'DocsGPTPrompt',
+      JSON.stringify((listenerApi.getState() as RootState).preference.prompt),
+    );
+  },
+});
+
 export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;
