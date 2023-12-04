@@ -66,8 +66,17 @@ export function getLocalRecentDocs(): string | null {
   return doc;
 }
 
+export function getLocalPrompt(): string | null {
+  const prompt = localStorage.getItem('DocsGPTPrompt');
+  return prompt;
+}
+
 export function setLocalApiKey(key: string): void {
   localStorage.setItem('DocsGPTApiKey', key);
+}
+
+export function setLocalPrompt(prompt: string): void {
+  localStorage.setItem('DocsGPTPrompt', prompt);
 }
 
 export function setLocalRecentDocs(doc: Doc): void {
