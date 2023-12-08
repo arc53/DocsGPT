@@ -244,8 +244,8 @@ const ConversationBubble = forwardRef<
                       ? 'rgba(125, 84, 209, 0.3)'
                       : '#EEEEEE'
                     : isLikeClicked
-                      ? 'rgba(125, 84, 209, 0.3)'
-                      : '#ffffff',
+                    ? 'rgba(125, 84, 209, 0.3)'
+                    : '#ffffff',
                 }}
               >
                 <Like
@@ -283,8 +283,8 @@ const ConversationBubble = forwardRef<
                       ? 'rgba(248, 113, 113, 0.3)'
                       : '#EEEEEE'
                     : isDislikeClicked
-                      ? 'rgba(248, 113, 113, 0.3)'
-                      : '#ffffff',
+                    ? 'rgba(248, 113, 113, 0.3)'
+                    : '#ffffff',
                 }}
               >
                 <Dislike
@@ -313,7 +313,9 @@ const ConversationBubble = forwardRef<
             </p>
 
             <div className="m-2 rounded-xl border-2 border-gray-200 bg-white p-2">
-              <p className="text-black">{sources[openSource].text}</p>
+              <p className="text-break text-black">
+                {sources[openSource].text}
+              </p>
             </div>
           </div>
         )}
