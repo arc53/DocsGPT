@@ -242,7 +242,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </p>
           </NavLink>
           {conversations && (
-            <div className="conversations-container max-h-[25rem] overflow-y-auto">
+            <div className="conversations-container max-h-[19rem] overflow-y-auto">
               <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
               {conversations?.map((conversation) => (
                 <ConversationTile
