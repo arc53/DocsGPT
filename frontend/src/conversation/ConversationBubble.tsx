@@ -313,7 +313,9 @@ const ConversationBubble = forwardRef<
             </p>
 
             <div className="m-2 rounded-xl border-2 border-gray-200 bg-white p-2">
-              <p className="text-black">{sources[openSource].text}</p>
+              <p className="text-break text-black">
+                {sources[openSource].text}
+              </p>
             </div>
           </div>
         )}

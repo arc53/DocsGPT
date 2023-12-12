@@ -6,6 +6,7 @@ import {
 } from './preferences/preferenceSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
+const prompt = localStorage.getItem('DocsGPTPrompt');
 const doc = localStorage.getItem('DocsGPTRecentDocs');
 
 const store = configureStore({
@@ -13,7 +14,10 @@ const store = configureStore({
     preference: {
       apiKey: key ?? '',
       selectedDocs: doc !== null ? JSON.parse(doc) : null,
-      prompt: { name: 'default', id: 'default', type: 'private' },
+      prompt:
+        prompt !== null
+          ? JSON.parse(prompt)
+          : { name: 'default', id: 'default', type: 'private' },
       conversations: null,
       sourceDocs: [
         {
