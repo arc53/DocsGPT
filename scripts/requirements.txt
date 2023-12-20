@@ -112,7 +112,7 @@ threadpoolctl==3.2.0
 tiktoken==0.4.0
 tokenizers==0.13.3
 tqdm==4.65.0
-transformers==4.31.0
+transformers==4.36.0
 typer==0.9.0
 typing-inspect==0.9.0
 typing_extensions==4.7.1
