@@ -96,7 +96,7 @@ pycryptodome==3.19.0
 pycryptodomex==3.19.0
 pydantic==2.5.3
 pydantic_core==2.14.6
-pydantic_settings-2.1.0
+pydantic_settings==2.1.0
 PyJWT==2.8.0
 pymongo==4.6.1
 pyowm==3.3.0
