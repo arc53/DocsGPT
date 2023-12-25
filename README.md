@@ -23,6 +23,9 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
  
 </div>
 
+### 📣🎅❄️ Special Seasonal 🎄🌟 Reward 🎁☃️ for Contributions.
+Starting from 25th December for the next 3 weeks, contribute a meaningful PR and earn a special holopin! This is an amazing opportunity not only to hone your skills but also to make memorable contributions.
+
 ### Production Support / Help for Companies:
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
