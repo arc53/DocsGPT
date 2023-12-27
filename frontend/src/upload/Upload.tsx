@@ -184,6 +184,7 @@ export default function Upload({
           className="h-10 w-[60%] rounded-md border-2 border-gray-5000 px-3 outline-none"
           value={docName}
           onChange={(e) => setDocName(e.target.value)}
+          readOnly
         ></input>
         <div className="relative bottom-12 left-2 mt-[-18.39px]">
           <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
