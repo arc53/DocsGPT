@@ -335,7 +335,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }`
             }
           >
-            <img src={SettingGear} alt="info" className="ml-2 w-5 opacity-60" />
+            <img src={SettingGear} alt="settings" className="ml-2 w-5 opacity-60" />
             <p className="my-auto text-sm text-eerie-black">Settings</p>
           </NavLink>
         </div>
