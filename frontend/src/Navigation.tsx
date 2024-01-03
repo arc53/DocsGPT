@@ -335,7 +335,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }`
             }
           >
-            <img src={SettingGear} alt="info" className="ml-2 w-5 opacity-60" />
+            <img src={SettingGear} alt="settings" className="ml-2 w-5 opacity-60" />
             <p className="my-auto text-sm text-eerie-black">Settings</p>
           </NavLink>
         </div>
@@ -368,7 +368,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             rel="noreferrer"
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
-            <img src={Discord} alt="link" className="ml-2 w-5" />
+            <img src={Discord} alt="discord-link" className="ml-2 w-5" />
             <p className="my-auto text-sm text-eerie-black">
               Visit our Discord
             </p>
@@ -380,7 +380,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             rel="noreferrer"
             className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
           >
-            <img src={Github} alt="link" className="ml-2 w-5" />
+            <img src={Github} alt="github-link" className="ml-2 w-5" />
             <p className="my-auto text-sm text-eerie-black">Visit our Github</p>
           </a>
         </div>
