@@ -181,20 +181,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <img
             src={Expand}
             alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
+            className={`${!navOpen ? 'rotate-180' : 'rotate-0'
+              } m-auto transition-all duration-200`}
           />
         </button>
       )}
       <div
         ref={navRef}
-        className={`${
-          !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
+        className={`${!navOpen && '-ml-96 md:-ml-[18rem]'
+          } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
       >
         <div
-          className={'visible mt-2 flex h-16 w-full justify-between md:h-12'}
+          className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
         >
           <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
             <img className="mb-2 h-10" src={DocsGPT3} alt="" />
@@ -209,180 +207,181 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img
               src={Expand}
               alt="menu toggle"
-              className={`${
-                !navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto transition-all duration-200`}
+              className={`${!navOpen ? 'rotate-180' : 'rotate-0'
+                } m-auto transition-all duration-200`}
             />
           </button>
         </div>
-        <div className="mb-auto">
-          <NavLink
-            to={'/'}
-            onClick={() => {
-              dispatch(setConversation([]));
-              dispatch(
-                updateConversationId({
-                  query: { conversationId: null },
-                }),
-              );
-            }}
-            className={({ isActive }) =>
-              `${
-                isActive ? 'bg-gray-3000' : ''
-              } group mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
-            }
-          >
-            <img
-              src={Add}
-              alt="new"
-              className="opacity-80 group-hover:opacity-100"
-            />
-            <p className=" text-sm text-dove-gray group-hover:text-neutral-600">
-              New Chat
-            </p>
-          </NavLink>
+        <NavLink
+          to={'/'}
+          onClick={() => {
+            dispatch(setConversation([]));
+            dispatch(
+              updateConversationId({
+                query: { conversationId: null },
+              }),
+            );
+          }}
+          className={({ isActive }) =>
+            `${isActive ? 'bg-gray-3000' : ''
+            } group mx-4 mt-4 sticky flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+          }
+        >
+          <img
+            src={Add}
+            alt="new"
+            className="opacity-80 group-hover:opacity-100"
+          />
+          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 ">
+            New Chat
+          </p>
+        </NavLink>
+        <div className="mb-auto h-[56vh] overflow-x-hidden  overflow-y-scroll">
+
           {conversations && (
-            <div className="conversations-container max-h-[25rem] overflow-y-auto">
+            <div>
               <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
-              {conversations?.map((conversation) => (
-                <ConversationTile
-                  key={conversation.id}
-                  conversation={conversation}
-                  selectConversation={(id) => handleConversationClick(id)}
-                  onDeleteConversation={(id) => handleDeleteConversation(id)}
-                  onSave={(conversation) =>
-                    updateConversationName(conversation)
-                  }
-                />
-              ))}
+              <div className="conversations-container">
+
+                {conversations?.map((conversation) => (
+                  <ConversationTile
+                    key={conversation.id}
+                    conversation={conversation}
+                    selectConversation={(id) => handleConversationClick(id)}
+                    onDeleteConversation={(id) => handleDeleteConversation(id)}
+                    onSave={(conversation) =>
+                      updateConversationName(conversation)
+                    }
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        <div className="flex flex-col-reverse border-b-2">
-          <div className="relative my-4 flex gap-2 px-2">
-            <div
-              className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 bg-white"
-              onClick={() => setIsDocsListOpen(!isDocsListOpen)}
-            >
-              {selectedDocs && (
-                <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {selectedDocs.name} {selectedDocs.version}
-                </p>
-              )}
-              <img
-                src={Arrow2}
-                alt="arrow"
-                className={`${
-                  !isDocsListOpen ? 'rotate-0' : 'rotate-180'
-                } ml-auto mr-3 w-3 transition-all`}
-              />
-            </div>
-            <img
-              className="mt-2 h-9 w-9 hover:cursor-pointer"
-              src={UploadIcon}
-              onClick={() => setUploadModalState('ACTIVE')}
-            ></img>
-            {isDocsListOpen && (
-              <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
-                {docs ? (
-                  docs.map((doc, index) => {
-                    if (doc.model === embeddingsName) {
-                      return (
-                        <div
-                          key={index}
-                          onClick={() => {
-                            dispatch(setSelectedDocs(doc));
-                            setIsDocsListOpen(false);
-                          }}
-                          className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
-                        >
-                          <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
-                            {doc.name} {doc.version}
-                          </p>
-                          {doc.location === 'local' && (
-                            <img
-                              src={Trash}
-                              alt="Delete"
-                              className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
-                              id={`img-${index}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteClick(index, doc);
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    }
-                  })
-                ) : (
-                  <div className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
-                    <p className="ml-5 py-3">No default documentation.</p>
-                  </div>
+        <div className='h-auto flex-col flex justify-end'>
+          <div className="flex flex-col-reverse border-b-2">
+            <div className="relative my-4 flex gap-2 px-2">
+              <div
+                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 bg-white"
+                onClick={() => setIsDocsListOpen(!isDocsListOpen)}
+              >
+                {selectedDocs && (
+                  <p className="my-3 mx-4 overflow-hidden text-ellipsis whitespace-nowrap">
+                    {selectedDocs.name} {selectedDocs.version}
+                  </p>
                 )}
+                <img
+                  src={Arrow2}
+                  alt="arrow"
+                  className={`${!isDocsListOpen ? 'rotate-0' : 'rotate-180'
+                    } ml-auto mr-3 w-3 transition-all`}
+                />
               </div>
-            )}
+              <img
+                className="mt-2 h-9 w-9 hover:cursor-pointer"
+                src={UploadIcon}
+                onClick={() => setUploadModalState('ACTIVE')}
+              ></img>
+              {isDocsListOpen && (
+                <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
+                  {docs ? (
+                    docs.map((doc, index) => {
+                      if (doc.model === embeddingsName) {
+                        return (
+                          <div
+                            key={index}
+                            onClick={() => {
+                              dispatch(setSelectedDocs(doc));
+                              setIsDocsListOpen(false);
+                            }}
+                            className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
+                          >
+                            <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
+                              {doc.name} {doc.version}
+                            </p>
+                            {doc.location === 'local' && (
+                              <img
+                                src={Trash}
+                                alt="Delete"
+                                className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
+                                id={`img-${index}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteClick(index, doc);
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      }
+                    })
+                  ) : (
+                    <div className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
+                      <p className="ml-5 py-3">No default documentation.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <p className="ml-6 mt-3 text-sm font-semibold">Source Docs</p>
           </div>
-          <p className="ml-6 mt-3 text-sm font-semibold">Source Docs</p>
-        </div>
-        <div className="flex flex-col gap-2 border-b-2 py-2">
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
-                isActive ? 'bg-gray-3000' : ''
-              }`
-            }
-          >
-            <img src={SettingGear} alt="settings" className="ml-2 w-5 opacity-60" />
-            <p className="my-auto text-sm text-eerie-black">Settings</p>
-          </NavLink>
-        </div>
+          <div className="flex flex-col gap-2 border-b-2 py-2">
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${isActive ? 'bg-gray-3000' : ''
+                }`
+              }
+            >
+              <img src={SettingGear} alt="settings" className="ml-2 w-5 opacity-60" />
+              <p className="my-auto text-sm text-eerie-black">Settings</p>
+            </NavLink>
+          </div>
 
-        <div className="flex flex-col gap-2 border-b-2 py-2">
-          <NavLink
-            to="/about"
-            className={({ isActive }) =>
-              `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
-                isActive ? 'bg-gray-3000' : ''
-              }`
-            }
-          >
-            <img src={Info} alt="info" className="ml-2 w-5" />
-            <p className="my-auto text-sm text-eerie-black">About</p>
-          </NavLink>
+          <div className="flex flex-col gap-2 border-b-2 py-2">
+            <NavLink
+              to="/about"
+              className={({ isActive }) =>
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${isActive ? 'bg-gray-3000' : ''
+                }`
+              }
+            >
+              <img src={Info} alt="info" className="ml-2 w-5" />
+              <p className="my-auto text-sm text-eerie-black">About</p>
+            </NavLink>
 
-          <a
-            href="https://docs.docsgpt.co.uk/"
-            target="_blank"
-            rel="noreferrer"
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
-          >
-            <img src={Documentation} alt="documentation" className="ml-2 w-5" />
-            <p className="my-auto text-sm text-eerie-black">Documentation</p>
-          </a>
-          <a
-            href="https://discord.gg/WHJdfbQDR4"
-            target="_blank"
-            rel="noreferrer"
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
-          >
-            <img src={Discord} alt="discord-link" className="ml-2 w-5" />
-            <p className="my-auto text-sm text-eerie-black">
-              Visit our Discord
-            </p>
-          </a>
+            <a
+              href="https://docs.docsgpt.co.uk/"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            >
+              <img src={Documentation} alt="documentation" className="ml-2 w-5" />
+              <p className="my-auto text-sm text-eerie-black">Documentation</p>
+            </a>
+            <a
+              href="https://discord.gg/WHJdfbQDR4"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            >
+              <img src={Discord} alt="discord-link" className="ml-2 w-5" />
+              <p className="my-auto text-sm text-eerie-black">
+                Visit our Discord
+              </p>
+            </a>
 
-          <a
-            href="https://github.com/arc53/DocsGPT"
-            target="_blank"
-            rel="noreferrer"
-            className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
-          >
-            <img src={Github} alt="github-link" className="ml-2 w-5" />
-            <p className="my-auto text-sm text-eerie-black">Visit our Github</p>
-          </a>
+            <a
+              href="https://github.com/arc53/DocsGPT"
+              target="_blank"
+              rel="noreferrer"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+            >
+              <img src={Github} alt="github-link" className="ml-2 w-5" />
+              <p className="my-auto text-sm text-eerie-black">Visit our Github</p>
+            </a>
+          </div>
         </div>
       </div>
       <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 md:hidden">
