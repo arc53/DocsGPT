@@ -91,7 +91,7 @@ prompt-toolkit==3.0.43
 pyasn1==0.5.1
 pycares==4.4.0
 pycparser==2.21
-pycryptodome==3.19.0
+pycryptodome==3.19.1
 pycryptodomex==3.19.0
 pydantic==2.5.3
 pydantic_core==2.14.6
