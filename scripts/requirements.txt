@@ -92,7 +92,7 @@ pyasn1==0.5.1
 pycares==4.4.0
 pycparser==2.21
 pycryptodome==3.19.0
-pycryptodomex==3.19.0
+pycryptodomex==3.19.1
 pydantic==2.5.3
 pydantic_core==2.14.6
 pydantic_settings==2.1.0
