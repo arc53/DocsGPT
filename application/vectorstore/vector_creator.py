@@ -1,11 +1,13 @@
 from application.vectorstore.faiss import FaissStore
 from application.vectorstore.elasticsearch import ElasticsearchStore
+from application.vectorstore.mongodb import MongoDBVectorStore
 
 
 class VectorCreator:
     vectorstores = {
         'faiss': FaissStore,
-        'elasticsearch':ElasticsearchStore
+        'elasticsearch':ElasticsearchStore,
+        'mongodb': MongoDBVectorStore,
     }
 
     @classmethod
