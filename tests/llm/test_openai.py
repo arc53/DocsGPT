@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 from application.llm.openai import OpenAILLM
 
 class TestOpenAILLM(unittest.TestCase):
