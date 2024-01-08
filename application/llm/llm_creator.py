@@ -3,6 +3,7 @@ from application.llm.sagemaker import SagemakerAPILLM
 from application.llm.huggingface import HuggingFaceLLM
 from application.llm.llama_cpp import LlamaCpp
 from application.llm.anthropic import AnthropicLLM
+from application.llm.docsgpt_provider import DocsGPTAPILLM
 
 
 
@@ -13,7 +14,8 @@ class LLMCreator:
         'sagemaker': SagemakerAPILLM,
         'huggingface': HuggingFaceLLM,
         'llama.cpp': LlamaCpp,
-        'anthropic': AnthropicLLM
+        'anthropic': AnthropicLLM,
+        'docsgpt': DocsGPTAPILLM
     }
 
     @classmethod
