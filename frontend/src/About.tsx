@@ -18,8 +18,7 @@ export default function About() {
             target="_blank"
             rel="noreferrer"
           >
-            {' '}
-            open-source{' '}
+            {' open-source '}
           </a>
           chatbot. Powered by GPT-3, Faiss and LangChain.
         </p>
@@ -51,12 +50,12 @@ export default function About() {
           </p>
         </div>
 
-        <p>
-          Currently It uses{' '}
+        <p className="mt-1">
+          Currently, it uses{' '}
           <span className="text-blue-950 font-medium">DocsGPT</span>{' '}
-          documentation, so it will respond to information relevant to{' '}
-          <span className="text-blue-950 font-medium">DocsGPT</span>. If you
-          want to train it on different documentation - please follow
+          documentation, thus, it will respond to information relevant to{' '}
+          <span className="text-blue-950 font-medium">DocsGPT</span>. To train 
+          it on different documentation - please follow
           <a
             className="text-blue-500"
             href="https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation"
@@ -69,7 +68,7 @@ export default function About() {
           .
         </p>
 
-        <p className="mt-4 text-left">
+        <p className="mt-3 text-left">
           If you want to launch it on your own server - follow
           <a
             className="text-blue-500"
