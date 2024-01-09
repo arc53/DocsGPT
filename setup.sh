@@ -67,6 +67,20 @@ use_openai() {
     echo "docker-compose down"
 }
 
+use_openai() {
+    echo "LLM_NAME=docsgpt" > .env
+    echo "VITE_API_STREAMING=true" >> .env
+    echo "The .env file has been created with API_KEY set to your provided key."
+
+    docker-compose build && docker-compose up -d
+
+
+
+    echo "The application will run on http://localhost:5173"
+    echo "You can stop the application by running the following command:"
+    echo "docker-compose down"
+}
+
 # Prompt the user for their choice
 prompt_user
 
