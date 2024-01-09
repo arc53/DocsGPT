@@ -91,13 +91,13 @@ It will install all the dependencies and allow you to download the local model, 
 Otherwise, refer to this Guide:
 
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
-2. Create a `.env` file in your root directory and set the env variable `API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys) and `VITE_API_STREAMING` to true or false, depending on whether you want streaming answers or not.
+2. Create a `.env` file in your root directory and set the env variables and `VITE_API_STREAMING` to true or false, depending on whether you want streaming answers or not.
    It should look like this inside:
 
    ```
    LLM_NAME=[docsgpt or openai or others] 
-   API_KEY=Yourkey
    VITE_API_STREAMING=true
+   API_KEY=[if LLM_NAME is openai]
    ```
 
    See optional environment variables in the [/.env-template](https://github.com/arc53/DocsGPT/blob/main/.env-template) and [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) files.
@@ -148,14 +148,22 @@ python -m venv venv
  venv/Scripts/activate
 ```
 
-3. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
+3. Download embedding model and save it in the `model/` folder:
+You can use the script below, or download it manually from [here](https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip), unzip it and save it in the `model/` folder.
 
 ```commandline
-pip install -r application/requirements.txt
+wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip
+unzip mpnet-base-v2.zip -d model
+rm mpnet-base-v2.zip
+
+4. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
+
+```commandline
+pip install -r requirements.txt
 ```
 
-4. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
-5. Start worker with `celery -A application.app.celery worker -l INFO`.
+5. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
+6. Start worker with `celery -A application.app.celery worker -l INFO`.
 
 ### Start Frontend
 
