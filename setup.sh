@@ -3,8 +3,9 @@
 # Function to prompt the user for their choice
 prompt_user() {
     echo "Do you want to:"
-    echo "1. Download the language model locally (12GB)"
-    echo "2. Use the OpenAI API"
+    echo "1. Use DocsGPT public API (simple and free)"
+    echo "2. Download the language model locally (12GB)"
+    echo "2. Use the OpenAI API (requires an API key)"
     read -p "Enter your choice (1/2): " choice
 }
 
@@ -67,14 +68,12 @@ use_openai() {
     echo "docker-compose down"
 }
 
-use_openai() {
+use_docsgpt() {
     echo "LLM_NAME=docsgpt" > .env
     echo "VITE_API_STREAMING=true" >> .env
     echo "The .env file has been created with API_KEY set to your provided key."
 
     docker-compose build && docker-compose up -d
-
-
 
     echo "The application will run on http://localhost:5173"
     echo "You can stop the application by running the following command:"
@@ -86,6 +85,9 @@ prompt_user
 
 # Handle the user's choice
 case $choice in
+    1)
+        use_docsgpt
+        ;;
     1)
         download_locally
         ;;
