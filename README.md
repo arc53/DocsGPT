@@ -86,7 +86,7 @@ On Mac OS or Linux, write:
 
 `./setup.sh`
 
-It will install all the dependencies and allow you to download the local model or use OpenAI.
+It will install all the dependencies and allow you to download the local model, use OpenAI or use our LLM API.
 
 Otherwise, refer to this Guide:
 
@@ -95,6 +95,7 @@ Otherwise, refer to this Guide:
    It should look like this inside:
 
    ```
+   LLM_NAME=[docsgpt or openai or others] 
    API_KEY=Yourkey
    VITE_API_STREAMING=true
    ```
@@ -126,7 +127,7 @@ docker compose -f docker-compose-dev.yaml up -d
 > Make sure you have Python 3.10 or 3.11 installed.
 
 1. Export required environment variables or prepare a `.env` file in the `/application` folder:
-   - Copy [.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) and create `.env` with your OpenAI API token for the `API_KEY` and `EMBEDDINGS_KEY` fields.
+   - Copy [.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) and create `.env`.
 
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
