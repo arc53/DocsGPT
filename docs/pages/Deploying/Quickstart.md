@@ -8,7 +8,7 @@ Just run the following command:
 ./setup.sh
 ```
 
-This command will install all the necessary dependencies and provide you with an option to download the local model or use OpenAI.
+This command will install all the necessary dependencies and provide you with an option to use our LLM API, download the local model or use OpenAI.
 
 If you prefer to follow manual steps, refer to this guide:
 
@@ -16,7 +16,7 @@ If you prefer to follow manual steps, refer to this guide:
    ```bash
    git clone https://github.com/arc53/DocsGPT.git
    ```
-2. Create a `.env` file in your root directory and set your `API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys).
+2. Create a `.env` file in your root directory and set your `API_KEY` with your [OpenAI API key](https://platform.openai.com/account/api-keys). (optional in case you want to use OpenAI)
 3. Run the following commands:
    ```bash
    docker-compose build && docker-compose up
