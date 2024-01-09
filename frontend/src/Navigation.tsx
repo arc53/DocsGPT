@@ -64,7 +64,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const navRef = useRef(null);
   const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
   const embeddingsName =
-    import.meta.env.VITE_EMBEDDINGS_NAME || 'openai_text-embedding-ada-002';
+    import.meta.env.VITE_EMBEDDINGS_NAME ||
+    'huggingface_sentence-transformers/all-mpnet-base-v2';
 
   const navigate = useNavigate();
 
@@ -181,15 +182,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <img
             src={Expand}
             alt="menu toggle"
-            className={`${!navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto transition-all duration-200`}
+            className={`${
+              !navOpen ? 'rotate-180' : 'rotate-0'
+            } m-auto transition-all duration-200`}
           />
         </button>
       )}
       <div
         ref={navRef}
-        className={`${!navOpen && '-ml-96 md:-ml-[18rem]'
-          } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
+        className={`${
+          !navOpen && '-ml-96 md:-ml-[18rem]'
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -207,8 +210,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img
               src={Expand}
               alt="menu toggle"
-              className={`${!navOpen ? 'rotate-180' : 'rotate-0'
-                } m-auto transition-all duration-200`}
+              className={`${
+                !navOpen ? 'rotate-180' : 'rotate-0'
+              } m-auto transition-all duration-200`}
             />
           </button>
         </div>
@@ -223,8 +227,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             );
           }}
           className={({ isActive }) =>
-            `${isActive ? 'bg-gray-3000' : ''
-            } group mx-4 mt-4 sticky flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+            `${
+              isActive ? 'bg-gray-3000' : ''
+            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
           }
         >
           <img
@@ -237,12 +242,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </p>
         </NavLink>
         <div className="mb-auto h-[56vh] overflow-x-hidden  overflow-y-scroll">
-
           {conversations && (
             <div>
               <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
               <div className="conversations-container">
-
                 {conversations?.map((conversation) => (
                   <ConversationTile
                     key={conversation.id}
@@ -259,7 +262,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
         </div>
 
-        <div className='h-auto flex-col flex justify-end'>
+        <div className="flex h-auto flex-col justify-end">
           <div className="flex flex-col-reverse border-b-2">
             <div className="relative my-4 flex gap-2 px-2">
               <div
@@ -274,8 +277,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <img
                   src={Arrow2}
                   alt="arrow"
-                  className={`${!isDocsListOpen ? 'rotate-0' : 'rotate-180'
-                    } ml-auto mr-3 w-3 transition-all`}
+                  className={`${
+                    !isDocsListOpen ? 'rotate-0' : 'rotate-180'
+                  } ml-auto mr-3 w-3 transition-all`}
                 />
               </div>
               <img
@@ -330,11 +334,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <NavLink
               to="/settings"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${isActive ? 'bg-gray-3000' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
+                  isActive ? 'bg-gray-3000' : ''
                 }`
               }
             >
-              <img src={SettingGear} alt="settings" className="ml-2 w-5 opacity-60" />
+              <img
+                src={SettingGear}
+                alt="settings"
+                className="ml-2 w-5 opacity-60"
+              />
               <p className="my-auto text-sm text-eerie-black">Settings</p>
             </NavLink>
           </div>
@@ -343,7 +352,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <NavLink
               to="/about"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${isActive ? 'bg-gray-3000' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
+                  isActive ? 'bg-gray-3000' : ''
                 }`
               }
             >
@@ -357,7 +367,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               rel="noreferrer"
               className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
             >
-              <img src={Documentation} alt="documentation" className="ml-2 w-5" />
+              <img
+                src={Documentation}
+                alt="documentation"
+                className="ml-2 w-5"
+              />
               <p className="my-auto text-sm text-eerie-black">Documentation</p>
             </a>
             <a
@@ -379,7 +393,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
             >
               <img src={Github} alt="github-link" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">Visit our Github</p>
+              <p className="my-auto text-sm text-eerie-black">
+                Visit our Github
+              </p>
             </a>
           </div>
         </div>

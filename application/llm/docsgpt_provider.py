@@ -42,8 +42,6 @@ class DocsGPTAPILLM(BaseLLM):
         )
     
         for line in response.iter_lines():
-            import sys
-            print(line, file=sys.stderr)
             if line:
                 #data = json.loads(line)
                 data_str = line.decode('utf-8')
