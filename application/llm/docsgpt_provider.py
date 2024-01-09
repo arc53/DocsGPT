@@ -1,7 +1,5 @@
 from application.llm.base import BaseLLM
-from application.core.settings import settings
 import json
-import io
 import requests
 
 class DocsGPTAPILLM(BaseLLM):
