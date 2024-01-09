@@ -8,7 +8,7 @@ RUN pip install --upgrade pip && pip install tiktoken==0.5.2
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 RUN apt-get install -y wget unzip
-RUN wget https://docsgpt.s3.eu-west-1.amazonaws.com/models/embeddings/mpnet-base-v2.zip
+RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip
 RUN unzip mpnet-base-v2.zip -d model
 RUN rm mpnet-base-v2.zip
 
