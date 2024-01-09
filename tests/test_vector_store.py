@@ -14,6 +14,6 @@ def test_init_local_faiss_store_huggingface():
     index.faiss file in the application/ folder results in a
     dimension mismatch error.
     """
-    settings.EMBEDDINGS_NAME = "huggingface_sentence-transformers/all-mpnet-base-v2"
+    settings.EMBEDDINGS_NAME = "openai_text-embedding-ada-002"
     with pytest.raises(ValueError):
         FaissStore("application/", "", None)
