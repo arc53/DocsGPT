@@ -5,8 +5,8 @@ prompt_user() {
     echo "Do you want to:"
     echo "1. Use DocsGPT public API (simple and free)"
     echo "2. Download the language model locally (12GB)"
-    echo "2. Use the OpenAI API (requires an API key)"
-    read -p "Enter your choice (1/2): " choice
+    echo "3. Use the OpenAI API (requires an API key)"
+    read -p "Enter your choice (1-3): " choice
 }
 
 # Function to handle the choice to download the model locally
@@ -88,10 +88,10 @@ case $choice in
     1)
         use_docsgpt
         ;;
-    1)
+    2)
         download_locally
         ;;
-    2)
+    3)
         use_openai
         ;;
     *)
