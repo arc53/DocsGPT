@@ -366,6 +366,6 @@ def api_search():
             source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
         else:
             source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
-        yield f"data:{data}\n\n"
+        #yield f"data:{data}\n\n"
     return source_log_docs
 
