@@ -117,12 +117,9 @@ def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conve
     source_log_docs = []
     for doc in docs:
         if doc.metadata:
-            data = json.dumps({"type": "source", "doc": doc.page_content[:10], "metadata": doc.metadata})
             source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
         else:
-            data = json.dumps({"type": "source", "doc": doc.page_content[:10]})
             source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
-        yield f"data:{data}\n\n"
 
     if len(chat_history) > 1:
         tokens_current_history = 0
