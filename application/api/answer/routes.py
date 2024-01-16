@@ -117,12 +117,9 @@ def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conve
     source_log_docs = []
     for doc in docs:
         if doc.metadata:
-            data = json.dumps({"type": "source", "doc": doc.page_content[:10], "metadata": doc.metadata})
             source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
         else:
-            data = json.dumps({"type": "source", "doc": doc.page_content[:10]})
             source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
-        yield f"data:{data}\n\n"
 
     if len(chat_history) > 1:
         tokens_current_history = 0
@@ -343,3 +340,32 @@ def api_answer():
         traceback.print_exc()
         print(str(e))
         return bad_request(500, str(e))
+
+
+@answer.route("/api/search", methods=["POST"])
+def api_search():
+    data = request.get_json()
+    # get parameter from url question
+    question = data["question"]
+
+    if not embeddings_key_set:
+        embeddings_key = data["embeddings_key"]
+    else:
+        embeddings_key = settings.EMBEDDINGS_KEY
+    if "active_docs" in data:
+        vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
+    else:
+        vectorstore = ""
+    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
+
+    docs = docsearch.search(question, k=2)
+
+    source_log_docs = []
+    for doc in docs:
+        if doc.metadata:
+            source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
+        else:
+            source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
+        #yield f"data:{data}\n\n"
+    return source_log_docs
+
