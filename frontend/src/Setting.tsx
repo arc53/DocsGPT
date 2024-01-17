@@ -10,7 +10,6 @@ import {
   selectSourceDocs,
 } from './preferences/preferenceSlice';
 import { Doc } from './preferences/preferenceApi';
-
 type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };
@@ -97,7 +96,7 @@ const Setting: React.FC = () => {
   };
 
   return (
-    <div className="p-4 pt-20 md:p-12">
+    <div className="p-4 pt-20 md:p-12 ">
       <p className="text-2xl font-bold text-eerie-black">Settings</p>
       <div className="mt-6 flex flex-row items-center space-x-4 overflow-x-auto md:space-x-8 ">
         <div className="md:hidden">
@@ -113,11 +112,10 @@ const Setting: React.FC = () => {
             <button
               key={index}
               onClick={() => setActiveTab(tab)}
-              className={`h-9 rounded-3xl px-4 font-bold ${
-                activeTab === tab
+              className={`h-9 rounded-3xl px-4 font-bold ${activeTab === tab
                   ? 'bg-purple-3000 text-purple-30'
                   : 'text-gray-6000'
-              }`}
+                }`}
             >
               {tab}
             </button>
@@ -187,10 +185,19 @@ const Setting: React.FC = () => {
 };
 
 const General: React.FC = () => {
-  const themes = ['Light'];
+  const themes = ['Light', 'Dark'];
   const languages = ['English'];
-  const [selectedTheme, setSelectedTheme] = useState(themes[0]);
+  const [selectedTheme, setSelectedTheme] = useState(localStorage.getItem('selectedTheme') || themes[0]);
   const [selectedLanguage, setSelectedLanguage] = useState(languages[0]);
+
+  useEffect(() => {
+    if (selectedTheme === 'Dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('selectedTheme', selectedTheme);
+  }, [selectedTheme]);
 
   return (
     <div className="mt-[59px]">
@@ -380,33 +387,30 @@ const Prompts: React.FC<PromptProps> = ({
 
       <div className="flex justify-between">
         <button
-          className={`rounded-lg bg-green-500 px-4 py-2 font-bold text-white transition-all hover:bg-green-700 ${
-            newPromptName === selectedPrompt.name
+          className={`rounded-lg bg-green-500 px-4 py-2 font-bold text-white transition-all hover:bg-green-700 ${newPromptName === selectedPrompt.name
               ? 'cursor-not-allowed opacity-50'
               : ''
-          }`}
+            }`}
           onClick={handleAddPrompt}
           disabled={newPromptName === selectedPrompt.name}
         >
           Add New Prompt
         </button>
         <button
-          className={`rounded-lg bg-red-500 px-4 py-2 font-bold text-white transition-all hover:bg-red-700 ${
-            selectedPrompt.type === 'public'
+          className={`rounded-lg bg-red-500 px-4 py-2 font-bold text-white transition-all hover:bg-red-700 ${selectedPrompt.type === 'public'
               ? 'cursor-not-allowed opacity-50'
               : ''
-          }`}
+            }`}
           onClick={handleDeletePrompt}
           disabled={selectedPrompt.type === 'public'}
         >
           Delete Prompt
         </button>
         <button
-          className={`rounded-lg bg-blue-500 px-4 py-2 font-bold text-white transition-all hover:bg-blue-700 ${
-            selectedPrompt.type === 'public'
+          className={`rounded-lg bg-blue-500 px-4 py-2 font-bold text-white transition-all hover:bg-blue-700 ${selectedPrompt.type === 'public'
               ? 'cursor-not-allowed opacity-50'
               : ''
-          }`}
+            }`}
           onClick={handleSaveChanges}
           disabled={selectedPrompt.type === 'public'}
         >
@@ -440,9 +444,8 @@ function DropdownPrompt({
         <img
           src={Arrow2}
           alt="arrow"
-          className={`transform ${
-            isOpen ? 'rotate-180' : 'rotate-0'
-          } h-3 w-3 transition-transform`}
+          className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'
+            } h-3 w-3 transition-transform`}
         />
       </button>
       {isOpen && (
@@ -496,9 +499,8 @@ function Dropdown({
         <img
           src={Arrow2}
           alt="arrow"
-          className={`transform ${
-            isOpen ? 'rotate-180' : 'rotate-0'
-          } h-3 w-3 transition-transform`}
+          className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'
+            } h-3 w-3 transition-transform`}
         />
       </button>
       {isOpen && (

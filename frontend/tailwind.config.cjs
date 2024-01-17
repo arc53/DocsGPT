@@ -35,6 +35,7 @@ module.exports = {
         'dove-gray': '#6c6c6c',
         silver: '#c4c4c4',
         'rainy-gray': '#a4a4a4',
+        'dark-bg':'#222327'
       },
     },
   },
