@@ -174,7 +174,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     <>
       {!navOpen && (
         <button
-          className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
+          className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block"
           onClick={() => {
             setNavOpen(!navOpen);
           }}
@@ -192,7 +192,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white dark:bg-chinese-black transition-all dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -228,8 +228,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }}
           className={({ isActive }) =>
             `${
-              isActive ? 'bg-gray-3000' : ''
-            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+              isActive ? 'bg-gray-3000 dark:bg-black' : ''
+            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray dark:border-purple-taupe dark:text-white hover:dark:bg-black hover:bg-gray-3000`
           }
         >
           <img
@@ -237,11 +237,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="new"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 ">
+          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-white dark:group-hover:text-white">
             New Chat
           </p>
         </NavLink>
-        <div className="mb-auto h-[56vh] overflow-x-hidden  overflow-y-scroll">
+        <div className="mb-auto h-[56vh] overflow-x-hidden dark:text-white overflow-y-scroll">
           {conversations && (
             <div>
               <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
@@ -262,11 +262,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
         </div>
 
-        <div className="flex h-auto flex-col justify-end">
+        <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-2">
             <div className="relative my-4 flex gap-2 px-2">
               <div
-                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 bg-white"
+                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 bg-white dark:bg-chinese-black"
                 onClick={() => setIsDocsListOpen(!isDocsListOpen)}
               >
                 {selectedDocs && (
@@ -288,7 +288,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 onClick={() => setUploadModalState('ACTIVE')}
               ></img>
               {isDocsListOpen && (
-                <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
+                <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white dark:bg-chinese-black shadow-lg">
                   {docs ? (
                     docs.map((doc, index) => {
                       if (doc.model === embeddingsName) {
@@ -299,7 +299,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                               dispatch(setSelectedDocs(doc));
                               setIsDocsListOpen(false);
                             }}
-                            className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
+                            className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-black"
                           >
                             <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
                               {doc.name} {doc.version}
@@ -334,8 +334,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <NavLink
               to="/settings"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
-                  isActive ? 'bg-gray-3000' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-black ${
+                  isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
             >
@@ -344,7 +344,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 alt="settings"
                 className="ml-2 w-5 opacity-60"
               />
-              <p className="my-auto text-sm text-eerie-black">Settings</p>
+              <p className="my-auto text-sm text-eerie-black  dark:text-white">Settings</p>
             </NavLink>
           </div>
 
@@ -352,36 +352,36 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <NavLink
               to="/about"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-black ${
                   isActive ? 'bg-gray-3000' : ''
                 }`
               }
             >
               <img src={Info} alt="info" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">About</p>
+              <p className="my-auto text-sm">About</p>
             </NavLink>
 
             <a
               href="https://docs.docsgpt.co.uk/"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-black"
             >
               <img
                 src={Documentation}
                 alt="documentation"
                 className="ml-2 w-5"
               />
-              <p className="my-auto text-sm text-eerie-black">Documentation</p>
+              <p className="my-auto text-sm ">Documentation</p>
             </a>
             <a
               href="https://discord.gg/WHJdfbQDR4"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-black"
             >
               <img src={Discord} alt="discord-link" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">
+              <p className="my-auto text-sm">
                 Visit our Discord
               </p>
             </a>
@@ -390,10 +390,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               href="https://github.com/arc53/DocsGPT"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-black"
             >
               <img src={Github} alt="github-link" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">
+              <p className="my-auto text-sm">
                 Visit our Github
               </p>
             </a>

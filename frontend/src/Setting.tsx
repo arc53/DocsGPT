@@ -96,7 +96,7 @@ const Setting: React.FC = () => {
   };
 
   return (
-    <div className="p-4 pt-20 md:p-12 ">
+    <div className="p-4 pt-20 md:p-12 wa">
       <p className="text-2xl font-bold text-eerie-black">Settings</p>
       <div className="mt-6 flex flex-row items-center space-x-4 overflow-x-auto md:space-x-8 ">
         <div className="md:hidden">

@@ -32,10 +32,14 @@ module.exports = {
         'green-2000': '#0FFF50',
         'light-gray': '#edeef0',
         'white-3000': '#ffffff',
+        'just-black':"#00000",
+        'purple-taupe':'#464152',
         'dove-gray': '#6c6c6c',
         silver: '#c4c4c4',
         'rainy-gray': '#a4a4a4',
-        'dark-bg':'#222327'
+        'dark-bg':'#222327',
+        'chinese-black':'#161616',
+        'dark-charcoal':'#2F3036'
       },
     },
   },

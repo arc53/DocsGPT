@@ -5,7 +5,7 @@ import About from './About';
 import PageNotFound from './PageNotFound';
 import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
-import { useState } from 'react';
+import { useState,useEffect } from 'react';
 import Setting from './Setting';
 
 inject();
@@ -13,7 +13,14 @@ inject();
 export default function App() {
   const { isMobile } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!isMobile);
-
+  const selectedTheme = localStorage.getItem('selectedTheme');
+  useEffect(()=>{
+    if (selectedTheme === 'Dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  },[])
   return (
     <div className="min-h-full min-w-full">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />

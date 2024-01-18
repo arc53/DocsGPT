@@ -67,7 +67,7 @@ export default function ConversationTile({
       onClick={() => {
         selectConversation(conversation.id);
       }}
-      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
+      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-black ${
         conversationId === conversation.id ? 'bg-gray-100' : ''
       }`}
     >
@@ -76,7 +76,7 @@ export default function ConversationTile({
           conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
         } gap-4`}
       >
-        <img src={Message} className="ml-4 w-5"></img>
+        <img src={Message} className="ml-4 w-5 dark:text-white"/>
         {isEdit ? (
           <input
             autoFocus
@@ -86,17 +86,17 @@ export default function ConversationTile({
             onChange={(e) => setConversationsName(e.target.value)}
           />
         ) : (
-          <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black">
+          <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black dark:text-white">
             {conversationName}
           </p>
         )}
       </div>
       {conversationId === conversation.id && (
-        <div className="flex">
+        <div className="flex text-white dark:text-[#949494]">
           <img
             src={isEdit ? CheckMark2 : Edit}
             alt="Edit"
-            className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50"
+            className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50 text-white"
             id={`img-${conversation.id}`}
             onClick={(event) => {
               event.stopPropagation();
