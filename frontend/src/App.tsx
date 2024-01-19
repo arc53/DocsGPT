@@ -22,7 +22,7 @@ export default function App() {
     }
   },[])
   return (
-    <div className="min-h-full min-w-full">
+    <div className="min-h-full min-w-full dark:bg-dark-charcoal">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <div
         className={`transition-all duration-200 ${

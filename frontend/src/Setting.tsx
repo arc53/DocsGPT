@@ -97,7 +97,7 @@ const Setting: React.FC = () => {
 
   return (
     <div className="p-4 pt-20 md:p-12 wa">
-      <p className="text-2xl font-bold text-eerie-black">Settings</p>
+      <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">Settings</p>
       <div className="mt-6 flex flex-row items-center space-x-4 overflow-x-auto md:space-x-8 ">
         <div className="md:hidden">
           <button
@@ -113,7 +113,7 @@ const Setting: React.FC = () => {
               key={index}
               onClick={() => setActiveTab(tab)}
               className={`h-9 rounded-3xl px-4 font-bold ${activeTab === tab
-                  ? 'bg-purple-3000 text-purple-30'
+                  ? 'bg-purple-3000 text-purple-30 dark:bg-purple-taupe'
                   : 'text-gray-6000'
                 }`}
             >
@@ -202,7 +202,7 @@ const General: React.FC = () => {
   return (
     <div className="mt-[59px]">
       <div className="mb-4">
-        <p className="font-bold text-jet">Select Theme</p>
+        <p className="font-bold text-jet dark:text-bright-gray">Select Theme</p>
         <Dropdown
           options={themes}
           selectedValue={selectedTheme}
@@ -210,7 +210,7 @@ const General: React.FC = () => {
         />
       </div>
       <div>
-        <p className="font-bold text-jet">Select Language</p>
+        <p className="font-bold text-jet dark:text-bright-gray">Select Language</p>
         <Dropdown
           options={languages}
           selectedValue={selectedLanguage}
@@ -353,7 +353,7 @@ const Prompts: React.FC<PromptProps> = ({
   return (
     <div className="mt-[59px]">
       <div className="mb-4">
-        <p className="font-semibold">Active Prompt</p>
+        <p className="font-semibold dark:text-bright-gray">Active Prompt</p>
         <DropdownPrompt
           options={prompts}
           selectedValue={selectedPrompt.name}
@@ -362,23 +362,23 @@ const Prompts: React.FC<PromptProps> = ({
       </div>
 
       <div className="mb-4">
-        <p>Prompt name </p>{' '}
-        <p className="mb-2 text-xs italic text-eerie-black text-gray-500">
+        <p className='dark:text-bright-gray'>Prompt name </p>{' '}
+        <p className="mb-2 text-xs italic text-eerie-black dark:text-bright-gray">
           start by editing name
         </p>
         <input
           type="text"
           value={newPromptName}
           placeholder="Active Prompt Name"
-          className="w-full rounded-lg border-2 p-2"
+          className="w-full rounded-lg border-2 p-2 dark:border-bright-gray dark:bg-transparent dark:text-white"
           onChange={(e) => setNewPromptName(e.target.value)}
         />
       </div>
 
       <div className="mb-4">
-        <p className="mb-2">Prompt content</p>
+        <p className="mb-2 dark:text-bright-gray">Prompt content</p>
         <textarea
-          className="h-32 w-full rounded-lg  border-2 p-2"
+          className="h-32 w-full rounded-lg  border-2 p-2 dark:border-bright-gray dark:text-white dark:bg-transparent"
           value={newPromptContent}
           onChange={(e) => setNewPromptContent(e.target.value)}
           placeholder="Active prompt contents"
@@ -436,9 +436,9 @@ function DropdownPrompt({
     <div className="relative mt-2 w-32">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3"
+        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3 dark:bg-transparent"
       >
-        <span className="flex-1 overflow-hidden text-ellipsis">
+        <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
           {selectedValue}
         </span>
         <img
@@ -449,11 +449,11 @@ function DropdownPrompt({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white shadow-lg">
+        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white dark:bg-dark-charcoal  shadow-lg">
           {options.map((option, index) => (
             <div
               key={index}
-              className="flex cursor-pointer items-center justify-between hover:bg-gray-100"
+              className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe dark:text-bright-gray "
             >
               <span
                 onClick={() => {
@@ -491,9 +491,9 @@ function Dropdown({
     <div className="relative mt-2 w-32">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3"
+        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3 dark:bg-transparent"
       >
-        <span className="flex-1 overflow-hidden text-ellipsis">
+        <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
           {selectedValue}
         </span>
         <img
@@ -504,18 +504,18 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white shadow-lg">
+        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white dark:bg-dark-charcoal shadow-lg">
           {options.map((option, index) => (
             <div
               key={index}
-              className="flex cursor-pointer items-center justify-between hover:bg-gray-100"
+              className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
               <span
                 onClick={() => {
                   onSelect(option);
                   setIsOpen(false);
                 }}
-                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
+                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray"
               >
                 {option}
               </span>
@@ -589,12 +589,12 @@ const Documents: React.FC<DocumentsProps> = ({
         {/* <h2 className="text-xl font-semibold">Documents</h2> */}
 
         <div className="mt-[27px] overflow-x-auto">
-          <table className="block w-full table-auto content-center justify-center text-center">
+          <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray" >
             <thead>
               <tr>
-                <th className="border px-4 py-2">Document Name</th>
-                <th className="border px-4 py-2">Vector Date</th>
-                <th className="border px-4 py-2">Type</th>
+                <th className="border p-4 md:w-[244px]">Document Name</th>
+                <th className="border px-4 py-2 w-[244px]">Vector Date</th>
+                <th className="border px-4 py-2 w-[244px]">Type</th>
                 <th className="border px-4 py-2"></th>
               </tr>
             </thead>
