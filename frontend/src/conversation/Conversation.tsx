@@ -11,6 +11,7 @@ import {
   updateQuery,
 } from './conversationSlice';
 import Send from './../assets/send.svg';
+import SendDark from './../assets/send_dark.svg'
 import Spinner from './../assets/spinner.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
@@ -152,7 +153,7 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
-      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white pt-3 md:fixed md:w-[65%]">
+      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white dark:bg-dark-charcoal pt-3 md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
           <div
             id="inputbox"
@@ -161,7 +162,7 @@ export default function Conversation() {
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
-            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-3xl border bg-white py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none`}
+            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-3xl border bg-white dark:bg-transparent dark:text-bright-gray py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -180,19 +181,19 @@ export default function Conversation() {
           ) : (
             <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
               <img
-                className="ml-[9px] mt-[9px]"
+                className="ml-[9px] mt-[9px] text-white"
                 onClick={() => {
                   if (inputRef.current?.textContent) {
                     handleQuestion(inputRef.current.textContent);
                     inputRef.current.textContent = '';
                   }
                 }}
-                src={Send}
+                src={localStorage.getItem('selectedTheme') === 'Dark' ? SendDark : Send}
               ></img>
             </div>
           )}
         </div>
-        <p className="text-gray-595959 w-[100vw] self-center bg-white p-5 text-center text-xs md:w-full">
+        <p className="text-gray-595959 dark:text-bright-gray w-[100vw] self-center bg-white dark:bg-dark-charcoal p-5 text-center text-xs md:w-full">
           This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
           questions.
         </p>

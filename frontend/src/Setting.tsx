@@ -588,28 +588,28 @@ const Documents: React.FC<DocumentsProps> = ({
       <div className="flex flex-col">
         {/* <h2 className="text-xl font-semibold">Documents</h2> */}
 
-        <div className="mt-[27px] overflow-x-auto">
+        <div className="mt-[27px] overflow-x-auto border rounded-xl w-max">
           <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray" >
             <thead>
               <tr>
-                <th className="border p-4 md:w-[244px]">Document Name</th>
-                <th className="border px-4 py-2 w-[244px]">Vector Date</th>
-                <th className="border px-4 py-2 w-[244px]">Type</th>
-                <th className="border px-4 py-2"></th>
+                <th className="border-r p-4 md:w-[244px]">Document Name</th>
+                <th className="border-r px-4 py-2 w-[244px]">Vector Date</th>
+                <th className="border-r px-4 py-2 w-[244px]">Type</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {documents &&
                 documents.map((document, index) => (
                   <tr key={index}>
-                    <td className="border px-4 py-2">{document.name}</td>
-                    <td className="border px-4 py-2">{document.date}</td>
-                    <td className="border px-4 py-2">
+                    <td className="border-r border-t px-4 py-2">{document.name}</td>
+                    <td className="border-r border-t px-4 py-2">{document.date}</td>
+                    <td className="border-r border-t px-4 py-2">
                       {document.location === 'remote'
                         ? 'Pre-loaded'
                         : 'Private'}
                     </td>
-                    <td className="border px-4 py-2">
+                    <td className="border-t px-4 py-2">
                       {document.location !== 'remote' && (
                         <img
                           src={Trash}

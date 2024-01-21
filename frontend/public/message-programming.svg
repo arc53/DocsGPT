@@ -1,6 +1,10 @@
 <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12.75 28.455H12C6 28.455 3 26.955 3 19.455V11.955C3 5.95496 6 2.95496 12 2.95496H24C30 2.95496 33 5.95496 33 11.955V19.455C33 25.455 30 28.455 24 28.455H23.25C22.785 28.455 22.335 28.68 22.05 29.055L19.8 32.055C18.81 33.375 17.19 33.375 16.2 32.055L13.95 29.055C13.71 28.725 13.17 28.455 12.75 28.455Z" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M12 13.05L9 16.05L12 19.05" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M24 13.05L27 16.05L24 19.05" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M19.5 12.5549L16.5 19.545" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<g id="vuesax/linear/message-programming">
+<g id="message-programming">
+<path id="Vector" d="M12.75 28.455H12C6 28.455 3 26.955 3 19.455V11.955C3 5.95496 6 2.95496 12 2.95496H24C30 2.95496 33 5.95496 33 11.955V19.455C33 25.455 30 28.455 24 28.455H23.25C22.785 28.455 22.335 28.68 22.05 29.055L19.8 32.055C18.81 33.375 17.19 33.375 16.2 32.055L13.95 29.055C13.71 28.725 13.17 28.455 12.75 28.455Z" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M12 13.05L9 16.05L12 19.05" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_3" d="M24 13.05L27 16.05L24 19.05" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M19.5 12.555L16.5 19.545" stroke="#3E3434" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
 </svg>

@@ -175,33 +175,33 @@ export default function Upload({
   } else {
     view = (
       <>
-        <p className="text-xl text-jet">Upload New Documentation</p>
+        <p className="text-xl text-jet dark:text-bright-gray">Upload New Documentation</p>
         <p className="mb-3 text-xs text-gray-4000">
           Please upload .pdf, .txt, .rst, .docx, .md, .zip limited to 25mb
         </p>
         <input
           type="text"
-          className="h-10 w-[60%] rounded-md border-2 border-gray-5000 px-3 outline-none"
+          className="h-10 w-[60%] rounded-md border-2 border-gray-5000 dark:text-silver dark:bg-transparent px-3 outline-none"
           value={docName}
           onChange={(e) => setDocName(e.target.value)}
         ></input>
         <div className="relative bottom-12 left-2 mt-[-18.39px]">
-          <span className="bg-white px-2 text-xs text-gray-4000">Name</span>
+          <span className="bg-white px-2 text-xs text-gray-4000 dark:text-silver dark:bg-outer-space">Name</span>
         </div>
         <div {...getRootProps()}>
-          <span className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer">
+          <span className="rounded-3xl border border-purple-30 dark:bg-purple-taupe px-4 py-2 font-medium text-purple-30 dark:text-silver hover:cursor-pointer">
             <input type="button" {...getInputProps()} />
             Choose Files
           </span>
         </div>
         <div className="mt-9">
-          <p className="mb-5 font-medium text-eerie-black">Uploaded Files</p>
+          <p className="mb-5 font-medium text-eerie-black dark:text-light-gray">Uploaded Files</p>
           {files.map((file) => (
             <p key={file.name} className="text-gray-6000">
               {file.name}
             </p>
           ))}
-          {files.length === 0 && <p className="text-gray-6000">None</p>}
+          {files.length === 0 && <p className="text-gray-6000 dark:text-light-gray">None</p>}
         </div>
         <div className="flex flex-row-reverse">
           <button
@@ -221,7 +221,7 @@ export default function Upload({
               setfiles([]);
               setModalState('INACTIVE');
             }}
-            className="font-medium"
+            className="font-medium dark:text-light-gray"
           >
             Cancel
           </button>
@@ -236,7 +236,7 @@ export default function Upload({
         modalState === 'ACTIVE' ? 'visible' : 'hidden'
       } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
-      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg">
+      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white dark:bg-outer-space p-6 shadow-lg">
         {view}
       </article>
     </article>
