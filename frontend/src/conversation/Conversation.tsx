@@ -23,7 +23,7 @@ export default function Conversation() {
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
-
+  const isDarkTheme = document.documentElement.classList.contains('dark');
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
 
   useEffect(() => {
@@ -122,7 +122,7 @@ export default function Conversation() {
         <button
           onClick={scrollIntoView}
           aria-label="scroll to bottom"
-          className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 md:h-9 md:w-9 md:bg-opacity-100 "
+          className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 dark:bg-purple-taupe bg-opacity-50 md:h-9 md:w-9 md:bg-opacity-100 "
         >
           <img
             src={ArrowDown}
@@ -153,7 +153,7 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
-      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white dark:bg-dark-charcoal pt-3 md:fixed md:w-[65%]">
+      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white dark:bg-raisin-black pt-3 md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
           <div
             id="inputbox"
@@ -188,12 +188,12 @@ export default function Conversation() {
                     inputRef.current.textContent = '';
                   }
                 }}
-                src={localStorage.getItem('selectedTheme') === 'Dark' ? SendDark : Send}
+                src={isDarkTheme ? SendDark : Send}
               ></img>
             </div>
           )}
         </div>
-        <p className="text-gray-595959 dark:text-bright-gray w-[100vw] self-center bg-white dark:bg-dark-charcoal p-5 text-center text-xs md:w-full">
+        <p className="text-gray-595959 dark:text-bright-gray w-[100vw] self-center bg-transparent p-5 text-center text-xs md:w-full">
           This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
           questions.
         </p>

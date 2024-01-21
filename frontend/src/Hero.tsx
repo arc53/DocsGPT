@@ -4,7 +4,8 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 export default function Hero({ className = '' }: { className?: string }) {
   // const isMobile = window.innerWidth <= 768;
   const { isMobile } = useMediaQuery();
-  const isDarkTheme = localStorage.getItem('selectedTheme') === 'Dark';
+  const isDarkTheme = document.documentElement.classList.contains('dark');
+  console.log(isDarkTheme)
   return (
     <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'}flex flex-col text-black-1000 dark:text-bright-gray`}>
       <div className=" mb-2 flex items-center justify-center sm:mb-10">

@@ -37,11 +37,13 @@ module.exports = {
         'dove-gray': '#6c6c6c',
         'silver': '#c4c4c4',
         'rainy-gray': '#a4a4a4',
-        'dark-bg':'#222327',
+        'raisin-black':'#222327',
         'chinese-black':'#161616',
+        'chinese-silver':'#CDCDCD',
         'dark-charcoal':'#2F3036',
         'bright-gray':'#ECECF1',
-        'outer-space':'#444654'
+        'outer-space':'#444654',
+        'gun-metal':'#2E303E'
       },
     },
   },

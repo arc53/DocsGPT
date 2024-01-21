@@ -193,6 +193,7 @@ const General: React.FC = () => {
   useEffect(() => {
     if (selectedTheme === 'Dark') {
       document.documentElement.classList.add('dark');
+      document.documentElement.classList.add('dark:bg-raisin-black');
     } else {
       document.documentElement.classList.remove('dark');
     }
