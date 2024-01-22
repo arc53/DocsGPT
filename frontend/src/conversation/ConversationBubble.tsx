@@ -202,10 +202,8 @@ const ConversationBubble = forwardRef<
           >
             <div className="absolute left-2 top-4">
               <div
-                className="flex items-center justify-center rounded-full p-2"
-                style={{
-                  backgroundColor: isCopyHovered ? '#EEEEEE' : '#ffffff',
-                }}
+                className={`flex items-center justify-center rounded-full p-2 
+                ${isCopyHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}
               >
                 {copied ? (
                   <CheckMark
@@ -237,21 +235,12 @@ const ConversationBubble = forwardRef<
           >
             <div className="absolute left-6 top-4">
               <div
-                className="flex items-center justify-center rounded-full p-2 dark:bg-transparent"
-                style={{
-                  backgroundColor: isLikeHovered
-                    ? isLikeClicked
-                      ? 'rgba(125, 84, 209, 0.3)'
-                      : '#EEEEEE'
-                    : isLikeClicked
-                    ? 'rgba(125, 84, 209, 0.3)'
-                    : '#ffffff',
-                }}
+                className={`flex items-center justify-center rounded-full p-2 dark:bg-transparent ${isLikeHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}
               >
                 <Like
-                  className={`cursor-pointer ${
-                    isLikeClicked || feedback === 'LIKE'
-                      ? 'fill-white-3000 stroke-purple-30'
+                  className={`cursor-pointer 
+                  ${isLikeClicked || feedback === 'LIKE'
+                      ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
                       : 'fill-none  stroke-gray-4000'
                   }`}
                   onClick={() => {
@@ -276,21 +265,13 @@ const ConversationBubble = forwardRef<
           >
             <div className="absolute left-10 top-4">
               <div
-                className="flex items-center justify-center rounded-full p-2"
-                style={{
-                  backgroundColor: isDislikeHovered
-                    ? isDislikeClicked
-                      ? 'rgba(248, 113, 113, 0.3)'
-                      : '#EEEEEE'
-                    : isDislikeClicked
-                    ? 'rgba(248, 113, 113, 0.3)'
-                    : '#ffffff',
-                }}
+                
+                className={`flex items-center justify-center rounded-full p-2 ${isDislikeHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}
               >
                 <Dislike
                   className={`cursor-pointer ${
                     isDislikeClicked || feedback === 'DISLIKE'
-                      ? 'fill-white-3000 stroke-red-2000'
+                      ? 'fill-white-3000 dark:fill-transparent stroke-red-2000'
                       : 'fill-none  stroke-gray-4000'
                   }`}
                   onClick={() => {

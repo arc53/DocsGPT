@@ -5,7 +5,7 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 export default function About() {
   return (
     <div className="mx-5 grid min-h-screen md:mx-36">
-      <article className="place-items-left mx-auto my-auto flex w-full max-w-6xl flex-col gap-4 rounded-3xl bg-gray-100 p-6 text-jet lg:p-6 xl:p-10">
+      <article className="place-items-left mx-auto my-auto flex w-full max-w-6xl flex-col gap-4 rounded-3xl bg-gray-100 dark:bg-gun-metal p-6 text-jet dark:text-bright-gray lg:p-6 xl:p-10">
         <div className="flex items-center">
           <p className="mr-2 text-3xl">About DocsGPT</p>
           <img className="h14 mb-2" src={DocsGPT3} alt="DocsGPT" />
@@ -31,23 +31,23 @@ export default function About() {
           </p>
           <p className="mt-4 ml-2">
             1. Navigate to{' '}
-            <span className="bg-gray-200 italic"> /application</span> folder
+            <span className="bg-gray-200 dark:bg-outer-space italic"> /application</span> folder
           </p>
           <p className="mt-4 ml-2">
             2. Install dependencies from{' '}
-            <span className="bg-gray-200 italic">
+            <span className="bg-gray-200 dark:bg-outer-space italic">
               pip install -r requirements.txt
             </span>
           </p>
           <p className="mt-4 ml-2">
-            3. Prepare a <span className="bg-gray-200 italic">.env</span> file.
-            Copy <span className="bg-gray-200 italic">.env_sample</span> and
-            create <span className="bg-gray-200 italic">.env</span> with your
+            3. Prepare a <span className="bg-gray-200 dark:bg-outer-space italic">.env</span> file.
+            Copy <span className="bg-gray-200 dark:bg-outer-space italic">.env_sample</span> and
+            create <span className="bg-gray-200 dark:bg-outer-space italic">.env</span> with your
             OpenAI API token
           </p>
           <p className="mt-4 ml-2">
             4. Run the app with{' '}
-            <span className="bg-gray-200 italic">python app.py</span>
+            <span className="bg-gray-200 dark:bg-outer-space italic">python app.py</span>
           </p>
         </div>
 

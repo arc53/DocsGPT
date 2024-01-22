@@ -176,7 +176,7 @@ export default function Conversation() {
           {status === 'loading' ? (
             <img
               src={Spinner}
-              className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end"
+              className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
             <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
