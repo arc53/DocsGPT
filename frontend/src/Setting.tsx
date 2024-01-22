@@ -113,7 +113,7 @@ const Setting: React.FC = () => {
               key={index}
               onClick={() => setActiveTab(tab)}
               className={`h-9 rounded-3xl px-4 font-bold ${activeTab === tab
-                  ? 'bg-purple-3000 text-purple-30 dark:bg-purple-taupe'
+                  ? 'bg-purple-3000 text-purple-30 dark:bg-dark-charcoal'
                   : 'text-gray-6000'
                 }`}
             >
@@ -371,7 +371,7 @@ const Prompts: React.FC<PromptProps> = ({
           type="text"
           value={newPromptName}
           placeholder="Active Prompt Name"
-          className="w-full rounded-lg border-2 p-2 dark:border-bright-gray dark:bg-transparent dark:text-white"
+          className="w-full rounded-lg border-2 p-2 dark:border-chinese-silver dark:bg-transparent dark:text-white"
           onChange={(e) => setNewPromptName(e.target.value)}
         />
       </div>
@@ -379,7 +379,7 @@ const Prompts: React.FC<PromptProps> = ({
       <div className="mb-4">
         <p className="mb-2 dark:text-bright-gray">Prompt content</p>
         <textarea
-          className="h-32 w-full rounded-lg  border-2 p-2 dark:border-bright-gray dark:text-white dark:bg-transparent"
+          className="h-32 w-full rounded-lg  border-2 p-2 dark:border-chinese-silver dark:text-white dark:bg-transparent"
           value={newPromptContent}
           onChange={(e) => setNewPromptContent(e.target.value)}
           placeholder="Active prompt contents"
@@ -437,7 +437,7 @@ function DropdownPrompt({
     <div className="relative mt-2 w-32">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3 dark:bg-transparent"
+        className="flex w-full cursor-pointer items-center rounded-xl border-2 dark:border-chinese-silver bg-white p-3 dark:bg-transparent"
       >
         <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
           {selectedValue}
@@ -450,7 +450,7 @@ function DropdownPrompt({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white dark:bg-dark-charcoal  shadow-lg">
+        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 dark:border-chinese-silver bg-white dark:bg-dark-charcoal  shadow-lg">
           {options.map((option, index) => (
             <div
               key={index}
@@ -492,7 +492,7 @@ function Dropdown({
     <div className="relative mt-2 w-32">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-xl border-2 bg-white p-3 dark:bg-transparent"
+        className="flex w-full cursor-pointer items-center rounded-xl border-2 dark:border-chinese-silver bg-white p-3 dark:bg-transparent"
       >
         <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
           {selectedValue}
@@ -505,7 +505,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white dark:bg-dark-charcoal shadow-lg">
+        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white dark:border-chinese-silver dark:bg-dark-charcoal shadow-lg">
           {options.map((option, index) => (
             <div
               key={index}
@@ -556,7 +556,7 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
           placeholder="Enter Prompt Name"
           value={newPromptName}
           onChange={(e) => onNewPromptNameChange(e.target.value)}
-          className="mb-4 w-full rounded-3xl border-2 p-2"
+          className="mb-4 w-full rounded-3xl border-2 dark:border-chinese-silver p-2"
         />
         <button
           onClick={onAddPrompt}
@@ -589,7 +589,7 @@ const Documents: React.FC<DocumentsProps> = ({
       <div className="flex flex-col">
         {/* <h2 className="text-xl font-semibold">Documents</h2> */}
 
-        <div className="mt-[27px] overflow-x-auto border rounded-xl w-max">
+        <div className="mt-[27px] overflow-x-auto border dark:border-chinese-silver rounded-xl w-max">
           <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray" >
             <thead>
               <tr>
