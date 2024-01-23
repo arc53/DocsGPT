@@ -3,14 +3,21 @@ import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Documentation from './assets/documentation.svg';
+import DocumentationDark from './assets/documentation-dark.svg';
 import Discord from './assets/discord.svg';
+import DiscordDark from './assets/discord-dark.svg';
+
 import Arrow2 from './assets/dropdown-arrow.svg';
 import Expand from './assets/expand.svg';
 import Trash from './assets/trash.svg';
 import Github from './assets/github.svg';
+import GithubDark from './assets/github-dark.svg';
 import Hamburger from './assets/hamburger.svg';
+import HamburgerDark from './assets/hamburger-dark.svg';
 import Info from './assets/info.svg';
+import InfoDark from './assets/info-dark.svg';
 import SettingGear from './assets/settingGear.svg';
+import SettingGearDark from './assets/settingGear-dark.svg';
 import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
@@ -47,7 +54,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
   const { isMobile } = useMediaQuery();
-
+  const isDarkTheme = document.documentElement.classList.contains('dark');
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
@@ -174,7 +181,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     <>
       {!navOpen && (
         <button
-          className="duration-25 absolute sticky top-3 left-3 z-20 hidden transition-all md:block"
+          className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block"
           onClick={() => {
             setNavOpen(!navOpen);
           }}
@@ -182,17 +189,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <img
             src={Expand}
             alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
+            className={`${!navOpen ? 'rotate-180' : 'rotate-0'
+              } m-auto transition-all duration-200`}
           />
         </button>
       )}
       <div
         ref={navRef}
-        className={`${
-          !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-2 bg-white transition-all`}
+        className={`${!navOpen && '-ml-96 md:-ml-[18rem]'
+          } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 dark:border-r-purple-taupe bg-white dark:bg-chinese-black transition-all dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -210,9 +215,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img
               src={Expand}
               alt="menu toggle"
-              className={`${
-                !navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto transition-all duration-200`}
+              className={`${!navOpen ? 'rotate-180' : 'rotate-0'
+                } m-auto transition-all duration-200`}
             />
           </button>
         </div>
@@ -227,9 +231,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             );
           }}
           className={({ isActive }) =>
-            `${
-              isActive ? 'bg-gray-3000' : ''
-            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000`
+            `${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray dark:border-purple-taupe dark:text-white dark:hover:bg-transparent hover:bg-gray-3000`
           }
         >
           <img
@@ -237,11 +240,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="new"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 ">
+          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
             New Chat
           </p>
         </NavLink>
-        <div className="mb-auto h-[56vh] overflow-x-hidden  overflow-y-scroll">
+        <div className="mb-auto h-[56vh] overflow-x-hidden dark:text-white overflow-y-scroll">
           {conversations && (
             <div>
               <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
@@ -262,11 +265,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
         </div>
 
-        <div className="flex h-auto flex-col justify-end">
-          <div className="flex flex-col-reverse border-b-2">
+        <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
+          <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
             <div className="relative my-4 flex gap-2 px-2">
               <div
-                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 bg-white"
+                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 dark:border-chinese-silver bg-white dark:bg-chinese-black"
                 onClick={() => setIsDocsListOpen(!isDocsListOpen)}
               >
                 {selectedDocs && (
@@ -277,9 +280,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <img
                   src={Arrow2}
                   alt="arrow"
-                  className={`${
-                    !isDocsListOpen ? 'rotate-0' : 'rotate-180'
-                  } ml-auto mr-3 w-3 transition-all`}
+                  className={`${!isDocsListOpen ? 'rotate-0' : 'rotate-180'
+                    } ml-auto mr-3 w-3 transition-all`}
                 />
               </div>
               <img
@@ -288,7 +290,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 onClick={() => setUploadModalState('ACTIVE')}
               ></img>
               {isDocsListOpen && (
-                <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white shadow-lg">
+                <div className="absolute top-12 left-0 right-6 z-10 ml-2 mr-4 max-h-52 overflow-y-scroll bg-white dark:bg-chinese-black shadow-lg">
                   {docs ? (
                     docs.map((doc, index) => {
                       if (doc.model === embeddingsName) {
@@ -299,7 +301,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                               dispatch(setSelectedDocs(doc));
                               setIsDocsListOpen(false);
                             }}
-                            className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-2 hover:bg-gray-100"
+                            className="flex h-10 w-full cursor-pointer items-center justify-between border-x-2 border-b-[1px] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-purple-taupe"
                           >
                             <p className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
                               {doc.name} {doc.version}
@@ -321,7 +323,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       }
                     })
                   ) : (
-                    <div className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100">
+                    <div className="h-10 w-full cursor-pointer  border-b-[1px] dark:border-b-purple-taupe hover:bg-gray-100">
                       <p className="ml-5 py-3">No default documentation.</p>
                     </div>
                   )}
@@ -330,58 +332,56 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </div>
             <p className="ml-6 mt-3 text-sm font-semibold">Source Docs</p>
           </div>
-          <div className="flex flex-col gap-2 border-b-2 py-2">
+          <div className="flex flex-col gap-2 border-b-[1px] dark:border-b-purple-taupe py-2">
             <NavLink
               to="/settings"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
-                  isActive ? 'bg-gray-3000' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
             >
               <img
-                src={SettingGear}
+                src={isDarkTheme ? SettingGearDark : SettingGear}
                 alt="settings"
                 className="ml-2 w-5 opacity-60"
               />
-              <p className="my-auto text-sm text-eerie-black">Settings</p>
+              <p className="my-auto text-sm text-eerie-black  dark:text-white">Settings</p>
             </NavLink>
           </div>
 
-          <div className="flex flex-col gap-2 border-b-2 py-2">
+          <div className="flex flex-col gap-2 border-b-[1.5px] dark:border-b-purple-taupe py-2">
             <NavLink
               to="/about"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 ${
-                  isActive ? 'bg-gray-3000' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${isActive ? 'bg-gray-3000 dark:bg-purple-taupe' : ''
                 }`
               }
             >
-              <img src={Info} alt="info" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">About</p>
+              <img src={isDarkTheme ? InfoDark : Info} alt="info" className="ml-2 w-5" />
+              <p className="my-auto text-sm">About</p>
             </NavLink>
 
             <a
               href="https://docs.docsgpt.co.uk/"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
               <img
-                src={Documentation}
+                src={isDarkTheme ? DocumentationDark : Documentation}
                 alt="documentation"
                 className="ml-2 w-5"
               />
-              <p className="my-auto text-sm text-eerie-black">Documentation</p>
+              <p className="my-auto text-sm ">Documentation</p>
             </a>
             <a
               href="https://discord.gg/WHJdfbQDR4"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
-              <img src={Discord} alt="discord-link" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">
+              <img src={isDarkTheme ? DiscordDark : Discord} alt="discord-link" className="ml-2 w-5" />
+              <p className="my-auto text-sm">
                 Visit our Discord
               </p>
             </a>
@@ -390,22 +390,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               href="https://github.com/arc53/DocsGPT"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100"
+              className="mt-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
-              <img src={Github} alt="github-link" className="ml-2 w-5" />
-              <p className="my-auto text-sm text-eerie-black">
+              <img src={isDarkTheme ? GithubDark : Github} alt="github-link" className="ml-2 w-5" />
+              <p className="my-auto text-sm">
                 Visit our Github
               </p>
             </a>
           </div>
         </div>
       </div>
-      <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 md:hidden">
+      <div className="fixed z-10 h-16 w-full border-b-2 dark:border-b-purple-taupe bg-gray-50 dark:bg-chinese-black md:hidden">
         <button
           className="mt-5 ml-6 h-6 w-6 md:hidden"
           onClick={() => setNavOpen(true)}
         >
-          <img src={Hamburger} alt="menu toggle" className="w-7" />
+          <img src={isDarkTheme ? HamburgerDark :Hamburger} alt="menu toggle" className="w-7" />
         </button>
       </div>
       <SelectDocsModal

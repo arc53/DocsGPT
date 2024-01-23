@@ -3,6 +3,8 @@ import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
 import Message from '../assets/message.svg';
+import MessageDark from '../assets/message-dark.svg';
+
 import CheckMark2 from '../assets/checkMark2.svg';
 import Trash from '../assets/trash.svg';
 
@@ -27,7 +29,7 @@ export default function ConversationTile({
 }: ConversationTileProps) {
   const conversationId = useSelector(selectConversationId);
   const tileRef = useRef<HTMLInputElement>(null);
-
+  const isDarkTheme = document.documentElement.classList.contains('dark');
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
   // useOutsideAlerter(
@@ -67,16 +69,14 @@ export default function ConversationTile({
       onClick={() => {
         selectConversation(conversation.id);
       }}
-      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 ${
-        conversationId === conversation.id ? 'bg-gray-100' : ''
-      }`}
+      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${conversationId === conversation.id ? 'bg-gray-100 dark:bg-purple-taupe' : ''
+        }`}
     >
       <div
-        className={`flex ${
-          conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
-        } gap-4`}
+        className={`flex ${conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
+          } gap-4`}
       >
-        <img src={Message} className="ml-4 w-5"></img>
+        <img src={isDarkTheme ? MessageDark : Message} className="ml-4 w-5 dark:text-white" />
         {isEdit ? (
           <input
             autoFocus
@@ -86,34 +86,33 @@ export default function ConversationTile({
             onChange={(e) => setConversationsName(e.target.value)}
           />
         ) : (
-          <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black">
+          <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black dark:text-white">
             {conversationName}
           </p>
         )}
       </div>
       {conversationId === conversation.id && (
-        <div className="flex">
+        <div className="flex text-white dark:text-[#949494]">
           <img
             src={isEdit ? CheckMark2 : Edit}
             alt="Edit"
-            className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50"
+            className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50 text-white"
             id={`img-${conversation.id}`}
             onClick={(event) => {
               event.stopPropagation();
               isEdit
                 ? handleSaveConversation({
-                    id: conversationId,
-                    name: conversationName,
-                  })
+                  id: conversationId,
+                  name: conversationName,
+                })
                 : handleEditConversation();
             }}
           />
           <img
             src={isEdit ? Exit : Trash}
             alt="Exit"
-            className={`mr-4 ${
-              isEdit ? 'h-3 w-3' : 'h-4 w-4'
-            }mt-px  cursor-pointer hover:opacity-50`}
+            className={`mr-4 ${isEdit ? 'h-3 w-3' : 'h-4 w-4'
+              }mt-px  cursor-pointer hover:opacity-50`}
             id={`img-${conversation.id}`}
             onClick={(event) => {
               event.stopPropagation();

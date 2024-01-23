@@ -64,7 +64,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex self-start ${className} group flex-col pr-20`}
+        className={`flex self-start ${className} group flex-col pr-20  dark:text-bright-gray`}
       >
         <div className="flex self-start">
           <Avatar
@@ -79,7 +79,7 @@ const ConversationBubble = forwardRef<
           />
 
           <div
-            className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 p-3.5 ${
+            className={`ml-2 mr-5 flex rounded-3xl bg-gray-1000 dark:bg-gun-metal p-3.5 ${
               type === 'ERROR'
                 ? 'flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
@@ -202,10 +202,8 @@ const ConversationBubble = forwardRef<
           >
             <div className="absolute left-2 top-4">
               <div
-                className="flex items-center justify-center rounded-full p-2"
-                style={{
-                  backgroundColor: isCopyHovered ? '#EEEEEE' : '#ffffff',
-                }}
+                className={`flex items-center justify-center rounded-full p-2 
+                ${isCopyHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}
               >
                 {copied ? (
                   <CheckMark
@@ -237,21 +235,12 @@ const ConversationBubble = forwardRef<
           >
             <div className="absolute left-6 top-4">
               <div
-                className="flex items-center justify-center rounded-full p-2"
-                style={{
-                  backgroundColor: isLikeHovered
-                    ? isLikeClicked
-                      ? 'rgba(125, 84, 209, 0.3)'
-                      : '#EEEEEE'
-                    : isLikeClicked
-                    ? 'rgba(125, 84, 209, 0.3)'
-                    : '#ffffff',
-                }}
+                className={`flex items-center justify-center rounded-full p-2 dark:bg-transparent ${isLikeHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}
               >
                 <Like
-                  className={`cursor-pointer ${
-                    isLikeClicked || feedback === 'LIKE'
-                      ? 'fill-white-3000 stroke-purple-30'
+                  className={`cursor-pointer 
+                  ${isLikeClicked || feedback === 'LIKE'
+                      ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
                       : 'fill-none  stroke-gray-4000'
                   }`}
                   onClick={() => {
@@ -276,21 +265,13 @@ const ConversationBubble = forwardRef<
           >
             <div className="absolute left-10 top-4">
               <div
-                className="flex items-center justify-center rounded-full p-2"
-                style={{
-                  backgroundColor: isDislikeHovered
-                    ? isDislikeClicked
-                      ? 'rgba(248, 113, 113, 0.3)'
-                      : '#EEEEEE'
-                    : isDislikeClicked
-                    ? 'rgba(248, 113, 113, 0.3)'
-                    : '#ffffff',
-                }}
+                
+                className={`flex items-center justify-center rounded-full p-2 ${isDislikeHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}
               >
                 <Dislike
                   className={`cursor-pointer ${
                     isDislikeClicked || feedback === 'DISLIKE'
-                      ? 'fill-white-3000 stroke-red-2000'
+                      ? 'fill-white-3000 dark:fill-transparent stroke-red-2000'
                       : 'fill-none  stroke-gray-4000'
                   }`}
                   onClick={() => {
@@ -307,13 +288,13 @@ const ConversationBubble = forwardRef<
         </div>
 
         {sources && openSource !== null && sources[openSource] && (
-          <div className="ml-10 mt-2 max-w-[800px] rounded-xl bg-blue-200 p-2">
-            <p className="m-1 w-3/4 truncate text-xs text-gray-500">
+          <div className="ml-10 mt-2 max-w-[800px] rounded-xl bg-blue-200 dark:bg-gun-metal p-2">
+            <p className="m-1 w-3/4 truncate text-xs text-gray-500 dark:text-bright-gray">
               Source: {sources[openSource].title}
             </p>
 
-            <div className="m-2 rounded-xl border-2 border-gray-200 bg-white p-2">
-              <p className="text-break text-black">
+            <div className="m-2 rounded-xl border-2 border-gray-200 dark:border-chinese-silver bg-white dark:bg-dark-charcoal p-2">
+              <p className="text-break text-black dark:text-bright-gray">
                 {sources[openSource].text}
               </p>
             </div>
