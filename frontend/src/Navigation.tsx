@@ -240,7 +240,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="new"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-white dark:group-hover:text-white">
+          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
             New Chat
           </p>
         </NavLink>
@@ -269,7 +269,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
             <div className="relative my-4 flex gap-2 px-2">
               <div
-                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 bg-white dark:bg-chinese-black"
+                className="flex h-12 w-5/6 cursor-pointer justify-between rounded-3xl border-2 dark:border-chinese-silver bg-white dark:bg-chinese-black"
                 onClick={() => setIsDocsListOpen(!isDocsListOpen)}
               >
                 {selectedDocs && (
