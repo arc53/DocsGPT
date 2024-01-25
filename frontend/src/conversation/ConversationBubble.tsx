@@ -78,7 +78,7 @@ const ConversationBubble = forwardRef<
           />
 
           <div
-            className={`ml-2 md:max-w-[50vw] max-w-[90vw] mr-5 flex rounded-3xl bg-gray-1000 dark:bg-gun-metal p-3.5 ${type === 'ERROR'
+            className={`ml-2 lg:max-w-[50vw] md:max-w-[70vw] max-w-[90vw] mr-5 flex rounded-3xl bg-gray-1000 dark:bg-gun-metal p-3.5 ${type === 'ERROR'
               ? 'flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
               : 'flex-col rounded-3xl'
               }`}
@@ -281,7 +281,7 @@ const ConversationBubble = forwardRef<
         </div>
 
         {sources && openSource !== null && sources[openSource] && (
-          <div className="ml-10 mt-12 sm:mt-2 max-w-[300px] sm:max-w-[800px] break-words rounded-xl bg-blue-200 dark:bg-gun-metal p-2">
+          <div className="ml-10 mt-12 lg:mt-2 max-w-[300px] sm:max-w-[800px] break-words rounded-xl bg-blue-200 dark:bg-gun-metal p-2">
             <p className="m-1 w-3/4 truncate text-xs text-gray-500 dark:text-bright-gray">
               Source: {sources[openSource].title}
             </p>
