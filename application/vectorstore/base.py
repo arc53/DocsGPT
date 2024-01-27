@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 import os
-from langchain.embeddings import (
-    OpenAIEmbeddings,
+from langchain_community.embeddings import (
     HuggingFaceEmbeddings,
     CohereEmbeddings,
     HuggingFaceInstructEmbeddings,
 )
+from langchain_openai import OpenAIEmbeddings
 from application.core.settings import settings
 
 class BaseVectorStore(ABC):

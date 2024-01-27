@@ -6,9 +6,9 @@ from application.core.settings import settings
 from retry import retry
 
 
-# from langchain.embeddings import HuggingFaceEmbeddings
-# from langchain.embeddings import HuggingFaceInstructEmbeddings
-# from langchain.embeddings import CohereEmbeddings
+# from langchain_community.embeddings import HuggingFaceEmbeddings
+# from langchain_community.embeddings import HuggingFaceInstructEmbeddings
+# from langchain_community.embeddings import CohereEmbeddings
 
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
