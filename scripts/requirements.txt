@@ -10,7 +10,7 @@ langchain==0.1.4
 langchain_community==0.0.16
 langchain-openai==0.0.5
 nltk==3.8.1
-openapi_parser==0.2.6
+openapi3_parser==1.1.16
 pandas==2.2.0
 PyPDF2==3.0.1
 python-dotenv==1.0.1
