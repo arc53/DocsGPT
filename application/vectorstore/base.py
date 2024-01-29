@@ -46,7 +46,7 @@ class BaseVectorStore(ABC):
             )
         elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
             embedding_instance = embeddings_factory[embeddings_name](
-                model_name="./model/all-mpnet-base-v2",
+                #model_name="./model/all-mpnet-base-v2",
                 model_kwargs={"device": "cpu"},
             )
         else:
