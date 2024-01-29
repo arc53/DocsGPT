@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 import dotenv
-from langchain.llms import OpenAI
+from langchain_community.llms import OpenAI
 from langchain.prompts import PromptTemplate
 
 dotenv.load_dotenv()

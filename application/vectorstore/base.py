@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 import os
-from langchain.embeddings import (
-    OpenAIEmbeddings,
+from langchain_community.embeddings import (
     HuggingFaceEmbeddings,
     CohereEmbeddings,
     HuggingFaceInstructEmbeddings,
 )
+from langchain_openai import OpenAIEmbeddings
 from application.core.settings import settings
 
 class BaseVectorStore(ABC):
@@ -46,7 +46,7 @@ class BaseVectorStore(ABC):
             )
         elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
             embedding_instance = embeddings_factory[embeddings_name](
-                model_name="./model/all-mpnet-base-v2",
+                #model_name="./model/all-mpnet-base-v2",
                 model_kwargs={"device": "cpu"},
             )
         else:
