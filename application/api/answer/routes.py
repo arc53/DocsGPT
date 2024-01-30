@@ -349,7 +349,10 @@ def api_search():
     question = data["question"]
 
     if not embeddings_key_set:
-        embeddings_key = data["embeddings_key"]
+        if "embeddings_key" in data:
+            embeddings_key = data["embeddings_key"]
+        else:
+            embeddings_key = settings.EMBEDDINGS_KEY
     else:
         embeddings_key = settings.EMBEDDINGS_KEY
     if "active_docs" in data:
