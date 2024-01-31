@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useDarkTheme } from '../hooks';
 import Hero from '../Hero';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
@@ -23,7 +24,7 @@ export default function Conversation() {
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
-  const isDarkTheme = document.documentElement.classList.contains('dark');
+  const [isDarkTheme]= useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
 
   useEffect(() => {

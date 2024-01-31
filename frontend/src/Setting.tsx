@@ -10,6 +10,8 @@ import {
   selectSourceDocs,
 } from './preferences/preferenceSlice';
 import { Doc } from './preferences/preferenceApi';
+import { useDarkTheme } from './hooks';
+import { Light } from 'react-syntax-highlighter';
 type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };
@@ -187,19 +189,9 @@ const Setting: React.FC = () => {
 const General: React.FC = () => {
   const themes = ['Light', 'Dark'];
   const languages = ['English'];
-  const [selectedTheme, setSelectedTheme] = useState(localStorage.getItem('selectedTheme') || themes[0]);
+  const [isDarkTheme, toggleTheme] = useDarkTheme();
+  const [selectedTheme, setSelectedTheme] = useState(isDarkTheme ? 'Dark' : 'Light');
   const [selectedLanguage, setSelectedLanguage] = useState(languages[0]);
-
-  useEffect(() => {
-    if (selectedTheme === 'Dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.add('dark:bg-raisin-black');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('selectedTheme', selectedTheme);
-  }, [selectedTheme]);
-
   return (
     <div className="mt-[59px]">
       <div className="mb-4">
@@ -207,7 +199,10 @@ const General: React.FC = () => {
         <Dropdown
           options={themes}
           selectedValue={selectedTheme}
-          onSelect={setSelectedTheme}
+          onSelect={(option:string)=>{
+              setSelectedTheme(option);
+              option !==selectedTheme && toggleTheme();
+            }}
         />
       </div>
       <div>
