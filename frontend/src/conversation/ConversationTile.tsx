@@ -4,7 +4,7 @@ import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
 import Message from '../assets/message.svg';
 import MessageDark from '../assets/message-dark.svg';
-
+import { useDarkTheme } from '../hooks';
 import CheckMark2 from '../assets/checkMark2.svg';
 import Trash from '../assets/trash.svg';
 
@@ -29,7 +29,7 @@ export default function ConversationTile({
 }: ConversationTileProps) {
   const conversationId = useSelector(selectConversationId);
   const tileRef = useRef<HTMLInputElement>(null);
-  const isDarkTheme = document.documentElement.classList.contains('dark');
+  const [isDarkTheme]= useDarkTheme();
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
   // useOutsideAlerter(

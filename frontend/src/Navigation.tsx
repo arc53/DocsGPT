@@ -41,12 +41,28 @@ import Upload from './upload/Upload';
 import { Doc, getConversations } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
 import ConversationTile from './conversation/ConversationTile';
+import { useDarkTheme } from './hooks';
 
 interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
-
+const NavImage: React.FC<{ Light: string, Dark: string }> = ({ Light, Dark }) => {
+  return (
+    <>
+      <img
+        src={Dark}
+        alt="icon"
+        className="ml-2 w-5 hidden dark:block "
+      />
+      <img
+        src={Light}
+        alt="icon"
+        className="ml-2 w-5 dark:hidden "
+      />
+    </>
+  )
+}
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
@@ -54,7 +70,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
   const { isMobile } = useMediaQuery();
-  const isDarkTheme = document.documentElement.classList.contains('dark');
+  const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
@@ -176,7 +192,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   useEffect(() => {
     setNavOpen(!isMobile);
   }, [isMobile]);
-
   return (
     <>
       {!navOpen && (
@@ -340,11 +355,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 }`
               }
             >
-              <img
-                src={isDarkTheme ? SettingGearDark : SettingGear}
-                alt="settings"
-                className="ml-2 w-5 opacity-60"
-              />
+              <NavImage Light={SettingGear} Dark={SettingGearDark} />
               <p className="my-auto text-sm text-eerie-black  dark:text-white">Settings</p>
             </NavLink>
           </div>
@@ -357,7 +368,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 }`
               }
             >
-              <img src={isDarkTheme ? InfoDark : Info} alt="info" className="ml-2 w-5" />
+              <NavImage Light={Info} Dark={InfoDark} />
               <p className="my-auto text-sm">About</p>
             </NavLink>
 
@@ -367,11 +378,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               rel="noreferrer"
               className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
-              <img
-                src={isDarkTheme ? DocumentationDark : Documentation}
-                alt="documentation"
-                className="ml-2 w-5"
-              />
+              <NavImage Light={Documentation} Dark={DocumentationDark} />
               <p className="my-auto text-sm ">Documentation</p>
             </a>
             <a
@@ -380,7 +387,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               rel="noreferrer"
               className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
-              <img src={isDarkTheme ? DiscordDark : Discord} alt="discord-link" className="ml-2 w-5" />
+              <NavImage Light={Discord} Dark={DiscordDark} />
+              {/*  <img src={isDarkTheme ? DiscordDark : Discord} alt="discord-link" className="ml-2 w-5" /> */}
               <p className="my-auto text-sm">
                 Visit our Discord
               </p>
@@ -392,7 +400,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               rel="noreferrer"
               className="mt-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
-              <img src={isDarkTheme ? GithubDark : Github} alt="github-link" className="ml-2 w-5" />
+              <NavImage Light={Github} Dark={GithubDark} />
               <p className="my-auto text-sm">
                 Visit our Github
               </p>
@@ -405,7 +413,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className="mt-5 ml-6 h-6 w-6 md:hidden"
           onClick={() => setNavOpen(true)}
         >
-          <img src={isDarkTheme ? HamburgerDark :Hamburger} alt="menu toggle" className="w-7" />
+          <img src={isDarkTheme ? HamburgerDark : Hamburger} alt="menu toggle" className="w-7" />
         </button>
       </div>
       <SelectDocsModal

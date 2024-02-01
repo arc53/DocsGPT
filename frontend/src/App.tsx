@@ -13,15 +13,6 @@ inject();
 export default function App() {
   const { isMobile } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!isMobile);
-  const selectedTheme = localStorage.getItem('selectedTheme');
-  useEffect(()=>{
-    if (selectedTheme === 'Dark') {
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark:bg-raisin-black');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  },[])
   return (
     <div className="min-h-full min-w-full dark:bg-raisin-black">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
