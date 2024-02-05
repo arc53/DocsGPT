@@ -92,7 +92,7 @@ export function useDarkTheme() {
     else{
       document.documentElement.classList.remove('dark');
     }
-  })
+  },[isDarkTheme])
 
   // Function to toggle dark mode
   const toggleTheme:any = () => {
