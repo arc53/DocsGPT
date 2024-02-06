@@ -41,10 +41,9 @@ export default function Conversation() {
 
   useEffect(() => {
     return () => {
-      fetchStream.current.abort(); //abort previous stream
+      fetchStream.current && fetchStream.current.abort(); //abort previous stream
     }
   }, [conversationId])
-  
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
