@@ -97,7 +97,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       fetchConversations();
     }
   }, [conversations, dispatch]);
-
   async function fetchConversations() {
     return await getConversations()
       .then((fetchedConversations) => {
