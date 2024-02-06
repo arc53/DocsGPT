@@ -25,9 +25,9 @@ export default function Conversation() {
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
-  const [isDarkTheme]= useDarkTheme();
+  const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
- const fetchStream = useRef<any>(new AbortController())
+  const fetchStream = useRef<any>(null)
   useEffect(() => {
     scrollIntoView();
   }, [queries.length, queries[queries.length - 1]]);
@@ -38,13 +38,13 @@ export default function Conversation() {
       element.focus();
     }
   }, []);
-  useEffect(()=>{
-    console.log('changed the conversation', conversationId)
-    return ()=>{
-      console.log('i just did abortion !');
-      fetchStream.current.abort();
+
+  useEffect(() => {
+    return () => {
+      fetchStream.current.abort(); //abort previous stream
     }
-  },[conversationId])
+  }, [conversationId])
+  
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
@@ -72,14 +72,10 @@ export default function Conversation() {
     });
   };
 
-  fetchStream.current != null && useEffect(()=>{
-    return ()=>{fetchStream.current.abort()}
-  },[selectConversationId])
   const handleQuestion = (question: string) => {
     question = question.trim();
     if (question === '') return;
     dispatch(addQuery({ prompt: question }));
-    //@ts-ignore
     fetchStream.current = dispatch(fetchAnswer({ question }));
 
   };

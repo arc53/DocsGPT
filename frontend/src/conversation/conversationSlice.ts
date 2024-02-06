@@ -18,8 +18,6 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
   'fetchAnswer',
   async ({ question }, { dispatch, getState, signal }) => {
     const state = getState() as RootState;
-    console.log('signal', signal);
-
     if (state.preference) {
       if (API_STREAMING) {
         await fetchAnswerSteaming(
@@ -198,7 +196,11 @@ export const conversationSlice = createSlice({
         state.status = 'loading';
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
-        if(action.meta.aborted)return state; //ignore error
+        if(action.meta.aborted)
+        {
+          state.status = 'idle';
+          return state;
+        }
         state.status = 'failed';
         state.queries[state.queries.length - 1].error =
           'Something went wrong. Please try again later.';
