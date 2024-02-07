@@ -5,6 +5,7 @@ const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 export function fetchAnswerApi(
   question: string,
+  signal:AbortSignal,
   apiKey: string,
   selectedDocs: Doc,
   history: Array<any> = [],
@@ -65,6 +66,7 @@ export function fetchAnswerApi(
       conversation_id: conversationId,
       prompt_id: promptId,
     }),
+    signal,
   })
     .then((response) => {
       if (response.ok) {
@@ -87,6 +89,7 @@ export function fetchAnswerApi(
 
 export function fetchAnswerSteaming(
   question: string,
+  signal:AbortSignal,
   apiKey: string,
   selectedDocs: Doc,
   history: Array<any> = [],
@@ -134,6 +137,7 @@ export function fetchAnswerSteaming(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal
     })
       .then((response) => {
         if (!response.body) throw Error('No response body');

@@ -4,7 +4,7 @@ import { useDarkTheme } from '../hooks';
 import Hero from '../Hero';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
-import {
+import conversationSlice, {
   addQuery,
   fetchAnswer,
   selectQueries,
@@ -17,16 +17,17 @@ import Spinner from './../assets/spinner.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import ArrowDown from './../assets/arrow-down.svg';
-
+import { selectConversationId } from '../preferences/preferenceSlice';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
+  const conversationId = useSelector(selectConversationId)
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
-  const [isDarkTheme]= useDarkTheme();
+  const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
-
+  const fetchStream = useRef<any>(null)
   useEffect(() => {
     scrollIntoView();
   }, [queries.length, queries[queries.length - 1]]);
@@ -38,6 +39,11 @@ export default function Conversation() {
     }
   }, []);
 
+  useEffect(() => {
+    return () => {
+      fetchStream.current && fetchStream.current.abort(); //abort previous stream
+    }
+  }, [conversationId])
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
@@ -69,9 +75,9 @@ export default function Conversation() {
     question = question.trim();
     if (question === '') return;
     dispatch(addQuery({ prompt: question }));
-    dispatch(fetchAnswer({ question }));
-  };
+    fetchStream.current = dispatch(fetchAnswer({ question }));
 
+  };
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
