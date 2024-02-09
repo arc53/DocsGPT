@@ -140,12 +140,12 @@ export default function Conversation() {
       )}
 
       {queries.length > 0 && (
-        <div className="mt-20 flex flex-col transition-all md:w-3/4">
+        <div className="mt-20 mb-9  flex flex-col transition-all md:w-3/4">
           {queries.map((query, index) => {
             return (
               <Fragment key={index}>
                 <ConversationBubble
-                  className={'last:mb-27 mb-7'}
+                  className={'last:mb-28 mb-7'}
                   key={`${index}QUESTION`}
                   message={query.prompt}
                   type="QUESTION"
@@ -160,7 +160,7 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
-      <div className="relative bottom-0 flex w-10/12 flex-col items-end self-center bg-white dark:bg-raisin-black pt-3 md:fixed md:w-[65%]">
+      <div className="absolute bottom-0 flex w-full flex-col items-end self-center bg-white dark:bg-raisin-black pt-4 md:fixed sm:w-[65%]">
         <div className="flex h-full w-full">
           <div
             id="inputbox"
@@ -169,7 +169,7 @@ export default function Conversation() {
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
-            className={`border-000000 overflow-x-hidden; max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-3xl border bg-white dark:bg-transparent dark:text-bright-gray py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none`}
+            className={`border-000000 overflow-x-hidden max-h-24 min-h-[2.6rem] w-full overflow-y-auto whitespace-pre-wrap rounded-3xl border bg-white dark:bg-raisin-black dark:text-bright-gray py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -200,7 +200,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
-        <p className="text-gray-595959 dark:text-bright-gray w-[100vw] self-center bg-transparent p-5 text-center text-xs md:w-full">
+        <p className="text-gray-595959 dark:text-bright-gray bg-white dark:bg-raisin-black w-[100vw] self-center bg-transparent p-5 text-center text-xs md:w-full">
           This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
           questions.
         </p>
