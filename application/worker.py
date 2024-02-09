@@ -21,17 +21,34 @@ except FileExistsError:
     pass
 
 
+# Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):
     store = '/'.join(title.split('/')[1:3])
     return {'title': title, 'store': store}
 
 
+# Define a function to generate a random string of a given length.
 def generate_random_string(length):
     return ''.join([string.ascii_letters[i % 52] for i in range(length)])
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Define the main function for ingesting and processing documents.
 def ingest_worker(self, directory, formats, name_job, filename, user):
+    """
+    Ingest and process documents.
+
+    Args:
+        self: Reference to the instance of the task.
+        directory (str): Specifies the directory for ingesting ('inputs' or 'temp').
+        formats (list of str): List of file extensions to consider for ingestion (e.g., [".rst", ".md"]).
+        name_job (str): Name of the job for this ingestion task.
+        filename (str): Name of the file to be ingested.
+        user (str): Identifier for the user initiating the ingestion.
+
+    Returns:
+        dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
+    """
     # directory = 'inputs' or 'temp'
     # formats = [".rst", ".md"]
     input_files = None

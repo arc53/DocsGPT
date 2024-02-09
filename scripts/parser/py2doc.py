@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import tiktoken
-from langchain.llms import OpenAI
+from langchain_community.llms import OpenAI
 from langchain.prompts import PromptTemplate
 
 

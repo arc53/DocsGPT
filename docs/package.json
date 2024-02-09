@@ -1,10 +1,16 @@
 {
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "license": "MIT",
   "dependencies": {
-    "@vercel/analytics": "^1.0.2",
+    "@vercel/analytics": "^1.1.1",
     "docsgpt": "^0.2.4",
-    "next": "^13.4.19",
-    "nextra": "^2.12.3",
-    "nextra-theme-docs": "^2.12.3",
+    "next": "^14.0.4",
+    "nextra": "^2.13.2",
+    "nextra-theme-docs": "^2.13.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   }

@@ -6,7 +6,7 @@ from pathlib import Path
 import dotenv
 import faiss
 import tiktoken
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import FAISS
 

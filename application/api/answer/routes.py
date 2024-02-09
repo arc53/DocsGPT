@@ -25,29 +25,29 @@ mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
+prompts_collection = db["prompts"]
 answer = Blueprint('answer', __name__)
 
 if settings.LLM_NAME == "gpt4":
     gpt_model = 'gpt-4'
+elif settings.LLM_NAME == "anthropic":
+    gpt_model = 'claude-2'
 else:
     gpt_model = 'gpt-3.5-turbo'
 
 # load the prompts
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-with open(os.path.join(current_dir, "prompts", "combine_prompt.txt"), "r") as f:
-    template = f.read()
-
-with open(os.path.join(current_dir, "prompts", "combine_prompt_hist.txt"), "r") as f:
-    template_hist = f.read()
-
-with open(os.path.join(current_dir, "prompts", "question_prompt.txt"), "r") as f:
-    template_quest = f.read()
-
-with open(os.path.join(current_dir, "prompts", "chat_combine_prompt.txt"), "r") as f:
+with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
     chat_combine_template = f.read()
 
 with open(os.path.join(current_dir, "prompts", "chat_reduce_prompt.txt"), "r") as f:
     chat_reduce_template = f.read()
+
+with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
+    chat_combine_creative = f.read()
+
+with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
+    chat_combine_strict = f.read()    
 
 api_key_set = settings.API_KEY is not None
 embeddings_key_set = settings.EMBEDDINGS_KEY is not None
@@ -77,11 +77,10 @@ def run_async_chain(chain, question, chat_history):
 
 def get_vectorstore(data):
     if "active_docs" in data:
-        if data["active_docs"].split("/")[0] == "local":
-            if data["active_docs"].split("/")[1] == "default":
+        if data["active_docs"].split("/")[0] == "default":
                 vectorstore = ""
-            else:
-                vectorstore = "indexes/" + data["active_docs"]
+        elif data["active_docs"].split("/")[0] == "local":
+            vectorstore = "indexes/" + data["active_docs"]
         else:
             vectorstore = "vectors/" + data["active_docs"]
         if data["active_docs"] == "default":
@@ -92,47 +91,35 @@ def get_vectorstore(data):
     return vectorstore
 
 
-# def get_docsearch(vectorstore, embeddings_key):
-#     if settings.EMBEDDINGS_NAME == "openai_text-embedding-ada-002":
-#         if is_azure_configured():
-#             os.environ["OPENAI_API_TYPE"] = "azure"
-#             openai_embeddings = OpenAIEmbeddings(model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME)
-#         else:
-#             openai_embeddings = OpenAIEmbeddings(openai_api_key=embeddings_key)
-#         docsearch = FAISS.load_local(vectorstore, openai_embeddings)
-#     elif settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
-#         docsearch = FAISS.load_local(vectorstore, HuggingFaceHubEmbeddings())
-#     elif settings.EMBEDDINGS_NAME == "huggingface_hkunlp/instructor-large":
-#         docsearch = FAISS.load_local(vectorstore, HuggingFaceInstructEmbeddings())
-#     elif settings.EMBEDDINGS_NAME == "cohere_medium":
-#         docsearch = FAISS.load_local(vectorstore, CohereEmbeddings(cohere_api_key=embeddings_key))
-#     return docsearch
-
-
 def is_azure_configured():
     return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
 
-def complete_stream(question, docsearch, chat_history, api_key, conversation_id):
+def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conversation_id):
     llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=api_key)
-    
+
+    if prompt_id == 'default':
+        prompt = chat_combine_template
+    elif prompt_id == 'creative':
+        prompt = chat_combine_creative
+    elif prompt_id == 'strict':
+        prompt = chat_combine_strict
+    else:
+        prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})["content"]
 
     docs = docsearch.search(question, k=2)
     if settings.LLM_NAME == "llama.cpp":
         docs = [docs[0]]
     # join all page_content together with a newline
     docs_together = "\n".join([doc.page_content for doc in docs])
-    p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+    p_chat_combine = prompt.replace("{summaries}", docs_together)
     messages_combine = [{"role": "system", "content": p_chat_combine}]
     source_log_docs = []
     for doc in docs:
         if doc.metadata:
-            data = json.dumps({"type": "source", "doc": doc.page_content, "metadata": doc.metadata})
             source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
         else:
-            data = json.dumps({"type": "source", "doc": doc.page_content})
             source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
-        yield f"data:{data}\n\n"
 
     if len(chat_history) > 1:
         tokens_current_history = 0
@@ -199,6 +186,10 @@ def stream():
     # history to json object from string
     history = json.loads(history)
     conversation_id = data["conversation_id"]
+    if 'prompt_id' in data:
+        prompt_id = data["prompt_id"]
+    else:
+        prompt_id = 'default'
 
     # check if active_docs is set
 
@@ -219,6 +210,7 @@ def stream():
     return Response(
         complete_stream(question, docsearch,
                         chat_history=history, api_key=api_key,
+                        prompt_id=prompt_id,
                         conversation_id=conversation_id), mimetype="text/event-stream"
     )
 
@@ -241,6 +233,19 @@ def api_answer():
         embeddings_key = data["embeddings_key"]
     else:
         embeddings_key = settings.EMBEDDINGS_KEY
+    if 'prompt_id' in data:
+        prompt_id = data["prompt_id"]
+    else:
+        prompt_id = 'default'
+
+    if prompt_id == 'default':
+        prompt = chat_combine_template
+    elif prompt_id == 'creative':
+        prompt = chat_combine_creative
+    elif prompt_id == 'strict':
+        prompt = chat_combine_strict
+    else:
+        prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})["content"]
 
     # use try and except  to check for exception
     try:
@@ -258,7 +263,7 @@ def api_answer():
         docs = docsearch.search(question, k=2)
         # join all page_content together with a newline
         docs_together = "\n".join([doc.page_content for doc in docs])
-        p_chat_combine = chat_combine_template.replace("{summaries}", docs_together)
+        p_chat_combine = prompt.replace("{summaries}", docs_together)
         messages_combine = [{"role": "system", "content": p_chat_combine}]
         source_log_docs = []
         for doc in docs:
@@ -335,3 +340,35 @@ def api_answer():
         traceback.print_exc()
         print(str(e))
         return bad_request(500, str(e))
+
+
+@answer.route("/api/search", methods=["POST"])
+def api_search():
+    data = request.get_json()
+    # get parameter from url question
+    question = data["question"]
+
+    if not embeddings_key_set:
+        if "embeddings_key" in data:
+            embeddings_key = data["embeddings_key"]
+        else:
+            embeddings_key = settings.EMBEDDINGS_KEY
+    else:
+        embeddings_key = settings.EMBEDDINGS_KEY
+    if "active_docs" in data:
+        vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
+    else:
+        vectorstore = ""
+    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
+
+    docs = docsearch.search(question, k=2)
+
+    source_log_docs = []
+    for doc in docs:
+        if doc.metadata:
+            source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
+        else:
+            source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
+        #yield f"data:{data}\n\n"
+    return source_log_docs
+

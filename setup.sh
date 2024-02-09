@@ -3,9 +3,10 @@
 # Function to prompt the user for their choice
 prompt_user() {
     echo "Do you want to:"
-    echo "1. Download the language model locally (12GB)"
-    echo "2. Use the OpenAI API"
-    read -p "Enter your choice (1/2): " choice
+    echo "1. Use DocsGPT public API (simple and free)"
+    echo "2. Download the language model locally (12GB)"
+    echo "3. Use the OpenAI API (requires an API key)"
+    read -p "Enter your choice (1, 2 or 3): " choice
 }
 
 # Function to handle the choice to download the model locally
@@ -32,9 +33,9 @@ download_locally() {
     docker-compose -f docker-compose-local.yaml build && docker-compose -f docker-compose-local.yaml up -d
     #python -m venv venv
     #source venv/bin/activate
-    #pip install -r application/requirements.txt
-    #pip install llama-cpp-python
-    #pip install sentence-transformers
+    pip install -r application/requirements.txt
+    pip install llama-cpp-python
+    pip install sentence-transformers
     export LLM_NAME=llama.cpp
     export EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2
     export FLASK_APP=application/app.py
@@ -67,15 +68,30 @@ use_openai() {
     echo "docker-compose down"
 }
 
+use_docsgpt() {
+    echo "LLM_NAME=docsgpt" > .env
+    echo "VITE_API_STREAMING=true" >> .env
+    echo "The .env file has been created with API_KEY set to your provided key."
+
+    docker-compose build && docker-compose up -d
+
+    echo "The application will run on http://localhost:5173"
+    echo "You can stop the application by running the following command:"
+    echo "docker-compose down"
+}
+
 # Prompt the user for their choice
 prompt_user
 
 # Handle the user's choice
 case $choice in
     1)
-        download_locally
+        use_docsgpt
         ;;
     2)
+        download_locally
+        ;;
+    3)
         use_openai
         ;;
     *)

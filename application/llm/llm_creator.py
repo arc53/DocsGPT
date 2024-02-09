@@ -2,6 +2,8 @@ from application.llm.openai import OpenAILLM, AzureOpenAILLM
 from application.llm.sagemaker import SagemakerAPILLM
 from application.llm.huggingface import HuggingFaceLLM
 from application.llm.llama_cpp import LlamaCpp
+from application.llm.anthropic import AnthropicLLM
+from application.llm.docsgpt_provider import DocsGPTAPILLM
 
 
 
@@ -11,7 +13,9 @@ class LLMCreator:
         'azure_openai': AzureOpenAILLM,
         'sagemaker': SagemakerAPILLM,
         'huggingface': HuggingFaceLLM,
-        'llama.cpp': LlamaCpp
+        'llama.cpp': LlamaCpp,
+        'anthropic': AnthropicLLM,
+        'docsgpt': DocsGPTAPILLM
     }
 
     @classmethod

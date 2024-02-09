@@ -1,11 +1,9 @@
 import os
 from flask import Blueprint, request, jsonify
 import requests
-import json
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.utils import secure_filename
-import http.client
 
 from application.api.user.tasks import ingest
 
@@ -16,6 +14,8 @@ mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
+prompts_collection = db["prompts"]
+feedback_collection = db["feedback"]
 user = Blueprint('user', __name__)
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,20 +70,29 @@ def api_feedback():
     answer = data["answer"]
     feedback = data["feedback"]
 
-    print("-" * 5)
-    print("Question: " + question)
-    print("Answer: " + answer)
-    print("Feedback: " + feedback)
-    print("-" * 5)
-    response = requests.post(
-        url="https://86x89umx77.execute-api.eu-west-2.amazonaws.com/docsgpt-feedback",
-        headers={
-            "Content-Type": "application/json; charset=utf-8",
-        },
-        data=json.dumps({"answer": answer, "question": question, "feedback": feedback}),
-    )
-    return {"status": http.client.responses.get(response.status_code, "ok")}
 
+    feedback_collection.insert_one(
+        {
+            "question": question,
+            "answer": answer,
+            "feedback": feedback,
+        }
+    )
+    return {"status": "ok"}
+
+@user.route("/api/delete_by_ids", methods=["get"])
+def delete_by_ids():
+    """Delete by ID. These are the IDs in the vectorstore"""
+
+    ids = request.args.get("path")
+    if not ids:
+        return {"status": "error"}
+
+    if settings.VECTOR_STORE == "faiss":
+        result = vectors_collection.delete_index(ids=ids)
+        if result:
+            return {"status": "ok"}
+    return {"status": "error"}
 
 @user.route("/api/delete_old", methods=["get"])
 def delete_old():
@@ -140,7 +149,9 @@ def upload_file():
             os.makedirs(save_dir)
 
         file.save(os.path.join(save_dir, filename))
-        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt"], job_name, filename, user)
+        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
+        ".csv", ".epub", ".html", ".mdx"],
+         job_name, filename, user)
         # task id
         task_id = task.id
         return {"status": "ok", "task_id": task_id}
@@ -173,7 +184,7 @@ def combined_json():
             "date": "default",
             "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
-            "location": "local",
+            "location": "remote",
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
@@ -229,6 +240,80 @@ def check_docs():
                 f.write(r.content)
 
         return {"status": "loaded"}
+
+@user.route("/api/create_prompt", methods=["POST"])
+def create_prompt():
+    data = request.get_json()
+    content = data["content"]
+    name = data["name"]
+    if name == "":
+        return {"status": "error"}
+    user = "local"
+    resp = prompts_collection.insert_one(
+        {
+            "name": name,
+            "content": content,
+            "user": user,
+        }
+    )
+    new_id = str(resp.inserted_id)
+    return {"id": new_id}
+
+@user.route("/api/get_prompts", methods=["GET"])
+def get_prompts():
+    user = "local"
+    prompts = prompts_collection.find({"user": user})
+    list_prompts = []
+    list_prompts.append({"id": "default", "name": "default", "type": "public"})
+    list_prompts.append({"id": "creative", "name": "creative", "type": "public"})
+    list_prompts.append({"id": "strict", "name": "strict", "type": "public"})
+    for prompt in prompts:
+        list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"})
+
+    return jsonify(list_prompts)
+
+@user.route("/api/get_single_prompt", methods=["GET"])
+def get_single_prompt():
+    prompt_id = request.args.get("id")
+    if prompt_id == 'default':
+        with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
+            chat_combine_template = f.read()
+        return jsonify({"content": chat_combine_template})
+    elif prompt_id == 'creative':
+        with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
+            chat_reduce_creative = f.read()
+        return jsonify({"content": chat_reduce_creative})
+    elif prompt_id == 'strict':
+        with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
+            chat_reduce_strict = f.read()   
+        return jsonify({"content": chat_reduce_strict})
+
+
+    prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
+    return jsonify({"content": prompt["content"]})
+
+@user.route("/api/delete_prompt", methods=["POST"])
+def delete_prompt():
+    data = request.get_json()
+    id = data["id"]
+    prompts_collection.delete_one(
+        {
+            "_id": ObjectId(id),
+        }
+    )
+    return {"status": "ok"}
+
+@user.route("/api/update_prompt", methods=["POST"])
+def update_prompt_name():
+    data = request.get_json()
+    id = data["id"]
+    name = data["name"]
+    content = data["content"]
+    # check if name is null
+    if name == "":
+        return {"status": "error"}
+    prompts_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name, "content": content}})
+    return {"status": "ok"}
 
 
 

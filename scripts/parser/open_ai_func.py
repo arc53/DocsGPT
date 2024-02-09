@@ -1,8 +1,8 @@
 import os
 
 import tiktoken
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
 from retry import retry
 
 

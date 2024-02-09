@@ -1,0 +1,21 @@
+{
+  "name": "mock-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "json-server": "^0.17.4",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/json-server": "^0.14.5"
+  }
+}
