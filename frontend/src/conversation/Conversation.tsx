@@ -160,7 +160,7 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
-      <div className="absolute bottom-0 flex w-full flex-col items-end self-center bg-white dark:bg-raisin-black pt-4 md:fixed sm:w-[65%]">
+      <div className="absolute bottom-0 flex w-11/12 md:w-[65%] flex-col items-end self-center bg-white dark:bg-raisin-black pt-4 md:fixed">
         <div className="flex h-full w-full">
           <div
             id="inputbox"
