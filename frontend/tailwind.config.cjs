@@ -43,7 +43,10 @@ module.exports = {
         'dark-charcoal':'#2F3036',
         'bright-gray':'#ECECF1',
         'outer-space':'#444654',
-        'gun-metal':'#2E303E'
+        'gun-metal':'#2E303E',
+        'sonic-silver':'#747474',
+        'soap':'#D8CCF1',
+        'independence':'#54546D'
       },
     },
   },
