@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     SAGEMAKER_ACCESS_KEY: Optional[str] = None # SageMaker access key
     SAGEMAKER_SECRET_KEY: Optional[str] = None # SageMaker secret key
 
+    # prem ai project id    
+    PREMAI_PROJECT_ID: Optional[str] = None
+
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
