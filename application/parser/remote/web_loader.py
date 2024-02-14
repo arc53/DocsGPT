@@ -6,7 +6,7 @@ class WebLoader(BaseRemote):
         self.loader = WebBaseLoader
 
     def load_data(self, inputs):
-        urls = inputs['data']
+        urls = inputs
 
         if isinstance(urls, str):
             urls = [urls] # Convert string to list if a single URL is passed

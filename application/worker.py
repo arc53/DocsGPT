@@ -138,19 +138,17 @@ def remote_worker(self, source_data, name_job, user, directory = 'temp', loader 
     # source_data {"data": [url]} for url type task just urls
  
     # Use RemoteCreator to load data from URL
-    remote_loader = RemoteCreator.create_loader(loader, source_data)
-    raw_docs = remote_loader.load_data()
+    remote_loader = RemoteCreator.create_loader(loader)
+    raw_docs = remote_loader.load_data(source_data)
 
-    raw_docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
+    docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
 
-    docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+    #docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
     call_openai_api(docs, full_path, self)
     self.update_state(state='PROGRESS', meta={'current': 100})
+    
 
-    if sample:
-        for i in range(min(5, len(raw_docs))):
-            print(raw_docs[i].text)
 
     # Proceed with uploading and cleaning as in the original function
     file_data = {'name': name_job, 'user': user}
@@ -165,7 +163,7 @@ def remote_worker(self, source_data, name_job, user, directory = 'temp', loader 
     shutil.rmtree(full_path)
 
     return {
-        'urls': source_data['data'],
+        'urls': source_data,
         'name_job': name_job,
         'user': user,
         'limited': False

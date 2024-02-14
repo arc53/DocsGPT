@@ -10,7 +10,7 @@ class SitemapLoader(BaseRemote):
         self.limit = limit  # Adding limit to control the number of URLs to process
 
     def load_data(self, inputs):
-        sitemap_url= inputs['data']
+        sitemap_url= inputs
         # Check if the input is a list and if it is, use the first element
         if isinstance(sitemap_url, list) and sitemap_url:
             url = sitemap_url[0]
