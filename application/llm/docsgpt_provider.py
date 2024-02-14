@@ -20,7 +20,7 @@ class DocsGPTAPILLM(BaseLLM):
                 "max_new_tokens": 30
             }
         )
-        response_clean = response.json()['a'].split("###")[0]
+        response_clean = response.json()['a'].replace("###", "")
 
         return response_clean
 
