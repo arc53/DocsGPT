@@ -50,7 +50,6 @@ router.render = (req, res) => {
       res.status(404).jsonp({});
     }
   } else if (req.url === "/stream" && req.method === "POST") {
-    console.log('pinged !')
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
