@@ -9,7 +9,7 @@ const middlewares = jsonServer.defaults();
 const localStorage = [];
 
 server.use(middlewares);
-server.use(cors({ origin: '*' }))
+server.use(cors({ origin: ['*'] }))
 server.use(jsonServer.rewriter(routes));
 
 server.use((req, res, next) => {
@@ -81,6 +81,43 @@ router.render = (req, res) => {
         }
       ]
     )
+  }
+  else if (req.url === '/get_prompts' && req.method === 'GET') {
+    res.status(200).json([
+      {
+        "id": "default",
+        "name": "default",
+        "type": "public"
+      },
+      {
+        "id": "creative",
+        "name": "creative",
+        "type": "public"
+      },
+      {
+        "id": "strict",
+        "name": "strict",
+        "type": "public"
+      }
+    ]);
+  }
+  else if (req.url.startsWith('/get_single_prompt') && req.method==='GET') {
+    const id = req.query.id;
+    console.log('hre');
+    if (id === 'creative')
+      res.status(200).json({
+        "content": "You are a DocsGPT, friendly and helpful AI assistant by Arc53 that provides help with documents. You give thorough answers with code examples if possible."
+      })
+    else if (id === 'strict') {
+      res.status(200).json({
+        "content": "You are an AI Assistant, DocsGPT, adept at offering document assistance. \nYour expertise lies in providing answer on top of provided context."
+      })
+    }
+    else {
+      res.status(200).json({
+        "content": "You are a helpful AI assistant, DocsGPT, specializing in document assistance, designed to offer detailed and informative responses."
+      })
+    }
   }
   else {
     res.status(res.statusCode).jsonp(res.locals.data);
