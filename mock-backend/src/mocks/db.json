@@ -225,7 +225,19 @@
       "version": "0.1.0"
     }
   ],
-  "conversations": [],
+  "conversations": [
+    {
+      "id": "65cf39c936523eea21ebe117",
+      "name": "Request clarification"
+    },
+    {
+      "id": "65cf39ba36523eea21ebe116",
+      "name": "Clarification request"
+    },
+    {
+      "id": "65cf37e97d527c332bbac933",
+      "name": "Greetings, assistance inquiry."
+    }],
   "docs_check": {
     "status": "loaded"
   }
