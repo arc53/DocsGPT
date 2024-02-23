@@ -2,6 +2,7 @@ FROM python:3.11-slim-bullseye as builder
 
 # Tiktoken requires Rust toolchain, so build it in a separate stage
 RUN apt-get update && apt-get install -y gcc curl
+RUN apt-get install -y wget unzip
 RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip
 RUN unzip mpnet-base-v2.zip -d model
 RUN rm mpnet-base-v2.zip
@@ -10,7 +11,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN pip install --upgrade pip && pip install tiktoken==0.5.2
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-RUN apt-get install -y wget unzip
+
 
 
 FROM python:3.11-slim-bullseye
