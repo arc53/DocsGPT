@@ -123,7 +123,7 @@ docker compose -f docker-compose-dev.yaml up -d
 > [!Note]
 > Make sure you have Python 3.10 or 3.11 installed.
 
-1. Export required environment variables or prepare a `.env` file in the `/application` folder:
+1. Export required environment variables or prepare a `.env` file in the project folder:
    - Copy [.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) and create `.env`.
 
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
@@ -152,11 +152,12 @@ You can use the script below, or download it manually from [here](https://d3dg10
 wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip
 unzip mpnet-base-v2.zip -d model
 rm mpnet-base-v2.zip
+```
 
-4. Change to the `application/` subdir by the command `cd application/` and install dependencies for the backend:
+4. Install dependencies for the backend:
 
 ```commandline
-pip install -r requirements.txt
+pip install -r application/requirements.txt
 ```
 
 5. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
