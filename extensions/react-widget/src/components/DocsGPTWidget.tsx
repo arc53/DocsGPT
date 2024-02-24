@@ -1,16 +1,25 @@
 "use client";
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { PaperPlaneIcon } from '@radix-ui/react-icons';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
-
+import { ScrollArea, ScrollBar } from './ui/scroll-area'
+import Dragon from '../assets/cute-docsgpt.svg'
+import MessageIcon from '../assets/message.svg'
+import Cancel from '../assets/cancel.svg'
+import { Doc, Query } from '@/models/customTypes';
+import { fetchAnswerStreaming } from '@/requests/streamingApi';
 //import './style.css'
 
 interface HistoryItem {
   prompt: string;
   response: string;
 }
-
+interface Message {
+  type: 'PROMPT' | 'RESPONSE' | 'ERROR',
+  message: string
+  id: string | null
+}
 interface FetchAnswerStreamingProps {
   question?: string;
   apiKey?: string;
@@ -21,6 +30,7 @@ interface FetchAnswerStreamingProps {
   onEvent?: (event: MessageEvent) => void;
 }
 
+type Status = 'idle' | 'loading' | 'failed';
 
 enum ChatStates {
   Init = 'init',
@@ -28,87 +38,6 @@ enum ChatStates {
   Typing = 'typing',
   Answer = 'answer',
   Minimized = 'minimized',
-}
-
-function fetchAnswerStreaming({
-  question = '',
-  apiKey = '',
-  selectedDocs = '',
-  history = [],
-  conversationId = null,
-  apiHost = '',
-  onEvent = () => { console.log("Event triggered, but no handler provided."); }
-}: FetchAnswerStreamingProps): Promise<void> {
-  let docPath = 'default';
-  if (selectedDocs) {
-    docPath = selectedDocs;
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    const body = {
-      question: question,
-      api_key: apiKey,
-      embeddings_key: apiKey,
-      active_docs: docPath,
-      history: JSON.stringify(history),
-      conversation_id: conversationId,
-      model: 'default'
-    };
-
-    fetch(apiHost + '/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-      .then((response) => {
-        if (!response.body) throw Error('No response body');
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let counterrr = 0;
-        const processStream = ({
-          done,
-          value,
-        }: ReadableStreamReadResult<Uint8Array>) => {
-          if (done) {
-            console.log(counterrr);
-            resolve();
-            return;
-          }
-
-          counterrr += 1;
-
-          const chunk = decoder.decode(value);
-
-          const lines = chunk.split('\n');
-
-          for (let line of lines) {
-            if (line.trim() == '') {
-              continue;
-            }
-            if (line.startsWith('data:')) {
-              line = line.substring(5);
-            }
-
-            const messageEvent = new MessageEvent('message', {
-              data: line,
-            });
-
-            onEvent(messageEvent); // handle each message
-          }
-
-          reader.read().then(processStream).catch(reject);
-        };
-
-        reader.read().then(processStream).catch(reject);
-      })
-      .catch((error) => {
-        console.error('Connection failed:', error);
-        reject(error);
-      });
-  });
 }
 
 export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public' }) => {
@@ -119,109 +48,131 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
     }
     return ChatStates.Init;
   });
-
-  const [answer, setAnswer] = useState<string>('');
-
-  //const selectDocs = 'local/1706.03762.pdf/'
-  const answerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (answerRef.current) {
-      const element = answerRef.current;
-      element.scrollTop = element.scrollHeight;
+  const [prompt, setPrompt] = useState('');
+  const [status, setStatus] = useState<Status>('idle');
+  const [queries, setQueries] = useState<Query[]>([
+    {
+      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
+      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
+    },
+    {
+      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
+      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
+    },
+    {
+      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
+      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
+    },
+    {
+      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
+      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
+    },
+    {
+      prompt: 'LAST PROMPT',
+      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
     }
-  }, [answer]);
+  ])
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  //const selectDocs = 'local/1706.03762.pdf/'
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollIntoView = () => {
+    scrollRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
+  useEffect(() => {
+    scrollIntoView();
+  }, [queries.length, queries[queries.length - 1].response]);
 
   useEffect(() => {
     localStorage.setItem('docsGPTChatState', chatState);
   }, [chatState]);
+  async function stream(question: string) {
+    setStatus('loading');
+    try {
+      await fetchAnswerStreaming(
+        {
+          question: question,
+          apiKey: apiKey,
+          apiHost: apiHost,
+          selectedDocs: selectDocs,
+          history: queries,
+          conversationId: conversationId,
+          onEvent: (event: MessageEvent) => {
+            const data = JSON.parse(event.data);
+            // check if the 'end' event has been received
+            if (data.type === 'end') {
+              // set status to 'idle'
+              setStatus('idle');
 
-
-
-  // submit handler
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    setAnswer('')
-    e.preventDefault()
-    // get question
-    setChatState(ChatStates.Processing)
-    setTimeout(() => {
-      setChatState(ChatStates.Answer)
-    }, 800)
-    const inputElement = e.currentTarget[0] as HTMLInputElement;
-    const questionValue = inputElement.value;
-
-    fetchAnswerStreaming({
-      question: questionValue,
-      apiKey: apiKey,
-      selectedDocs: selectDocs,
-      history: [],
-      conversationId: null,
-      apiHost: apiHost,
-      onEvent: (event) => {
-        const data = JSON.parse(event.data);
-
-        // check if the 'end' event has been received
-        if (data.type === 'end') {
-          setChatState(ChatStates.Answer)
-        } else if (data.type === 'source') {
-          // check if data.metadata exists
-          let result;
-          if (data.metadata && data.metadata.title) {
-            const titleParts = data.metadata.title.split('/');
-            result = {
-              title: titleParts[titleParts.length - 1],
-              text: data.doc,
-            };
-          } else {
-            result = { title: data.doc, text: data.doc };
+            } else if (data.type === 'id') {
+              setConversationId(data.id)
+            } else {
+              const result = data.answer;
+              let streamingResponse = queries[queries.length - 1].response ? queries[queries.length - 1].response : '';
+              let updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].response = streamingResponse + result;
+              setQueries(updatedQueries);
+            }
           }
-          console.log(result)
-
-        } else if (data.type === 'id') {
-          console.log(data.id);
-        } else {
-          const result = data.answer;
-          // set answer by appending answer
-          setAnswer(prevAnswer => prevAnswer + result);
         }
-      },
-    });
+      );
+    } catch (error) {
+      console.log(error);
+
+      let updatedQueries = [...queries];
+      updatedQueries[updatedQueries.length - 1].error = 'error'
+      setQueries(updatedQueries);
+      setStatus('idle')
+    }
+
   }
+  // submit handler
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    queries.push({ prompt })
+    setPrompt('')
+    setChatState(ChatStates.Processing)
+    await stream(prompt)
+    setChatState(ChatStates.Answer)
+
+  }
+
 
   return (
     <>
       <div className="dark widget-container">
         <div onClick={() => setChatState(ChatStates.Init)}
           className={`${chatState !== 'minimized' ? 'hidden' : ''} cursor-pointer`}>
-          <div className="mr-2 mb-2 w-20 h-20 rounded-full overflow-hidden dark:divide-gray-700 border dark:border-gray-700 bg-gradient-to-br from-gray-100/80 via-white to-white dark:from-gray-900/80 dark:via-gray-900 dark:to-gray-900 font-sans shadow backdrop-blur-sm flex items-center justify-center">
+          <div className="mr-2 mb-2 bottom-2 right-2 absolute w-20 h-20 rounded-full overflow-hidden dark:divide-gray-700 border dark:border-gray-100 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#E80D9D] from-gray-900/80  via-gray-900 to-gray-900 font-sans shadow backdrop-blur-sm flex items-center justify-center">
             <img
-              src="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
+              src={MessageIcon}
               alt="DocsGPT"
-              className="cursor-pointer hover:opacity-50 h-14"
+              className="cursor-pointer hover:opacity-50 w-12"
             />
           </div>
         </div>
-        <div className={` ${chatState !== 'minimized' ? '' : 'hidden'} divide-y dark:divide-gray-700 rounded-md border dark:border-gray-700 bg-gradient-to-br from-gray-100/80 via-white to-white dark:from-gray-900/80 dark:via-gray-900 dark:to-gray-900 font-sans shadow backdrop-blur-sm`} style={{ width: '18rem', transform: 'translateY(0%) translateZ(0px)' }}>
+        <div className={` ${chatState !== 'minimized' ? '' : 'hidden'} absolute bottom-0 divide-y dark:divide-gray-700 rounded-md border dark:bg-[#222327] dark:border-gray-700  font-sans shadow backdrop-blur-sm w-full`} style={{ transform: 'translateY(0%) translateZ(0px)' }}>
           <div>
             <img
-              src="https://d3dg1063dc54p9.cloudfront.net/exit.svg"
+              src={Cancel}
               alt="Exit"
-              className="cursor-pointer hover:opacity-50 h-2 absolute top-0 right-0 m-2 white-filter"
+              className="cursor-pointer hover:opacity-50 absolute top-0 right-0 m-2 white-filter"
               onClick={(event) => {
                 event.stopPropagation();
                 setChatState(ChatStates.Minimized);
               }}
             />
             <div className="flex items-center gap-2 p-3">
-              <div className={`${chatState === 'init' ? '' :
-                chatState === 'processing' ? '' :
-                  chatState === 'typing' ? '' :
-                    'hidden'} flex-1`}>
-                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200">Need help with documentation?</h3>
-                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">DocsGPT AI assistant will help you with docs</p>
-              </div>
-              <div id="docsgpt-answer" ref={answerRef} className={`${chatState !== 'answer' ? 'hidden' : ''}`}>
-                <p className="mt-1 text-sm text-gray-600 dark:text-white text-left">{answer}</p>
+              <div className={` flex justify-between`}>
+                <img src={Dragon} />
+                <div className='mx-2 w-full'>
+
+                  <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200">Get AI assistance</h3>
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">DocsGPT's AI Chatbot is here to help</p>
+
+                </div>
               </div>
             </div>
           </div>
@@ -230,47 +181,47 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
               className={`flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 hover:bg-gray-100 rounded-b dark:hover:bg-gray-800/70 ${chatState !== 'init' ? 'hidden' : ''}`}>
               Ask DocsGPT
             </button>
-            {(chatState === 'typing' || chatState === 'answer') && (
-              <div>
-                <div>
-                  <div className='flex justify-start m-2 '>
-                    <p className='dark:bg-slate-600 max-w-[80%] dark:text-white block p-2 rounded-lg'>
-                      Hi, How can I help you today ?
-                    </p>
-                  </div>
-
-                  <div className='flex justify-end m-2 '>
-                    <p className='dark:bg-blue-500 max-w-[80%] dark:text-black block p-2 rounded-lg '>
-                      Hey, I am having trouble with my account !
-                    </p>
-                  </div>
-
-                  <div className='flex justify-start m-2 '>
-                    <p className='dark:bg-slate-600 max-w-[80%] dark:text-white block p-2 rounded-lg'>
-                      What seems to be the problem ?
-                    </p>
-                  </div>
-
-                  <div className='flex justify-end m-2 '>
-                    <p className='dark:bg-blue-500 max-w-[80%] dark:text-black block p-2 rounded-lg '>
-                      I can't login
-                    </p>
-                  </div>
-                </div>
+            {(chatState === 'typing' || chatState === 'answer' || chatState === 'processing') && (
+              <div className='h-full'>
+                <ScrollArea className='h-72 rounded-md border'>
+                  {
+                    queries?.map((query, index) => {
+                      return (
+                        <Fragment key={index}>
+                          {
+                            query.prompt && <div className='flex justify-end m-2 '>
+                              <p className='bg-gradient-to-br dark:from-[#8860DB] dark:to-[#6D42C5] max-w-[80%] dark:text-white block p-2 rounded-lg '>
+                                {query.prompt}
+                              </p>
+                            </div>
+                          }
+                          {
+                            query.response && <div ref={(index === queries.length - 1) ? scrollRef : null} className='flex justify-start m-2 '>
+                              <p className='dark:bg-[#38383B] max-w-[80%] dark:text-white block p-2 rounded-lg'>
+                                {query.response}
+                              </p>
+                            </div>
+                          }
+                        </Fragment>)
+                    })
+                  }
+                </ScrollArea>
                 <form
                   onSubmit={handleSubmit}
                   className="relative w-full m-0" style={{ opacity: 1 }}>
                   <div className='p-2 flex justify-between'>
-                    <Input type='text'
-                      className="w-[85%] h-8 bg-transparent px-5 py-4  text-sm text-gray-700 dark:text-white focus:outline-none" placeholder="What do you want to do?" />
-                    <Button className="text-gray-400 dark:text-gray-500 dark:bg-blue-700 dark:hover:bg-blue-600 text-sm inset-y-0  px-2" type="submit" ><PaperPlaneIcon className='text-white' /></Button>
+                    <Input
+                      value={prompt} onChange={(event) => setPrompt(event.target.value)}
+                      type='text'
+                      className="w-[85%] border border-[#686877] h-8 bg-transparent px-5 py-4  text-sm text-gray-700 dark:text-white focus:outline-none" placeholder="What do you want to do?" />
+                    <Button className="text-gray-400 dark:text-gray-500 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#E80D9D] disabled:bg-black  text-sm inset-y-0  px-2" type="submit" disabled={prompt.length == 0 || status !== 'idle'}>
+                      <PaperPlaneIcon className='text-white' />
+                    </Button>
                   </div>
                 </form>
               </div>
             )}
-            <p className={`${chatState !== 'processing' ? 'hidden' : ''} flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 rounded-b`}>
-              Processing<span className="dot-animation">.</span><span className="dot-animation delay-200">.</span><span className="dot-animation delay-400">.</span>
-            </p>
+
           </div>
         </div>
       </div>
