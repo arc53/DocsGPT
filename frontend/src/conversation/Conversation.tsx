@@ -201,8 +201,7 @@ export default function Conversation() {
           )}
         </div>
         <p className="text-gray-595959 dark:text-bright-gray bg-white dark:bg-raisin-black w-[100vw] self-center bg-transparent p-5 text-center text-xs md:w-full">
-          This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
-          questions.
+          DocsGPT uses GenAI, please review critial information using sources.
         </p>
       </div>
     </div>

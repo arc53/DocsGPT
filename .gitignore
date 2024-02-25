@@ -172,3 +172,4 @@ application/vectors/
 node_modules/
 .vscode/settings.json
 models/
+model/
