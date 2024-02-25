@@ -1,34 +1,17 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { PaperPlaneIcon } from '@radix-ui/react-icons';
+import ReactMarkdown from 'react-markdown';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon } from '@radix-ui/react-icons';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
-import { ScrollArea, ScrollBar } from './ui/scroll-area'
+import { ScrollArea } from './ui/scroll-area'
+import { Alert, AlertTitle, AlertDescription } from './ui/alert';
 import Dragon from '../assets/cute-docsgpt.svg'
 import MessageIcon from '../assets/message.svg'
 import Cancel from '../assets/cancel.svg'
-import { Doc, Query } from '@/models/customTypes';
+import { Query } from '@/models/customTypes';
 import { fetchAnswerStreaming } from '@/requests/streamingApi';
-//import './style.css'
-
-interface HistoryItem {
-  prompt: string;
-  response: string;
-}
-interface Message {
-  type: 'PROMPT' | 'RESPONSE' | 'ERROR',
-  message: string
-  id: string | null
-}
-interface FetchAnswerStreamingProps {
-  question?: string;
-  apiKey?: string;
-  selectedDocs?: string;
-  history?: HistoryItem[];
-  conversationId?: string | null;
-  apiHost?: string;
-  onEvent?: (event: MessageEvent) => void;
-}
+import Response from './Response';
 
 type Status = 'idle' | 'loading' | 'failed';
 
@@ -50,28 +33,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
   });
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<Status>('idle');
-  const [queries, setQueries] = useState<Query[]>([
-    {
-      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
-      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
-    },
-    {
-      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
-      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
-    },
-    {
-      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
-      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
-    },
-    {
-      prompt: 'dasasfafa fafajfiaf agad gagadjga gadgadgadijgaf',
-      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
-    },
-    {
-      prompt: 'LAST PROMPT',
-      response: 'dkadfafadfa fadfafa fa df adgdfaeye5uttr sr s srt rssr  '
-    }
-  ])
+  const [queries, setQueries] = useState<Query[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   //const selectDocs = 'local/1706.03762.pdf/'
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -83,7 +45,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
   };
   useEffect(() => {
     scrollIntoView();
-  }, [queries.length, queries[queries.length - 1].response]);
+  }, [queries.length, queries[queries.length - 1]?.response]);
 
   useEffect(() => {
     localStorage.setItem('docsGPTChatState', chatState);
@@ -185,7 +147,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
               <div className='h-full'>
                 <ScrollArea className='h-72 rounded-md border'>
                   {
-                    queries?.map((query, index) => {
+                    queries.length > 0 ? queries?.map((query, index) => {
                       return (
                         <Fragment key={index}>
                           {
@@ -196,14 +158,37 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
                             </div>
                           }
                           {
-                            query.response && <div ref={(index === queries.length - 1) ? scrollRef : null} className='flex justify-start m-2 '>
+                            query.response ? <div ref={(index === queries.length - 1) ? scrollRef : null} className='flex justify-start m-2 '>
                               <p className='dark:bg-[#38383B] max-w-[80%] dark:text-white block p-2 rounded-lg'>
-                                {query.response}
+                                <Response message={query.response}/>
                               </p>
                             </div>
+                              : <div className='max-w-[80%] m-2'>
+                                {
+                                  query.error ? <Alert className='border-red-700 text-red-700' variant="destructive">
+                                    <ExclamationTriangleIcon color='red' className="h-4 w-4" />
+                                    <AlertTitle>Network Error</AlertTitle>
+                                    <AlertDescription>
+                                      Something went wrong !
+                                    </AlertDescription>
+                                  </Alert>
+                                    : <div>
+                                      add loader here
+                                    </div>
+                                }
+                              </div>
                           }
                         </Fragment>)
                     })
+                      : <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5/6 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#ff1bf4] rounded-lg mx-2 p-[1px]'>
+                        <Alert className='dark:bg-[#222327] mx-0'>
+                          <RocketIcon className="h-4 w-4" />
+                          <AlertTitle>Welcome to DocsGPT !</AlertTitle>
+                          <AlertDescription>
+                            This is a chatbot that uses the GPT-3, Faiss and LangChain to answer questions.
+                          </AlertDescription>
+                        </Alert>
+                      </div>
                   }
                 </ScrollArea>
                 <form
