@@ -8,19 +8,9 @@ import { Alert, AlertTitle, AlertDescription } from './ui/alert';
 import Dragon from '../assets/cute-docsgpt.svg'
 import MessageIcon from '../assets/message.svg'
 import Cancel from '../assets/cancel.svg'
-import { Query } from '@/models/customTypes';
+import { Query, Status, ChatStates } from '@/models/customTypes';
 import { fetchAnswerStreaming } from '@/requests/streamingApi';
 import Response from './Response';
-
-type Status = 'idle' | 'loading' | 'failed';
-
-enum ChatStates {
-  Init = 'init',
-  Processing = 'processing',
-  Typing = 'typing',
-  Answer = 'answer',
-  Minimized = 'minimized',
-}
 
 export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public' }) => {
   // processing states
@@ -118,7 +108,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             />
           </div>
         </div>
-        <div className={` ${chatState !== 'minimized' ? '' : 'hidden'} absolute bottom-0 divide-y dark:divide-gray-700 rounded-md border dark:bg-[#222327] dark:border-gray-700  font-sans shadow backdrop-blur-sm w-full`} style={{ transform: 'translateY(0%) translateZ(0px)' }}>
+        <div className={` ${chatState !== 'minimized' ? '' : 'hidden'} absolute bottom-0 dark:divide-gray-700 rounded-md dark:bg-[#222327] dark:border-gray-700  font-sans shadow backdrop-blur-sm w-full`} style={{ transform: 'translateY(0%) translateZ(0px)' }}>
           <div>
             <img
               src={Cancel}
@@ -130,7 +120,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
               }}
             />
             <div className="flex items-center gap-2 p-3">
-              <div className={` flex justify-between`}>
+              <div className='p-2 flex justify-between'>
                 <img src={Dragon} />
                 <div className='mx-2 w-full'>
                   <h3 className="text-sm font-normal text-gray-700 dark:text-[#FAFAFA] ">Get AI assistance</h3>
@@ -146,7 +136,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             </button>
             {(chatState === 'typing' || chatState === 'answer' || chatState === 'processing') && (
               <div className='h-full'>
-                <ScrollArea className='h-72 p-2 rounded-md border'>
+                <ScrollArea className='h-72 p-2 rounded-md'>
                   {
                     queries.length > 0 ? queries?.map((query, index) => {
                       return (
@@ -198,7 +188,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
                 </ScrollArea>
                 <form
                   onSubmit={handleSubmit}
-                  className="relative w-full m-0" style={{ opacity: 1 }}>
+                  className="relative w-full m-0 p-2" style={{ opacity: 1 }}>
                   <div className='p-2 flex justify-between'>
                     <Input
                       value={prompt} onChange={(event) => setPrompt(event.target.value)}
