@@ -21,16 +21,15 @@ def group_documents(documents: List[Document], min_tokens: int, max_tokens: int)
     for doc in documents:
         doc_len = len(tiktoken.get_encoding("cl100k_base").encode(doc.text))
 
-        if current_group is None:
-            current_group = Document(text=doc.text, doc_id=doc.doc_id, embedding=doc.embedding,
-                                     extra_info=doc.extra_info)
-        elif len(tiktoken.get_encoding("cl100k_base").encode(
-                current_group.text)) + doc_len < max_tokens and doc_len < min_tokens:
-            current_group.text += " " + doc.text
+        # Check if current group is empty or if the document can be added based on token count and matching metadata
+        if current_group is None or (len(tiktoken.get_encoding("cl100k_base").encode(current_group.text)) + doc_len < max_tokens and doc_len < min_tokens and current_group.extra_info == doc.extra_info):
+            if current_group is None:
+                current_group = doc  # Use the document directly to retain its metadata
+            else:
+                current_group.text += " " + doc.text  # Append text to the current group
         else:
             docs.append(current_group)
-            current_group = Document(text=doc.text, doc_id=doc.doc_id, embedding=doc.embedding,
-                                     extra_info=doc.extra_info)
+            current_group = doc  # Start a new group with the current document
 
     if current_group is not None:
         docs.append(current_group)
