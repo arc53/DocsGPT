@@ -1,6 +1,5 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon } from '@radix-ui/react-icons';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -35,16 +34,21 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
   const [status, setStatus] = useState<Status>('idle');
   const [queries, setQueries] = useState<Query[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
-  //const selectDocs = 'local/1706.03762.pdf/'
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const scrollIntoView = () => {
-    scrollRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+  const scrollToBottom = (element: Element | null) => {
+    if (!element) return;
+    if (element?.children.length === 0) {
+      element?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }
+    const lastChild = element?.children?.[element.children.length - 1]
+    lastChild && scrollToBottom(lastChild)
   };
   useEffect(() => {
-    scrollIntoView();
+    scrollToBottom(scrollRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
 
   useEffect(() => {
@@ -101,10 +105,9 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
 
   }
 
-
   return (
     <>
-      <div className="dark widget-container">
+      <div className="dark widget-container font-sans">
         <div onClick={() => setChatState(ChatStates.Init)}
           className={`${chatState !== 'minimized' ? 'hidden' : ''} cursor-pointer`}>
           <div className="mr-2 mb-2 bottom-2 right-2 absolute w-20 h-20 rounded-full overflow-hidden dark:divide-gray-700 border dark:border-gray-100 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#E80D9D] from-gray-900/80  via-gray-900 to-gray-900 font-sans shadow backdrop-blur-sm flex items-center justify-center">
@@ -130,10 +133,8 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
               <div className={` flex justify-between`}>
                 <img src={Dragon} />
                 <div className='mx-2 w-full'>
-
-                  <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200">Get AI assistance</h3>
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">DocsGPT's AI Chatbot is here to help</p>
-
+                  <h3 className="text-sm font-normal text-gray-700 dark:text-[#FAFAFA] ">Get AI assistance</h3>
+                  <p className="mt-1 text-xs text-gray-400 dark:text-[#A1A1AA]">DocsGPT's AI Chatbot is here to help</p>
                 </div>
               </div>
             </div>
@@ -145,35 +146,39 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             </button>
             {(chatState === 'typing' || chatState === 'answer' || chatState === 'processing') && (
               <div className='h-full'>
-                <ScrollArea className='h-72 rounded-md border'>
+                <ScrollArea className='h-72 p-2 rounded-md border'>
                   {
                     queries.length > 0 ? queries?.map((query, index) => {
                       return (
                         <Fragment key={index}>
                           {
                             query.prompt && <div className='flex justify-end m-2 '>
-                              <p className='bg-gradient-to-br dark:from-[#8860DB] dark:to-[#6D42C5] max-w-[80%] dark:text-white block p-2 rounded-lg '>
+                              <p ref={(!(query.response || query.error) && index === queries.length - 1) ? scrollRef : null} className='bg-gradient-to-br dark:from-[#8860DB] dark:to-[#6D42C5] max-w-[80%] dark:text-white block px-3 py-2 rounded-lg '>
                                 {query.prompt}
                               </p>
                             </div>
                           }
                           {
-                            query.response ? <div ref={(index === queries.length - 1) ? scrollRef : null} className='flex justify-start m-2 '>
-                              <p className='dark:bg-[#38383B] max-w-[80%] dark:text-white block p-2 rounded-lg'>
-                                <Response message={query.response}/>
-                              </p>
+                            query.response ? <div className='flex justify-start m-2 '>
+                              <div ref={(index === queries.length - 1) ? scrollRef : null} className='dark:bg-[#38383B] max-w-[80%] dark:text-white block px-3 py-2 rounded-lg'>
+                                <Response message={query.response} />
+                              </div>
                             </div>
-                              : <div className='max-w-[80%] m-2'>
+                              : <div className='m-2'>
                                 {
-                                  query.error ? <Alert className='border-red-700 text-red-700' variant="destructive">
+                                  query.error ? <Alert className='border-red-700 text-red-700 max-w-[80%]' variant="destructive">
                                     <ExclamationTriangleIcon color='red' className="h-4 w-4" />
                                     <AlertTitle>Network Error</AlertTitle>
                                     <AlertDescription>
                                       Something went wrong !
                                     </AlertDescription>
                                   </Alert>
-                                    : <div>
-                                      add loader here
+                                    : <div className='flex justify-start m-2 '>
+                                      <p className='dark:bg-[#38383B] text-xl max-w-[80%] font-extrabold dark:text-white block px-3 py-2 rounded-lg  justify-center text-gray-800  transition duration-300 rounded-b '>
+                                        <span className="dot-animation">.</span>
+                                        <span className="dot-animation delay-200">.</span>
+                                        <span className="dot-animation delay-400">.</span>
+                                      </p>
                                     </div>
                                 }
                               </div>
