@@ -209,6 +209,29 @@ export default function Upload({
     xhr.send(formData);
   };
 
+  const uploadRemote = () => {
+    console.log("here")
+    const formData = new FormData();
+    formData.append('name', urlName);
+    formData.append('user', 'local');
+    if (urlType !== null) {
+      formData.append('source', urlType?.value);
+    }
+    formData.append('data', url);
+    const apiHost = import.meta.env.VITE_API_HOST;
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', (event) => {
+      const progress = +((event.loaded / event.total) * 100).toFixed(2);
+      setProgress({ type: 'UPLOAD', percentage: progress });
+    });
+    xhr.onload = () => {
+      const { task_id } = JSON.parse(xhr.responseText);
+      setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+    };
+    xhr.open('POST', `${apiHost + '/api/remote'}`);
+    xhr.send(formData);
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: false,
@@ -309,12 +332,12 @@ export default function Upload({
         }
         <div className="flex flex-row-reverse">
           <button
-            onClick={uploadFile}
+            onClick={activeTab === 'file' ? uploadFile : uploadRemote} 
             className={`ml-6 rounded-3xl bg-purple-30 text-white cursor-pointer ${files.length > 0 && docName.trim().length > 0
               ? ''
               : 'bg-opacity-75 text-opacity-80'
               } py-2 px-6`}
-            disabled={files.length === 0 || docName.trim().length === 0} // Disable the button if no file is selected or docName is empty
+            disabled={(files.length === 0 || docName.trim().length === 0) && (activeTab === 'file') } // Disable the button if no file is selected or docName is empty
           >
             Train
           </button>
