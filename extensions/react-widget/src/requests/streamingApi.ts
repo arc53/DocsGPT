@@ -1,5 +1,3 @@
-import { Answer } from "@/models/customTypes";
-import { Doc } from "@/models/customTypes";
 interface HistoryItem {
     prompt: string;
     response?: string;
