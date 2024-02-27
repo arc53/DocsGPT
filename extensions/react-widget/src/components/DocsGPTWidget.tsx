@@ -8,25 +8,22 @@ import { Alert, AlertTitle, AlertDescription } from './ui/alert';
 import Dragon from '../assets/cute-docsgpt.svg'
 import MessageIcon from '../assets/message.svg'
 import Cancel from '../assets/cancel.svg'
-import { Query, Status, ChatStates } from '@/models/customTypes';
+import { Query, Status } from '@/models/customTypes';
 import { fetchAnswerStreaming } from '@/requests/streamingApi';
 import Response from './Response';
 
 export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public' }) => {
-  // processing states
-  const [chatState, setChatState] = useState<ChatStates>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('docsGPTChatState') as ChatStates || ChatStates.Init;
-    }
-    return ChatStates.Init;
-  });
+
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [queries, setQueries] = useState<Query[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
-
+  const [open, setOpen] = useState<boolean>(false)
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
   const scrollToBottom = (element: Element | null) => {
+    //recursive function to scroll to the last child of the last child ...
+    // to get to the bottom most element
     if (!element) return;
     if (element?.children.length === 0) {
       element?.scrollIntoView({
@@ -37,13 +34,11 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
+
   useEffect(() => {
     scrollToBottom(scrollRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
 
-  useEffect(() => {
-    localStorage.setItem('docsGPTChatState', chatState);
-  }, [chatState]);
   async function stream(question: string) {
     setStatus('loading');
     try {
@@ -89,17 +84,14 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
     e.preventDefault()
     queries.push({ prompt })
     setPrompt('')
-    setChatState(ChatStates.Processing)
     await stream(prompt)
-    setChatState(ChatStates.Answer)
-
   }
 
   return (
     <>
-      <div className="dark widget-container font-sans">
-        <div onClick={() => setChatState(ChatStates.Init)}
-          className={`${chatState !== 'minimized' ? 'hidden' : ''} cursor-pointer`}>
+      <div className="dark text-left widget-container font-sans">
+        <div onClick={() => setOpen(true)}
+          className={`${open ? 'hidden' : ''} cursor-pointer`}>
           <div className="mr-2 mb-2 bottom-2 right-2 absolute w-20 h-20 rounded-full overflow-hidden dark:divide-gray-700 border dark:border-gray-100 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#E80D9D] from-gray-900/80  via-gray-900 to-gray-900 font-sans shadow backdrop-blur-sm flex items-center justify-center">
             <img
               src={MessageIcon}
@@ -108,7 +100,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             />
           </div>
         </div>
-        <div className={` ${chatState !== 'minimized' ? '' : 'hidden'} absolute bottom-0 dark:divide-gray-700 rounded-md dark:bg-[#222327] dark:border-gray-700  font-sans shadow backdrop-blur-sm w-full`} style={{ transform: 'translateY(0%) translateZ(0px)' }}>
+        <div className={`${open ? '' : 'hidden'} absolute bottom-0 dark:divide-gray-700 rounded-md dark:bg-[#222327] dark:border-gray-700  font-sans shadow backdrop-blur-sm w-full`} style={{ transform: 'translateY(0%) translateZ(0px)' }}>
           <div>
             <img
               src={Cancel}
@@ -116,7 +108,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
               className="cursor-pointer hover:opacity-50 absolute top-0 right-0 m-2 white-filter"
               onClick={(event) => {
                 event.stopPropagation();
-                setChatState(ChatStates.Minimized);
+                setOpen(false);
               }}
             />
             <div className="flex items-center gap-2 p-3">
@@ -130,13 +122,9 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             </div>
           </div>
           <div className="w-full">
-            <button onClick={() => setChatState(ChatStates.Typing)}
-              className={`flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 hover:bg-gray-100 rounded-b dark:hover:bg-gray-800/70 ${chatState !== 'init' ? 'hidden' : ''}`}>
-              Ask DocsGPT
-            </button>
-            {(chatState === 'typing' || chatState === 'answer' || chatState === 'processing') && (
+            {open && (
               <div className='h-full'>
-                <ScrollArea className='h-72 p-2 rounded-md'>
+                <ScrollArea className='h-72 p-2 rounded-md text-left'>
                   {
                     queries.length > 0 ? queries?.map((query, index) => {
                       return (
@@ -188,13 +176,16 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
                 </ScrollArea>
                 <form
                   onSubmit={handleSubmit}
-                  className="relative w-full m-0 p-2" style={{ opacity: 1 }}>
-                  <div className='p-2 flex justify-between'>
+                  className="relative w-full m-0 bg-transparent p-2" style={{ opacity: 1 }}>
+                  <div className='p-2 flex justify-between bg-transparent'>
                     <Input
                       value={prompt} onChange={(event) => setPrompt(event.target.value)}
                       type='text'
                       className="w-[85%] border border-[#686877] h-8 bg-transparent px-5 py-4  text-sm text-gray-700 dark:text-white focus:outline-none" placeholder="What do you want to do?" />
-                    <Button className="text-gray-400 dark:text-gray-500 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#E80D9D] disabled:bg-black  text-sm inset-y-0  px-2" type="submit" disabled={prompt.length == 0 || status !== 'idle'}>
+                    <Button
+                      className="text-gray-400 dark:text-gray-500 bg-gradient-to-br dark:from-[#5AF0EC] dark:to-[#E80D9D] disabled:bg-black  text-sm inset-y-0  px-2"
+                      type="submit"
+                      disabled={prompt.length == 0 || status !== 'idle'}>
                       <PaperPlaneIcon className='text-white' />
                     </Button>
                   </div>
@@ -205,7 +196,6 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
           </div>
         </div>
       </div>
-
     </>
   )
 }

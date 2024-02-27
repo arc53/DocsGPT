@@ -2,9 +2,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     },
     "target": "ES2020",
     "useDefineForClassFields": true,
@@ -24,8 +22,13 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["src", "src/components/ui/input.tsx", "index.ts"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+    "noFallthroughCasesInSwitch": true,
+    /* The "typeRoots" configuration specifies the locations where 
+       TypeScript looks for type definitions (.d.ts files) to 
+       include in the compilation process.*/
+       "typeRoots": ["./dist/index.d.ts", "node_modules/@types"]
+      },
+      /* include /index.ts*/
+    "include": ["src", "./index.ts"],
+    "references": [{ "path": "./tsconfig.node.json" }]
 }

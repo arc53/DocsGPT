@@ -1,7 +1,9 @@
 {
-  "name": "docsgpt",
+  "name": "docsgpt-bot",
   "private": false,
-  "version": "0.2.4",
+  "description": "docsgpt-widget",
+  "homepage": "https://github.com/arc53/DocsGPT#readme",
+  "version": "0.2.6",
   "type": "module",
   "main": "dist/index.umd.js",
   "module": "dist/index.es.js",
@@ -24,6 +26,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "prepare": "npm run build && npm run build-css",
+    "build-css": "postcss src/index.css -o dist/style.css",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -32,16 +36,18 @@
     "@radix-ui/react-slot": "^1.0.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "postcss-cli": "^11.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.1",
     "react-syntax-highlighter": "^15.5.0",
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^2.2.1",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "vite-plugin-dts": "^3.7.3"
   },
   "devDependencies": {
-    "@types/node": "^20.11.19",
+    "@types/node": "^20.11.20",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@types/react-syntax-highlighter": "^15.5.11",
