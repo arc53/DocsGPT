@@ -2,8 +2,7 @@
   "name": "docsgpt-bot",
   "private": false,
   "description": "docsgpt-widget",
-  "homepage": "https://github.com/arc53/DocsGPT#readme",
-  "version": "0.3.6",
+  "version": "0.3.9",
   "type": "module",
   "main": "dist/index.umd.js",
   "module": "dist/index.es.js",
@@ -13,12 +12,8 @@
       "import": "./dist/index.es.js",
       "require": "./dist/index.umd.js",
       "types": "./dist/index.d.ts"
-    },
-    "./dist/style.css": "./dist/style.css"
+    }
   },
-  "files": [
-    "/dist"
-  ],
   "publishConfig": {
     "access": "public"
   },
@@ -38,12 +33,14 @@
     "clsx": "^2.1.0",
     "i": "^0.3.7",
     "npm": "^10.4.0",
+    "npm-packlist": "^8.0.2",
     "postcss-cli": "^11.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.1",
     "react-syntax-highlighter": "^15.5.0",
     "remark-gfm": "^4.0.0",
+    "rollup-plugin-import-css": "^3.5.0",
     "tailwind-merge": "^2.2.1",
     "tailwindcss-animate": "^1.0.7",
     "vite-plugin-dts": "^3.7.3",
@@ -71,5 +68,19 @@
     "typescript": "^5.2.2",
     "vite": "^5.1.0",
     "vite-plugin-scope-tailwind": "^1.1.10"
-  }
+  },
+  "keywords": [
+    "docsgpt",
+    "chatbot",
+    "assistant",
+    "ai",
+    "chatdocs",
+    "widget"
+  ],
+  "author": "Arc53",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/arc53/DocsGPT/issues"
+  },
+  "homepage": "https://github.com/arc53/DocsGPT#readme"
 }
