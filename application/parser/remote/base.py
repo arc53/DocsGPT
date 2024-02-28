@@ -1,6 +1,6 @@
 """Base reader class."""
 from abc import abstractmethod
-from typing import Any, List, Iterator
+from typing import Any, List
 
 from langchain.docstore.document import Document as LCDocument
 from application.parser.schema.base import Document

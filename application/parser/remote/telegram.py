@@ -1,4 +1,4 @@
-from langchain.document_loader import TelegramChatApiLoader, TelegramChatFileLoader
+from langchain.document_loader import TelegramChatApiLoader
 from application.parser.remote.base import BaseRemote
 
 class TelegramChatApiRemote(BaseRemote):
@@ -8,4 +8,4 @@ class TelegramChatApiRemote(BaseRemote):
 
     def parse_file(self, *args, **load_kwargs):
 
-        return text
+        return 
