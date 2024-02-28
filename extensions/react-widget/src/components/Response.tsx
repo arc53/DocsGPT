@@ -1,12 +1,26 @@
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
 import ReactMarkdown from 'react-markdown'
-import classes from './Response.module.css'
 import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/light-async';
 interface typeProps {
-    message:string
+    message: string
 }
-const Response = (props:typeProps) => {
+const classes = {
+    list: {
+        p: {
+            display: 'inline'
+        },
+        li: {
+            ':not(:first-child)': {
+                marginTop: '1em'
+            },
+            '> .list': {
+                marginTop: '1em'
+            }
+        }
+    }
+};
+const Response = (props: typeProps) => {
     return (
         <ReactMarkdown
             className="whitespace-pre-wrap break-words max-w-72"
@@ -19,7 +33,7 @@ const Response = (props:typeProps) => {
                         <SyntaxHighlighter
                             PreTag="div"
                             wrapLines={true}
-                            lineProps={{style: {width:'',overflowX:'scroll'}}}
+                            lineProps={{ style: { width: '', overflowX: 'scroll' } }}
                             language={match[1]}
                             style={vscDarkPlus}
                         >
