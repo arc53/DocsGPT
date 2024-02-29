@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     TOKENS_MAX_HISTORY: int = 150
     UPLOAD_FOLDER: str = "inputs"
-    VECTOR_STORE: str = "qdrant"  # "faiss" or "elasticsearch" or "qdrant"
+    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
