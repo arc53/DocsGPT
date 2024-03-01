@@ -9,6 +9,7 @@ import requests
 
 from application.core.settings import settings
 from application.parser.file.bulk import SimpleDirectoryReader
+from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
@@ -118,6 +119,52 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
         'formats': formats,
         'name_job': name_job,
         'filename': filename,
+        'user': user,
+        'limited': False
+    }
+
+def remote_worker(self, source_data, name_job, user, directory = 'temp', loader = 'url'):
+    # sample = False
+    token_check = True
+    min_tokens = 150
+    max_tokens = 1250
+    full_path = directory + '/' + user + '/' + name_job
+
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+
+    self.update_state(state='PROGRESS', meta={'current': 1})
+ 
+    # source_data {"data": [url]} for url type task just urls
+ 
+    # Use RemoteCreator to load data from URL
+    remote_loader = RemoteCreator.create_loader(loader)
+    raw_docs = remote_loader.load_data(source_data)
+
+    docs = group_split(documents=raw_docs, min_tokens=min_tokens, max_tokens=max_tokens, token_check=token_check)
+
+    #docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+
+    call_openai_api(docs, full_path, self)
+    self.update_state(state='PROGRESS', meta={'current': 100})
+    
+
+
+    # Proceed with uploading and cleaning as in the original function
+    file_data = {'name': name_job, 'user': user}
+    if settings.VECTOR_STORE == "faiss":
+        files = {'file_faiss': open(full_path + '/index.faiss', 'rb'),
+                 'file_pkl': open(full_path + '/index.pkl', 'rb')}
+        requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
+        requests.get(urljoin(settings.API_URL, "/api/delete_old?path=" + full_path))
+    else:
+        requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
+
+    shutil.rmtree(full_path)
+
+    return {
+        'urls': source_data,
+        'name_job': name_job,
         'user': user,
         'limited': False
     }

@@ -5,7 +5,7 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.utils import secure_filename
 
-from application.api.user.tasks import ingest
+from application.api.user.tasks import ingest, ingest_remote
 
 from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
@@ -152,6 +152,32 @@ def upload_file():
         task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
         ".csv", ".epub", ".html", ".mdx"],
          job_name, filename, user)
+        # task id
+        task_id = task.id
+        return {"status": "ok", "task_id": task_id}
+    else:
+        return {"status": "error"}
+    
+@user.route("/api/remote", methods=["POST"])
+def upload_remote():
+    """Upload a remote source to get vectorized and indexed."""
+    if "user" not in request.form:
+        return {"status": "no user"}
+    user = secure_filename(request.form["user"])
+    if "source" not in request.form:
+        return {"status": "no source"}
+    source = secure_filename(request.form["source"])
+    if "name" not in request.form:
+        return {"status": "no name"}
+    job_name = secure_filename(request.form["name"])
+    # check if the post request has the file part
+    if "data" not in request.form:
+        print("No data")
+        return {"status": "no data"}
+    source_data = request.form["data"]
+
+    if source_data:
+        task = ingest_remote.delay(source_data=source_data, job_name=job_name, user=user, loader=source)
         # task id
         task_id = task.id
         return {"status": "ok", "task_id": task_id}
