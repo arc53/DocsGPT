@@ -71,7 +71,7 @@ export default function Upload({
   const [url, setUrl] = useState('')
   const urlOptions: urlOption[] = [
     { label: 'Crawler', value: 'crawler' },
-    { label: 'Sitemap', value: 'sitemap' },
+    // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' }]
   const [urlType, setUrlType] = useState<urlOption>(null)
   const [activeTab, setActiveTab] = useState<string>('file');
