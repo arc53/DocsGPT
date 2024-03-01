@@ -36,7 +36,7 @@ def delete_conversation():
 @user.route("/api/get_conversations", methods=["get"])
 def get_conversations():
     # provides a list of conversations
-    conversations = conversations_collection.find().sort("date", -1)
+    conversations = conversations_collection.find().sort("date", -1).limit(30)
     list_conversations = []
     for conversation in conversations:
         list_conversations.append({"id": str(conversation["_id"]), "name": conversation["name"]})
