@@ -8,10 +8,10 @@ import {
   selectPrompt,
   setPrompt,
   selectSourceDocs,
+  setSourceDocs,
 } from './preferences/preferenceSlice';
 import { Doc } from './preferences/preferenceApi';
 import { useDarkTheme } from './hooks';
-import { Light } from 'react-syntax-highlighter';
 type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };
@@ -86,13 +86,11 @@ const Setting: React.FC = () => {
     fetch(`${apiHost}/api/delete_old?path=${docPath}`, {
       method: 'GET',
     })
-      .then(() => {
-        // remove the image element from the DOM
-        const imageElement = document.querySelector(
-          `#img-${index}`,
-        ) as HTMLElement;
-        const parentElement = imageElement.parentNode as HTMLElement;
-        parentElement.parentNode?.removeChild(parentElement);
+      .then((response) => {
+        if(response.ok && documents){
+          const updatedDocuments = [...documents.slice(0, index), ...documents.slice(index + 1)];
+          dispatch(setSourceDocs(updatedDocuments));
+        }
       })
       .catch((error) => console.error(error));
   };

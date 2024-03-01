@@ -147,12 +147,24 @@ class SimpleDirectoryReader(BaseReader):
                 # do standard read
                 with open(input_file, "r", errors=self.errors) as f:
                     data = f.read()
-            if isinstance(data, List):
-                data_list.extend(data)
-            else:
-                data_list.append(str(data))
+            # Prepare metadata for this file
             if self.file_metadata is not None:
-                metadata_list.append(self.file_metadata(str(input_file)))
+                file_metadata = self.file_metadata(str(input_file))
+            else:
+                # Provide a default empty metadata
+                file_metadata = {'title': '', 'store': ''}
+                # TODO: Find a case with no metadata and check if breaks anything 
+
+            if isinstance(data, List):
+                # Extend data_list with each item in the data list
+                data_list.extend([str(d) for d in data])
+                # For each item in the data list, add the file's metadata to metadata_list
+                metadata_list.extend([file_metadata for _ in data])
+            else:
+                # Add the single piece of data to data_list
+                data_list.append(str(data))
+                # Add the file's metadata to metadata_list
+                metadata_list.append(file_metadata)
 
         if concatenate:
             return [Document("\n".join(data_list))]
