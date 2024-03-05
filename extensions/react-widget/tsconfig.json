@@ -1,35 +1,34 @@
 {
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    /* The "typeRoots" configuration specifies the locations where 
-       TypeScript looks for type definitions (.d.ts files) to 
-       include in the compilation process.*/
-       "typeRoots": ["./dist/index.d.ts", "node_modules/@types"]
+    "compilerOptions": {
+      "baseUrl": ".",
+      "paths": {
+        "@/*": ["src/*", "@/*"]
       },
-      /* include /index.ts*/
-    "include": ["src", "./index.ts"],
-    "exclude": ["node_modules","dist"],
-    "references": [{ "path": "./tsconfig.node.json" }]
-}
+      "target": "ES2020",
+      "useDefineForClassFields": true,
+      "lib": ["ES2020", "DOM", "DOM.Iterable"],
+      "module": "ESNext",
+      "skipLibCheck": true,
+  
+      /* Bundler mode */
+      "moduleResolution": "bundler",
+      "allowImportingTsExtensions": true,
+      "resolveJsonModule": true,
+      "isolatedModules": true,
+      "noEmit": true,
+      "jsx": "react-jsx",
+  
+      /* Linting */
+      "strict": true,
+      "noUnusedLocals": false,
+      "noUnusedParameters": true,
+      "noFallthroughCasesInSwitch": true,
+      /* The "typeRoots" configuration specifies the locations where 
+         TypeScript looks for type definitions (.d.ts files) to 
+         include in the compilation process.*/
+         "typeRoots": ["./dist/index.d.ts", "node_modules/@types"]
+        },
+        /* include /index.ts*/
+        "include": ["src/index.ts","custom.d.ts"],
+        "exclude": ["node_modules"],
+  }

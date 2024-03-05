@@ -13,7 +13,6 @@ npm install  docsgpt
 
 ```javascript
     import { DocsGPTWidget } from "docsgpt";
-    import "docsgpt/dist/style.css";
 
     const App = () => {
       return <DocsGPTWidget />;
@@ -24,7 +23,6 @@ To link the widget to your api and your documents you can pass parameters to the
 
 ```javascript
     import { DocsGPTWidget } from "docsgpt";
-    import "docsgpt/dist/style.css";
 
     const App = () => {
       return <DocsGPTWidget apiHost="http://localhost:7001" selectDocs='default' apiKey=''/>;

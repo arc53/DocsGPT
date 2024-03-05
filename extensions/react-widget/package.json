@@ -1,86 +1,59 @@
 {
   "name": "docsgpt-bot",
-  "private": false,
-  "description": "docsgpt-widget",
-  "version": "0.3.9",
-  "type": "module",
-  "main": "dist/index.umd.js",
-  "module": "dist/index.es.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.es.js",
-      "require": "./dist/index.umd.js",
-      "types": "./dist/index.d.ts"
-    }
+  "version": "4.0.6",
+  "description": "docsgpt ai assistant",
+  "source": "./src/index.html",
+  "main": "dist/main.js",
+  "module": "dist/module.js",
+  "types": "dist/types.d.ts",
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "@parcel/resolver-default": {
+    "packageExports": true
   },
-  "publishConfig": {
-    "access": "public"
+  "resolution":{
+    "styled-components": "^5"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "prepare": "npm run build && npm run build-css",
-    "build-css": "postcss src/index.css -o dist/style.css",
-    "preview": "vite preview"
+    "build": "parcel build src/index.ts",
+    "dev": "parcel",
+    "test": "jest",
+    "lint": "eslint",
+    "check": "tsc --noEmit",
+    "ci": "yarn build && yarn test && yarn lint && yarn check"
   },
+  "author": "",
+  "license": "MIT",
   "dependencies": {
+    "@babel/plugin-transform-flow-strip-types": "^7.23.3",
+    "@parcel/resolver-glob": "^2.12.0",
+    "@parcel/transformer-svg-react": "^2.12.0",
+    "@parcel/transformer-typescript-tsc": "^2.12.0",
+    "@parcel/validator-typescript": "^2.12.0",
     "@radix-ui/react-icons": "^1.3.0",
-    "@radix-ui/react-scroll-area": "^1.0.5",
-    "@radix-ui/react-slot": "^1.0.2",
+    "@types/react": "^18.2.61",
+    "@types/react-dom": "^18.2.19",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "flow-bin": "^0.229.2",
     "i": "^0.3.7",
-    "npm": "^10.4.0",
-    "npm-packlist": "^8.0.2",
-    "postcss-cli": "^11.0.0",
+    "install": "^0.13.0",
+    "npm": "^10.5.0",
+    "parcel": "^2.12.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-markdown": "^9.0.1",
-    "react-syntax-highlighter": "^15.5.0",
-    "remark-gfm": "^4.0.0",
-    "rollup-plugin-import-css": "^3.5.0",
-    "tailwind-merge": "^2.2.1",
-    "tailwindcss-animate": "^1.0.7",
-    "vite-plugin-dts": "^3.7.3",
-    "vite-plugin-tailwind": "^0.0.4"
+    "styled-components": "^6.1.8"
   },
   "devDependencies": {
-    "@types/node": "^20.11.20",
-    "@types/react": "^18.2.55",
-    "@types/react-dom": "^18.2.19",
-    "@types/react-syntax-highlighter": "^15.5.11",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
-    "@vitejs/plugin-react": "^4.2.1",
-    "autoprefixer": "^10.4.17",
-    "cssnano": "^6.0.5",
-    "eslint": "^8.56.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.5",
-    "postcss": "^8.4.35",
-    "postcss-cssnext": "^3.1.1",
-    "postcss-nested": "^6.0.1",
-    "postcss-simple-vars": "^7.0.1",
-    "rollup-plugin-postcss": "^4.0.2",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5.2.2",
-    "vite": "^5.1.0",
-    "vite-plugin-scope-tailwind": "^1.1.10"
-  },
-  "keywords": [
-    "docsgpt",
-    "chatbot",
-    "assistant",
-    "ai",
-    "chatdocs",
-    "widget"
-  ],
-  "author": "Arc53",
-  "license": "Apache-2.0",
-  "bugs": {
-    "url": "https://github.com/arc53/DocsGPT/issues"
-  },
-  "homepage": "https://github.com/arc53/DocsGPT#readme"
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "@babel/preset-react": "^7.23.3",
+    "@parcel/packager-ts": "^2.12.0",
+    "@parcel/transformer-typescript-types": "^2.12.0",
+    "babel-loader": "^8.0.4",
+    "process": "^0.11.10",
+    "typescript": "^5.3.3"
+  }
 }

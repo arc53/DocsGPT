@@ -1,13 +1,10 @@
-import { DocsGPTWidget } from '..'
-
-function App() {
-
+import React from "react"
+import {DocsGPTWidget} from "./components/DocsGPTWidget"
+const App = () => {
   return (
-    <>
-      <div>
-        <DocsGPTWidget/>
-      </div>
-    </>
+    <div>
+      <DocsGPTWidget/>
+    </div>
   )
 }
 

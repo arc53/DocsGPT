@@ -1,0 +1,10 @@
+{
+  "extends": "@parcel/config-default",
+  "resolvers": ["@parcel/resolver-glob","..."],
+  "transformers": {
+    "*.svg": ["...", "@parcel/transformer-svg-react", "@parcel/transformer-typescript-tsc"]
+},
+  "validators": {
+    "*.{ts,tsx}": ["@parcel/validator-typescript"]
+  }
+}
