@@ -3,6 +3,7 @@ from typing import Optional
 import os
 
 from pydantic_settings import BaseSettings
+
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     TOKENS_MAX_HISTORY: int = 150
     UPLOAD_FOLDER: str = "inputs"
-    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch"
+    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
@@ -27,20 +28,35 @@ class Settings(BaseSettings):
     AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for embeddings
 
     # elasticsearch
-    ELASTIC_CLOUD_ID: Optional[str] = None # cloud id for elasticsearch
-    ELASTIC_USERNAME: Optional[str] = None # username for elasticsearch
-    ELASTIC_PASSWORD: Optional[str] = None # password for elasticsearch
-    ELASTIC_URL: Optional[str] = None # url for elasticsearch
-    ELASTIC_INDEX: Optional[str] = "docsgpt" # index name for elasticsearch
+    ELASTIC_CLOUD_ID: Optional[str] = None  # cloud id for elasticsearch
+    ELASTIC_USERNAME: Optional[str] = None  # username for elasticsearch
+    ELASTIC_PASSWORD: Optional[str] = None  # password for elasticsearch
+    ELASTIC_URL: Optional[str] = None  # url for elasticsearch
+    ELASTIC_INDEX: Optional[str] = "docsgpt"  # index name for elasticsearch
 
     # SageMaker config
-    SAGEMAKER_ENDPOINT: Optional[str] = None # SageMaker endpoint name
-    SAGEMAKER_REGION: Optional[str] = None # SageMaker region name
-    SAGEMAKER_ACCESS_KEY: Optional[str] = None # SageMaker access key
-    SAGEMAKER_SECRET_KEY: Optional[str] = None # SageMaker secret key
+    SAGEMAKER_ENDPOINT: Optional[str] = None  # SageMaker endpoint name
+    SAGEMAKER_REGION: Optional[str] = None  # SageMaker region name
+    SAGEMAKER_ACCESS_KEY: Optional[str] = None  # SageMaker access key
+    SAGEMAKER_SECRET_KEY: Optional[str] = None  # SageMaker secret key
 
-    # prem ai project id    
+    # prem ai project id
     PREMAI_PROJECT_ID: Optional[str] = None
+
+    # Qdrant vectorstore config
+    QDRANT_COLLECTION_NAME: Optional[str] = "docsgpt"
+    QDRANT_LOCATION: Optional[str] = None
+    QDRANT_URL: Optional[str] = None
+    QDRANT_PORT: Optional[int] = 6333
+    QDRANT_GRPC_PORT: int = 6334
+    QDRANT_PREFER_GRPC: bool = False
+    QDRANT_HTTPS: Optional[bool] = None
+    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_PREFIX: Optional[str] = None
+    QDRANT_TIMEOUT: Optional[float] = None
+    QDRANT_HOST: Optional[str] = None
+    QDRANT_PATH: Optional[str] = None
+    QDRANT_DISTANCE_FUNC: str = "Cosine"
 
 
 path = Path(__file__).parent.parent.absolute()
