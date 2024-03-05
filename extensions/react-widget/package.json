@@ -1,6 +1,6 @@
 {
   "name": "docsgpt-bot",
-  "version": "4.0.6",
+  "version": "4.0.7",
   "description": "docsgpt ai assistant",
   "source": "./src/index.html",
   "main": "dist/main.js",

@@ -1,6 +1,6 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross1Icon, WidthIcon } from '@radix-ui/react-icons';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross1Icon } from '@radix-ui/react-icons';
 import { MESSAGE_TYPE } from '../models/types';
 import { Query, Status } from '../models/types';
 import MessageIcon from '../assets/message.svg'
@@ -211,7 +211,7 @@ const HeroWrapper = styled.div`
   background-color: #222327;
   border-radius: 10px; 
   font-weight: normal;
-  padding: 2px;
+  padding: 6px;
   display: flex;
   justify-content: space-between;
 `
@@ -226,7 +226,10 @@ const HeroDescription = styled.p`
   color: #fff;
   font-size: 13px;
 `;
-const Hero = () => {
+const Avatar = styled.img<{width:number,height:number}>`
+max-width: ${props => props.width};
+`
+const Hero = ({title,description}:{title:string,description:string}) => {
   return (
     <>
       <HeroContainer>
@@ -235,9 +238,9 @@ const Hero = () => {
             <RocketIcon color='white' width={20} height={20} />
           </IconWrapper>
           <div>
-            <HeroTitle>Welcome to DocsGPT !</HeroTitle>
+            <HeroTitle>{title}</HeroTitle>
             <HeroDescription>
-              This is a chatbot that uses GPT-3, Faiss, and LangChain to answer questions.
+              {description}
             </HeroDescription>
           </div>
         </HeroWrapper>
@@ -245,7 +248,16 @@ const Hero = () => {
     </>
   );
 };
-export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public' }) => {
+export const DocsGPTWidget = ({
+  apiHost = 'https://gptcloud.arc53.com',
+  selectDocs = 'default', 
+  apiKey = 'docsgpt-public',
+  avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+  title = 'Get AI assistance',
+  description = 'DocsGPT\'s AI Chatbot is here to help',
+  heroTitle = 'Welcome to DocsGPT !',
+  heroDescription='This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+}) => {
 
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<Status>('idle');
@@ -319,12 +331,14 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
     setPrompt('')
     await stream(prompt)
   }
-
+  const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
+  };
   return (
     <>
       <WidgetContainer>
         <FloatingButton onClick={() => setOpen(true)} hidden={open}>
-            <MessageIcon/>
+          <MessageIcon />
         </FloatingButton>
         {open && <StyledContainer>
           <div>
@@ -333,12 +347,12 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
             </CancelButton>
 
             <Header>
-                <IconWrapper>
-                  <img width={48} height={48} src='https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png' alt='docs-gpt'/>
-                </IconWrapper>
+              <IconWrapper>
+                <img style={{maxWidth:"42px",maxHeight:"42px"}}  onError={handleImageError} src={avatar} alt='docs-gpt' />
+              </IconWrapper>
               <ContentWrapper>
-                <Title>Get AI assistance</Title>
-                <Description>DocsGPT's AI Chatbot is here to help</Description>
+                <Title>{title}</Title>
+                <Description>{description}</Description>
               </ContentWrapper>
             </Header>
           </div>
@@ -389,7 +403,7 @@ export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDo
                       }
                     </Fragment>)
                 })
-                  : <Hero />
+                  : <Hero title={heroTitle} description={heroDescription}/>
               }
             </Conversation>
             <PromptContainer

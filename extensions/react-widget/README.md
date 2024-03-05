@@ -25,7 +25,16 @@ To link the widget to your api and your documents you can pass parameters to the
     import { DocsGPTWidget } from "docsgpt";
 
     const App = () => {
-      return <DocsGPTWidget apiHost="http://localhost:7001" selectDocs='default' apiKey=''/>;
+      return <DocsGPTWidget 
+             apiHost = 'http://localhost:7001',
+             selectDocs = 'default', 
+             apiKey = '',
+             avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+             title = 'Get AI assistance',
+             description = 'DocsGPT\'s AI Chatbot is here to help',
+             heroTitle = 'Welcome to DocsGPT !',
+             heroDescription='This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+             />;
     };
 ```
 
