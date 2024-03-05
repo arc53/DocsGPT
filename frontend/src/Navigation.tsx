@@ -40,7 +40,7 @@ import { Doc, getConversations } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme } from './hooks';
-import Dropdown from './components/Dropdown';
+import SourceDropdown from './components/SourceDropdown';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -277,7 +277,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
             <div className="relative my-4 flex gap-2 px-2">
-              <Dropdown
+              <SourceDropdown
                 options={docs}
                 selectedDocs={selectedDocs}
                 setSelectedDocs={setSelectedDocs}
