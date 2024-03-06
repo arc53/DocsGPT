@@ -1,247 +1,426 @@
 "use client";
-import {useEffect, useRef, useState} from 'react'
-//import './style.css'
-
-interface HistoryItem {
-  prompt: string;
-  response: string;
-}
-
-interface FetchAnswerStreamingProps {
-  question?: string;
-  apiKey?: string;
-  selectedDocs?: string;
-  history?: HistoryItem[];
-  conversationId?: string | null;
-  apiHost?: string;
-  onEvent?: (event: MessageEvent) => void;
-}
-
-
-enum ChatStates {
-  Init = 'init',
-  Processing = 'processing',
-  Typing = 'typing',
-  Answer = 'answer',
-  Minimized = 'minimized',
-}
-
-function fetchAnswerStreaming({
-  question = '',
-  apiKey = '',
-  selectedDocs = '',
-  history = [],
-  conversationId = null,
-  apiHost = '',
-  onEvent = () => {console.log("Event triggered, but no handler provided.");}
-}: FetchAnswerStreamingProps): Promise<void> {
-  let docPath = 'default';
-  if (selectedDocs) {
-    docPath = selectedDocs;
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    const body = {
-      question: question,
-      api_key: apiKey,
-      embeddings_key: apiKey,
-      active_docs: docPath,
-      history: JSON.stringify(history),
-      conversation_id: conversationId,
-      model: 'default'
-    };
-
-    fetch(apiHost + '/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-      .then((response) => {
-        if (!response.body) throw Error('No response body');
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let counterrr = 0;
-        const processStream = ({
-          done,
-          value,
-        }: ReadableStreamReadResult<Uint8Array>) => {
-          if (done) {
-            console.log(counterrr);
-            resolve();
-            return;
-          }
-
-          counterrr += 1;
-
-          const chunk = decoder.decode(value);
-
-          const lines = chunk.split('\n');
-
-          for (let line of lines) {
-            if (line.trim() == '') {
-              continue;
-            }
-            if (line.startsWith('data:')) {
-              line = line.substring(5);
-            }
-
-            const messageEvent = new MessageEvent('message', {
-              data: line,
-            });
-
-            onEvent(messageEvent); // handle each message
-          }
-
-          reader.read().then(processStream).catch(reject);
-        };
-
-        reader.read().then(processStream).catch(reject);
-      })
-      .catch((error) => {
-        console.error('Connection failed:', error);
-        reject(error);
-      });
-  });
-}
-
-export const DocsGPTWidget = ({ apiHost = 'https://gptcloud.arc53.com', selectDocs = 'default', apiKey = 'docsgpt-public'}) => {
-    // processing states
-    const [chatState, setChatState] = useState<ChatStates>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('docsGPTChatState') as ChatStates || ChatStates.Init;
-        }
-        return ChatStates.Init;
-    });
-
-    const [answer, setAnswer] = useState<string>('');
-
-    //const selectDocs = 'local/1706.03762.pdf/'
-    const answerRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        if (answerRef.current) {
-            const element = answerRef.current;
-            element.scrollTop = element.scrollHeight;
-        }
-    }, [answer]);
-
-    useEffect(() => {
-        localStorage.setItem('docsGPTChatState', chatState);
-    }, [chatState]);
-
-
-
-    // submit handler
-    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-        setAnswer('')
-        e.preventDefault()
-        // get question
-        setChatState(ChatStates.Processing)
-        setTimeout(() => {
-            setChatState(ChatStates.Answer)
-        }, 800)
-        const inputElement = e.currentTarget[0] as HTMLInputElement;
-        const questionValue = inputElement.value;
-
-        fetchAnswerStreaming({
-          question: questionValue,
-          apiKey: apiKey,
-          selectedDocs: selectDocs,
-          history: [],
-          conversationId: null,
-          apiHost: apiHost,
-          onEvent: (event) => {
-            const data = JSON.parse(event.data);
-
-            // check if the 'end' event has been received
-            if (data.type === 'end') {
-              setChatState(ChatStates.Answer)
-            } else if (data.type === 'source') {
-              // check if data.metadata exists
-              let result;
-              if (data.metadata && data.metadata.title) {
-                const titleParts = data.metadata.title.split('/');
-                result = {
-                  title: titleParts[titleParts.length - 1],
-                  text: data.doc,
-                };
-              } else {
-                result = { title: data.doc, text: data.doc };
-              }
-              console.log(result)
-
-            } else if (data.type === 'id') {
-              console.log(data.id);
-            } else {
-              const result = data.answer;
-              // set answer by appending answer
-                setAnswer(prevAnswer => prevAnswer + result);
-            }
-          },
-      });
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross1Icon } from '@radix-ui/react-icons';
+import { MESSAGE_TYPE } from '../models/types';
+import { Query, Status } from '../models/types';
+import MessageIcon from '../assets/message.svg'
+import { fetchAnswerStreaming } from '../requests/streamingApi';
+import styled, { keyframes } from 'styled-components';
+const WidgetContainer = styled.div`
+    position: fixed;
+    right: 10px;
+    bottom: 10px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: left;
+    width: 356px;
+    height: 405px;
+`;
+const StyledContainer = styled.div`
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    border-radius: 0.375rem;
+    background-color: rgb(34, 35, 39);
+    border: 1px solid gray;
+    font-family: sans-serif;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: visibility 0.3s, opacity 0.3s;
+`;
+const FloatingButton = styled.div`
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    bottom: 1rem;
+    right: 1rem;
+    width: 5rem;
+    height: 5rem;
+    border-radius: 9999px;
+    overflow: hidden;
+    background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
+    background-color: #5AF0EC;
+    background-color: rgba(0, 0, 0, 0.8);
+    font-family: sans-serif;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    &:hover {
+        transform: scale(1.1);
+        transition: transform 0.2s ease-in-out;
     }
+`;
+const CancelButton = styled.button`
+    cursor: pointer;
+    position: absolute;
+    top: 0;
+    right: 0;
+    margin: 0.5rem;
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    outline: none;
+    color: inherit;
+    transition: opacity 0.3s ease;
+    &:hover {
+        opacity: 0.5;
+    }
+    .white-filter {
+        filter: invert(100%);
+    }
+`;
 
+const Header = styled.div`
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+`;
+
+const IconWrapper = styled.div`
+    padding: 0.5rem;
+`;
+
+const ContentWrapper = styled.div`
+    flex: 1;
+    margin-left: 0.5rem;
+`;
+
+const Title = styled.h3`
+    font-size: 0.875rem;
+    font-weight: normal;
+    color: #FAFAFA;
+    margin-top: 0;
+    margin-bottom: 0.25rem;
+`;
+
+const Description = styled.p`
+    font-size: 0.75rem;
+    color: #A1A1AA;
+    margin-top: 0;
+`;
+const Conversation = styled.div`
+    height: 18rem;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    text-align: left;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #4a4a4a transparent; /* thumb color track color */
+`;
+
+const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
+    display: flex;
+    justify-content: ${props => props.type === 'QUESTION' ? 'flex-end' : 'flex-start'};
+    margin: 0.5rem;
+`;
+const Message = styled.p<{ type: MESSAGE_TYPE }>`
+    background: ${props => props.type === 'QUESTION' ?
+    'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
+    props => props.type === 'ANSWER' ?
+      '#38383b' :
+      ''};
+
+    color: ${props => props.type != 'ERROR' ? '#ffff' : '#b91c1c'};
+    border:${props => props.type !== 'ERROR' ? 'none' : '1px solid #b91c1c'};
+    max-width: 80%;
+    display: block;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+`;
+const ErrorAlert = styled.div`
+  color: #b91c1c;
+  border:0.1px solid #b91c1c;
+  display: flex;
+  padding:4px;
+  opacity: 90%;
+  max-width: 70%;
+  font-weight: 400;
+  border-radius: 0.375rem;
+  justify-content: space-evenly;
+`
+//dot loading animation
+const dotBounce = keyframes`
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-5px);
+  }
+`;
+
+const DotAnimation = styled.div`
+  display: inline-block;
+  animation: ${dotBounce} 1s infinite ease-in-out;
+`;
+
+// delay classes as styled components
+const Delay = styled(DotAnimation) <{ delay: number }>`
+  animation-delay: ${props => props.delay + 'ms'};
+`;
+const PromptContainer = styled.form`
+  background-color: transparent;
+  padding: 12px 8px;
+  opacity: 1;
+  width: 340px;
+  display: flex;
+  justify-content: space-between;
+`;
+const StyledInput = styled.input`
+  width: 80%;
+  border: 1px solid #686877;
+  height: 36px;
+  background-color: transparent;
+  font-size: 14px;
+  border-radius: 6px;
+  color: #ffff;
+  outline: none;
+  padding: 6px;
+`;
+const StyledButton = styled.button`
+  color: #ccc; 
+  background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
+  font-size: 14px;
+  padding: 0 8px; 
+  border-radius: 6px;
+  margin: 2px;
+  width: 36px;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  &:hover{
+    opacity: 80%;
+  }
+  &:disabled {
+    opacity: 60%;
+  }`
+const HeroContainer = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  background-image: linear-gradient(to bottom right, #5AF0EC, #ff1bf4);
+  border-radius: 10px;
+  margin: 0 auto;
+  padding: 1px;
+`;
+const HeroWrapper = styled.div`
+  background-color: #222327;
+  border-radius: 10px; 
+  font-weight: normal;
+  padding: 6px;
+  display: flex;
+  justify-content: space-between;
+`
+const HeroTitle = styled.h3`
+  color: #fff;
+  font-size: 15px;
+  margin-bottom: 5px;
+  padding: 3px;
+`;
+
+const HeroDescription = styled.p`
+  color: #fff;
+  font-size: 13px;
+`;
+const Avatar = styled.img<{width:number,height:number}>`
+max-width: ${props => props.width};
+`
+const Hero = ({title,description}:{title:string,description:string}) => {
   return (
     <>
-        <div className="dark widget-container">
-            <div onClick={() => setChatState(ChatStates.Init)}
-                 className={`${chatState !== 'minimized' ? 'hidden' : ''} cursor-pointer`}>
-               <div className="mr-2 mb-2 w-20 h-20 rounded-full overflow-hidden dark:divide-gray-700 border dark:border-gray-700 bg-gradient-to-br from-gray-100/80 via-white to-white dark:from-gray-900/80 dark:via-gray-900 dark:to-gray-900 font-sans shadow backdrop-blur-sm flex items-center justify-center">
-                        <img
-                            src="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
-                            alt="DocsGPT"
-                            className="cursor-pointer hover:opacity-50 h-14"
-                        />
-                    </div>
-            </div>
-      <div className={` ${chatState !== 'minimized' ? '' : 'hidden'} divide-y dark:divide-gray-700 rounded-md border dark:border-gray-700 bg-gradient-to-br from-gray-100/80 via-white to-white dark:from-gray-900/80 dark:via-gray-900 dark:to-gray-900 font-sans shadow backdrop-blur-sm`} style={{ width: '18rem', transform: 'translateY(0%) translateZ(0px)' }}>
-        <div>
-          <img
-                        src="https://d3dg1063dc54p9.cloudfront.net/exit.svg"
-                        alt="Exit"
-                        className="cursor-pointer hover:opacity-50 h-2 absolute top-0 right-0 m-2 white-filter"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setChatState(ChatStates.Minimized);
-                        }}
-                      />
-          <div className="flex items-center gap-2 p-3">
-            <div  className={`${chatState === 'init' ? '' :
-                                chatState === 'processing' ? '' : 
-                                chatState === 'typing' ? '' :     
-                               'hidden'} flex-1`}>
-              <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200">Need help with documentation?</h3>
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">DocsGPT AI assistant will help you with docs</p>
-            </div>
-            <div id="docsgpt-answer" ref={answerRef} className={`${chatState !== 'answer' ? 'hidden' : ''}`}>
-                <p className="mt-1 text-sm text-gray-600 dark:text-white text-left">{answer}</p>
-            </div>
+      <HeroContainer>
+        <HeroWrapper>
+          <IconWrapper style={{ marginTop: '8px' }}>
+            <RocketIcon color='white' width={20} height={20} />
+          </IconWrapper>
+          <div>
+            <HeroTitle>{title}</HeroTitle>
+            <HeroDescription>
+              {description}
+            </HeroDescription>
           </div>
-        </div>
-        <div className="w-full">
-          <button onClick={() => setChatState(ChatStates.Typing)}
-                  className={`flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 hover:bg-gray-100 rounded-b dark:hover:bg-gray-800/70 ${chatState !== 'init' ? 'hidden' : ''}`}>
-            Ask DocsGPT
-          </button>
-         { (chatState === 'typing' || chatState === 'answer') && (
-            <form
-                onSubmit={handleSubmit}
-                className="relative w-full m-0" style={{ opacity: 1 }}>
-              <input type="text"
-                     className="w-full bg-transparent px-5 py-3 pr-8 text-sm text-gray-700 dark:text-white focus:outline-none" placeholder="What do you want to do?" />
-              <button className="absolute text-gray-400 dark:text-gray-500 text-sm inset-y-0 right-2 -mx-2 px-2" type="submit" >Submit</button>
-            </form>
-          )}
-          <p className={`${chatState !== 'processing' ? 'hidden' : ''} flex w-full justify-center px-5 py-3 text-sm text-gray-800 font-bold dark:text-white transition duration-300 rounded-b`}>
-            Processing<span className="dot-animation">.</span><span className="dot-animation delay-200">.</span><span className="dot-animation delay-400">.</span>
-          </p>
-        </div>
-      </div>
-    </div>
+        </HeroWrapper>
+      </HeroContainer>
+    </>
+  );
+};
+export const DocsGPTWidget = ({
+  apiHost = 'https://gptcloud.arc53.com',
+  selectDocs = 'default', 
+  apiKey = 'docsgpt-public',
+  avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+  title = 'Get AI assistance',
+  description = 'DocsGPT\'s AI Chatbot is here to help',
+  heroTitle = 'Welcome to DocsGPT !',
+  heroDescription='This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+}) => {
 
+  const [prompt, setPrompt] = useState('');
+  const [status, setStatus] = useState<Status>('idle');
+  const [queries, setQueries] = useState<Query[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [open, setOpen] = useState<boolean>(false)
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToBottom = (element: Element | null) => {
+    //recursive function to scroll to the last child of the last child ...
+    // to get to the bottom most element
+    if (!element) return;
+    if (element?.children.length === 0) {
+      element?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }
+    const lastChild = element?.children?.[element.children.length - 1]
+    lastChild && scrollToBottom(lastChild)
+  };
+
+  useEffect(() => {
+    scrollToBottom(scrollRef.current);
+  }, [queries.length, queries[queries.length - 1]?.response]);
+
+  async function stream(question: string) {
+    setStatus('loading');
+    try {
+      await fetchAnswerStreaming(
+        {
+          question: question,
+          apiKey: apiKey,
+          apiHost: apiHost,
+          selectedDocs: selectDocs,
+          history: queries,
+          conversationId: conversationId,
+          onEvent: (event: MessageEvent) => {
+            const data = JSON.parse(event.data);
+            // check if the 'end' event has been received
+            if (data.type === 'end') {
+              // set status to 'idle'
+              setStatus('idle');
+
+            } else if (data.type === 'id') {
+              setConversationId(data.id)
+            } else {
+              const result = data.answer;
+              const streamingResponse = queries[queries.length - 1].response ? queries[queries.length - 1].response : '';
+              const updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].response = streamingResponse + result;
+              setQueries(updatedQueries);
+            }
+          }
+        }
+      );
+    } catch (error) {
+      console.log(error);
+
+      const updatedQueries = [...queries];
+      updatedQueries[updatedQueries.length - 1].error = 'error'
+      setQueries(updatedQueries);
+      setStatus('idle')
+    }
+
+  }
+  // submit handler
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    queries.push({ prompt })
+    setPrompt('')
+    await stream(prompt)
+  }
+  const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
+  };
+  return (
+    <>
+      <WidgetContainer>
+        <FloatingButton onClick={() => setOpen(true)} hidden={open}>
+          <MessageIcon />
+        </FloatingButton>
+        {open && <StyledContainer>
+          <div>
+            <CancelButton onClick={() => setOpen(false)}>
+              <Cross1Icon style={{ color: 'white' }} />
+            </CancelButton>
+
+            <Header>
+              <IconWrapper>
+                <img style={{maxWidth:"42px",maxHeight:"42px"}}  onError={handleImageError} src={avatar} alt='docs-gpt' />
+              </IconWrapper>
+              <ContentWrapper>
+                <Title>{title}</Title>
+                <Description>{description}</Description>
+              </ContentWrapper>
+            </Header>
+          </div>
+          <div style={{ width: '100%' }}>
+            <Conversation>
+              {
+                queries.length > 0 ? queries?.map((query, index) => {
+                  return (
+                    <Fragment key={index}>
+                      {
+                        query.prompt && <MessageBubble type='QUESTION'>
+                          <Message
+                            type='QUESTION'
+                            ref={(!(query.response || query.error) && index === queries.length - 1) ? scrollRef : null}>
+                            {query.prompt}
+                          </Message>
+                        </MessageBubble>
+                      }
+                      {
+                        query.response ? <MessageBubble type='ANSWER'>
+                          <Message
+                            type='ANSWER'
+                            ref={(index === queries.length - 1) ? scrollRef : null}
+                          >
+                            {query.response}
+                          </Message>
+                        </MessageBubble>
+                          : <div>
+                            {
+                              query.error ? <ErrorAlert>
+                                <IconWrapper>
+                                  <ExclamationTriangleIcon style={{ marginTop: '4px' }} width={22} height={22} color='#b91c1c' />
+                                </IconWrapper>
+                                <div>
+                                  <h5 style={{ margin: 2 }}>Network Error</h5>
+                                  <span style={{ margin: 2, fontSize: '13px' }}>Something went wrong !</span>
+                                </div>
+                              </ErrorAlert>
+                                : <MessageBubble type='ANSWER'>
+                                  <Message type='ANSWER' style={{ fontWeight: 600 }}>
+                                    <DotAnimation>.</DotAnimation>
+                                    <Delay delay={200}>.</Delay>
+                                    <Delay delay={400}>.</Delay>
+                                  </Message>
+                                </MessageBubble>
+                            }
+                          </div>
+                      }
+                    </Fragment>)
+                })
+                  : <Hero title={heroTitle} description={heroDescription}/>
+              }
+            </Conversation>
+            <PromptContainer
+              onSubmit={handleSubmit}>
+              <StyledInput
+                value={prompt} onChange={(event) => setPrompt(event.target.value)}
+                type='text' placeholder="What do you want to do?" />
+              <StyledButton
+                disabled={prompt.length == 0 || status !== 'idle'}>
+                <PaperPlaneIcon color='white' />
+              </StyledButton>
+            </PromptContainer>
+
+
+          </div>
+        </StyledContainer>}
+      </WidgetContainer>
     </>
   )
 }

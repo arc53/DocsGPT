@@ -1,15 +1,11 @@
-import { useState } from "react";
-//import "./App.css";
-import {DocsGPTWidget} from "./components/DocsGPTWidget";
-
-function App() {
-  const [count, setCount] = useState(0);
-
+import React from "react"
+import {DocsGPTWidget} from "./components/DocsGPTWidget"
+const App = () => {
   return (
-    <div className="App">
-      <DocsGPTWidget />
+    <div>
+      <DocsGPTWidget/>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
