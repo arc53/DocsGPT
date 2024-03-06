@@ -8,26 +8,52 @@ function Dropdown({
   showDelete,
   onDelete,
 }: {
-  options: string[] | { name: string; id: string; type: string }[];
-  selectedValue: string;
+  options:
+    | string[]
+    | { name: string; id: string; type: string }[]
+    | { label: string; value: string }[];
+  selectedValue: string | { label: string; value: string };
   onSelect:
     | ((value: string) => void)
-    | ((value: { name: string; id: string; type: string }) => void);
+    | ((value: { name: string; id: string; type: string }) => void)
+    | ((value: { label: string; value: string }) => void);
   showDelete?: boolean;
   onDelete?: (value: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
-    <div className="relative mt-2 w-32">
+    <div
+      className={
+        typeof selectedValue === 'string'
+          ? 'relative mt-2 w-32'
+          : 'relative w-full align-middle'
+      }
+    >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center border-2 bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
-          isOpen ? 'rounded-t-xl' : 'rounded-xl'
+        className={`flex w-full cursor-pointer items-center justify-between border-2 bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
+          isOpen
+            ? typeof selectedValue === 'string'
+              ? 'rounded-t-xl'
+              : 'rounded-t-2xl'
+            : typeof selectedValue === 'string'
+            ? 'rounded-xl'
+            : 'rounded-full'
         }`}
       >
-        <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
-          {selectedValue}
-        </span>
+        {typeof selectedValue === 'string' ? (
+          <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
+            {selectedValue}
+          </span>
+        ) : (
+          <span
+            className={`overflow-hidden text-ellipsis dark:text-bright-gray ${
+              !selectedValue && 'text-silver'
+            }`}
+          >
+            {selectedValue ? selectedValue.label : 'From URL'}
+          </span>
+        )}
         <img
           src={Arrow2}
           alt="arrow"
@@ -41,7 +67,7 @@ function Dropdown({
           {options.map((option: any, index) => (
             <div
               key={index}
-              className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe"
+              className="hover:eerie-black flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe"
             >
               <span
                 onClick={() => {
@@ -50,7 +76,11 @@ function Dropdown({
                 }}
                 className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray"
               >
-                {typeof option === 'string' ? option : option.name}
+                {typeof option === 'string'
+                  ? option
+                  : option.name
+                  ? option.name
+                  : option.label}
               </span>
               {showDelete && onDelete && (
                 <button onClick={() => onDelete(option)} className="p-2">
