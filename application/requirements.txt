@@ -12,7 +12,7 @@ Flask==3.0.1
 gunicorn==21.2.0
 html2text==2020.1.16
 javalang==0.13.0
-langchain==0.1.4
+langchain==0.1.11
 langchain-openai==0.0.5
 nltk==3.8.1
 openapi3_parser==1.1.16
