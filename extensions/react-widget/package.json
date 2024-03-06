@@ -1,6 +1,7 @@
 {
-  "name": "docsgpt-bot",
-  "version": "4.0.7",
+  "name": "docsgpt",
+  "version": "0.3.0",
+  "private": false,
   "description": "docsgpt ai assistant",
   "source": "./src/index.html",
   "main": "dist/main.js",
@@ -24,8 +25,6 @@
     "check": "tsc --noEmit",
     "ci": "yarn build && yarn test && yarn lint && yarn check"
   },
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "@babel/plugin-transform-flow-strip-types": "^7.23.3",
     "@parcel/resolver-glob": "^2.12.0",
@@ -55,5 +54,26 @@
     "babel-loader": "^8.0.4",
     "process": "^0.11.10",
     "typescript": "^5.3.3"
-  }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arc53/DocsGPT.git"
+  },
+  "keywords": [
+    "docsgpt",
+    "chatbot",
+    "assistant",
+    "ai",
+    "chatdocs",
+    "widget"
+  ],
+  "author": "Arc53",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/arc53/DocsGPT/issues"
+  },
+  "homepage": "https://github.com/arc53/DocsGPT#readme"
 }
