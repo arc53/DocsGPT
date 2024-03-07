@@ -23,7 +23,7 @@ const StyledContainer = styled.div`
     bottom: 0;
     left: 0;
     width: 100%;
-    border-radius: 0.375rem;
+    border-radius: 0.75rem;
     background-color: rgb(34, 35, 39);
     border: 1px solid gray;
     font-family: sans-serif;
@@ -34,19 +34,14 @@ const FloatingButton = styled.div`
     position: absolute;
     display: flex;
     justify-content: center;
+    align-items: center;
     bottom: 1rem;
     right: 1rem;
     width: 5rem;
     height: 5rem;
     border-radius: 9999px;
-    overflow: hidden;
     background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
-    background-color: #5AF0EC;
-    background-color: rgba(0, 0, 0, 0.8);
-    font-family: sans-serif;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    align-items: center;
-    justify-content: center;
     cursor: pointer;
     &:hover {
         transform: scale(1.1);
@@ -59,6 +54,7 @@ const CancelButton = styled.button`
     top: 0;
     right: 0;
     margin: 0.5rem;
+    width: 30px;
     padding: 0;
     background-color: transparent;
     border: none;
@@ -89,7 +85,7 @@ const ContentWrapper = styled.div`
 `;
 
 const Title = styled.h3`
-    font-size: 0.875rem;
+    font-size: 1rem;
     font-weight: normal;
     color: #FAFAFA;
     margin-top: 0;
@@ -97,7 +93,7 @@ const Title = styled.h3`
 `;
 
 const Description = styled.p`
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     color: #A1A1AA;
     margin-top: 0;
 `;
@@ -164,29 +160,25 @@ const PromptContainer = styled.form`
   background-color: transparent;
   padding: 12px 8px;
   opacity: 1;
-  width: 340px;
+  height: 40px;
   display: flex;
   justify-content: space-between;
 `;
 const StyledInput = styled.input`
   width: 80%;
   border: 1px solid #686877;
-  height: 36px;
+  padding-left: 12px;
   background-color: transparent;
-  font-size: 14px;
+  font-size: 16px;
   border-radius: 6px;
   color: #ffff;
   outline: none;
-  padding: 6px;
 `;
 const StyledButton = styled.button`
   color: #ccc; 
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
-  font-size: 14px;
-  padding: 0 8px; 
   border-radius: 6px;
-  margin: 2px;
-  width: 36px;
+  width: 40px;
   border: none;
   cursor: pointer;
   outline: none;
@@ -200,12 +192,15 @@ const HeroContainer = styled.div`
   position: absolute;
   top: 50%;
   left: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: middle;
   transform: translate(-50%, -50%);
   width: 80%;
   background-image: linear-gradient(to bottom right, #5AF0EC, #ff1bf4);
   border-radius: 10px;
   margin: 0 auto;
-  padding: 1px;
+  padding: 2px;
 `;
 const HeroWrapper = styled.div`
   background-color: #222327;
@@ -213,18 +208,20 @@ const HeroWrapper = styled.div`
   font-weight: normal;
   padding: 6px;
   display: flex;
+
   justify-content: space-between;
 `
 const HeroTitle = styled.h3`
   color: #fff;
-  font-size: 15px;
+  font-size: 17px;
   margin-bottom: 5px;
-  padding: 3px;
+  padding: 2px;
 `;
 
 const HeroDescription = styled.p`
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
 `;
 const Avatar = styled.img<{width:number,height:number}>`
 max-width: ${props => props.width};
@@ -337,15 +334,14 @@ export const DocsGPTWidget = ({
   return (
     <>
       <WidgetContainer>
-        <FloatingButton onClick={() => setOpen(true)} hidden={open}>
-          <MessageIcon />
+        <FloatingButton onClick={() => setOpen(true)} hidden={open}>  
+            <MessageIcon style={{marginTop:'8px'}}/>   
         </FloatingButton>
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
-              <Cross1Icon style={{ color: 'white' }} />
+              <Cross1Icon width={20} height={20} color='white'/>
             </CancelButton>
-
             <Header>
               <IconWrapper>
                 <img style={{maxWidth:"42px",maxHeight:"42px"}}  onError={handleImageError} src={avatar} alt='docs-gpt' />
