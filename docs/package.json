@@ -7,7 +7,7 @@
   "license": "MIT",
   "dependencies": {
     "@vercel/analytics": "^1.1.1",
-    "docsgpt": "^0.3.5",
+    "docsgpt": "^0.3.6",
     "next": "^14.0.4",
     "nextra": "^2.13.2",
     "nextra-theme-docs": "^2.13.2",
