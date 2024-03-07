@@ -1,12 +1,13 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross1Icon } from '@radix-ui/react-icons';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { MESSAGE_TYPE } from '../models/types';
 import { Query, Status } from '../models/types';
 import MessageIcon from '../assets/message.svg'
 import { fetchAnswerStreaming } from '../requests/streamingApi';
 import styled, { keyframes } from 'styled-components';
 const WidgetContainer = styled.div`
+    display: block;
     position: fixed;
     right: 10px;
     bottom: 10px;
@@ -15,26 +16,25 @@ const WidgetContainer = styled.div`
     flex-direction: column;
     align-items: center;
     text-align: left;
-    width: 356px;
-    height: 456px;
 `;
 const StyledContainer = styled.div`
-    position: absolute;
+    display: block;
+    position: relative;
     bottom: 0;
     left: 0;
-    padding: 4px;
-    height: 454px;
-    width: 354px;
+    width: 352px;
+    height: 407px;
+    max-height: 407px;
     border-radius: 0.75rem;
-    background-color: rgb(34, 35, 39);
-    border: 1px solid gray;
+    background-color: #222327;
     font-family: sans-serif;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
 const FloatingButton = styled.div`
-    position: absolute;
+    position: fixed;
     display: flex;
+    z-index: 500;
     justify-content: center;
     align-items: center;
     bottom: 1rem;
@@ -63,8 +63,9 @@ const CancelButton = styled.button`
     outline: none;
     color: inherit;
     transition: opacity 0.3s ease;
+    opacity: 0.6;
     &:hover {
-        opacity: 0.5;
+        opacity: 1;
     }
     .white-filter {
         filter: invert(100%);
@@ -74,7 +75,9 @@ const CancelButton = styled.button`
 const Header = styled.div`
     display: flex;
     align-items: center;
-    padding: 0.75rem;
+    padding-inline: 0.75rem;
+    padding-top: 1rem;
+    padding-bottom: 0.5rem;
 `;
 
 const IconWrapper = styled.div`
@@ -100,7 +103,7 @@ const Description = styled.p`
     margin-top: 0;
 `;
 const Conversation = styled.div`
-    height: 20rem;
+    height: 16rem;
     padding-inline: 0.5rem;
     border-radius: 0.375rem;
     text-align: left;
@@ -122,6 +125,8 @@ const Message = styled.p<{ type: MESSAGE_TYPE }>`
     color: #ffff;
     border: none;
     max-width: 80%;
+
+    margin: 4px;
     display: block;
     padding: 0.75rem;
     border-radius: 0.375rem;
@@ -157,15 +162,17 @@ const Delay = styled(DotAnimation) <{ delay: number }>`
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
-  opacity: 1;
-  padding-inline: 4px;
-  height: 40px;
+  height: 36px;
+  position: absolute;
+  bottom: 25px;
+  left: 24px;
+  right: 24px;
   display: flex;
-  justify-content: space-between;
+  justify-content: space-evenly;
 `;
 const StyledInput = styled.input`
-  width: 80%;
-  height: 40px;
+  width: 260px;
+  height: 36px;
   border: 1px solid #686877;
   padding-left: 12px;
   background-color: transparent;
@@ -180,8 +187,9 @@ const StyledButton = styled.button`
   align-items: center;
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   border-radius: 6px;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
+  margin-left:8px;
   padding: 0px;
   border: none;
   cursor: pointer;
@@ -212,7 +220,6 @@ const HeroWrapper = styled.div`
   font-weight: normal;
   padding: 6px;
   display: flex;
-
   justify-content: space-between;
 `
 const HeroTitle = styled.h3`
@@ -221,15 +228,11 @@ const HeroTitle = styled.h3`
   margin-bottom: 5px;
   padding: 2px;
 `;
-
 const HeroDescription = styled.p`
   color: #fff;
   font-size: 14px;
   line-height: 1.5;
 `;
-const Avatar = styled.img<{ width: number, height: number }>`
-max-width: ${props => props.width};
-`
 const Hero = ({ title, description }: { title: string, description: string }) => {
   return (
     <>
@@ -338,13 +341,13 @@ export const DocsGPTWidget = ({
   return (
     <>
       <WidgetContainer>
-        <FloatingButton onClick={() => setOpen(true)} hidden={open}>
+        {!open && <FloatingButton onClick={() => setOpen(true)} hidden={open}>
           <MessageIcon style={{ marginTop: '8px' }} />
-        </FloatingButton>
+        </FloatingButton>}
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
-              <Cross1Icon width={20} height={20} color='white' />
+              <Cross2Icon width={24} height={24} color='white'/>
             </CancelButton>
             <Header>
               <IconWrapper>
@@ -356,7 +359,6 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <div style={{ width: '100%' }}>
             <Conversation>
               {
                 queries.length > 0 ? queries?.map((query, index) => {
@@ -406,7 +408,8 @@ export const DocsGPTWidget = ({
                   : <Hero title={heroTitle} description={heroDescription} />
               }
             </Conversation>
-            <PromptContainer
+          
+          <PromptContainer
               onSubmit={handleSubmit}>
               <StyledInput
                 value={prompt} onChange={(event) => setPrompt(event.target.value)}
@@ -416,9 +419,6 @@ export const DocsGPTWidget = ({
                 <PaperPlaneIcon width={15} height={15} color='white' />
               </StyledButton>
             </PromptContainer>
-
-
-          </div>
         </StyledContainer>}
       </WidgetContainer>
     </>
