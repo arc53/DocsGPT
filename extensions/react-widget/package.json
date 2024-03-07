@@ -1,8 +1,8 @@
 {
   "name": "docsgpt",
-  "version": "0.3.0",
+  "version": "0.3.6",
   "private": false,
-  "description": "docsgpt ai assistant",
+  "description": "DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖.",
   "source": "./src/index.html",
   "main": "dist/main.js",
   "module": "dist/module.js",

@@ -1,12 +1,13 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross1Icon } from '@radix-ui/react-icons';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { MESSAGE_TYPE } from '../models/types';
 import { Query, Status } from '../models/types';
 import MessageIcon from '../assets/message.svg'
 import { fetchAnswerStreaming } from '../requests/streamingApi';
 import styled, { keyframes } from 'styled-components';
 const WidgetContainer = styled.div`
+    display: block;
     position: fixed;
     right: 10px;
     bottom: 10px;
@@ -15,24 +16,25 @@ const WidgetContainer = styled.div`
     flex-direction: column;
     align-items: center;
     text-align: left;
-    width: 356px;
-    height: 405px;
 `;
 const StyledContainer = styled.div`
-    position: absolute;
+    display: block;
+    position: relative;
     bottom: 0;
     left: 0;
-    width: 100%;
+    width: 352px;
+    height: 407px;
+    max-height: 407px;
     border-radius: 0.75rem;
-    background-color: rgb(34, 35, 39);
-    border: 1px solid gray;
+    background-color: #222327;
     font-family: sans-serif;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
 const FloatingButton = styled.div`
-    position: absolute;
+    position: fixed;
     display: flex;
+    z-index: 500;
     justify-content: center;
     align-items: center;
     bottom: 1rem;
@@ -61,8 +63,9 @@ const CancelButton = styled.button`
     outline: none;
     color: inherit;
     transition: opacity 0.3s ease;
+    opacity: 0.6;
     &:hover {
-        opacity: 0.5;
+        opacity: 1;
     }
     .white-filter {
         filter: invert(100%);
@@ -72,7 +75,9 @@ const CancelButton = styled.button`
 const Header = styled.div`
     display: flex;
     align-items: center;
-    padding: 0.75rem;
+    padding-inline: 0.75rem;
+    padding-top: 1rem;
+    padding-bottom: 0.5rem;
 `;
 
 const IconWrapper = styled.div`
@@ -98,8 +103,8 @@ const Description = styled.p`
     margin-top: 0;
 `;
 const Conversation = styled.div`
-    height: 18rem;
-    padding: 0.5rem;
+    height: 16rem;
+    padding-inline: 0.5rem;
     border-radius: 0.375rem;
     text-align: left;
     overflow-y: auto;
@@ -109,19 +114,19 @@ const Conversation = styled.div`
 
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     display: flex;
+    font-size: 16px;
     justify-content: ${props => props.type === 'QUESTION' ? 'flex-end' : 'flex-start'};
     margin: 0.5rem;
 `;
 const Message = styled.p<{ type: MESSAGE_TYPE }>`
     background: ${props => props.type === 'QUESTION' ?
     'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
-    props => props.type === 'ANSWER' ?
-      '#38383b' :
-      ''};
-
-    color: ${props => props.type != 'ERROR' ? '#ffff' : '#b91c1c'};
-    border:${props => props.type !== 'ERROR' ? 'none' : '1px solid #b91c1c'};
+    '#38383b'};
+    color: #ffff;
+    border: none;
     max-width: 80%;
+
+    margin: 4px;
     display: block;
     padding: 0.75rem;
     border-radius: 0.375rem;
@@ -151,21 +156,23 @@ const DotAnimation = styled.div`
   display: inline-block;
   animation: ${dotBounce} 1s infinite ease-in-out;
 `;
-
 // delay classes as styled components
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
-  padding: 12px 8px;
-  opacity: 1;
-  height: 40px;
+  height: 36px;
+  position: absolute;
+  bottom: 25px;
+  left: 24px;
+  right: 24px;
   display: flex;
-  justify-content: space-between;
+  justify-content: space-evenly;
 `;
 const StyledInput = styled.input`
-  width: 80%;
+  width: 260px;
+  height: 36px;
   border: 1px solid #686877;
   padding-left: 12px;
   background-color: transparent;
@@ -175,19 +182,24 @@ const StyledInput = styled.input`
   outline: none;
 `;
 const StyledButton = styled.button`
-  color: #ccc; 
+  display: flex;
+  justify-content: center;
+  align-items: center;
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   border-radius: 6px;
-  width: 40px;
+  width: 36px;
+  height: 36px;
+  margin-left:8px;
+  padding: 0px;
   border: none;
   cursor: pointer;
   outline: none;
   &:hover{
-    opacity: 80%;
+    opacity: 90%;
   }
   &:disabled {
     opacity: 60%;
-  }`
+  }`;
 const HeroContainer = styled.div`
   position: absolute;
   top: 50%;
@@ -208,7 +220,6 @@ const HeroWrapper = styled.div`
   font-weight: normal;
   padding: 6px;
   display: flex;
-
   justify-content: space-between;
 `
 const HeroTitle = styled.h3`
@@ -217,16 +228,12 @@ const HeroTitle = styled.h3`
   margin-bottom: 5px;
   padding: 2px;
 `;
-
 const HeroDescription = styled.p`
   color: #fff;
   font-size: 14px;
   line-height: 1.5;
 `;
-const Avatar = styled.img<{width:number,height:number}>`
-max-width: ${props => props.width};
-`
-const Hero = ({title,description}:{title:string,description:string}) => {
+const Hero = ({ title, description }: { title: string, description: string }) => {
   return (
     <>
       <HeroContainer>
@@ -247,13 +254,13 @@ const Hero = ({title,description}:{title:string,description:string}) => {
 };
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
-  selectDocs = 'default', 
+  selectDocs = 'default',
   apiKey = 'docsgpt-public',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
   heroTitle = 'Welcome to DocsGPT !',
-  heroDescription='This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
 }) => {
 
   const [prompt, setPrompt] = useState('');
@@ -334,17 +341,17 @@ export const DocsGPTWidget = ({
   return (
     <>
       <WidgetContainer>
-        <FloatingButton onClick={() => setOpen(true)} hidden={open}>  
-            <MessageIcon style={{marginTop:'8px'}}/>   
-        </FloatingButton>
+        {!open && <FloatingButton onClick={() => setOpen(true)} hidden={open}>
+          <MessageIcon style={{ marginTop: '8px' }} />
+        </FloatingButton>}
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
-              <Cross1Icon width={20} height={20} color='white'/>
+              <Cross2Icon width={24} height={24} color='white'/>
             </CancelButton>
             <Header>
               <IconWrapper>
-                <img style={{maxWidth:"42px",maxHeight:"42px"}}  onError={handleImageError} src={avatar} alt='docs-gpt' />
+                <img style={{ maxWidth: "42px", maxHeight: "42px" }} onError={handleImageError} src={avatar} alt='docs-gpt' />
               </IconWrapper>
               <ContentWrapper>
                 <Title>{title}</Title>
@@ -352,7 +359,6 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <div style={{ width: '100%' }}>
             <Conversation>
               {
                 queries.length > 0 ? queries?.map((query, index) => {
@@ -399,22 +405,20 @@ export const DocsGPTWidget = ({
                       }
                     </Fragment>)
                 })
-                  : <Hero title={heroTitle} description={heroDescription}/>
+                  : <Hero title={heroTitle} description={heroDescription} />
               }
             </Conversation>
-            <PromptContainer
+          
+          <PromptContainer
               onSubmit={handleSubmit}>
               <StyledInput
                 value={prompt} onChange={(event) => setPrompt(event.target.value)}
                 type='text' placeholder="What do you want to do?" />
               <StyledButton
                 disabled={prompt.length == 0 || status !== 'idle'}>
-                <PaperPlaneIcon color='white' />
+                <PaperPlaneIcon width={15} height={15} color='white' />
               </StyledButton>
             </PromptContainer>
-
-
-          </div>
         </StyledContainer>}
       </WidgetContainer>
     </>
