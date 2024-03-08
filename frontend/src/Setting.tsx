@@ -12,6 +12,7 @@ import {
 } from './preferences/preferenceSlice';
 import { Doc } from './preferences/preferenceApi';
 import { useDarkTheme } from './hooks';
+import Dropdown from './components/Dropdown';
 type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };
@@ -87,8 +88,11 @@ const Setting: React.FC = () => {
       method: 'GET',
     })
       .then((response) => {
-        if(response.ok && documents){
-          const updatedDocuments = [...documents.slice(0, index), ...documents.slice(index + 1)];
+        if (response.ok && documents) {
+          const updatedDocuments = [
+            ...documents.slice(0, index),
+            ...documents.slice(index + 1),
+          ];
           dispatch(setSourceDocs(updatedDocuments));
         }
       })
@@ -96,8 +100,10 @@ const Setting: React.FC = () => {
   };
 
   return (
-    <div className="p-4 pt-20 md:p-12 wa">
-      <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">Settings</p>
+    <div className="wa p-4 pt-20 md:p-12">
+      <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
+        Settings
+      </p>
       <div className="mt-6 flex flex-row items-center space-x-4 overflow-x-auto md:space-x-8 ">
         <div className="md:hidden">
           <button
@@ -112,10 +118,11 @@ const Setting: React.FC = () => {
             <button
               key={index}
               onClick={() => setActiveTab(tab)}
-              className={`h-9 rounded-3xl px-4 font-bold ${activeTab === tab
+              className={`h-9 rounded-3xl px-4 font-bold ${
+                activeTab === tab
                   ? 'bg-purple-3000 text-purple-30 dark:bg-dark-charcoal'
                   : 'text-gray-6000'
-                }`}
+              }`}
             >
               {tab}
             </button>
@@ -188,7 +195,9 @@ const General: React.FC = () => {
   const themes = ['Light', 'Dark'];
   const languages = ['English'];
   const [isDarkTheme, toggleTheme] = useDarkTheme();
-  const [selectedTheme, setSelectedTheme] = useState(isDarkTheme ? 'Dark' : 'Light');
+  const [selectedTheme, setSelectedTheme] = useState(
+    isDarkTheme ? 'Dark' : 'Light',
+  );
   const [selectedLanguage, setSelectedLanguage] = useState(languages[0]);
   return (
     <div className="mt-[59px]">
@@ -197,14 +206,16 @@ const General: React.FC = () => {
         <Dropdown
           options={themes}
           selectedValue={selectedTheme}
-          onSelect={(option:string)=>{
-              setSelectedTheme(option);
-              option !==selectedTheme && toggleTheme();
-            }}
+          onSelect={(option: string) => {
+            setSelectedTheme(option);
+            option !== selectedTheme && toggleTheme();
+          }}
         />
       </div>
       <div>
-        <p className="font-bold text-jet dark:text-bright-gray">Select Language</p>
+        <p className="font-bold text-jet dark:text-bright-gray">
+          Select Language
+        </p>
         <Dropdown
           options={languages}
           selectedValue={selectedLanguage}
@@ -348,7 +359,7 @@ const Prompts: React.FC<PromptProps> = ({
     <div className="mt-[59px]">
       <div className="mb-4">
         <p className="font-semibold dark:text-bright-gray">Active Prompt</p>
-        <DropdownPrompt
+        <Dropdown
           options={prompts}
           selectedValue={selectedPrompt.name}
           onSelect={handleSelectPrompt}
@@ -356,7 +367,7 @@ const Prompts: React.FC<PromptProps> = ({
       </div>
 
       <div className="mb-4">
-        <p className='dark:text-bright-gray'>Prompt name </p>{' '}
+        <p className="dark:text-bright-gray">Prompt name </p>{' '}
         <p className="mb-2 text-xs italic text-eerie-black dark:text-bright-gray">
           start by editing name
         </p>
@@ -372,7 +383,7 @@ const Prompts: React.FC<PromptProps> = ({
       <div className="mb-4">
         <p className="mb-2 dark:text-bright-gray">Prompt content</p>
         <textarea
-          className="h-32 w-full rounded-lg  border-2 p-2 dark:border-chinese-silver dark:text-white dark:bg-transparent"
+          className="h-32 w-full rounded-lg  border-2 p-2 dark:border-chinese-silver dark:bg-transparent dark:text-white"
           value={newPromptContent}
           onChange={(e) => setNewPromptContent(e.target.value)}
           placeholder="Active prompt contents"
@@ -381,30 +392,33 @@ const Prompts: React.FC<PromptProps> = ({
 
       <div className="flex justify-between">
         <button
-          className={`rounded-lg bg-green-500 px-4 py-2 font-bold text-white transition-all hover:bg-green-700 ${newPromptName === selectedPrompt.name
+          className={`rounded-lg bg-green-500 px-4 py-2 font-bold text-white transition-all hover:bg-green-700 ${
+            newPromptName === selectedPrompt.name
               ? 'cursor-not-allowed opacity-50'
               : ''
-            }`}
+          }`}
           onClick={handleAddPrompt}
           disabled={newPromptName === selectedPrompt.name}
         >
           Add New Prompt
         </button>
         <button
-          className={`rounded-lg bg-red-500 px-4 py-2 font-bold text-white transition-all hover:bg-red-700 ${selectedPrompt.type === 'public'
+          className={`rounded-lg bg-red-500 px-4 py-2 font-bold text-white transition-all hover:bg-red-700 ${
+            selectedPrompt.type === 'public'
               ? 'cursor-not-allowed opacity-50'
               : ''
-            }`}
+          }`}
           onClick={handleDeletePrompt}
           disabled={selectedPrompt.type === 'public'}
         >
           Delete Prompt
         </button>
         <button
-          className={`rounded-lg bg-blue-500 px-4 py-2 font-bold text-white transition-all hover:bg-blue-700 ${selectedPrompt.type === 'public'
+          className={`rounded-lg bg-blue-500 px-4 py-2 font-bold text-white transition-all hover:bg-blue-700 ${
+            selectedPrompt.type === 'public'
               ? 'cursor-not-allowed opacity-50'
               : ''
-            }`}
+          }`}
           onClick={handleSaveChanges}
           disabled={selectedPrompt.type === 'public'}
         >
@@ -414,118 +428,6 @@ const Prompts: React.FC<PromptProps> = ({
     </div>
   );
 };
-
-function DropdownPrompt({
-  options,
-  selectedValue,
-  onSelect,
-}: {
-  options: { name: string; id: string; type: string }[];
-  selectedValue: string;
-  onSelect: (value: { name: string; id: string; type: string }) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="relative mt-2 w-32">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-xl border-2 dark:border-chinese-silver bg-white p-3 dark:bg-transparent"
-      >
-        <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
-          {selectedValue}
-        </span>
-        <img
-          src={Arrow2}
-          alt="arrow"
-          className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'
-            } h-3 w-3 transition-transform`}
-        />
-      </button>
-      {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 dark:border-chinese-silver bg-white dark:bg-dark-charcoal  shadow-lg">
-          {options.map((option, index) => (
-            <div
-              key={index}
-              className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe dark:text-bright-gray "
-            >
-              <span
-                onClick={() => {
-                  onSelect(option);
-                  setIsOpen(false);
-                }}
-                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
-              >
-                {option.name}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Dropdown({
-  options,
-  selectedValue,
-  onSelect,
-  showDelete,
-  onDelete,
-}: {
-  options: string[];
-  selectedValue: string;
-  onSelect: (value: string) => void;
-  showDelete?: boolean; // optional
-  onDelete?: (value: string) => void; // optional
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="relative mt-2 w-32">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center rounded-xl border-2 dark:border-chinese-silver bg-white p-3 dark:bg-transparent"
-      >
-        <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
-          {selectedValue}
-        </span>
-        <img
-          src={Arrow2}
-          alt="arrow"
-          className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'
-            } h-3 w-3 transition-transform`}
-        />
-      </button>
-      {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-3 rounded-b-xl border-2 bg-white dark:border-chinese-silver dark:bg-dark-charcoal shadow-lg">
-          {options.map((option, index) => (
-            <div
-              key={index}
-              className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe"
-            >
-              <span
-                onClick={() => {
-                  onSelect(option);
-                  setIsOpen(false);
-                }}
-                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray"
-              >
-                {option}
-              </span>
-              {showDelete && onDelete && (
-                <button onClick={() => onDelete(option)} className="p-2">
-                  {/* Icon or text for delete button */}
-                  Delete
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 type AddPromptModalProps = {
   newPromptName: string;
@@ -549,7 +451,7 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
           placeholder="Enter Prompt Name"
           value={newPromptName}
           onChange={(e) => onNewPromptNameChange(e.target.value)}
-          className="mb-4 w-full rounded-3xl border-2 dark:border-chinese-silver p-2"
+          className="mb-4 w-full rounded-3xl border-2 p-2 dark:border-chinese-silver"
         />
         <button
           onClick={onAddPrompt}
@@ -582,13 +484,13 @@ const Documents: React.FC<DocumentsProps> = ({
       <div className="flex flex-col">
         {/* <h2 className="text-xl font-semibold">Documents</h2> */}
 
-        <div className="mt-[27px] overflow-x-auto border dark:border-chinese-silver rounded-xl w-max">
-          <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray" >
+        <div className="mt-[27px] w-max overflow-x-auto rounded-xl border dark:border-chinese-silver">
+          <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray">
             <thead>
               <tr>
                 <th className="border-r p-4 md:w-[244px]">Document Name</th>
-                <th className="border-r px-4 py-2 w-[244px]">Vector Date</th>
-                <th className="border-r px-4 py-2 w-[244px]">Type</th>
+                <th className="w-[244px] border-r px-4 py-2">Vector Date</th>
+                <th className="w-[244px] border-r px-4 py-2">Type</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -596,8 +498,12 @@ const Documents: React.FC<DocumentsProps> = ({
               {documents &&
                 documents.map((document, index) => (
                   <tr key={index}>
-                    <td className="border-r border-t px-4 py-2">{document.name}</td>
-                    <td className="border-r border-t px-4 py-2">{document.date}</td>
+                    <td className="border-r border-t px-4 py-2">
+                      {document.name}
+                    </td>
+                    <td className="border-r border-t px-4 py-2">
+                      {document.date}
+                    </td>
                     <td className="border-r border-t px-4 py-2">
                       {document.location === 'remote'
                         ? 'Pre-loaded'
