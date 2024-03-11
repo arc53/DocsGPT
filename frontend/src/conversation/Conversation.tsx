@@ -27,9 +27,12 @@ export default function Conversation() {
   const inputRef = useRef<HTMLDivElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
-  const fetchStream = useRef<any>(null)
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [eventInterrupt, setEventInterrupt] = useState<boolean>(false); //interruptions caused during auto-scrolling
+  const fetchStream = useRef<any>(null);
+  const handleUserInterruption = () => setEventInterrupt(true);
   useEffect(() => {
-    scrollIntoView();
+    !eventInterrupt && scrollIntoView();
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
@@ -38,12 +41,16 @@ export default function Conversation() {
       element.focus();
     }
   }, []);
-
   useEffect(() => {
+    if (status === 'loading') {
+      scrollRef.current?.addEventListener('mousedown', handleUserInterruption);
+      scrollRef.current?.addEventListener('scroll', handleUserInterruption,{ passive: true });
+    }
     return () => {
       if (status !== 'idle') {
         fetchStream.current && fetchStream.current.abort(); //abort previous stream
       }
+      scrollRef.current?.removeEventListener('scroll', handleUserInterruption);
     }
   }, [status])
   useEffect(() => {
@@ -74,11 +81,11 @@ export default function Conversation() {
   };
 
   const handleQuestion = (question: string) => {
+    setEventInterrupt(false);
     question = question.trim();
     if (question === '') return;
     dispatch(addQuery({ prompt: question }));
     fetchStream.current = dispatch(fetchAnswer({ question }));
-
   };
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
@@ -126,7 +133,7 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex flex-col justify-center p-4 md:flex-row">
+    <div className="flex flex-col justify-center p-4 md:flex-row" id='conversation' ref={scrollRef}>
       {queries.length > 0 && !hasScrolledToLast && (
         <button
           onClick={scrollIntoView}
