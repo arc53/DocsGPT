@@ -7,6 +7,7 @@ import MessageIcon from '../assets/message.svg'
 import { fetchAnswerStreaming } from '../requests/streamingApi';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import snarkdown from '@bpmn-io/snarkdown';
+import { sanitize } from 'dompurify';
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -410,7 +411,7 @@ export const DocsGPTWidget = ({
                           type='ANSWER'
                           ref={(index === queries.length - 1) ? scrollRef : null}
                         >
-                          <div className="response" dangerouslySetInnerHTML={{ __html: snarkdown(query.response) }} />
+                          <div className="response" dangerouslySetInnerHTML={{ __html: sanitize(snarkdown(query.response)) }} />
                         </Message>
                       </MessageBubble>
                         : <div>
