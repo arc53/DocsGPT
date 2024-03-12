@@ -5,7 +5,34 @@ import { MESSAGE_TYPE } from '../models/types';
 import { Query, Status } from '../models/types';
 import MessageIcon from '../assets/message.svg'
 import { fetchAnswerStreaming } from '../requests/streamingApi';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, createGlobalStyle } from 'styled-components';
+import snarkdown from '@bpmn-io/snarkdown';
+const GlobalStyles = createGlobalStyle`
+.response pre {
+    padding: 8px;
+    width: 90%;
+    font-size: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    background-color: #1B1C1F;
+}
+.response h1{
+  font-size: 20px;
+}
+.response h2{
+  font-size: 18px;
+}
+.response h3{
+  font-size: 16px;
+}
+.response code:not(pre code){
+  border-radius: 6px;
+  padding: 1px 3px 1px 3px;
+  font-size: 12px;
+  display: inline-block;
+  background-color: #646464;
+}
+`;
 const WidgetContainer = styled.div`
     display: block;
     position: fixed;
@@ -125,9 +152,10 @@ const Message = styled.p<{ type: MESSAGE_TYPE }>`
     color: #ffff;
     border: none;
     max-width: 80%;
-
+    overflow: auto;
     margin: 4px;
     display: block;
+    line-height: 1.5;
     padding: 0.75rem;
     border-radius: 0.375rem;
 `;
@@ -341,13 +369,14 @@ export const DocsGPTWidget = ({
   return (
     <>
       <WidgetContainer>
+        <GlobalStyles />
         {!open && <FloatingButton onClick={() => setOpen(true)} hidden={open}>
           <MessageIcon style={{ marginTop: '8px' }} />
         </FloatingButton>}
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
-              <Cross2Icon width={24} height={24} color='white'/>
+              <Cross2Icon width={24} height={24} color='white' />
             </CancelButton>
             <Header>
               <IconWrapper>
@@ -359,66 +388,68 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-            <Conversation>
-              {
-                queries.length > 0 ? queries?.map((query, index) => {
-                  return (
-                    <Fragment key={index}>
-                      {
-                        query.prompt && <MessageBubble type='QUESTION'>
-                          <Message
-                            type='QUESTION'
-                            ref={(!(query.response || query.error) && index === queries.length - 1) ? scrollRef : null}>
-                            {query.prompt}
-                          </Message>
-                        </MessageBubble>
-                      }
-                      {
-                        query.response ? <MessageBubble type='ANSWER'>
-                          <Message
-                            type='ANSWER'
-                            ref={(index === queries.length - 1) ? scrollRef : null}
-                          >
-                            {query.response}
-                          </Message>
-                        </MessageBubble>
-                          : <div>
-                            {
-                              query.error ? <ErrorAlert>
-                                <IconWrapper>
-                                  <ExclamationTriangleIcon style={{ marginTop: '4px' }} width={22} height={22} color='#b91c1c' />
-                                </IconWrapper>
-                                <div>
-                                  <h5 style={{ margin: 2 }}>Network Error</h5>
-                                  <span style={{ margin: 2, fontSize: '13px' }}>Something went wrong !</span>
-                                </div>
-                              </ErrorAlert>
-                                : <MessageBubble type='ANSWER'>
-                                  <Message type='ANSWER' style={{ fontWeight: 600 }}>
-                                    <DotAnimation>.</DotAnimation>
-                                    <Delay delay={200}>.</Delay>
-                                    <Delay delay={400}>.</Delay>
-                                  </Message>
-                                </MessageBubble>
-                            }
-                          </div>
-                      }
-                    </Fragment>)
-                })
-                  : <Hero title={heroTitle} description={heroDescription} />
-              }
-            </Conversation>
-          
+          <Conversation>
+            {
+              queries.length > 0 ? queries?.map((query, index) => {
+                query.response && console.log(query.response);
+
+                return (
+                  <Fragment key={index}>
+                    {
+                      query.prompt && <MessageBubble type='QUESTION'>
+                        <Message
+                          type='QUESTION'
+                          ref={(!(query.response || query.error) && index === queries.length - 1) ? scrollRef : null}>
+                          {query.prompt}
+                        </Message>
+                      </MessageBubble>
+                    }
+                    {
+                      query.response ? <MessageBubble type='ANSWER'>
+                        <Message
+                          type='ANSWER'
+                          ref={(index === queries.length - 1) ? scrollRef : null}
+                        >
+                          <div className="response" dangerouslySetInnerHTML={{ __html: snarkdown(query.response) }} />
+                        </Message>
+                      </MessageBubble>
+                        : <div>
+                          {
+                            query.error ? <ErrorAlert>
+                              <IconWrapper>
+                                <ExclamationTriangleIcon style={{ marginTop: '4px' }} width={22} height={22} color='#b91c1c' />
+                              </IconWrapper>
+                              <div>
+                                <h5 style={{ margin: 2 }}>Network Error</h5>
+                                <span style={{ margin: 2, fontSize: '13px' }}>Something went wrong !</span>
+                              </div>
+                            </ErrorAlert>
+                              : <MessageBubble type='ANSWER'>
+                                <Message type='ANSWER' style={{ fontWeight: 600 }}>
+                                  <DotAnimation>.</DotAnimation>
+                                  <Delay delay={200}>.</Delay>
+                                  <Delay delay={400}>.</Delay>
+                                </Message>
+                              </MessageBubble>
+                          }
+                        </div>
+                    }
+                  </Fragment>)
+              })
+                : <Hero title={heroTitle} description={heroDescription} />
+            }
+          </Conversation>
+
           <PromptContainer
-              onSubmit={handleSubmit}>
-              <StyledInput
-                value={prompt} onChange={(event) => setPrompt(event.target.value)}
-                type='text' placeholder="What do you want to do?" />
-              <StyledButton
-                disabled={prompt.length == 0 || status !== 'idle'}>
-                <PaperPlaneIcon width={15} height={15} color='white' />
-              </StyledButton>
-            </PromptContainer>
+            onSubmit={handleSubmit}>
+            <StyledInput
+              value={prompt} onChange={(event) => setPrompt(event.target.value)}
+              type='text' placeholder="What do you want to do?" />
+            <StyledButton
+              disabled={prompt.length == 0 || status !== 'idle'}>
+              <PaperPlaneIcon width={15} height={15} color='white' />
+            </StyledButton>
+          </PromptContainer>
         </StyledContainer>}
       </WidgetContainer>
     </>
