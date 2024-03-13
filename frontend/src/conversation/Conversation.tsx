@@ -4,7 +4,7 @@ import { useDarkTheme } from '../hooks';
 import Hero from '../Hero';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
-import conversationSlice, {
+import {
   addQuery,
   fetchAnswer,
   selectQueries,
@@ -27,10 +27,14 @@ export default function Conversation() {
   const inputRef = useRef<HTMLDivElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [eventInterrupt, setEventInterrupt] = useState<boolean>(false); //interruptions caused during auto-scrolling
+  const conversationRef = useRef<HTMLDivElement>(null);
   const fetchStream = useRef<any>(null);
-  const handleUserInterruption = () => setEventInterrupt(true);
+  const [eventInterrupt, setEventInterrupt] = useState(false);
+  useEffect(() => console.log(status, eventInterrupt))
+  const handleUserInterruption = () => {
+    if (!eventInterrupt && status === "loading")
+      setEventInterrupt(true)
+  }
   useEffect(() => {
     !eventInterrupt && scrollIntoView();
   }, [queries.length, queries[queries.length - 1]]);
@@ -41,18 +45,15 @@ export default function Conversation() {
       element.focus();
     }
   }, []);
+
   useEffect(() => {
-    if (status === 'loading') {
-      scrollRef.current?.addEventListener('mousedown', handleUserInterruption);
-      scrollRef.current?.addEventListener('scroll', handleUserInterruption,{ passive: true });
-    }
     return () => {
       if (status !== 'idle') {
         fetchStream.current && fetchStream.current.abort(); //abort previous stream
       }
-      scrollRef.current?.removeEventListener('scroll', handleUserInterruption);
     }
   }, [status])
+
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
       entries.forEach((entry) => {
@@ -78,12 +79,12 @@ export default function Conversation() {
       behavior: 'smooth',
       block: 'start',
     });
-  };
+  }
 
   const handleQuestion = (question: string) => {
-    setEventInterrupt(false);
     question = question.trim();
     if (question === '') return;
+    setEventInterrupt(false)
     dispatch(addQuery({ prompt: question }));
     fetchStream.current = dispatch(fetchAnswer({ question }));
   };
@@ -133,7 +134,10 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex flex-col justify-center p-4 md:flex-row" id='conversation' ref={scrollRef}>
+    <div ref={conversationRef}
+      onWheel={handleUserInterruption}
+      onTouchMove={handleUserInterruption}
+      className="flex flex-col h-[86vh] overflow-y-scroll justify-center p-4 md:flex-row">
       {queries.length > 0 && !hasScrolledToLast && (
         <button
           onClick={scrollIntoView}
@@ -169,8 +173,8 @@ export default function Conversation() {
       {queries.length === 0 && (
         <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
       )}
-      <div className="absolute bottom-0 flex w-11/12 md:w-[65%] flex-col items-end self-center bg-white dark:bg-raisin-black pt-4 md:fixed">
-        <div className="flex h-full w-full">
+      <div className="absolute bottom-0 flex w-11/12 md:w-[65%] h-[14vh] flex-col items-end self-center bg-white dark:bg-raisin-black pt-1 md:fixed">
+        <div className="flex w-full">
           <div
             id="inputbox"
             ref={inputRef}
