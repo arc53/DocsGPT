@@ -17,20 +17,17 @@ import Spinner from './../assets/spinner.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import ArrowDown from './../assets/arrow-down.svg';
-import { selectConversationId } from '../preferences/preferenceSlice';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
-  const conversationId = useSelector(selectConversationId)
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
-  const conversationRef = useRef<HTMLDivElement>(null);
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
-  useEffect(() => console.log(status, eventInterrupt))
+
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === "loading")
       setEventInterrupt(true)
@@ -134,10 +131,10 @@ export default function Conversation() {
   };
 
   return (
-    <div ref={conversationRef}
+    <div
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex flex-col h-[86vh] overflow-y-scroll justify-center p-4 md:flex-row">
+      className="flex flex-col justify-center w-full p-4 md:flex-row">
       {queries.length > 0 && !hasScrolledToLast && (
         <button
           onClick={scrollIntoView}
@@ -153,7 +150,7 @@ export default function Conversation() {
       )}
 
       {queries.length > 0 && (
-        <div className="mt-20 mb-9  flex flex-col transition-all md:w-3/4">
+        <div className="mt-20 mb-9 flex flex-col transition-all md:w-3/4">
           {queries.map((query, index) => {
             return (
               <Fragment key={index}>
@@ -171,10 +168,10 @@ export default function Conversation() {
         </div>
       )}
       {queries.length === 0 && (
-        <Hero className="mt-24 h-[100vh] md:mt-52"></Hero>
+        <Hero className="mt-24 md:mt-52"></Hero>
       )}
-      <div className="absolute bottom-0 flex w-11/12 md:w-[65%] h-[14vh] flex-col items-end self-center bg-white dark:bg-raisin-black pt-1 md:fixed">
-        <div className="flex w-full">
+      <div className="absolute bottom-0 flex w-11/12 md:w-[65%] flex-col items-end self-center bg-white dark:bg-raisin-black pt-4 md:fixed">
+        <div className="flex h-full w-full">
           <div
             id="inputbox"
             ref={inputRef}

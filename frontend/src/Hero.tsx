@@ -6,14 +6,15 @@ export default function Hero({ className = '' }: { className?: string }) {
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme()
   return (
-    <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'}flex flex-col text-black-1000 dark:text-bright-gray`}>
+    <div className={`mt-14 ${isMobile ? 'mb-2' : 'mb-12'} flex flex-col text-black-1000 dark:text-bright-gray`}>
       <div className=" mb-2 flex items-center justify-center sm:mb-10">
+        
         <p className="mr-2 text-4xl font-semibold">DocsGPT</p>
         <img className="mb-2 h-14" src={DocsGPT3} alt="DocsGPT" />
       </div>
       {isMobile ? (
         <p className="mb-3 text-center leading-6">
-          Welcome to <span className="font-bold ">DocsGPT</span>, your technical
+          Welcome to <span className="font-bold">DocsGPT</span>, your technical
           documentation assistant! Start by entering your query in the input
           field below, and we&apos;ll provide you with the most relevant
           answers.
