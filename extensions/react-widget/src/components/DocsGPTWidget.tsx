@@ -316,12 +316,11 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
+  
   useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
- /* useEffect(()=>{
-  setEventInterrupt(false)
- },[status]) */
+
   async function stream(question: string) {
     setStatus('loading')
     try {

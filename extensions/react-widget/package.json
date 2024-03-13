@@ -33,7 +33,6 @@
     "@parcel/transformer-typescript-tsc": "^2.12.0",
     "@parcel/validator-typescript": "^2.12.0",
     "@radix-ui/react-icons": "^1.3.0",
-    "@sundersb/markdown-mini": "^1.0.1",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
     "class-variance-authority": "^0.7.0",
