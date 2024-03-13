@@ -23,8 +23,8 @@ export default function Upload({
     { label: 'Link', value: 'url' },
   ];
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: '',
-    value: '',
+    label: 'Link',
+    value: 'url',
   });
   const [activeTab, setActiveTab] = useState<string>('file');
   const [files, setfiles] = useState<File[]>([]);
