@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useRef, useState } from 'react'
+import {Fragment, useEffect, useRef, useState } from 'react'
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { MESSAGE_TYPE } from '../models/types';
 import { Query, Status } from '../models/types';
@@ -165,6 +165,7 @@ const ErrorAlert = styled.div`
   border:0.1px solid #b91c1c;
   display: flex;
   padding:4px;
+  margin:0.5rem;
   opacity: 90%;
   max-width: 70%;
   font-weight: 400;
@@ -297,8 +298,11 @@ export const DocsGPTWidget = ({
   const [queries, setQueries] = useState<Query[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [open, setOpen] = useState<boolean>(false)
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
+  const [eventInterrupt, setEventInterrupt] = useState<boolean>(false); //click or scroll by user while autoScrolling
+  const endMessageRef = useRef<HTMLDivElement | null>(null);
+  const handleUserInterrupt = () => {
+    (status === 'loading') && setEventInterrupt(true);
+  }
   const scrollToBottom = (element: Element | null) => {
     //recursive function to scroll to the last child of the last child ...
     // to get to the bottom most element
@@ -312,13 +316,14 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
-
   useEffect(() => {
-    scrollToBottom(scrollRef.current);
+    !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
-
+ /* useEffect(()=>{
+  setEventInterrupt(false)
+ },[status]) */
   async function stream(question: string) {
-    setStatus('loading');
+    setStatus('loading')
     try {
       await fetchAnswerStreaming(
         {
@@ -348,18 +353,18 @@ export const DocsGPTWidget = ({
         }
       );
     } catch (error) {
-      console.log(error);
-
       const updatedQueries = [...queries];
       updatedQueries[updatedQueries.length - 1].error = 'error'
       setQueries(updatedQueries);
       setStatus('idle')
+      //setEventInterrupt(false)
     }
 
   }
   // submit handler
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setEventInterrupt(false);
     queries.push({ prompt })
     setPrompt('')
     await stream(prompt)
@@ -389,18 +394,16 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <Conversation>
+          <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
-                query.response && console.log(query.response);
-
                 return (
                   <Fragment key={index}>
                     {
                       query.prompt && <MessageBubble type='QUESTION'>
                         <Message
                           type='QUESTION'
-                          ref={(!(query.response || query.error) && index === queries.length - 1) ? scrollRef : null}>
+                          ref={(!(query.response || query.error) && index === queries.length - 1) ? endMessageRef : null}>
                           {query.prompt}
                         </Message>
                       </MessageBubble>
@@ -409,7 +412,7 @@ export const DocsGPTWidget = ({
                       query.response ? <MessageBubble type='ANSWER'>
                         <Message
                           type='ANSWER'
-                          ref={(index === queries.length - 1) ? scrollRef : null}
+                          ref={(index === queries.length - 1) ? endMessageRef : null}
                         >
                           <div className="response" dangerouslySetInnerHTML={{ __html: sanitize(snarkdown(query.response)) }} />
                         </Message>
