@@ -29,7 +29,7 @@ export default function ConversationTile({
 }: ConversationTileProps) {
   const conversationId = useSelector(selectConversationId);
   const tileRef = useRef<HTMLInputElement>(null);
-  const [isDarkTheme]= useDarkTheme();
+  const [isDarkTheme] = useDarkTheme();
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
   // useOutsideAlerter(
@@ -69,14 +69,21 @@ export default function ConversationTile({
       onClick={() => {
         selectConversation(conversation.id);
       }}
-      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${conversationId === conversation.id ? 'bg-gray-100 dark:bg-purple-taupe' : ''
-        }`}
+      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${
+        conversationId === conversation.id
+          ? 'bg-gray-100 dark:bg-purple-taupe'
+          : ''
+      }`}
     >
       <div
-        className={`flex ${conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
-          } gap-4`}
+        className={`flex ${
+          conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
+        } gap-4`}
       >
-        <img src={isDarkTheme ? MessageDark : Message} className="ml-4 w-5 dark:text-white" />
+        <img
+          src={isDarkTheme ? MessageDark : Message}
+          className="ml-4 w-5 dark:text-white"
+        />
         {isEdit ? (
           <input
             autoFocus
@@ -96,23 +103,24 @@ export default function ConversationTile({
           <img
             src={isEdit ? CheckMark2 : Edit}
             alt="Edit"
-            className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50 text-white"
+            className="mr-2 h-4 w-4 cursor-pointer text-white hover:opacity-50"
             id={`img-${conversation.id}`}
             onClick={(event) => {
               event.stopPropagation();
               isEdit
                 ? handleSaveConversation({
-                  id: conversationId,
-                  name: conversationName,
-                })
+                    id: conversationId,
+                    name: conversationName,
+                  })
                 : handleEditConversation();
             }}
           />
           <img
             src={isEdit ? Exit : Trash}
             alt="Exit"
-            className={`mr-4 ${isEdit ? 'h-3 w-3' : 'h-4 w-4'
-              }mt-px  cursor-pointer hover:opacity-50`}
+            className={`mr-4 ${
+              isEdit ? 'h-3 w-3' : 'h-4 w-4'
+            }mt-px  cursor-pointer hover:opacity-50`}
             id={`img-${conversation.id}`}
             onClick={(event) => {
               event.stopPropagation();

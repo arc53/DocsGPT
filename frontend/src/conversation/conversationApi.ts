@@ -5,7 +5,7 @@ const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 export function fetchAnswerApi(
   question: string,
-  signal:AbortSignal,
+  signal: AbortSignal,
   apiKey: string,
   selectedDocs: Doc,
   history: Array<any> = [],
@@ -13,20 +13,20 @@ export function fetchAnswerApi(
   promptId: string | null,
 ): Promise<
   | {
-    result: any;
-    answer: any;
-    sources: any;
-    conversationId: any;
-    query: string;
-  }
+      result: any;
+      answer: any;
+      sources: any;
+      conversationId: any;
+      query: string;
+    }
   | {
-    result: any;
-    answer: any;
-    sources: any;
-    query: string;
-    conversationId: any;
-    title: any;
-  }
+      result: any;
+      answer: any;
+      sources: any;
+      query: string;
+      conversationId: any;
+      title: any;
+    }
 > {
   let namePath = selectedDocs.name;
   if (selectedDocs.language === namePath) {
@@ -89,7 +89,7 @@ export function fetchAnswerApi(
 
 export function fetchAnswerSteaming(
   question: string,
-  signal:AbortSignal,
+  signal: AbortSignal,
   apiKey: string,
   selectedDocs: Doc,
   history: Array<any> = [],
@@ -137,7 +137,7 @@ export function fetchAnswerSteaming(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal
+      signal,
     })
       .then((response) => {
         if (!response.body) throw Error('No response body');
@@ -222,21 +222,20 @@ export function searchEndpoint(
     question: question,
     active_docs: docPath,
     conversation_id,
-    history
+    history,
   };
   return fetch(`${apiHost}/api/search`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(
-      body
-    ),
-  }).then((response) => response.json())
+    body: JSON.stringify(body),
+  })
+    .then((response) => response.json())
     .then((data) => {
       return data;
     })
-    .catch(err => console.log(err))
+    .catch((err) => console.log(err));
 }
 export function sendFeedback(
   prompt: string,

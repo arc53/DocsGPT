@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import Arrow2 from './assets/dropdown-arrow.svg';
 import ArrowLeft from './assets/arrow-left.svg';
 import ArrowRight from './assets/arrow-right.svg';
 import Trash from './assets/trash.svg';

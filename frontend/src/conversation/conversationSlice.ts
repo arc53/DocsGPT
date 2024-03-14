@@ -32,7 +32,6 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           (event) => {
             const data = JSON.parse(event.data);
 
-
             // check if the 'end' event has been received
             if (data.type === 'end') {
               // set status to 'idle'
@@ -45,13 +44,14 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                   console.error('Failed to fetch conversations: ', error);
                 });
 
-              searchEndpoint( //search for sources post streaming
+              searchEndpoint(
+                //search for sources post streaming
                 question,
                 state.preference.apiKey,
                 state.preference.selectedDocs!,
                 state.conversation.conversationId,
-                state.conversation.queries
-              ).then(sources => {
+                state.conversation.queries,
+              ).then((sources) => {
                 //dispatch streaming sources
                 dispatch(
                   updateStreamingSource({
@@ -168,7 +168,6 @@ export const conversationSlice = createSlice({
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
-
       const { index, query } = action.payload;
       if (!state.queries[index].sources) {
         state.queries[index].sources = query?.sources;
@@ -196,8 +195,7 @@ export const conversationSlice = createSlice({
         state.status = 'loading';
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
-        if(action.meta.aborted)
-        {
+        if (action.meta.aborted) {
           state.status = 'idle';
           return state;
         }

@@ -66,7 +66,9 @@ export function useMediaQuery() {
 }
 
 export function useDarkTheme() {
-  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(localStorage.getItem('selectedTheme') === "Dark" || false);
+  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(
+    localStorage.getItem('selectedTheme') === 'Dark' || false,
+  );
 
   useEffect(() => {
     // Check if dark mode preference exists in local storage
@@ -88,14 +90,13 @@ export function useDarkTheme() {
     if (isDarkTheme) {
       document.documentElement.classList.add('dark');
       document.documentElement.classList.add('dark:bg-raisin-black');
-    }
-    else {
+    } else {
       document.documentElement.classList.remove('dark');
     }
-  }, [isDarkTheme])
+  }, [isDarkTheme]);
   //method to toggle theme
   const toggleTheme: any = () => {
-    setIsDarkTheme(!isDarkTheme)
+    setIsDarkTheme(!isDarkTheme);
   };
   return [isDarkTheme, toggleTheme];
 }
