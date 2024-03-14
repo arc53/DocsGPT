@@ -54,7 +54,7 @@ function SourceDropdown({
         <div className="absolute left-0 right-0 z-50 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white  shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options ? (
             options.map((option: any, index: number) => {
-              if (option.model !== embeddingsName) {
+              if (option.model === embeddingsName) {
                 return (
                   <div
                     key={index}
