@@ -1,5 +1,5 @@
 "use client";
-import {Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { MESSAGE_TYPE } from '../models/types';
 import { Query, Status } from '../models/types';
@@ -165,7 +165,7 @@ const ErrorAlert = styled.div`
   border:0.1px solid #b91c1c;
   display: flex;
   padding:4px;
-  margin:0.5rem;
+  margin:0.7rem;
   opacity: 90%;
   max-width: 70%;
   font-weight: 400;
@@ -316,7 +316,7 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
-  
+
   useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
