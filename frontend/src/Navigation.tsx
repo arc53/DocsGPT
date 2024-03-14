@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
+import PropTypes from 'prop-types';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Documentation from './assets/documentation.svg';
 import DocumentationDark from './assets/documentation-dark.svg';
 import Discord from './assets/discord.svg';
 import DiscordDark from './assets/discord-dark.svg';
-
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
 import GithubDark from './assets/github-dark.svg';
@@ -46,16 +46,20 @@ interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
-const NavImage: React.FC<{ Light: string; Dark: string }> = ({
-  Light,
-  Dark,
-}) => {
+const NavImage: React.FC<{
+  Light: string | undefined;
+  Dark: string | undefined;
+}> = ({ Light, Dark }) => {
   return (
     <>
       <img src={Dark} alt="icon" className="ml-2 hidden w-5 dark:block " />
       <img src={Light} alt="icon" className="ml-2 w-5 dark:hidden " />
     </>
   );
+};
+NavImage.propTypes = {
+  Light: PropTypes.string,
+  Dark: PropTypes.string,
 };
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();

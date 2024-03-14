@@ -54,7 +54,6 @@ export function fetchAnswerStreaming({
             value,
           }: ReadableStreamReadResult<Uint8Array>) => {
             if (done) {
-              console.log(counterrr);
               resolve();
               return;
             }

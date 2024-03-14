@@ -5,7 +5,7 @@ import About from './About';
 import PageNotFound from './PageNotFound';
 import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
-import { useState,useEffect } from 'react';
+import { useState} from 'react';
 import Setting from './Setting';
 
 inject();
