@@ -21,6 +21,7 @@ export default function Upload({
     { label: 'Crawler', value: 'crawler' },
     // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' },
+    { label: 'Reddit', value: 'reddit' },
   ];
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
     label: 'Link',
