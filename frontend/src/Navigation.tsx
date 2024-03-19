@@ -257,7 +257,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             New Chat
           </p>
         </NavLink>
-        <div className="mb-auto h-[56vh] overflow-x-hidden overflow-y-scroll dark:text-white">
+        <div className="mb-auto h-[56vh] overflow-y-auto overflow-x-hidden dark:text-white">
           {conversations && (
             <div>
               <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
