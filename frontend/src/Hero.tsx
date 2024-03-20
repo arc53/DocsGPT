@@ -7,9 +7,7 @@ export default function Hero({ className = '' }: { className?: string }) {
   const [isDarkTheme] = useDarkTheme();
   return (
     <div
-      className={`mt-14 ${
-        isMobile ? 'mb-2' : 'mb-12'
-      } flex flex-col text-black-1000 dark:text-bright-gray`}
+      className={`mt-14 mb-32 flex flex-col text-black-1000 dark:text-bright-gray lg:mt-6`}
     >
       <div className=" mb-2 flex items-center justify-center sm:mb-10">
         <p className="mr-2 text-4xl font-semibold">DocsGPT</p>
@@ -39,16 +37,14 @@ export default function Hero({ className = '' }: { className?: string }) {
         </>
       )}
       <div
-        className={`sections ${
-          isMobile ? '' : 'mt-1'
-        } flex flex-wrap items-center justify-center gap-2 sm:gap-1 md:gap-0`}
+        className={`mt-0 flex flex-wrap items-center justify-center gap-2 sm:mt-1 sm:gap-4 md:gap-4 lg:gap-0`}
       >
         {/* first */}
-        <div className="h-auto rounded-[50px] bg-gradient-to-l from-[#6EE7B7]/70  via-[#3B82F6] to-[#9333EA]/50 p-1 dark:from-[#D16FF8] dark:via-[#48E6E0] dark:to-[#C85EF6] md:h-60  md:rounded-tr-none md:rounded-br-none">
+        <div className="h-auto rounded-[50px] bg-gradient-to-l from-[#6EE7B7]/70  via-[#3B82F6] to-[#9333EA]/50 p-1 dark:from-[#D16FF8] dark:via-[#48E6E0] dark:to-[#C85EF6] lg:h-60  lg:rounded-tr-none lg:rounded-br-none">
           <div
             className={`h-full rounded-[45px] bg-white dark:bg-dark-charcoal p-${
               isMobile ? '3.5' : '6 py-8'
-            }  md:rounded-tr-none md:rounded-br-none`}
+            }  lg:rounded-tr-none lg:rounded-br-none`}
           >
             {/* Add Mobile check here */}
             {isMobile ? (
@@ -93,11 +89,11 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
         {/* second */}
-        <div className="h-auto rounded-[50px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 dark:from-[#D16FF8] dark:via-[#48E6E0] dark:to-[#C85EF6] md:h-60  md:rounded-none  md:py-1 md:px-0">
+        <div className="h-auto rounded-[50px] bg-gradient-to-r from-[#6EE7B7]/70 via-[#3B82F6] to-[#9333EA]/50 p-1 dark:from-[#D16FF8] dark:via-[#48E6E0] dark:to-[#C85EF6] lg:h-60  lg:rounded-none  lg:py-1 lg:px-0">
           <div
             className={`h-full rounded-[45px] bg-white dark:bg-dark-charcoal p-${
               isMobile ? '3.5' : '6 py-6'
-            }  md:rounded-none`}
+            }  lg:rounded-none`}
           >
             {/* Add Mobile check here */}
             {isMobile ? (
@@ -138,7 +134,7 @@ export default function Hero({ className = '' }: { className?: string }) {
           </div>
         </div>
         {/* third */}
-        <div className="h-auto rounded-[50px] bg-gradient-to-l from-[#6EE7B7]/70  via-[#3B82F6] to-[#9333EA]/50 p-1 dark:from-[#D16FF8] dark:via-[#48E6E0] dark:to-[#C85EF6] md:h-60 md:rounded-tl-none md:rounded-bl-none ">
+        <div className="h-auto rounded-[50px] bg-gradient-to-l from-[#6EE7B7]/70  via-[#3B82F6] to-[#9333EA]/50 p-1 dark:from-[#D16FF8] dark:via-[#48E6E0] dark:to-[#C85EF6] lg:h-60 lg:rounded-tl-none lg:rounded-bl-none ">
           <div
             className={`firefox h-full rounded-[45px] bg-white dark:bg-dark-charcoal p-${
               isMobile ? '3.5' : '6 px-6 '

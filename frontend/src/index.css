@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #2f3036;
+}
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 40px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #b1afaf;
+}
+
 /*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
 
 /* Document
