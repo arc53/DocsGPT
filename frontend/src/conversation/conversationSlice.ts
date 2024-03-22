@@ -28,6 +28,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.conversation.queries,
           state.conversation.conversationId,
           state.preference.prompt.id,
+          state.preference.chunks,
 
           (event) => {
             const data = JSON.parse(event.data);
@@ -51,6 +52,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 state.preference.selectedDocs!,
                 state.conversation.conversationId,
                 state.conversation.queries,
+                state.preference.chunks,
               ).then((sources) => {
                 //dispatch streaming sources
                 dispatch(
@@ -86,6 +88,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.conversation.queries,
           state.conversation.conversationId,
           state.preference.prompt.id,
+          state.preference.chunks,
         );
         if (answer) {
           let sourcesPrepped = [];

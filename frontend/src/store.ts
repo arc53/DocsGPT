@@ -8,11 +8,13 @@ import {
 const key = localStorage.getItem('DocsGPTApiKey');
 const prompt = localStorage.getItem('DocsGPTPrompt');
 const doc = localStorage.getItem('DocsGPTRecentDocs');
+const chunks = localStorage.getItem('DocsGPTChunks');
 
 const store = configureStore({
   preloadedState: {
     preference: {
       apiKey: key ?? '',
+      chunks: JSON.parse(chunks ?? '2'),
       selectedDocs: doc !== null ? JSON.parse(doc) : null,
       prompt:
         prompt !== null
