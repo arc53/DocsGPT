@@ -10,6 +10,7 @@ interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
   selectedDocs: Doc | null;
+  chunks: string;
   sourceDocs: Doc[] | null;
   conversations: { name: string; id: string }[] | null;
 }
@@ -17,6 +18,7 @@ interface Preference {
 const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
+  chunks: '2',
   selectedDocs: {
     name: 'default',
     language: 'default',
@@ -51,6 +53,9 @@ export const prefSlice = createSlice({
     setPrompt: (state, action) => {
       state.prompt = action.payload;
     },
+    setChunks: (state, action) => {
+      state.chunks = action.payload;
+    },
   },
 });
 
@@ -60,6 +65,7 @@ export const {
   setSourceDocs,
   setConversations,
   setPrompt,
+  setChunks,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -91,6 +97,16 @@ prefListenerMiddleware.startListening({
   },
 });
 
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setChunks),
+  effect: (action, listenerApi) => {
+    localStorage.setItem(
+      'DocsGPTChunks',
+      JSON.stringify((listenerApi.getState() as RootState).preference.chunks),
+    );
+  },
+});
+
 export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;
@@ -105,3 +121,4 @@ export const selectConversations = (state: RootState) =>
 export const selectConversationId = (state: RootState) =>
   state.conversation.conversationId;
 export const selectPrompt = (state: RootState) => state.preference.prompt;
+export const selectChunks = (state: RootState) => state.preference.chunks;
