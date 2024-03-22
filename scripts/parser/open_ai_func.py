@@ -28,7 +28,7 @@ def store_add_texts_with_retry(store, i):
     # store_pine.add_texts([i.page_content], metadatas=[i.metadata])
 
 
-def call_openai_api(docs, folder_name, use_s3, s3_assume_role):
+def call_openai_api(docs, folder_name, use_s3, s3_bucket, s3_save_folder, s3_assume_role, aws_assume_role_profile):
     # Function to create a vector store from the documents and save it to disk.
 
     # create output folder if it doesn't exist
@@ -81,50 +81,9 @@ def call_openai_api(docs, folder_name, use_s3, s3_assume_role):
     store.save_local(f"outputs/{folder_name}")
 
     if use_s3:
-        s3_bucket_name = os.environ.get("S3_BUCKET")
-        s3_save_folder = os.environ.get("S3_SAVE_FOLDER")
-        aws_assume_role_profile = os.environ.get("AWS_ASSUME_ROLE_PROFILE")
-        if not s3_save_folder:
-            print(
-                "WARNING: S3_SAVE_FOLDER environment variable is not set. Root will be used."
-            )
-            s3_save_folder = ""
-        if not s3_assume_role:
-            s3 = boto3.Session().resource("s3")
-        elif s3_assume_role:
-            if not aws_assume_role_profile:
-                print("Error: AWS_ASSUME_ROLE_PROFILE environment variable is not set.")
-                sys.exit(1)
-            s3 = boto3.Session(profile_name=aws_assume_role_profile).resource("s3")
+        upload_to_s3(s3_bucket, s3_save_folder, s3_assume_role, aws_assume_role_profile)
 
-        with tqdm(
-            total=2,
-            desc=f"Uploading vectors to '{s3_save_folder}' folder in S3 bucket '{s3_bucket_name}' 🦖",
-            unit="doc(s)",
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} {unit} [Time Left: {remaining}]",
-        ) as pbar:
-            # First File Upload
-            s3.Bucket(s3_bucket_name).upload_file(
-                "outputs/s3_temp_storage/index.faiss",
-                f"{s3_save_folder}" + "/" + "index.faiss",
-            )
-            pbar.update(1)  # update progress bar after first file
-
-            # Second File Upload
-            s3.Bucket(s3_bucket_name).upload_file(
-                "outputs/s3_temp_storage/index.pkl",
-                f"{s3_save_folder}" + "/" + "index.pkl",
-            )
-            pbar.update(1)  # Update progress bar after second file
-
-            # Cleanup
-            os.remove("outputs/s3_temp_storage/index.faiss")
-            os.remove("outputs/s3_temp_storage/index.pkl")
-            os.removedirs("outputs/s3_temp_storage")
-            shutil.rmtree("s3_temp_storage")
-
-
-def get_user_permission(docs, folder_name, use_s3, s3_assume_role):
+def get_user_permission(docs, folder_name, use_s3, s3_bucket, s3_save_folder, s3_assume_role, aws_assume_role_profile):
     # Function to ask user permission to call the OpenAI api and spend their OpenAI funds.
     # Here we convert the docs list to a string and calculate the number of OpenAI tokens the string represents.
     # docs_content = (" ".join(docs))
@@ -139,8 +98,57 @@ def get_user_permission(docs, folder_name, use_s3, s3_assume_role):
     # Here we check for user permission before calling the API.
     user_input = input("Price Okay? (Y/N) \n").lower()
     if user_input == "y":
-        call_openai_api(docs, folder_name, use_s3, s3_assume_role)
+        call_openai_api(docs, folder_name, use_s3, s3_bucket, s3_save_folder, s3_assume_role, aws_assume_role_profile)
     elif user_input == "":
-        call_openai_api(docs, folder_name, use_s3, s3_assume_role)
+        call_openai_api(docs, folder_name, use_s3, s3_bucket, s3_save_folder, s3_assume_role, aws_assume_role_profile)
     else:
         print("The API was not called. No money was spent.")
+
+def upload_to_s3(s3_bucket, s3_save_folder, s3_assume_role, aws_assume_role_profile):
+    # Set defaults from environment variables if not provided via command line
+    s3_bucket = s3_bucket or os.environ.get("S3_BUCKET")
+    s3_save_folder = s3_save_folder or os.environ.get("S3_SAVE_FOLDER")
+    aws_assume_role_profile = aws_assume_role_profile or os.environ.get("AWS_ASSUME_ROLE_PROFILE")
+    
+    if not s3_bucket:
+        print("Error: S3_BUCKET environment variable is not set.")
+        sys.exit(1)
+
+    if s3_assume_role and not aws_assume_role_profile:
+        print("Error: AWS_ASSUME_ROLE_PROFILE environment variable is not set.")
+        sys.exit(1)
+
+    if not s3_save_folder:
+        print("WARNING: S3_SAVE_FOLDER environment variable is not set. Root will be used.")
+        s3_save_folder = ""
+
+    session_parameters = {'profile_name': aws_assume_role_profile} if s3_assume_role else {}
+    s3 = boto3.Session(**session_parameters).resource("s3")
+
+    from tqdm import tqdm
+
+    with tqdm(
+            total=2,
+            desc=f"Uploading vectors to '{s3_save_folder}' folder in S3 bucket '{s3_bucket}' 🦖",
+            unit="doc(s)",
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} {unit} [Time Left: {remaining}]",
+        ) as pbar:
+            # First File Upload
+            s3.Bucket(s3_bucket).upload_file(
+                "outputs/s3_temp_storage/index.faiss",
+                f"{s3_save_folder}" + "/" + "index.faiss",
+            )
+            pbar.update(1)  # update progress bar after first file
+
+            # Second File Upload
+            s3.Bucket(s3_bucket).upload_file(
+                "outputs/s3_temp_storage/index.pkl",
+                f"{s3_save_folder}" + "/" + "index.pkl",
+            )
+            pbar.update(1)  # Update progress bar after second file
+
+            # Cleanup
+            os.remove("outputs/s3_temp_storage/index.faiss")
+            os.remove("outputs/s3_temp_storage/index.pkl")
+            os.removedirs("outputs/s3_temp_storage")
+            shutil.rmtree("s3_temp_storage")
