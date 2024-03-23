@@ -14,7 +14,7 @@ const store = configureStore({
   preloadedState: {
     preference: {
       apiKey: key ?? '',
-      chunks: JSON.parse(chunks ?? '2'),
+      chunks: JSON.parse(chunks ?? '2').toString(),
       selectedDocs: doc !== null ? JSON.parse(doc) : null,
       prompt:
         prompt !== null
