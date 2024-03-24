@@ -10,6 +10,8 @@ class VectorCreator:
         "elasticsearch": ElasticsearchStore,
         "mongodb": MongoDBVectorStore,
         "qdrant": QdrantStore,
+        "lancedb": LancedbStore,
+
     }
 
     @classmethod
