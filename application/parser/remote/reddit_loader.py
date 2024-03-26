@@ -4,12 +4,13 @@ from langchain_community.document_loaders import RedditPostsLoader
 
 class RedditPostsLoaderRemote(BaseRemote):
     def load_data(self, inputs):
-        client_id = inputs.get("client_id")
-        client_secret = inputs.get("client_secret")
-        user_agent = inputs.get("user_agent")
-        categories = inputs.get("categories", ["new", "hot"])
-        mode = inputs.get("mode", "subreddit")
-        search_queries = inputs.get("search_queries")
+        data = eval(inputs)
+        client_id = data.get("client_id")
+        client_secret = data.get("client_secret")
+        user_agent = data.get("user_agent")
+        categories = data.get("categories", ["new", "hot"])
+        mode = data.get("mode", "subreddit")
+        search_queries = data.get("search_queries")
         self.loader = RedditPostsLoader(
             client_id=client_id,
             client_secret=client_secret,
@@ -17,11 +18,8 @@ class RedditPostsLoaderRemote(BaseRemote):
             categories=categories,
             mode=mode,
             search_queries=search_queries,
+            number_posts=10,
         )
-        documents = []
-        try:
-            documents.extend(self.loader.load())
-        except Exception as e:
-            print(f"Error processing Data: {e}")
+        documents = self.loader.load()
         print(f"Loaded {len(documents)} documents from Reddit")
-        return documents[:5]
+        return documents

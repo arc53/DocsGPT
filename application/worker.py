@@ -149,7 +149,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     }
 
 
-def remote_worker(self, source_data, name_job, user, directory="temp", loader="url"):
+def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     # sample = False
     token_check = True
     min_tokens = 150
