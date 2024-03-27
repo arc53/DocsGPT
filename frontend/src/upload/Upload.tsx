@@ -22,6 +22,7 @@ export default function Upload({
     client_secret: '',
     user_agent: '',
     search_queries: [''],
+    number_posts: 10,
   });
   const urlOptions: { label: string; value: string }[] = [
     { label: 'Crawler', value: 'crawler' },
@@ -386,6 +387,19 @@ export default function Upload({
                 <div className="relative bottom-12 left-2 mt-[-18.39px]">
                   <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
                     Search queries
+                  </span>
+                </div>
+                <input
+                  placeholder="Enter number of posts"
+                  type="number"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  name="number_posts"
+                  value={redditData.number_posts}
+                  onChange={handleChange}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Number of posts
                   </span>
                 </div>
               </>

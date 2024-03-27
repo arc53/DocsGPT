@@ -11,6 +11,7 @@ class RedditPostsLoaderRemote(BaseRemote):
         categories = data.get("categories", ["new", "hot"])
         mode = data.get("mode", "subreddit")
         search_queries = data.get("search_queries")
+        number_posts = data.get("number_posts", 10)
         self.loader = RedditPostsLoader(
             client_id=client_id,
             client_secret=client_secret,
@@ -18,7 +19,7 @@ class RedditPostsLoaderRemote(BaseRemote):
             categories=categories,
             mode=mode,
             search_queries=search_queries,
-            number_posts=10,
+            number_posts=number_posts,
         )
         documents = self.loader.load()
         print(f"Loaded {len(documents)} documents from Reddit")
