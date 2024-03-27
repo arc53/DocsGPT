@@ -1,13 +1,15 @@
 from application.parser.remote.sitemap_loader import SitemapLoader
 from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.remote.web_loader import WebLoader
+from application.parser.remote.reddit_loader import RedditPostsLoaderRemote
 
 
 class RemoteCreator:
     loaders = {
-        'url': WebLoader,
-        'sitemap': SitemapLoader,
-        'crawler': CrawlerLoader
+        "url": WebLoader,
+        "sitemap": SitemapLoader,
+        "crawler": CrawlerLoader,
+        "reddit": RedditPostsLoaderRemote,
     }
 
     @classmethod
