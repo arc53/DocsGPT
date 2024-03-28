@@ -8,7 +8,6 @@ function Dropdown({
   showDelete,
   onDelete,
   placeholder,
-  className,
 }: {
   options:
     | string[]
@@ -28,14 +27,11 @@ function Dropdown({
   const [isOpen, setIsOpen] = useState(false);
   return (
     <div
-      className={`relative ${
-        className
-          ? className
-          : typeof selectedValue === 'string'
-          ? ' mt-2 w-32'
-          : ' w-full align-middle'
-      } 
-        }`}
+      className={
+        typeof selectedValue === 'string'
+          ? 'relative mt-2 w-32'
+          : 'relative w-full align-middle'
+      }
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -56,7 +52,7 @@ function Dropdown({
         ) : (
           <span
             className={`overflow-hidden text-ellipsis dark:text-bright-gray ${
-              !selectedValue && 'text-silver'
+              !selectedValue && 'text-silver dark:text-gray-400'
             }`}
           >
             {selectedValue

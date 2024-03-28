@@ -46,7 +46,8 @@ module.exports = {
         'gun-metal':'#2E303E',
         'sonic-silver':'#747474',
         'soap':'#D8CCF1',
-        'independence':'#54546D'
+        'independence':'#54546D',
+        'philippine-yellow':'#FFC700',
       },
     },
   },

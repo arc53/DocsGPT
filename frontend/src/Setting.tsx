@@ -760,7 +760,7 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
   };
   return (
     <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
-      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 sm:w-[600px]">
+      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 dark:bg-outer-space dark:text-bright-gray sm:w-[600px]">
         <button className="float-right m-2 w-4" onClick={close}>
           <img src={Exit} />
         </button>
@@ -771,10 +771,10 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
         <div className="flex justify-between py-2">
           <div>
             <h2 className="text-base font-semibold">API Key</h2>
-            <span className="text-xs font-normal leading-7">{apiKey}</span>
+            <span className="text-sm font-normal leading-7 ">{apiKey}</span>
           </div>
           <button
-            className="my-1 h-10 w-20 rounded-full border border-purple-30 p-2 text-sm text-purple-30"
+            className="my-1 h-10 w-20 rounded-full border border-purple-30 p-2 text-sm text-purple-30 dark:border-purple-500 dark:text-purple-500"
             onClick={handleCopyKey}
           >
             {isCopied ? 'Copied' : 'Copy'}
@@ -782,9 +782,8 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
         </div>
         <button
           onClick={close}
-          className="rounded-full bg-[#FFC700] px-4 py-3 font-medium text-black dark:bg-purple-taupe dark:text-white"
+          className="rounded-full bg-philippine-yellow px-4 py-3 font-medium text-black"
         >
-          {' '}
           I saved the Key
         </button>
       </div>
@@ -806,8 +805,6 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
     value: string;
   } | null>(null);
   const docs = useSelector(selectSourceDocs);
-  console.log(docs);
-
   const extractDocPaths = () =>
     docs
       ? docs
@@ -840,11 +837,13 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
 
   return (
     <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
-      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 sm:w-[600px]">
+      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 dark:bg-outer-space sm:w-[600px]">
         <button className="float-right m-2 w-4" onClick={close}>
           <img src={Exit} />
         </button>
-        <h1 className="m-4 text-2xl font-bold text-jet">Create New API Key</h1>
+        <h1 className="m-4 text-2xl font-bold text-jet dark:text-bright-gray">
+          Create New API Key
+        </h1>
         <div className="relative m-4">
           <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
             API Key Name
