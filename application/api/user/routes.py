@@ -1,4 +1,5 @@
 import os
+import uuid
 from flask import Blueprint, request, jsonify
 import requests
 from pymongo import MongoClient
@@ -16,6 +17,7 @@ conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
+api_key_collection = db["api_keys"]
 user = Blueprint('user', __name__)
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -343,5 +345,41 @@ def update_prompt_name():
 
 
 
+@user.route("/api/get_api_keys", methods=["GET"])
+def get_api_keys():
+    user = "local"
+    keys = api_key_collection.find({"user": user})
+    list_keys = []
+    for key in keys:
+        list_keys.append({"id": str(key["_id"]), "name": key["name"], "key": key["key"][:4] + "..." + key["key"][-4:], "source": key["source"]})
+    return jsonify(list_keys)
 
+@user.route("/api/create_api_key", methods=["POST"])
+def create_api_key():
+    data = request.get_json()
+    name = data["name"]
+    source = data["source"]
+    key = str(uuid.uuid4())
+    user = "local"
+    resp = api_key_collection.insert_one(
+        {
+            "name": name,
+            "key": key,
+            "source": source,
+            "user": user,
+        }
+    )
+    new_id = str(resp.inserted_id)
+    return {"id": new_id, "key": key}
+
+@user.route("/api/delete_api_key", methods=["POST"])
+def delete_api_key():
+    data = request.get_json()
+    id = data["id"]
+    api_key_collection.delete_one(
+        {
+            "_id": ObjectId(id),
+        }
+    )
+    return {"status": "ok"}
 
