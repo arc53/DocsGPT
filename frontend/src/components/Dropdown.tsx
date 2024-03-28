@@ -8,6 +8,7 @@ function Dropdown({
   showDelete,
   onDelete,
   placeholder,
+  className,
 }: {
   options:
     | string[]
@@ -21,15 +22,20 @@ function Dropdown({
   showDelete?: boolean;
   onDelete?: (value: string) => void;
   placeholder?: string;
+  className?: string;
+  width?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
     <div
-      className={
-        typeof selectedValue === 'string'
-          ? 'relative mt-2 w-32'
-          : 'relative w-full align-middle'
-      }
+      className={`relative ${
+        className
+          ? className
+          : typeof selectedValue === 'string'
+          ? ' mt-2 w-32'
+          : ' w-full align-middle'
+      } 
+        }`}
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -69,7 +75,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-1 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-50 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options.map((option: any, index) => (
             <div
               key={index}

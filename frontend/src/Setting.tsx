@@ -13,14 +13,11 @@ import {
 import { Doc } from './preferences/preferenceApi';
 import { useDarkTheme } from './hooks';
 import Dropdown from './components/Dropdown';
-type PromptProps = {
-  prompts: { name: string; id: string; type: string }[];
-  selectedPrompt: { name: string; id: string; type: string };
-  onSelectPrompt: (name: string, id: string, type: string) => void;
-  setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
-  apiHost: string;
-};
+const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
+const embeddingsName =
+  import.meta.env.VITE_EMBEDDINGS_NAME ||
+  'huggingface_sentence-transformers/all-mpnet-base-v2';
 const Setting: React.FC = () => {
   const tabs = ['General', 'Prompts', 'Documents', 'API Keys'];
   //const tabs = ['General', 'Prompts', 'Documents', 'Widgets'];
@@ -29,9 +26,6 @@ const Setting: React.FC = () => {
   const [prompts, setPrompts] = useState<
     { name: string; id: string; type: string }[]
   >([]);
-  const [apiKeys, setApiKeys] = useState<
-    { name: string; key: string; source: string; id: string }[]
-  >([]);
   const selectedPrompt = useSelector(selectPrompt);
   const [isAddPromptModalOpen, setAddPromptModalOpen] = useState(false);
   const documents = useSelector(selectSourceDocs);
@@ -39,24 +33,12 @@ const Setting: React.FC = () => {
 
   const dispatch = useDispatch();
 
-  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
   const [widgetScreenshot, setWidgetScreenshot] = useState<File | null>(null);
 
   const updateWidgetScreenshot = (screenshot: File | null) => {
     setWidgetScreenshot(screenshot);
   };
-  const fetchAPIKeys = async () => {
-    try {
-      const response = await fetch(`${apiHost}/api/get_api_keys`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch API Keys');
-      }
-      const apiKeys = await response.json();
-      setApiKeys(apiKeys);
-    } catch (error) {
-      console.log(error);
-    }
-  };
+
   useEffect(() => {
     const fetchPrompts = async () => {
       try {
@@ -71,7 +53,6 @@ const Setting: React.FC = () => {
       }
     };
     fetchPrompts();
-    fetchAPIKeys();
   }, []);
 
   const onDeletePrompt = (name: string, id: string) => {
@@ -182,7 +163,6 @@ const Setting: React.FC = () => {
               dispatch(setPrompt({ name: name, id: id, type: type }))
             }
             setPrompts={setPrompts}
-            apiHost={apiHost}
           />
         );
       case 'Documents':
@@ -243,13 +223,18 @@ const General: React.FC = () => {
 };
 
 export default Setting;
+type PromptProps = {
+  prompts: { name: string; id: string; type: string }[];
+  selectedPrompt: { name: string; id: string; type: string };
+  onSelectPrompt: (name: string, id: string, type: string) => void;
+  setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
+};
 
 const Prompts: React.FC<PromptProps> = ({
   prompts,
   selectedPrompt,
   onSelectPrompt,
   setPrompts,
-  apiHost,
 }) => {
   const handleSelectPrompt = ({
     name,
@@ -634,14 +619,74 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({
   );
 };
 const APIKeys: React.FC = () => {
-  const apiKeys = [
-    { name: 'Base', source: '2001', key: '131346543' },
-    { name: 'Base', source: '2001', key: '131346543' },
-    { name: 'Base', source: '2001', key: '131346543' },
-    { name: 'Base', source: '2001', key: '131346543' },
-  ];
   const [isCreateModalOpen, setCreateModal] = useState(false);
-  const [isSaveKeyModalOpen, setSaveKeyModal] = useState(true);
+  const [isSaveKeyModalOpen, setSaveKeyModal] = useState(false);
+  const [newKey, setNewKey] = useState('');
+  const [apiKeys, setApiKeys] = useState<
+    { name: string; key: string; source: string; id: string }[]
+  >([]);
+  const handleDeleteKey = (id: string) => {
+    fetch(`${apiHost}/api/delete_api_key`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to delete API Key');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        data.status === 'ok' &&
+          setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  };
+  useEffect(() => {
+    fetchAPIKeys();
+  }, []);
+  const fetchAPIKeys = async () => {
+    try {
+      const response = await fetch(`${apiHost}/api/get_api_keys`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch API Keys');
+      }
+      const apiKeys = await response.json();
+      setApiKeys(apiKeys);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+  const createAPIKey = (payload: { name: string; source: string }) => {
+    fetch(`${apiHost}/api/create_api_key`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to create API Key');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        setApiKeys([...apiKeys, data]);
+        setCreateModal(false); //close the create key modal
+        setNewKey(data.key);
+        setSaveKeyModal(true); // render the newly created key
+        fetchAPIKeys();
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  };
   return (
     <div className="mt-8">
       <div className="flex w-full flex-col lg:w-max">
@@ -654,11 +699,14 @@ const APIKeys: React.FC = () => {
           </button>
         </div>
         {isCreateModalOpen && (
-          <CreateAPIKeyModal close={() => setCreateModal(false)} />
+          <CreateAPIKeyModal
+            close={() => setCreateModal(false)}
+            createAPIKey={createAPIKey}
+          />
         )}
         {isSaveKeyModalOpen && (
           <SaveAPIKeyModal
-            apiKey="4b4c7430-58d9-11eb-8985-0242ac130002"
+            apiKey={newKey}
             close={() => setSaveKeyModal(false)}
           />
         )}
@@ -687,10 +735,7 @@ const APIKeys: React.FC = () => {
                         alt="Delete"
                         className="h-4 w-4 cursor-pointer hover:opacity-50"
                         id={`img-${index}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          console.log('deleted api key !');
-                        }}
+                        onClick={() => handleDeleteKey(element.id)}
                       />
                     </td>
                   </tr>
@@ -749,41 +794,48 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
 
 type CreateAPIKeyModalProps = {
   close: () => void;
+  createAPIKey: (payload: { name: string; source: string }) => void;
 };
-const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({ close }) => {
+const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
+  close,
+  createAPIKey,
+}) => {
   const [APIKeyName, setAPIKeyName] = useState<string>('');
-  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
+  const [sourcePath, setSourcePath] = useState<{
+    label: string;
+    value: string;
+  } | null>(null);
   const docs = useSelector(selectSourceDocs);
-  const handleCreate = () => {
-    console.log(selectedDocPath, APIKeyName);
-    close();
-  };
+  console.log(docs);
+
   const extractDocPaths = () =>
     docs
-      ? docs.map((doc: Doc) => {
-          let namePath = doc.name;
-          if (doc.language === namePath) {
-            namePath = '.project';
-          }
-          let docPath = 'default';
-          if (doc.location === 'local') {
-            docPath = 'local' + '/' + doc.name + '/';
-          } else if (doc.location === 'remote') {
-            docPath =
-              doc.language +
-              '/' +
-              namePath +
-              '/' +
-              doc.version +
-              '/' +
-              doc.model +
-              '/';
-          }
-          return {
-            label: namePath,
-            value: docPath,
-          };
-        })
+      ? docs
+          .filter((doc) => doc.model === embeddingsName)
+          .map((doc: Doc) => {
+            let namePath = doc.name;
+            if (doc.language === namePath) {
+              namePath = '.project';
+            }
+            let docPath = 'default';
+            if (doc.location === 'local') {
+              docPath = 'local' + '/' + doc.name + '/';
+            } else if (doc.location === 'remote') {
+              docPath =
+                doc.language +
+                '/' +
+                namePath +
+                '/' +
+                doc.version +
+                '/' +
+                doc.model +
+                '/';
+            }
+            return {
+              label: doc.name,
+              value: docPath,
+            };
+          })
       : [];
 
   return (
@@ -806,15 +858,21 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({ close }) => {
         </div>
         <div className="m-4">
           <Dropdown
+            className="mt-2 w-full"
             placeholder="Select the source doc"
-            selectedValue={selectedDocPath}
-            onSelect={(value: string) => setSelectedDocPath(value)}
+            selectedValue={sourcePath}
+            onSelect={(selection: { label: string; value: string }) =>
+              setSourcePath(selection)
+            }
             options={extractDocPaths()}
           />
         </div>
         <button
-          disabled={selectedDocPath === null || APIKeyName.length === 0}
-          onClick={handleCreate}
+          disabled={sourcePath === null || APIKeyName.length === 0}
+          onClick={() =>
+            sourcePath &&
+            createAPIKey({ name: APIKeyName, source: sourcePath.value })
+          }
           className="float-right m-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
         >
           Create
