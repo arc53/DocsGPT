@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import ArrowLeft from './assets/arrow-left.svg';
 import ArrowRight from './assets/arrow-right.svg';
+import Exit from './assets/exit.svg';
 import Trash from './assets/trash.svg';
 import {
   selectPrompt,
@@ -21,12 +22,15 @@ type PromptProps = {
 };
 
 const Setting: React.FC = () => {
-  const tabs = ['General', 'Prompts', 'Documents'];
+  const tabs = ['General', 'Prompts', 'Documents', 'API Keys'];
   //const tabs = ['General', 'Prompts', 'Documents', 'Widgets'];
 
   const [activeTab, setActiveTab] = useState('General');
   const [prompts, setPrompts] = useState<
     { name: string; id: string; type: string }[]
+  >([]);
+  const [apiKeys, setApiKeys] = useState<
+    { name: string; key: string; source: string; id: string }[]
   >([]);
   const selectedPrompt = useSelector(selectPrompt);
   const [isAddPromptModalOpen, setAddPromptModalOpen] = useState(false);
@@ -41,7 +45,18 @@ const Setting: React.FC = () => {
   const updateWidgetScreenshot = (screenshot: File | null) => {
     setWidgetScreenshot(screenshot);
   };
-
+  const fetchAPIKeys = async () => {
+    try {
+      const response = await fetch(`${apiHost}/api/get_api_keys`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch API Keys');
+      }
+      const apiKeys = await response.json();
+      setApiKeys(apiKeys);
+    } catch (error) {
+      console.log(error);
+    }
+  };
   useEffect(() => {
     const fetchPrompts = async () => {
       try {
@@ -55,8 +70,8 @@ const Setting: React.FC = () => {
         console.error(error);
       }
     };
-
     fetchPrompts();
+    fetchAPIKeys();
   }, []);
 
   const onDeletePrompt = (name: string, id: string) => {
@@ -184,6 +199,8 @@ const Setting: React.FC = () => {
             onWidgetScreenshotChange={updateWidgetScreenshot} // Add this line
           />
         );
+      case 'API Keys':
+        return <APIKeys />;
       default:
         return null;
     }
@@ -468,7 +485,6 @@ const AddPromptModal: React.FC<AddPromptModalProps> = ({
     </div>
   );
 };
-
 type DocumentsProps = {
   documents: Doc[] | null;
   handleDeleteDocument: (index: number, document: Doc) => void;
@@ -480,10 +496,10 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   return (
     <div className="mt-8">
-      <div className="flex flex-col">
+      <div className="flex flex-col overflow-x-auto">
         {/* <h2 className="text-xl font-semibold">Documents</h2> */}
 
-        <div className="mt-[27px] w-max overflow-x-auto rounded-xl border dark:border-chinese-silver">
+        <div className="mt-[27px] w-max rounded-xl border dark:border-chinese-silver">
           <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray">
             <thead>
               <tr>
@@ -617,7 +633,196 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({
     </div>
   );
 };
+const APIKeys: React.FC = () => {
+  const apiKeys = [
+    { name: 'Base', source: '2001', key: '131346543' },
+    { name: 'Base', source: '2001', key: '131346543' },
+    { name: 'Base', source: '2001', key: '131346543' },
+    { name: 'Base', source: '2001', key: '131346543' },
+  ];
+  const [isCreateModalOpen, setCreateModal] = useState(false);
+  const [isSaveKeyModalOpen, setSaveKeyModal] = useState(true);
+  return (
+    <div className="mt-8">
+      <div className="flex w-full flex-col lg:w-max">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setCreateModal(true)}
+            className="rounded-full bg-purple-30 px-4 py-3 text-sm text-white hover:bg-[#7E66B1]"
+          >
+            Create New
+          </button>
+        </div>
+        {isCreateModalOpen && (
+          <CreateAPIKeyModal close={() => setCreateModal(false)} />
+        )}
+        {isSaveKeyModalOpen && (
+          <SaveAPIKeyModal
+            apiKey="4b4c7430-58d9-11eb-8985-0242ac130002"
+            close={() => setSaveKeyModal(false)}
+          />
+        )}
+        <div className="mt-[27px] w-full">
+          <div className="w-full overflow-x-auto">
+            <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
+              <thead>
+                <tr>
+                  <th className="border-r p-4 md:w-[244px]">Name</th>
+                  <th className="w-[244px] border-r px-4 py-2">
+                    Source document
+                  </th>
+                  <th className="w-[244px] border-r px-4 py-2">API Key</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {apiKeys?.map((element, index) => (
+                  <tr key={index}>
+                    <td className="border-r border-t p-4">{element.name}</td>
+                    <td className="border-r border-t p-4">{element.source}</td>
+                    <td className="border-r border-t p-4">{element.key}</td>
+                    <td className="border-t p-4">
+                      <img
+                        src={Trash}
+                        alt="Delete"
+                        className="h-4 w-4 cursor-pointer hover:opacity-50"
+                        id={`img-${index}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          console.log('deleted api key !');
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+type SaveAPIKeyModalProps = {
+  apiKey: string;
+  close: () => void;
+};
+const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
+  const [isCopied, setIsCopied] = useState(false);
+  const handleCopyKey = () => {
+    navigator.clipboard.writeText(apiKey);
+    setIsCopied(true);
+  };
+  return (
+    <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
+      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 sm:w-[600px]">
+        <button className="float-right m-2 w-4" onClick={close}>
+          <img src={Exit} />
+        </button>
+        <h1 className="mb-0 text-xl font-medium">Please save your Key</h1>
+        <h3 className="text-sm font-normal text-outer-space">
+          This is the only time your key will be shown.
+        </h3>
+        <div className="flex justify-between py-2">
+          <div>
+            <h2 className="text-base font-semibold">API Key</h2>
+            <span className="text-xs font-normal leading-7">{apiKey}</span>
+          </div>
+          <button
+            className="my-1 h-10 w-20 rounded-full border border-purple-30 p-2 text-sm text-purple-30"
+            onClick={handleCopyKey}
+          >
+            {isCopied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <button
+          onClick={close}
+          className="rounded-full bg-[#FFC700] px-4 py-3 font-medium text-black dark:bg-purple-taupe dark:text-white"
+        >
+          {' '}
+          I saved the Key
+        </button>
+      </div>
+    </div>
+  );
+};
 
+type CreateAPIKeyModalProps = {
+  close: () => void;
+};
+const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({ close }) => {
+  const [APIKeyName, setAPIKeyName] = useState<string>('');
+  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
+  const docs = useSelector(selectSourceDocs);
+  const handleCreate = () => {
+    console.log(selectedDocPath, APIKeyName);
+    close();
+  };
+  const extractDocPaths = () =>
+    docs
+      ? docs.map((doc: Doc) => {
+          let namePath = doc.name;
+          if (doc.language === namePath) {
+            namePath = '.project';
+          }
+          let docPath = 'default';
+          if (doc.location === 'local') {
+            docPath = 'local' + '/' + doc.name + '/';
+          } else if (doc.location === 'remote') {
+            docPath =
+              doc.language +
+              '/' +
+              namePath +
+              '/' +
+              doc.version +
+              '/' +
+              doc.model +
+              '/';
+          }
+          return {
+            label: namePath,
+            value: docPath,
+          };
+        })
+      : [];
+
+  return (
+    <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
+      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 sm:w-[600px]">
+        <button className="float-right m-2 w-4" onClick={close}>
+          <img src={Exit} />
+        </button>
+        <h1 className="m-4 text-2xl font-bold text-jet">Create New API Key</h1>
+        <div className="relative m-4">
+          <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+            API Key Name
+          </span>
+          <input
+            type="text"
+            className="h-10 w-full rounded-md border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+            value={APIKeyName}
+            onChange={(e) => setAPIKeyName(e.target.value)}
+          />
+        </div>
+        <div className="m-4">
+          <Dropdown
+            placeholder="Select the source doc"
+            selectedValue={selectedDocPath}
+            onSelect={(value: string) => setSelectedDocPath(value)}
+            options={extractDocPaths()}
+          />
+        </div>
+        <button
+          disabled={selectedDocPath === null || APIKeyName.length === 0}
+          onClick={handleCreate}
+          className="float-right m-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
+        >
+          Create
+        </button>
+      </div>
+    </div>
+  );
+};
 const Widgets: React.FC<{
   widgetScreenshot: File | null;
   onWidgetScreenshotChange: (screenshot: File | null) => void;

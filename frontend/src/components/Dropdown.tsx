@@ -7,18 +7,20 @@ function Dropdown({
   onSelect,
   showDelete,
   onDelete,
+  placeholder,
 }: {
   options:
     | string[]
     | { name: string; id: string; type: string }[]
     | { label: string; value: string }[];
-  selectedValue: string | { label: string; value: string };
+  selectedValue: string | { label: string; value: string } | null;
   onSelect:
     | ((value: string) => void)
     | ((value: { name: string; id: string; type: string }) => void)
     | ((value: { label: string; value: string }) => void);
   showDelete?: boolean;
   onDelete?: (value: string) => void;
+  placeholder?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
@@ -51,7 +53,11 @@ function Dropdown({
               !selectedValue && 'text-silver'
             }`}
           >
-            {selectedValue ? selectedValue.label : 'From URL'}
+            {selectedValue
+              ? selectedValue.label
+              : placeholder
+              ? placeholder
+              : 'From URL'}
           </span>
         )}
         <img
