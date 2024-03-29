@@ -39,10 +39,10 @@ function Dropdown({
           isOpen
             ? typeof selectedValue === 'string'
               ? 'rounded-t-xl'
-              : 'rounded-t-2xl'
+              : 'rounded-t-3xl'
             : typeof selectedValue === 'string'
             ? 'rounded-xl'
-            : 'rounded-full'
+            : 'rounded-3xl'
         }`}
       >
         {typeof selectedValue === 'string' ? (

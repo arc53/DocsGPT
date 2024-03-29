@@ -10,6 +10,7 @@ export function fetchAnswerApi(
   history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
+  chunks: string,
 ): Promise<
   | {
       result: any;
@@ -62,6 +63,7 @@ export function fetchAnswerApi(
       active_docs: docPath,
       conversation_id: conversationId,
       prompt_id: promptId,
+      chunks: chunks,
     }),
     signal,
   })
@@ -91,6 +93,7 @@ export function fetchAnswerSteaming(
   history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
+  chunks: string,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   let namePath = selectedDocs.name;
@@ -124,6 +127,7 @@ export function fetchAnswerSteaming(
       history: JSON.stringify(history),
       conversation_id: conversationId,
       prompt_id: promptId,
+      chunks: chunks,
     };
     fetch(apiHost + '/stream', {
       method: 'POST',
@@ -185,6 +189,7 @@ export function searchEndpoint(
   selectedDocs: Doc,
   conversation_id: string | null,
   history: Array<any> = [],
+  chunks: string,
 ) {
   /*
   "active_docs": "default",
@@ -216,6 +221,7 @@ export function searchEndpoint(
     active_docs: docPath,
     conversation_id,
     history,
+    chunks: chunks,
   };
   return fetch(`${apiHost}/api/search`, {
     method: 'POST',

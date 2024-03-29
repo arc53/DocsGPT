@@ -9,6 +9,8 @@ import {
   setPrompt,
   selectSourceDocs,
   setSourceDocs,
+  setChunks,
+  selectChunks,
 } from './preferences/preferenceSlice';
 import { Doc } from './preferences/preferenceApi';
 import { useDarkTheme } from './hooks';
@@ -190,10 +192,13 @@ const Setting: React.FC = () => {
 const General: React.FC = () => {
   const themes = ['Light', 'Dark'];
   const languages = ['English'];
+  const chunks = ['0', '2', '4', '6', '8', '10'];
+  const selectedChunks = useSelector(selectChunks);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
   const [selectedTheme, setSelectedTheme] = useState(
     isDarkTheme ? 'Dark' : 'Light',
   );
+  const dispatch = useDispatch();
   const [selectedLanguage, setSelectedLanguage] = useState(languages[0]);
   return (
     <div className="mt-[59px]">
@@ -208,7 +213,7 @@ const General: React.FC = () => {
           }}
         />
       </div>
-      <div>
+      <div className="mb-4">
         <p className="font-bold text-jet dark:text-bright-gray">
           Select Language
         </p>
@@ -216,6 +221,16 @@ const General: React.FC = () => {
           options={languages}
           selectedValue={selectedLanguage}
           onSelect={setSelectedLanguage}
+        />
+      </div>
+      <div>
+        <p className="font-bold text-jet dark:text-bright-gray">
+          Chunks processed per query
+        </p>
+        <Dropdown
+          options={chunks}
+          selectedValue={selectedChunks}
+          onSelect={(value: string) => dispatch(setChunks(value))}
         />
       </div>
     </div>

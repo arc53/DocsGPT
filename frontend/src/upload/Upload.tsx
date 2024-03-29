@@ -17,10 +17,18 @@ export default function Upload({
   const [docName, setDocName] = useState('');
   const [urlName, setUrlName] = useState('');
   const [url, setUrl] = useState('');
+  const [redditData, setRedditData] = useState({
+    client_id: '',
+    client_secret: '',
+    user_agent: '',
+    search_queries: [''],
+    number_posts: 10,
+  });
   const urlOptions: { label: string; value: string }[] = [
     { label: 'Crawler', value: 'crawler' },
     // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' },
+    { label: 'Reddit', value: 'reddit' },
   ];
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
     label: 'Link',
@@ -163,7 +171,6 @@ export default function Upload({
   };
 
   const uploadRemote = () => {
-    console.log('here');
     const formData = new FormData();
     formData.append('name', urlName);
     formData.append('user', 'local');
@@ -171,6 +178,13 @@ export default function Upload({
       formData.append('source', urlType?.value);
     }
     formData.append('data', url);
+    if (
+      redditData.client_id.length > 0 &&
+      redditData.client_secret.length > 0
+    ) {
+      formData.set('name', 'other');
+      formData.set('data', JSON.stringify(redditData));
+    }
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (event) => {
@@ -202,6 +216,19 @@ export default function Upload({
         ['.docx'],
     },
   });
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (name === 'search_queries' && value.length > 0) {
+      setRedditData({
+        ...redditData,
+        [name]: value.split(',').map((item) => item.trim()),
+      });
+    } else
+      setRedditData({
+        ...redditData,
+        [name]: value,
+      });
+  };
   let view;
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
@@ -281,30 +308,102 @@ export default function Upload({
                 setUrlType(value)
               }
             />
-            <input
-              placeholder="Enter name"
-              type="text"
-              className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
-              value={urlName}
-              onChange={(e) => setUrlName(e.target.value)}
-            ></input>
-            <div className="relative bottom-12 left-2 mt-[-18.39px]">
-              <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
-                Name
-              </span>
-            </div>
-            <input
-              placeholder="URL Link"
-              type="text"
-              className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            ></input>
-            <div className="relative bottom-12 left-2 mt-[-18.39px]">
-              <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
-                Link
-              </span>
-            </div>
+            {urlType.label !== 'Reddit' ? (
+              <>
+                <input
+                  placeholder="Enter name"
+                  type="text"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  value={urlName}
+                  onChange={(e) => setUrlName(e.target.value)}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Name
+                  </span>
+                </div>
+                <input
+                  placeholder="URL Link"
+                  type="text"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Link
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <input
+                  placeholder="Enter client ID"
+                  type="text"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  name="client_id"
+                  value={redditData.client_id}
+                  onChange={handleChange}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Client ID
+                  </span>
+                </div>
+                <input
+                  placeholder="Enter client secret"
+                  type="text"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  name="client_secret"
+                  value={redditData.client_secret}
+                  onChange={handleChange}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Client secret
+                  </span>
+                </div>
+                <input
+                  placeholder="Enter user agent"
+                  type="text"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  name="user_agent"
+                  value={redditData.user_agent}
+                  onChange={handleChange}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    User agent
+                  </span>
+                </div>
+                <input
+                  placeholder="Enter search queries"
+                  type="text"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  name="search_queries"
+                  value={redditData.search_queries}
+                  onChange={handleChange}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Search queries
+                  </span>
+                </div>
+                <input
+                  placeholder="Enter number of posts"
+                  type="number"
+                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  name="number_posts"
+                  value={redditData.number_posts}
+                  onChange={handleChange}
+                ></input>
+                <div className="relative bottom-12 left-2 mt-[-18.39px]">
+                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                    Number of posts
+                  </span>
+                </div>
+              </>
+            )}
           </>
         )}
         <div className="flex flex-row-reverse">
