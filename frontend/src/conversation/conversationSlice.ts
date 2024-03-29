@@ -23,7 +23,6 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
         await fetchAnswerSteaming(
           question,
           signal,
-          state.preference.apiKey,
           state.preference.selectedDocs!,
           state.conversation.queries,
           state.conversation.conversationId,
@@ -48,7 +47,6 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
               searchEndpoint(
                 //search for sources post streaming
                 question,
-                state.preference.apiKey,
                 state.preference.selectedDocs!,
                 state.conversation.conversationId,
                 state.conversation.queries,
@@ -83,7 +81,6 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
         const answer = await fetchAnswerApi(
           question,
           signal,
-          state.preference.apiKey,
           state.preference.selectedDocs!,
           state.conversation.queries,
           state.conversation.conversationId,

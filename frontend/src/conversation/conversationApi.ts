@@ -6,7 +6,6 @@ const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 export function fetchAnswerApi(
   question: string,
   signal: AbortSignal,
-  apiKey: string,
   selectedDocs: Doc,
   history: Array<any> = [],
   conversationId: string | null,
@@ -60,8 +59,6 @@ export function fetchAnswerApi(
     },
     body: JSON.stringify({
       question: question,
-      api_key: apiKey,
-      embeddings_key: apiKey,
       history: history,
       active_docs: docPath,
       conversation_id: conversationId,
@@ -92,7 +89,6 @@ export function fetchAnswerApi(
 export function fetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
-  apiKey: string,
   selectedDocs: Doc,
   history: Array<any> = [],
   conversationId: string | null,
@@ -127,8 +123,6 @@ export function fetchAnswerSteaming(
   return new Promise<Answer>((resolve, reject) => {
     const body = {
       question: question,
-      api_key: apiKey,
-      embeddings_key: apiKey,
       active_docs: docPath,
       history: JSON.stringify(history),
       conversation_id: conversationId,
@@ -192,7 +186,6 @@ export function fetchAnswerSteaming(
 }
 export function searchEndpoint(
   question: string,
-  apiKey: string,
   selectedDocs: Doc,
   conversation_id: string | null,
   history: Array<any> = [],

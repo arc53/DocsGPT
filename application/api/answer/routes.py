@@ -26,6 +26,7 @@ db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
+api_key_collection = db["api_keys"]
 answer = Blueprint('answer', __name__)
 
 gpt_model = ""
@@ -77,6 +78,12 @@ def run_async_chain(chain, question, chat_history):
     result["answer"] = answer
     return result
 
+def get_data_from_api_key(api_key):
+    data = api_key_collection.find_one({"key": api_key})
+    if data is None:
+        return bad_request(401, "Invalid API key")
+    return data
+    
 
 def get_vectorstore(data):
     if "active_docs" in data:
@@ -98,9 +105,8 @@ def is_azure_configured():
     return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
 
-def complete_stream(question, docsearch, chat_history, api_key, prompt_id, conversation_id, chunks=2):
-    llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=api_key)
-
+def complete_stream(question, docsearch, chat_history, prompt_id, conversation_id, chunks=2):
+    llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=settings.API_KEY)
     if prompt_id == 'default':
         prompt = chat_combine_template
     elif prompt_id == 'creative':
@@ -188,10 +194,15 @@ def stream():
     data = request.get_json()
     # get parameter from url question
     question = data["question"]
-    history = data["history"]
-    # history to json object from string
-    history = json.loads(history)
-    conversation_id = data["conversation_id"]
+    if "history" not in data:
+        history = []
+    else:
+        history = data["history"]
+        history = json.loads(history)
+    if "conversation_id" not in data:
+        conversation_id = None
+    else:
+        conversation_id = data["conversation_id"]
     if 'prompt_id' in data:
         prompt_id = data["prompt_id"]
     else:
@@ -203,23 +214,18 @@ def stream():
 
     # check if active_docs is set
 
-    if not api_key_set:
-        api_key = data["api_key"]
-    else:
-        api_key = settings.API_KEY
-    if not embeddings_key_set:
-        embeddings_key = data["embeddings_key"]
-    else:
-        embeddings_key = settings.EMBEDDINGS_KEY
-    if "active_docs" in data:
+    if "api_key" in data:
+        data_key = get_data_from_api_key(data["api_key"])
+        vectorstore = get_vectorstore({"active_docs": data_key["source"]})
+    elif "active_docs" in data:
         vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
     else:
         vectorstore = ""
-    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
+    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, settings.EMBEDDINGS_KEY)
 
     return Response(
         complete_stream(question, docsearch,
-                        chat_history=history, api_key=api_key,
+                        chat_history=history,
                         prompt_id=prompt_id,
                         conversation_id=conversation_id,
                         chunks=chunks), mimetype="text/event-stream"
@@ -230,20 +236,15 @@ def stream():
 def api_answer():
     data = request.get_json()
     question = data["question"]
-    history = data["history"]
+    if "history" not in data:
+        history = []
+    else:
+        history = data["history"]
     if "conversation_id" not in data:
         conversation_id = None
     else:
         conversation_id = data["conversation_id"]
     print("-" * 5)
-    if not api_key_set:
-        api_key = data["api_key"]
-    else:
-        api_key = settings.API_KEY
-    if not embeddings_key_set:
-        embeddings_key = data["embeddings_key"]
-    else:
-        embeddings_key = settings.EMBEDDINGS_KEY
     if 'prompt_id' in data:
         prompt_id = data["prompt_id"]
     else:
@@ -265,13 +266,17 @@ def api_answer():
     # use try and except  to check for exception
     try:
         # check if the vectorstore is set
-        vectorstore = get_vectorstore(data)
+        if "api_key" in data:
+            data_key = get_data_from_api_key(data["api_key"])
+            vectorstore = get_vectorstore({"active_docs": data_key["source"]})
+        else:
+            vectorstore = get_vectorstore(data)
         # loading the index and the store and the prompt template
         # Note if you have used other embeddings than OpenAI, you need to change the embeddings
-        docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
+        docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, settings.EMBEDDINGS_KEY)
 
 
-        llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=api_key)
+        llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=settings.API_KEY)
 
 
 
@@ -366,14 +371,10 @@ def api_search():
     # get parameter from url question
     question = data["question"]
 
-    if not embeddings_key_set:
-        if "embeddings_key" in data:
-            embeddings_key = data["embeddings_key"]
-        else:
-            embeddings_key = settings.EMBEDDINGS_KEY
-    else:
-        embeddings_key = settings.EMBEDDINGS_KEY
-    if "active_docs" in data:
+    if "api_key" in data:
+        data_key = get_data_from_api_key(data["api_key"])
+        vectorstore = data_key["source"]
+    elif "active_docs" in data:
         vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
     else:
         vectorstore = ""
@@ -381,7 +382,7 @@ def api_search():
         chunks = int(data["chunks"])
     else:
         chunks = 2
-    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, embeddings_key)
+    docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, settings.EMBEDDINGS_KEY)
     if chunks == 0:
         docs = []
     else:

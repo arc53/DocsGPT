@@ -7,18 +7,22 @@ function Dropdown({
   onSelect,
   showDelete,
   onDelete,
+  placeholder,
 }: {
   options:
     | string[]
     | { name: string; id: string; type: string }[]
     | { label: string; value: string }[];
-  selectedValue: string | { label: string; value: string };
+  selectedValue: string | { label: string; value: string } | null;
   onSelect:
     | ((value: string) => void)
     | ((value: { name: string; id: string; type: string }) => void)
     | ((value: { label: string; value: string }) => void);
   showDelete?: boolean;
   onDelete?: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  width?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
@@ -31,7 +35,7 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between border-2 bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
           isOpen
             ? typeof selectedValue === 'string'
               ? 'rounded-t-xl'
@@ -48,10 +52,14 @@ function Dropdown({
         ) : (
           <span
             className={`overflow-hidden text-ellipsis dark:text-bright-gray ${
-              !selectedValue && 'text-silver'
+              !selectedValue && 'text-silver dark:text-gray-400'
             }`}
           >
-            {selectedValue ? selectedValue.label : 'From URL'}
+            {selectedValue
+              ? selectedValue.label
+              : placeholder
+              ? placeholder
+              : 'From URL'}
           </span>
         )}
         <img
@@ -63,7 +71,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-1 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-50 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options.map((option: any, index) => (
             <div
               key={index}
