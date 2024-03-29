@@ -35,7 +35,7 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between border-2 bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
           isOpen
             ? typeof selectedValue === 'string'
               ? 'rounded-t-xl'

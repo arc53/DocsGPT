@@ -759,12 +759,12 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
     setIsCopied(true);
   };
   return (
-    <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
-      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 dark:bg-outer-space dark:text-bright-gray sm:w-[600px]">
-        <button className="float-right m-2 w-4" onClick={close}>
-          <img src={Exit} />
+    <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
+      <div className="relative w-11/12 rounded-md bg-white p-5 dark:bg-outer-space dark:text-bright-gray sm:w-[512px]">
+        <button className="absolute top-4 right-4 w-4" onClick={close}>
+          <img className="filter dark:invert" src={Exit} />
         </button>
-        <h1 className="mb-0 text-xl font-medium">Please save your Key</h1>
+        <h1 className="my-0 text-xl font-medium">Please save your Key</h1>
         <h3 className="text-sm font-normal text-outer-space">
           This is the only time your key will be shown.
         </h3>
@@ -782,7 +782,7 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
         </div>
         <button
           onClick={close}
-          className="rounded-full bg-philippine-yellow px-4 py-3 font-medium text-black"
+          className="rounded-full bg-philippine-yellow px-4 py-3 font-medium text-black hover:bg-[#E6B91A]"
         >
           I saved the Key
         </button>
@@ -836,15 +836,15 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
       : [];
 
   return (
-    <div className="fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-900 bg-opacity-50">
-      <div className="z-10 w-11/12 rounded-3xl bg-white p-4 dark:bg-outer-space sm:w-[600px]">
-        <button className="float-right m-2 w-4" onClick={close}>
-          <img src={Exit} />
+    <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
+      <div className="relative w-11/12 rounded-lg bg-white p-5 dark:bg-outer-space sm:w-[512px]">
+        <button className="absolute top-2 right-2 m-2 w-4" onClick={close}>
+          <img className="filter dark:invert" src={Exit} />
         </button>
-        <h1 className="m-4 text-2xl font-bold text-jet dark:text-bright-gray">
+        <span className="mb-4 text-xl font-bold text-jet dark:text-bright-gray">
           Create New API Key
-        </h1>
-        <div className="relative m-4">
+        </span>
+        <div className="relative my-4">
           <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
             API Key Name
           </span>
@@ -855,7 +855,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
             onChange={(e) => setAPIKeyName(e.target.value)}
           />
         </div>
-        <div className="m-4">
+        <div className="my-4">
           <Dropdown
             className="mt-2 w-full"
             placeholder="Select the source doc"
@@ -872,7 +872,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
             sourcePath &&
             createAPIKey({ name: APIKeyName, source: sourcePath.value })
           }
-          className="float-right m-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
+          className="float-right my-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
         >
           Create
         </button>
