@@ -207,7 +207,9 @@ def stream():
         prompt_id = data["prompt_id"]
     else:
         prompt_id = 'default'
-    if 'chunks' in data:
+    if 'selectedDocs' in data and data['selectedDocs'] is None:
+        chunks = 0
+    elif 'chunks' in data:
         chunks = int(data["chunks"])
     else:
         chunks = 2
