@@ -8,6 +8,8 @@ function Dropdown({
   showDelete,
   onDelete,
   placeholder,
+  fullWidth,
+  alignMidddle,
 }: {
   options:
     | string[]
@@ -21,37 +23,31 @@ function Dropdown({
   showDelete?: boolean;
   onDelete?: (value: string) => void;
   placeholder?: string;
-  className?: string;
-  width?: string;
+  fullWidth?: boolean;
+  alignMidddle?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
-    <div
-      className={
-        typeof selectedValue === 'string'
-          ? 'relative mt-2 w-32'
-          : 'relative w-full align-middle'
-      }
-    >
+    <div className={fullWidth ? 'relative w-full' : 'relative mt-2 w-32'}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
-          isOpen
-            ? typeof selectedValue === 'string'
-              ? 'rounded-t-xl'
-              : 'rounded-t-3xl'
-            : typeof selectedValue === 'string'
-            ? 'rounded-xl'
-            : 'rounded-3xl'
+          isOpen ? 'rounded-t-3xl' : 'rounded-3xl'
         }`}
       >
         {typeof selectedValue === 'string' ? (
-          <span className="flex-1 overflow-hidden text-ellipsis dark:text-bright-gray">
+          <span
+            className={`${
+              alignMidddle && 'flex-1'
+            } overflow-hidden text-ellipsis dark:text-bright-gray`}
+          >
             {selectedValue}
           </span>
         ) : (
           <span
-            className={`overflow-hidden text-ellipsis dark:text-bright-gray ${
+            className={`${
+              alignMidddle && 'flex-1'
+            } overflow-hidden text-ellipsis dark:text-bright-gray ${
               !selectedValue && 'text-silver dark:text-gray-400'
             }`}
           >

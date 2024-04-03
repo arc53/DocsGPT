@@ -302,6 +302,7 @@ export default function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
+              fullWidth
               options={urlOptions}
               selectedValue={urlType}
               onSelect={(value: { label: string; value: string }) =>
