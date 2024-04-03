@@ -6,7 +6,7 @@ const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 export function fetchAnswerApi(
   question: string,
   signal: AbortSignal,
-  selectedDocs: Doc,
+  selectedDocs: Doc | null,
   history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
@@ -28,24 +28,26 @@ export function fetchAnswerApi(
       title: any;
     }
 > {
-  let namePath = selectedDocs.name;
-  if (selectedDocs.language === namePath) {
-    namePath = '.project';
-  }
-
   let docPath = 'default';
-  if (selectedDocs.location === 'local') {
-    docPath = 'local' + '/' + selectedDocs.name + '/';
-  } else if (selectedDocs.location === 'remote') {
-    docPath =
-      selectedDocs.language +
-      '/' +
-      namePath +
-      '/' +
-      selectedDocs.version +
-      '/' +
-      selectedDocs.model +
-      '/';
+
+  if (selectedDocs) {
+    let namePath = selectedDocs.name;
+    if (selectedDocs.language === namePath) {
+      namePath = '.project';
+    }
+    if (selectedDocs.location === 'local') {
+      docPath = 'local' + '/' + selectedDocs.name + '/';
+    } else if (selectedDocs.location === 'remote') {
+      docPath =
+        selectedDocs.language +
+        '/' +
+        namePath +
+        '/' +
+        selectedDocs.version +
+        '/' +
+        selectedDocs.model +
+        '/';
+    }
   }
   //in history array remove all keys except prompt and response
   history = history.map((item) => {
@@ -89,31 +91,33 @@ export function fetchAnswerApi(
 export function fetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
-  selectedDocs: Doc,
+  selectedDocs: Doc | null,
   history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
-  let namePath = selectedDocs.name;
-  if (selectedDocs.language === namePath) {
-    namePath = '.project';
-  }
-
   let docPath = 'default';
-  if (selectedDocs.location === 'local') {
-    docPath = 'local' + '/' + selectedDocs.name + '/';
-  } else if (selectedDocs.location === 'remote') {
-    docPath =
-      selectedDocs.language +
-      '/' +
-      namePath +
-      '/' +
-      selectedDocs.version +
-      '/' +
-      selectedDocs.model +
-      '/';
+
+  if (selectedDocs) {
+    let namePath = selectedDocs.name;
+    if (selectedDocs.language === namePath) {
+      namePath = '.project';
+    }
+    if (selectedDocs.location === 'local') {
+      docPath = 'local' + '/' + selectedDocs.name + '/';
+    } else if (selectedDocs.location === 'remote') {
+      docPath =
+        selectedDocs.language +
+        '/' +
+        namePath +
+        '/' +
+        selectedDocs.version +
+        '/' +
+        selectedDocs.model +
+        '/';
+    }
   }
 
   history = history.map((item) => {
@@ -186,7 +190,7 @@ export function fetchAnswerSteaming(
 }
 export function searchEndpoint(
   question: string,
-  selectedDocs: Doc,
+  selectedDocs: Doc | null,
   conversation_id: string | null,
   history: Array<any> = [],
   chunks: string,
@@ -196,24 +200,25 @@ export function searchEndpoint(
   "question": "Summarise",
   "conversation_id": null,
   "history": "[]" */
-  let namePath = selectedDocs.name;
-  if (selectedDocs.language === namePath) {
-    namePath = '.project';
-  }
-
   let docPath = 'default';
-  if (selectedDocs.location === 'local') {
-    docPath = 'local' + '/' + selectedDocs.name + '/';
-  } else if (selectedDocs.location === 'remote') {
-    docPath =
-      selectedDocs.language +
-      '/' +
-      namePath +
-      '/' +
-      selectedDocs.version +
-      '/' +
-      selectedDocs.model +
-      '/';
+  if (selectedDocs) {
+    let namePath = selectedDocs.name;
+    if (selectedDocs.language === namePath) {
+      namePath = '.project';
+    }
+    if (selectedDocs.location === 'local') {
+      docPath = 'local' + '/' + selectedDocs.name + '/';
+    } else if (selectedDocs.location === 'remote') {
+      docPath =
+        selectedDocs.language +
+        '/' +
+        namePath +
+        '/' +
+        selectedDocs.version +
+        '/' +
+        selectedDocs.model +
+        '/';
+    }
   }
 
   const body = {
