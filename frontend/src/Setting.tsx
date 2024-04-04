@@ -30,7 +30,7 @@ const embeddingsName =
   'huggingface_sentence-transformers/all-mpnet-base-v2';
 
 const Setting: React.FC = () => {
-  const tabs = ['General', 'Documents'];
+  const tabs = ['General', 'Documents', 'API Keys'];
   const [activeTab, setActiveTab] = useState('General');
   const documents = useSelector(selectSourceDocs);
 
