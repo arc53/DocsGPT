@@ -307,6 +307,8 @@ export default function Upload({
               onSelect={(value: { label: string; value: string }) =>
                 setUrlType(value)
               }
+              size="w-full"
+              rounded="3xl"
             />
             {urlType.label !== 'Reddit' ? (
               <>
