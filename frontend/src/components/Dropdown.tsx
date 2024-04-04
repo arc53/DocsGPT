@@ -76,7 +76,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options.map((option: any, index) => (
             <div
               key={index}
@@ -111,12 +111,20 @@ function Dropdown({
                 />
               )}
               {showDelete && onDelete && (
-                <img
-                  src={Trash}
-                  alt="Delete"
-                  className="mr-2 h-4 w-4 cursor-pointer hover:opacity-50"
+                <button
                   onClick={() => onDelete(option.id)}
-                />
+                  disabled={option.type === 'public'}
+                >
+                  <img
+                    src={Trash}
+                    alt="Delete"
+                    className={`mr-2 h-4 w-4 cursor-pointer hover:opacity-50 ${
+                      option.type === 'public'
+                        ? 'cursor-not-allowed opacity-50'
+                        : ''
+                    }`}
+                  />
+                </button>
               )}
             </div>
           ))}

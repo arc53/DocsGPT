@@ -281,6 +281,7 @@ const Prompts: React.FC<PromptProps> = ({
           ...prompts,
           { name: newPromptName, id: newPrompt.id, type: 'private' },
         ]);
+        setModalState('INACTIVE');
       }
       onSelectPrompt(newPromptName, newPrompt.id, newPromptContent);
       setNewPromptName(newPromptName);
@@ -305,7 +306,6 @@ const Prompts: React.FC<PromptProps> = ({
         // get 1st prompt and set it as selected
         if (prompts.length > 0) {
           onSelectPrompt(prompts[0].name, prompts[0].id, prompts[0].type);
-          setNewPromptName(prompts[0].name);
         }
       })
       .catch((error) => {

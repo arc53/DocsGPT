@@ -48,7 +48,7 @@ function AddPrompt({
       <div className="mt-6 flex flex-row-reverse gap-4">
         <button
           onClick={handleAddPrompt}
-          className="rounded-3xl bg-purple-30 px-5 py-2 text-white transition-all hover:bg-purple-30"
+          className="rounded-3xl bg-purple-30 px-5 py-2 text-white transition-all hover:opacity-90"
         >
           Save
         </button>
@@ -86,7 +86,7 @@ function EditPrompt({
     <div className="rounded-3xl px-4 py-2">
       <p className="mb-1 text-xl text-jet dark:text-bright-gray">Edit Prompt</p>
       <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
-        Edit your custom prompt and save it to DocsGPT.
+        Edit your custom prompt and save it to DocsGPT
       </p>
       <div>
         <input
@@ -114,10 +114,10 @@ function EditPrompt({
       </div>
       <div className="mt-6 flex flex-row-reverse gap-4">
         <button
-          className={`rounded-3xl bg-purple-30 px-5 py-2 text-white transition-all hover:bg-purple-30 ${
+          className={`rounded-3xl bg-purple-30 px-5 py-2 text-white transition-all ${
             currentPromptEdit.type === 'public'
               ? 'cursor-not-allowed opacity-50'
-              : ''
+              : 'hover:opacity-90'
           }`}
           onClick={() => {
             handleEditPrompt &&
