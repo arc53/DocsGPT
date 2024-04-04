@@ -10,14 +10,11 @@ class LancedbStore(BaseVectorStore):
         self.embeddings_key = embeddings_key
         self.docsearch = None  
         
-        # Load embeddings based on a given key
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
         
-        # Initialize LanceDB if docs_init is provided and has content
         if docs_init:
             self.docsearch = LanceDB.from_documents(docs_init, embeddings)
         else:
-            # Log or handle the absence of docs_init appropriately
             print(f"No initial documents provided for LanceDB initialization at {path}.")
     
     
