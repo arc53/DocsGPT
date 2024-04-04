@@ -281,8 +281,8 @@ const Prompts: React.FC<PromptProps> = ({
           ...prompts,
           { name: newPromptName, id: newPrompt.id, type: 'private' },
         ]);
-        setModalState('INACTIVE');
       }
+      setModalState('INACTIVE');
       onSelectPrompt(newPromptName, newPrompt.id, newPromptContent);
       setNewPromptName(newPromptName);
     } catch (error) {
@@ -313,11 +313,11 @@ const Prompts: React.FC<PromptProps> = ({
       });
   };
 
-  const fetchPromptContent = async (name: string) => {
+  const fetchPromptContent = async (id: string) => {
     console.log('fetching prompt content');
     try {
       const response = await fetch(
-        `${apiHost}/api/get_single_prompt?id=${name}`,
+        `${apiHost}/api/get_single_prompt?id=${id}`,
         {
           method: 'GET',
           headers: {
@@ -351,6 +351,26 @@ const Prompts: React.FC<PromptProps> = ({
         if (!response.ok) {
           throw new Error('Failed to update prompt');
         }
+        if (setPrompts) {
+          const existingPromptIndex = prompts.findIndex(
+            (prompt) => prompt.id === id,
+          );
+          if (existingPromptIndex === -1) {
+            setPrompts([
+              ...prompts,
+              { name: editPromptName, id: id, type: type },
+            ]);
+          } else {
+            const updatedPrompts = [...prompts];
+            updatedPrompts[existingPromptIndex] = {
+              name: editPromptName,
+              id: id,
+              type: type,
+            };
+            setPrompts(updatedPrompts);
+          }
+        }
+        setModalState('INACTIVE');
         onSelectPrompt(editPromptName, id, type);
       })
       .catch((error) => {
@@ -383,7 +403,7 @@ const Prompts: React.FC<PromptProps> = ({
               }) => {
                 setModalType('EDIT');
                 setEditPromptName(name);
-                fetchPromptContent(name);
+                fetchPromptContent(id);
                 setCurrentPromptEdit({ id: id, name: name, type: type });
                 setModalState('ACTIVE');
               }}
