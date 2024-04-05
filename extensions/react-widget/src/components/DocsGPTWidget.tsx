@@ -285,7 +285,7 @@ const Hero = ({ title, description }: { title: string, description: string }) =>
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
   selectDocs = 'default',
-  apiKey = 'docsgpt-public',
+  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',

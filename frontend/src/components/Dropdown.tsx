@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import Arrow2 from '../assets/dropdown-arrow.svg';
+import Edit from '../assets/edit.svg';
+import Trash from '../assets/trash.svg';
 
 function Dropdown({
   options,
   selectedValue,
   onSelect,
+  size = 'w-32',
+  rounded = 'xl',
+  showEdit,
+  onEdit,
   showDelete,
   onDelete,
   placeholder,
@@ -20,6 +26,10 @@ function Dropdown({
     | ((value: string) => void)
     | ((value: { name: string; id: string; type: string }) => void)
     | ((value: { label: string; value: string }) => void);
+  size?: string;
+  rounded?: 'xl' | '3xl';
+  showEdit?: boolean;
+  onEdit?: (value: { name: string; id: string; type: string }) => void;
   showDelete?: boolean;
   onDelete?: (value: string) => void;
   placeholder?: string;
@@ -28,19 +38,22 @@ function Dropdown({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
-    <div className={fullWidth ? 'relative w-full' : 'relative mt-2 w-32'}>
+    <div
+      className={[
+        typeof selectedValue === 'string'
+          ? 'relative mt-2'
+          : 'relative align-middle',
+        size,
+      ].join(' ')}
+    >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white p-3 dark:border-chinese-silver dark:bg-transparent ${
-          isOpen ? 'rounded-t-3xl' : 'rounded-3xl'
+        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent ${
+          isOpen ? `rounded-t-${rounded}` : `rounded-${rounded}`
         }`}
       >
         {typeof selectedValue === 'string' ? (
-          <span
-            className={`${
-              alignMidddle && 'flex-1'
-            } overflow-hidden text-ellipsis dark:text-bright-gray`}
-          >
+          <span className="overflow-hidden text-ellipsis dark:text-bright-gray">
             {selectedValue}
           </span>
         ) : (
@@ -67,7 +80,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options.map((option: any, index) => (
             <div
               key={index}
@@ -86,9 +99,35 @@ function Dropdown({
                   ? option.name
                   : option.label}
               </span>
+              {showEdit && onEdit && (
+                <img
+                  src={Edit}
+                  alt="Edit"
+                  className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
+                  onClick={() => {
+                    onEdit({
+                      id: option.id,
+                      name: option.name,
+                      type: option.type,
+                    });
+                    setIsOpen(false);
+                  }}
+                />
+              )}
               {showDelete && onDelete && (
-                <button onClick={() => onDelete(option)} className="p-2">
-                  Delete
+                <button
+                  onClick={() => onDelete(option.id)}
+                  disabled={option.type === 'public'}
+                >
+                  <img
+                    src={Trash}
+                    alt="Delete"
+                    className={`mr-2 h-4 w-4 cursor-pointer hover:opacity-50 ${
+                      option.type === 'public'
+                        ? 'cursor-not-allowed opacity-50'
+                        : ''
+                    }`}
+                  />
                 </button>
               )}
             </div>

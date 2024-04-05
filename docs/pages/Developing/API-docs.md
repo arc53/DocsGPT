@@ -227,3 +227,119 @@ JSON response indicating the status of the operation:
 ```json
 { "status": "ok" }
 ```
+
+### 7. /api/get_api_keys
+**Description:**
+
+The endpoint retrieves a list of API keys for the user.
+
+**Request:**
+
+**Method**: `GET`
+
+**Sample JavaScript Fetch Request:**
+```js
+// get_api_keys (GET http://127.0.0.1:5000/api/get_api_keys)
+fetch("http://localhost:5001/api/get_api_keys", {
+      "method": "GET",
+      "headers": {
+            "Content-Type": "application/json; charset=utf-8"
+      },
+})
+.then((res) => res.text())
+.then(console.log.bind(console))
+
+```
+**Response:**
+
+JSON response with a list of created API keys:
+
+```json
+[
+      {
+        "id": "string",
+        "name": "string",
+        "key": "string",
+        "source": "string"
+      },
+      ...
+    ]
+```
+
+### 8. /api/create_api_key
+
+**Description:**
+
+Create a new API key for the user.
+
+**Request:**
+
+**Method**: `POST`
+
+**Headers**: Content-Type should be set to `application/json; charset=utf-8`
+
+**Request Body**: JSON object with the following fields:
+* `name` — A name for the API key.
+* `source` — The source documents that will be used.
+
+Here is a JavaScript Fetch Request example:
+```js
+// create_api_key (POST http://127.0.0.1:5000/api/create_api_key)
+fetch("http://127.0.0.1:5000/api/create_api_key", {
+      "method": "POST",
+      "headers": {
+            "Content-Type": "application/json; charset=utf-8"
+      },
+      "body": JSON.stringify({"name":"Example Key Name","source":"Example Source"})
+})
+.then((res) => res.json())
+.then(console.log.bind(console))
+```
+
+**Response**
+
+In response, you will get a JSON document containing the `id` and `key`:
+```json
+{
+  "id": "string",
+  "key": "string"
+}
+```
+
+### 9. /api/delete_api_key
+
+**Description:**
+
+Delete an API key for the user.
+
+**Request:**
+
+**Method**: `POST`
+
+**Headers**: Content-Type should be set to `application/json; charset=utf-8`
+
+**Request Body**: JSON object with the field:
+* `id` — The unique identifier of the API key to be deleted.
+
+Here is a JavaScript Fetch Request example:
+```js
+// delete_api_key (POST http://127.0.0.1:5000/api/delete_api_key)
+fetch("http://127.0.0.1:5000/api/delete_api_key", {
+      "method": "POST",
+      "headers": {
+            "Content-Type": "application/json; charset=utf-8"
+      },
+      "body": JSON.stringify({"id":"API_KEY_ID"})
+})
+.then((res) => res.json())
+.then(console.log.bind(console))
+```
+
+**Response:**
+
+In response, you will get a JSON document indicating the status of the operation:
+```json
+{
+  "status": "ok"
+}
+```
