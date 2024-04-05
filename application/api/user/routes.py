@@ -351,7 +351,14 @@ def get_api_keys():
     keys = api_key_collection.find({"user": user})
     list_keys = []
     for key in keys:
-        list_keys.append({"id": str(key["_id"]), "name": key["name"], "key": key["key"][:4] + "..." + key["key"][-4:], "source": key["source"]})
+        list_keys.append({
+            "id": str(key["_id"]),
+            "name": key["name"],
+            "key": key["key"][:4] + "..." + key["key"][-4:],
+            "source": key["source"],
+            "prompt_id": key["prompt_id"],
+            "chunks": key["chunks"]
+        })
     return jsonify(list_keys)
 
 @user.route("/api/create_api_key", methods=["POST"])
@@ -359,6 +366,8 @@ def create_api_key():
     data = request.get_json()
     name = data["name"]
     source = data["source"]
+    prompt_id = data["prompt_id"]
+    chunks = data["chunks"]
     key = str(uuid.uuid4())
     user = "local"
     resp = api_key_collection.insert_one(
@@ -367,6 +376,8 @@ def create_api_key():
             "key": key,
             "source": source,
             "user": user,
+            "prompt_id": prompt_id,
+            "chunks": chunks
         }
     )
     new_id = str(resp.inserted_id)
