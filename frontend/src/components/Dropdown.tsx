@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React from 'react';
 import Arrow2 from '../assets/dropdown-arrow.svg';
 import Edit from '../assets/edit.svg';
 import Trash from '../assets/trash.svg';
@@ -34,7 +34,7 @@ function Dropdown({
   className?: string;
   width?: string;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = React.useState(false);
   return (
     <div
       className={[
@@ -46,7 +46,7 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center justify-between border-2 bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent ${
           isOpen ? `rounded-t-${rounded}` : `rounded-${rounded}`
         }`}
       >
