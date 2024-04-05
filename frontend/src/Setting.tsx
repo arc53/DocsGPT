@@ -179,6 +179,7 @@ const General: React.FC = () => {
       <div className="mb-4">
         <p className="font-bold text-jet dark:text-bright-gray">Select Theme</p>
         <Dropdown
+          alignMidddle
           options={themes}
           selectedValue={selectedTheme}
           onSelect={(option: string) => {
@@ -194,6 +195,7 @@ const General: React.FC = () => {
           Select Language
         </p>
         <Dropdown
+          alignMidddle
           options={languages}
           selectedValue={selectedLanguage}
           onSelect={setSelectedLanguage}
@@ -206,6 +208,7 @@ const General: React.FC = () => {
           Chunks processed per query
         </p>
         <Dropdown
+          alignMidddle
           options={chunks}
           selectedValue={selectedChunks}
           onSelect={(value: string) => dispatch(setChunks(value))}
@@ -671,7 +674,13 @@ const APIKeys: React.FC = () => {
       console.log(error);
     }
   };
-  const createAPIKey = (payload: { name: string; source: string }) => {
+
+  const createAPIKey = (payload: {
+    name: string;
+    source: string;
+    prompt_id: string;
+    chunks: string;
+  }) => {
     fetch(`${apiHost}/api/create_api_key`, {
       method: 'POST',
       headers: {
@@ -802,7 +811,12 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
 
 type CreateAPIKeyModalProps = {
   close: () => void;
-  createAPIKey: (payload: { name: string; source: string }) => void;
+  createAPIKey: (payload: {
+    name: string;
+    source: string;
+    prompt_id: string;
+    chunks: string;
+  }) => void;
 };
 const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
   close,
@@ -813,7 +827,33 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
     label: string;
     value: string;
   } | null>(null);
+
+  const chunkOptions = ['0', '2', '4', '6', '8', '10'];
+  const [chunk, setChunk] = useState<string>('2');
+  const [activePrompts, setActivePrompts] = useState<
+    { name: string; id: string; type: string }[]
+  >([]);
+  const [prompt, setPrompt] = useState<{
+    name: string;
+    id: string;
+    type: string;
+  } | null>(null);
   const docs = useSelector(selectSourceDocs);
+  useEffect(() => {
+    const fetchPrompts = async () => {
+      try {
+        const response = await fetch(`${apiHost}/api/get_prompts`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch prompts');
+        }
+        const promptsData = await response.json();
+        setActivePrompts(promptsData);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    fetchPrompts();
+  }, []);
   const extractDocPaths = () =>
     docs
       ? docs
@@ -866,7 +906,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
         </div>
         <div className="my-4">
           <Dropdown
-            className="mt-2 w-full"
+            fullWidth
             placeholder="Select the source doc"
             selectedValue={sourcePath}
             onSelect={(selection: { label: string; value: string }) =>
@@ -875,11 +915,41 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
             options={extractDocPaths()}
           />
         </div>
+
+        <div className="my-4">
+          <Dropdown
+            fullWidth
+            options={activePrompts}
+            selectedValue={prompt ? prompt.name : null}
+            placeholder="Select Active Prompt"
+            onSelect={(value: { name: string; id: string; type: string }) =>
+              setPrompt(value)
+            }
+          />
+        </div>
+        <div className="my-4">
+          <p className="mb-2 ml-2 font-bold text-jet dark:text-bright-gray">
+            Chunks processed per query
+          </p>
+          <Dropdown
+            fullWidth
+            alignMidddle
+            options={chunkOptions}
+            selectedValue={chunk}
+            onSelect={(value: string) => setChunk(value)}
+          />
+        </div>
         <button
-          disabled={sourcePath === null || APIKeyName.length === 0}
+          disabled={!sourcePath || APIKeyName.length === 0 || !prompt}
           onClick={() =>
             sourcePath &&
-            createAPIKey({ name: APIKeyName, source: sourcePath.value })
+            prompt &&
+            createAPIKey({
+              name: APIKeyName,
+              source: sourcePath.value,
+              prompt_id: prompt.id,
+              chunks: chunk,
+            })
           }
           className="float-right my-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
         >
