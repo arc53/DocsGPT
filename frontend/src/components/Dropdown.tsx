@@ -48,7 +48,7 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between border-2 bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent ${
           isOpen ? `rounded-t-${rounded}` : `rounded-${rounded}`
         }`}
       >
@@ -80,7 +80,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 border-silver bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options.map((option: any, index) => (
             <div
               key={index}
