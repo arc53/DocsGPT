@@ -4,7 +4,11 @@
     "href": "/Extensions/Chatwoot-extension"
   },
   "react-widget": {
-      "title": "🏗️ Widget setup",
-      "href": "/Extensions/react-widget"
-    }
+    "title": "🏗️ Widget setup",
+    "href": "/Extensions/react-widget"
+  },
+  "api-key-guide": {
+    "title": "🔐 API Keys guide",
+    "href": "/Extensions/api-key-guide"
+  }
 }
