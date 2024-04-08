@@ -1,6 +1,7 @@
 import os
 import uuid
 from flask import Blueprint, request, jsonify
+from urllib.parse import urlparse
 import requests
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -247,25 +248,31 @@ def check_docs():
     # split docs on / and take first part
     if data["docs"].split("/")[0] == "local":
         return {"status": "exists"}
-    vectorstore = "vectors/" + data["docs"]
+    vectorstore = "vectors/" + secure_filename(data["docs"])
     base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": "exists"}
     else:
-        r = requests.get(base_path + vectorstore + "index.faiss")
+        file_url = urlparse(base_path + vectorstore + "index.faiss")
+        
+        if file_url.scheme in ['https'] and file_url.netloc == 'raw.githubusercontent.com' and file_url.path.startswith('/arc53/DocsHUB/main/'):
+            
+            r = requests.get(file_url.geturl())
 
-        if r.status_code != 200:
-            return {"status": "null"}
+            if r.status_code != 200:
+                return {"status": "null"}
+            else:
+                if not os.path.exists(vectorstore):
+                    os.makedirs(vectorstore)
+                with open(vectorstore + "index.faiss", "wb") as f:
+                    f.write(r.content)
+
+                # download the store
+                r = requests.get(base_path + vectorstore + "index.pkl")
+                with open(vectorstore + "index.pkl", "wb") as f:
+                    f.write(r.content)
         else:
-            if not os.path.exists(vectorstore):
-                os.makedirs(vectorstore)
-            with open(vectorstore + "index.faiss", "wb") as f:
-                f.write(r.content)
-
-            # download the store
-            r = requests.get(base_path + vectorstore + "index.pkl")
-            with open(vectorstore + "index.pkl", "wb") as f:
-                f.write(r.content)
+            return {"status": "null"}
 
         return {"status": "loaded"}
 
