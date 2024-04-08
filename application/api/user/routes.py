@@ -248,7 +248,7 @@ def check_docs():
     # split docs on / and take first part
     if data["docs"].split("/")[0] == "local":
         return {"status": "exists"}
-    vectorstore = "vectors/" + data["docs"]
+    vectorstore = "vectors/" + secure_filename(data["docs"])
     base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": "exists"}
