@@ -8,6 +8,7 @@ import traceback
 
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+from flask import stream_with_context
 
 
 
@@ -168,53 +169,53 @@ def complete_stream(question, retriever, conversation_id):
 
 @answer.route("/stream", methods=["POST"])
 def stream():
-    data = request.get_json()
-    # get parameter from url question
-    question = data["question"]
-    if "history" not in data:
-        history = []
-    else:
-        history = data["history"]
-        history = json.loads(history)
-    if "conversation_id" not in data:
-        conversation_id = None
-    else:
-        conversation_id = data["conversation_id"]
-    if 'prompt_id' in data:
-        prompt_id = data["prompt_id"]
-    else:
-        prompt_id = 'default'
-    if 'selectedDocs' in data and data['selectedDocs'] is None:
-        chunks = 0
-    elif 'chunks' in data:
-        chunks = int(data["chunks"])
-    else:
-        chunks = 2
-    
-    prompt = get_prompt(prompt_id)
+    try:
+        data = request.get_json()
+        # get parameter from url question
+        question = data["question"]
+        if "history" not in data:
+            history = []
+        else:
+            history = data["history"]
+            history = json.loads(history)
+        if "conversation_id" not in data:
+            conversation_id = None
+        else:
+            conversation_id = data["conversation_id"]
+        if 'prompt_id' in data:
+            prompt_id = data["prompt_id"]
+        else:
+            prompt_id = 'default'
+        if 'selectedDocs' in data and data['selectedDocs'] is None:
+            chunks = 0
+        elif 'chunks' in data:
+            chunks = int(data["chunks"])
+        else:
+            chunks = 2
 
-    # check if active_docs is set
+        # check if active_docs is set
 
-    if "api_key" in data:
-        data_key = get_data_from_api_key(data["api_key"])
-        source = {"active_docs": data_key["source"]}
-    elif "active_docs" in data:
-        source = {"active_docs": data["active_docs"]}
-    else:
-        source = {}
+        if "api_key" in data:
+            data_key = get_data_from_api_key(data["api_key"])
+            vectorstore = get_vectorstore({"active_docs": data_key["source"]})
+        elif "active_docs" in data:
+            vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
+        else:
+            vectorstore = ""
+        docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, settings.EMBEDDINGS_KEY)
 
-    if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
-        retriever_name = "classic"
-    else:
-        retriever_name = source['active_docs']
-
-    retriever = RetrieverCreator.create_retriever(retriever_name, question=question, 
-        source=source, chat_history=history, prompt=prompt, chunks=chunks, gpt_model=gpt_model
+        return Response(
+            stream_with_context(complete_stream(question, docsearch,
+                            chat_history=history,
+                            prompt_id=prompt_id,
+                            conversation_id=conversation_id,
+                            chunks=chunks)), mimetype="text/event-stream"
         )
-
-    return Response(
-        complete_stream(question=question, retriever=retriever,
-                        conversation_id=conversation_id), mimetype="text/event-stream")
+    except Exception as e:
+        error_message = "An error occurred: " + str(e)
+        return Response(stream_with_context(generate_error_stream(error_message)), mimetype="text/event-stream")
+def generate_error_stream(error_message):
+    yield f"data: {{\"type\": \"error\", \"message\": \"{error_message}\"}}\n\n"    
 
 
 @answer.route("/api/answer", methods=["POST"])
