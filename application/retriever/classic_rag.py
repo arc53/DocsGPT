@@ -1,5 +1,4 @@
 import os
-import json
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
@@ -39,9 +38,19 @@ class ClassicRAG(BaseRetriever):
         if self.chunks == 0:
             docs = []
         else:
-            docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY)
+            docsearch = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, 
+                self.vectorstore, 
+                settings.EMBEDDINGS_KEY
+            )
             docs_temp = docsearch.search(self.question, k=self.chunks)
-            docs = [{"title": i.metadata['title'].split('/')[-1] if i.metadata else i.page_content, "text": i.page_content} for i in docs_temp]
+            docs = [
+                {
+                    "title": i.metadata['title'].split('/')[-1] if i.metadata else i.page_content, 
+                    "text": i.page_content
+                } 
+                for i in docs_temp
+            ]
         if settings.LLM_NAME == "llama.cpp":
             docs = [docs[0]]
         

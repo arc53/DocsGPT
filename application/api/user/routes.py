@@ -283,10 +283,12 @@ def check_docs():
     else:
         file_url = urlparse(base_path + vectorstore + "index.faiss")
         
-        if file_url.scheme in ['https'] and file_url.netloc == 'raw.githubusercontent.com' and file_url.path.startswith('/arc53/DocsHUB/main/'):
-            
+        if (
+            file_url.scheme in ['https'] and 
+            file_url.netloc == 'raw.githubusercontent.com' and 
+            file_url.path.startswith('/arc53/DocsHUB/main/')
+        ):
             r = requests.get(file_url.geturl())
-
             if r.status_code != 200:
                 return {"status": "null"}
             else:
@@ -295,7 +297,6 @@ def check_docs():
                 with open(vectorstore + "index.faiss", "wb") as f:
                     f.write(r.content)
 
-                # download the store
                 r = requests.get(base_path + vectorstore + "index.pkl")
                 with open(vectorstore + "index.pkl", "wb") as f:
                     f.write(r.content)

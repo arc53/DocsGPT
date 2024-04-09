@@ -8,12 +8,10 @@ import traceback
 
 from pymongo import MongoClient
 from bson.objectid import ObjectId
-from application.utils import count_tokens
 
 
 
 from application.core.settings import settings
-from application.vectorstore.vector_creator import VectorCreator
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.error import bad_request
