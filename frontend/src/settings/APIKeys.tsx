@@ -208,7 +208,6 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
         </div>
         <div className="my-4">
           <Dropdown
-            className="mt-2 w-full"
             placeholder="Select the source doc"
             selectedValue={sourcePath}
             onSelect={(selection: { label: string; value: string }) =>
