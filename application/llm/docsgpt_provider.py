@@ -24,17 +24,10 @@ class DocsGPTAPILLM(BaseLLM):
 
         return response_clean
 
-<<<<<<< HEAD
-    def gen_stream(self, model, messages, stream=True, **kwargs):
-        context = messages[0]['content']
-        user_question = messages[-1]['content']
-        prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
-=======
 def gen_stream(self, model, engine, messages, stream=True, **kwargs):
     context = messages[0]['content']
     user_question = messages[-1]['content']
     prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
->>>>>>> d9ed516 (error handling for /stream endpoint)
 
     # send prompt to endpoint /stream
     try:

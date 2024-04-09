@@ -11,10 +11,9 @@ def app():
 
 def test_bad_request_with_message(app):
     with app.app_context():
-        message = "Invalid input"
-        response = bad_request(status_code=400, message=message)
+        response = bad_request(status_code=400)
         assert response.status_code == 400
-        assert response.json == {'error': 'Bad Request', 'message': message}
+        assert response.json == {'error': 'Bad Request', 'message': 'An error occurred'}
 
 
 def test_bad_request_without_message(app):
@@ -26,10 +25,9 @@ def test_bad_request_without_message(app):
 
 def test_response_error_with_message(app):
     with app.app_context():
-        message = "Something went wrong"
-        response = response_error(code_status=500, message=message)
+        response = response_error(code_status=500)
         assert response.status_code == 500
-        assert response.json == {'error': 'Internal Server Error', 'message': message}
+        assert response.json == {'error': 'Internal Server Error', 'message': 'An error occurred'}
 
 
 def test_response_error_without_message(app):
