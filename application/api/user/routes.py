@@ -1,5 +1,6 @@
 import os
 import uuid
+import shutil
 from flask import Blueprint, request, jsonify
 from urllib.parse import urlparse
 import requests
@@ -136,30 +137,43 @@ def upload_file():
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
     # check if the post request has the file part
-    if "file" not in request.files:
-        print("No file part")
-        return {"status": "no file"}
-    file = request.files["file"]
-    if file.filename == "":
+    files = request.files.getlist("file")
+        
+    if not files or all(file.filename == '' for file in files):
         return {"status": "no file name"}
 
-    if file:
-        filename = secure_filename(file.filename)
-        # save dir
-        save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
-        # create dir if not exists
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        file.save(os.path.join(save_dir, filename))
-        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
-        ".csv", ".epub", ".html", ".mdx"],
-         job_name, filename, user)
-        # task id
-        task_id = task.id
-        return {"status": "ok", "task_id": task_id}
+    # Directory where files will be saved
+    save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
+    os.makedirs(save_dir, exist_ok=True)
+    
+    if len(files) > 1:
+        # Multiple files; prepare them for zip
+        temp_dir = os.path.join(save_dir, "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        for file in files:
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(temp_dir, filename))
+        
+        # Use shutil.make_archive to zip the temp directory
+        zip_path = shutil.make_archive(base_name=os.path.join(save_dir, job_name), format='zip', root_dir=temp_dir)
+        final_filename = os.path.basename(zip_path)
+        
+        # Clean up the temporary directory after zipping
+        shutil.rmtree(temp_dir)
     else:
-        return {"status": "error"}
+        # Single file
+        file = files[0]
+        final_filename = secure_filename(file.filename)
+        file_path = os.path.join(save_dir, final_filename)
+        file.save(file_path)
+    
+    # Call ingest with the single file or zipped file
+    task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
+    ".csv", ".epub", ".html", ".mdx"],
+    job_name, final_filename, user)
+    
+    return {"status": "ok", "task_id": task.id}
     
 @user.route("/api/remote", methods=["POST"])
 def upload_remote():

@@ -201,7 +201,7 @@ export default function Upload({
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false,
+    multiple: true,
     onDragEnter: doNothing,
     onDragOver: doNothing,
     onDragLeave: doNothing,
