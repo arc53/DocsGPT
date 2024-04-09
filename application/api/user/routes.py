@@ -237,6 +237,20 @@ def combined_json():
         for index in data_remote:
             index["location"] = "remote"
             data.append(index)
+    if 'duckduck_search' in settings.RETRIEVERS_ENABLED:
+        data.append(
+            {
+                "name": "DuckDuckGo Search",
+                "language": "en",
+                "version": "",
+                "description": "duckduck_search",
+                "fullName": "DuckDuckGo Search",
+                "date": "duckduck_search",
+                "docLink": "duckduck_search",
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "custom",
+            }
+        )
 
     return jsonify(data)
 

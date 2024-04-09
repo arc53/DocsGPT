@@ -205,7 +205,12 @@ def stream():
     else:
         source = {}
 
-    retriever = RetrieverCreator.create_retriever("classic", question=question, 
+    if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
+        retriever_name = "classic"
+    else:
+        retriever_name = source['active_docs']
+
+    retriever = RetrieverCreator.create_retriever(retriever_name, question=question, 
         source=source, chat_history=history, prompt=prompt, chunks=chunks, gpt_model=gpt_model
         )
 
@@ -247,7 +252,12 @@ def api_answer():
         else:
             source = {data}
 
-        retriever = RetrieverCreator.create_retriever("classic", question=question, 
+        if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
+            retriever_name = "classic"
+        else:
+            retriever_name = source['active_docs']
+
+        retriever = RetrieverCreator.create_retriever(retriever_name, question=question, 
             source=source, chat_history=history, prompt=prompt, chunks=chunks, gpt_model=gpt_model
             )
         source_log_docs = []
@@ -290,9 +300,14 @@ def api_search():
     else:
         chunks = 2
 
-    retriever = RetrieverCreator.create_retriever("classic", question=question, 
-            source=source, chat_history=[], prompt="default", chunks=chunks, gpt_model=gpt_model
-            )
+    if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
+        retriever_name = "classic"
+    else:
+        retriever_name = source['active_docs']
+
+    retriever = RetrieverCreator.create_retriever(retriever_name, question=question, 
+        source=source, chat_history=[], prompt="default", chunks=chunks, gpt_model=gpt_model
+        )
     docs = retriever.search()
     return docs
 
