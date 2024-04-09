@@ -28,9 +28,11 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.conversation.conversationId,
           state.preference.prompt.id,
           state.preference.chunks,
-
+          (error) => {
+            console.error(error);
+          },
           (event) => {
-            const data = JSON.parse(event.data);
+            const data = JSON.parse(event);
 
             // check if the 'end' event has been received
             if (data.type === 'end') {
@@ -64,6 +66,13 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
               dispatch(
                 updateConversationId({
                   query: { conversationId: data.id },
+                }),
+              );
+            } else if (data.type === 'error') {
+              dispatch(
+                conversationSlice.actions.setError({
+                  index: state.conversation.queries.length - 1,
+                  error: data.message,
                 }),
               );
             } else {
@@ -142,6 +151,10 @@ export const conversationSlice = createSlice({
     },
     setConversation(state, action: PayloadAction<Query[]>) {
       state.queries = action.payload;
+    },
+    setError(state, action: PayloadAction<{ index: number; error: string }>) {
+      const { index, error } = action.payload;
+      state.queries[index].error = error;
     },
     updateStreamingQuery(
       state,

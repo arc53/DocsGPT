@@ -94,15 +94,26 @@ export default function Conversation() {
 
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
+
     if (query.error) {
+      let errorMessage = 'An Error occoured, please try again later.';
+      try {
+        const errorObject = JSON.parse(query.error);
+        if (errorObject && errorObject.message) {
+          errorMessage = errorObject.message;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ERROR`}
-          message={query.error}
+          message={errorMessage}
           type="ERROR"
-        ></ConversationBubble>
+        />
       );
     } else if (query.response) {
       responseView = (
@@ -111,15 +122,16 @@ export default function Conversation() {
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
-          type={'ANSWER'}
+          type="ANSWER"
           sources={query.sources}
           feedback={query.feedback}
           handleFeedback={(feedback: FEEDBACK) =>
             handleFeedback(query, feedback, index)
           }
-        ></ConversationBubble>
+        />
       );
     }
+
     return responseView;
   };
 

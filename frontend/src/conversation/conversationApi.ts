@@ -97,6 +97,7 @@ export function fetchAnswerSteaming(
   promptId: string | null,
   chunks: string,
   onEvent: (event: MessageEvent) => void,
+  onError: (error: string) => void,
 ): Promise<Answer> {
   let docPath = 'default';
 
@@ -184,6 +185,7 @@ export function fetchAnswerSteaming(
       })
       .catch((error) => {
         console.error('Connection failed:', error);
+        onError(error);
         reject(error);
       });
   });
