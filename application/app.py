@@ -40,5 +40,5 @@ def after_request(response):
     return response
 
 if __name__ == "__main__":
-    app.run(debug=True, port=7091)
+    app.run(debug=settings.FLASK_DEBUG_MODE, port=7091)
 

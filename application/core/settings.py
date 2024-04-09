@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
 
+    FLASK_DEBUG_MODE: bool = False
+
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
