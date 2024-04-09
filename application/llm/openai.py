@@ -18,7 +18,7 @@ class OpenAILLM(BaseLLM):
         
         return openai
 
-    def gen(self, model, engine, messages, stream=False, **kwargs):
+    def gen(self, model, messages, stream=False, engine=settings.AZURE_DEPLOYMENT_NAME, **kwargs):
         response = self.client.chat.completions.create(model=model,
             messages=messages,
             stream=stream,
@@ -26,7 +26,7 @@ class OpenAILLM(BaseLLM):
 
         return response.choices[0].message.content
 
-    def gen_stream(self, model, engine, messages, stream=True, **kwargs):
+    def gen_stream(self, model, messages, stream=True, engine=settings.AZURE_DEPLOYMENT_NAME, **kwargs):
         response = self.client.chat.completions.create(model=model,
             messages=messages,
             stream=stream,
