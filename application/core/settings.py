@@ -9,7 +9,7 @@ current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__
 
 class Settings(BaseSettings):
     LLM_NAME: str = "docsgpt"
-    MODEL_NAME: Optional[str] = None # when LLM_NAME is openai, MODEL_NAME can be e.g. gpt-4-turbo-preview or gpt-3.5-turbo
+    MODEL_NAME: Optional[str] = None # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     TOKENS_MAX_HISTORY: int = 150
     UPLOAD_FOLDER: str = "inputs"
     VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant"
+    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
@@ -58,6 +59,8 @@ class Settings(BaseSettings):
     QDRANT_HOST: Optional[str] = None
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
+
+    BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
 

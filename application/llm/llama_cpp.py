@@ -12,7 +12,7 @@ class LlamaCpp(BaseLLM):
 
         llama = Llama(model_path=llm_name, n_ctx=2048)
 
-    def gen(self, model, engine, messages, stream=False, **kwargs):
+    def gen(self, model, messages, stream=False, **kwargs):
         context = messages[0]['content']
         user_question = messages[-1]['content']
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
@@ -24,7 +24,7 @@ class LlamaCpp(BaseLLM):
         
         return result['choices'][0]['text'].split('### Answer \n')[-1]
 
-    def gen_stream(self, model, engine, messages, stream=True, **kwargs):
+    def gen_stream(self, model, messages, stream=True, **kwargs):
         context = messages[0]['content']
         user_question = messages[-1]['content']
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"

@@ -251,6 +251,34 @@ def combined_json():
         for index in data_remote:
             index["location"] = "remote"
             data.append(index)
+    if 'duckduck_search' in settings.RETRIEVERS_ENABLED:
+        data.append(
+            {
+                "name": "DuckDuckGo Search",
+                "language": "en",
+                "version": "",
+                "description": "duckduck_search",
+                "fullName": "DuckDuckGo Search",
+                "date": "duckduck_search",
+                "docLink": "duckduck_search",
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "custom",
+            }
+        )
+    if 'brave_search' in settings.RETRIEVERS_ENABLED:
+        data.append(
+            {
+                "name": "Brave Search",
+                "language": "en",
+                "version": "",
+                "description": "brave_search",
+                "fullName": "Brave Search",
+                "date": "brave_search",
+                "docLink": "brave_search",
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "custom",
+            }
+        )
 
     return jsonify(data)
 
@@ -269,10 +297,12 @@ def check_docs():
     else:
         file_url = urlparse(base_path + vectorstore + "index.faiss")
         
-        if file_url.scheme in ['https'] and file_url.netloc == 'raw.githubusercontent.com' and file_url.path.startswith('/arc53/DocsHUB/main/'):
-            
+        if (
+            file_url.scheme in ['https'] and 
+            file_url.netloc == 'raw.githubusercontent.com' and 
+            file_url.path.startswith('/arc53/DocsHUB/main/')
+        ):
             r = requests.get(file_url.geturl())
-
             if r.status_code != 200:
                 return {"status": "null"}
             else:
@@ -281,7 +311,6 @@ def check_docs():
                 with open(vectorstore + "index.faiss", "wb") as f:
                     f.write(r.content)
 
-                # download the store
                 r = requests.get(base_path + vectorstore + "index.pkl")
                 with open(vectorstore + "index.pkl", "wb") as f:
                     f.write(r.content)
