@@ -1,10 +1,12 @@
 from application.retriever.classic_rag import ClassicRAG
+from application.retriever.duckduck_search import DuckDuckSearch
 
 
 
 class RetrieverCreator:
     retievers = {
         'classic': ClassicRAG,
+        'duckduck': DuckDuckSearch
     }
 
     @classmethod

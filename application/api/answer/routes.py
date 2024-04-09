@@ -103,7 +103,7 @@ def is_azure_configured():
     return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
 def save_conversation(conversation_id, question, response, source_log_docs, llm):
-    if conversation_id is not None:
+    if conversation_id is not None and conversation_id != "None":
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id)},
             {"$push": {"queries": {"prompt": question, "response": response, "sources": source_log_docs}}},
@@ -129,6 +129,7 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm)
              "name": completion,
              "queries": [{"prompt": question, "response": response, "sources": source_log_docs}]}
         ).inserted_id
+    return conversation_id
 
 def get_prompt(prompt_id):
     if prompt_id == 'default':
@@ -293,12 +294,5 @@ def api_search():
             source=source, chat_history=[], prompt="default", chunks=chunks, gpt_model=gpt_model
             )
     docs = retriever.search()
-
-    source_log_docs = []
-    for doc in docs:
-        if doc.metadata:
-            source_log_docs.append({"title": doc.metadata['title'].split('/')[-1], "text": doc.page_content})
-        else:
-            source_log_docs.append({"title": doc.page_content, "text": doc.page_content})
-    return source_log_docs
+    return docs
 

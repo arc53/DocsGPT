@@ -1,47 +1,62 @@
-import os
 import json
+import ast
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
-from application.vectorstore.vector_creator import VectorCreator
 from application.llm.llm_creator import LLMCreator
-
 from application.utils import count_tokens
+from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
 
 
-class ClassicRAG(BaseRetriever):
+class DuckDuckSearch(BaseRetriever):
 
     def __init__(self, question, source, chat_history, prompt, chunks=2, gpt_model='docsgpt'):
         self.question = question
-        self.vectorstore = self._get_vectorstore(source=source)
+        self.source = source
         self.chat_history = chat_history
         self.prompt = prompt
         self.chunks = chunks
         self.gpt_model = gpt_model
 
-    def _get_vectorstore(self, source):
-        if "active_docs" in source:
-            if source["active_docs"].split("/")[0] == "default":
-                    vectorstore = ""
-            elif source["active_docs"].split("/")[0] == "local":
-                vectorstore = "indexes/" + source["active_docs"]
-            else:
-                vectorstore = "vectors/" + source["active_docs"]
-            if source["active_docs"] == "default":
-                vectorstore = ""
-        else:
-            vectorstore = ""
-        vectorstore = os.path.join("application", vectorstore)
-        return vectorstore
-
+    def _parse_lang_string(self, input_string):
+        result = []
+        current_item = ""
+        inside_brackets = False
+        for char in input_string:
+            if char == "[":
+                inside_brackets = True
+            elif char == "]":
+                inside_brackets = False
+                result.append(current_item)
+                current_item = ""
+            elif inside_brackets:
+                current_item += char
+        
+        # Check if there is an unmatched opening bracket at the end
+        if inside_brackets:
+            result.append(current_item)
+        
+        return result
     
     def _get_data(self):
         if self.chunks == 0:
             docs = []
         else:
-            docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY)
-            docs_temp = docsearch.search(self.question, k=self.chunks)
-            docs = [{"title": i.metadata['title'].split('/')[-1] if i.metadata else i.page_content, "text": i.page_content} for i in docs_temp]
+            wrapper = DuckDuckGoSearchAPIWrapper(max_results=self.chunks)
+            search = DuckDuckGoSearchResults(api_wrapper=wrapper)
+            results = search.run(self.question)
+            results = self._parse_lang_string(results)
+        
+            docs = []
+            for i in results:
+                try:
+                    text = i.split("title:")[0]
+                    title = i.split("title:")[1].split("link:")[0]
+                    link = i.split("link:")[1]
+                    docs.append({"text": text, "title": title, "link": link})
+                except IndexError:
+                    pass
         if settings.LLM_NAME == "llama.cpp":
             docs = [docs[0]]
         
