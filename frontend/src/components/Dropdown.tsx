@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React from 'react';
 import Arrow2 from '../assets/dropdown-arrow.svg';
 import Edit from '../assets/edit.svg';
 import Trash from '../assets/trash.svg';
@@ -36,7 +36,7 @@ function Dropdown({
   fullWidth?: boolean;
   alignMidddle?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = React.useState(false);
   return (
     <div
       className={[
@@ -80,7 +80,7 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 border-silver bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
           {options.map((option: any, index) => (
             <div
               key={index}
