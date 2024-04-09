@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
 
+    BRAVE_SEARCH_API_KEY: Optional[str] = None
+
     FLASK_DEBUG_MODE: bool = False
 
 

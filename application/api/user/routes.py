@@ -251,6 +251,20 @@ def combined_json():
                 "location": "custom",
             }
         )
+    if 'brave_search' in settings.RETRIEVERS_ENABLED:
+        data.append(
+            {
+                "name": "Brave Search",
+                "language": "en",
+                "version": "",
+                "description": "brave_search",
+                "fullName": "Brave Search",
+                "date": "brave_search",
+                "docLink": "brave_search",
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "custom",
+            }
+        )
 
     return jsonify(data)
 
