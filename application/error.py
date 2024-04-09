@@ -3,7 +3,7 @@ from werkzeug.http import HTTP_STATUS_CODES
 
 
 def response_error(code_status, message=None):
-    payload = {'error': HTTP_STATUS_CODES.get(code_status, "something went wrong")}
+    payload = {'error': HTTP_STATUS_CODES.get(code_status, "something went wrong"), 'message': message if message else "An error occurred"}
     if message:
         payload['message'] = message
     response = jsonify(payload)

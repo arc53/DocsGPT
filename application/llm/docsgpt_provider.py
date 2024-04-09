@@ -24,12 +24,20 @@ class DocsGPTAPILLM(BaseLLM):
 
         return response_clean
 
+<<<<<<< HEAD
     def gen_stream(self, model, messages, stream=True, **kwargs):
         context = messages[0]['content']
         user_question = messages[-1]['content']
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
+=======
+def gen_stream(self, model, engine, messages, stream=True, **kwargs):
+    context = messages[0]['content']
+    user_question = messages[-1]['content']
+    prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
+>>>>>>> d9ed516 (error handling for /stream endpoint)
 
-        # send prompt to endpoint /stream
+    # send prompt to endpoint /stream
+    try:
         response = requests.post(
             f"{self.endpoint}/stream",
             json={
@@ -38,12 +46,14 @@ class DocsGPTAPILLM(BaseLLM):
             },
             stream=True
         )
-    
+
         for line in response.iter_lines():
             if line:
-                #data = json.loads(line)
                 data_str = line.decode('utf-8')
                 if data_str.startswith("data: "):
                     data = json.loads(data_str[6:])
                     yield data['a']
+    except Exception as e:
+        error_message = "An error occurred: " + str(e)
+        yield f"data: {{\"type\": \"error\", \"message\": \"{error_message}\"}}\n\n"
                     
