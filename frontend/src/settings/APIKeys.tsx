@@ -59,7 +59,12 @@ const APIKeys: React.FC = () => {
       console.log(error);
     }
   };
-  const createAPIKey = (payload: { name: string; source: string }) => {
+  const createAPIKey = (payload: {
+    name: string;
+    source: string;
+    prompt_id: string;
+    chunks: string;
+  }) => {
     fetch(`${apiHost}/api/create_api_key`, {
       method: 'POST',
       headers: {
@@ -75,9 +80,9 @@ const APIKeys: React.FC = () => {
       })
       .then((data) => {
         setApiKeys([...apiKeys, data]);
-        setCreateModal(false); //close the create key modal
+        setCreateModal(false);
         setNewKey(data.key);
-        setSaveKeyModal(true); // render the newly created key
+        setSaveKeyModal(true);
         fetchAPIKeys();
       })
       .catch((error) => {
@@ -90,9 +95,9 @@ const APIKeys: React.FC = () => {
         <div className="flex justify-end">
           <button
             onClick={() => setCreateModal(true)}
-            className="rounded-full bg-purple-30 px-4 py-3 text-sm text-white hover:bg-[#7E66B1]"
+            className="rounded-full bg-purple-30 px-4 py-3 text-sm text-white hover:opacity-90"
           >
-            Create New
+            Create new
           </button>
         </div>
         {isCreateModalOpen && (
@@ -155,7 +160,33 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
     label: string;
     value: string;
   } | null>(null);
+
+  const chunkOptions = ['0', '2', '4', '6', '8', '10'];
+  const [chunk, setChunk] = React.useState<string>('2');
+  const [activePrompts, setActivePrompts] = React.useState<
+    { name: string; id: string; type: string }[]
+  >([]);
+  const [prompt, setPrompt] = React.useState<{
+    name: string;
+    id: string;
+    type: string;
+  } | null>(null);
   const docs = useSelector(selectSourceDocs);
+  React.useEffect(() => {
+    const fetchPrompts = async () => {
+      try {
+        const response = await fetch(`${apiHost}/api/get_prompts`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch prompts');
+        }
+        const promptsData = await response.json();
+        setActivePrompts(promptsData);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    fetchPrompts();
+  }, []);
   const extractDocPaths = () =>
     docs
       ? docs
@@ -188,14 +219,14 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
 
   return (
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
-      <div className="relative w-11/12 rounded-lg bg-white p-5 dark:bg-outer-space sm:w-[512px]">
-        <button className="absolute top-2 right-2 m-2 w-4" onClick={close}>
+      <div className="relative w-11/12 rounded-2xl bg-white px-8 py-8 dark:bg-outer-space sm:w-[512px]">
+        <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
           <img className="filter dark:invert" src={Exit} />
         </button>
-        <span className="mb-4 text-xl font-bold text-jet dark:text-bright-gray">
+        <span className="text-xl text-jet dark:text-bright-gray">
           Create New API Key
         </span>
-        <div className="relative my-4">
+        <div className="relative mt-5 mb-4">
           <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
             API Key Name
           </span>
@@ -208,21 +239,51 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
         </div>
         <div className="my-4">
           <Dropdown
-            placeholder="Select the source doc"
+            placeholder="Source document"
             selectedValue={sourcePath}
             onSelect={(selection: { label: string; value: string }) =>
               setSourcePath(selection)
             }
             options={extractDocPaths()}
+            size="w-full"
+            rounded="xl"
+          />
+        </div>
+        <div className="my-4">
+          <Dropdown
+            options={activePrompts}
+            selectedValue={prompt ? prompt.name : null}
+            placeholder="Select active prompt"
+            onSelect={(value: { name: string; id: string; type: string }) =>
+              setPrompt(value)
+            }
+            size="w-full"
+          />
+        </div>
+        <div className="my-4">
+          <p className="mb-2 ml-2 font-bold text-jet dark:text-bright-gray">
+            Chunks processed per query
+          </p>
+          <Dropdown
+            options={chunkOptions}
+            selectedValue={chunk}
+            onSelect={(value: string) => setChunk(value)}
+            size="w-full"
           />
         </div>
         <button
-          disabled={sourcePath === null || APIKeyName.length === 0}
+          disabled={!sourcePath || APIKeyName.length === 0 || !prompt}
           onClick={() =>
             sourcePath &&
-            createAPIKey({ name: APIKeyName, source: sourcePath.value })
+            prompt &&
+            createAPIKey({
+              name: APIKeyName,
+              source: sourcePath.value,
+              prompt_id: prompt.id,
+              chunks: chunk,
+            })
           }
-          className="float-right my-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
+          className="float-right mt-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
         >
           Create
         </button>
@@ -239,8 +300,8 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
   };
   return (
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
-      <div className="relative w-11/12 rounded-md bg-white p-5 dark:bg-outer-space dark:text-bright-gray sm:w-[512px]">
-        <button className="absolute top-4 right-4 w-4" onClick={close}>
+      <div className="relative w-11/12 rounded-3xl bg-white px-6 py-8 dark:bg-outer-space dark:text-bright-gray sm:w-[512px]">
+        <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
           <img className="filter dark:invert" src={Exit} />
         </button>
         <h1 className="my-0 text-xl font-medium">Please save your Key</h1>
@@ -253,7 +314,7 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
             <span className="text-sm font-normal leading-7 ">{apiKey}</span>
           </div>
           <button
-            className="my-1 h-10 w-20 rounded-full border border-purple-30 p-2 text-sm text-purple-30 dark:border-purple-500 dark:text-purple-500"
+            className="my-1 h-10 w-20 rounded-full border border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white dark:border-purple-500 dark:text-purple-500"
             onClick={handleCopyKey}
           >
             {isCopied ? 'Copied' : 'Copy'}

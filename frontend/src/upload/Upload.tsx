@@ -302,14 +302,13 @@ export default function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              fullWidth
               options={urlOptions}
               selectedValue={urlType}
               onSelect={(value: { label: string; value: string }) =>
                 setUrlType(value)
               }
               size="w-full"
-              rounded="3xl"
+              rounded="xl"
             />
             {urlType.label !== 'Reddit' ? (
               <>
