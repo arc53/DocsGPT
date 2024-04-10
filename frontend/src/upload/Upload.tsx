@@ -308,7 +308,7 @@ export default function Upload({
                 setUrlType(value)
               }
               size="w-full"
-              rounded="xl"
+              rounded="3xl"
             />
             {urlType.label !== 'Reddit' ? (
               <>
@@ -419,7 +419,7 @@ export default function Upload({
             disabled={
               (files.length === 0 || docName.trim().length === 0) &&
               activeTab === 'file'
-            } // Disable the button if no file is selected or docName is empty
+            }
           >
             Train
           </button>
@@ -450,4 +450,3 @@ export default function Upload({
     </article>
   );
 }
-// TODO: sanitize all inputs

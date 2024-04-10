@@ -60,7 +60,7 @@ function AddPrompt({
         <div className="mt-6 flex flex-row-reverse">
           <button
             onClick={handleAddPrompt}
-            className="rounded-3xl bg-purple-30 px-6 py-3 text-sm text-white transition-all hover:opacity-90"
+            className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:opacity-90"
           >
             Save
           </button>
@@ -130,7 +130,7 @@ function EditPrompt({
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">
           <button
-            className={`rounded-3xl bg-purple-30 px-6 py-3 text-sm text-white transition-all ${
+            className={`rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all ${
               currentPromptEdit.type === 'public'
                 ? 'cursor-not-allowed opacity-50'
                 : 'hover:opacity-90'
