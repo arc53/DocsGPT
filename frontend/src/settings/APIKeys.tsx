@@ -219,13 +219,15 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
 
   return (
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
-      <div className="relative w-11/12 rounded-2xl bg-white px-8 py-8 dark:bg-outer-space sm:w-[512px]">
+      <div className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]">
         <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
           <img className="filter dark:invert" src={Exit} />
         </button>
-        <span className="text-xl text-jet dark:text-bright-gray">
-          Create New API Key
-        </span>
+        <div className="mb-6">
+          <span className="text-xl text-jet dark:text-bright-gray">
+            Create New API Key
+          </span>
+        </div>
         <div className="relative mt-5 mb-4">
           <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
             API Key Name
