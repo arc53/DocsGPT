@@ -30,7 +30,12 @@ export type DocumentsProps = {
 
 export type CreateAPIKeyModalProps = {
   close: () => void;
-  createAPIKey: (payload: { name: string; source: string }) => void;
+  createAPIKey: (payload: {
+    name: string;
+    source: string;
+    prompt_id: string;
+    chunks: string;
+  }) => void;
 };
 
 export type SaveAPIKeyModalProps = {

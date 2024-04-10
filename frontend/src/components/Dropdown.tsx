@@ -14,8 +14,6 @@ function Dropdown({
   showDelete,
   onDelete,
   placeholder,
-  fullWidth,
-  alignMidddle,
 }: {
   options:
     | string[]
@@ -33,8 +31,6 @@ function Dropdown({
   showDelete?: boolean;
   onDelete?: (value: string) => void;
   placeholder?: string;
-  fullWidth?: boolean;
-  alignMidddle?: boolean;
 }) {
   const [isOpen, setIsOpen] = React.useState(false);
   return (
@@ -58,9 +54,7 @@ function Dropdown({
           </span>
         ) : (
           <span
-            className={`${
-              alignMidddle && 'flex-1'
-            } overflow-hidden text-ellipsis dark:text-bright-gray ${
+            className={`overflow-hidden text-ellipsis dark:text-bright-gray ${
               !selectedValue && 'text-silver dark:text-gray-400'
             }`}
           >
@@ -91,7 +85,7 @@ function Dropdown({
                   onSelect(option);
                   setIsOpen(false);
                 }}
-                className="ml-2 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray"
+                className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray"
               >
                 {typeof option === 'string'
                   ? option

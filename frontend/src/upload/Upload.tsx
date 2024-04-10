@@ -302,7 +302,6 @@ export default function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              fullWidth
               options={urlOptions}
               selectedValue={urlType}
               onSelect={(value: { label: string; value: string }) =>
@@ -420,7 +419,7 @@ export default function Upload({
             disabled={
               (files.length === 0 || docName.trim().length === 0) &&
               activeTab === 'file'
-            } // Disable the button if no file is selected or docName is empty
+            }
           >
             Train
           </button>
@@ -451,4 +450,3 @@ export default function Upload({
     </article>
   );
 }
-// TODO: sanitize all inputs
