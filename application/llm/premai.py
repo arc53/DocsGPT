@@ -12,7 +12,7 @@ class PremAILLM(BaseLLM):
         self.api_key = api_key
         self.project_id = settings.PREMAI_PROJECT_ID
 
-    def gen(self, model, engine, messages, stream=False, **kwargs):
+    def gen(self, model, messages, stream=False, **kwargs):
         response = self.client.chat.completions.create(model=model,
             project_id=self.project_id,
             messages=messages,
@@ -21,7 +21,7 @@ class PremAILLM(BaseLLM):
 
         return response.choices[0].message["content"]
 
-    def gen_stream(self, model, engine, messages, stream=True, **kwargs):
+    def gen_stream(self, model, messages, stream=True, **kwargs):
         response = self.client.chat.completions.create(model=model,
             project_id=self.project_id,
             messages=messages,

@@ -36,6 +36,32 @@ current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
+def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
+    """
+    Recursively extract zip files with a limit on recursion depth.
+
+    Args:
+        zip_path (str): Path to the zip file to be extracted.
+        extract_to (str): Destination path for extracted files.
+        current_depth (int): Current depth of recursion.
+        max_depth (int): Maximum allowed depth of recursion to prevent infinite loops.
+    """
+    if current_depth > max_depth:
+        print(f"Reached maximum recursion depth of {max_depth}")
+        return
+
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
+    os.remove(zip_path)  # Remove the zip file after extracting
+
+    # Check for nested zip files and extract them
+    for root, dirs, files in os.walk(extract_to):
+        for file in files:
+            if file.endswith(".zip"):
+                # If a nested zip file is found, extract it recursively
+                file_path = os.path.join(root, file)
+                extract_zip_recursive(file_path, root, current_depth + 1, max_depth)
+
 
 # Define the main function for ingesting and processing documents.
 def ingest_worker(self, directory, formats, name_job, filename, user):
@@ -66,8 +92,10 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     token_check = True
     min_tokens = 150
     max_tokens = 1250
-    full_path = directory + "/" + user + "/" + name_job
+    recursion_depth = 2
+    full_path = os.path.join(directory, user, name_job)
     import sys
+
 
     print(full_path, file=sys.stderr)
     # check if API_URL env variable is set
@@ -81,14 +109,12 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     if not os.path.exists(full_path):
         os.makedirs(full_path)
-    with open(full_path + "/" + filename, "wb") as f:
+    with open(os.path.join(full_path, filename), "wb") as f:
         f.write(file)
 
     # check if file is .zip and extract it
     if filename.endswith(".zip"):
-        with zipfile.ZipFile(full_path + "/" + filename, "r") as zip_ref:
-            zip_ref.extractall(full_path)
-        os.remove(full_path + "/" + filename)
+        extract_zip_recursive(os.path.join(full_path, filename), full_path, 0, recursion_depth)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
