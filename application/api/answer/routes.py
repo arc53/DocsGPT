@@ -193,23 +193,36 @@ def stream():
         else:
             chunks = 2
 
+        prompt = get_prompt(prompt_id)
+
+
+
         # check if active_docs is set
 
         if "api_key" in data:
             data_key = get_data_from_api_key(data["api_key"])
-            vectorstore = get_vectorstore({"active_docs": data_key["source"]})
+            source = {"active_docs": data_key["source"]}
         elif "active_docs" in data:
-            vectorstore = get_vectorstore({"active_docs": data["active_docs"]})
+            source = {"active_docs": data["active_docs"]}
         else:
-            vectorstore = ""
-        docsearch = VectorCreator.create_vectorstore(settings.VECTOR_STORE, vectorstore, settings.EMBEDDINGS_KEY)
+            source = {}
+
+        if source.get("active_docs", "").split("/")[0] in ["default", "local"]:
+            retriever_name = "classic"
+        else:
+            retriever_name = source["active_docs"]
+
+        retriever = RetrieverCreator.create_retriever(retriever_name, question=question, 
+                                                      source=source, chat_history=history, 
+                                                      prompt=prompt, chunks=chunks, 
+                                                      gpt_model=settings.gpt_model)
 
         return Response(
-            stream_with_context(complete_stream(question, docsearch,
-                            chat_history=history,
-                            prompt_id=prompt_id,
-                            conversation_id=conversation_id,
-                            chunks=chunks)), mimetype="text/event-stream"
+            stream_with_context(complete_stream(question, retriever,
+                                                chat_history=history,
+                                                prompt_id=prompt_id,
+                                                conversation_id=conversation_id,
+                                                chunks=chunks)), mimetype="text/event-stream"
         )
     except Exception as e:
         error_message = "An error occurred: " + str(e)
