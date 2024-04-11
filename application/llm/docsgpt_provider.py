@@ -24,12 +24,11 @@ class DocsGPTAPILLM(BaseLLM):
 
         return response_clean
 
-def gen_stream(self, model, engine, messages, stream=True, **kwargs):
+def gen_stream(self, model , messages, stream=True, **kwargs):
     context = messages[0]['content']
     user_question = messages[-1]['content']
     prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
 
-    # send prompt to endpoint /stream
     try:
         response = requests.post(
             f"{self.endpoint}/stream",
