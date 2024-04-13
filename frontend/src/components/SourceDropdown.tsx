@@ -24,6 +24,12 @@ function SourceDropdown({
   const embeddingsName =
     import.meta.env.VITE_EMBEDDINGS_NAME ||
     'huggingface_sentence-transformers/all-mpnet-base-v2';
+
+  const handleEmptyDocumentSelect = () => {
+    dispatch(setSelectedDocs(null));
+    setIsDocsListOpen(false);
+  };
+
   return (
     <div className="relative w-5/6 rounded-3xl">
       <button
@@ -35,7 +41,7 @@ function SourceDropdown({
         <span className="ml-1 mr-2 flex-1 overflow-hidden text-ellipsis text-left dark:text-bright-gray">
           <div className="flex flex-row gap-2">
             <p className="max-w-3/4 truncate whitespace-nowrap">
-              {selectedDocs?.name}
+              {selectedDocs?.name || ''}
             </p>
             <p className="flex flex-col items-center justify-center">
               {selectedDocs?.version}
@@ -93,6 +99,14 @@ function SourceDropdown({
               <p className="ml-5 py-3">No default documentation.</p>
             </div>
           )}
+          <div
+            className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
+            onClick={handleEmptyDocumentSelect}
+          >
+            <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
+              Empty
+            </span>
+          </div>
         </div>
       )}
     </div>

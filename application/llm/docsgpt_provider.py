@@ -8,7 +8,7 @@ class DocsGPTAPILLM(BaseLLM):
         self.endpoint =  "https://llm.docsgpt.co.uk"
 
 
-    def gen(self, model, engine, messages, stream=False, **kwargs):
+    def gen(self, model, messages, stream=False, **kwargs):
         context = messages[0]['content']
         user_question = messages[-1]['content']
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
@@ -24,7 +24,7 @@ class DocsGPTAPILLM(BaseLLM):
 
         return response_clean
 
-    def gen_stream(self, model, engine, messages, stream=True, **kwargs):
+    def gen_stream(self, model, messages, stream=True, **kwargs):
         context = messages[0]['content']
         user_question = messages[-1]['content']
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"

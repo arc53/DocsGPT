@@ -6,7 +6,7 @@ import PageNotFound from './PageNotFound';
 import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
 import { useState } from 'react';
-import Setting from './Setting';
+import Setting from './settings';
 
 inject();
 

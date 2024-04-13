@@ -201,7 +201,7 @@ export default function Upload({
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false,
+    multiple: true,
     onDragEnter: doNothing,
     onDragOver: doNothing,
     onDragLeave: doNothing,
@@ -307,6 +307,8 @@ export default function Upload({
               onSelect={(value: { label: string; value: string }) =>
                 setUrlType(value)
               }
+              size="w-full"
+              rounded="3xl"
             />
             {urlType.label !== 'Reddit' ? (
               <>
@@ -417,7 +419,7 @@ export default function Upload({
             disabled={
               (files.length === 0 || docName.trim().length === 0) &&
               activeTab === 'file'
-            } // Disable the button if no file is selected or docName is empty
+            }
           >
             Train
           </button>
@@ -448,4 +450,3 @@ export default function Upload({
     </article>
   );
 }
-// TODO: sanitize all inputs

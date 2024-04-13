@@ -1,6 +1,8 @@
 import os
 import uuid
+import shutil
 from flask import Blueprint, request, jsonify
+from urllib.parse import urlparse
 import requests
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -135,30 +137,43 @@ def upload_file():
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
     # check if the post request has the file part
-    if "file" not in request.files:
-        print("No file part")
-        return {"status": "no file"}
-    file = request.files["file"]
-    if file.filename == "":
+    files = request.files.getlist("file")
+        
+    if not files or all(file.filename == '' for file in files):
         return {"status": "no file name"}
 
-    if file:
-        filename = secure_filename(file.filename)
-        # save dir
-        save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
-        # create dir if not exists
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        file.save(os.path.join(save_dir, filename))
-        task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
-        ".csv", ".epub", ".html", ".mdx"],
-         job_name, filename, user)
-        # task id
-        task_id = task.id
-        return {"status": "ok", "task_id": task_id}
+    # Directory where files will be saved
+    save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
+    os.makedirs(save_dir, exist_ok=True)
+    
+    if len(files) > 1:
+        # Multiple files; prepare them for zip
+        temp_dir = os.path.join(save_dir, "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        for file in files:
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(temp_dir, filename))
+        
+        # Use shutil.make_archive to zip the temp directory
+        zip_path = shutil.make_archive(base_name=os.path.join(save_dir, job_name), format='zip', root_dir=temp_dir)
+        final_filename = os.path.basename(zip_path)
+        
+        # Clean up the temporary directory after zipping
+        shutil.rmtree(temp_dir)
     else:
-        return {"status": "error"}
+        # Single file
+        file = files[0]
+        final_filename = secure_filename(file.filename)
+        file_path = os.path.join(save_dir, final_filename)
+        file.save(file_path)
+    
+    # Call ingest with the single file or zipped file
+    task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
+    ".csv", ".epub", ".html", ".mdx"],
+    job_name, final_filename, user)
+    
+    return {"status": "ok", "task_id": task.id}
     
 @user.route("/api/remote", methods=["POST"])
 def upload_remote():
@@ -236,6 +251,34 @@ def combined_json():
         for index in data_remote:
             index["location"] = "remote"
             data.append(index)
+    if 'duckduck_search' in settings.RETRIEVERS_ENABLED:
+        data.append(
+            {
+                "name": "DuckDuckGo Search",
+                "language": "en",
+                "version": "",
+                "description": "duckduck_search",
+                "fullName": "DuckDuckGo Search",
+                "date": "duckduck_search",
+                "docLink": "duckduck_search",
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "custom",
+            }
+        )
+    if 'brave_search' in settings.RETRIEVERS_ENABLED:
+        data.append(
+            {
+                "name": "Brave Search",
+                "language": "en",
+                "version": "",
+                "description": "brave_search",
+                "fullName": "Brave Search",
+                "date": "brave_search",
+                "docLink": "brave_search",
+                "model": settings.EMBEDDINGS_NAME,
+                "location": "custom",
+            }
+        )
 
     return jsonify(data)
 
@@ -247,25 +290,32 @@ def check_docs():
     # split docs on / and take first part
     if data["docs"].split("/")[0] == "local":
         return {"status": "exists"}
-    vectorstore = "vectors/" + data["docs"]
+    vectorstore = "vectors/" + secure_filename(data["docs"])
     base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": "exists"}
     else:
-        r = requests.get(base_path + vectorstore + "index.faiss")
+        file_url = urlparse(base_path + vectorstore + "index.faiss")
+        
+        if (
+            file_url.scheme in ['https'] and 
+            file_url.netloc == 'raw.githubusercontent.com' and 
+            file_url.path.startswith('/arc53/DocsHUB/main/')
+        ):
+            r = requests.get(file_url.geturl())
+            if r.status_code != 200:
+                return {"status": "null"}
+            else:
+                if not os.path.exists(vectorstore):
+                    os.makedirs(vectorstore)
+                with open(vectorstore + "index.faiss", "wb") as f:
+                    f.write(r.content)
 
-        if r.status_code != 200:
-            return {"status": "null"}
+                r = requests.get(base_path + vectorstore + "index.pkl")
+                with open(vectorstore + "index.pkl", "wb") as f:
+                    f.write(r.content)
         else:
-            if not os.path.exists(vectorstore):
-                os.makedirs(vectorstore)
-            with open(vectorstore + "index.faiss", "wb") as f:
-                f.write(r.content)
-
-            # download the store
-            r = requests.get(base_path + vectorstore + "index.pkl")
-            with open(vectorstore + "index.pkl", "wb") as f:
-                f.write(r.content)
+            return {"status": "null"}
 
         return {"status": "loaded"}
 
@@ -351,7 +401,14 @@ def get_api_keys():
     keys = api_key_collection.find({"user": user})
     list_keys = []
     for key in keys:
-        list_keys.append({"id": str(key["_id"]), "name": key["name"], "key": key["key"][:4] + "..." + key["key"][-4:], "source": key["source"]})
+        list_keys.append({
+            "id": str(key["_id"]),
+            "name": key["name"],
+            "key": key["key"][:4] + "..." + key["key"][-4:],
+            "source": key["source"],
+            "prompt_id": key["prompt_id"],
+            "chunks": key["chunks"]
+        })
     return jsonify(list_keys)
 
 @user.route("/api/create_api_key", methods=["POST"])
@@ -359,6 +416,8 @@ def create_api_key():
     data = request.get_json()
     name = data["name"]
     source = data["source"]
+    prompt_id = data["prompt_id"]
+    chunks = data["chunks"]
     key = str(uuid.uuid4())
     user = "local"
     resp = api_key_collection.insert_one(
@@ -367,6 +426,8 @@ def create_api_key():
             "key": key,
             "source": source,
             "user": user,
+            "prompt_id": prompt_id,
+            "chunks": chunks
         }
     )
     new_id = str(resp.inserted_id)

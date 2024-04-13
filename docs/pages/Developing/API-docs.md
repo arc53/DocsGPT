@@ -281,6 +281,8 @@ Create a new API key for the user.
 **Request Body**: JSON object with the following fields:
 * `name` — A name for the API key.
 * `source` — The source documents that will be used.
+* `prompt_id` — The prompt ID.
+* `chunks` — The number of chunks used to process an answer.
 
 Here is a JavaScript Fetch Request example:
 ```js
@@ -290,7 +292,10 @@ fetch("http://127.0.0.1:5000/api/create_api_key", {
       "headers": {
             "Content-Type": "application/json; charset=utf-8"
       },
-      "body": JSON.stringify({"name":"Example Key Name","source":"Example Source"})
+      "body": JSON.stringify({"name":"Example Key Name",
+          "source":"Example Source",
+          "prompt_id":"creative",
+          "chunks":"2"})
 })
 .then((res) => res.json())
 .then(console.log.bind(console))

@@ -3,6 +3,7 @@ boto3==1.34.6
 celery==5.3.6
 dataclasses_json==0.6.3
 docx2txt==0.8
+duckduckgo-search==5.3.0
 EbookLib==0.18
 elasticsearch==8.12.0
 escodegen==1.0.11
@@ -21,7 +22,7 @@ pydantic_settings==2.1.0
 pymongo==4.6.1
 PyPDF2==3.0.1
 python-dotenv==1.0.1
-qdrant-client==1.7.3
+qdrant-client==1.8.2
 redis==5.0.1
 Requests==2.31.0
 retry==0.9.2

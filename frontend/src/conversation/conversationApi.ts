@@ -3,10 +3,37 @@ import { Doc } from '../preferences/preferenceApi';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
+function getDocPath(selectedDocs: Doc | null): string {
+  let docPath = 'default';
+
+  if (selectedDocs) {
+    let namePath = selectedDocs.name;
+    if (selectedDocs.language === namePath) {
+      namePath = '.project';
+    }
+    if (selectedDocs.location === 'local') {
+      docPath = 'local' + '/' + selectedDocs.name + '/';
+    } else if (selectedDocs.location === 'remote') {
+      docPath =
+        selectedDocs.language +
+        '/' +
+        namePath +
+        '/' +
+        selectedDocs.version +
+        '/' +
+        selectedDocs.model +
+        '/';
+    } else if (selectedDocs.location === 'custom') {
+      docPath = selectedDocs.docLink;
+    }
+  }
+
+  return docPath;
+}
 export function fetchAnswerApi(
   question: string,
   signal: AbortSignal,
-  selectedDocs: Doc,
+  selectedDocs: Doc | null,
   history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
@@ -28,25 +55,7 @@ export function fetchAnswerApi(
       title: any;
     }
 > {
-  let namePath = selectedDocs.name;
-  if (selectedDocs.language === namePath) {
-    namePath = '.project';
-  }
-
-  let docPath = 'default';
-  if (selectedDocs.location === 'local') {
-    docPath = 'local' + '/' + selectedDocs.name + '/';
-  } else if (selectedDocs.location === 'remote') {
-    docPath =
-      selectedDocs.language +
-      '/' +
-      namePath +
-      '/' +
-      selectedDocs.version +
-      '/' +
-      selectedDocs.model +
-      '/';
-  }
+  const docPath = getDocPath(selectedDocs);
   //in history array remove all keys except prompt and response
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
@@ -89,32 +98,14 @@ export function fetchAnswerApi(
 export function fetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
-  selectedDocs: Doc,
+  selectedDocs: Doc | null,
   history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
-  let namePath = selectedDocs.name;
-  if (selectedDocs.language === namePath) {
-    namePath = '.project';
-  }
-
-  let docPath = 'default';
-  if (selectedDocs.location === 'local') {
-    docPath = 'local' + '/' + selectedDocs.name + '/';
-  } else if (selectedDocs.location === 'remote') {
-    docPath =
-      selectedDocs.language +
-      '/' +
-      namePath +
-      '/' +
-      selectedDocs.version +
-      '/' +
-      selectedDocs.model +
-      '/';
-  }
+  const docPath = getDocPath(selectedDocs);
 
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
@@ -186,35 +177,12 @@ export function fetchAnswerSteaming(
 }
 export function searchEndpoint(
   question: string,
-  selectedDocs: Doc,
+  selectedDocs: Doc | null,
   conversation_id: string | null,
   history: Array<any> = [],
   chunks: string,
 ) {
-  /*
-  "active_docs": "default",
-  "question": "Summarise",
-  "conversation_id": null,
-  "history": "[]" */
-  let namePath = selectedDocs.name;
-  if (selectedDocs.language === namePath) {
-    namePath = '.project';
-  }
-
-  let docPath = 'default';
-  if (selectedDocs.location === 'local') {
-    docPath = 'local' + '/' + selectedDocs.name + '/';
-  } else if (selectedDocs.location === 'remote') {
-    docPath =
-      selectedDocs.language +
-      '/' +
-      namePath +
-      '/' +
-      selectedDocs.version +
-      '/' +
-      selectedDocs.model +
-      '/';
-  }
+  const docPath = getDocPath(selectedDocs);
 
   const body = {
     question: question,
