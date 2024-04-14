@@ -19,7 +19,7 @@
   },
   "scripts": {
     "build": "parcel build src/index.ts",
-    "dev": "parcel",
+    "dev": "parcel src/index.html -p 3000",
     "test": "jest",
     "lint": "eslint",
     "check": "tsc --noEmit",
