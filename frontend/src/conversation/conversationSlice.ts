@@ -30,6 +30,12 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           state.preference.chunks,
           (error) => {
             console.error(error);
+            dispatch(
+              conversationSlice.actions.setError({
+                index: state.conversation.queries.length - 1,
+                error: error.data.message,
+              }),
+            );
           },
           (event) => {
             const data = JSON.parse(event);
