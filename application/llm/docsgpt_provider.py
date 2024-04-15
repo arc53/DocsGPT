@@ -1,7 +1,6 @@
 from application.llm.base import BaseLLM
 import json
 import requests
-from application.usage import gen_token_usage, stream_token_usage
 
 
 class DocsGPTAPILLM(BaseLLM):
@@ -11,8 +10,7 @@ class DocsGPTAPILLM(BaseLLM):
         self.api_key = api_key
         self.endpoint = "https://llm.docsgpt.co.uk"
 
-    @gen_token_usage
-    def gen(self, model, messages, stream=False, **kwargs):
+    def _raw_gen(self, baseself, model, messages, stream=False, *args, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
@@ -24,8 +22,7 @@ class DocsGPTAPILLM(BaseLLM):
 
         return response_clean
 
-    @stream_token_usage
-    def gen_stream(self, model, messages, stream=True, **kwargs):
+    def _raw_gen_stream(self, baseself, model, messages, stream=True, *args, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"

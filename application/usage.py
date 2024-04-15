@@ -19,12 +19,10 @@ def update_token_usage(api_key, token_usage):
 
 
 def gen_token_usage(func):
-    def wrapper(self, model, messages, *args, **kwargs):
-        context = messages[0]["content"]
-        user_question = messages[-1]["content"]
-        prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
-        self.token_usage["prompt_tokens"] += count_tokens(prompt)
-        result = func(self, model, messages, *args, **kwargs)
+    def wrapper(self, model, messages, stream, **kwargs):
+        for message in messages:
+            self.token_usage["prompt_tokens"] += count_tokens(message["content"])
+        result = func(self, model, messages, stream, **kwargs)
         self.token_usage["generated_tokens"] += count_tokens(result)
         update_token_usage(self.api_key, self.token_usage)
         return result
@@ -33,13 +31,11 @@ def gen_token_usage(func):
 
 
 def stream_token_usage(func):
-    def wrapper(self, model, messages, *args, **kwargs):
-        context = messages[0]["content"]
-        user_question = messages[-1]["content"]
-        prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
-        self.token_usage["prompt_tokens"] += count_tokens(prompt)
+    def wrapper(self, model, messages, stream, **kwargs):
+        for message in messages:
+            self.token_usage["prompt_tokens"] += count_tokens(message["content"])
         batch = []
-        result = func(self, model, messages, *args, **kwargs)
+        result = func(self, model, messages, stream, **kwargs)
         for r in result:
             batch.append(r)
             yield r
