@@ -60,7 +60,7 @@ class LineIterator:
 
 class SagemakerAPILLM(BaseLLM):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, api_key, *args, **kwargs):
         import boto3
 
         runtime = boto3.client(
@@ -70,6 +70,8 @@ class SagemakerAPILLM(BaseLLM):
             region_name="us-west-2",
         )
 
+        super().__init__(*args, **kwargs)
+        self.api_key = api_key
         self.endpoint = settings.SAGEMAKER_ENDPOINT
         self.runtime = runtime
 

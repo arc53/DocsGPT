@@ -4,9 +4,10 @@ from application.core.settings import settings
 
 class PremAILLM(BaseLLM):
 
-    def __init__(self, api_key):
+    def __init__(self, api_key, *args, **kwargs):
         from premai import Prem
 
+        super().__init__(*args, **kwargs)
         self.client = Prem(api_key=api_key)
         self.api_key = api_key
         self.project_id = settings.PREMAI_PROJECT_ID

@@ -3,7 +3,7 @@ from application.llm.base import BaseLLM
 
 class HuggingFaceLLM(BaseLLM):
 
-    def __init__(self, api_key, llm_name="Arc53/DocsGPT-7B", q=False):
+    def __init__(self, api_key, llm_name="Arc53/DocsGPT-7B", q=False, *args, **kwargs):
         global hf
 
         from langchain.llms import HuggingFacePipeline
@@ -33,6 +33,8 @@ class HuggingFaceLLM(BaseLLM):
             tokenizer = AutoTokenizer.from_pretrained(llm_name)
             model = AutoModelForCausalLM.from_pretrained(llm_name)
 
+        super().__init__(*args, **kwargs)
+        self.api_key = api_key
         pipe = pipeline(
             "text-generation",
             model=model,

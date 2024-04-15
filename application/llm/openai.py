@@ -4,10 +4,11 @@ from application.core.settings import settings
 
 class OpenAILLM(BaseLLM):
 
-    def __init__(self, api_key):
+    def __init__(self, api_key, *args, **kwargs):
         global openai
         from openai import OpenAI
 
+        super().__init__(*args, **kwargs)
         self.client = OpenAI(
             api_key=api_key,
         )

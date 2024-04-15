@@ -4,9 +4,10 @@ from application.core.settings import settings
 
 class AnthropicLLM(BaseLLM):
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, *args, **kwargs):
         from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
 
+        super().__init__(*args, **kwargs)
         self.api_key = (
             api_key or settings.ANTHROPIC_API_KEY
         )  # If not provided, use a default from settings
