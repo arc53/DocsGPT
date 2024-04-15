@@ -19,7 +19,7 @@ nltk==3.8.1
 openapi3_parser==1.1.16
 pandas==2.2.0
 pydantic_settings==2.1.0
-pymongo==4.6.1
+pymongo==4.6.3
 PyPDF2==3.0.1
 python-dotenv==1.0.1
 qdrant-client==1.8.2
