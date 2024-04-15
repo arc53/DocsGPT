@@ -5,7 +5,7 @@ import requests
 
 class DocsGPTAPILLM(BaseLLM):
 
-    def __init__(self, api_key, *args, **kwargs):
+    def __init__(self, api_key=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.api_key = api_key
         self.endpoint = "https://llm.docsgpt.co.uk"

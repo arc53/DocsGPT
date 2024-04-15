@@ -60,7 +60,7 @@ class LineIterator:
 
 class SagemakerAPILLM(BaseLLM):
 
-    def __init__(self, api_key, *args, **kwargs):
+    def __init__(self, api_key=None, *args, **kwargs):
         import boto3
 
         runtime = boto3.client(
@@ -75,7 +75,7 @@ class SagemakerAPILLM(BaseLLM):
         self.endpoint = settings.SAGEMAKER_ENDPOINT
         self.runtime = runtime
 
-    def _raw_gen(self, model, messages, stream=False, **kwargs):
+    def _raw_gen(self, baseself, model, messages, stream=False, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
@@ -104,7 +104,7 @@ class SagemakerAPILLM(BaseLLM):
         print(result[0]["generated_text"], file=sys.stderr)
         return result[0]["generated_text"][len(prompt) :]
 
-    def _raw_gen_stream(self, model, messages, stream=True, **kwargs):
+    def _raw_gen_stream(self, baseself, model, messages, stream=True, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"

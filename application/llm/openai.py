@@ -4,7 +4,7 @@ from application.core.settings import settings
 
 class OpenAILLM(BaseLLM):
 
-    def __init__(self, api_key, *args, **kwargs):
+    def __init__(self, api_key=None, *args, **kwargs):
         global openai
         from openai import OpenAI
 
@@ -22,6 +22,7 @@ class OpenAILLM(BaseLLM):
 
     def _raw_gen(
         self,
+        baseself,
         model,
         messages,
         stream=False,
@@ -36,6 +37,7 @@ class OpenAILLM(BaseLLM):
 
     def _raw_gen_stream(
         self,
+        baseself,
         model,
         messages,
         stream=True,
