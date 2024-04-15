@@ -215,7 +215,7 @@ def stream():
         retriever = RetrieverCreator.create_retriever(retriever_name, question=question, 
                                                       source=source, chat_history=history, 
                                                       prompt=prompt, chunks=chunks, 
-                                                      gpt_model=settings.gpt_model)
+                                                      gpt_model=gpt_model)
 
         return Response(
             stream_with_context(complete_stream(question, retriever,
