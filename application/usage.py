@@ -1,5 +1,4 @@
 from pymongo import MongoClient
-from bson.son import SON
 from datetime import datetime
 from application.core.settings import settings
 from application.utils import count_tokens
