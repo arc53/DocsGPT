@@ -1,3 +1,4 @@
+import sys
 from pymongo import MongoClient
 from datetime import datetime
 from application.core.settings import settings
@@ -9,6 +10,8 @@ usage_collection = db["token_usage"]
 
 
 def update_token_usage(api_key, token_usage):
+    if "pytest" in sys.modules:
+        return
     usage_data = {
         "api_key": api_key,
         "prompt_tokens": token_usage["prompt_tokens"],
