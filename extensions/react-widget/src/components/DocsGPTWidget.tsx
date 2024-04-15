@@ -1,8 +1,7 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
-import { MESSAGE_TYPE } from '../models/types';
-import { Query, Status } from '../models/types';
+import { MESSAGE_TYPE, Query, Status } from '../types/index';
 import MessageIcon from '../assets/message.svg'
 import { fetchAnswerStreaming } from '../requests/streamingApi';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
