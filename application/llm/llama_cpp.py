@@ -4,7 +4,14 @@ from application.core.settings import settings
 
 class LlamaCpp(BaseLLM):
 
-    def __init__(self, api_key=None, llm_name=settings.MODEL_PATH, *args, **kwargs):
+    def __init__(
+        self,
+        api_key=None,
+        user_api_key=None,
+        llm_name=settings.MODEL_PATH,
+        *args,
+        **kwargs,
+    ):
         global llama
         try:
             from llama_cpp import Llama
@@ -15,6 +22,7 @@ class LlamaCpp(BaseLLM):
 
         super().__init__(*args, **kwargs)
         self.api_key = api_key
+        self.user_api_key = user_api_key
         llama = Llama(model_path=llm_name, n_ctx=2048)
 
     def _raw_gen(self, baseself, model, messages, stream=False, **kwargs):

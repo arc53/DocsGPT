@@ -4,7 +4,13 @@ from application.llm.base import BaseLLM
 class HuggingFaceLLM(BaseLLM):
 
     def __init__(
-        self, api_key=None, llm_name="Arc53/DocsGPT-7B", q=False, *args, **kwargs
+        self,
+        api_key=None,
+        user_api_key=None,
+        llm_name="Arc53/DocsGPT-7B",
+        q=False,
+        *args,
+        **kwargs,
     ):
         global hf
 
@@ -37,6 +43,7 @@ class HuggingFaceLLM(BaseLLM):
 
         super().__init__(*args, **kwargs)
         self.api_key = api_key
+        self.user_api_key = user_api_key
         pipe = pipeline(
             "text-generation",
             model=model,

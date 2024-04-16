@@ -16,7 +16,7 @@ class DuckDuckSearch(BaseRetriever):
         prompt,
         chunks=2,
         gpt_model="docsgpt",
-        api_key=None,
+        user_api_key=None,
     ):
         self.question = question
         self.source = source
@@ -24,7 +24,7 @@ class DuckDuckSearch(BaseRetriever):
         self.prompt = prompt
         self.chunks = chunks
         self.gpt_model = gpt_model
-        self.api_key = api_key
+        self.user_api_key = user_api_key
 
     def _parse_lang_string(self, input_string):
         result = []
@@ -100,7 +100,9 @@ class DuckDuckSearch(BaseRetriever):
                         )
         messages_combine.append({"role": "user", "content": self.question})
 
-        llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=self.api_key)
+        llm = LLMCreator.create_llm(
+            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
+        )
 
         completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
         for line in completion:

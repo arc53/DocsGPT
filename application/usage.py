@@ -9,11 +9,11 @@ db = mongo["docsgpt"]
 usage_collection = db["token_usage"]
 
 
-def update_token_usage(api_key, token_usage):
+def update_token_usage(user_api_key, token_usage):
     if "pytest" in sys.modules:
         return
     usage_data = {
-        "api_key": api_key,
+        "api_key": user_api_key,
         "prompt_tokens": token_usage["prompt_tokens"],
         "generated_tokens": token_usage["generated_tokens"],
         "timestamp": datetime.now(),
@@ -27,7 +27,7 @@ def gen_token_usage(func):
             self.token_usage["prompt_tokens"] += count_tokens(message["content"])
         result = func(self, model, messages, stream, **kwargs)
         self.token_usage["generated_tokens"] += count_tokens(result)
-        update_token_usage(self.api_key, self.token_usage)
+        update_token_usage(self.user_api_key, self.token_usage)
         return result
 
     return wrapper
@@ -44,6 +44,6 @@ def stream_token_usage(func):
             yield r
         for line in batch:
             self.token_usage["generated_tokens"] += count_tokens(line)
-        update_token_usage(self.api_key, self.token_usage)
+        update_token_usage(self.user_api_key, self.token_usage)
 
     return wrapper

@@ -4,7 +4,7 @@ from application.core.settings import settings
 
 class OpenAILLM(BaseLLM):
 
-    def __init__(self, api_key=None, *args, **kwargs):
+    def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
         global openai
         from openai import OpenAI
 
@@ -13,6 +13,7 @@ class OpenAILLM(BaseLLM):
             api_key=api_key,
         )
         self.api_key = api_key
+        self.user_api_key = user_api_key
 
     def _get_openai(self):
         # Import openai when needed

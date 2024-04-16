@@ -5,9 +5,10 @@ import requests
 
 class DocsGPTAPILLM(BaseLLM):
 
-    def __init__(self, api_key=None, *args, **kwargs):
+    def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.api_key = api_key
+        self.user_api_key = user_api_key
         self.endpoint = "https://llm.docsgpt.co.uk"
 
     def _raw_gen(self, baseself, model, messages, stream=False, *args, **kwargs):

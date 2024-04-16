@@ -184,7 +184,9 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
         elif "source" in line:
             source_log_docs.append(line["source"])
 
-    llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=user_api_key)
+    llm = LLMCreator.create_llm(
+        settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
+    )
     conversation_id = save_conversation(
         conversation_id, question, response_full, source_log_docs, llm
     )
@@ -252,7 +254,7 @@ def stream():
         prompt=prompt,
         chunks=chunks,
         gpt_model=gpt_model,
-        api_key=user_api_key,
+        user_api_key=user_api_key,
     )
 
     return Response(
@@ -317,7 +319,7 @@ def api_answer():
             prompt=prompt,
             chunks=chunks,
             gpt_model=gpt_model,
-            api_key=user_api_key,
+            user_api_key=user_api_key,
         )
         source_log_docs = []
         response_full = ""
@@ -327,7 +329,9 @@ def api_answer():
             elif "answer" in line:
                 response_full += line["answer"]
 
-        llm = LLMCreator.create_llm(settings.LLM_NAME, api_key=user_api_key)
+        llm = LLMCreator.create_llm(
+            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
+        )
 
         result = {"answer": response_full, "sources": source_log_docs}
         result["conversation_id"] = save_conversation(
@@ -379,7 +383,7 @@ def api_search():
         prompt="default",
         chunks=chunks,
         gpt_model=gpt_model,
-        api_key=user_api_key,
+        user_api_key=user_api_key,
     )
     docs = retriever.search()
     return docs
