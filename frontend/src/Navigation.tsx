@@ -19,7 +19,9 @@ import SettingGearDark from './assets/settingGear-dark.svg';
 import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
+import Trash from '../src/assets/trash.svg';
 import APIKeyModal from './preferences/APIKeyModal';
+
 import {
   selectApiKeyStatus,
   selectSelectedDocs,
@@ -41,6 +43,7 @@ import SelectDocsModal from './preferences/SelectDocsModal';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme } from './hooks';
 import SourceDropdown from './components/SourceDropdown';
+import DeleteConvModal from './preferences/DeleteConvModal';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -75,6 +78,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
 
+  const [deleteConvModalState, setDeleteConvState] =
+    useState<ActiveState>('INACTIVE');
+
   const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
   const [selectedDocsModalState, setSelectedDocsModalState] =
     useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
@@ -104,6 +110,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const handleDeleteConversation = (id: string) => {
     fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
+      method: 'POST',
+    })
+      .then(() => {
+        fetchConversations();
+      })
+      .catch((error) => console.error(error));
+  };
+
+  const handleDeleteAllConversations = () => {
+    fetch(`${apiHost}/api/delete_all_conversations`, {
       method: 'POST',
     })
       .then(() => {
@@ -260,7 +276,20 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="mb-auto h-[56vh] overflow-y-auto overflow-x-hidden dark:text-white">
           {conversations && (
             <div>
-              <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
+              <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
+                <p className="my-auto ml-6 text-sm font-semibold">Chats</p>
+                <img
+                  src={Trash}
+                  alt="Exit"
+                  className={`mr-4 ${
+                    conversations?.length === 0
+                      ? ' hidden '
+                      : 'h-4 w-4 bg-blue-400'
+                  }mt-px  cursor-pointer hover:opacity-50`}
+                  id={`img-trash`}
+                  onClick={() => setDeleteConvState('ACTIVE')}
+                />
+              </div>
               <div className="conversations-container">
                 {conversations?.map((conversation) => (
                   <ConversationTile
@@ -312,7 +341,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-
           <div className="flex flex-col gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
             <NavLink
               to="/about"
@@ -370,6 +398,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           />
         </button>
       </div>
+
       <SelectDocsModal
         modalState={selectedDocsModalState}
         setModalState={setSelectedDocsModalState}
@@ -379,6 +408,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         modalState={apiKeyModalState}
         setModalState={setApiKeyModalState}
         isCancellable={isApiKeySet}
+      />
+      <DeleteConvModal
+        modalState={deleteConvModalState}
+        setModalState={setDeleteConvState}
+        handleDeleteAllConv={handleDeleteAllConversations}
       />
       <Upload
         modalState={uploadModalState}
