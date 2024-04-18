@@ -219,8 +219,6 @@ def stream():
 
         return Response(
             stream_with_context(complete_stream(question, retriever,
-                                                chat_history=history,
-                                                prompt_id=prompt_id,
                                                 conversation_id=conversation_id,
                                                 chunks=chunks)), mimetype="text/event-stream"
         )
