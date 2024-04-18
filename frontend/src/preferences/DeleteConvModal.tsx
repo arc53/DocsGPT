@@ -42,6 +42,7 @@ export default function DeleteConvModal({
       modalState={modalState}
       isCancellable={true}
       handleSubmit={handleSubmit}
+      textDelete={true}
       render={() => {
         return (
           <article
