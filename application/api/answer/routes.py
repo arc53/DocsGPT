@@ -219,8 +219,7 @@ def stream():
 
         return Response(
             stream_with_context(complete_stream(question, retriever,
-                                                conversation_id=conversation_id,
-                                                chunks=chunks)), mimetype="text/event-stream"
+                                                conversation_id=conversation_id)), mimetype="text/event-stream"
         )
     except Exception as e:
         error_message = "An error occurred: " + str(e)
