@@ -121,7 +121,7 @@ export const selectSelectedDocsStatus = (state: RootState) =>
   !!state.preference.selectedDocs;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
-export const selectModalState = (state: RootState) =>
+export const selectModalStateDeleteConv = (state: RootState) =>
   state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>
   state.preference.selectedDocs;

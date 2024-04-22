@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { ActiveState } from '../models/misc';
 import { useMediaQuery, useOutsideAlerter } from './../hooks';
 import Modal from '../Modal';
+import { useDispatch } from 'react-redux';
 
 export default function DeleteConvModal({
   modalState,
@@ -12,7 +13,7 @@ export default function DeleteConvModal({
   setModalState: (val: ActiveState) => void;
   handleDeleteAllConv: () => void;
 }) {
-  //   const dispatch = useDispatch()
+  const dispatch = useDispatch();
   const modalRef = useRef(null);
   const { isMobile } = useMediaQuery();
 
@@ -20,7 +21,7 @@ export default function DeleteConvModal({
     modalRef,
     () => {
       if (isMobile && modalState === 'ACTIVE') {
-        setModalState('INACTIVE');
+        dispatch(setModalState('INACTIVE'));
       }
     },
     [modalState],
@@ -28,11 +29,11 @@ export default function DeleteConvModal({
 
   function handleSubmit() {
     handleDeleteAllConv();
-    setModalState('INACTIVE');
+    dispatch(setModalState('INACTIVE'));
   }
 
   function handleCancel() {
-    setModalState('INACTIVE');
+    dispatch(setModalState('INACTIVE'));
   }
 
   return (

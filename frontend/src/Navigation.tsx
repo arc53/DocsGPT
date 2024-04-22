@@ -31,7 +31,8 @@ import {
   selectConversations,
   setConversations,
   selectConversationId,
-  selectModalState,
+  selectModalStateDeleteConv,
+  setModalStateDeleteConv,
 } from './preferences/preferenceSlice';
 import {
   setConversation,
@@ -69,7 +70,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
-  const modalState = useSelector(selectModalState);
+  const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
 
   const { isMobile } = useMediaQuery();
@@ -78,9 +79,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
-    useState<ActiveState>('INACTIVE');
-
-  const [deleteConvModalState, setDeleteConvState] =
     useState<ActiveState>('INACTIVE');
 
   const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
@@ -102,8 +100,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }, [conversations, dispatch]);
 
   useEffect(() => {
-    console.log(modalState);
-  }, [modalState]);
+    console.log(modalStateDeleteConv);
+  }, [modalStateDeleteConv]);
 
   async function fetchConversations() {
     return await getConversations()
@@ -407,8 +405,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         isCancellable={isApiKeySet}
       />
       <DeleteConvModal
-        modalState={modalState}
-        setModalState={setDeleteConvState}
+        modalState={modalStateDeleteConv}
+        setModalState={setModalStateDeleteConv}
         handleDeleteAllConv={handleDeleteAllConversations}
       />
       <Upload
