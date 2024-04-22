@@ -3,6 +3,7 @@ import { ActiveState } from '../models/misc';
 import { useMediaQuery, useOutsideAlerter } from './../hooks';
 import Modal from '../Modal';
 import { useDispatch } from 'react-redux';
+import { Action } from '@reduxjs/toolkit';
 
 export default function DeleteConvModal({
   modalState,
@@ -10,7 +11,7 @@ export default function DeleteConvModal({
   handleDeleteAllConv,
 }: {
   modalState: ActiveState;
-  setModalState: (val: ActiveState) => void;
+  setModalState: (val: ActiveState) => Action;
   handleDeleteAllConv: () => void;
 }) {
   const dispatch = useDispatch();

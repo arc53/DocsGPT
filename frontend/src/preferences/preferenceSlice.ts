@@ -1,4 +1,5 @@
 import {
+  PayloadAction,
   createListenerMiddleware,
   createSlice,
   isAnyOf,
@@ -34,7 +35,7 @@ const initialState: Preference = {
   } as Doc,
   sourceDocs: null,
   conversations: null,
-  modalState: 'ACTIVE',
+  modalState: 'INACTIVE',
 };
 
 export const prefSlice = createSlice({
@@ -59,7 +60,7 @@ export const prefSlice = createSlice({
     setChunks: (state, action) => {
       state.chunks = action.payload;
     },
-    setModalStateDeleteConv: (state, action) => {
+    setModalStateDeleteConv: (state, action: PayloadAction<ActiveState>) => {
       state.modalState = action.payload;
     },
   },
