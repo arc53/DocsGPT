@@ -99,10 +99,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     }
   }, [conversations, dispatch]);
 
-  useEffect(() => {
-    console.log(modalStateDeleteConv);
-  }, [modalStateDeleteConv]);
-
   async function fetchConversations() {
     return await getConversations()
       .then((fetchedConversations) => {
