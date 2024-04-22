@@ -8,7 +8,9 @@ import {
   setPrompt,
   setChunks,
   selectChunks,
+  setModalStateDeleteConv,
 } from '../preferences/preferenceSlice';
+import Trash from '../assets/trash.svg';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
@@ -43,6 +45,7 @@ const General: React.FC = () => {
     };
     fetchPrompts();
   }, []);
+
   return (
     <div className="mt-[59px]">
       <div className="mb-4">
@@ -92,6 +95,25 @@ const General: React.FC = () => {
           setPrompts={setPrompts}
           apiHost={apiHost}
         />
+      </div>
+      <div className="w-55 w-56">
+        <p className="font-bold text-jet dark:text-bright-gray">
+          Delete all conversations
+        </p>
+        <button
+          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl border-2 border-silver bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent"
+          onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
+        >
+          <span className="overflow-hidden text-ellipsis dark:text-bright-gray">
+            Delete
+          </span>
+          <img
+            src={Trash}
+            alt="Exit"
+            className={`mr-4 mt-px  cursor-pointer hover:opacity-50`}
+            id={`img-trash`}
+          />
+        </button>
       </div>
     </div>
   );

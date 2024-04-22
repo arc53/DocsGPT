@@ -5,6 +5,7 @@ import {
 } from '@reduxjs/toolkit';
 import { Doc, setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
 import { RootState } from '../store';
+import { ActiveState } from '../models/misc';
 
 interface Preference {
   apiKey: string;
@@ -13,6 +14,7 @@ interface Preference {
   chunks: string;
   sourceDocs: Doc[] | null;
   conversations: { name: string; id: string }[] | null;
+  modalState: ActiveState;
 }
 
 const initialState: Preference = {
@@ -32,6 +34,7 @@ const initialState: Preference = {
   } as Doc,
   sourceDocs: null,
   conversations: null,
+  modalState: 'ACTIVE',
 };
 
 export const prefSlice = createSlice({
@@ -56,6 +59,9 @@ export const prefSlice = createSlice({
     setChunks: (state, action) => {
       state.chunks = action.payload;
     },
+    setModalStateDeleteConv: (state, action) => {
+      state.modalState = action.payload;
+    },
   },
 });
 
@@ -66,6 +72,7 @@ export const {
   setConversations,
   setPrompt,
   setChunks,
+  setModalStateDeleteConv,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -114,6 +121,8 @@ export const selectSelectedDocsStatus = (state: RootState) =>
   !!state.preference.selectedDocs;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
+export const selectModalState = (state: RootState) =>
+  state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>
   state.preference.selectedDocs;
 export const selectConversations = (state: RootState) =>
