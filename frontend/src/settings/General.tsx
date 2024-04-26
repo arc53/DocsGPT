@@ -10,7 +10,6 @@ import {
   selectChunks,
   setModalStateDeleteConv,
 } from '../preferences/preferenceSlice';
-import Trash from '../assets/trash.svg';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
@@ -101,18 +100,12 @@ const General: React.FC = () => {
           Delete all conversations
         </p>
         <button
-          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl border-2 border-silver bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent"
+          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border-2 border-solid border-purple-30 bg-white  px-5 py-3 text-purple-30 hover:bg-purple-30 hover:text-white dark:border-chinese-silver dark:bg-transparent"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           <span className="overflow-hidden text-ellipsis dark:text-bright-gray">
             Delete
           </span>
-          <img
-            src={Trash}
-            alt="Exit"
-            className={`mr-4 mt-px  cursor-pointer hover:opacity-50`}
-            id={`img-trash`}
-          />
         </button>
       </div>
     </div>

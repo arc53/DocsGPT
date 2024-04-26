@@ -39,7 +39,8 @@ def delete_conversation():
 
 @user.route("/api/delete_all_conversations", methods=["POST"])
 def delete_all_conversations():
-    conversations_collection.delete_many({})
+    user_id = "local"
+    conversations_collection.delete_many({"user":user_id})
     return {"status": "ok"}
 
 @user.route("/api/get_conversations", methods=["get"])
