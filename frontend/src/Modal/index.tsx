@@ -8,7 +8,9 @@ interface ModalProps {
   modalState: string;
   isError: boolean;
   errorMessage?: string;
+  textDelete?: boolean;
 }
+
 const Modal = (props: ModalProps) => {
   return (
     <div
@@ -23,7 +25,7 @@ const Modal = (props: ModalProps) => {
             onClick={() => props.handleSubmit()}
             className="ml-auto h-10 w-20 rounded-3xl bg-violet-800 text-white transition-all hover:bg-violet-700"
           >
-            Save
+            {props.textDelete ? 'Delete' : 'Save'}
           </button>
           {props.isCancellable && (
             <button

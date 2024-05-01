@@ -34,6 +34,7 @@ const store = configureStore({
           model: '1.0',
         },
       ],
+      modalState: 'INACTIVE',
     },
   },
   reducer: {

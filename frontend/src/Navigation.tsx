@@ -20,6 +20,8 @@ import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
+import DeleteConvModal from './preferences/DeleteConvModal';
+
 import {
   selectApiKeyStatus,
   selectSelectedDocs,
@@ -29,6 +31,8 @@ import {
   selectConversations,
   setConversations,
   selectConversationId,
+  selectModalStateDeleteConv,
+  setModalStateDeleteConv,
 } from './preferences/preferenceSlice';
 import {
   setConversation,
@@ -66,7 +70,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
+  const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
+
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
@@ -92,6 +98,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       fetchConversations();
     }
   }, [conversations, dispatch]);
+
   async function fetchConversations() {
     return await getConversations()
       .then((fetchedConversations) => {
@@ -101,6 +108,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         console.error('Failed to fetch conversations: ', error);
       });
   }
+
+  const handleDeleteAllConversations = () => {
+    fetch(`${apiHost}/api/delete_all_conversations`, {
+      method: 'POST',
+    })
+      .then(() => {
+        fetchConversations();
+      })
+      .catch((error) => console.error(error));
+  };
 
   const handleDeleteConversation = (id: string) => {
     fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
@@ -260,7 +277,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="mb-auto h-[56vh] overflow-y-auto overflow-x-hidden dark:text-white">
           {conversations && (
             <div>
-              <p className="ml-6 mt-3 text-sm font-semibold">Chats</p>
+              <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
+                <p className="my-auto ml-6 text-sm font-semibold">Chats</p>
+              </div>
               <div className="conversations-container">
                 {conversations?.map((conversation) => (
                   <ConversationTile
@@ -312,7 +331,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-
           <div className="flex flex-col gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
             <NavLink
               to="/about"
@@ -370,6 +388,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           />
         </button>
       </div>
+
       <SelectDocsModal
         modalState={selectedDocsModalState}
         setModalState={setSelectedDocsModalState}
@@ -379,6 +398,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         modalState={apiKeyModalState}
         setModalState={setApiKeyModalState}
         isCancellable={isApiKeySet}
+      />
+      <DeleteConvModal
+        modalState={modalStateDeleteConv}
+        setModalState={setModalStateDeleteConv}
+        handleDeleteAllConv={handleDeleteAllConversations}
       />
       <Upload
         modalState={uploadModalState}
