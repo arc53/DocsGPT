@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM ubuntu:mantic as final
 
 # Install Python
-RUN apt-get update && apt-get install -y --no-install-recommends python3.11 gunicorn && \
+RUN apt-get update && apt-get install -y --no-install-recommends python3.11 && \
     ln -s /usr/bin/python3.11 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
