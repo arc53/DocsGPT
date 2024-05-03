@@ -1,11 +1,18 @@
 # Builder Stage
 FROM ubuntu:mantic as builder
 
-# Install necessary packages
+# Install necessary packages and Python
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3-pip python3-venv && \
-    ln -s /usr/bin/python3.11 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip
+    apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3-pip python3.11-venv && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* 
+
+# Verify Python installation and setup symlink
+RUN if [ -f /usr/bin/python3.11 ]; then \
+        ln -s /usr/bin/python3.11 /usr/bin/python; \
+    else \
+        echo "Python 3.11 not found"; exit 1; \
+    fi
 
 # Download and unzip the model
 RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
@@ -22,7 +29,9 @@ RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var
 COPY requirements.txt .
 
 # Setup Python virtual environment
-RUN python3 -m venv /venv
+RUN python3.11 -m venv /venv
+
+# Activate virtual environment and install Python packages
 ENV PATH="/venv/bin:$PATH"
 
 # Install Python packages
@@ -34,7 +43,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM ubuntu:mantic as final
 
 # Install Python
-RUN apt-get update && apt-get install -y --no-install-recommends python3.11 && \
+RUN apt-get update && apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
     ln -s /usr/bin/python3.11 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
