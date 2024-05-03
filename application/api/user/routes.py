@@ -20,9 +20,12 @@ vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
-user = Blueprint('user', __name__)
+user = Blueprint("user", __name__)
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+
 
 @user.route("/api/delete_conversation", methods=["POST"])
 def delete_conversation():
@@ -37,11 +40,13 @@ def delete_conversation():
 
     return {"status": "ok"}
 
+
 @user.route("/api/delete_all_conversations", methods=["POST"])
 def delete_all_conversations():
     user_id = "local"
-    conversations_collection.delete_many({"user":user_id})
+    conversations_collection.delete_many({"user": user_id})
     return {"status": "ok"}
+
 
 @user.route("/api/get_conversations", methods=["get"])
 def get_conversations():
@@ -49,9 +54,11 @@ def get_conversations():
     conversations = conversations_collection.find().sort("date", -1).limit(30)
     list_conversations = []
     for conversation in conversations:
-        list_conversations.append({"id": str(conversation["_id"]), "name": conversation["name"]})
+        list_conversations.append(
+            {"id": str(conversation["_id"]), "name": conversation["name"]}
+        )
 
-    #list_conversations = [{"id": "default", "name": "default"}, {"id": "jeff", "name": "jeff"}]
+    # list_conversations = [{"id": "default", "name": "default"}, {"id": "jeff", "name": "jeff"}]
 
     return jsonify(list_conversations)
 
@@ -61,7 +68,8 @@ def get_single_conversation():
     # provides data for a conversation
     conversation_id = request.args.get("id")
     conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
-    return jsonify(conversation['queries'])
+    return jsonify(conversation["queries"])
+
 
 @user.route("/api/update_conversation_name", methods=["POST"])
 def update_conversation_name():
@@ -69,7 +77,7 @@ def update_conversation_name():
     data = request.get_json()
     id = data["id"]
     name = data["name"]
-    conversations_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name}})
+    conversations_collection.update_one({"_id": ObjectId(id)}, {"$set": {"name": name}})
     return {"status": "ok"}
 
 
@@ -80,7 +88,6 @@ def api_feedback():
     answer = data["answer"]
     feedback = data["feedback"]
 
-
     feedback_collection.insert_one(
         {
             "question": question,
@@ -89,6 +96,7 @@ def api_feedback():
         }
     )
     return {"status": "ok"}
+
 
 @user.route("/api/delete_by_ids", methods=["get"])
 def delete_by_ids():
@@ -103,6 +111,7 @@ def delete_by_ids():
         if result:
             return {"status": "ok"}
     return {"status": "error"}
+
 
 @user.route("/api/delete_old", methods=["get"])
 def delete_old():
@@ -119,7 +128,7 @@ def delete_old():
     if dirs_clean[0] not in ["indexes", "vectors"]:
         return {"status": "error"}
     path_clean = "/".join(dirs_clean)
-    vectors_collection.delete_one({"name": dirs_clean[-1], 'user': dirs_clean[-2]})
+    vectors_collection.delete_one({"name": dirs_clean[-1], "user": dirs_clean[-2]})
     if settings.VECTOR_STORE == "faiss":
         try:
             shutil.rmtree(os.path.join(current_dir, path_clean))
@@ -130,8 +139,9 @@ def delete_old():
             settings.VECTOR_STORE, path=os.path.join(current_dir, path_clean)
         )
         vetorstore.delete_index()
-        
+
     return {"status": "ok"}
+
 
 @user.route("/api/upload", methods=["POST"])
 def upload_file():
@@ -144,27 +154,29 @@ def upload_file():
     job_name = secure_filename(request.form["name"])
     # check if the post request has the file part
     files = request.files.getlist("file")
-        
-    if not files or all(file.filename == '' for file in files):
+
+    if not files or all(file.filename == "" for file in files):
         return {"status": "no file name"}
 
     # Directory where files will be saved
     save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
     os.makedirs(save_dir, exist_ok=True)
-    
+
     if len(files) > 1:
         # Multiple files; prepare them for zip
         temp_dir = os.path.join(save_dir, "temp")
         os.makedirs(temp_dir, exist_ok=True)
-        
+
         for file in files:
             filename = secure_filename(file.filename)
             file.save(os.path.join(temp_dir, filename))
-        
+
         # Use shutil.make_archive to zip the temp directory
-        zip_path = shutil.make_archive(base_name=os.path.join(save_dir, job_name), format='zip', root_dir=temp_dir)
+        zip_path = shutil.make_archive(
+            base_name=os.path.join(save_dir, job_name), format="zip", root_dir=temp_dir
+        )
         final_filename = os.path.basename(zip_path)
-        
+
         # Clean up the temporary directory after zipping
         shutil.rmtree(temp_dir)
     else:
@@ -173,14 +185,19 @@ def upload_file():
         final_filename = secure_filename(file.filename)
         file_path = os.path.join(save_dir, final_filename)
         file.save(file_path)
-    
+
     # Call ingest with the single file or zipped file
-    task = ingest.delay(settings.UPLOAD_FOLDER, [".rst", ".md", ".pdf", ".txt", ".docx", 
-    ".csv", ".epub", ".html", ".mdx"],
-    job_name, final_filename, user)
-    
+    task = ingest.delay(
+        settings.UPLOAD_FOLDER,
+        [".rst", ".md", ".pdf", ".txt", ".docx", ".csv", ".epub", ".html", ".mdx"],
+        job_name,
+        final_filename,
+        user,
+    )
+
     return {"status": "ok", "task_id": task.id}
-    
+
+
 @user.route("/api/remote", methods=["POST"])
 def upload_remote():
     """Upload a remote source to get vectorized and indexed."""
@@ -193,25 +210,27 @@ def upload_remote():
     if "name" not in request.form:
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
-    # check if the post request has the file part
     if "data" not in request.form:
         print("No data")
         return {"status": "no data"}
     source_data = request.form["data"]
 
     if source_data:
-        task = ingest_remote.delay(source_data=source_data, job_name=job_name, user=user, loader=source)
-        # task id
+        task = ingest_remote.delay(
+            source_data=source_data, job_name=job_name, user=user, loader=source
+        )
         task_id = task.id
         return {"status": "ok", "task_id": task_id}
     else:
         return {"status": "error"}
+
 
 @user.route("/api/task_status", methods=["GET"])
 def task_status():
     """Get celery job status."""
     task_id = request.args.get("task_id")
     from application.celery import celery
+
     task = celery.AsyncResult(task_id)
     task_meta = task.info
     return {"status": task.status, "result": task_meta}
@@ -253,11 +272,13 @@ def combined_json():
             }
         )
     if settings.VECTOR_STORE == "faiss":
-        data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
+        data_remote = requests.get(
+            "https://d3dg1063dc54p9.cloudfront.net/combined.json"
+        ).json()
         for index in data_remote:
             index["location"] = "remote"
             data.append(index)
-    if 'duckduck_search' in settings.RETRIEVERS_ENABLED:
+    if "duckduck_search" in settings.RETRIEVERS_ENABLED:
         data.append(
             {
                 "name": "DuckDuckGo Search",
@@ -271,7 +292,7 @@ def combined_json():
                 "location": "custom",
             }
         )
-    if 'brave_search' in settings.RETRIEVERS_ENABLED:
+    if "brave_search" in settings.RETRIEVERS_ENABLED:
         data.append(
             {
                 "name": "Brave Search",
@@ -302,11 +323,11 @@ def check_docs():
         return {"status": "exists"}
     else:
         file_url = urlparse(base_path + vectorstore + "index.faiss")
-        
+
         if (
-            file_url.scheme in ['https'] and 
-            file_url.netloc == 'raw.githubusercontent.com' and 
-            file_url.path.startswith('/arc53/DocsHUB/main/')
+            file_url.scheme in ["https"]
+            and file_url.netloc == "raw.githubusercontent.com"
+            and file_url.path.startswith("/arc53/DocsHUB/main/")
         ):
             r = requests.get(file_url.geturl())
             if r.status_code != 200:
@@ -324,6 +345,7 @@ def check_docs():
             return {"status": "null"}
 
         return {"status": "loaded"}
+
 
 @user.route("/api/create_prompt", methods=["POST"])
 def create_prompt():
@@ -343,6 +365,7 @@ def create_prompt():
     new_id = str(resp.inserted_id)
     return {"id": new_id}
 
+
 @user.route("/api/get_prompts", methods=["GET"])
 def get_prompts():
     user = "local"
@@ -352,29 +375,38 @@ def get_prompts():
     list_prompts.append({"id": "creative", "name": "creative", "type": "public"})
     list_prompts.append({"id": "strict", "name": "strict", "type": "public"})
     for prompt in prompts:
-        list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"})
+        list_prompts.append(
+            {"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"}
+        )
 
     return jsonify(list_prompts)
+
 
 @user.route("/api/get_single_prompt", methods=["GET"])
 def get_single_prompt():
     prompt_id = request.args.get("id")
-    if prompt_id == 'default':
-        with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
+    if prompt_id == "default":
+        with open(
+            os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r"
+        ) as f:
             chat_combine_template = f.read()
         return jsonify({"content": chat_combine_template})
-    elif prompt_id == 'creative':
-        with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
+    elif prompt_id == "creative":
+        with open(
+            os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r"
+        ) as f:
             chat_reduce_creative = f.read()
         return jsonify({"content": chat_reduce_creative})
-    elif prompt_id == 'strict':
-        with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
-            chat_reduce_strict = f.read()   
+    elif prompt_id == "strict":
+        with open(
+            os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
+        ) as f:
+            chat_reduce_strict = f.read()
         return jsonify({"content": chat_reduce_strict})
-
 
     prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
     return jsonify({"content": prompt["content"]})
+
 
 @user.route("/api/delete_prompt", methods=["POST"])
 def delete_prompt():
@@ -387,6 +419,7 @@ def delete_prompt():
     )
     return {"status": "ok"}
 
+
 @user.route("/api/update_prompt", methods=["POST"])
 def update_prompt_name():
     data = request.get_json()
@@ -396,9 +429,10 @@ def update_prompt_name():
     # check if name is null
     if name == "":
         return {"status": "error"}
-    prompts_collection.update_one({"_id": ObjectId(id)},{"$set":{"name":name, "content": content}})
+    prompts_collection.update_one(
+        {"_id": ObjectId(id)}, {"$set": {"name": name, "content": content}}
+    )
     return {"status": "ok"}
-
 
 
 @user.route("/api/get_api_keys", methods=["GET"])
@@ -407,15 +441,18 @@ def get_api_keys():
     keys = api_key_collection.find({"user": user})
     list_keys = []
     for key in keys:
-        list_keys.append({
-            "id": str(key["_id"]),
-            "name": key["name"],
-            "key": key["key"][:4] + "..." + key["key"][-4:],
-            "source": key["source"],
-            "prompt_id": key["prompt_id"],
-            "chunks": key["chunks"]
-        })
+        list_keys.append(
+            {
+                "id": str(key["_id"]),
+                "name": key["name"],
+                "key": key["key"][:4] + "..." + key["key"][-4:],
+                "source": key["source"],
+                "prompt_id": key["prompt_id"],
+                "chunks": key["chunks"],
+            }
+        )
     return jsonify(list_keys)
+
 
 @user.route("/api/create_api_key", methods=["POST"])
 def create_api_key():
@@ -433,11 +470,12 @@ def create_api_key():
             "source": source,
             "user": user,
             "prompt_id": prompt_id,
-            "chunks": chunks
+            "chunks": chunks,
         }
     )
     new_id = str(resp.inserted_id)
     return {"id": new_id, "key": key}
+
 
 @user.route("/api/delete_api_key", methods=["POST"])
 def delete_api_key():
@@ -449,4 +487,3 @@ def delete_api_key():
         }
     )
     return {"status": "ok"}
-
