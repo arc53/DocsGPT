@@ -32,4 +32,4 @@ torch
 tqdm==4.66.1
 transformers==4.36.2
 unstructured==0.12.2
-Werkzeug==3.0.1
+Werkzeug==3.0.3
