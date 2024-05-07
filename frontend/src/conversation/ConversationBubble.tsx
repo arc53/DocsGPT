@@ -88,7 +88,7 @@ const ConversationBubble = forwardRef<
               <img src={Alert} alt="alert" className="mr-2 inline" />
             )}
             <ReactMarkdown
-              className="whitespace-pre-wrap break-words"
+              className="whitespace-pre-wrap break-words leading-normal"
               remarkPlugins={[remarkGfm]}
               components={{
                 code({ node, inline, className, children, ...props }) {

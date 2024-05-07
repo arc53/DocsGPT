@@ -100,10 +100,10 @@ const General: React.FC = () => {
           Delete all conversations
         </p>
         <button
-          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border-2 border-solid border-purple-30 bg-white  px-5 py-3 text-purple-30 hover:bg-purple-30 hover:text-white dark:border-chinese-silver dark:bg-transparent"
+          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border-2 border-solid border-purple-30 px-5 py-3 text-purple-30 hover:bg-purple-30 hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
-          <span className="overflow-hidden text-ellipsis dark:text-bright-gray">
+          <span className="overflow-hidden text-ellipsis ">
             Delete
           </span>
         </button>

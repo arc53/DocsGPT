@@ -8,8 +8,8 @@ const Documents: React.FC<DocumentsProps> = ({
   return (
     <div className="mt-8">
       <div className="flex flex-col">
-        <div className="mt-[27px] w-max overflow-x-auto rounded-xl border dark:border-chinese-silver">
-          <table className="block w-full table-auto content-center justify-center text-center dark:text-bright-gray">
+        <div className="w-full overflow-x-auto">
+          <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
             <thead>
               <tr>
                 <th className="border-r p-4 md:w-[244px]">Document Name</th>
