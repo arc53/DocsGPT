@@ -29,7 +29,7 @@ retry==0.9.2
 sentence-transformers
 tiktoken
 torch
-tqdm==4.66.1
+tqdm==4.66.3
 transformers==4.36.2
 unstructured==0.12.2
 Werkzeug==3.0.3
