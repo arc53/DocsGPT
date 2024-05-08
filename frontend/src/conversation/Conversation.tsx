@@ -56,7 +56,7 @@ export default function Conversation() {
         setHasScrolledToLast(entry.isIntersecting);
       });
     };
-
+ 
     const observer = new IntersectionObserver(observerCallback, {
       root: null,
       threshold: [1, 0.8],
@@ -130,45 +130,48 @@ export default function Conversation() {
   };
 
   return (
-    <div
-      onWheel={handleUserInterruption}
-      onTouchMove={handleUserInterruption}
-      className="flex w-full justify-center p-4 h-full"
-    >
-      {queries.length > 0 && !hasScrolledToLast && (
-        <button
-          onClick={scrollIntoView}
-          aria-label="scroll to bottom"
-          className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
-        >
-          <img
-            src={ArrowDown}
-            alt="arrow down"
-            className="h-4 w-4 opacity-50 md:h-5 md:w-5"
-          />
-        </button>
-      )}
+    <div className='flex flex-col gap-1 h-screen'>
+      <div
+        onWheel={handleUserInterruption}
+        onTouchMove={handleUserInterruption}
+        className="flex w-full justify-center p-4 h-[86vh] overflow-y-scroll"
+      >
+        {queries.length > 0 && !hasScrolledToLast && (
+          <button
+            onClick={scrollIntoView}
+            aria-label="scroll to bottom"
+            className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
+          >
+            <img
+              src={ArrowDown}
+              alt="arrow down"
+              className="h-4 w-4 opacity-50 md:h-5 md:w-5"
+            />
+          </button>
+        )}
 
-      {queries.length > 0 && (
-        <div className="w-full md:w-8/12">
-          {queries.map((query, index) => {
-            return (
-              <Fragment key={index}>
-                <ConversationBubble
-                  className={'mb-7 last:mb-28'}
-                  key={`${index}QUESTION`}
-                  message={query.prompt}
-                  type="QUESTION"
-                  sources={query.sources}
-                ></ConversationBubble>
-                {prepResponseView(query, index)}
-              </Fragment>
-            );
-          })}
-        </div>
-      )}
-      {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-      <div className="absolute bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-4 dark:bg-raisin-black md:fixed md:w-[65%]">
+        {queries.length > 0 && (
+          <div className="w-full md:w-8/12 first:mt-20">
+            {queries.map((query, index) => {
+              return (
+                <Fragment key={index}>
+                  <ConversationBubble
+                    className={'mb-1 md:mb-7 last:mb-28'}
+                    key={`${index}QUESTION`}
+                    message={query.prompt}
+                    type="QUESTION"
+                    sources={query.sources}
+                  ></ConversationBubble>
+                  {prepResponseView(query, index)}
+                </Fragment>
+              );
+            })}
+          </div>
+        )}
+        {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
+
+      </div>
+      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-4 dark:bg-raisin-black md:fixed md:w-[65%]">
         <div className="flex h-full w-full">
           <div
             id="inputbox"
