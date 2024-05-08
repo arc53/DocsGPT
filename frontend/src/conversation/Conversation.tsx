@@ -134,7 +134,7 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex w-full justify-center p-4 h-[86vh] overflow-y-auto"
+        className="flex w-full justify-center p-4 h-[87vh] overflow-y-auto"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -151,7 +151,7 @@ export default function Conversation() {
         )}
 
         {queries.length > 0 && (
-          <div className="w-full md:w-8/12 first:mt-20">
+          <div className="w-full md:w-8/12 mt-16">
             {queries.map((query, index) => {
               return (
                 <Fragment key={index}>
@@ -171,7 +171,7 @@ export default function Conversation() {
         {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
 
       </div>
-      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-4 dark:bg-raisin-black md:fixed md:w-[65%]">
+      <div className="bottom-0 flex flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black md:fixed w-11/12 md:w-[60%]">
         <div className="flex h-full w-full">
           <div
             id="inputbox"
@@ -211,7 +211,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
-        <p className="text-gray-595959 w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:w-full">
+        <p className="hidden md:inline text-gray-595959 w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:w-full">
           DocsGPT uses GenAI, please review critial information using sources.
         </p>
       </div>

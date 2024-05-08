@@ -172,7 +172,7 @@ const ConversationBubble = forwardRef<
                     {sources?.map((source, index) => (
                       <div
                         key={index}
-                        className={`max-w-fit cursor-pointer rounded-[28px] py-1 px-4 ${
+                        className={`max-w-xs sm:max-w-sm md:max-w-md cursor-pointer rounded-[28px] py-1 px-4 ${
                           openSource === index
                             ? 'bg-[#007DFF]'
                             : 'bg-[#D7EBFD] hover:bg-[#BFE1FF]'
