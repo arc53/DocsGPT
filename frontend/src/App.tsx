@@ -19,7 +19,7 @@ export default function App() {
       <div
         className={`transition-all duration-200 ${
           !isMobile
-            ? `ml-0 ${!navOpen ? '-mt-5 md:mx-auto lg:mx-auto' : 'md:ml-72'}`
+            ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
             : 'ml-0 md:ml-16'
         }`}
       >

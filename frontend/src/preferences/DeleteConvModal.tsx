@@ -49,12 +49,11 @@ export default function DeleteConvModal({
         return (
           <article
             ref={modalRef}
-            className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-t-lg bg-white p-6 shadow-lg"
+            className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-t-lg bg-white dark:bg-outer-space dark:text-silver p-6 shadow-lg"
           >
-            <p className="text-xl text-jet">
+            <p className="text-xl text-jet dark:text-silver">
               Are you sure you want to delete all the conversations?
             </p>
-            <p className="text-md leading-6 text-gray-500"></p>
           </article>
         );
       }}

@@ -19,18 +19,18 @@ const Modal = (props: ModalProps) => {
       } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
       {props.render()}
-      <div className=" mx-auto flex w-[90vw] max-w-lg flex-row-reverse rounded-b-lg bg-white pb-5 pr-5  shadow-lg">
+      <div className=" mx-auto flex w-[90vw] max-w-lg flex-row-reverse rounded-b-lg bg-white dark:bg-outer-space pb-5 pr-5  shadow-lg">
         <div>
           <button
             onClick={() => props.handleSubmit()}
-            className="ml-auto h-10 w-20 rounded-3xl bg-violet-800 text-white transition-all hover:bg-violet-700"
+            className="ml-auto h-10 w-20 rounded-3xl bg-violet-800 text-white dark:text-silver transition-all hover:bg-violet-700"
           >
             {props.textDelete ? 'Delete' : 'Save'}
           </button>
           {props.isCancellable && (
             <button
               onClick={() => props.handleCancel && props.handleCancel()}
-              className="ml-5 h-10 w-20 rounded-lg border border-violet-700 bg-white text-violet-800 transition-all hover:bg-violet-700 hover:text-white"
+              className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
             >
               Cancel
             </button>

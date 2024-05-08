@@ -133,7 +133,7 @@ export default function Conversation() {
     <div
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex w-full flex-col justify-center p-4 md:flex-row"
+      className="flex w-full justify-center p-4 h-full"
     >
       {queries.length > 0 && !hasScrolledToLast && (
         <button
@@ -144,13 +144,13 @@ export default function Conversation() {
           <img
             src={ArrowDown}
             alt="arrow down"
-            className="h4- w-4 opacity-50 md:h-5 md:w-5"
+            className="h-4 w-4 opacity-50 md:h-5 md:w-5"
           />
         </button>
       )}
 
       {queries.length > 0 && (
-        <div className="mt-20 mb-9 flex flex-col transition-all md:w-3/4">
+        <div className="w-full md:w-8/12">
           {queries.map((query, index) => {
             return (
               <Fragment key={index}>
