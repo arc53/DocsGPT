@@ -47,13 +47,13 @@ const ConversationBubble = forwardRef<
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
 
   let bubble;
-
+  
   if (type === 'QUESTION') {
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div className="mr-2 ml-10 flex items-center rounded-3xl bg-purple-30 p-3.5 text-white">
-          <ReactMarkdown className="whitespace-pre-wrap break-all">
+          <ReactMarkdown className="whitespace-pre-wrap break-normal leading-normal">
             {message}
           </ReactMarkdown>
         </div>
@@ -88,7 +88,7 @@ const ConversationBubble = forwardRef<
               <img src={Alert} alt="alert" className="mr-2 inline" />
             )}
             <ReactMarkdown
-              className="whitespace-pre-wrap break-words leading-normal"
+              className="whitespace-pre-wrap break-normal leading-normal"
               remarkPlugins={[remarkGfm]}
               components={{
                 code({ node, inline, className, children, ...props }) {
