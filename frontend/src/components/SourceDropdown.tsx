@@ -97,9 +97,7 @@ function SourceDropdown({
               }
             })
           ) : (
-            <div className="h-10 w-full cursor-pointer  border-b-[1px] hover:bg-gray-100 dark:border-b-purple-taupe dark:hover:bg-purple-taupe">
-              <p className="ml-5 py-3">No default documentation.</p>
-            </div>
+            <></>
           )}
           <div
             className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
