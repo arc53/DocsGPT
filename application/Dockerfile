@@ -1,81 +1,83 @@
-# Etapa de Construção
+# Builder Stage
 FROM ubuntu:mantic as builder
 
-# Configura o modo não interativo para evitar prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instala os pacotes necessários e o Python
+# Install necessary packages and Python
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3-pip python3.11-venv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* 
 
-# Verifica a instalação do Python e configura um link simbólico
-RUN if [ ! -f /usr/bin/python3.11 ]; then \
+# Verify Python installation and setup symlink
+RUN if [ -f /usr/bin/python3.11 ]; then \
+        ln -s /usr/bin/python3.11 /usr/bin/python; \
+    else \
         echo "Python 3.11 not found"; exit 1; \
-    fi && \
-    ln -s /usr/bin/python3.11 /usr/bin/python
+    fi
 
-# Baixa e descompacta o modelo
+# Download and unzip the model
 RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
     unzip mpnet-base-v2.zip -d model && \
     rm mpnet-base-v2.zip
 
-# Instala o Rust
+# Install Rust
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 
-# Limpa para reduzir o tamanho do container
-RUN apt-get purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+# Clean up to reduce container size
+RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-# Copia o requirements.txt
+# Copy requirements.txt
 COPY requirements.txt .
 
-# Configura o ambiente virtual Python
+# Setup Python virtual environment
 RUN python3.11 -m venv /venv
 
-# Ativa o ambiente virtual e instala os pacotes Python
+# Activate virtual environment and install Python packages
 ENV PATH="/venv/bin:$PATH"
+
+# Install Python packages
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir tiktoken && \
     pip install --no-cache-dir -r requirements.txt
 
-# Etapa Final
+# Final Stage
 FROM ubuntu:mantic as final
 
-# Instala o Python
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
+# Install Python
+RUN apt-get update && apt-get install -y --no-install-recommends python3.11 && \
     ln -s /usr/bin/python3.11 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
-# Define o diretório de trabalho
+# Set working directory
 WORKDIR /app
 
-# Cria um usuário não root: `appuser`
+# Create a non-root user: `appuser` (Feel free to choose a name)
 RUN groupadd -r appuser && \
     useradd -r -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser
 
-# Copia o ambiente virtual e o modelo da etapa de construção
+# Copy the virtual environment and model from the builder stage
 COPY --from=builder /venv /venv
 COPY --from=builder /model /app/model
 
-# Copia o código da aplicação
+# Copy your application code
 COPY . /app/application
 
-# Muda a propriedade do diretório /app para o appuser
-RUN mkdir -p /app/application/inputs/local && \
-    chown -R appuser:appuser /app
+# Change the ownership of the /app directory to the appuser
+	
+RUN mkdir -p /app/application/inputs/local
+RUN chown -R appuser:appuser /app
 
-# Configura variáveis de ambiente
+# Set environment variables
 ENV FLASK_APP=app.py \
     FLASK_DEBUG=true \
     PATH="/venv/bin:$PATH"
 
-# Expõe a porta em que o app roda
+# Expose the port the app runs on
 EXPOSE 7091
 
-# Altera para o usuário não root
+# Switch to non-root user
 USER appuser
 
-# Inicia o Gunicorn
+# Start Gunicorn
 CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:7091", "application.wsgi:app"]
