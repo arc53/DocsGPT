@@ -20,7 +20,7 @@ import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
-import DeleteConvModal from './preferences/DeleteConvModal';
+import DeleteConvModal from './modals/DeleteConvModal';
 
 import {
   selectApiKeyStatus,
@@ -275,10 +275,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </p>
         </NavLink>
         <div className="mb-auto h-[56vh] overflow-y-auto overflow-x-hidden dark:text-white">
-          {conversations && (
+          {conversations && conversations.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
-                <p className="my-auto ml-6 text-sm font-semibold">Chats</p>
+                <p className="mt-1 ml-4 text-sm font-semibold">Chats</p>
               </div>
               <div className="conversations-container">
                 {conversations?.map((conversation) => (
@@ -294,12 +294,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 ))}
               </div>
             </div>
+          ) : (
+            <></>
           )}
         </div>
 
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
-            <div className="relative my-4 flex gap-2 px-2">
+            <div className="relative my-4 mx-4 flex gap-2">
               <SourceDropdown
                 options={docs}
                 selectedDocs={selectedDocs}
@@ -314,13 +316,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 onClick={() => setUploadModalState('ACTIVE')}
               ></img>
             </div>
-            <p className="ml-6 mt-3 text-sm font-semibold">Source Docs</p>
+            <p className="ml-5 mt-3 text-sm font-semibold">Source Docs</p>
           </div>
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
               to="/settings"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
                   isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
@@ -335,8 +337,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <NavLink
               to="/about"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${
-                  isActive ? 'bg-gray-3000 dark:bg-purple-taupe' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+                  isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
                 }`
               }
             >
@@ -348,7 +350,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               href="https://docs.docsgpt.co.uk/"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
             >
               <NavImage Light={Documentation} Dark={DocumentationDark} />
               <p className="my-auto text-sm ">Documentation</p>
@@ -357,7 +359,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               href="https://discord.gg/WHJdfbQDR4"
               target="_blank"
               rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
+              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
             >
               <NavImage Light={Discord} Dark={DiscordDark} />
               {/*  <img src={isDarkTheme ? DiscordDark : Discord} alt="discord-link" className="ml-2 w-5" /> */}
@@ -368,7 +370,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               href="https://github.com/arc53/DocsGPT"
               target="_blank"
               rel="noreferrer"
-              className="mx-4 mt-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
+              className="mx-4 mt-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
             >
               <NavImage Light={Github} Dark={GithubDark} />
               <p className="my-auto text-sm">Visit our Github</p>

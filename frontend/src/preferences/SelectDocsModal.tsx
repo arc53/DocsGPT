@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { ActiveState } from '../models/misc';
-import Modal from '../Modal';
+import Modal from '../modals';
 import {
   setSelectedDocs,
   setSourceDocs,

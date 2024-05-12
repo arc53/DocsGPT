@@ -95,7 +95,7 @@ const APIKeys: React.FC = () => {
         <div className="flex justify-end">
           <button
             onClick={() => setCreateModal(true)}
-            className="rounded-full bg-purple-30 px-4 py-3 text-sm text-white hover:opacity-90"
+            className="rounded-full bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
           >
             Create new
           </button>
@@ -234,7 +234,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
           </span>
           <input
             type="text"
-            className="h-10 w-full rounded-md border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+            className="h-[42px] w-full rounded-md border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={APIKeyName}
             onChange={(e) => setAPIKeyName(e.target.value)}
           />
@@ -285,7 +285,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
               chunks: chunk,
             })
           }
-          className="float-right mt-4 rounded-full bg-purple-30 px-4 py-3 text-white disabled:opacity-50"
+          className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
         >
           Create
         </button>
@@ -316,7 +316,7 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
             <span className="text-sm font-normal leading-7 ">{apiKey}</span>
           </div>
           <button
-            className="my-1 h-10 w-20 rounded-full border border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white dark:border-purple-500 dark:text-purple-500"
+            className="my-1 h-10 w-20 rounded-full border border-solid border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white"
             onClick={handleCopyKey}
           >
             {isCopied ? 'Copied' : 'Copy'}

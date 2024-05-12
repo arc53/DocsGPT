@@ -37,7 +37,7 @@ function AddPrompt({
           <input
             placeholder="Prompt Name"
             type="text"
-            className="h-10 w-full rounded-lg border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+            className="h-10 w-full rounded-lg border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={newPromptName}
             onChange={(e) => setNewPromptName(e.target.value)}
           ></input>
@@ -52,7 +52,7 @@ function AddPrompt({
             </span>
           </div>
           <textarea
-            className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:bg-transparent dark:text-silver"
+            className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
           ></textarea>
@@ -108,7 +108,7 @@ function EditPrompt({
           <input
             placeholder="Prompt Name"
             type="text"
-            className="h-10 w-full rounded-lg border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+            className="h-10 w-full rounded-lg border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
           ></input>
@@ -123,7 +123,7 @@ function EditPrompt({
             </span>
           </div>
           <textarea
-            className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:bg-transparent dark:text-silver"
+            className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
           ></textarea>

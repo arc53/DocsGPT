@@ -266,11 +266,11 @@ export default function Upload({
           <>
             <input
               type="text"
-              className="h-10 w-full rounded-full border-2 border-gray-5000 px-3 outline-none dark:bg-transparent dark:text-silver"
+              className="h-[42px] w-full rounded-full border-2 border-gray-5000 px-3 outline-none dark:bg-transparent dark:text-silver"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
             ></input>
-            <div className="relative bottom-12 left-2 mt-[-18.39px]">
+            <div className="relative bottom-12 left-2 mt-[-20px]">
               <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                 Name
               </span>
@@ -315,24 +315,24 @@ export default function Upload({
                 <input
                   placeholder="Enter name"
                   type="text"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   value={urlName}
                   onChange={(e) => setUrlName(e.target.value)}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     Name
                   </span>
                 </div>
                 <input
                   placeholder="URL Link"
                   type="text"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     Link
                   </span>
                 </div>
@@ -342,65 +342,65 @@ export default function Upload({
                 <input
                   placeholder="Enter client ID"
                   type="text"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="client_id"
                   value={redditData.client_id}
                   onChange={handleChange}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     Client ID
                   </span>
                 </div>
                 <input
                   placeholder="Enter client secret"
                   type="text"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="client_secret"
                   value={redditData.client_secret}
                   onChange={handleChange}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     Client secret
                   </span>
                 </div>
                 <input
                   placeholder="Enter user agent"
                   type="text"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="user_agent"
                   value={redditData.user_agent}
                   onChange={handleChange}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     User agent
                   </span>
                 </div>
                 <input
                   placeholder="Enter search queries"
                   type="text"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="search_queries"
                   value={redditData.search_queries}
                   onChange={handleChange}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     Search queries
                   </span>
                 </div>
                 <input
                   placeholder="Enter number of posts"
                   type="number"
-                  className="h-10 w-full rounded-full border-2 border-silver px-3 outline-none dark:bg-transparent dark:text-silver"
+                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="number_posts"
                   value={redditData.number_posts}
                   onChange={handleChange}
                 ></input>
-                <div className="relative bottom-12 left-2 mt-[-18.39px]">
-                  <span className="bg-white px-2 text-xs text-silver dark:bg-outer-space dark:text-silver">
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     Number of posts
                   </span>
                 </div>
@@ -409,27 +409,36 @@ export default function Upload({
           </>
         )}
         <div className="flex flex-row-reverse">
-          <button
-            onClick={activeTab === 'file' ? uploadFile : uploadRemote}
-            className={`ml-6 cursor-pointer rounded-3xl bg-purple-30 text-white ${
-              files.length > 0 && docName.trim().length > 0
-                ? ''
-                : 'bg-opacity-75 text-opacity-80'
-            } py-2 px-6`}
-            disabled={
-              (files.length === 0 || docName.trim().length === 0) &&
-              activeTab === 'file'
-            }
-          >
-            Train
-          </button>
+          {activeTab === 'file' ? (
+            <button
+              onClick={uploadFile}
+              className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 text-sm text-white ${
+                files.length > 0 && docName.trim().length > 0
+                  ? 'hover:bg-[#6F3FD1]'
+                  : 'bg-opacity-75 text-opacity-80'
+              } py-2 px-6`}
+              disabled={
+                (files.length === 0 || docName.trim().length === 0) &&
+                activeTab === 'file'
+              }
+            >
+              Train
+            </button>
+          ) : (
+            <button
+              onClick={uploadRemote}
+              className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1]`}
+            >
+              Train
+            </button>
+          )}
           <button
             onClick={() => {
               setDocName('');
               setfiles([]);
               setModalState('INACTIVE');
             }}
-            className="cursor-pointer font-medium dark:text-light-gray"
+            className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
           >
             Cancel
           </button>

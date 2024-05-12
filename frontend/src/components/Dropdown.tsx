@@ -9,6 +9,8 @@ function Dropdown({
   onSelect,
   size = 'w-32',
   rounded = 'xl',
+  border = 'border-2',
+  borderColor = 'silver',
   showEdit,
   onEdit,
   showDelete,
@@ -26,6 +28,8 @@ function Dropdown({
     | ((value: { label: string; value: string }) => void);
   size?: string;
   rounded?: 'xl' | '3xl';
+  border?: 'border' | 'border-2';
+  borderColor?: string;
   showEdit?: boolean;
   onEdit?: (value: { name: string; id: string; type: string }) => void;
   showDelete?: boolean;
@@ -33,6 +37,8 @@ function Dropdown({
   placeholder?: string;
 }) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const borderRadius = rounded === 'xl' ? 'rounded-xl' : 'rounded-3xl';
+  const borderTopRadius = rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl';
   return (
     <div
       className={[
@@ -44,8 +50,8 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between border-2 border-silver bg-white px-5 py-3 dark:border-chinese-silver dark:bg-transparent ${
-          isOpen ? `rounded-t-${rounded}` : `rounded-${rounded}`
+        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${borderColor}/40 dark:bg-transparent ${
+          isOpen ? `${borderTopRadius}` : `${borderRadius}`
         }`}
       >
         {typeof selectedValue === 'string' ? (
@@ -74,7 +80,9 @@ function Dropdown({
         />
       </button>
       {isOpen && (
-        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border-2 border-silver bg-white shadow-lg dark:border-chinese-silver dark:bg-dark-charcoal">
+        <div
+          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-white shadow-lg dark:border-${borderColor}/40 dark:bg-dark-charcoal`}
+        >
           {options.map((option: any, index) => (
             <div
               key={index}

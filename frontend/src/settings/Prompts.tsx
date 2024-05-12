@@ -156,7 +156,7 @@ const Prompts: React.FC<PromptProps> = ({
   return (
     <>
       <div>
-        <div className="mb-4 flex flex-row items-center gap-8">
+        <div className="flex flex-row items-center gap-8">
           <div>
             <p className="font-semibold dark:text-bright-gray">Active Prompt</p>
             <Dropdown
@@ -165,6 +165,7 @@ const Prompts: React.FC<PromptProps> = ({
               onSelect={handleSelectPrompt}
               size="w-56"
               rounded="3xl"
+              border="border"
               showEdit
               showDelete
               onEdit={({
@@ -186,7 +187,7 @@ const Prompts: React.FC<PromptProps> = ({
             />
           </div>
           <button
-            className="mt-[24px] rounded-3xl border-2 border-solid border-purple-30 px-5 py-3 text-purple-30 hover:bg-purple-30 hover:text-white"
+            className="mt-[24px] rounded-3xl border border-solid border-purple-30 px-5 py-3 text-purple-30 hover:bg-purple-30 hover:text-white"
             onClick={() => {
               setModalType('ADD');
               setModalState('ACTIVE');
