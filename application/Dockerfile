@@ -1,6 +1,8 @@
 # Builder Stage
 FROM ubuntu:mantic as builder
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install necessary packages and Python
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3-pip python3.11-venv && \
@@ -43,7 +45,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM ubuntu:mantic as final
 
 # Install Python
-RUN apt-get update && apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
+RUN apt-get update && apt-get install -y --no-install-recommends python3.11 && \
     ln -s /usr/bin/python3.11 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
@@ -62,6 +64,8 @@ COPY --from=builder /model /app/model
 COPY . /app/application
 
 # Change the ownership of the /app directory to the appuser
+	
+RUN mkdir -p /app/application/inputs/local
 RUN chown -R appuser:appuser /app
 
 # Set environment variables
