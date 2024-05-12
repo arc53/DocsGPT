@@ -52,17 +52,17 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ## Useful Links
 
-- :mag: :fire: [Live preview](https://docsgpt.arc53.com/)
+- :mag: :fire: [Cloud Version](https://docsgpt.arc53.com/)
 
 - :speech_balloon: :tada: [Join our Discord](https://discord.gg/n5BX8dh8rU)
 
-- :books: :sunglasses: [Guides](https://docs.docsgpt.co.uk/)
+- :books: :sunglasses: [Guides](https://docs.docsgpt.cloud/)
 
 - :couple: [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
 
-- :file_folder: :rocket: [How to use any other documentation](https://docs.docsgpt.co.uk/Guides/How-to-train-on-other-documentation)
+- :file_folder: :rocket: [How to use any other documentation](https://docs.docsgpt.cloud/Guides/How-to-train-on-other-documentation)
 
-- :house: :closed_lock_with_key: [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.co.uk/Guides/How-to-use-different-LLM)
+- :house: :closed_lock_with_key: [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM)
 
 ## Project Structure
 

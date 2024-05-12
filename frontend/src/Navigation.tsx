@@ -345,7 +345,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </NavLink>
 
             <a
-              href="https://docs.docsgpt.co.uk/"
+              href="https://docs.docsgpt.cloud/"
               target="_blank"
               rel="noreferrer"
               className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe"
