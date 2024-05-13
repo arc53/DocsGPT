@@ -1,8 +1,9 @@
-import { useRef } from 'react';
-import { ActiveState } from '../models/misc';
-import { useMediaQuery, useOutsideAlerter } from './../hooks';
-import Modal from '../Modal';
+import React from 'react';
 import { useDispatch } from 'react-redux';
+import { ActiveState } from '../models/misc';
+import { useMediaQuery, useOutsideAlerter } from '../hooks';
+import ConfirmationModal from './ConfirmationModal';
+
 import { Action } from '@reduxjs/toolkit';
 
 export default function DeleteConvModal({
@@ -14,8 +15,8 @@ export default function DeleteConvModal({
   setModalState: (val: ActiveState) => Action;
   handleDeleteAllConv: () => void;
 }) {
+  const modalRef = React.useRef(null);
   const dispatch = useDispatch();
-  const modalRef = useRef(null);
   const { isMobile } = useMediaQuery();
 
   useOutsideAlerter(
@@ -38,25 +39,13 @@ export default function DeleteConvModal({
   }
 
   return (
-    <Modal
-      handleCancel={handleCancel}
-      isError={false}
+    <ConfirmationModal
+      message="Are you sure you want to delete all the conversations?"
       modalState={modalState}
-      isCancellable={true}
+      setModalState={setModalState}
+      submitLabel={'Delete'}
       handleSubmit={handleSubmit}
-      textDelete={true}
-      render={() => {
-        return (
-          <article
-            ref={modalRef}
-            className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-t-lg bg-white dark:bg-outer-space dark:text-silver p-6 shadow-lg"
-          >
-            <p className="text-xl text-jet dark:text-silver">
-              Are you sure you want to delete all the conversations?
-            </p>
-          </article>
-        );
-      }}
+      handleCancel={handleCancel}
     />
   );
 }

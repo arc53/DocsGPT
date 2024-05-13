@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { ActiveState } from '../models/misc';
 import { selectApiKey, setApiKey } from './preferenceSlice';
 import { useMediaQuery, useOutsideAlerter } from './../hooks';
-import Modal from '../Modal';
+import Modal from '../modals';
 
 export default function APIKeyModal({
   modalState,

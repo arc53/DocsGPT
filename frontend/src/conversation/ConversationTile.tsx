@@ -32,15 +32,6 @@ export default function ConversationTile({
   const [isDarkTheme] = useDarkTheme();
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
-  // useOutsideAlerter(
-  //   tileRef,
-  //   () =>
-  //     handleSaveConversation({
-  //       id: conversationId || conversation.id,
-  //       name: conversationName,
-  //     }),
-  //   [conversationName],
-  // );
 
   useEffect(() => {
     setConversationsName(conversation.name);
@@ -69,9 +60,9 @@ export default function ConversationTile({
       onClick={() => {
         selectConversation(conversation.id);
       }}
-      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-purple-taupe ${
+      className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
         conversationId === conversation.id
-          ? 'bg-gray-100 dark:bg-purple-taupe'
+          ? 'bg-gray-100 dark:bg-[#28292E]'
           : ''
       }`}
     >

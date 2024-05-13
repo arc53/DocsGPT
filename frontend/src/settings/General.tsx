@@ -47,7 +47,7 @@ const General: React.FC = () => {
 
   return (
     <div className="mt-[59px]">
-      <div className="mb-4">
+      <div className="mb-5">
         <p className="font-bold text-jet dark:text-bright-gray">Select Theme</p>
         <Dropdown
           options={themes}
@@ -58,9 +58,10 @@ const General: React.FC = () => {
           }}
           size="w-56"
           rounded="3xl"
+          border="border"
         />
       </div>
-      <div className="mb-4">
+      <div className="mb-5">
         <p className="font-bold text-jet dark:text-bright-gray">
           Select Language
         </p>
@@ -70,9 +71,10 @@ const General: React.FC = () => {
           onSelect={setSelectedLanguage}
           size="w-56"
           rounded="3xl"
+          border="border"
         />
       </div>
-      <div className="mb-4">
+      <div className="mb-5">
         <p className="font-bold text-jet dark:text-bright-gray">
           Chunks processed per query
         </p>
@@ -82,9 +84,10 @@ const General: React.FC = () => {
           onSelect={(value: string) => dispatch(setChunks(value))}
           size="w-56"
           rounded="3xl"
+          border="border"
         />
       </div>
-      <div>
+      <div className="mb-5">
         <Prompts
           prompts={prompts}
           selectedPrompt={selectedPrompt}
@@ -95,17 +98,15 @@ const General: React.FC = () => {
           apiHost={apiHost}
         />
       </div>
-      <div className="w-55 w-56">
+      <div className="w-56">
         <p className="font-bold text-jet dark:text-bright-gray">
           Delete all conversations
         </p>
         <button
-          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border-2 border-solid border-purple-30 px-5 py-3 text-purple-30 hover:bg-purple-30 hover:text-white"
+          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border border-solid border-red-500 px-5 py-3 text-red-500 hover:bg-red-500 hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
-          <span className="overflow-hidden text-ellipsis ">
-            Delete
-          </span>
+          <span className="overflow-hidden text-ellipsis ">Delete all</span>
         </button>
       </div>
     </div>
