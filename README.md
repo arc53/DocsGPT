@@ -85,7 +85,7 @@ On Mac OS or Linux, write:
 
 It will install all the dependencies and allow you to download the local model, use OpenAI or use our LLM API.
 
-Otherwise, refer to this Guide:
+Otherwise, refer to this Guide for Windows:
 
 1. Download and open this repository with `git clone https://github.com/arc53/DocsGPT.git`
 2. Create a `.env` file in your root directory and set the env variables and `VITE_API_STREAMING` to true or false, depending on whether you want streaming answers or not.
