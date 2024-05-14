@@ -334,9 +334,9 @@ def api_answer():
         )
 
         result = {"answer": response_full, "sources": source_log_docs}
-        result["conversation_id"] = save_conversation(
+        result["conversation_id"] = str(save_conversation(
             conversation_id, question, response_full, source_log_docs, llm
-        )
+        ))
 
         return result
     except Exception as e:
