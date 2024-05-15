@@ -78,7 +78,7 @@ def get_data_from_api_key(api_key):
     if data is None:
         return bad_request(401, "Invalid API key")
     return data
-
+    
 
 def get_vectorstore(data):
     if "active_docs" in data:
@@ -94,7 +94,6 @@ def get_vectorstore(data):
         vectorstore = ""
     vectorstore = os.path.join("application", vectorstore)
     return vectorstore
-
 
 def is_azure_configured():
     return (
@@ -223,12 +222,13 @@ def stream():
     else:
         chunks = 2
 
-    prompt = get_prompt(prompt_id)
 
-    # check if active_docs is set
+    # check if active_docs or api_key is set
 
     if "api_key" in data:
         data_key = get_data_from_api_key(data["api_key"])
+        chunks = int(data_key["chunks"])
+        prompt_id = data_key["prompt_id"]
         source = {"active_docs": data_key["source"]}
         user_api_key = data["api_key"]
     elif "active_docs" in data:
@@ -245,6 +245,8 @@ def stream():
         retriever_name = "classic"
     else:
         retriever_name = source["active_docs"]
+
+    prompt = get_prompt(prompt_id)
 
     retriever = RetrieverCreator.create_retriever(
         retriever_name,
@@ -290,13 +292,13 @@ def api_answer():
     else:
         chunks = 2
 
-    prompt = get_prompt(prompt_id)
-
     # use try and except  to check for exception
     try:
         # check if the vectorstore is set
         if "api_key" in data:
             data_key = get_data_from_api_key(data["api_key"])
+            chunks = int(data_key["chunks"])
+            prompt_id = data_key["prompt_id"]
             source = {"active_docs": data_key["source"]}
             user_api_key = data["api_key"]
         else:
@@ -311,6 +313,8 @@ def api_answer():
         else:
             retriever_name = source["active_docs"]
 
+        prompt = get_prompt(prompt_id)
+ 
         retriever = RetrieverCreator.create_retriever(
             retriever_name,
             question=question,
@@ -334,9 +338,9 @@ def api_answer():
         )
 
         result = {"answer": response_full, "sources": source_log_docs}
-        result["conversation_id"] = str(save_conversation(
+        result["conversation_id"] = save_conversation(
             conversation_id, question, response_full, source_log_docs, llm
-        ))
+        )
 
         return result
     except Exception as e:
@@ -351,9 +355,13 @@ def api_search():
     data = request.get_json()
     # get parameter from url question
     question = data["question"]
-
+    if "chunks" in data:
+        chunks = int(data["chunks"])
+    else:
+        chunks = 2
     if "api_key" in data:
         data_key = get_data_from_api_key(data["api_key"])
+        chunks = int(data_key["chunks"])
         source = {"active_docs": data_key["source"]}
         user_api_key = data["api_key"]
     elif "active_docs" in data:
@@ -362,10 +370,7 @@ def api_search():
     else:
         source = {}
         user_api_key = None
-    if "chunks" in data:
-        chunks = int(data["chunks"])
-    else:
-        chunks = 2
+   
 
     if (
         source["active_docs"].split("/")[0] == "default"
