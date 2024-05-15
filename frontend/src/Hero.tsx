@@ -1,52 +1,60 @@
 import { useDarkTheme, useMediaQuery } from './hooks';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
-import SourceDropdown from './components/SourceDropdown';
 import { useSelector } from 'react-redux';
-import { selectSourceDocs,selectSelectedDocs,selectConversations,selectModalStateDeleteConv } from './preferences/preferenceSlice';
+import { selectConversations } from './preferences/preferenceSlice';
+import Arrow2 from './assets/dropdown-arrow.svg';
 export default function Hero({ className = '' }: { className?: string }) {
   // const isMobile = window.innerWidth <= 768;
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
-  const docs = useSelector(selectSourceDocs);
-  const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
-  const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   return (
     <div
-      className={`mt-14 mb-4 flex flex-col justify-end text-black-1000 dark:text-bright-gray lg:mt-6`}
+      className={`mt-14 mb-4 flex w-11/12 sm:w-7/12 flex-col justify-end text-black-1000 dark:text-bright-gray lg:mt-6`}
     >
-      <div className='h-full flex flex-col items-center justify-center'>
-        <div>
-          <span className='font-semibold text-4xl p-0'>DocsGPT</span>
-          <img className='inline p-0 w-14 ml-2 mb-4' src={DocsGPT3} alt='docsgpt'/>
+      <div className="flex h-full w-full flex-col items-center justify-center">
+        <div className="flex items-center">
+          <span className="p-0 text-4xl font-semibold">DocsGPT</span>
+          <img className="mb-1 inline w-14 p-0" src={DocsGPT3} alt="docsgpt" />
         </div>
-       {/*  <SourceDropdown
-                options={docs}
-                selectedDocs={selectedDocs}
-                setSelectedDocs={setSelectedDocs}
-                isDocsListOpen={isDocsListOpen}
-                setIsDocsListOpen={setIsDocsListOpen}
-                handleDeleteClick={handleDeleteClick}
-              /> */}
-      </div>
-      <div className='grid grid-cols-1 lg:grid-cols-2 items-center gap-3 sm:gap-6 text-xs md:text-sm'>
-        <div className='border-2 w-full sm:w-112 px-6 py-4 rounded-full border-silver'>
-          <p className='mb-1 font-semibold text-black dark:text-silver'>Chat with your documentation</p>
-          <span className='text-gray-400'>Upload documents and get your answers</span>
-        </div>
-        <div className='border-2 w-full sm:w-112 px-6 py-4 rounded-full border-silver'>
-          <p className='mb-1 font-semibold text-black dark:text-silver'>Chat with your documentation</p>
-          <span className='text-gray-400'>Upload documents and get your answers</span>
-        </div>
-        <div className='border-2 w-full sm:w-112 px-6 py-4 rounded-full border-silver'>
-          <p className='mb-1 font-semibold text-black dark:text-silver'>Chat with your documentation</p>
-          <span className='text-gray-400'>Upload documents and get your answers</span>
-        </div>
-        <div className='border-2 w-full sm:w-112 px-6 py-4 rounded-full border-silver'>
-          <p className='mb-1 font-semibold text-black dark:text-silver'>Chat with your documentation</p>
-          <span className='text-gray-400'>Upload documents and get your answers</span>
+
+        <div className="mb-4 flex flex-col items-center justify-center dark:text-white">
+          
         </div>
       </div>
-    </div>
-  );
+      <div className="grid w-full grid-cols-1 items-center gap-4 self-center text-xs sm:gap-6 md:text-sm  lg:grid-cols-2">
+        <div className="w-full rounded-full border-2 border-silver px-6 py-4">
+          <p className="mb-1 font-semibold text-black dark:text-silver">
+            Chat with your documentation
+          </p>
+          <span className="text-gray-400">
+            Upload documents and get your answers
+          </span>
+        </div>
+        <div className="w-full rounded-full border-2 border-silver px-6 py-4">
+          <p className="mb-1 font-semibold text-black dark:text-silver">
+            Chat with your documentation
+          </p>
+          <span className="text-gray-400">
+            Upload documents and get your answers
+          </span>
+        </div>
+        <div className="w-full rounded-full border-2 border-silver px-6 py-4">
+          <p className="mb-1 font-semibold text-black dark:text-silver">
+            Chat with your documentation
+          </p>
+          <span className="text-gray-400">
+            Upload documents and get your answers
+          </span>
+        </div>
+        <div className="w-full rounded-full border-2 border-silver px-6 py-4">
+          <p className="mb-1 font-semibold text-black dark:text-silver">
+            Chat with your documentation
+          </p>
+          <span className="text-gray-400">
+            Upload documents and get your answers
+          </span>
+        </div>
+      </div>
+    </div>  );
 }

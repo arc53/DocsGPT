@@ -56,7 +56,7 @@ export default function Conversation() {
         setHasScrolledToLast(entry.isIntersecting);
       });
     };
- 
+
     const observer = new IntersectionObserver(observerCallback, {
       root: null,
       threshold: [1, 0.8],
@@ -134,7 +134,7 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex w-full justify-center p-4 h-[87vh] overflow-y-auto"
+        className="flex w-full justify-center p-4 h-[86vh] overflow-y-auto"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -171,8 +171,8 @@ export default function Conversation() {
         {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
 
       </div>
-      <div className="bottom-0 flex flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black md:fixed w-11/12 md:w-[60%]">
-        <div className="flex h-full w-full">
+      <div className="bottom-0 flex flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black md:fixed w-11/12 sm:w-6/12">
+        <div className="flex h-full w-full items-center rounded-full border border-silver">
           <div
             id="inputbox"
             ref={inputRef}
@@ -180,7 +180,7 @@ export default function Conversation() {
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
-            className={`border-000000 max-h-24 min-h-[2.6rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-3xl border bg-white py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -197,9 +197,9 @@ export default function Conversation() {
               className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
-            <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
+            <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
               <img
-                className="ml-[9px] mt-[9px] text-white"
+                className="w-6 text-white "
                 onClick={() => {
                   if (inputRef.current?.textContent) {
                     handleQuestion(inputRef.current.textContent);
