@@ -99,7 +99,10 @@ const ConversationBubble = forwardRef<
                           {children}
                         </code>
                       )}
-                      <div className="absolute right-3 top-3">
+                      <div
+                        className={`absolute right-3 top-3 lg:invisible 
+                        ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
+                      >
                         <CoppyButton
                           text={String(children).replace(/\n$/, '')}
                         />
