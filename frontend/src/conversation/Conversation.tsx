@@ -130,11 +130,11 @@ export default function Conversation() {
   };
 
   return (
-    <div className='flex flex-col gap-1 h-screen'>
+    <div className="flex h-screen flex-col gap-1">
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex w-full justify-center p-4 h-[86vh] overflow-y-auto"
+        className="flex h-[85vh] w-full justify-center overflow-y-auto p-4"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -151,12 +151,12 @@ export default function Conversation() {
         )}
 
         {queries.length > 0 && (
-          <div className="w-full md:w-8/12 mt-16">
+          <div className="mt-16 w-full md:w-8/12">
             {queries.map((query, index) => {
               return (
                 <Fragment key={index}>
                   <ConversationBubble
-                    className={'mb-1 md:mb-7 last:mb-28'}
+                    className={'mb-1 last:mb-28 md:mb-7'}
                     key={`${index}QUESTION`}
                     message={query.prompt}
                     type="QUESTION"
@@ -169,9 +169,8 @@ export default function Conversation() {
           </div>
         )}
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
-
       </div>
-      <div className="bottom-0 flex flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black md:fixed w-11/12 sm:w-6/12">
+      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12 md:fixed">
         <div className="flex h-full w-full items-center rounded-full border border-silver">
           <div
             id="inputbox"
@@ -211,7 +210,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
-        <p className="hidden md:inline text-gray-595959 w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           DocsGPT uses GenAI, please review critial information using sources.
         </p>
       </div>
