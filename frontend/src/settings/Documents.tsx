@@ -1,6 +1,6 @@
 import { DocumentsProps } from '../models/misc';
 import Trash from '../assets/trash.svg';
-
+import PropTypes from 'prop-types';
 const Documents: React.FC<DocumentsProps> = ({
   documents,
   handleDeleteDocument,
@@ -56,5 +56,8 @@ const Documents: React.FC<DocumentsProps> = ({
     </div>
   );
 };
-
+Documents.propTypes = {
+  documents: PropTypes.array.isRequired,
+  handleDeleteDocument: PropTypes.func.isRequired,
+};
 export default Documents;

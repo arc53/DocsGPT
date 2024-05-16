@@ -131,11 +131,11 @@ export default function Conversation() {
   };
 
   return (
-    <div className='flex flex-col gap-1 h-screen'>
+    <div className="flex h-screen flex-col gap-1">
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex w-full justify-center p-4 h-[87vh] overflow-y-auto"
+        className="flex h-[85vh] w-full justify-center overflow-y-auto p-4"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -152,12 +152,12 @@ export default function Conversation() {
         )}
 
         {queries.length > 0 && (
-          <div className="w-full md:w-8/12 mt-16">
+          <div className="mt-16 w-full md:w-8/12">
             {queries.map((query, index) => {
               return (
                 <Fragment key={index}>
                   <ConversationBubble
-                    className={'mb-1 md:mb-7 last:mb-28'}
+                    className={'mb-1 last:mb-28 md:mb-7'}
                     key={`${index}QUESTION`}
                     message={query.prompt}
                     type="QUESTION"
@@ -169,11 +169,10 @@ export default function Conversation() {
             })}
           </div>
         )}
-        {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
-
+        {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
-      <div className="bottom-0 flex flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black md:fixed w-11/12 md:w-[60%]">
-        <div className="flex h-full w-full">
+      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12 md:fixed">
+        <div className="flex h-full w-full items-center rounded-full border border-silver">
           <div
             id="inputbox"
             ref={inputRef}
@@ -181,7 +180,7 @@ export default function Conversation() {
             placeholder="Type your message here..."
             contentEditable
             onPaste={handlePaste}
-            className={`border-000000 max-h-24 min-h-[2.6rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-3xl border bg-white py-2 pl-4 pr-9 text-base leading-7 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -198,9 +197,9 @@ export default function Conversation() {
               className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
-            <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
+            <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
               <img
-                className="ml-[9px] mt-[9px] text-white"
+                className="w-6 text-white "
                 onClick={() => {
                   if (inputRef.current?.textContent) {
                     handleQuestion(inputRef.current.textContent);
@@ -212,7 +211,7 @@ export default function Conversation() {
             </div>
           )}
         </div>
-        <p className="hidden md:inline text-gray-595959 w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           DocsGPT uses GenAI, please review critial information using sources.
         </p>
       </div>
