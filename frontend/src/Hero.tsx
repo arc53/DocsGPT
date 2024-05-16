@@ -2,7 +2,7 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 const demos: { header: string; query: string }[] = [
   {
     header: 'Learn about DocsGPT',
-    query: 'What is DocsGPT ?',
+    query: 'What is DocsGPT?',
   },
   {
     header: 'Summarise documentation',
