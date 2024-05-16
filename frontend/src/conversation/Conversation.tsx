@@ -168,7 +168,7 @@ export default function Conversation() {
             })}
           </div>
         )}
-        {queries.length === 0 && <Hero className="mt-24 md:mt-52"></Hero>}
+        {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
 
       </div>
       <div className="bottom-0 flex flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black md:fixed w-11/12 sm:w-6/12">
