@@ -14,6 +14,7 @@ import {
 import Send from './../assets/send.svg';
 import SendDark from './../assets/send_dark.svg';
 import Spinner from './../assets/spinner.svg';
+import SpinnerDark from './../assets/spinner-dark.svg'
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import ArrowDown from './../assets/arrow-down.svg';
@@ -56,7 +57,7 @@ export default function Conversation() {
         setHasScrolledToLast(entry.isIntersecting);
       });
     };
- 
+
     const observer = new IntersectionObserver(observerCallback, {
       root: null,
       threshold: [1, 0.8],
@@ -193,8 +194,8 @@ export default function Conversation() {
           ></div>
           {status === 'loading' ? (
             <img
-              src={Spinner}
-              className="relative right-[38px] bottom-[7px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+              src={isDarkTheme ? SpinnerDark : Spinner}
+              className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
             <div className="relative right-[43px] bottom-[7px] -mr-[35px] h-[35px] w-[35px] cursor-pointer self-end rounded-full hover:bg-gray-3000">
