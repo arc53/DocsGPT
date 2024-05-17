@@ -1,21 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
-import PropTypes from 'prop-types';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
-import Documentation from './assets/documentation.svg';
-import DocumentationDark from './assets/documentation-dark.svg';
 import Discord from './assets/discord.svg';
-import DiscordDark from './assets/discord-dark.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import GithubDark from './assets/github-dark.svg';
 import Hamburger from './assets/hamburger.svg';
 import HamburgerDark from './assets/hamburger-dark.svg';
 import Info from './assets/info.svg';
-import InfoDark from './assets/info-dark.svg';
 import SettingGear from './assets/settingGear.svg';
-import SettingGearDark from './assets/settingGear-dark.svg';
+import Twitter from './assets/TwitterX.svg';
 import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
 import { ActiveState } from './models/misc';
@@ -50,21 +44,21 @@ interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
-const NavImage: React.FC<{
+/* const NavImage: React.FC<{
   Light: string | undefined;
   Dark: string | undefined;
 }> = ({ Light, Dark }) => {
   return (
     <>
       <img src={Dark} alt="icon" className="ml-2 hidden w-5 dark:block " />
-      <img src={Light} alt="icon" className="ml-2 w-5 dark:hidden " />
+      <img src={Light} alt="icon" className="ml-2 w-5 dark:hidden filter dark:invert" />
     </>
   );
 };
 NavImage.propTypes = {
   Light: PropTypes.string,
   Dark: PropTypes.string,
-};
+}; */
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const docs = useSelector(selectSourceDocs);
@@ -274,7 +268,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             New Chat
           </p>
         </NavLink>
-        <div className="mb-auto h-[56vh] overflow-y-auto overflow-x-hidden dark:text-white">
+        <div className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white">
           {conversations && conversations.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
@@ -327,13 +321,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 }`
               }
             >
-              <NavImage Light={SettingGear} Dark={SettingGearDark} />
+              <img
+                src={SettingGear}
+                alt="icon"
+                className="ml-2 w-5 filter dark:invert"
+              />
               <p className="my-auto text-sm text-eerie-black  dark:text-white">
                 Settings
               </p>
             </NavLink>
           </div>
-          <div className="flex flex-col gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
+          <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
             <NavLink
               to="/about"
               className={({ isActive }) =>
@@ -342,39 +340,54 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 }`
               }
             >
-              <NavImage Light={Info} Dark={InfoDark} />
-              <p className="my-auto text-sm">About</p>
+              <img
+                src={Info}
+                alt="icon"
+                className="ml-2 w-5 filter dark:invert"
+              />
+              <p className="my-auto mr-2 text-sm">About</p>
             </NavLink>
-
-            <a
-              href="https://docs.docsgpt.cloud/"
-              target="_blank"
-              rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
-            >
-              <NavImage Light={Documentation} Dark={DocumentationDark} />
-              <p className="my-auto text-sm ">Documentation</p>
-            </a>
-            <a
-              href="https://discord.gg/WHJdfbQDR4"
-              target="_blank"
-              rel="noreferrer"
-              className="my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
-            >
-              <NavImage Light={Discord} Dark={DiscordDark} />
-              {/*  <img src={isDarkTheme ? DiscordDark : Discord} alt="discord-link" className="ml-2 w-5" /> */}
-              <p className="my-auto text-sm">Visit our Discord</p>
-            </a>
-
-            <a
-              href="https://github.com/arc53/DocsGPT"
-              target="_blank"
-              rel="noreferrer"
-              className="mx-4 mt-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
-            >
-              <NavImage Light={Github} Dark={GithubDark} />
-              <p className="my-auto text-sm">Visit our Github</p>
-            </a>
+            <div className="flex items-center justify-evenly gap-1 px-1">
+              <NavLink
+                target="_blank"
+                to={'https://discord.gg/WHJdfbQDR4'}
+                className={
+                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                }
+              >
+                <img
+                  src={Discord}
+                  alt="discord"
+                  className="m-2 w-6 self-center filter dark:invert"
+                />
+              </NavLink>
+              <NavLink
+                target="_blank"
+                to={'https://twitter.com/docsgptai'}
+                className={
+                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                }
+              >
+                <img
+                  src={Twitter}
+                  alt="x"
+                  className="m-2 w-5 self-center filter dark:invert"
+                />
+              </NavLink>
+              <NavLink
+                target="_blank"
+                to={'https://github.com/arc53/docsgpt'}
+                className={
+                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                }
+              >
+                <img
+                  src={Github}
+                  alt="github"
+                  className="m-2 w-6 self-center filter dark:invert"
+                />
+              </NavLink>
+            </div>
           </div>
         </div>
       </div>
