@@ -83,22 +83,16 @@ const ConversationBubble = forwardRef<
                 code({ node, inline, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || '');
 
-                  return (
-                    <div className="relative">
-                      {!inline && match ? (
-                        <SyntaxHighlighter
-                          PreTag="div"
-                          language={match[1]}
-                          {...props}
-                          style={vscDarkPlus}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      ) : (
-                        <code className={className ? className : ''} {...props}>
-                          {children}
-                        </code>
-                      )}
+                  return !inline && match ? (
+                    <div className="group relative">
+                      <SyntaxHighlighter
+                        PreTag="div"
+                        language={match[1]}
+                        {...props}
+                        style={vscDarkPlus}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
                       <div
                         className={`absolute right-3 top-3 lg:invisible 
                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
@@ -108,6 +102,10 @@ const ConversationBubble = forwardRef<
                         />
                       </div>
                     </div>
+                  ) : (
+                    <code className={className ? className : ''} {...props}>
+                      {children}
+                    </code>
                   );
                 },
                 ul({ children }) {
