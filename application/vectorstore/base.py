@@ -45,10 +45,15 @@ class BaseVectorStore(ABC):
                 cohere_api_key=embeddings_key
             )
         elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
-            embedding_instance = embeddings_factory[embeddings_name](
-                #model_name="./model/all-mpnet-base-v2",
-                model_kwargs={"device": "cpu"},
-            )
+            if os.path.exists("./model/all-mpnet-base-v2"):
+                embedding_instance = embeddings_factory[embeddings_name](
+                    model_name="./model/all-mpnet-base-v2",
+                    model_kwargs={"device": "cpu"},
+                )
+            else:
+                embedding_instance = embeddings_factory[embeddings_name](
+                    model_kwargs={"device": "cpu"},
+                )
         else:
             embedding_instance = embeddings_factory[embeddings_name]()
             
