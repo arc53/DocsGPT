@@ -4,7 +4,6 @@ import string
 import zipfile
 from urllib.parse import urljoin
 
-import nltk
 import requests
 
 from application.core.settings import settings
@@ -13,13 +12,6 @@ from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
-
-try:
-    nltk.download("punkt", quiet=True)
-    nltk.download("averaged_perceptron_tagger", quiet=True)
-except FileExistsError:
-    pass
-
 
 # Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):

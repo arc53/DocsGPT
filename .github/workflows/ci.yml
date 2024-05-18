@@ -13,7 +13,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v3
 
@@ -36,12 +35,11 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Runs a single command using the runners shell
       - name: Build and push Docker images to docker.io and ghcr.io
         uses: docker/build-push-action@v4
         with:
           file: './application/Dockerfile'
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           context: ./application
           push: true
           tags: |
