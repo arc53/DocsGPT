@@ -18,7 +18,7 @@
     "styled-components": "^5"
   },
   "scripts": {
-    "build": "parcel build src/index.ts",
+    "build": "parcel build src/main.tsx --public-url ./",
     "dev": "parcel src/index.html -p 3000",
     "test": "jest",
     "lint": "eslint",
@@ -42,7 +42,6 @@
     "i": "^0.3.7",
     "install": "^0.13.0",
     "npm": "^10.5.0",
-    "parcel": "^2.12.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "styled-components": "^6.1.8"
@@ -55,6 +54,7 @@
     "@parcel/transformer-typescript-types": "^2.12.0",
     "@types/dompurify": "^3.0.5",
     "babel-loader": "^8.0.4",
+    "parcel": "^2.12.0",
     "process": "^0.11.10",
     "typescript": "^5.3.3"
   },

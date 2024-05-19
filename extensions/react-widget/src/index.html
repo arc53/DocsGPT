@@ -9,5 +9,11 @@
   <body>
     <div id="app"></div>
     <script type="module" src="main.tsx"></script>
+    <script type="module" src="../dist/main.js"></script>
+    <script type="module">
+      window.onload = function() {
+        renderDocsGPTWidget('app');
+      }
+    </script>
   </body>
 </html>

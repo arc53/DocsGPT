@@ -1,6 +1,10 @@
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
 import React from 'react';
-const root = createRoot(document.getElementById('app') as HTMLElement);
+import { DocsGPTWidget } from './components/DocsGPTWidget';
 
-root.render(<App />);
+const renderWidget = (elementId: string, props = {}) => {
+  const root = createRoot(document.getElementById(elementId) as HTMLElement);
+  root.render(<DocsGPTWidget {...props} />);
+};
+
+(window as any).renderDocsGPTWidget = renderWidget;
