@@ -39,7 +39,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           file: './application/Dockerfile'
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           context: ./application
           push: true
           tags: |
