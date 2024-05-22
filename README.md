@@ -27,7 +27,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
-- [Book Demo :wave:](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
+- [Book Enterprise :wave:](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
 - [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
