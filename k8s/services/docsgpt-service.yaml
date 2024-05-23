@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: docsgpt-api-service
+spec:
+  selector:
+    app: docsgpt-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 7091
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docsgpt-frontend-service
+spec:
+  selector:
+    app: docsgpt-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5173
+  type: LoadBalancer
