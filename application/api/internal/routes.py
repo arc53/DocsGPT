@@ -34,6 +34,7 @@ def upload_index_files():
     if "name" not in request.form:
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
+    tokens = secure_filename(request.form["tokens"])
     save_dir = os.path.join(current_dir, "indexes", user, job_name)
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
@@ -64,6 +65,7 @@ def upload_index_files():
             "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             "model": settings.EMBEDDINGS_NAME,
             "type": "local",
+            "tokens": tokens
         }
     )
     return {"status": "ok"}
