@@ -302,7 +302,7 @@ def api_answer():
             source = {"active_docs": data_key["source"]}
             user_api_key = data["api_key"]
         else:
-            source = {data}
+            source = data
             user_api_key = None
 
         if (
