@@ -10,5 +10,9 @@
   "Railway-Deploying": {
     "title": "🚂Deploying on Railway",
     "href": "/Deploying/Railway-Deploying"
+  },
+  "Kubernetes-Deploying": {
+    "title": "🚀Deploying on Kubernetes",
+    "href": "/Deploying/Kubernetes-Deploying"
   }
 }

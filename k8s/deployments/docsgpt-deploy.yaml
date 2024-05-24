@@ -63,7 +63,7 @@ spec:
             name: docsgpt-secrets
         env:
         - name: API_URL
-          value: "BACKEND-URL"
+          value: "http://<your-api-endpoint>"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -93,6 +93,6 @@ spec:
             cpu: "100m"
         env:
         - name: VITE_API_HOST
-          value: "BACKEND-URL"
+          value: "http://<your-api-endpoint>"
         - name: VITE_API_STREAMING
           value: "true"
