@@ -58,16 +58,8 @@ The `k8s` folder contains the necessary deployment and service configuration fil
 
    After deploying the services, you need to update the environment variable `VITE_API_HOST` in your deployment file `deployments/docsgpt-deploy.yaml` with the actual endpoint URL created by your `docsgpt-api-service`.
 
-   You can get the value of the `docsgpt-api-service` by running:
-
-   ```sh
-   kubectl get services/docsgpt-api-service | awk 'NR>1 {print $4}'
-   ```
-
-   Update the `<your-api-endpoint>` field with your API endpoint URL by running this command and pasting endpoint from previous command:
-
-   ```sh
-   read -p "Enter the API endpoint: " api_endpoint && sed -i "s|<your-api-endpoint>|$api_endpoint|g" deployments/docsgpt-deploy.yaml
+    ```sh
+    kubectl get services/docsgpt-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' | xargs -I {} sed -i "s|<your-api-endpoint>|{}|g" deployments/docsgpt-deploy.yaml
     ```
 
 7. **Rerun Deployment**
