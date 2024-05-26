@@ -15,6 +15,7 @@ class DuckDuckSearch(BaseRetriever):
         chat_history,
         prompt,
         chunks=2,
+        token_limit=150,
         gpt_model="docsgpt",
         user_api_key=None,
     ):
@@ -24,6 +25,16 @@ class DuckDuckSearch(BaseRetriever):
         self.prompt = prompt
         self.chunks = chunks
         self.gpt_model = gpt_model
+        self.token_limit = (
+            token_limit
+            if token_limit
+            < settings.MODEL_TOKEN_LIMITS.get(
+                self.gpt_model, settings.DEFAULT_MAX_HISTORY
+            )
+            else settings.MODEL_TOKEN_LIMITS.get(
+                self.gpt_model, settings.DEFAULT_MAX_HISTORY
+            )
+        )
         self.user_api_key = user_api_key
 
     def _parse_lang_string(self, input_string):
@@ -87,10 +98,7 @@ class DuckDuckSearch(BaseRetriever):
                     tokens_batch = count_tokens(i["prompt"]) + count_tokens(
                         i["response"]
                     )
-                    if (
-                        tokens_current_history + tokens_batch
-                        < settings.TOKENS_MAX_HISTORY
-                    ):
+                    if tokens_current_history + tokens_batch < self.token_limit:
                         tokens_current_history += tokens_batch
                         messages_combine.append(
                             {"role": "user", "content": i["prompt"]}

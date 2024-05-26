@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
-    TOKENS_MAX_HISTORY: int = 150
+    DEFAULT_MAX_HISTORY: int = 150
+    MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
     VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant"
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
