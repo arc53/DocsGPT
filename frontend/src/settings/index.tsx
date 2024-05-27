@@ -11,12 +11,18 @@ import {
 import { Doc } from '../preferences/preferenceApi';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
+import { useTranslation } from 'react-i18next';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 const Settings: React.FC = () => {
   const dispatch = useDispatch();
-  const tabs = ['General', 'Documents', 'API Keys'];
+  const { t } = useTranslation();
+  const tabs = [
+    t('settings.general.label'),
+    t('settings.documents.label'),
+    t('settings.apiKeys.label'),
+  ];
   const [activeTab, setActiveTab] = React.useState('General');
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
     null,
@@ -45,7 +51,7 @@ const Settings: React.FC = () => {
   return (
     <div className="wa p-4 pt-20 md:p-12">
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
-        Settings
+        {t('settings.label')}
       </p>
       <div className="mt-6 flex flex-row items-center space-x-4 overflow-x-auto md:space-x-8 ">
         <div className="md:hidden">
@@ -100,9 +106,9 @@ const Settings: React.FC = () => {
 
   function renderActiveTab() {
     switch (activeTab) {
-      case 'General':
+      case t('settings.general.label'):
         return <General />;
-      case 'Documents':
+      case t('settings.documents.label'):
         return (
           <Documents
             documents={documents}
@@ -116,7 +122,7 @@ const Settings: React.FC = () => {
             onWidgetScreenshotChange={updateWidgetScreenshot} // Add this line
           />
         );
-      case 'API Keys':
+      case t('settings.apiKeys.label'):
         return <APIKeys />;
       default:
         return null;

@@ -19,11 +19,11 @@ const Modal = (props: ModalProps) => {
       } absolute z-30  h-screen w-screen  bg-gray-alpha`}
     >
       {props.render()}
-      <div className=" mx-auto flex w-[90vw] max-w-lg flex-row-reverse rounded-b-lg bg-white dark:bg-outer-space pb-5 pr-5  shadow-lg">
+      <div className=" mx-auto flex w-[90vw] max-w-lg flex-row-reverse rounded-b-lg bg-white pb-5 pr-5 shadow-lg  dark:bg-outer-space">
         <div>
           <button
             onClick={() => props.handleSubmit()}
-            className="ml-auto h-10 w-20 rounded-3xl bg-violet-800 text-white dark:text-silver transition-all hover:bg-violet-700"
+            className="ml-auto h-10 w-20 rounded-3xl bg-violet-800 text-white transition-all hover:bg-violet-700 dark:text-silver"
           >
             {props.textDelete ? 'Delete' : 'Save'}
           </button>

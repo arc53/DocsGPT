@@ -9,13 +9,14 @@ import {
 import { selectSourceDocs } from '../preferences/preferenceSlice';
 import Exit from '../assets/exit.svg';
 import Trash from '../assets/trash.svg';
-
+import { useTranslation } from 'react-i18next';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
   'huggingface_sentence-transformers/all-mpnet-base-v2';
 
 const APIKeys: React.FC = () => {
+  const { t } = useTranslation();
   const [isCreateModalOpen, setCreateModal] = React.useState(false);
   const [isSaveKeyModalOpen, setSaveKeyModal] = React.useState(false);
   const [newKey, setNewKey] = React.useState('');
@@ -97,7 +98,7 @@ const APIKeys: React.FC = () => {
             onClick={() => setCreateModal(true)}
             className="rounded-full bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
           >
-            Create new
+            {t('settings.apiKeys.createNew')}
           </button>
         </div>
         {isCreateModalOpen && (
@@ -117,11 +118,15 @@ const APIKeys: React.FC = () => {
             <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
               <thead>
                 <tr>
-                  <th className="border-r p-4 md:w-[244px]">Name</th>
-                  <th className="w-[244px] border-r px-4 py-2">
-                    Source document
+                  <th className="border-r p-4 md:w-[244px]">
+                    {t('settings.apiKeys.name')}
                   </th>
-                  <th className="w-[244px] border-r px-4 py-2">API Key</th>
+                  <th className="w-[244px] border-r px-4 py-2">
+                    {t('settings.apiKeys.sourceDoc')}
+                  </th>
+                  <th className="w-[244px] border-r px-4 py-2">
+                    {t('settings.apiKeys.key')}
+                  </th>
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>

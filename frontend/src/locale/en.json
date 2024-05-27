@@ -1,0 +1,39 @@
+{
+  "language": "English",
+  "chat":"Chat",
+  "newChat":"New Chat",
+  "myPlan":"My Plan",
+  "about":"About",
+  "inputPlaceholder":"Type your message here...",
+  "tagline":"DocsGPT uses GenAI, please review critial information using sources.",
+  "sourceDocs":"Source Docs",
+  "settings":{
+    "label":"Settings",
+    "general":{
+      "label":"General",
+      "selectTheme":"Select Theme",
+      "light":"Light",
+      "dark":"Dark",
+      "selectLanguage":"Select Language",
+      "chunks":"Chunks processed per query",
+      "prompt":"Active Prompt",
+      "deleteAllLabel":"Delete all Conversation",
+      "deleteAllBtn":"Delete all",
+      "addNew":"Add New"
+    },
+    "documents":{
+      "label":"Documents",
+      "name":"Document Name",
+      "date":"Vector Date",
+      "type":"Type",
+      "tokenUsage":"Token Usage"
+    },
+    "apiKeys":{
+      "label":"API Keys",
+      "name":"Name",
+      "key":"API Key",
+      "sourceDoc":"Source Document",
+      "createNew":"Create New"
+    }
+  }
+}

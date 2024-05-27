@@ -14,7 +14,7 @@ import {
 import Send from './../assets/send.svg';
 import SendDark from './../assets/send_dark.svg';
 import Spinner from './../assets/spinner.svg';
-import SpinnerDark from './../assets/spinner-dark.svg'
+import SpinnerDark from './../assets/spinner-dark.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import ArrowDown from './../assets/arrow-down.svg';
