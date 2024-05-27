@@ -253,6 +253,7 @@ def combined_json():
             "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
             "location": "remote",
+            "tokens":""
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
@@ -269,6 +270,7 @@ def combined_json():
                 "docLink": index["location"],
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "local",
+                "tokens" : index["tokens"] if ("tokens" in index.keys()) else ""
             }
         )
     if settings.VECTOR_STORE == "faiss":
@@ -290,6 +292,7 @@ def combined_json():
                 "docLink": "duckduck_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
+                "tokens":""
             }
         )
     if "brave_search" in settings.RETRIEVERS_ENABLED:
@@ -304,6 +307,7 @@ def combined_json():
                 "docLink": "brave_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
+                "tokens":""
             }
         )
 

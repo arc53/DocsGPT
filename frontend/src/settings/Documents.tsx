@@ -14,6 +14,7 @@ const Documents: React.FC<DocumentsProps> = ({
               <tr>
                 <th className="border-r p-4 md:w-[244px]">Document Name</th>
                 <th className="w-[244px] border-r px-4 py-2">Vector Date</th>
+                <th className="w-[244px] border-r px-4 py-2">Token usage</th>
                 <th className="w-[244px] border-r px-4 py-2">Type</th>
                 <th className="px-4 py-2"></th>
               </tr>
@@ -27,6 +28,9 @@ const Documents: React.FC<DocumentsProps> = ({
                     </td>
                     <td className="border-r border-t px-4 py-2">
                       {document.date}
+                    </td>
+                    <td className="border-r border-t px-4 py-2">
+                      {document.tokens ? document.tokens : ''}
                     </td>
                     <td className="border-r border-t px-4 py-2">
                       {document.location === 'remote'

@@ -2,6 +2,7 @@ import os
 import shutil
 import string
 import zipfile
+import tiktoken
 from urllib.parse import urljoin
 
 import requests
@@ -131,6 +132,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
     call_openai_api(docs, full_path, self)
+    tokens = count_tokens_docs(docs)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     if sample:
@@ -139,7 +141,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    file_data = {"name": name_job, "user": user}
+    file_data = {"name": name_job, "user": user, "tokens":tokens}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
@@ -188,18 +190,19 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
         max_tokens=max_tokens,
         token_check=token_check,
     )
-
     # docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
     call_openai_api(docs, full_path, self)
+    tokens = count_tokens_docs(docs)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user}
+    file_data = {"name": name_job, "user": user, "tokens":tokens}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
+        
         requests.post(
             urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
         )
@@ -210,3 +213,25 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     shutil.rmtree(full_path)
 
     return {"urls": source_data, "name_job": name_job, "user": user, "limited": False}
+
+
+def count_tokens_docs(docs):
+    # Here we convert the docs list to a string and calculate the number of tokens the string represents.
+    # docs_content = (" ".join(docs))
+    docs_content = ""
+    for doc in docs:
+        docs_content += doc.page_content
+
+    tokens, total_price = num_tokens_from_string(
+        string=docs_content, encoding_name="cl100k_base"
+    )
+    # Here we print the number of tokens and the approx user cost with some visually appealing formatting.
+    return tokens
+
+
+def num_tokens_from_string(string: str, encoding_name: str) -> int:
+    # Function to convert string to tokens and estimate user cost.
+    encoding = tiktoken.get_encoding(encoding_name)
+    num_tokens = len(encoding.encode(string))
+    total_price = (num_tokens / 1000) * 0.0004
+    return num_tokens, total_price
