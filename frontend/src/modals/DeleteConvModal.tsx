@@ -3,7 +3,7 @@ import { useDispatch } from 'react-redux';
 import { ActiveState } from '../models/misc';
 import { useMediaQuery, useOutsideAlerter } from '../hooks';
 import ConfirmationModal from './ConfirmationModal';
-
+import { useTranslation } from 'react-i18next';
 import { Action } from '@reduxjs/toolkit';
 
 export default function DeleteConvModal({
@@ -18,7 +18,7 @@ export default function DeleteConvModal({
   const modalRef = React.useRef(null);
   const dispatch = useDispatch();
   const { isMobile } = useMediaQuery();
-
+  const { t } = useTranslation();
   useOutsideAlerter(
     modalRef,
     () => {
@@ -40,10 +40,10 @@ export default function DeleteConvModal({
 
   return (
     <ConfirmationModal
-      message="Are you sure you want to delete all the conversations?"
+      message={t('modals.deleteConv.confirm')}
       modalState={modalState}
       setModalState={setModalState}
-      submitLabel={'Delete'}
+      submitLabel={t('modals.deleteConv.delete')}
       handleSubmit={handleSubmit}
       handleCancel={handleCancel}
     />

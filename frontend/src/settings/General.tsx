@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import Prompts from './Prompts';
 import { useDarkTheme } from '../hooks';
@@ -19,7 +19,7 @@ const General: React.FC = () => {
     t,
     i18n: { changeLanguage, language },
   } = useTranslation();
-  const themes = [t('settings.general.light'), t('settings.general.dark')];
+  const themes = ['Light', 'Dark'];
 
   const languageOptions = [
     {
@@ -38,7 +38,7 @@ const General: React.FC = () => {
   const selectedChunks = useSelector(selectChunks);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
   const [selectedTheme, setSelectedTheme] = React.useState(
-    isDarkTheme ? t('settings.general.dark') : t('settings.general.light'),
+    isDarkTheme ? 'Dark' : 'Light',
   );
   const dispatch = useDispatch();
   const locale = localStorage.getItem('docsgpt-locale');
@@ -46,10 +46,7 @@ const General: React.FC = () => {
     locale ? languageOptions.find((option) => option.value === locale) : 'en',
   );
   const selectedPrompt = useSelector(selectPrompt);
-  useEffect(() => {
-    console.log(selectedLanguage);
-    console.log(language);
-  }, [selectedLanguage]);
+
   React.useEffect(() => {
     const fetchPrompts = async () => {
       try {
