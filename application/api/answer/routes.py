@@ -11,7 +11,6 @@ from bson.objectid import ObjectId
 
 
 from application.core.settings import settings
-from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.error import bad_request
 from application.cache import cache
