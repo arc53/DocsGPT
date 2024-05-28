@@ -8,7 +8,7 @@
   "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
   "sourceDocs": "Documentos Fuente",
   "none": "Nada",
-  "cancel":"Cancelar",
+  "cancel": "Cancelar",
   "demo": [
     {
       "header": "Aprende sobre DocsGPT",
@@ -95,6 +95,6 @@
     "deleteConv": {
       "confirm": "¿Está seguro de que desea eliminar todas las conversaciones?",
       "delete": "Eliminar"
-    }    
+    }
   }
 }
