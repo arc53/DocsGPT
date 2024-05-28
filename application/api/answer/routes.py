@@ -78,7 +78,7 @@ def get_data_from_api_key(api_key):
     if data is None:
         return bad_request(401, "Invalid API key")
     return data
-    
+
 
 def get_vectorstore(data):
     if "active_docs" in data:
@@ -94,6 +94,7 @@ def get_vectorstore(data):
         vectorstore = ""
     vectorstore = os.path.join("application", vectorstore)
     return vectorstore
+
 
 def is_azure_configured():
     return (
@@ -221,7 +222,10 @@ def stream():
         chunks = int(data["chunks"])
     else:
         chunks = 2
-
+    if "token_limit" in data:
+        token_limit = data["token_limit"]
+    else:
+        token_limit = settings.DEFAULT_MAX_HISTORY
 
     # check if active_docs or api_key is set
 
@@ -255,6 +259,7 @@ def stream():
         chat_history=history,
         prompt=prompt,
         chunks=chunks,
+        token_limit=token_limit,
         gpt_model=gpt_model,
         user_api_key=user_api_key,
     )
@@ -291,6 +296,10 @@ def api_answer():
         chunks = int(data["chunks"])
     else:
         chunks = 2
+    if "token_limit" in data:
+        token_limit = data["token_limit"]
+    else:
+        token_limit = settings.DEFAULT_MAX_HISTORY
 
     # use try and except  to check for exception
     try:
@@ -314,7 +323,7 @@ def api_answer():
             retriever_name = source["active_docs"]
 
         prompt = get_prompt(prompt_id)
- 
+
         retriever = RetrieverCreator.create_retriever(
             retriever_name,
             question=question,
@@ -322,6 +331,7 @@ def api_answer():
             chat_history=history,
             prompt=prompt,
             chunks=chunks,
+            token_limit=token_limit,
             gpt_model=gpt_model,
             user_api_key=user_api_key,
         )
@@ -370,7 +380,6 @@ def api_search():
     else:
         source = {}
         user_api_key = None
-   
 
     if (
         source["active_docs"].split("/")[0] == "default"
@@ -379,6 +388,10 @@ def api_search():
         retriever_name = "classic"
     else:
         retriever_name = source["active_docs"]
+    if "token_limit" in data:
+        token_limit = data["token_limit"]
+    else:
+        token_limit = settings.DEFAULT_MAX_HISTORY
 
     retriever = RetrieverCreator.create_retriever(
         retriever_name,
@@ -387,6 +400,7 @@ def api_search():
         chat_history=[],
         prompt="default",
         chunks=chunks,
+        token_limit=token_limit,
         gpt_model=gpt_model,
         user_api_key=user_api_key,
     )
