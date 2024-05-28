@@ -1,5 +1,5 @@
 import * as React from 'react';
-
+import { useTranslation } from 'react-i18next';
 interface ModalProps {
   handleSubmit: () => void;
   isCancellable: boolean;
@@ -12,6 +12,7 @@ interface ModalProps {
 }
 
 const Modal = (props: ModalProps) => {
+  const { t } = useTranslation();
   return (
     <div
       className={`${
@@ -32,7 +33,7 @@ const Modal = (props: ModalProps) => {
               onClick={() => props.handleCancel && props.handleCancel()}
               className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
             >
-              Cancel
+              {t('cancel')}
             </button>
           )}
         </div>

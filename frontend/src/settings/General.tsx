@@ -43,7 +43,9 @@ const General: React.FC = () => {
   const dispatch = useDispatch();
   const locale = localStorage.getItem('docsgpt-locale');
   const [selectedLanguage, setSelectedLanguage] = React.useState(
-    locale ? languageOptions.find((option) => option.value === locale) : 'en',
+    locale
+      ? languageOptions.find((option) => option.value === locale)
+      : languageOptions[0],
   );
   const selectedPrompt = useSelector(selectPrompt);
 
