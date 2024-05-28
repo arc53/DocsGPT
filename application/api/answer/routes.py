@@ -14,6 +14,7 @@ from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.error import bad_request
+from application.cache import cache
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ def is_azure_configured():
     )
 
 
-def save_conversation(conversation_id, question, response, source_log_docs, llm):
+def save_conversation(conversation_id, question, response, source_log_docs, cache, user_api_key):
     if conversation_id is not None and conversation_id != "None":
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id)},
@@ -140,6 +141,9 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm)
             },
         ]
 
+        llm = cache.get("llm_creator").create_llm(
+            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
+        )
         completion = llm.gen(model=gpt_model, messages=messages_summary, max_tokens=30)
         conversation_id = conversations_collection.insert_one(
             {
@@ -170,11 +174,10 @@ def get_prompt(prompt_id):
     return prompt
 
 
-def complete_stream(question, retriever, conversation_id, user_api_key):
-
+def complete_stream(cache, question, retriever, conversation_id, user_api_key):
     response_full = ""
     source_log_docs = []
-    answer = retriever.gen()
+    answer = retriever.gen(cache)
     for line in answer:
         if "answer" in line:
             response_full += str(line["answer"])
@@ -183,11 +186,8 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
         elif "source" in line:
             source_log_docs.append(line["source"])
 
-    llm = LLMCreator.create_llm(
-        settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
-    )
     conversation_id = save_conversation(
-        conversation_id, question, response_full, source_log_docs, llm
+        conversation_id, question, response_full, source_log_docs, cache, user_api_key
     )
 
     # send data.type = "end" to indicate that the stream has ended as json
@@ -261,6 +261,7 @@ def stream():
 
     return Response(
         complete_stream(
+            cache=cache,
             question=question,
             retriever=retriever,
             conversation_id=conversation_id,
@@ -327,19 +328,15 @@ def api_answer():
         )
         source_log_docs = []
         response_full = ""
-        for line in retriever.gen():
+        for line in retriever.gen(cache):
             if "source" in line:
                 source_log_docs.append(line["source"])
             elif "answer" in line:
                 response_full += line["answer"]
 
-        llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
-        )
-
         result = {"answer": response_full, "sources": source_log_docs}
         result["conversation_id"] = save_conversation(
-            conversation_id, question, response_full, source_log_docs, llm
+            conversation_id, question, response_full, source_log_docs, cache, user_api_key
         )
 
         return result

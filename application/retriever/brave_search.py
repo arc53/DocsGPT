@@ -51,7 +51,7 @@ class BraveRetSearch(BaseRetriever):
 
         return docs
 
-    def gen(self):
+    def gen(self, cache):
         docs = self._get_data()
 
         # join all page_content together with a newline
@@ -83,7 +83,7 @@ class BraveRetSearch(BaseRetriever):
                         )
         messages_combine.append({"role": "user", "content": self.question})
 
-        llm = LLMCreator.create_llm(
+        llm = cache.get("llm_creator").create_llm(
             settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
         )
 
