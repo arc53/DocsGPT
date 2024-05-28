@@ -148,7 +148,7 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
       const { index, query } = action.payload;
-      if (query.response) {
+      if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
       } else {
