@@ -84,7 +84,7 @@ const General: React.FC = () => {
         />
       </div>
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <p className="mb-2 font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectLanguage')}
         </p>
         <Dropdown
