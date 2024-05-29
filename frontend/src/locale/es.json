@@ -1,0 +1,100 @@
+{
+  "language": "Spanish",
+  "chat": "Chat",
+  "newChat": "Nuevo Chat",
+  "myPlan": "Mi Plan",
+  "about": "Acerca de",
+  "inputPlaceholder": "Escribe tu mensaje aquí...",
+  "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
+  "sourceDocs": "Documentos Fuente",
+  "none": "Nada",
+  "cancel": "Cancelar",
+  "demo": [
+    {
+      "header": "Aprende sobre DocsGPT",
+      "query": "¿Qué es DocsGPT?"
+    },
+    {
+      "header": "Resumir documentación",
+      "query": "Resumir contexto actual"
+    },
+    {
+      "header": "Escribir Código",
+      "query": "Escribir código para solicitud de API a /api/answer"
+    },
+    {
+      "header": "Asistencia de Aprendizaje",
+      "query": "Escribe posibles preguntas para el contexto"
+    }
+  ],
+  "settings": {
+    "label": "Configuración",
+    "general": {
+      "label": "General",
+      "selectTheme": "Seleccionar Tema",
+      "light": "de luz",
+      "dark": "oscura",
+      "selectLanguage": "Seleccionar Idioma",
+      "chunks": "Trozos procesados por consulta",
+      "prompt": "Prompt Activo",
+      "deleteAllLabel": "Eliminar toda la Conversación",
+      "deleteAllBtn": "Eliminar todo",
+      "addNew": "Agregar Nuevo"
+    },
+    "documents": {
+      "label": "Documentos",
+      "name": "Nombre del Documento",
+      "date": "Fecha Vector",
+      "type": "Tipo",
+      "tokenUsage": "Uso de Tokens"
+    },
+    "apiKeys": {
+      "label": "Claves API",
+      "name": "Nombre",
+      "key": "Clave de API",
+      "sourceDoc": "Documento Fuente",
+      "createNew": "Crear Nuevo"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "Subir Nueva Documentación",
+      "file": "Desde Archivo",
+      "remote": "Remota",
+      "name": "Nombre",
+      "choose": "Seleccionar Archivos",
+      "info": "Por favor, suba archivos .pdf, .txt, .rst, .docx, .md, .zip limitados a 25 MB",
+      "uploadedFiles": "Archivos Subidos",
+      "cancel": "Cancelar",
+      "train": "Entrenar",
+      "link": "Enlace",
+      "urlLink": "Enlace URL",
+      "reddit": {
+        "id": "ID de Cliente",
+        "secret": "Secreto de Cliente",
+        "agent": "Agente de Usuario",
+        "searchQueries": "Consultas de Búsqueda",
+        "numberOfPosts": "Número de publicaciones"
+      }
+    },
+    "createAPIKey": {
+      "label": "Crear Nueva Clave de API",
+      "apiKeyName": "Nombre de la Clave de API",
+      "chunks": "Fragmentos procesados por consulta",
+      "prompt": "Seleccione el prompt activo",
+      "sourceDoc": "Documento Fuente",
+      "create": "Crear"
+    },
+    "saveKey": {
+      "note": "Por favor, guarde su Clave",
+      "disclaimer": "Esta es la única vez que se mostrará su clave.",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "confirm": "He guardado la Clave"
+    },
+    "deleteConv": {
+      "confirm": "¿Está seguro de que desea eliminar todas las conversaciones?",
+      "delete": "Eliminar"
+    }
+  }
+}

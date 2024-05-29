@@ -1,0 +1,100 @@
+{
+  "language": "English",
+  "chat": "Chat",
+  "newChat": "New Chat",
+  "myPlan": "My Plan",
+  "about": "About",
+  "inputPlaceholder": "Type your message here...",
+  "tagline": "DocsGPT uses GenAI, please review critial information using sources.",
+  "sourceDocs": "Source Docs",
+  "none": "None",
+  "cancel":"Cancel",
+  "demo": [
+    {
+      "header": "Learn about DocsGPT",
+      "query": "What is DocsGPT?"
+    },
+    {
+      "header": "Summarise documentation",
+      "query": "Summarise current context"
+    },
+    {
+      "header": "Write Code",
+      "query": "Write code for api request to /api/answer"
+    },
+    {
+      "header": "Learning Assistance",
+      "query": "Write potential questions for context"
+    }
+  ],
+  "settings": {
+    "label": "Settings",
+    "general": {
+      "label": "General",
+      "selectTheme": "Select Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "selectLanguage": "Select Language",
+      "chunks": "Chunks processed per query",
+      "prompt": "Active Prompt",
+      "deleteAllLabel": "Delete all Conversation",
+      "deleteAllBtn": "Delete all",
+      "addNew": "Add New"
+    },
+    "documents": {
+      "label": "Documents",
+      "name": "Document Name",
+      "date": "Vector Date",
+      "type": "Type",
+      "tokenUsage": "Token Usage"
+    },
+    "apiKeys": {
+      "label": "API Keys",
+      "name": "Name",
+      "key": "API Key",
+      "sourceDoc": "Source Document",
+      "createNew": "Create New"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "Upload New Documentation",
+      "file": "From File",
+      "remote": "Remote",
+      "name": "Name",
+      "choose": "Choose Files",
+      "info": "Please upload .pdf, .txt, .rst, .docx, .md, .zip limited to 25mb",
+      "uploadedFiles": "Uploaded Files",
+      "cancel": "Cancel",
+      "train": "Train",
+      "link": "Link",
+      "urlLink": "URL Link",
+      "reddit": {
+        "id": "Client ID",
+        "secret": "Client Secret",
+        "agent": "User agent",
+        "searchQueries": "Search queries",
+        "numberOfPosts": "Number of posts"
+      }
+    },
+    "createAPIKey": {
+      "label": "Create New API Key",
+      "apiKeyName": "API Key Name",
+      "chunks": "Chunks processed per query",
+      "prompt": "Select active prompt",
+      "sourceDoc": "Source document",
+      "create": "Create"
+    },
+    "saveKey": {
+      "note": "Please save your Key",
+      "disclaimer": "This is the only time your key will be shown.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "confirm": "I saved the Key"
+    },
+    "deleteConv": {
+      "confirm": "Are you sure you want to delete all the conversations?",
+      "delete": "Delete"
+    }
+  }
+}

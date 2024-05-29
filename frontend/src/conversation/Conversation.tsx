@@ -14,9 +14,10 @@ import {
 import Send from './../assets/send.svg';
 import SendDark from './../assets/send_dark.svg';
 import Spinner from './../assets/spinner.svg';
-import SpinnerDark from './../assets/spinner-dark.svg'
+import SpinnerDark from './../assets/spinner-dark.svg';
 import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
+import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -28,6 +29,7 @@ export default function Conversation() {
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
+  const { t } = useTranslation();
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
@@ -177,7 +179,7 @@ export default function Conversation() {
             id="inputbox"
             ref={inputRef}
             tabIndex={1}
-            placeholder="Type your message here..."
+            placeholder={t('inputPlaceholder')}
             contentEditable
             onPaste={handlePaste}
             className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
@@ -212,7 +214,7 @@ export default function Conversation() {
           )}
         </div>
         <p className="text-gray-595959 hidden w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
-          DocsGPT uses GenAI, please review critial information using sources.
+          {t('tagline')}
         </p>
       </div>
     </div>

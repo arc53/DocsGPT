@@ -2,7 +2,7 @@ import Trash from '../assets/trash.svg';
 import Arrow2 from '../assets/dropdown-arrow.svg';
 import { Doc } from '../preferences/preferenceApi';
 import { useDispatch } from 'react-redux';
-
+import { useTranslation } from 'react-i18next';
 type Props = {
   options: Doc[] | null;
   selectedDocs: Doc | null;
@@ -29,6 +29,8 @@ function SourceDropdown({
     dispatch(setSelectedDocs(null));
     setIsDocsListOpen(false);
   };
+
+  const { t } = useTranslation();
 
   return (
     <div className="relative w-5/6 rounded-3xl">
@@ -104,7 +106,7 @@ function SourceDropdown({
             onClick={handleEmptyDocumentSelect}
           >
             <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
-              None
+              {t('none')}
             </span>
           </div>
         </div>

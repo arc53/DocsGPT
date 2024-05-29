@@ -1,6 +1,6 @@
 import Exit from '../assets/exit.svg';
 import { ActiveState } from '../models/misc';
-
+import { useTranslation } from 'react-i18next';
 function ConfirmationModal({
   message,
   modalState,
@@ -18,6 +18,7 @@ function ConfirmationModal({
   cancelLabel?: string;
   handleCancel?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <article
       className={`${
@@ -54,7 +55,7 @@ function ConfirmationModal({
                   }}
                   className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
                 >
-                  {cancelLabel ? cancelLabel : 'Cancel'}
+                  {cancelLabel ? cancelLabel : t('cancel')}
                 </button>
               </div>
             </div>

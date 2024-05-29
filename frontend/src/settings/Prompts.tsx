@@ -2,9 +2,8 @@ import React from 'react';
 import { PromptProps, ActiveState } from '../models/misc';
 import Dropdown from '../components/Dropdown';
 import PromptsModal from '../preferences/PromptsModal';
-
+import { useTranslation } from 'react-i18next';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-
 const Prompts: React.FC<PromptProps> = ({
   prompts,
   selectedPrompt,
@@ -34,7 +33,10 @@ const Prompts: React.FC<PromptProps> = ({
   });
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
-
+  const {
+    t,
+    i18n: { changeLanguage, language },
+  } = useTranslation();
   const handleAddPrompt = async () => {
     try {
       const response = await fetch(`${apiHost}/api/create_prompt`, {
@@ -158,7 +160,9 @@ const Prompts: React.FC<PromptProps> = ({
       <div>
         <div className="flex flex-row items-center gap-8">
           <div>
-            <p className="font-semibold dark:text-bright-gray">Active Prompt</p>
+            <p className="font-semibold dark:text-bright-gray">
+              {t('settings.general.prompt')}
+            </p>
             <Dropdown
               options={prompts}
               selectedValue={selectedPrompt.name}
@@ -193,7 +197,7 @@ const Prompts: React.FC<PromptProps> = ({
               setModalState('ACTIVE');
             }}
           >
-            Add new
+            {t('settings.general.addNew')}
           </button>
         </div>
       </div>

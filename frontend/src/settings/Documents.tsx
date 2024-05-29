@@ -1,10 +1,12 @@
 import { DocumentsProps } from '../models/misc';
 import Trash from '../assets/trash.svg';
 import PropTypes from 'prop-types';
+import { useTranslation } from 'react-i18next';
 const Documents: React.FC<DocumentsProps> = ({
   documents,
   handleDeleteDocument,
 }) => {
+  const { t } = useTranslation();
   return (
     <div className="mt-8">
       <div className="flex flex-col">
@@ -12,10 +14,18 @@ const Documents: React.FC<DocumentsProps> = ({
           <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
             <thead>
               <tr>
-                <th className="border-r p-4 md:w-[244px]">Document Name</th>
-                <th className="w-[244px] border-r px-4 py-2">Vector Date</th>
-                <th className="w-[244px] border-r px-4 py-2">Token usage</th>
-                <th className="w-[244px] border-r px-4 py-2">Type</th>
+                <th className="border-r p-4 md:w-[244px]">
+                  {t('settings.documents.name')}
+                </th>
+                <th className="w-[244px] border-r px-4 py-2">
+                  {t('settings.documents.date')}
+                </th>
+                <th className="w-[244px] border-r px-4 py-2">
+                  {t('settings.documents.tokenUsage')}
+                </th>
+                <th className="w-[244px] border-r px-4 py-2">
+                  {t('settings.documents.type')}
+                </th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>

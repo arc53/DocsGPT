@@ -2,6 +2,7 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import Prompts from './Prompts';
 import { useDarkTheme } from '../hooks';
+import { useTranslation } from 'react-i18next';
 import Dropdown from '../components/Dropdown';
 import {
   selectPrompt,
@@ -16,8 +17,22 @@ import {
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 const General: React.FC = () => {
+  const {
+    t,
+    i18n: { changeLanguage, language },
+  } = useTranslation();
   const themes = ['Light', 'Dark'];
-  const languages = ['English'];
+
+  const languageOptions = [
+    {
+      label: 'English',
+      value: 'en',
+    },
+    {
+      label: 'Spanish',
+      value: 'es',
+    },
+  ];
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([
     [0, 'None'],
@@ -37,7 +52,12 @@ const General: React.FC = () => {
     isDarkTheme ? 'Dark' : 'Light',
   );
   const dispatch = useDispatch();
-  const [selectedLanguage, setSelectedLanguage] = React.useState(languages[0]);
+  const locale = localStorage.getItem('docsgpt-locale');
+  const [selectedLanguage, setSelectedLanguage] = React.useState(
+    locale
+      ? languageOptions.find((option) => option.value === locale)
+      : languageOptions[0],
+  );
   const selectedPrompt = useSelector(selectPrompt);
 
   React.useEffect(() => {
@@ -59,7 +79,9 @@ const General: React.FC = () => {
   return (
     <div className="mt-[59px]">
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">Select Theme</p>
+        <p className="font-bold text-jet dark:text-bright-gray">
+          {t('settings.general.selectTheme')}
+        </p>
         <Dropdown
           options={themes}
           selectedValue={selectedTheme}
@@ -73,13 +95,17 @@ const General: React.FC = () => {
         />
       </div>
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">
-          Select Language
+        <p className="mb-2 font-bold text-jet dark:text-bright-gray">
+          {t('settings.general.selectLanguage')}
         </p>
         <Dropdown
-          options={languages}
-          selectedValue={selectedLanguage}
-          onSelect={setSelectedLanguage}
+          options={languageOptions}
+          selectedValue={selectedLanguage ?? languageOptions[0]}
+          onSelect={(selectedOption: { label: string; value: string }) => {
+            setSelectedLanguage(selectedOption);
+            changeLanguage(selectedOption.value);
+            localStorage.setItem('docsgpt-locale', selectedOption.value);
+          }}
           size="w-56"
           rounded="3xl"
           border="border"
@@ -87,7 +113,7 @@ const General: React.FC = () => {
       </div>
       <div className="mb-5">
         <p className="font-bold text-jet dark:text-bright-gray">
-          Chunks processed per query
+          {t('settings.general.chunks')}
         </p>
         <Dropdown
           options={chunks}
@@ -136,13 +162,15 @@ const General: React.FC = () => {
       </div>
       <div className="w-56">
         <p className="font-bold text-jet dark:text-bright-gray">
-          Delete all conversations
+          {t('settings.general.deleteAllLabel')}
         </p>
         <button
           className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border border-solid border-red-500 px-5 py-3 text-red-500 hover:bg-red-500 hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
-          <span className="overflow-hidden text-ellipsis ">Delete all</span>
+          <span className="overflow-hidden text-ellipsis ">
+            {t('settings.general.deleteAllBtn')}
+          </span>
         </button>
       </div>
     </div>
