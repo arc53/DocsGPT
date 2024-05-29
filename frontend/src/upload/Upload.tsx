@@ -6,7 +6,7 @@ import { ActiveState } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import Dropdown from '../components/Dropdown';
-
+import { useTranslation } from 'react-i18next';
 export default function Upload({
   modalState,
   setModalState,
@@ -24,6 +24,7 @@ export default function Upload({
     search_queries: [''],
     number_posts: 10,
   });
+  const { t } = useTranslation();
   const urlOptions: { label: string; value: string }[] = [
     { label: 'Crawler', value: 'crawler' },
     // { label: 'Sitemap', value: 'sitemap' },
@@ -238,7 +239,7 @@ export default function Upload({
     view = (
       <>
         <p className="text-xl text-jet dark:text-bright-gray">
-          Upload New Documentation
+          {t('modals.uploadDoc.label')}
         </p>
         <div>
           <button
@@ -249,7 +250,7 @@ export default function Upload({
                 : 'text-sonic-silver  hover:text-purple-30'
             } mr-4 rounded-full px-[20px] py-[5px] text-sm font-semibold`}
           >
-            From File
+            {t('modals.uploadDoc.file')}
           </button>
           <button
             onClick={() => setActiveTab('remote')}
@@ -259,7 +260,7 @@ export default function Upload({
                 : 'text-sonic-silver  hover:text-purple-30'
             } mr-4 rounded-full px-[20px] py-[5px] text-sm font-semibold`}
           >
-            Remote
+            {t('modals.uploadDoc.remote')}
           </button>
         </div>
         {activeTab === 'file' && (
@@ -272,21 +273,21 @@ export default function Upload({
             ></input>
             <div className="relative bottom-12 left-2 mt-[-20px]">
               <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                Name
+                {t('modals.uploadDoc.name')}
               </span>
             </div>
             <div {...getRootProps()}>
               <span className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:bg-purple-taupe dark:text-silver">
                 <input type="button" {...getInputProps()} />
-                Choose Files
+                {t('modals.uploadDoc.choose')}
               </span>
             </div>
             <p className="mb-0 text-xs italic text-gray-4000">
-              Please upload .pdf, .txt, .rst, .docx, .md, .zip limited to 25mb
+              {t('modals.uploadDoc.info')}
             </p>
             <div className="mt-0">
               <p className="mb-[14px] font-medium text-eerie-black dark:text-light-gray">
-                Uploaded Files
+                {t('modals.uploadDoc.uploadedFiles')}
               </p>
               {files.map((file) => (
                 <p key={file.name} className="text-gray-6000">
@@ -294,7 +295,9 @@ export default function Upload({
                 </p>
               ))}
               {files.length === 0 && (
-                <p className="text-gray-6000 dark:text-light-gray">None</p>
+                <p className="text-gray-6000 dark:text-light-gray">
+                  {t('none')}
+                </p>
               )}
             </div>
           </>
@@ -313,7 +316,7 @@ export default function Upload({
             {urlType.label !== 'Reddit' ? (
               <>
                 <input
-                  placeholder="Enter name"
+                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
                   type="text"
                   className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   value={urlName}
@@ -321,11 +324,11 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    Name
+                    {t('modals.uploadDoc.name')}
                   </span>
                 </div>
                 <input
-                  placeholder="URL Link"
+                  placeholder={t('modals.uploadDoc.urlLink')}
                   type="text"
                   className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   value={url}
@@ -333,7 +336,7 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    Link
+                    {t('modals.uploadDoc.link')}
                   </span>
                 </div>
               </>
@@ -349,7 +352,7 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    Client ID
+                    {t('modals.uploadDoc.reddit.id')}
                   </span>
                 </div>
                 <input
@@ -362,7 +365,7 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    Client secret
+                    {t('modals.uploadDoc.reddit.secret')}
                   </span>
                 </div>
                 <input
@@ -375,7 +378,7 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    User agent
+                    {t('modals.uploadDoc.reddit.agent')}
                   </span>
                 </div>
                 <input
@@ -388,7 +391,7 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    Search queries
+                    {t('modals.uploadDoc.reddit.searchQueries')}
                   </span>
                 </div>
                 <input
@@ -401,7 +404,7 @@ export default function Upload({
                 ></input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    Number of posts
+                    {t('modals.uploadDoc.reddit.numberOfPosts')}
                   </span>
                 </div>
               </>
@@ -422,14 +425,14 @@ export default function Upload({
                 activeTab === 'file'
               }
             >
-              Train
+              {t('modals.uploadDoc.train')}
             </button>
           ) : (
             <button
               onClick={uploadRemote}
               className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1]`}
             >
-              Train
+              {t('modals.uploadDoc.train')}
             </button>
           )}
           <button
@@ -440,7 +443,7 @@ export default function Upload({
             }}
             className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
           >
-            Cancel
+            {t('modals.uploadDoc.cancel')}
           </button>
         </div>
       </>

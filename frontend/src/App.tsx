@@ -7,6 +7,7 @@ import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
 import { useState } from 'react';
 import Setting from './settings';
+import './locale/i18n';
 
 inject();
 
