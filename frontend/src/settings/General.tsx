@@ -35,12 +35,12 @@ const General: React.FC = () => {
   ];
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([
-    [0, 'None'],
-    [100, 'Low'],
-    [1000, 'Medium'],
-    [2000, 'Default'],
-    [4000, 'High'],
-    [1e9, 'Unlimited'],
+    [0, t('settings.general.none')],
+    [100, t('settings.general.low')],
+    [1000, t('settings.general.medium')],
+    [2000, t('settings.general.default')],
+    [4000, t('settings.general.high')],
+    [1e9, t('settings.general.unlimited')],
   ]);
   const [prompts, setPrompts] = React.useState<
     { name: string; id: string; type: string }[]
@@ -126,7 +126,7 @@ const General: React.FC = () => {
       </div>
       <div className="mb-5">
         <p className="mb-2 font-bold text-jet dark:text-bright-gray">
-          Conversational history
+          {t('settings.general.convHistory')}
         </p>
         <Dropdown
           options={Array.from(token_limits, ([value, desc]) => ({

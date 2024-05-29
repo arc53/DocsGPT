@@ -40,7 +40,14 @@
       "prompt": "Active Prompt",
       "deleteAllLabel": "Delete all Conversation",
       "deleteAllBtn": "Delete all",
-      "addNew": "Add New"
+      "addNew": "Add New",
+      "convHistory":"Conversational history",
+      "none":"None",
+      "low":"Low",
+      "medium":"Medium",
+      "high":"High",
+      "unlimited":"Unlimited",
+      "default":"default"
     },
     "documents": {
       "label": "Documents",
