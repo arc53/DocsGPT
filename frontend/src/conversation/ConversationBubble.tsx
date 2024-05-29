@@ -22,7 +22,7 @@ const ConversationBubble = forwardRef<
     className?: string;
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
-    sources?: { title: string; text: string }[];
+    sources?: { title: string; text: string; source: string }[];
   }
 >(function ConversationBubble(
   { message, type, className, feedback, handleFeedback, sources },
@@ -177,7 +177,13 @@ const ConversationBubble = forwardRef<
                             : 'bg-[#D7EBFD] hover:bg-[#BFE1FF]'
                         }`}
                         onClick={() =>
-                          setOpenSource(openSource === index ? null : index)
+                          source.source !== 'local'
+                            ? window.open(
+                                source.source,
+                                '_blank',
+                                'noopener, noreferrer',
+                              )
+                            : setOpenSource(openSource === index ? null : index)
                         }
                       >
                         <p

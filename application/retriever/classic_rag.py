@@ -69,6 +69,11 @@ class ClassicRAG(BaseRetriever):
                         else i.page_content
                     ),
                     "text": i.page_content,
+                    "source": (
+                        i.metadata.get("source")
+                        if i.metadata.get("source")
+                        else "local"
+                    ),
                 }
                 for i in docs_temp
             ]
