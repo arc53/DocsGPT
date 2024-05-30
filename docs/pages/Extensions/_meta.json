@@ -7,8 +7,8 @@
     "title": "🏗️ Widget setup",
     "href": "/Extensions/react-widget"
   },
-  "api-key-guide": {
-    "title": "🔐 API Keys guide",
-    "href": "/Extensions/api-key-guide"
+  "Chrome-extension": {
+    "title": "🌐 Chrome Extension",
+    "href": "/Extensions/Chrome-extension"
   }
 }
