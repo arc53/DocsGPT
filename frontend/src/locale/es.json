@@ -40,7 +40,14 @@
       "prompt": "Prompt Activo",
       "deleteAllLabel": "Eliminar toda la Conversación",
       "deleteAllBtn": "Eliminar todo",
-      "addNew": "Agregar Nuevo"
+      "addNew": "Agregar Nuevo",
+      "convHistory":"Historia conversacional",
+      "none":"ninguno",
+      "low":"Bajo",
+      "medium":"Medio",
+      "high":"Alto",
+      "unlimited":"Ilimitado",
+      "default":"predeterminada"
     },
     "documents": {
       "label": "Documentos",
