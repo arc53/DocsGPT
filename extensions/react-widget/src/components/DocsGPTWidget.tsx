@@ -282,14 +282,23 @@ const Hero = ({ title, description }: { title: string, description: string }) =>
   );
 };
 export const DocsGPTWidget = ({
-  apiHost = 'https://gptcloud.arc53.com',
-  selectDocs = 'default',
-  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
-  avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
-  title = 'Get AI assistance',
-  description = 'DocsGPT\'s AI Chatbot is here to help',
-  heroTitle = 'Welcome to DocsGPT !',
-  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+  apiHost,
+  selectDocs,
+  apiKey,
+  avatar,
+  title,
+  description,
+  heroTitle,
+  heroDescription
+}: {
+  apiHost:string,
+  selectDocs:string,
+  apiKey:string,
+  avatar:string,
+  title:string,
+  description:string,
+  heroTitle:string,
+  heroDescription:string
 }) => {
 
   const [prompt, setPrompt] = useState('');
