@@ -1,42 +1,28 @@
 # DocsGPT react widget
 
 
-This widget will allow you to embed a DocsGPT assistant in your React app.
-
-## Installation
-
-```bash
-npm install  docsgpt
-```
+This widget will allow you to embed a DocsGPT assistant in your React app or any HTML based file.
 
 ## Usage
 
-```javascript
-    import { DocsGPTWidget } from "docsgpt";
+To embed the widget into an HTML file, do the following:
 
-    const App = () => {
-      return <DocsGPTWidget />;
-    };
-```
+1. create a root element where widget would live and/or get rendered. It's important the element is given the specified id:
+```<div id="docsgpt-widget-container"></div>```
 
-To link the widget to your api and your documents you can pass parameters to the <DocsGPTWidget /> component.
+While default props have been provided to the core DocsGPTWidget that gets rendered into the above ```div```, you can still specify the following dataset attributes where applicable:
+- data-apiHost
+- data-selectDocs 
+- data-apiKey
+- data-avatar 
+- data-title
+- data-description 
+- data-heroTitle 
+- data-heroDescription
 
-```javascript
-    import { DocsGPTWidget } from "docsgpt";
 
-    const App = () => {
-      return <DocsGPTWidget 
-             apiHost = 'http://localhost:7001',
-             selectDocs = 'default', 
-             apiKey = '',
-             avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
-             title = 'Get AI assistance',
-             description = 'DocsGPT\'s AI Chatbot is here to help',
-             heroTitle = 'Welcome to DocsGPT !',
-             heroDescription='This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
-             />;
-    };
-```
+2. Add below script tag to fetch hosted script. Tag can come just before your closing ```</body>``` tag:
+```<script src="https://docsgpt-widget.vercel.app/index.96e2502d.js"></script>```
 
 
 ## Our github
