@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docsgpt-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docsgpt-api
+  template:
+    metadata:
+      labels:
+        app: docsgpt-api
+    spec:
+      containers:
+      - name: docsgpt-api
+        image: arc53/docsgpt
+        ports:
+        - containerPort: 7091
+        resources:
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        env:
+        - name: FLASK_APP
+          value: "application/app.py"
+        - name: DEPLOYMENT_TYPE
+          value: "cloud"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docsgpt-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docsgpt-worker
+  template:
+    metadata:
+      labels:
+        app: docsgpt-worker
+    spec:
+      containers:
+      - name: docsgpt-worker
+        image: arc53/docsgpt
+        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h"]
+        resources:
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        env:
+        - name: API_URL
+          value: "http://<your-api-endpoint>"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docsgpt-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docsgpt-frontend
+  template:
+    metadata:
+      labels:
+        app: docsgpt-frontend
+    spec:
+      containers:
+      - name: docsgpt-frontend
+        image: arc53/docsgpt-fe
+        ports:
+        - containerPort: 5173
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+        env:
+        - name: VITE_API_HOST
+          value: "http://<your-api-endpoint>"
+        - name: VITE_API_STREAMING
+          value: "true"

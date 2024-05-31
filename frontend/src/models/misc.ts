@@ -13,6 +13,7 @@ export type Doc = {
   date: string;
   docLink: string;
   model: string;
+  tokens?: string;
 };
 
 export type PromptProps = {

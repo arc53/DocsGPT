@@ -7,9 +7,9 @@
 </p>
 
 <p align="left">
-  <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in the project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
+  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in the project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
   
-Say goodbye to time-consuming manual searches, and let <strong><a href="https://docsgpt.arc53.com/">DocsGPT</a></strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
+Say goodbye to time-consuming manual searches, and let <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
 </p>
 
 <div align="center">
@@ -27,7 +27,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
-- [Book Demo :wave:](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
+- [Book Enterprise Demo :wave:](https://airtable.com/appdeaL0F1qV8Bl2C/shrrJF1Ll7btCJRbP)
 - [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
@@ -52,7 +52,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 ## Useful Links
 
-- :mag: :fire: [Cloud Version](https://docsgpt.arc53.com/)
+- :mag: :fire: [Cloud Version](https://app.docsgpt.cloud/)
 
 - :speech_balloon: :tada: [Join our Discord](https://discord.gg/n5BX8dh8rU)
 

@@ -39,7 +39,7 @@ import SelectDocsModal from './preferences/SelectDocsModal';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme } from './hooks';
 import SourceDropdown from './components/SourceDropdown';
-
+import { useTranslation } from 'react-i18next';
 interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -70,6 +70,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
+  const { t } = useTranslation();
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
@@ -265,14 +266,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             className="opacity-80 group-hover:opacity-100"
           />
           <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
-            New Chat
+            {t('newChat')}
           </p>
         </NavLink>
         <div className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white">
           {conversations && conversations.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
-                <p className="mt-1 ml-4 text-sm font-semibold">Chats</p>
+                <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
                 {conversations?.map((conversation) => (
@@ -310,7 +311,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 onClick={() => setUploadModalState('ACTIVE')}
               ></img>
             </div>
-            <p className="ml-5 mt-3 text-sm font-semibold">Source Docs</p>
+            <p className="ml-5 mt-3 text-sm font-semibold">{t('sourceDocs')}</p>
           </div>
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
@@ -327,7 +328,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 className="ml-2 w-5 filter dark:invert"
               />
               <p className="my-auto text-sm text-eerie-black  dark:text-white">
-                Settings
+                {t('settings.label')}
               </p>
             </NavLink>
           </div>
@@ -345,7 +346,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 alt="icon"
                 className="ml-2 w-5 filter dark:invert"
               />
-              <p className="my-auto mr-2 text-sm">About</p>
+              <p className="my-auto pr-1 text-sm">{t('about')}</p>
             </NavLink>
             <div className="flex items-center justify-evenly gap-1 px-1">
               <NavLink

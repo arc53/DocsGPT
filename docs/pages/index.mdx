@@ -2,10 +2,12 @@
 title: 'Home'
 ---
 import { Cards, Card } from 'nextra/components'
+import Image from 'next/image'
 import deployingGuides from './Deploying/_meta.json';
-import developingGuides from './Developing/_meta.json';
+import developingGuides from './API/_meta.json';
 import extensionGuides from './Extensions/_meta.json';
 import mainGuides from './Guides/_meta.json';
+
 
 
 
@@ -21,7 +23,10 @@ export const allGuides = {
 
 DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖. Eliminate lengthy manual searches 🔍 and enhance your documentation experience with DocsGPT, and consider contributing to its AI-powered future 🚀.
 
-![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
+
+
+<Image src="/homevideo.gif" alt="homedemo" width={800} height={500}/>
+
 
 Try it yourself: [https://docsgpt.arc53.com/](https://docsgpt.arc53.com/)
 

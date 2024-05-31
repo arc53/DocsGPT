@@ -9,13 +9,14 @@ import {
 import { selectSourceDocs } from '../preferences/preferenceSlice';
 import Exit from '../assets/exit.svg';
 import Trash from '../assets/trash.svg';
-
+import { useTranslation } from 'react-i18next';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
   'huggingface_sentence-transformers/all-mpnet-base-v2';
 
 const APIKeys: React.FC = () => {
+  const { t } = useTranslation();
   const [isCreateModalOpen, setCreateModal] = React.useState(false);
   const [isSaveKeyModalOpen, setSaveKeyModal] = React.useState(false);
   const [newKey, setNewKey] = React.useState('');
@@ -97,7 +98,7 @@ const APIKeys: React.FC = () => {
             onClick={() => setCreateModal(true)}
             className="rounded-full bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
           >
-            Create new
+            {t('settings.apiKeys.createNew')}
           </button>
         </div>
         {isCreateModalOpen && (
@@ -117,11 +118,15 @@ const APIKeys: React.FC = () => {
             <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
               <thead>
                 <tr>
-                  <th className="border-r p-4 md:w-[244px]">Name</th>
-                  <th className="w-[244px] border-r px-4 py-2">
-                    Source document
+                  <th className="border-r p-4 md:w-[244px]">
+                    {t('settings.apiKeys.name')}
                   </th>
-                  <th className="w-[244px] border-r px-4 py-2">API Key</th>
+                  <th className="w-[244px] border-r px-4 py-2">
+                    {t('settings.apiKeys.sourceDoc')}
+                  </th>
+                  <th className="w-[244px] border-r px-4 py-2">
+                    {t('settings.apiKeys.key')}
+                  </th>
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>
@@ -216,7 +221,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
             };
           })
       : [];
-
+  const { t } = useTranslation();
   return (
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
       <div className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]">
@@ -225,12 +230,12 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
         </button>
         <div className="mb-6">
           <span className="text-xl text-jet dark:text-bright-gray">
-            Create New API Key
+            {t('modals.createAPIKey.label')}
           </span>
         </div>
         <div className="relative mt-5 mb-4">
           <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-            API Key Name
+            {t('modals.createAPIKey.apiKeyName')}
           </span>
           <input
             type="text"
@@ -241,7 +246,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
         </div>
         <div className="my-4">
           <Dropdown
-            placeholder="Source document"
+            placeholder={t('modals.createAPIKey.sourceDoc')}
             selectedValue={sourcePath}
             onSelect={(selection: { label: string; value: string }) =>
               setSourcePath(selection)
@@ -255,7 +260,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
           <Dropdown
             options={activePrompts}
             selectedValue={prompt ? prompt.name : null}
-            placeholder="Select active prompt"
+            placeholder={t('modals.createAPIKey.prompt')}
             onSelect={(value: { name: string; id: string; type: string }) =>
               setPrompt(value)
             }
@@ -264,7 +269,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
         </div>
         <div className="my-4">
           <p className="mb-2 ml-2 font-bold text-jet dark:text-bright-gray">
-            Chunks processed per query
+            {t('modals.createAPIKey.chunks')}
           </p>
           <Dropdown
             options={chunkOptions}
@@ -287,7 +292,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
           }
           className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
         >
-          Create
+          {t('modals.createAPIKey.create')}
         </button>
       </div>
     </div>
@@ -296,6 +301,7 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
 
 const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
   const [isCopied, setIsCopied] = React.useState(false);
+  const { t } = useTranslation();
   const handleCopyKey = () => {
     navigator.clipboard.writeText(apiKey);
     setIsCopied(true);
@@ -306,9 +312,12 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
         <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
           <img className="filter dark:invert" src={Exit} />
         </button>
-        <h1 className="my-0 text-xl font-medium">Please save your Key</h1>
+        <h1 className="my-0 text-xl font-medium">
+          {' '}
+          {t('modals.saveKey.note')}
+        </h1>
         <h3 className="text-sm font-normal text-outer-space">
-          This is the only time your key will be shown.
+          {t('modals.saveKey.disclaimer')}
         </h3>
         <div className="flex justify-between py-2">
           <div>
@@ -319,14 +328,14 @@ const SaveAPIKeyModal: React.FC<SaveAPIKeyModalProps> = ({ apiKey, close }) => {
             className="my-1 h-10 w-20 rounded-full border border-solid border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white"
             onClick={handleCopyKey}
           >
-            {isCopied ? 'Copied' : 'Copy'}
+            {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
           </button>
         </div>
         <button
           onClick={close}
           className="rounded-full bg-philippine-yellow px-4 py-3 font-medium text-black hover:bg-[#E6B91A]"
         >
-          I saved the Key
+          {t('modals.saveKey.confirm')}
         </button>
       </div>
     </div>
