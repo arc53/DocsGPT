@@ -1,6 +1,5 @@
 # DocsGPT react widget
 
-
 This widget will allow you to embed a DocsGPT assistant in your React app.
 
 ## Installation
@@ -46,20 +45,25 @@ To link the widget to your api and your documents you can pass parameters to the
     <!DOCTYPE html>
     <html lang="en">
       <head>
-        <title></title>
+        <meta charset="UTF-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DocsGPT Widget</title>
       </head>
       <body>
-        <div id="widget-container"></div>
+        <div id="app"></div>
         <!-- Include the widget script -->
-        <script src="path/to/your/dist/main.js" type="module"></script>
+        <script src="./node_modules/docsgpt/dist/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
-            renderDocsGPTWidget('widget-container');
+            renderDocsGPTWidget('app');
           }
         </script>
       </body>
     </html>
 ```
+
+##### Serve the HTML using Parcel: `parcel my-widget.html -p 3000`
 
 To link the widget to your api and your documents you can pass parameters to the **renderDocsGPTWidget('div id', { parameters })**.
 
@@ -67,15 +71,18 @@ To link the widget to your api and your documents you can pass parameters to the
     <!DOCTYPE html>
     <html lang="en">
       <head>
-        <title></title>
+        <meta charset="UTF-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DocsGPT Widget</title>
       </head>
       <body>
-        <div id="widget-container"></div>
+        <div id="app"></div>
         <!-- Include the widget script -->
-        <script src="path/to/your/dist/main.js" type="module"></script>
+        <script src="./node_modules/docsgpt/dist/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
-            renderDocsGPTWidget('widget-container', , {
+            renderDocsGPTWidget('app', , {
               apiHost: 'http://localhost:7001',
               selectDocs: 'default',
               apiKey: '',
@@ -91,10 +98,8 @@ To link the widget to your api and your documents you can pass parameters to the
     </html>
 ```
 
-
 ## Our github
 
 [DocsGPT](https://github.com/arc53/DocsGPT)
 
 You can find the source code in the extensions/react-widget folder.
-

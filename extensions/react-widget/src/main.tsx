@@ -8,3 +8,4 @@ const renderWidget = (elementId: string, props = {}) => {
 };
 
 (window as any).renderDocsGPTWidget = renderWidget;
+export { DocsGPTWidget };
