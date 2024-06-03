@@ -53,7 +53,7 @@ To link the widget to your api and your documents you can pass parameters to the
       <body>
         <div id="app"></div>
         <!-- Include the widget script from dist/modern or dist/legacy -->
-        <script src="./node_modules/docsgpt/dist/modern/main.js" type="module"></script>
+        <script src="https://unpkg.com/docsgpt/dist/modern/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
             renderDocsGPTWidget('app');
@@ -77,7 +77,7 @@ To link the widget to your api and your documents you can pass parameters to the
       <body>
         <div id="app"></div>
         <!-- Include the widget script from dist/modern or dist/legacy -->
-        <script src="./node_modules/docsgpt/dist/modern/main.js" type="module"></script>
+        <script src="https://unpkg.com/docsgpt/dist/modern/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
             renderDocsGPTWidget('app', , {
