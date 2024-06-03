@@ -1,12 +1,13 @@
 "use client";
-import { Fragment, useEffect, useRef, useState } from 'react'
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
-import { MESSAGE_TYPE, Query, Status } from '../types/index';
-import MessageIcon from '../assets/message.svg';
-import { fetchAnswerStreaming } from '../requests/streamingApi';
-import styled, { keyframes, createGlobalStyle } from 'styled-components';
+import React from 'react'
+import DOMPurify from 'dompurify';
 import snarkdown from '@bpmn-io/snarkdown';
-import { sanitize } from 'dompurify';
+import styled, { keyframes, createGlobalStyle } from 'styled-components';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
+import MessageIcon from '../assets/message.svg';
+import { MESSAGE_TYPE, Query, Status } from '../types/index';
+import { fetchAnswerStreaming } from '../requests/streamingApi';
+
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -292,13 +293,13 @@ export const DocsGPTWidget = ({
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
 }) => {
 
-  const [prompt, setPrompt] = useState('');
-  const [status, setStatus] = useState<Status>('idle');
-  const [queries, setQueries] = useState<Query[]>([])
-  const [conversationId, setConversationId] = useState<string | null>(null)
-  const [open, setOpen] = useState<boolean>(false)
-  const [eventInterrupt, setEventInterrupt] = useState<boolean>(false); //click or scroll by user while autoScrolling
-  const endMessageRef = useRef<HTMLDivElement | null>(null);
+  const [prompt, setPrompt] = React.useState('');
+  const [status, setStatus] = React.useState<Status>('idle');
+  const [queries, setQueries] = React.useState<Query[]>([])
+  const [conversationId, setConversationId] = React.useState<string | null>(null)
+  const [open, setOpen] = React.useState<boolean>(false)
+  const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const handleUserInterrupt = () => {
     (status === 'loading') && setEventInterrupt(true);
   }
@@ -316,7 +317,7 @@ export const DocsGPTWidget = ({
     lastChild && scrollToBottom(lastChild)
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
 
@@ -396,7 +397,7 @@ export const DocsGPTWidget = ({
             {
               queries.length > 0 ? queries?.map((query, index) => {
                 return (
-                  <Fragment key={index}>
+                  <React.Fragment key={index}>
                     {
                       query.prompt && <MessageBubble type='QUESTION'>
                         <Message
@@ -412,7 +413,7 @@ export const DocsGPTWidget = ({
                           type='ANSWER'
                           ref={(index === queries.length - 1) ? endMessageRef : null}
                         >
-                          <div className="response" dangerouslySetInnerHTML={{ __html: sanitize(snarkdown(query.response)) }} />
+                          <div className="response" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(snarkdown(query.response)) }} />
                         </Message>
                       </MessageBubble>
                         : <div>
@@ -436,7 +437,7 @@ export const DocsGPTWidget = ({
                           }
                         </div>
                     }
-                  </Fragment>)
+                  </React.Fragment>)
               })
                 : <Hero title={heroTitle} description={heroDescription} />
             }
