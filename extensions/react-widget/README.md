@@ -52,8 +52,8 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <!-- Include the widget script -->
-        <script src="./node_modules/docsgpt/dist/main.js" type="module"></script>
+        <!-- Include the widget script from dist/modern or dist/legacy -->
+        <script src="./node_modules/docsgpt/dist/modern/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
             renderDocsGPTWidget('app');
@@ -62,8 +62,6 @@ To link the widget to your api and your documents you can pass parameters to the
       </body>
     </html>
 ```
-
-##### Serve the HTML using Parcel: `parcel my-widget.html -p 3000`
 
 To link the widget to your api and your documents you can pass parameters to the **renderDocsGPTWidget('div id', { parameters })**.
 
@@ -78,8 +76,8 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <!-- Include the widget script -->
-        <script src="./node_modules/docsgpt/dist/main.js" type="module"></script>
+        <!-- Include the widget script from dist/modern or dist/legacy -->
+        <script src="./node_modules/docsgpt/dist/modern/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
             renderDocsGPTWidget('app', , {

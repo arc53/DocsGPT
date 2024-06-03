@@ -11,6 +11,18 @@
     "dist",
     "package.json"
   ],
+  "targets": {
+    "modern": {
+      "engines": {
+        "browsers": "Chrome 80"
+      }
+    },
+    "legacy": {
+      "engines": {
+        "browsers": "> 0.5%, last 2 versions, not dead"
+      }
+    }
+  },
   "@parcel/resolver-default": {
     "packageExports": true
   },

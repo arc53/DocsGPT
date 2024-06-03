@@ -1,5 +1,5 @@
-import { createRoot } from 'react-dom/client';
 import React from 'react';
+import { createRoot } from 'react-dom/client';
 import { DocsGPTWidget } from './components/DocsGPTWidget';
 
 const renderWidget = (elementId: string, props = {}) => {
