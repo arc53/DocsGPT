@@ -16,15 +16,26 @@ def ingest_remote(self, source_data, job_name, user, loader):
 
 
 @celery.task(bind=True)
-def schedule_syncs(self):
-    resp = sync_worker(self)
+def schedule_syncs(self, frequency):
+    resp = sync_worker(self, frequency)
     return resp
 
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    interval_days = 30
     sender.add_periodic_task(
-        timedelta(days=interval_days),
-        schedule_syncs.s(),
+        timedelta(hours=1),
+        schedule_syncs.s("hourly"),
+    )
+    sender.add_periodic_task(
+        timedelta(days=1),
+        schedule_syncs.s("daily"),
+    )
+    sender.add_periodic_task(
+        timedelta(weeks=1),
+        schedule_syncs.s("weekly"),
+    )
+    sender.add_periodic_task(
+        timedelta(days=30),
+        schedule_syncs.s("monthly"),
     )

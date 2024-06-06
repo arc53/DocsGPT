@@ -39,8 +39,9 @@ def upload_index_files():
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
     tokens = secure_filename(request.form["tokens"])
-    source_type = request.form["source_type"]
-    source_data = request.form["source_data"]
+    source_type = request.form.get("source_type")
+    source_data = request.form.get("source_data")
+    sync_frequency = request.form.get("sync_frequency")
     save_dir = os.path.join(current_dir, "indexes", user, job_name)
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
@@ -62,22 +63,24 @@ def upload_index_files():
         file_faiss.save(os.path.join(save_dir, "index.faiss"))
         file_pkl.save(os.path.join(save_dir, "index.pkl"))
     # create entry in vectors_collection
+    update_dict = {
+        "location": save_dir,
+        "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "model": settings.EMBEDDINGS_NAME,
+        "type": "local",
+        "tokens": tokens,
+    }
+    if source_type is not None and source_data is not None:
+        update_dict["source"] = {"type": source_type, "data": source_data}
+    if sync_frequency is not None:
+        update_dict["sync_frequency"] = sync_frequency
     vectors_collection.update_one(
         {
             "user": user,
             "name": job_name,
             "language": job_name,
         },
-        {
-            "$set": {
-                "location": save_dir,
-                "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                "model": settings.EMBEDDINGS_NAME,
-                "type": "local",
-                "tokens": tokens,
-                "source": {"type": source_type, "data": source_data},
-            }
-        },
+        {"$set": update_dict},
         upsert=True,
     )
     return {"status": "ok"}
