@@ -4,6 +4,7 @@ import string
 import zipfile
 import tiktoken
 from urllib.parse import urljoin
+from pymongo import MongoClient
 
 import requests
 
@@ -13,6 +14,10 @@ from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
+
+mongo = MongoClient(settings.MONGO_URI)
+db = mongo["docsgpt"]
+vectors_collection = db["vectors"]
 
 
 # Define a function to extract metadata from a given filename.
@@ -197,7 +202,13 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user, "tokens": tokens}
+    file_data = {
+        "name": name_job,
+        "user": user,
+        "tokens": tokens,
+        "source_type": loader,
+        "source_data": source_data,
+    }
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
@@ -238,5 +249,33 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
     return num_tokens, total_price
 
 
+def sync(self, source_data, name_job, user, loader, directory="temp"):
+    try:
+        remote_worker(self, source_data, name_job, user, loader, directory)
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+    return {"status": "success"}
+
+
 def sync_worker(self):
-    return 1
+    success_count = 0
+    failure_count = 0
+    total_sync_count = 0
+    vectors = vectors_collection.find()
+    for doc in vectors:
+        if "source" in doc:
+            name = doc.get("name")
+            user = doc.get("user")
+            source_type = doc["source"].get("type")
+            source_data = doc["source"].get("data")
+            total_sync_count += 1
+            resp = sync(self, source_data, name, user, source_type)
+            if resp["status"] == "success":
+                success_count += 1
+            else:
+                failure_count += 1
+    return {
+        "total": total_sync_count,
+        "sync_success": success_count,
+        "sync_failure": failure_count,
+    }
