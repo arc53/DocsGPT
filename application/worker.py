@@ -14,6 +14,7 @@ from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
 
+
 # Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):
     store = "/".join(title.split("/")[1:3])
@@ -141,7 +142,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    file_data = {"name": name_job, "user": user, "tokens":tokens}
+    file_data = {"name": name_job, "user": user, "tokens": tokens}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
@@ -196,13 +197,13 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user, "tokens":tokens}
+    file_data = {"name": name_job, "user": user, "tokens": tokens}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
-        
+
         requests.post(
             urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
         )
@@ -235,3 +236,7 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
     num_tokens = len(encoding.encode(string))
     total_price = (num_tokens / 1000) * 0.0004
     return num_tokens, total_price
+
+
+def sync_worker(self):
+    return 1
