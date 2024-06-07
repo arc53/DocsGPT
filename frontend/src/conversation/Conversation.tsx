@@ -80,11 +80,11 @@ export default function Conversation() {
     });
   };
 
-  const handleQuestion = (question: string) => {
+  const handleQuestion = (question: string, isRetry = false) => {
     question = question.trim();
     if (question === '') return;
     setEventInterrupt(false);
-    dispatch(addQuery({ prompt: question }));
+    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
     fetchStream.current = dispatch(fetchAnswer({ question }));
   };
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
