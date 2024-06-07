@@ -6,7 +6,7 @@
   "myPlan": "My Plan",
   "about": "About",
   "inputPlaceholder": "Type your message here...",
-  "tagline": "DocsGPT uses GenAI, please review critial information using sources.",
+  "tagline": "DocsGPT uses GenAI, please review critical information using sources.",
   "sourceDocs": "Source Docs",
   "none": "None",
   "cancel": "Cancel",
@@ -16,8 +16,8 @@
       "query": "What is DocsGPT?"
     },
     {
-      "header": "Summarise documentation",
-      "query": "Summarise current context"
+      "header": "Summarize documentation",
+      "query": "Summarize current context"
     },
     {
       "header": "Write Code",
