@@ -9,7 +9,7 @@
   "tagline": "DocsGPT uses GenAI, please review critial information using sources.",
   "sourceDocs": "Source Docs",
   "none": "None",
-  "cancel":"Cancel",
+  "cancel": "Cancel",
   "demo": [
     {
       "header": "Learn about DocsGPT",
@@ -41,13 +41,13 @@
       "deleteAllLabel": "Delete all Conversation",
       "deleteAllBtn": "Delete all",
       "addNew": "Add New",
-      "convHistory":"Conversational history",
-      "none":"None",
-      "low":"Low",
-      "medium":"Medium",
-      "high":"High",
-      "unlimited":"Unlimited",
-      "default":"default"
+      "convHistory": "Conversational history",
+      "none": "None",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "unlimited": "Unlimited",
+      "default": "default"
     },
     "documents": {
       "label": "Documents",

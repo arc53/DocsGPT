@@ -41,13 +41,13 @@
       "deleteAllLabel": "Eliminar toda la Conversación",
       "deleteAllBtn": "Eliminar todo",
       "addNew": "Agregar Nuevo",
-      "convHistory":"Historia conversacional",
-      "none":"ninguno",
-      "low":"Bajo",
-      "medium":"Medio",
-      "high":"Alto",
-      "unlimited":"Ilimitado",
-      "default":"predeterminada"
+      "convHistory": "Historia conversacional",
+      "none": "ninguno",
+      "low": "Bajo",
+      "medium": "Medio",
+      "high": "Alto",
+      "unlimited": "Ilimitado",
+      "default": "predeterminada"
     },
     "documents": {
       "label": "Documentos",
