@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 
 import en from './en.json'; //English
 import es from './es.json'; //Spanish
+import jp from './jp.json'; //Japanese
 
 i18n.use(initReactI18next).init({
   resources: {
@@ -11,6 +12,9 @@ i18n.use(initReactI18next).init({
     },
     es: {
       translation: es,
+    },
+    jp: {
+      translation: jp,
     },
   },
 });
