@@ -79,7 +79,7 @@ export default function Conversation() {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
       queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
     }
-  }, [queries]);
+  }, [queries[queries.length - 1]]);
 
   const scrollIntoView = () => {
     endMessageRef?.current?.scrollIntoView({
@@ -105,17 +105,7 @@ export default function Conversation() {
 
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
-    if (query.error) {
-      responseView = (
-        <ConversationBubble
-          ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
-          key={`${index}ERROR`}
-          message={query.error}
-          type="ERROR"
-        ></ConversationBubble>
-      );
-    } else if (query.response) {
+    if (query.response) {
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
@@ -128,6 +118,16 @@ export default function Conversation() {
           handleFeedback={(feedback: FEEDBACK) =>
             handleFeedback(query, feedback, index)
           }
+        ></ConversationBubble>
+      );
+    } else if (query.error) {
+      responseView = (
+        <ConversationBubble
+          ref={endMessageRef}
+          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
+          key={`${index}ERROR`}
+          message={query.error}
+          type="ERROR"
         ></ConversationBubble>
       );
     }
