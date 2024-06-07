@@ -29,6 +29,7 @@ export default function Conversation() {
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
+  const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const { t } = useTranslation();
 
   const handleUserInterruption = () => {
@@ -72,6 +73,13 @@ export default function Conversation() {
       observer.disconnect();
     };
   }, [endMessageRef.current]);
+
+  useEffect(() => {
+    if (queries.length) {
+      queries[queries.length - 1].error && setLastQueryReturnedErr(true);
+      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
+    }
+  }, [queries]);
 
   const scrollIntoView = () => {
     endMessageRef?.current?.scrollIntoView({
@@ -174,45 +182,60 @@ export default function Conversation() {
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
       <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12 md:fixed">
-        <div className="flex h-full w-full items-center rounded-full border border-silver">
-          <div
-            id="inputbox"
-            ref={inputRef}
-            tabIndex={1}
-            placeholder={t('inputPlaceholder')}
-            contentEditable
-            onPaste={handlePaste}
-            className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (inputRef.current?.textContent && status !== 'loading') {
-                  handleQuestion(inputRef.current.textContent);
-                  inputRef.current.textContent = '';
-                }
-              }
-            }}
-          ></div>
-          {status === 'loading' ? (
-            <img
-              src={isDarkTheme ? SpinnerDark : Spinner}
-              className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
-            ></img>
-          ) : (
-            <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
-              <img
-                className="w-6 text-white "
-                onClick={() => {
-                  if (inputRef.current?.textContent) {
+        {!lastQueryReturnedErr ? (
+          <div className="flex h-full w-full items-center rounded-full border border-silver">
+            <div
+              id="inputbox"
+              ref={inputRef}
+              tabIndex={1}
+              placeholder={t('inputPlaceholder')}
+              contentEditable
+              onPaste={handlePaste}
+              className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (inputRef.current?.textContent && status !== 'loading') {
                     handleQuestion(inputRef.current.textContent);
                     inputRef.current.textContent = '';
                   }
-                }}
-                src={isDarkTheme ? SendDark : Send}
+                }
+              }}
+            ></div>
+            {status === 'loading' ? (
+              <img
+                src={isDarkTheme ? SpinnerDark : Spinner}
+                className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
               ></img>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
+                <img
+                  className="w-6 text-white "
+                  onClick={() => {
+                    if (inputRef.current?.textContent) {
+                      handleQuestion(inputRef.current.textContent);
+                      inputRef.current.textContent = '';
+                    }
+                  }}
+                  src={isDarkTheme ? SendDark : Send}
+                ></img>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center p-4">
+            <p>There was an error during generation</p>
+            <button
+              className="p-4"
+              onClick={() =>
+                handleQuestion(queries[queries.length - 1].prompt, true)
+              }
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         <p className="text-gray-595959 hidden w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
