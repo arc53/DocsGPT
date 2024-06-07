@@ -173,6 +173,7 @@ export default function Conversation() {
                     type="QUESTION"
                     sources={query.sources}
                   ></ConversationBubble>
+
                   {prepResponseView(query, index)}
                 </Fragment>
               );
@@ -223,10 +224,13 @@ export default function Conversation() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center p-4">
-            <p>There was an error during generation</p>
+          <div className="flex w-full flex-col items-center p-4 pt-5 ">
+            <p className="dark:text-bright-gray">
+              There was an error during generation
+            </p>
             <button
-              className="p-4"
+              className="mt-3 rounded-full border-2 border-gray-400 py-3 px-8 text-lg text-gray-500 transition-colors delay-100  hover:border-gray-700 disabled:cursor-not-allowed dark:text-bright-gray"
+              disabled={status === 'loading'}
               onClick={() =>
                 handleQuestion(queries[queries.length - 1].prompt, true)
               }
@@ -236,7 +240,7 @@ export default function Conversation() {
           </div>
         )}
 
-        <p className="text-gray-595959 hidden w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
