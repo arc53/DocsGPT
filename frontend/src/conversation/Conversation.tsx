@@ -19,6 +19,7 @@ import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
+import RetryIcon from '../components/RetryIcon';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
@@ -229,12 +230,21 @@ export default function Conversation() {
               There was an error during generation
             </p>
             <button
-              className="mt-3 rounded-full border-2 border-gray-400 py-3 px-8 text-lg text-gray-500 transition-colors delay-100  hover:border-gray-700 disabled:cursor-not-allowed dark:text-bright-gray"
+              className="mt-3 flex items-center justify-center gap-3 rounded-full border-2 border-gray-400 py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
               disabled={status === 'loading'}
               onClick={() =>
                 handleQuestion(queries[queries.length - 1].prompt, true)
               }
             >
+              {/* <img
+                src={Retry}
+                alt="Reload icon"
+                className="w-4 dark:text-red-900"
+              /> */}
+              <RetryIcon
+                fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+                stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+              />
               Retry
             </button>
           </div>
