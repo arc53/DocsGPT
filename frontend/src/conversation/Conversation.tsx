@@ -233,7 +233,7 @@ export default function Conversation() {
             )}
           </div>
         ) : (
-          <div className="flex w-full flex-col items-center p-4 pt-5 ">
+          <div className="flex w-full flex-col items-center p-1">
             <p className="dark:text-bright-gray">
               There was an error during generation
             </p>
@@ -247,11 +247,6 @@ export default function Conversation() {
                 })
               }
             >
-              {/* <img
-                src={Retry}
-                alt="Reload icon"
-                className="w-4 dark:text-red-900"
-              /> */}
               <RetryIcon
                 fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
                 stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
