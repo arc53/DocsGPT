@@ -89,7 +89,13 @@ export default function Conversation() {
     });
   };
 
-  const handleQuestion = (question: string, isRetry = false) => {
+  const handleQuestion = ({
+    question,
+    isRetry = false,
+  }: {
+    question: string;
+    isRetry?: boolean;
+  }) => {
     question = question.trim();
     if (question === '') return;
     setEventInterrupt(false);
@@ -198,7 +204,7 @@ export default function Conversation() {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   if (inputRef.current?.textContent && status !== 'loading') {
-                    handleQuestion(inputRef.current.textContent);
+                    handleQuestion({ question: inputRef.current.textContent });
                     inputRef.current.textContent = '';
                   }
                 }
@@ -215,7 +221,9 @@ export default function Conversation() {
                   className="w-6 text-white "
                   onClick={() => {
                     if (inputRef.current?.textContent) {
-                      handleQuestion(inputRef.current.textContent);
+                      handleQuestion({
+                        question: inputRef.current.textContent,
+                      });
                       inputRef.current.textContent = '';
                     }
                   }}
@@ -233,7 +241,10 @@ export default function Conversation() {
               className="mt-3 flex items-center justify-center gap-3 rounded-full border-2 border-gray-400 py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
               disabled={status === 'loading'}
               onClick={() =>
-                handleQuestion(queries[queries.length - 1].prompt, true)
+                handleQuestion({
+                  question: queries[queries.length - 1].prompt,
+                  isRetry: true,
+                })
               }
             >
               {/* <img

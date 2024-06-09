@@ -4,7 +4,13 @@ import { useTranslation } from 'react-i18next';
 export default function Hero({
   handleQuestion,
 }: {
-  handleQuestion: (question: string) => void;
+  handleQuestion: ({
+    question,
+    isRetry,
+  }: {
+    question: string;
+    isRetry?: boolean;
+  }) => void;
 }) {
   const { t } = useTranslation();
   const demos = t('demo', { returnObjects: true }) as Array<{
@@ -30,7 +36,7 @@ export default function Hero({
             demo.query && (
               <Fragment key={key}>
                 <button
-                  onClick={() => handleQuestion(demo.query)}
+                  onClick={() => handleQuestion({ question: demo.query })}
                   className="w-full rounded-full border-2 border-silver px-6 py-4 text-left hover:border-gray-4000 dark:hover:border-gray-3000 xl:min-w-[24vw]"
                 >
                   <p className="mb-1 font-semibold text-black dark:text-silver">
