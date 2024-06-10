@@ -4,6 +4,8 @@ import string
 import zipfile
 import tiktoken
 from urllib.parse import urljoin
+from pymongo import MongoClient
+from collections import Counter
 
 import requests
 
@@ -13,6 +15,11 @@ from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
+
+mongo = MongoClient(settings.MONGO_URI)
+db = mongo["docsgpt"]
+vectors_collection = db["vectors"]
+
 
 # Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):
@@ -141,7 +148,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    file_data = {"name": name_job, "user": user, "tokens":tokens}
+    file_data = {"name": name_job, "user": user, "tokens": tokens}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
@@ -171,7 +178,15 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     }
 
 
-def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
+def remote_worker(
+    self,
+    source_data,
+    name_job,
+    user,
+    loader,
+    directory="temp",
+    sync_frequency="monthly",
+):
     token_check = True
     min_tokens = 150
     max_tokens = 1250
@@ -196,13 +211,20 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user, "tokens":tokens}
+    file_data = {
+        "name": name_job,
+        "user": user,
+        "tokens": tokens,
+        "source_type": loader,
+        "source_data": source_data,
+        "sync_frequency": sync_frequency,
+    }
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
-        
+
         requests.post(
             urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
         )
@@ -235,3 +257,34 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
     num_tokens = len(encoding.encode(string))
     total_price = (num_tokens / 1000) * 0.0004
     return num_tokens, total_price
+
+
+def sync(self, source_data, name_job, user, loader, sync_frequency, directory="temp"):
+    try:
+        remote_worker(
+            self, source_data, name_job, user, loader, directory, sync_frequency
+        )
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+    return {"status": "success"}
+
+
+def sync_worker(self, frequency):
+    sync_counts = Counter()
+    vectors = vectors_collection.find()
+    for doc in vectors:
+        if "source" in doc and doc.get("sync_frequency") == frequency:
+            name = doc.get("name")
+            user = doc.get("user")
+            source_type = doc["source"].get("type")
+            source_data = doc["source"].get("data")
+            resp = sync(self, source_data, name, user, source_type, frequency)
+            sync_counts["total_sync_count"] += 1
+            sync_counts[
+                "sync_success" if resp["status"] == "success" else "sync_failure"
+            ] += 1
+
+    return {
+        key: sync_counts[key]
+        for key in ["total_sync_count", "sync_success", "sync_failure"]
+    }

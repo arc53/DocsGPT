@@ -4,6 +4,7 @@ import shutil
 from flask import Blueprint, request, jsonify
 from urllib.parse import urlparse
 import requests
+from datetime import datetime
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.utils import secure_filename
@@ -253,7 +254,7 @@ def combined_json():
             "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
             "location": "remote",
-            "tokens":""
+            "tokens": "",
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
@@ -261,16 +262,20 @@ def combined_json():
     for index in vectors_collection.find({"user": user}):
         data.append(
             {
-                "name": index["name"],
-                "language": index["language"],
+                "name": index.get("name", ""),
+                "language": index.get("language", ""),
                 "version": "",
-                "description": index["name"],
-                "fullName": index["name"],
-                "date": index["date"],
-                "docLink": index["location"],
+                "description": index.get("name", ""),
+                "fullName": index.get("name", ""),
+                "date": index.get("date", datetime.fromtimestamp(0)).strftime(
+                    "%d/%m/%Y"
+                ),
+                "docLink": index.get("location", ""),
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "local",
-                "tokens" : index["tokens"] if ("tokens" in index.keys()) else ""
+                "tokens": index.get("tokens", ""),
+                "source": index.get("source", {}),
+                "syncFrequency": index.get("sync_frequency", ""),
             }
         )
     if settings.VECTOR_STORE == "faiss":
@@ -292,7 +297,7 @@ def combined_json():
                 "docLink": "duckduck_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
-                "tokens":""
+                "tokens": "",
             }
         )
     if "brave_search" in settings.RETRIEVERS_ENABLED:
@@ -307,7 +312,7 @@ def combined_json():
                 "docLink": "brave_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
-                "tokens":""
+                "tokens": "",
             }
         )
 
@@ -489,5 +494,27 @@ def delete_api_key():
         {
             "_id": ObjectId(id),
         }
+    )
+    return {"status": "ok"}
+
+
+@user.route("/api/manage_sync", methods=["POST"])
+def share_docs():
+    path = request.args.get("path")
+    sync_frequency = request.args.get("sync_frequency")
+    dirs = path.split("/")
+    dirs_clean = []
+    for i in range(0, len(dirs)):
+        dirs_clean.append(secure_filename(dirs[i]))
+    if dirs_clean[0] not in ["indexes", "vectors"]:
+        return {"status": "error"}
+
+    update_data = {"$set": {"sync_frequency": sync_frequency}}
+    vectors_collection.update_one(
+        {
+            "name": dirs_clean[-1],
+            "user": dirs_clean[-2],
+        },
+        update_data,
     )
     return {"status": "ok"}

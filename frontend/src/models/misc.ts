@@ -14,6 +14,8 @@ export type Doc = {
   docLink: string;
   model: string;
   tokens?: string;
+  source?: Object;
+  syncFrequency?: string;
 };
 
 export type PromptProps = {
