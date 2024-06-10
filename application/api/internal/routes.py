@@ -65,7 +65,7 @@ def upload_index_files():
     # create entry in vectors_collection
     update_dict = {
         "location": save_dir,
-        "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "date": datetime.datetime.now(),
         "model": settings.EMBEDDINGS_NAME,
         "type": "local",
         "tokens": tokens,
