@@ -51,6 +51,59 @@ export default function MyApp({ Component, pageProps }) {
     )
 }
 ```  
+### How to use DocsGPTWidget with HTML
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocsGPT Widget</title>
+</head>
+<body>
+  <div id="app"></div>
+  <!-- Include the widget script from dist/modern or dist/legacy -->
+  <script src="https://unpkg.com/docsgpt/dist/modern/main.js" type="module"></script>
+  <script type="module">
+    window.onload = function() {
+      renderDocsGPTWidget('app');
+    }
+  </script>
+</body>
+</html>
+```
+To link the widget to your api and your documents you can pass parameters to the renderDocsGPTWidget('div id', { parameters }).
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocsGPT Widget</title>
+</head>
+<body>
+  <div id="app"></div>
+  <!-- Include the widget script from dist/modern or dist/legacy -->
+  <script src="https://unpkg.com/docsgpt/dist/modern/main.js" type="module"></script>
+  <script type="module">
+    window.onload = function() {
+      renderDocsGPTWidget('app', {
+        apiHost: 'http://localhost:7001',
+        selectDocs: 'default',
+        apiKey: '',
+        avatar: 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+        title: 'Get AI assistance',
+        description: "DocsGPT's AI Chatbot is here to help",
+        heroTitle: 'Welcome to DocsGPT!',
+        heroDescription: 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+      });
+    }
+  </script>
+</body>
+</html>
+```
 
 For more information about React, refer to this [link here](https://react.dev/learn)
 
