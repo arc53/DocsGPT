@@ -2,6 +2,24 @@ import { DocumentsProps } from '../models/misc';
 import Trash from '../assets/trash.svg';
 import PropTypes from 'prop-types';
 import { useTranslation } from 'react-i18next';
+
+// Utility function to format numbers
+const formatTokens = (tokens: number): string => {
+  const roundToTwoDecimals = (num: number): string => {
+    return (Math.round((num + Number.EPSILON) * 100) / 100).toString();
+  };
+
+  if (tokens >= 1_000_000_000) {
+    return roundToTwoDecimals(tokens / 1_000_000_000) + 'b';
+  } else if (tokens >= 1_000_000) {
+    return roundToTwoDecimals(tokens / 1_000_000) + 'm';
+  } else if (tokens >= 1_000) {
+    return roundToTwoDecimals(tokens / 1_000) + 'k';
+  } else {
+    return tokens.toString();
+  }
+};
+
 const Documents: React.FC<DocumentsProps> = ({
   documents,
   handleDeleteDocument,
@@ -40,7 +58,7 @@ const Documents: React.FC<DocumentsProps> = ({
                       {document.date}
                     </td>
                     <td className="border-r border-t px-4 py-2">
-                      {document.tokens ? document.tokens : ''}
+                      {document.tokens ? formatTokens(+document.tokens) : ''}
                     </td>
                     <td className="border-r border-t px-4 py-2">
                       {document.location === 'remote'
