@@ -187,74 +187,71 @@ export default function Conversation() {
             })}
           </div>
         )}
+
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
+
       <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12 md:fixed">
-        {!lastQueryReturnedErr ? (
-          <div className="flex h-full w-full items-center rounded-full border border-silver">
-            <div
-              id="inputbox"
-              ref={inputRef}
-              tabIndex={1}
-              placeholder={t('inputPlaceholder')}
-              contentEditable
-              onPaste={handlePaste}
-              className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (inputRef.current?.textContent && status !== 'loading') {
-                    handleQuestion({ question: inputRef.current.textContent });
+        {lastQueryReturnedErr && (
+          <button
+            className="mb-5 flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+            disabled={status === 'loading'}
+            onClick={() =>
+              handleQuestion({
+                question: queries[queries.length - 1].prompt,
+                isRetry: true,
+              })
+            }
+          >
+            <RetryIcon
+              fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+              stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+            />
+            Retry
+          </button>
+        )}
+
+        <div className="flex h-full w-full items-center rounded-full border border-silver">
+          <div
+            id="inputbox"
+            ref={inputRef}
+            tabIndex={1}
+            placeholder={t('inputPlaceholder')}
+            contentEditable
+            onPaste={handlePaste}
+            className={`max-h-24 min-h-[3.8rem] w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white py-2 pl-4 pr-9 text-base leading-10 opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (inputRef.current?.textContent && status !== 'loading') {
+                  handleQuestion({ question: inputRef.current.textContent });
+                  inputRef.current.textContent = '';
+                }
+              }
+            }}
+          ></div>
+          {status === 'loading' ? (
+            <img
+              src={isDarkTheme ? SpinnerDark : Spinner}
+              className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+            ></img>
+          ) : (
+            <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
+              <img
+                className="w-6 text-white "
+                onClick={() => {
+                  if (inputRef.current?.textContent) {
+                    handleQuestion({
+                      question: inputRef.current.textContent,
+                    });
                     inputRef.current.textContent = '';
                   }
-                }
-              }}
-            ></div>
-            {status === 'loading' ? (
-              <img
-                src={isDarkTheme ? SpinnerDark : Spinner}
-                className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+                }}
+                src={isDarkTheme ? SendDark : Send}
               ></img>
-            ) : (
-              <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
-                <img
-                  className="w-6 text-white "
-                  onClick={() => {
-                    if (inputRef.current?.textContent) {
-                      handleQuestion({
-                        question: inputRef.current.textContent,
-                      });
-                      inputRef.current.textContent = '';
-                    }
-                  }}
-                  src={isDarkTheme ? SendDark : Send}
-                ></img>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex w-full flex-col items-center p-1">
-            <p className="dark:text-bright-gray">
-              There was an error during generation
-            </p>
-            <button
-              className="mt-3 flex items-center justify-center gap-3 rounded-full border-2 border-gray-400 py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
-              disabled={status === 'loading'}
-              onClick={() =>
-                handleQuestion({
-                  question: queries[queries.length - 1].prompt,
-                  isRetry: true,
-                })
-              }
-            >
-              <RetryIcon
-                fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
-                stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
-              />
-              Retry
-            </button>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
