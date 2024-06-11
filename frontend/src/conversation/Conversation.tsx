@@ -33,6 +33,8 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const { t } = useTranslation();
 
+  console.log('QUERIES: ', queries);
+
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
   };
@@ -102,12 +104,36 @@ export default function Conversation() {
     !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
     fetchStream.current = dispatch(fetchAnswer({ question }));
   };
+
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
     sendFeedback(query.prompt, query.response!, feedback).catch(() =>
       dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
     );
+  };
+
+  const handleQuestionSubmission = () => {
+    if (inputRef.current?.textContent && status !== 'loading') {
+      if (lastQueryReturnedErr) {
+        // update last failed query with new prompt
+        dispatch(
+          updateQuery({
+            index: queries.length - 1,
+            query: {
+              prompt: inputRef.current.textContent,
+            },
+          }),
+        );
+        handleQuestion({
+          question: queries[queries.length - 1].prompt,
+          isRetry: true,
+        });
+      } else {
+        handleQuestion({ question: inputRef.current.textContent });
+      }
+      inputRef.current.textContent = '';
+    }
   };
 
   const prepResponseView = (query: Query, index: number) => {
@@ -196,12 +222,12 @@ export default function Conversation() {
           <button
             className="mb-5 flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
             disabled={status === 'loading'}
-            onClick={() =>
+            onClick={() => {
               handleQuestion({
                 question: queries[queries.length - 1].prompt,
                 isRetry: true,
-              })
-            }
+              });
+            }}
           >
             <RetryIcon
               fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
@@ -223,10 +249,7 @@ export default function Conversation() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (inputRef.current?.textContent && status !== 'loading') {
-                  handleQuestion({ question: inputRef.current.textContent });
-                  inputRef.current.textContent = '';
-                }
+                handleQuestionSubmission();
               }
             }}
           ></div>
@@ -239,14 +262,7 @@ export default function Conversation() {
             <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
               <img
                 className="w-6 text-white "
-                onClick={() => {
-                  if (inputRef.current?.textContent) {
-                    handleQuestion({
-                      question: inputRef.current.textContent,
-                    });
-                    inputRef.current.textContent = '';
-                  }
-                }}
+                onClick={handleQuestionSubmission}
                 src={isDarkTheme ? SendDark : Send}
               ></img>
             </div>
