@@ -1,5 +1,5 @@
 from application.worker import ingest_worker, remote_worker
-from application.celery import celery
+from application.celery_init import celery
 
 @celery.task(bind=True)
 def ingest(self, directory, formats, name_job, filename, user):
