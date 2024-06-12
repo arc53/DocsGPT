@@ -137,13 +137,13 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[85vh] w-full justify-center overflow-y-auto p-4"
+        className="flex h-[80vh] md:h-[85vh] w-full justify-center overflow-y-auto p-4"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
             onClick={scrollIntoView}
             aria-label="scroll to bottom"
-            className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
+            className="fixed bottom-40 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
           >
             <img
               src={ArrowDown}
