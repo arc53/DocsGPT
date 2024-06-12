@@ -33,8 +33,6 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const { t } = useTranslation();
 
-  console.log('QUERIES: ', queries);
-
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
   };
@@ -178,7 +176,7 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[85vh] w-full justify-center overflow-y-auto p-4"
+        className="flex h-[85vh] w-full flex-1 justify-center overflow-y-auto p-4"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -217,10 +215,11 @@ export default function Conversation() {
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
 
-      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12 md:fixed">
+      {/* INPUTS VIEW */}
+      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12">
         {lastQueryReturnedErr && (
           <button
-            className="mb-5 flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+            className="mb-2 flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
             disabled={status === 'loading'}
             onClick={() => {
               handleQuestion({
@@ -269,7 +268,7 @@ export default function Conversation() {
           )}
         </div>
 
-        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent py-2 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
