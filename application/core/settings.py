@@ -4,12 +4,16 @@ import os
 
 from pydantic_settings import BaseSettings
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
 class Settings(BaseSettings):
     LLM_NAME: str = "docsgpt"
-    MODEL_NAME: Optional[str] = None # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
+    MODEL_NAME: Optional[str] = (
+        None  # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
+    )
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
@@ -19,16 +23,20 @@ class Settings(BaseSettings):
     MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
     VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant"
-    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
+    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"]  # also brave_search
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
     API_KEY: Optional[str] = None  # LLM api key
-    EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
+    EMBEDDINGS_KEY: Optional[str] = (
+        None  # api key for embeddings (if using openai, just copy API_KEY)
+    )
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for answering
-    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for embeddings
+    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = (
+        None  # azure deployment name for embeddings
+    )
 
     # elasticsearch
     ELASTIC_CLOUD_ID: Optional[str] = None  # cloud id for elasticsearch
@@ -60,6 +68,10 @@ class Settings(BaseSettings):
     QDRANT_HOST: Optional[str] = None
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
+
+    # Oracle DB config
+    # ORACLE_URI="your_username/your_password@localhost:1521/docsgpt"
+    ORACLE_URI: Optional[str] = None  # Oracle DB connection string
 
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
