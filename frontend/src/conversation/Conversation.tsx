@@ -19,6 +19,7 @@ import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
+import RetryIcon from '../components/RetryIcon';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
@@ -151,13 +152,32 @@ export default function Conversation() {
         ></ConversationBubble>
       );
     } else if (query.error) {
+      const retryBtn = (
+        <button
+          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          disabled={status === 'loading'}
+          onClick={() => {
+            handleQuestion({
+              question: queries[queries.length - 1].prompt,
+              isRetry: true,
+            });
+          }}
+        >
+          <RetryIcon
+            fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+            stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+          />
+          Retry
+        </button>
+      );
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
+          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
           key={`${index}ERROR`}
           message={query.error}
           type="ERROR"
+          retryBtn={retryBtn}
         ></ConversationBubble>
       );
     }
@@ -213,6 +233,7 @@ export default function Conversation() {
 
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
+
       <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
         <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
           <div
