@@ -29,7 +29,7 @@ export default function Hero({
 
         <div className="mb-4 flex flex-col items-center justify-center dark:text-white"></div>
       </div>
-      <div className="grid w-full grid-cols-1 items-center gap-4 self-center text-xs sm:w-auto sm:gap-6 md:text-sm  lg:grid-cols-2">
+      <div className="mb-16 grid w-full grid-cols-1 items-center gap-4 self-center text-xs sm:w-auto sm:gap-6  md:mb-0 md:text-sm lg:grid-cols-2">
         {demos?.map(
           (demo: { header: string; query: string }, key: number) =>
             demo.header &&

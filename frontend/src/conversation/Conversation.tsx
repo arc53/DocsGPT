@@ -19,7 +19,6 @@ import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
-import RetryIcon from '../components/RetryIcon';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
@@ -176,13 +175,13 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[85vh] w-full flex-1 justify-center overflow-y-auto p-4"
+        className="flex h-[90%] w-full justify-center overflow-y-auto p-4 md:h-[84vh]"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
             onClick={scrollIntoView}
             aria-label="scroll to bottom"
-            className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
+            className="fixed bottom-40 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
           >
             <img
               src={ArrowDown}
@@ -214,29 +213,8 @@ export default function Conversation() {
 
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
-
-      {/* INPUTS VIEW */}
-      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12">
-        {lastQueryReturnedErr && (
-          <button
-            className="mb-2 flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-8  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
-            disabled={status === 'loading'}
-            onClick={() => {
-              handleQuestion({
-                question: queries[queries.length - 1].prompt,
-                isRetry: true,
-              });
-            }}
-          >
-            <RetryIcon
-              fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
-              stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
-            />
-            Retry
-          </button>
-        )}
-
-        <div className="flex h-full w-full items-center rounded-full border border-silver">
+      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
+        <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
           <div
             id="inputbox"
             ref={inputRef}
@@ -255,7 +233,7 @@ export default function Conversation() {
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
-              className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+              className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
             <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
