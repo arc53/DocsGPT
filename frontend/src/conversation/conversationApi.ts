@@ -1,6 +1,5 @@
 import { Answer, FEEDBACK } from './conversationModels';
 import { Doc } from '../preferences/preferenceApi';
-import { selectTokenLimit } from '../preferences/preferenceSlice';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
