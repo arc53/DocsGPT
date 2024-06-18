@@ -137,6 +137,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ) as HTMLElement;
         const parentElement = imageElement.parentNode as HTMLElement;
         parentElement.parentNode?.removeChild(parentElement);
+
+        dispatch(setSelectedDocs(docs?.find((doc) => doc.name == 'default')));
       })
       .catch((error) => console.error(error));
   };
