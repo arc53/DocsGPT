@@ -68,6 +68,15 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                   query: { conversationId: data.id },
                 }),
               );
+            } else if (data.type === 'error') {
+              // set status to 'failed'
+              dispatch(conversationSlice.actions.setStatus('failed'));
+              dispatch(
+                conversationSlice.actions.raiseError({
+                  index: state.conversation.queries.length - 1,
+                  message: data.error,
+                }),
+              );
             } else {
               const result = data.answer;
               dispatch(
@@ -190,6 +199,13 @@ export const conversationSlice = createSlice({
     },
     setStatus(state, action: PayloadAction<Status>) {
       state.status = action.payload;
+    },
+    raiseError(
+      state,
+      action: PayloadAction<{ index: number; message: string }>,
+    ) {
+      const { index, message } = action.payload;
+      state.queries[index].error = message;
     },
   },
   extraReducers(builder) {
