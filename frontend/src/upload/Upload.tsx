@@ -4,10 +4,11 @@ import { useDropzone } from 'react-dropzone';
 import { useDispatch } from 'react-redux';
 import { ActiveState } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
-import { setSourceDocs } from '../preferences/preferenceSlice';
+import { setSelectedDocs, setSourceDocs } from '../preferences/preferenceSlice';
 import Dropdown from '../components/Dropdown';
 import { useTranslation } from 'react-i18next';
-export default function Upload({
+
+function Upload({
   modalState,
   setModalState,
 }: {
@@ -24,17 +25,6 @@ export default function Upload({
     search_queries: [''],
     number_posts: 10,
   });
-  const { t } = useTranslation();
-  const urlOptions: { label: string; value: string }[] = [
-    { label: 'Crawler', value: 'crawler' },
-    // { label: 'Sitemap', value: 'sitemap' },
-    { label: 'Link', value: 'url' },
-    { label: 'Reddit', value: 'reddit' },
-  ];
-  const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: 'Link',
-    value: 'url',
-  });
   const [activeTab, setActiveTab] = useState<string>('file');
   const [files, setfiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<{
@@ -43,6 +33,20 @@ export default function Upload({
     taskId?: string;
     failed?: boolean;
   }>();
+
+  const { t } = useTranslation();
+
+  const urlOptions: { label: string; value: string }[] = [
+    { label: 'Crawler', value: 'crawler' },
+    // { label: 'Sitemap', value: 'sitemap' },
+    { label: 'Link', value: 'url' },
+    { label: 'Reddit', value: 'reddit' },
+  ];
+
+  const [urlType, setUrlType] = useState<{ label: string; value: string }>({
+    label: 'Link',
+    value: 'url',
+  });
 
   function Progress({
     title,
@@ -93,6 +97,7 @@ export default function Upload({
 
   function TrainingProgress() {
     const dispatch = useDispatch();
+
     useEffect(() => {
       let timeoutID: number | undefined;
 
@@ -241,6 +246,7 @@ export default function Upload({
         ['.docx'],
     },
   });
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (name === 'search_queries' && value.length > 0) {
@@ -254,7 +260,9 @@ export default function Upload({
         [name]: value,
       });
   };
+
   let view;
+
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
   } else if (progress?.type === 'TRAINIING') {
@@ -287,6 +295,7 @@ export default function Upload({
             {t('modals.uploadDoc.remote')}
           </button>
         </div>
+
         {activeTab === 'file' && (
           <>
             <input
@@ -435,6 +444,7 @@ export default function Upload({
             )}
           </>
         )}
+
         <div className="flex flex-row-reverse">
           {activeTab === 'file' ? (
             <button
@@ -486,3 +496,5 @@ export default function Upload({
     </article>
   );
 }
+
+export default Upload;

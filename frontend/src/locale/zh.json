@@ -1,109 +1,108 @@
 {
-    "language": "普通话", 
-    "chat": "聊天",
-    "chats": "聊天",
-    "newChat": "新聊天",
-    "myPlan": "我的计划",
-    "about": "关于",
-    "inputPlaceholder": "在这里输入您的消息...",
-    "tagline": "DocsGPT 使用 GenAI, 请使用来源审核关键信息.",
-    "sourceDocs": "来源文档",
-    "none": "无",
-    "cancel":"取消",
-    "demo": [
-      {
-        "header": "了解 DocsGPT",
-        "query": "DocsGPT 是什么"
-      },
-      {
-        "header": "总结文档",
-        "query": "总结当前情况"
-      },
-      {
-        "header": "编写代码",
-        "query": "为 /api/answer API 请求编写代码"
-      },
-      {
-        "header": "学习帮助",
-        "query": "为背景写出潜在问题"
-      }
-    ],
-    "settings": {
-      "label": "设置",
-      "general": {
-        "label": "般",
-        "selectTheme": "选择主题",
-        "light": "浅色",
-        "dark": "暗色",
-        "selectLanguage": "选择语言",
-        "chunks": "每个查询处理的块",
-        "prompt": "提示",
-        "deleteAllLabel": "删除所有对话",
-        "deleteAllBtn": "删除所有",
-        "addNew": "添加新的",
-        "convHistory":"对话历史",
-        "none":"无",
-        "low":"低",
-        "medium":"中",
-        "high":"高",
-        "unlimited":"无限",
-        "default":"默认"
-      },
-      "documents": {
-        "label": "文件",
-        "name": "文件名称",
-        "date": "向量日期",
-        "type": "类型",
-        "tokenUsage": "令牌使用"
-      },
-      "apiKeys": {
-        "label": "API 密钥",
-        "name": "名称",
-        "key": "API 密钥",
-        "sourceDoc": "源文档",
-        "createNew": "创建新的"
+  "language": "普通话",
+  "chat": "聊天",
+  "chats": "聊天",
+  "newChat": "新聊天",
+  "myPlan": "我的计划",
+  "about": "关于",
+  "inputPlaceholder": "在这里输入您的消息...",
+  "tagline": "DocsGPT 使用 GenAI, 请使用来源审核关键信息.",
+  "sourceDocs": "来源文档",
+  "none": "无",
+  "cancel": "取消",
+  "demo": [
+    {
+      "header": "了解 DocsGPT",
+      "query": "DocsGPT 是什么"
+    },
+    {
+      "header": "总结文档",
+      "query": "总结当前情况"
+    },
+    {
+      "header": "编写代码",
+      "query": "为 /api/answer API 请求编写代码"
+    },
+    {
+      "header": "学习帮助",
+      "query": "为背景写出潜在问题"
+    }
+  ],
+  "settings": {
+    "label": "设置",
+    "general": {
+      "label": "般",
+      "selectTheme": "选择主题",
+      "light": "浅色",
+      "dark": "暗色",
+      "selectLanguage": "选择语言",
+      "chunks": "每个查询处理的块",
+      "prompt": "提示",
+      "deleteAllLabel": "删除所有对话",
+      "deleteAllBtn": "删除所有",
+      "addNew": "添加新的",
+      "convHistory": "对话历史",
+      "none": "无",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "unlimited": "无限",
+      "default": "默认"
+    },
+    "documents": {
+      "label": "文件",
+      "name": "文件名称",
+      "date": "向量日期",
+      "type": "类型",
+      "tokenUsage": "令牌使用"
+    },
+    "apiKeys": {
+      "label": "API 密钥",
+      "name": "名称",
+      "key": "API 密钥",
+      "sourceDoc": "源文档",
+      "createNew": "创建新的"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "上传新文档资料",
+      "file": "从文件",
+      "remote": "远程",
+      "name": "名称",
+      "choose": "选择文件",
+      "info": "请上传 .pdf, .txt, .rst, .docx, .md, .zip 文件，限 25MB",
+      "uploadedFiles": "已上传文件",
+      "cancel": "取消",
+      "train": "训练",
+      "link": "链接",
+      "urlLink": "URL 链接",
+      "reddit": {
+        "id": "客户端 ID",
+        "secret": "客户端密钥",
+        "agent": "用户代理",
+        "searchQueries": "搜索查询",
+        "numberOfPosts": "帖子数量"
       }
     },
-    "modals": {
-      "uploadDoc": {
-        "label": "上传新文档资料",
-        "file": "从文件",
-        "remote": "远程",
-        "name": "名称",
-        "choose": "选择文件",
-        "info": "请上传 .pdf, .txt, .rst, .docx, .md, .zip 文件，限 25MB",
-        "uploadedFiles": "已上传文件",
-        "cancel": "取消",
-        "train": "训练",
-        "link": "链接",
-        "urlLink": "URL 链接",
-        "reddit": {
-          "id": "客户端 ID",
-          "secret": "客户端密钥",
-          "agent": "用户代理",
-          "searchQueries": "搜索查询",
-          "numberOfPosts": "帖子数量"
-        }
-      },
-      "createAPIKey": {
-        "label": "创建新的 API 密钥",
-        "apiKeyName": "API 密钥名称",
-        "chunks": "每个查询处理的块",
-        "prompt": "选择活动提示",
-        "sourceDoc": "源文档",
-        "create": "创建"
-      },
-      "saveKey": {
-        "note": "请保存您的密钥",
-        "disclaimer": "这是您的密钥唯一一次展示机会。",
-        "copy": "复制",
-        "copied": "已复制",
-        "confirm": "我已保存密钥"
-      },
-      "deleteConv": {
-        "confirm": "您确定要删除所有对话吗？",
-        "delete": "删除"
-      }
+    "createAPIKey": {
+      "label": "创建新的 API 密钥",
+      "apiKeyName": "API 密钥名称",
+      "chunks": "每个查询处理的块",
+      "prompt": "选择活动提示",
+      "sourceDoc": "源文档",
+      "create": "创建"
+    },
+    "saveKey": {
+      "note": "请保存您的密钥",
+      "disclaimer": "这是您的密钥唯一一次展示机会。",
+      "copy": "复制",
+      "copied": "已复制",
+      "confirm": "我已保存密钥"
+    },
+    "deleteConv": {
+      "confirm": "您确定要删除所有对话吗？",
+      "delete": "删除"
     }
   }
-  
+}
