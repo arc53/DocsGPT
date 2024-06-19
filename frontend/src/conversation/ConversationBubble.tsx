@@ -23,9 +23,10 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     sources?: { title: string; text: string; source: string }[];
+    retryBtn?: React.ReactElement;
   }
 >(function ConversationBubble(
-  { message, type, className, feedback, handleFeedback, sources },
+  { message, type, className, feedback, handleFeedback, sources, retryBtn },
   ref,
 ) {
   const [openSource, setOpenSource] = useState<number | null>(null);
@@ -69,12 +70,17 @@ const ConversationBubble = forwardRef<
           <div
             className={`ml-2 mr-5 flex max-w-[90vw] rounded-3xl bg-gray-1000 p-3.5 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
-                ? 'flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
+                ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
             }`}
           >
             {type === 'ERROR' && (
-              <img src={Alert} alt="alert" className="mr-2 inline" />
+              <>
+                <img src={Alert} alt="alert" className="mr-2 inline" />
+                <div className="absolute -right-32 top-1/2 -translate-y-1/2">
+                  {retryBtn}
+                </div>
+              </>
             )}
             <ReactMarkdown
               className="whitespace-pre-wrap break-normal leading-normal"

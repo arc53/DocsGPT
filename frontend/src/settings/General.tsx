@@ -36,6 +36,10 @@ const General: React.FC = () => {
       label: 'Japanese',
       value: 'jp',
     },
+    {
+      label: 'Mandarin',
+      value: 'zh',
+    },
   ];
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([

@@ -1,109 +1,108 @@
 {
-    "language": "日本語",
-    "chat": "チャット",
-    "chats": "チャット",
-    "newChat": "新しいチャット",
-    "myPlan": "私のプラン",
-    "about": "について",
-    "inputPlaceholder": "ここにメッセージを入力してください...",
-    "tagline": "DocsGPTはGenAIを使用しています。重要な情報はソースで確認してください。",
-    "sourceDocs": "ソースドキュメント",
-    "none": "なし",
-    "cancel":"キャンセル",
-    "demo": [
-      {
-        "header": "DocsGPTについて学ぶ",
-        "query": "DocsGPTとは何ですか?"
-      },
-      {
-        "header": "ドキュメントを要約する",
-        "query": "現在のコンテキストを要約してください"
-      },
-      {
-        "header": "コードを書く",
-        "query": "APIリクエストのコードを/api/answerに書いてください。"
-      },
-      {
-        "header": "学習支援",
-        "query": "コンテキストに対する潜在的な質問を書いてください"
-      }
-    ],
-    "settings": {
-      "label": "設定",
-      "general": {
-        "label": "一般",
-        "selectTheme": "テーマを選択",
-        "light": "ライト",
-        "dark": "ダーク",
-        "selectLanguage": "言語を選択",
-        "chunks": "クエリごとに処理されるチャンク",
-        "prompt": "アクティブプロンプト",
-        "deleteAllLabel": "すべての会話を削除",
-        "deleteAllBtn": "すべて削除",
-        "addNew": "新規追加",
-        "convHistory":"会話履歴",
-        "none":"なし",
-        "low":"低",
-        "medium":"中",
-        "high":"高",
-        "unlimited":"無制限",
-        "default":"デフォルト"
-      },
-      "documents": {
-        "label": "ドキュメント",
-        "name": "ドキュメント名",
-        "date": "ベクトル日付",
-        "type": "タイプ",
-        "tokenUsage": "トークン使用量"
-      },
-      "apiKeys": {
-        "label": "APIキー",
-        "name": "名前",
-        "key": "APIキー",
-        "sourceDoc": "ソースドキュメント",
-        "createNew": "新規作成"
+  "language": "日本語",
+  "chat": "チャット",
+  "chats": "チャット",
+  "newChat": "新しいチャット",
+  "myPlan": "私のプラン",
+  "about": "について",
+  "inputPlaceholder": "ここにメッセージを入力してください...",
+  "tagline": "DocsGPTはGenAIを使用しています。重要な情報はソースで確認してください。",
+  "sourceDocs": "ソースドキュメント",
+  "none": "なし",
+  "cancel": "キャンセル",
+  "demo": [
+    {
+      "header": "DocsGPTについて学ぶ",
+      "query": "DocsGPTとは何ですか?"
+    },
+    {
+      "header": "ドキュメントを要約する",
+      "query": "現在のコンテキストを要約してください"
+    },
+    {
+      "header": "コードを書く",
+      "query": "APIリクエストのコードを/api/answerに書いてください。"
+    },
+    {
+      "header": "学習支援",
+      "query": "コンテキストに対する潜在的な質問を書いてください"
+    }
+  ],
+  "settings": {
+    "label": "設定",
+    "general": {
+      "label": "一般",
+      "selectTheme": "テーマを選択",
+      "light": "ライト",
+      "dark": "ダーク",
+      "selectLanguage": "言語を選択",
+      "chunks": "クエリごとに処理されるチャンク",
+      "prompt": "アクティブプロンプト",
+      "deleteAllLabel": "すべての会話を削除",
+      "deleteAllBtn": "すべて削除",
+      "addNew": "新規追加",
+      "convHistory": "会話履歴",
+      "none": "なし",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "unlimited": "無制限",
+      "default": "デフォルト"
+    },
+    "documents": {
+      "label": "ドキュメント",
+      "name": "ドキュメント名",
+      "date": "ベクトル日付",
+      "type": "タイプ",
+      "tokenUsage": "トークン使用量"
+    },
+    "apiKeys": {
+      "label": "APIキー",
+      "name": "名前",
+      "key": "APIキー",
+      "sourceDoc": "ソースドキュメント",
+      "createNew": "新規作成"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "新規書類のアップロード",
+      "file": "ファイルから",
+      "remote": "リモート",
+      "name": "名前",
+      "choose": "ファイルを選択",
+      "info": ".pdf, .txt, .rst, .docx, .md, .zipファイルを25MBまでアップロードしてください",
+      "uploadedFiles": "アップロードされたファイル",
+      "cancel": "キャンセル",
+      "train": "トレーニング",
+      "link": "リンク",
+      "urlLink": "URLリンク",
+      "reddit": {
+        "id": "クライアントID",
+        "secret": "クライアントシークレット",
+        "agent": "ユーザーエージェント",
+        "searchQueries": "検索クエリ",
+        "numberOfPosts": "投稿数"
       }
     },
-    "modals": {
-      "uploadDoc": {
-        "label": "新規書類のアップロード",
-        "file": "ファイルから",
-        "remote": "リモート",
-        "name": "名前",
-        "choose": "ファイルを選択",
-        "info": ".pdf, .txt, .rst, .docx, .md, .zipファイルを25MBまでアップロードしてください",
-        "uploadedFiles": "アップロードされたファイル",
-        "cancel": "キャンセル",
-        "train": "トレーニング",
-        "link": "リンク",
-        "urlLink": "URLリンク",
-        "reddit": {
-          "id": "クライアントID",
-          "secret": "クライアントシークレット",
-          "agent": "ユーザーエージェント",
-          "searchQueries": "検索クエリ",
-          "numberOfPosts": "投稿数"
-        }
-      },
-      "createAPIKey": {
-        "label": "新しいAPIキーを作成",
-        "apiKeyName": "APIキー名",
-        "chunks": "クエリごとに処理されるチャンク",
-        "prompt": "アクティブプロンプトを選択",
-        "sourceDoc": "ソースドキュメント",
-        "create": "作成"
-      },
-      "saveKey": {
-        "note": "キーを保存してください",
-        "disclaimer": "キーが表示されるのはこのときだけです。",
-        "copy": "コピー",
-        "copied": "コピーしました",
-        "confirm": "キーを保存しました"
-      },
-      "deleteConv": {
-        "confirm": "すべての会話を削除してもよろしいですか?",
-        "delete": "削除"
-      }
+    "createAPIKey": {
+      "label": "新しいAPIキーを作成",
+      "apiKeyName": "APIキー名",
+      "chunks": "クエリごとに処理されるチャンク",
+      "prompt": "アクティブプロンプトを選択",
+      "sourceDoc": "ソースドキュメント",
+      "create": "作成"
+    },
+    "saveKey": {
+      "note": "キーを保存してください",
+      "disclaimer": "キーが表示されるのはこのときだけです。",
+      "copy": "コピー",
+      "copied": "コピーしました",
+      "confirm": "キーを保存しました"
+    },
+    "deleteConv": {
+      "confirm": "すべての会話を削除してもよろしいですか?",
+      "delete": "削除"
     }
   }
-  
+}

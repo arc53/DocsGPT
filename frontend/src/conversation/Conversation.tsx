@@ -19,6 +19,7 @@ import { FEEDBACK, Query } from './conversationModels';
 import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
+import RetryIcon from '../components/RetryIcon';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
@@ -29,6 +30,7 @@ export default function Conversation() {
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
+  const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const { t } = useTranslation();
 
   const handleUserInterruption = () => {
@@ -73,6 +75,13 @@ export default function Conversation() {
     };
   }, [endMessageRef.current]);
 
+  useEffect(() => {
+    if (queries.length) {
+      queries[queries.length - 1].error && setLastQueryReturnedErr(true);
+      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
+    }
+  }, [queries[queries.length - 1]]);
+
   const scrollIntoView = () => {
     endMessageRef?.current?.scrollIntoView({
       behavior: 'smooth',
@@ -80,13 +89,20 @@ export default function Conversation() {
     });
   };
 
-  const handleQuestion = (question: string) => {
+  const handleQuestion = ({
+    question,
+    isRetry = false,
+  }: {
+    question: string;
+    isRetry?: boolean;
+  }) => {
     question = question.trim();
     if (question === '') return;
     setEventInterrupt(false);
-    dispatch(addQuery({ prompt: question }));
+    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
     fetchStream.current = dispatch(fetchAnswer({ question }));
   };
+
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
@@ -95,19 +111,32 @@ export default function Conversation() {
     );
   };
 
+  const handleQuestionSubmission = () => {
+    if (inputRef.current?.textContent && status !== 'loading') {
+      if (lastQueryReturnedErr) {
+        // update last failed query with new prompt
+        dispatch(
+          updateQuery({
+            index: queries.length - 1,
+            query: {
+              prompt: inputRef.current.textContent,
+            },
+          }),
+        );
+        handleQuestion({
+          question: queries[queries.length - 1].prompt,
+          isRetry: true,
+        });
+      } else {
+        handleQuestion({ question: inputRef.current.textContent });
+      }
+      inputRef.current.textContent = '';
+    }
+  };
+
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
-    if (query.error) {
-      responseView = (
-        <ConversationBubble
-          ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
-          key={`${index}ERROR`}
-          message={query.error}
-          type="ERROR"
-        ></ConversationBubble>
-      );
-    } else if (query.response) {
+    if (query.response) {
       responseView = (
         <ConversationBubble
           ref={endMessageRef}
@@ -120,6 +149,35 @@ export default function Conversation() {
           handleFeedback={(feedback: FEEDBACK) =>
             handleFeedback(query, feedback, index)
           }
+        ></ConversationBubble>
+      );
+    } else if (query.error) {
+      const retryBtn = (
+        <button
+          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          disabled={status === 'loading'}
+          onClick={() => {
+            handleQuestion({
+              question: queries[queries.length - 1].prompt,
+              isRetry: true,
+            });
+          }}
+        >
+          <RetryIcon
+            fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+            stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+          />
+          Retry
+        </button>
+      );
+      responseView = (
+        <ConversationBubble
+          ref={endMessageRef}
+          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
+          key={`${index}ERROR`}
+          message={query.error}
+          type="ERROR"
+          retryBtn={retryBtn}
         ></ConversationBubble>
       );
     }
@@ -137,13 +195,13 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[85vh] w-full justify-center overflow-y-auto p-4"
+        className="flex h-[90%] w-full justify-center overflow-y-auto p-4 md:h-[84vh]"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
             onClick={scrollIntoView}
             aria-label="scroll to bottom"
-            className="fixed bottom-32 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
+            className="fixed bottom-40 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
           >
             <img
               src={ArrowDown}
@@ -165,16 +223,19 @@ export default function Conversation() {
                     type="QUESTION"
                     sources={query.sources}
                   ></ConversationBubble>
+
                   {prepResponseView(query, index)}
                 </Fragment>
               );
             })}
           </div>
         )}
+
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
-      <div className="bottom-0 flex w-11/12 flex-col items-end self-center bg-white pt-1 dark:bg-raisin-black sm:w-6/12 md:fixed">
-        <div className="flex h-full w-full items-center rounded-full border border-silver">
+
+      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
+        <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
           <div
             id="inputbox"
             ref={inputRef}
@@ -186,34 +247,27 @@ export default function Conversation() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (inputRef.current?.textContent && status !== 'loading') {
-                  handleQuestion(inputRef.current.textContent);
-                  inputRef.current.textContent = '';
-                }
+                handleQuestionSubmission();
               }
             }}
           ></div>
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
-              className="relative right-[38px] bottom-[15px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+              className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
             <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
               <img
                 className="w-6 text-white "
-                onClick={() => {
-                  if (inputRef.current?.textContent) {
-                    handleQuestion(inputRef.current.textContent);
-                    inputRef.current.textContent = '';
-                  }
-                }}
+                onClick={handleQuestionSubmission}
                 src={isDarkTheme ? SendDark : Send}
               ></img>
             </div>
           )}
         </div>
-        <p className="text-gray-595959 hidden w-[100vw] self-center bg-white bg-transparent p-5 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
+
+        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent py-2 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
