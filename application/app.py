@@ -6,6 +6,8 @@ from application.core.settings import settings
 from application.api.user.routes import user
 from application.api.answer.routes import answer
 from application.api.internal.routes import internal
+from application.cache import cache
+from application.llm.llm_creator import LLMCreator
 
 if platform.system() == "Windows":
     import pathlib
@@ -23,6 +25,8 @@ app.config.update(
     CELERY_RESULT_BACKEND=settings.CELERY_RESULT_BACKEND,
     MONGO_URI=settings.MONGO_URI
 )
+cache.init_app(app)
+cache.set("llm_creator", LLMCreator())
 celery.config_from_object("application.celeryconfig")
 
 @app.route("/")

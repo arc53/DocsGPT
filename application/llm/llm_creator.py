@@ -19,9 +19,20 @@ class LLMCreator:
         "premai": PremAILLM,
     }
 
-    @classmethod
-    def create_llm(cls, type, api_key, user_api_key, *args, **kwargs):
-        llm_class = cls.llms.get(type.lower())
+    singleton_llm = {
+        'type': None,
+        'llm': None
+    }
+
+    def create_llm(self, type, api_key, user_api_key, *args, **kwargs):
+        llm_class = self.llms.get(type.lower())
         if not llm_class:
             raise ValueError(f"No LLM class found for type {type}")
-        return llm_class(api_key, user_api_key, *args, **kwargs)
+
+        # do not create a new LLM (and allocate memory again) for each request for local models
+        if self.singleton_llm['type'] != llm_class or self.singleton_llm['type'] != LlamaCpp:
+            llm = llm_class(api_key, user_api_key, *args, **kwargs)
+            self.singleton_llm['type'] = llm_class
+            self.singleton_llm['llm'] = llm
+
+        return self.singleton_llm['llm']

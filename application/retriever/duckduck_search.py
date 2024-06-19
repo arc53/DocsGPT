@@ -1,6 +1,5 @@
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
-from application.llm.llm_creator import LLMCreator
 from application.utils import count_tokens
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
@@ -79,7 +78,7 @@ class DuckDuckSearch(BaseRetriever):
 
         return docs
 
-    def gen(self):
+    def gen(self, cache):
         docs = self._get_data()
 
         # join all page_content together with a newline
@@ -108,7 +107,7 @@ class DuckDuckSearch(BaseRetriever):
                         )
         messages_combine.append({"role": "user", "content": self.question})
 
-        llm = LLMCreator.create_llm(
+        llm = cache.get("llm_creator").create_llm(
             settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
         )
 
