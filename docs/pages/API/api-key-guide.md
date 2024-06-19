@@ -14,7 +14,7 @@ Before creating your first API key, you must upload the document that will be li
 After uploading your document, you can obtain an API key either through the graphical user interface or via an API call:
 
 - **Graphical User Interface:** Navigate to the Settings section of the DocsGPT web app, find the API Keys option, and press 'Create New' to generate your key.
-- **API Call:** Alternatively, you can use the `/api/create_api_key` endpoint to create a new API key. For detailed instructions, visit [DocsGPT API Documentation](https://docs.docsgpt.cloud/Developing/API-docs#8-apicreate_api_key).
+- **API Call:** Alternatively, you can use the `/api/create_api_key` endpoint to create a new API key. For detailed instructions, visit [DocsGPT API Documentation](https://docs.docsgpt.cloud/API/API-docs#8-apicreate_api_key).
 
 ### Understanding Key Variables
 

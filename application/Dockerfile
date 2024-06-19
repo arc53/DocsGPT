@@ -1,11 +1,16 @@
 # Builder Stage
-FROM ubuntu:mantic as builder
+FROM ubuntu:24.04 as builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update && \
+    apt-get install -y software-properties-common
+
+RUN add-apt-repository ppa:deadsnakes/ppa
+
 # Install necessary packages and Python
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3-pip python3.11-venv && \
+    apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* 
 
@@ -42,7 +47,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Final Stage
-FROM ubuntu:mantic as final
+FROM ubuntu:24.04 as final
+
+RUN apt-get update && \
+    apt-get install -y software-properties-common
+
+RUN add-apt-repository ppa:deadsnakes/ppa
 
 # Install Python
 RUN apt-get update && apt-get install -y --no-install-recommends python3.11 && \

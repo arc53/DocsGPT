@@ -1,6 +1,6 @@
 import platform
 import dotenv
-from application.celery import celery
+from application.celery_init import celery
 from flask import Flask, request, redirect
 from application.core.settings import settings
 from application.api.user.routes import user
