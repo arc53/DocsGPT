@@ -229,7 +229,7 @@ def upload_remote():
 def task_status():
     """Get celery job status."""
     task_id = request.args.get("task_id")
-    from application.celery import celery
+    from application.celery_init import celery
 
     task = celery.AsyncResult(task_id)
     task_meta = task.info
