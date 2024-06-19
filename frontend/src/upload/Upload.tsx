@@ -104,7 +104,14 @@ export default function Upload({
             .then((data) => {
               if (data.status == 'SUCCESS') {
                 if (data.result.limited === true) {
-                  getDocs().then((data) => dispatch(setSourceDocs(data)));
+                  getDocs().then((data) => {
+                    dispatch(setSourceDocs(data));
+                    dispatch(
+                      setSelectedDocs(
+                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                      ),
+                    );
+                  });
                   setProgress(
                     (progress) =>
                       progress && {
@@ -114,7 +121,14 @@ export default function Upload({
                       },
                   );
                 } else {
-                  getDocs().then((data) => dispatch(setSourceDocs(data)));
+                  getDocs().then((data) => {
+                    dispatch(setSourceDocs(data));
+                    dispatch(
+                      setSelectedDocs(
+                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                      ),
+                    );
+                  });
                   setProgress(
                     (progress) =>
                       progress && {
