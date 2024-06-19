@@ -94,8 +94,10 @@ export default function Upload({
   function TrainingProgress() {
     const dispatch = useDispatch();
     useEffect(() => {
-      (progress?.percentage ?? 0) < 100 &&
-        setTimeout(() => {
+      let timeoutID: number | undefined;
+
+      if ((progress?.percentage ?? 0) < 100) {
+        timeoutID = setTimeout(() => {
           const apiHost = import.meta.env.VITE_API_HOST;
           fetch(`${apiHost}/api/task_status?task_id=${progress?.taskId}`)
             .then((data) => data.json())
@@ -133,6 +135,14 @@ export default function Upload({
               }
             });
         }, 5000);
+      }
+
+      // cleanup
+      return () => {
+        if (timeoutID !== undefined) {
+          clearTimeout(timeoutID);
+        }
+      };
     }, [progress, dispatch]);
     return (
       <Progress
