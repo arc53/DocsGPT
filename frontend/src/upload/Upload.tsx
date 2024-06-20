@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useDispatch } from 'react-redux';
@@ -35,6 +35,7 @@ function Upload({
   }>();
 
   const { t } = useTranslation();
+  const setTimeoutRef = useRef<number | null>();
 
   const urlOptions: { label: string; value: string }[] = [
     { label: 'Crawler', value: 'crawler' },
@@ -47,6 +48,12 @@ function Upload({
     label: 'Link',
     value: 'url',
   });
+
+  useEffect(() => {
+    if (setTimeoutRef.current) {
+      clearTimeout(setTimeoutRef.current);
+    }
+  }, []);
 
   function ProgressBar({ progress }: { progress: number }) {
     return (
@@ -63,7 +70,6 @@ function Upload({
             {progress >= 5 && `${progress}%`}
           </div>
         </div>
-        {/* <div className="h-1 w-[100%] bg-purple-30"></div> */}
       </div>
     );
   }
@@ -209,7 +215,9 @@ function Upload({
     });
     xhr.onload = () => {
       const { task_id } = JSON.parse(xhr.responseText);
-      setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+      setTimeoutRef.current = setTimeout(() => {
+        setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+      }, 2000);
     };
     xhr.open('POST', `${apiHost + '/api/upload'}`);
     xhr.send(formData);
@@ -238,7 +246,9 @@ function Upload({
     });
     xhr.onload = () => {
       const { task_id } = JSON.parse(xhr.responseText);
-      setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+      setTimeoutRef.current = setTimeout(() => {
+        setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+      }, 2000);
     };
     xhr.open('POST', `${apiHost + '/api/remote'}`);
     xhr.send(formData);
