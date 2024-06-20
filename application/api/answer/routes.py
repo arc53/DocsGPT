@@ -185,20 +185,20 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
             elif "source" in line:
                 source_log_docs.append(line["source"])
 
-            llm = LLMCreator.create_llm(
-                settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
-               )
-            conversation_id = save_conversation(
-                conversation_id, question, response_full, source_log_docs, llm
+        llm = LLMCreator.create_llm(
+            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
             )
-           
-            # send data.type = "end" to indicate that the stream has ended as json
-            data = json.dumps({"type": "id", "id": str(conversation_id)})
-            yield f"data: {data}\n\n"
-            data = json.dumps({"type": "end"})
-            yield f"data: {data}\n\n"
-    except Exception:
-        data = json.dumps({"type": "error","error":"Please try again later. We apologize for any inconvenience."})
+        conversation_id = save_conversation(
+            conversation_id, question, response_full, source_log_docs, llm
+        )
+        
+        # send data.type = "end" to indicate that the stream has ended as json
+        data = json.dumps({"type": "id", "id": str(conversation_id)})
+        yield f"data: {data}\n\n"
+        data = json.dumps({"type": "end"})
+        yield f"data: {data}\n\n"
+    except Exception as e:
+        data = json.dumps({"type": "error","error": str(e)})
         yield f"data: {data}\n\n"
         return 
 
