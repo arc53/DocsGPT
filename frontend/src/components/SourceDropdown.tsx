@@ -90,7 +90,7 @@ function SourceDropdown({
                         id={`img-${index}`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          handleDeleteClick(index, option);
+                          handleDeleteClick(option);
                         }}
                       />
                     )}
