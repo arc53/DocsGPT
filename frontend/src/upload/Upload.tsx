@@ -4,10 +4,11 @@ import { useDropzone } from 'react-dropzone';
 import { useDispatch } from 'react-redux';
 import { ActiveState } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
-import { setSourceDocs } from '../preferences/preferenceSlice';
+import { setSelectedDocs, setSourceDocs } from '../preferences/preferenceSlice';
 import Dropdown from '../components/Dropdown';
 import { useTranslation } from 'react-i18next';
-export default function Upload({
+
+function Upload({
   modalState,
   setModalState,
 }: {
@@ -24,17 +25,6 @@ export default function Upload({
     search_queries: [''],
     number_posts: 10,
   });
-  const { t } = useTranslation();
-  const urlOptions: { label: string; value: string }[] = [
-    { label: 'Crawler', value: 'crawler' },
-    // { label: 'Sitemap', value: 'sitemap' },
-    { label: 'Link', value: 'url' },
-    { label: 'Reddit', value: 'reddit' },
-  ];
-  const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: 'Link',
-    value: 'url',
-  });
   const [activeTab, setActiveTab] = useState<string>('file');
   const [files, setfiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<{
@@ -43,6 +33,20 @@ export default function Upload({
     taskId?: string;
     failed?: boolean;
   }>();
+
+  const { t } = useTranslation();
+
+  const urlOptions: { label: string; value: string }[] = [
+    { label: 'Crawler', value: 'crawler' },
+    // { label: 'Sitemap', value: 'sitemap' },
+    { label: 'Link', value: 'url' },
+    { label: 'Reddit', value: 'reddit' },
+  ];
+
+  const [urlType, setUrlType] = useState<{ label: string; value: string }>({
+    label: 'Link',
+    value: 'url',
+  });
 
   function Progress({
     title,
@@ -93,16 +97,26 @@ export default function Upload({
 
   function TrainingProgress() {
     const dispatch = useDispatch();
+
     useEffect(() => {
-      (progress?.percentage ?? 0) < 100 &&
-        setTimeout(() => {
+      let timeoutID: number | undefined;
+
+      if ((progress?.percentage ?? 0) < 100) {
+        timeoutID = setTimeout(() => {
           const apiHost = import.meta.env.VITE_API_HOST;
           fetch(`${apiHost}/api/task_status?task_id=${progress?.taskId}`)
             .then((data) => data.json())
             .then((data) => {
               if (data.status == 'SUCCESS') {
                 if (data.result.limited === true) {
-                  getDocs().then((data) => dispatch(setSourceDocs(data)));
+                  getDocs().then((data) => {
+                    dispatch(setSourceDocs(data));
+                    dispatch(
+                      setSelectedDocs(
+                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                      ),
+                    );
+                  });
                   setProgress(
                     (progress) =>
                       progress && {
@@ -112,7 +126,14 @@ export default function Upload({
                       },
                   );
                 } else {
-                  getDocs().then((data) => dispatch(setSourceDocs(data)));
+                  getDocs().then((data) => {
+                    dispatch(setSourceDocs(data));
+                    dispatch(
+                      setSelectedDocs(
+                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                      ),
+                    );
+                  });
                   setProgress(
                     (progress) =>
                       progress && {
@@ -133,6 +154,14 @@ export default function Upload({
               }
             });
         }, 5000);
+      }
+
+      // cleanup
+      return () => {
+        if (timeoutID !== undefined) {
+          clearTimeout(timeoutID);
+        }
+      };
     }, [progress, dispatch]);
     return (
       <Progress
@@ -217,6 +246,7 @@ export default function Upload({
         ['.docx'],
     },
   });
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (name === 'search_queries' && value.length > 0) {
@@ -230,7 +260,9 @@ export default function Upload({
         [name]: value,
       });
   };
+
   let view;
+
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
   } else if (progress?.type === 'TRAINIING') {
@@ -263,6 +295,7 @@ export default function Upload({
             {t('modals.uploadDoc.remote')}
           </button>
         </div>
+
         {activeTab === 'file' && (
           <>
             <input
@@ -411,6 +444,7 @@ export default function Upload({
             )}
           </>
         )}
+
         <div className="flex flex-row-reverse">
           {activeTab === 'file' ? (
             <button
@@ -462,3 +496,5 @@ export default function Upload({
     </article>
   );
 }
+
+export default Upload;

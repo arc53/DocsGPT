@@ -27,6 +27,7 @@ import {
   selectConversationId,
   selectModalStateDeleteConv,
   setModalStateDeleteConv,
+  setSourceDocs,
 } from './preferences/preferenceSlice';
 import {
   setConversation,
@@ -34,7 +35,7 @@ import {
 } from './conversation/conversationSlice';
 import { useMediaQuery, useOutsideAlerter } from './hooks';
 import Upload from './upload/Upload';
-import { Doc, getConversations } from './preferences/preferenceApi';
+import { Doc, getConversations, getDocs } from './preferences/preferenceApi';
 import SelectDocsModal from './preferences/SelectDocsModal';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme } from './hooks';
@@ -124,19 +125,29 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .catch((error) => console.error(error));
   };
 
-  const handleDeleteClick = (index: number, doc: Doc) => {
-    const docPath = 'indexes/' + 'local' + '/' + doc.name;
+  const handleDeleteClick = (doc: Doc) => {
+    const docPath = `indexes/local/${doc.name}`;
 
     fetch(`${apiHost}/api/delete_old?path=${docPath}`, {
       method: 'GET',
     })
       .then(() => {
         // remove the image element from the DOM
-        const imageElement = document.querySelector(
-          `#img-${index}`,
-        ) as HTMLElement;
-        const parentElement = imageElement.parentNode as HTMLElement;
-        parentElement.parentNode?.removeChild(parentElement);
+        // const imageElement = document.querySelector(
+        //   `#img-${index}`,
+        // ) as HTMLElement;
+        // const parentElement = imageElement.parentNode as HTMLElement;
+        // parentElement.parentNode?.removeChild(parentElement);
+
+        return getDocs();
+      })
+      .then((updatedDocs) => {
+        dispatch(setSourceDocs(updatedDocs));
+        dispatch(
+          setSelectedDocs(
+            updatedDocs?.find((doc) => doc.name.toLowerCase() === 'default'),
+          ),
+        );
       })
       .catch((error) => console.error(error));
   };
