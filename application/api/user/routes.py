@@ -257,8 +257,8 @@ def combined_json():
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
-    # append data from vectors_collection
-    for index in vectors_collection.find({"user": user}):
+    # append data from vectors_collection in sorted order in descending order of date
+    for index in vectors_collection.find({"user": user}).sort("date", -1):
         data.append(
             {
                 "name": index["name"],
