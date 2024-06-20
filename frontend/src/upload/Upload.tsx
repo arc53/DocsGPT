@@ -48,6 +48,26 @@ function Upload({
     value: 'url',
   });
 
+  function ProgressBar({ progress }: { progress: number }) {
+    return (
+      <div className="my-5 w-[50%]">
+        <div
+          className={`h-4 overflow-hidden rounded-lg border border-purple-30 text-xs text-white outline-none `}
+        >
+          <div
+            className={`h-full border-none p-1 w-${
+              progress || 0
+            }%  flex items-center justify-center bg-purple-30 outline-none transition-all`}
+            style={{ width: `${progress || 0}%` }}
+          >
+            {progress >= 5 && `${progress}%`}
+          </div>
+        </div>
+        {/* <div className="h-1 w-[100%] bg-purple-30"></div> */}
+      </div>
+    );
+  }
+
   function Progress({
     title,
     isCancellable = false,
@@ -64,15 +84,10 @@ function Upload({
         <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
           Over the token limit, please consider uploading smaller document
         </p>
-        <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p>
+        {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
 
-        <div className="mb-10 w-[50%]">
-          <div className="h-1 w-[100%] bg-purple-30"></div>
-          <div
-            className={`relative bottom-1 h-1 bg-purple-30 transition-all`}
-            style={{ width: `${progress?.percentage || 0}%` }}
-          ></div>
-        </div>
+        {/* progress bar */}
+        <ProgressBar progress={progress?.percentage as number} />
 
         <button
           onClick={() => {
