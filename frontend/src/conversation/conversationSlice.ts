@@ -220,7 +220,7 @@ export const conversationSlice = createSlice({
         }
         state.status = 'failed';
         state.queries[state.queries.length - 1].error =
-          'Something went wrong. Please try again later.';
+          'Something went wrong. Please check your internet connection.';
       });
   },
 });
