@@ -198,7 +198,8 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
-        data = json.dumps({"type": "error","error": str(e)})
+        data = json.dumps({"type": "error","error":"Please try again later. We apologize for any inconvenience.",
+          "error_exception": str(e)})
         yield f"data: {data}\n\n"
         return 
 
