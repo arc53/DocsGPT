@@ -76,7 +76,7 @@ def get_data_from_api_key(api_key):
     
     # # Raise custom exception if the API key is not found
     if data is None:
-        raise Exception("API key is invalid", 401)
+        raise Exception("Invalid API Key, please generate new key", 401)
     return data
 
 
@@ -200,6 +200,7 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
     except Exception:
         data = json.dumps({"type": "error","error":"Please try again later. We apologize for any inconvenience."})
         yield f"data: {data}\n\n"
+        return 
 
 @answer.route("/stream", methods=["POST"])
 def stream():
