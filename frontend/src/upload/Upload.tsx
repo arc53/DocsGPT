@@ -217,7 +217,7 @@ function Upload({
       const { task_id } = JSON.parse(xhr.responseText);
       setTimeoutRef.current = setTimeout(() => {
         setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
-      }, 2000);
+      }, 3000);
     };
     xhr.open('POST', `${apiHost + '/api/upload'}`);
     xhr.send(formData);
@@ -248,7 +248,7 @@ function Upload({
       const { task_id } = JSON.parse(xhr.responseText);
       setTimeoutRef.current = setTimeout(() => {
         setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
-      }, 2000);
+      }, 3000);
     };
     xhr.open('POST', `${apiHost + '/api/remote'}`);
     xhr.send(formData);
