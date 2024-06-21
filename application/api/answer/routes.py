@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from flask import Blueprint, request, Response
 import json
 import datetime
@@ -198,6 +199,7 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
+        print("\033[91merr", str(e), file=sys.stderr)
         data = json.dumps({"type": "error","error":"Please try again later. We apologize for any inconvenience.",
           "error_exception": str(e)})
         yield f"data: {data}\n\n"
@@ -282,13 +284,14 @@ def stream():
     
    except ValueError:
        message = "Malformed request body"
+       print("\033[91merr", str(message), file=sys.stderr)
        return Response(
         error_stream_generate(message),
         status=400,
         mimetype="text/event-stream",
     )
    except Exception as e:
-        print("err",str(e))
+        print("\033[91merr", str(e), file=sys.stderr)
         message = e.args[0]
         status_code = 400
         # # Custom exceptions with two arguments, index 1 as status code
