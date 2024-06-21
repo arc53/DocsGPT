@@ -42,9 +42,26 @@ function Dropdown({
   onDelete?: (value: string) => void;
   placeholder?: string;
 }) {
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = React.useState(false);
   const borderRadius = rounded === 'xl' ? 'rounded-xl' : 'rounded-3xl';
   const borderTopRadius = rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl';
+
+  const handleClickOutside = (event: MouseEvent) => {
+    if (
+      dropdownRef.current &&
+      !dropdownRef.current.contains(event.target as Node)
+    ) {
+      setIsOpen(false);
+    }
+  };
+
+  React.useEffect(() => {
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
   return (
     <div
       className={[
@@ -53,6 +70,7 @@ function Dropdown({
           : 'relative align-middle',
         size,
       ].join(' ')}
+      ref={dropdownRef}
     >
       <button
         onClick={() => setIsOpen(!isOpen)}

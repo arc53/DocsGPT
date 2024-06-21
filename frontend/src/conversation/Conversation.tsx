@@ -195,7 +195,7 @@ export default function Conversation() {
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[90%] w-full justify-center overflow-y-auto p-4 md:h-[84vh]"
+        className="flex h-[90%] w-full justify-center overflow-y-auto p-4 md:h-[83vh]"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
