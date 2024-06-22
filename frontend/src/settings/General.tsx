@@ -107,7 +107,10 @@ const General: React.FC = () => {
           {t('settings.general.selectLanguage')}
         </p>
         <Dropdown
-          options={languageOptions}
+          options={languageOptions.filter(
+            (languageOption) =>
+              languageOption.value !== selectedLanguage?.value,
+          )}
           selectedValue={selectedLanguage ?? languageOptions[0]}
           onSelect={(selectedOption: { label: string; value: string }) => {
             setSelectedLanguage(selectedOption);
