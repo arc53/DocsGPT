@@ -1,37 +1,42 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import General from './General';
-import Documents from './Documents';
-import APIKeys from './APIKeys';
-import Widgets from './Widgets';
+import { useTranslation } from 'react-i18next';
 import {
   selectSourceDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import { Doc } from '../preferences/preferenceApi';
+
+import General from './General';
+import Documents from './Documents';
+import APIKeys from './APIKeys';
+import Widgets from './Widgets';
+
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
-import { useTranslation } from 'react-i18next';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 const Settings: React.FC = () => {
+  const documents = useSelector(selectSourceDocs);
   const dispatch = useDispatch();
   const { t } = useTranslation();
-  const tabs = [
-    t('settings.general.label'),
-    t('settings.documents.label'),
-    t('settings.apiKeys.label'),
-  ];
+
   const [activeTab, setActiveTab] = React.useState('General');
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
     null,
   );
 
-  const documents = useSelector(selectSourceDocs);
+  const tabs = [
+    t('settings.general.label'),
+    t('settings.documents.label'),
+    t('settings.apiKeys.label'),
+  ];
+
   const updateWidgetScreenshot = (screenshot: File | null) => {
     setWidgetScreenshot(screenshot);
   };
+
   const handleDeleteClick = (index: number, doc: Doc) => {
     const docPath = 'indexes/' + 'local' + '/' + doc.name;
     fetch(`${apiHost}/api/delete_old?path=${docPath}`, {
@@ -48,6 +53,7 @@ const Settings: React.FC = () => {
       })
       .catch((error) => console.error(error));
   };
+
   return (
     <div className="wa p-4 pt-20 md:p-12">
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
