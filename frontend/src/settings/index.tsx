@@ -22,7 +22,7 @@ const Settings: React.FC = () => {
   const dispatch = useDispatch();
   const { t } = useTranslation();
 
-  const [activeTab, setActiveTab] = React.useState('General');
+  const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
     null,
   );
