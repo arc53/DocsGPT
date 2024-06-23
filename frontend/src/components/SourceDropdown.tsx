@@ -1,3 +1,4 @@
+import React from 'react';
 import Trash from '../assets/trash.svg';
 import Arrow2 from '../assets/dropdown-arrow.svg';
 import { Doc } from '../preferences/preferenceApi';
@@ -21,6 +22,8 @@ function SourceDropdown({
   handleDeleteClick,
 }: Props) {
   const dispatch = useDispatch();
+  const { t } = useTranslation();
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
   const embeddingsName =
     import.meta.env.VITE_EMBEDDINGS_NAME ||
     'huggingface_sentence-transformers/all-mpnet-base-v2';
@@ -30,10 +33,23 @@ function SourceDropdown({
     setIsDocsListOpen(false);
   };
 
-  const { t } = useTranslation();
+  const handleClickOutside = (event: MouseEvent) => {
+    if (
+      dropdownRef.current &&
+      !dropdownRef.current.contains(event.target as Node)
+    ) {
+      setIsDocsListOpen(false);
+    }
+  };
 
+  React.useEffect(() => {
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
   return (
-    <div className="relative w-5/6 rounded-3xl">
+    <div className="relative w-5/6 rounded-3xl" ref={dropdownRef}>
       <button
         onClick={() => setIsDocsListOpen(!isDocsListOpen)}
         className={`flex w-full cursor-pointer items-center border border-silver bg-white p-[14px] dark:bg-transparent ${
