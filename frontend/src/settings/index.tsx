@@ -23,7 +23,7 @@ const Settings: React.FC = () => {
     t('settings.documents.label'),
     t('settings.apiKeys.label'),
   ];
-  const [activeTab, setActiveTab] = React.useState('General');
+  const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
     null,
   );
