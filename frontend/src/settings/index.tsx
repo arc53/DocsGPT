@@ -14,6 +14,7 @@ import Widgets from './Widgets';
 
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
+import i18n from '../locale/i18n';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
@@ -53,6 +54,11 @@ const Settings: React.FC = () => {
       })
       .catch((error) => console.error(error));
   };
+
+  // persist active tab as the translated version of 'general' per language change
+  React.useEffect(() => {
+    setActiveTab(t('settings.general.label'));
+  }, [i18n.language]);
 
   return (
     <div className="wa p-4 pt-20 md:p-12">
