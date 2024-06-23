@@ -1,8 +1,8 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import Prompts from './Prompts';
 import { useDarkTheme } from '../hooks';
 import { useTranslation } from 'react-i18next';
+import Prompts from './Prompts';
 import Dropdown from '../components/Dropdown';
 import {
   selectPrompt,
@@ -41,6 +41,7 @@ const General: React.FC = () => {
       value: 'zh',
     },
   ];
+
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([
     [0, t('settings.general.none')],
@@ -61,6 +62,7 @@ const General: React.FC = () => {
   );
   const dispatch = useDispatch();
   const locale = localStorage.getItem('docsgpt-locale');
+
   const [selectedLanguage, setSelectedLanguage] = React.useState(
     locale
       ? languageOptions.find((option) => option.value === locale)
@@ -84,6 +86,11 @@ const General: React.FC = () => {
     fetchPrompts();
   }, []);
 
+  React.useEffect(() => {
+    localStorage.setItem('docsgpt-locale', selectedLanguage?.value as string);
+    changeLanguage(selectedLanguage?.value);
+  }, [selectedLanguage, changeLanguage]);
+
   return (
     <div className="mt-[59px]">
       <div className="mb-5">
@@ -102,6 +109,7 @@ const General: React.FC = () => {
           border="border"
         />
       </div>
+
       <div className="mb-5">
         <p className="mb-2 font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectLanguage')}
@@ -114,14 +122,13 @@ const General: React.FC = () => {
           selectedValue={selectedLanguage ?? languageOptions[0]}
           onSelect={(selectedOption: { label: string; value: string }) => {
             setSelectedLanguage(selectedOption);
-            changeLanguage(selectedOption.value);
-            localStorage.setItem('docsgpt-locale', selectedOption.value);
           }}
           size="w-56"
           rounded="3xl"
           border="border"
         />
       </div>
+
       <div className="mb-5">
         <p className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.chunks')}
