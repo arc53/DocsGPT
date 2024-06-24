@@ -12,6 +12,7 @@ import { Doc } from '../preferences/preferenceApi';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
 import { useTranslation } from 'react-i18next';
+import i18n from '../locale/i18n';
 
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
@@ -23,7 +24,7 @@ const Settings: React.FC = () => {
     t('settings.documents.label'),
     t('settings.apiKeys.label'),
   ];
-  const [activeTab, setActiveTab] = React.useState('General');
+  const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
     null,
   );
@@ -48,6 +49,11 @@ const Settings: React.FC = () => {
       })
       .catch((error) => console.error(error));
   };
+
+  // persist active tab as the translated version of 'general' per language change
+  React.useEffect(() => {
+    setActiveTab(t('settings.general.label'));
+  }, [i18n.language]);
   return (
     <div className="wa p-4 pt-20 md:p-12">
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">

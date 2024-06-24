@@ -84,6 +84,11 @@ const General: React.FC = () => {
     fetchPrompts();
   }, []);
 
+  React.useEffect(() => {
+    localStorage.setItem('docsgpt-locale', selectedLanguage?.value as string);
+    changeLanguage(selectedLanguage?.value);
+  }, [selectedLanguage, changeLanguage]);
+
   return (
     <div className="mt-[59px]">
       <div className="mb-5">
@@ -107,12 +112,13 @@ const General: React.FC = () => {
           {t('settings.general.selectLanguage')}
         </p>
         <Dropdown
-          options={languageOptions}
+          options={languageOptions.filter(
+            (languageOption) =>
+              languageOption.value !== selectedLanguage?.value,
+          )}
           selectedValue={selectedLanguage ?? languageOptions[0]}
           onSelect={(selectedOption: { label: string; value: string }) => {
             setSelectedLanguage(selectedOption);
-            changeLanguage(selectedOption.value);
-            localStorage.setItem('docsgpt-locale', selectedOption.value);
           }}
           size="w-56"
           rounded="3xl"
