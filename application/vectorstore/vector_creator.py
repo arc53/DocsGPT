@@ -2,6 +2,7 @@ from application.vectorstore.faiss import FaissStore
 from application.vectorstore.elasticsearch import ElasticsearchStore
 from application.vectorstore.mongodb import MongoDBVectorStore
 from application.vectorstore.qdrant import QdrantStore
+from application.vectorstore.lancedb import LancedbStore
 
 
 class VectorCreator:
@@ -10,6 +11,8 @@ class VectorCreator:
         "elasticsearch": ElasticsearchStore,
         "mongodb": MongoDBVectorStore,
         "qdrant": QdrantStore,
+        "lancedb": LancedbStore,
+
     }
 
     @classmethod
