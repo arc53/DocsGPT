@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
 
+    # ORACLE_URI="your_username/your_password@localhost:1521/docsgpt"
+    ORACLE_URI: Optional[str] = None  # Oracle DB connection string
+
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
