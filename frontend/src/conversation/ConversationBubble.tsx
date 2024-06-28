@@ -68,7 +68,7 @@ const ConversationBubble = forwardRef<
           />
 
           <div
-            className={`ml-2 mr-5 flex max-w-[90vw] rounded-3xl bg-gray-1000 p-3.5 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
+            className={`ml-2 mr-5 flex max-w-[90vw] rounded-[28px] border-2 border-red-600 bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
                 ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
