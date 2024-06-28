@@ -42,7 +42,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="ml-10 mr-2 flex items-center rounded-3xl bg-purple-30 p-3.5 text-white">
+        <div className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white">
           <ReactMarkdown className="whitespace-pre-wrap break-normal leading-normal">
             {message}
           </ReactMarkdown>
@@ -68,7 +68,7 @@ const ConversationBubble = forwardRef<
           />
 
           <div
-            className={`ml-2 mr-5 flex max-w-[90vw] rounded-3xl bg-gray-1000 p-3.5 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
+            className={`ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
                 ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
