@@ -191,7 +191,7 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex h-screen flex-col gap-7">
+    <div className="flex h-screen flex-col gap-7 pb-2">
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
