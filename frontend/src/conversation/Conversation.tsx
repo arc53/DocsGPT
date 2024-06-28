@@ -191,11 +191,11 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex h-screen flex-col gap-1">
+    <div className="flex h-screen flex-col gap-7">
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[90%] w-full justify-center overflow-y-auto p-4 md:h-[83vh]"
+        className="flex h-[90%] w-full flex-1 justify-center overflow-y-auto p-4 md:h-[83vh]"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -234,7 +234,7 @@ export default function Conversation() {
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
 
-      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
         <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
           <div
             id="inputbox"
