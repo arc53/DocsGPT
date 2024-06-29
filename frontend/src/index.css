@@ -413,7 +413,7 @@ template {
   bottom: env(safe-area-inset-bottom, 0);
 }
 
-.inputbox-style[contenteditable] {
+.text-input {
   padding-left: 36px;
   padding-right: 36px;
 }
