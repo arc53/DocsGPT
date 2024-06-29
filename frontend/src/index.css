@@ -412,8 +412,3 @@ template {
 .bottom-safe {
   bottom: env(safe-area-inset-bottom, 0);
 }
-
-.text-input {
-  padding-left: 36px;
-  padding-right: 36px;
-}
