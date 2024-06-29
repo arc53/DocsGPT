@@ -20,12 +20,15 @@ import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
 import RetryIcon from '../components/RetryIcon';
+import TextInput from '../components/inputs/TextInput';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLDivElement>(null);
+  // const inputRef = useRef<HTMLInputElement>(null);
+  // migrating to useState for managing input values and onChange
+  const [prompt, setPrompt] = useState('');
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
   const fetchStream = useRef<any>(null);
@@ -112,14 +115,14 @@ export default function Conversation() {
   };
 
   const handleQuestionSubmission = () => {
-    if (inputRef.current?.textContent && status !== 'loading') {
+    if (prompt.length && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: inputRef.current.textContent,
+              prompt,
             },
           }),
         );
@@ -128,9 +131,9 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: inputRef.current.textContent });
+        handleQuestion({ question: prompt });
       }
-      inputRef.current.textContent = '';
+      setPrompt('');
     }
   };
 
@@ -190,6 +193,8 @@ export default function Conversation() {
     document.execCommand('insertText', false, text);
   };
 
+  // console.log('inputRef: ', inputRef);
+
   return (
     <div className="flex h-screen flex-col gap-1">
       <div
@@ -236,21 +241,36 @@ export default function Conversation() {
 
       <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
         <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
-          <div
+          {/* <div
             id="inputbox"
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
             contentEditable
             onPaste={handlePaste}
-            className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`text-input max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleQuestionSubmission();
               }
             }}
-          ></div>
+          ></div> */}
+          <TextInput
+            variant="PROMPT"
+            id="inputbox"
+            // ref={inputRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={t('inputPlaceholder')}
+            onPaste={handlePaste}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleQuestionSubmission();
+              }
+            }}
+          ></TextInput>
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
