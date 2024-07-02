@@ -53,7 +53,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex flex-wrap self-start ${className} group flex-col pr-20  dark:text-bright-gray`}
+        className={`flex flex-wrap self-start ${className} group flex-col  dark:text-bright-gray`}
       >
         <div className="flex flex-wrap self-start lg:flex-nowrap">
           <Avatar
