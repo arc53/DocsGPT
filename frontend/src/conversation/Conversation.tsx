@@ -235,7 +235,7 @@ export default function Conversation() {
       </div>
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
-        <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
+        <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <div
             id="inputbox"
             ref={inputRef}
