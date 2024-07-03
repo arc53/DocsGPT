@@ -1,6 +1,6 @@
 export type TextAreaProps = {
   value: string | string[] | number;
-  isAutoFocused: boolean;
+  isAutoFocused?: boolean;
   id?: string;
   maxLength?: number;
   name?: string;
@@ -20,4 +20,5 @@ export type TextAreaProps = {
 
 export type InputProps = TextAreaProps & {
   type: 'text' | 'number';
+  hasSilverBorder?: boolean;
 };

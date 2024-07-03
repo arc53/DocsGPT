@@ -1,5 +1,6 @@
 import { ActiveState } from '../models/misc';
 import Exit from '../assets/exit.svg';
+import Input from '../components/Input';
 
 function AddPrompt({
   setModalState,
@@ -34,13 +35,14 @@ function AddPrompt({
           Add your custom prompt and save it to DocsGPT
         </p>
         <div>
-          <input
+          <Input
             placeholder="Prompt Name"
             type="text"
-            className="h-10 w-full rounded-lg border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+            className="h-10 rounded-lg"
+            hasSilverBorder
             value={newPromptName}
             onChange={(e) => setNewPromptName(e.target.value)}
-          ></input>
+          ></Input>
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
               Prompt Name
@@ -105,13 +107,14 @@ function EditPrompt({
           Edit your custom prompt and save it to DocsGPT
         </p>
         <div>
-          <input
+          <Input
             placeholder="Prompt Name"
             type="text"
-            className="h-10 w-full rounded-lg border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+            className="h-10 rounded-lg"
+            hasSilverBorder
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
-          ></input>
+          ></Input>
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
               Prompt Name

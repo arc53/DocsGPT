@@ -4,6 +4,7 @@ import { ActiveState } from '../models/misc';
 import { selectApiKey, setApiKey } from './preferenceSlice';
 import { useMediaQuery, useOutsideAlerter } from './../hooks';
 import Modal from '../modals';
+import Input from '../components/Input';
 
 export default function APIKeyModal({
   modalState,
@@ -66,14 +67,14 @@ export default function APIKeyModal({
               key for llm. Currently, we support only OpenAI but soon many more.
               You can find it here.
             </p>
-            <input
+            <Input
               type="text"
-              className="h-10 w-full border-b-2 border-jet focus:outline-none"
+              className="h-10 border-b-2 border-jet focus:outline-none"
               value={key}
               maxLength={100}
               placeholder="API Key"
               onChange={(e) => setKey(e.target.value)}
-            />
+            ></Input>
           </article>
         );
       }}
