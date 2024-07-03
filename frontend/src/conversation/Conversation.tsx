@@ -20,7 +20,7 @@ import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
 import RetryIcon from '../components/RetryIcon';
-import TextInput from '../components/inputs/TextInput';
+import TextArea from '../components/TextArea';
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
@@ -232,9 +232,9 @@ export default function Conversation() {
 
       <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
         <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
-          <TextInput
-            variant="PROMPT"
+          <TextArea
             value={prompt}
+            isAutoFocused
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={t('inputPlaceholder')}
             onPaste={handlePaste}
@@ -244,7 +244,7 @@ export default function Conversation() {
                 handleQuestionSubmission();
               }
             }}
-          ></TextInput>
+          ></TextArea>{' '}
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
