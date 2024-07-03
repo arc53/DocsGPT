@@ -154,7 +154,7 @@ export default function Conversation() {
     } else if (query.error) {
       const retryBtn = (
         <button
-          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver px-5 py-3  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
           disabled={status === 'loading'}
           onClick={() => {
             handleQuestion({
@@ -243,7 +243,7 @@ export default function Conversation() {
             placeholder={t('inputPlaceholder')}
             contentEditable
             onPaste={handlePaste}
-            className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`inputbox-style max-h-24 w-full overflow-x-hidden overflow-y-scroll whitespace-pre-wrap rounded-full bg-white pb-[22px] pt-5 text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -254,7 +254,7 @@ export default function Conversation() {
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
-              className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+              className="relative bottom-[24px] right-[38px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
             <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
@@ -267,7 +267,7 @@ export default function Conversation() {
           )}
         </div>
 
-        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent py-2 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-transparent bg-white py-2 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
