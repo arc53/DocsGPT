@@ -1,18 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-
-type Props = {
-  value: string | string[] | number;
-  isAutoFocused: boolean;
-  id?: string;
-  maxLength?: number;
-  name?: string;
-  placeholder?: string;
-  className?: string;
-  children?: React.ReactElement;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-};
+import { TextAreaProps } from './types';
 
 const TextArea = ({
   value,
@@ -26,7 +13,7 @@ const TextArea = ({
   onChange,
   onPaste,
   onKeyDown,
-}: Props) => {
+}: TextAreaProps) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
