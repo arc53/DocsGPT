@@ -43,7 +43,7 @@ const ConversationBubble = forwardRef<
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div className="ml-10 mr-2 flex items-center rounded-3xl bg-purple-30 p-3.5 text-white">
-          <ReactMarkdown className="whitespace-pre-wrap break-normal leading-normal">
+          <ReactMarkdown className="whitespace-pre-wrap break-normal leading-normal [&>*]:whitespace-pre-wrap">
             {message}
           </ReactMarkdown>
         </div>
