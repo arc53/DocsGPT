@@ -36,7 +36,7 @@ const TextArea = ({
   return (
     <textarea
       ref={textAreaRef}
-      className={`} w-full resize-none self-stretch overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white px-9 pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black
+      className={`w-full resize-none self-stretch overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white px-9 pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black
       dark:text-bright-gray ${className}`}
       id={id}
       rows={1}
