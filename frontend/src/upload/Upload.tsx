@@ -56,7 +56,7 @@ function Upload({
     }
   }, []);
 
-  function ProgressBar({ progress }: { progress: number }) {
+  function ProgressBar({ progressPercent }: { progressPercent: number }) {
     return (
       <div className="my-5 w-[50%]">
         <div
@@ -66,9 +66,9 @@ function Upload({
             className={`h-full border-none p-1 w-${
               progress || 0
             }%  flex items-center justify-center bg-purple-30 outline-none transition-all`}
-            style={{ width: `${progress || 0}%` }}
+            style={{ width: `${progressPercent || 0}%` }}
           >
-            {progress >= 5 && `${progress}%`}
+            {progressPercent >= 5 && `${progressPercent}%`}
           </div>
         </div>
       </div>
@@ -94,7 +94,7 @@ function Upload({
         {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
 
         {/* progress bar */}
-        <ProgressBar progress={progress?.percentage as number} />
+        <ProgressBar progressPercent={progress?.percentage as number} />
 
         <button
           onClick={() => {

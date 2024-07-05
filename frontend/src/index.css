@@ -408,7 +408,3 @@ template {
 ::-webkit-scrollbar {
   width: 0;
 }
-
-.bottom-safe {
-  bottom: env(safe-area-inset-bottom, 0);
-}
