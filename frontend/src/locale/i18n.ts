@@ -27,13 +27,12 @@ i18n
     },
     fallbackLng: 'en',
     detection: {
-      order: ['localStorage', 'navigator'], // checks localStorage for existing lang before browser's
-      caches: ['localStorage'], //stores detected lang to localStorage with i18nextLng key
-      lookupLocalStorage: 'docsgpt-locale', //using docsgpt-locale as the custom key for storing and retrieving the lang rather than the default `i18nextLng`
+      order: ['localStorage', 'navigator'],
+      caches: ['localStorage'],
+      lookupLocalStorage: 'docsgpt-locale',
     },
   });
 
-const savedLocale = localStorage.getItem('docsgpt-locale') ?? i18n.language;
-i18n.changeLanguage(savedLocale);
+i18n.changeLanguage(i18n.language);
 
 export default i18n;
