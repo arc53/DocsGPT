@@ -184,8 +184,6 @@ export default function Conversation() {
     document.execCommand('insertText', false, text);
   };
 
-  // console.log('inputRef: ', inputRef);
-
   return (
     <div className="flex h-screen flex-col gap-7 pb-2">
       <div

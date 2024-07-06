@@ -241,7 +241,6 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
           <Input
             type="text"
             className="rounded-md"
-            hasSilverBorder
             value={APIKeyName}
             onChange={(e) => setAPIKeyName(e.target.value)}
           ></Input>

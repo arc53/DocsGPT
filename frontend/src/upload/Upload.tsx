@@ -328,7 +328,7 @@ function Upload({
           <>
             <Input
               type="text"
-              className="border-gray-5000 dark:text-silver"
+              colorVariant="gray"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
             ></Input>
@@ -379,7 +379,6 @@ function Upload({
                 <Input
                   placeholder={`Enter ${t('modals.uploadDoc.name')}`}
                   type="text"
-                  hasSilverBorder
                   value={urlName}
                   onChange={(e) => setUrlName(e.target.value)}
                 ></Input>
@@ -391,7 +390,6 @@ function Upload({
                 <Input
                   placeholder={t('modals.uploadDoc.urlLink')}
                   type="text"
-                  hasSilverBorder
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                 ></Input>
@@ -406,7 +404,6 @@ function Upload({
                 <Input
                   placeholder="Enter client ID"
                   type="text"
-                  hasSilverBorder
                   name="client_id"
                   value={redditData.client_id}
                   onChange={handleChange}
@@ -419,7 +416,6 @@ function Upload({
                 <Input
                   placeholder="Enter client secret"
                   type="text"
-                  hasSilverBorder
                   name="client_secret"
                   value={redditData.client_secret}
                   onChange={handleChange}
@@ -432,7 +428,6 @@ function Upload({
                 <Input
                   placeholder="Enter user agent"
                   type="text"
-                  hasSilverBorder
                   name="user_agent"
                   value={redditData.user_agent}
                   onChange={handleChange}
@@ -445,7 +440,6 @@ function Upload({
                 <Input
                   placeholder="Enter search queries"
                   type="text"
-                  hasSilverBorder
                   name="search_queries"
                   value={redditData.search_queries}
                   onChange={handleChange}
@@ -458,7 +452,6 @@ function Upload({
                 <Input
                   placeholder="Enter number of posts"
                   type="number"
-                  hasSilverBorder
                   name="number_posts"
                   value={redditData.number_posts}
                   onChange={handleChange}

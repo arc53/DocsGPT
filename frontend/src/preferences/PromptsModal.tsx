@@ -39,7 +39,6 @@ function AddPrompt({
             placeholder="Prompt Name"
             type="text"
             className="h-10 rounded-lg"
-            hasSilverBorder
             value={newPromptName}
             onChange={(e) => setNewPromptName(e.target.value)}
           ></Input>
@@ -111,7 +110,6 @@ function EditPrompt({
             placeholder="Prompt Name"
             type="text"
             className="h-10 rounded-lg"
-            hasSilverBorder
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
           ></Input>

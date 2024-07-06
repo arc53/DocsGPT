@@ -69,7 +69,8 @@ export default function APIKeyModal({
             </p>
             <Input
               type="text"
-              className="h-10 border-b-2 border-jet focus:outline-none"
+              colorVariant="jet"
+              className="h-10 border-b-2 focus:outline-none"
               value={key}
               maxLength={100}
               placeholder="API Key"

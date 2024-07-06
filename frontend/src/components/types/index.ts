@@ -20,5 +20,5 @@ export type TextAreaProps = {
 
 export type InputProps = TextAreaProps & {
   type: 'text' | 'number';
-  hasSilverBorder?: boolean;
+  colorVariant?: 'silver' | 'jet' | 'gray';
 };
