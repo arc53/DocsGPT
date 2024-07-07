@@ -15,14 +15,15 @@ const Input = ({
   onPaste,
   onKeyDown,
 }: InputProps) => {
+  const colorStyles = {
+    silver: 'border-silver dark:border-silver/40',
+    jet: 'border-jet',
+    gray: 'border-gray-5000 dark:text-silver',
+  };
+
   return (
     <input
-      className={`h-[42px] w-full rounded-full border-2 px-3 outline-none dark:bg-transparent dark:text-white ${className} ${
-        colorVariant === 'silver' ? 'border-silver dark:border-silver/40' : ''
-      } ${colorVariant === 'jet' ? 'border-jet' : ''} ${
-        colorVariant === 'gray' ? 'border-gray-5000 dark:text-silver' : ''
-      }
-      }`}
+      className={`h-[42px] w-full rounded-full border-2 px-3 outline-none dark:bg-transparent dark:text-white ${className} ${colorStyles[colorVariant]}`}
       type={type}
       id={id}
       name={name}
