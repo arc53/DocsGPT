@@ -208,82 +208,82 @@ const ConversationBubble = forwardRef<
               </>
             )}
           </div>
-          <div className="flex justify-center">
-            <div
-              className={`relative mr-5  block items-center justify-center lg:invisible 
+        </div>
+        <div className="my-2 flex justify-start lg:ml-12">
+          <div
+            className={`relative mr-5  block items-center justify-center lg:invisible 
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
-            >
-              <div className="absolute left-2 top-4">
-                <CoppyButton text={message} />
-              </div>
+          >
+            <div>
+              <CoppyButton text={message} />
             </div>
-            <div
-              className={`relative mr-5 flex items-center justify-center ${
-                !isLikeClicked ? 'lg:invisible' : ''
-              } ${
-                feedback === 'LIKE' || type !== 'ERROR'
-                  ? 'group-hover:lg:visible'
-                  : ''
-              }`}
-            >
-              <div className="absolute left-6 top-4">
-                <div
-                  className={`flex items-center justify-center rounded-full p-2 dark:bg-transparent ${
-                    isLikeHovered
-                      ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
-                      : 'bg-[#ffffff] dark:bg-transparent'
-                  }`}
-                >
-                  <Like
-                    className={`cursor-pointer 
+          </div>
+          <div
+            className={`relative mr-5 flex items-center justify-center ${
+              !isLikeClicked ? 'lg:invisible' : ''
+            } ${
+              feedback === 'LIKE' || type !== 'ERROR'
+                ? 'group-hover:lg:visible'
+                : ''
+            }`}
+          >
+            <div>
+              <div
+                className={`flex items-center justify-center rounded-full p-2 dark:bg-transparent ${
+                  isLikeHovered
+                    ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
+                    : 'bg-[#ffffff] dark:bg-transparent'
+                }`}
+              >
+                <Like
+                  className={`cursor-pointer 
                   ${
                     isLikeClicked || feedback === 'LIKE'
                       ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
                       : 'fill-none  stroke-gray-4000'
                   }`}
-                    onClick={() => {
-                      handleFeedback?.('LIKE');
-                      setIsLikeClicked(true);
-                      setIsDislikeClicked(false);
-                    }}
-                    onMouseEnter={() => setIsLikeHovered(true)}
-                    onMouseLeave={() => setIsLikeHovered(false)}
-                  ></Like>
-                </div>
+                  onClick={() => {
+                    handleFeedback?.('LIKE');
+                    setIsLikeClicked(true);
+                    setIsDislikeClicked(false);
+                  }}
+                  onMouseEnter={() => setIsLikeHovered(true)}
+                  onMouseLeave={() => setIsLikeHovered(false)}
+                ></Like>
               </div>
             </div>
-            <div
-              className={`mr-13 relative flex items-center justify-center ${
-                !isDislikeClicked ? 'lg:invisible' : ''
-              } ${
-                feedback === 'DISLIKE' || type !== 'ERROR'
-                  ? 'group-hover:lg:visible'
-                  : ''
-              }`}
-            >
-              <div className="absolute left-10 top-4">
-                <div
-                  className={`flex items-center justify-center rounded-full p-2 ${
-                    isDislikeHovered
-                      ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
-                      : 'bg-[#ffffff] dark:bg-transparent'
+          </div>
+          <div
+            className={`mr-13 relative flex items-center justify-center ${
+              !isDislikeClicked ? 'lg:invisible' : ''
+            } ${
+              feedback === 'DISLIKE' || type !== 'ERROR'
+                ? 'group-hover:lg:visible'
+                : ''
+            }`}
+          >
+            <div>
+              <div
+                className={`flex items-center justify-center rounded-full p-2 ${
+                  isDislikeHovered
+                    ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
+                    : 'bg-[#ffffff] dark:bg-transparent'
+                }`}
+              >
+                <Dislike
+                  className={`cursor-pointer ${
+                    isDislikeClicked || feedback === 'DISLIKE'
+                      ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
+                      : 'fill-none  stroke-gray-4000'
                   }`}
-                >
-                  <Dislike
-                    className={`cursor-pointer ${
-                      isDislikeClicked || feedback === 'DISLIKE'
-                        ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
-                        : 'fill-none  stroke-gray-4000'
-                    }`}
-                    onClick={() => {
-                      handleFeedback?.('DISLIKE');
-                      setIsDislikeClicked(true);
-                      setIsLikeClicked(false);
-                    }}
-                    onMouseEnter={() => setIsDislikeHovered(true)}
-                    onMouseLeave={() => setIsDislikeHovered(false)}
-                  ></Dislike>
-                </div>
+                  onClick={() => {
+                    handleFeedback?.('DISLIKE');
+                    setIsDislikeClicked(true);
+                    setIsLikeClicked(false);
+                  }}
+                  onMouseEnter={() => setIsDislikeHovered(true)}
+                  onMouseLeave={() => setIsDislikeHovered(false)}
+                ></Dislike>
               </div>
             </div>
           </div>
