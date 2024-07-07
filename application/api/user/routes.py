@@ -4,10 +4,12 @@ import shutil
 from flask import Blueprint, request, jsonify
 from urllib.parse import urlparse
 import requests
+import json
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+from bson.binary import Binary, UuidRepresentation
 from werkzeug.utils import secure_filename
-
+from bson.dbref import DBRef
 from application.api.user.tasks import ingest, ingest_remote
 
 from application.core.settings import settings
@@ -20,6 +22,8 @@ vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
+shared_conversations_collections = db["shared_conversations"]
+
 user = Blueprint("user", __name__)
 
 current_dir = os.path.dirname(
@@ -491,3 +495,49 @@ def delete_api_key():
         }
     )
     return {"status": "ok"}
+
+
+#route to share conversation
+@user.route("/api/share",methods=["POST"])
+def share_conversation():
+    try:
+        data = request.get_json()
+        conversation_id = data["conversation_id"]
+        isPromptable = request.args.get("isPromptable").lower() == "true"
+        conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
+        current_n_queries = len(conversation["queries"])
+        explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)
+        shared_conversations_collections.insert_one({
+         "uuid":explicit_binary,
+         "conversation_id": {
+                "$ref":"conversations",
+                "$id":ObjectId(conversation_id)
+                } ,
+                 "isPromptable":isPromptable,
+                 "first_n_queries":current_n_queries
+        })
+        ## Identifier as route parameter in frontend
+        return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),201
+    except Exception as err:
+        return jsonify({"success":False,"error":str(err)}),400
+
+#route to get publicly shared conversations
+@user.route("/api/shared_conversation/<string:identifier>",methods=["GET"])
+def get_publicly_shared_conversations(identifier : str):
+    try:
+        query_uuid = Binary.from_uuid(uuid.UUID(identifier), UuidRepresentation.STANDARD)
+        shared = shared_conversations_collections.find_one({"uuid":query_uuid})
+        conversation_queries=[]
+        if shared and 'conversation_id' in shared and isinstance(shared['conversation_id'], DBRef):
+        # Resolve the DBRef
+            conversation_ref = shared['conversation_id']
+            conversation = db.dereference(conversation_ref)
+            conversation_queries = conversation['queries'] 
+        else:
+            return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
+
+        return jsonify({"success":True,"queries":conversation_queries}),200
+    except Exception as err:
+        print (err)
+        return jsonify({"success":False,"error":str(err)}),400
+    
