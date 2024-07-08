@@ -502,22 +502,36 @@ def delete_api_key():
 def share_conversation():
     try:
         data = request.get_json()
+        user = "local"
+        if(hasattr(data,"user")):
+            user = data["user"]
         conversation_id = data["conversation_id"]
         isPromptable = request.args.get("isPromptable").lower() == "true"
         conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
         current_n_queries = len(conversation["queries"])
-        explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)
-        shared_conversations_collections.insert_one({
-         "uuid":explicit_binary,
-         "conversation_id": {
-                "$ref":"conversations",
-                "$id":ObjectId(conversation_id)
-                } ,
-                 "isPromptable":isPromptable,
-                 "first_n_queries":current_n_queries
+        pre_existing = shared_conversations_collections.find_one({
+            "conversation_id":DBRef("conversations",ObjectId(conversation_id)),
+            "isPromptable":isPromptable,
+            "first_n_queries":current_n_queries
         })
-        ## Identifier as route parameter in frontend
-        return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),201
+        print("pre_existing",pre_existing)
+        if(pre_existing is not None):
+            explicit_binary = pre_existing["uuid"]
+            return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),200
+        else:
+           explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)       
+           shared_conversations_collections.insert_one({
+           "uuid":explicit_binary,
+           "conversation_id": {
+                  "$ref":"conversations",
+                  "$id":ObjectId(conversation_id)
+                  } ,
+                     "isPromptable":isPromptable,
+                    "first_n_queries":current_n_queries,
+                    "user":user
+           })
+            ## Identifier as route parameter in frontend
+           return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),201
     except Exception as err:
         return jsonify({"success":False,"error":str(err)}),400
 
@@ -532,11 +546,10 @@ def get_publicly_shared_conversations(identifier : str):
         # Resolve the DBRef
             conversation_ref = shared['conversation_id']
             conversation = db.dereference(conversation_ref)
-            conversation_queries = conversation['queries'] 
+            conversation_queries = conversation['queries'][:(shared["first_n_queries"])] 
         else:
             return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
-
-        return jsonify({"success":True,"queries":conversation_queries}),200
+        return jsonify(conversation_queries),200
     except Exception as err:
         print (err)
         return jsonify({"success":False,"error":str(err)}),400
