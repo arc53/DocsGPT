@@ -1,5 +1,7 @@
-export type TextAreaProps = {
+export type InputProps = {
+  type: 'text' | 'number';
   value: string | string[] | number;
+  colorVariant?: 'silver' | 'jet' | 'gray';
   isAutoFocused?: boolean;
   id?: string;
   maxLength?: number;
@@ -16,9 +18,4 @@ export type TextAreaProps = {
   onKeyDown?: (
     e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
   ) => void;
-};
-
-export type InputProps = TextAreaProps & {
-  type: 'text' | 'number';
-  colorVariant?: 'silver' | 'jet' | 'gray';
 };

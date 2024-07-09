@@ -408,3 +408,8 @@ template {
 ::-webkit-scrollbar {
   width: 0;
 }
+
+.inputbox-style[contenteditable] {
+  padding-left: 36px;
+  padding-right: 36px;
+}
