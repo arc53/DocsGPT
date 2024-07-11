@@ -498,6 +498,7 @@ def delete_api_key():
 
 
 #route to share conversation
+##isPromptable should be passed through queries
 @user.route("/api/share",methods=["POST"])
 def share_conversation():
     try:
@@ -526,7 +527,7 @@ def share_conversation():
                   "$ref":"conversations",
                   "$id":ObjectId(conversation_id)
                   } ,
-                     "isPromptable":isPromptable,
+                    "isPromptable":isPromptable,
                     "first_n_queries":current_n_queries,
                     "user":user
            })
