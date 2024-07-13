@@ -547,10 +547,15 @@ def get_publicly_shared_conversations(identifier : str):
         # Resolve the DBRef
             conversation_ref = shared['conversation_id']
             conversation = db.dereference(conversation_ref)
-            conversation_queries = conversation['queries'][:(shared["first_n_queries"])] 
+            if(conversation is None):
+                return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
+            conversation_queries = conversation['queries'][:(shared["first_n_queries"])]
+            for query in conversation_queries:
+                query.pop("sources") ## avoid exposing sources
         else:
             return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
-        return jsonify(conversation_queries),200
+        date = conversation["_id"].generation_time.isoformat()
+        return jsonify({"success":True,"queries":conversation_queries,"title":conversation["name"],"timestamp":date}),200
     except Exception as err:
         print (err)
         return jsonify({"success":False,"error":str(err)}),400
