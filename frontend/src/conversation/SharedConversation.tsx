@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { Query } from './conversationModels';
+import { useTranslation } from 'react-i18next';
 import ConversationBubble from './ConversationBubble';
 import { Fragment } from 'react';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
@@ -12,7 +13,7 @@ const SharedConversation = () => {
   const [queries, setQueries] = useState<Query[]>([]);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
-
+  const { t } = useTranslation();
   function formatISODate(isoDateStr: string) {
     const date = new Date(isoDateStr);
 
@@ -97,7 +98,7 @@ const SharedConversation = () => {
                   {title}
                 </h1>
                 <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
-                  Created with{' '}
+                  {t('sharedConv.subtitle')}{' '}
                   <a href="/" className="text-[#007DFF]">
                     DocsGPT
                   </a>
@@ -131,11 +132,10 @@ const SharedConversation = () => {
             onClick={() => navigate('/')}
             className="w-fit rounded-full bg-purple-30 p-4 text-white shadow-xl transition-colors duration-200 hover:bg-purple-taupe"
           >
-            Get Started with DocsGPT
+            {t('sharedConv.button')}
           </button>
           <span className="hidden text-xs text-dark-charcoal dark:text-silver sm:inline">
-            This is a chatbot that uses the GPT-3, Faiss and LangChain to answer
-            questions.
+            {t('sharedConv.meta')}
           </span>
         </div>
       </div>

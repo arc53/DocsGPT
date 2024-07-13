@@ -51,11 +51,8 @@ export const ShareConversationModal = ({
           <img className="filter dark:invert" src={Exit} />
         </button>
         <div className="flex flex-col gap-2">
-          <h2 className="text-xl font-medium">Create a public page to share</h2>
-          <p className="text-sm">
-            Source document, personal information and further conversation will
-            remain private
-          </p>
+          <h2 className="text-xl font-medium">{t('modals.shareConv.label')}</h2>
+          <p className="text-sm">{t('modals.shareConv.note')}</p>
           <div className="flex items-baseline justify-between gap-2">
             <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 p-3 shadow-inner">{`${domain}/share/${
               identifier ?? '....'
@@ -76,7 +73,7 @@ export const ShareConversationModal = ({
                   shareCoversationPublicly(false);
                 }}
               >
-                Create
+                {t('modals.shareConv.create')}
                 {status === 'loading' && (
                   <img
                     src={Spinner}

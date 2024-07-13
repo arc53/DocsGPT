@@ -103,6 +103,22 @@
     "deleteConv": {
       "confirm": "すべての会話を削除してもよろしいですか?",
       "delete": "削除"
+    },
+    "shareConv": {
+      "label": "共有ページを作成して共有する",
+      "note": "ソースドキュメント、個人情報、および以降の会話は非公開のままになります",
+      "create": "作成"
     }
+  },
+  "sharedConv": {
+    "subtitle": "作成者",
+    "button": "DocsGPT を始める",
+    "meta": "GPT-3、Faiss、および LangChain を使用して質問に答えるチャットボットです"
+  },
+  "convTile": {
+    "share": "共有",
+    "delete": "削除",
+    "rename": "名前変更",
+    "deleteWarning": "この会話を削除してもよろしいですか？"
   }
 }

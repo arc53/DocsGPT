@@ -13,6 +13,7 @@ import threeDots from '../assets/three-dots.svg';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
+import { useTranslation } from 'react-i18next';
 interface ConversationProps {
   name: string;
   id: string;
@@ -40,6 +41,7 @@ export default function ConversationTile({
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const menuRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
   useEffect(() => {
     setConversationsName(conversation.name);
   }, [conversation.name]);
@@ -159,7 +161,7 @@ export default function ConversationTile({
                   className="cursor-pointer hover:opacity-50"
                   id={`img-${conversation.id}`}
                 />
-                <span>Share</span>
+                <span>{t('convTile.share')}</span>
               </button>
               <button
                 onClick={(event) => {
@@ -175,7 +177,7 @@ export default function ConversationTile({
                   className="cursor-pointer hover:opacity-50"
                   id={`img-${conversation.id}`}
                 />
-                <span>Rename</span>
+                <span>{t('convTile.rename')}</span>
               </button>
               <button
                 onClick={(event) => {
@@ -191,18 +193,18 @@ export default function ConversationTile({
                   height={24}
                   className="cursor-pointer hover:opacity-50"
                 />
-                <span>Delete</span>
+                <span>{t('convTile.delete')}</span>
               </button>
             </div>
           )}
         </div>
       )}
       <ConfirmationModal
-        message={`Are you sure you want to delete this conversation?`}
+        message={t('convTile.deleteWarning')}
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={() => onDeleteConversation(conversation.id)}
-        submitLabel="Delete"
+        submitLabel={t('convTile.delete')}
       />
       {isShareModalOpen && conversationId && (
         <ShareConversationModal
