@@ -57,13 +57,13 @@ export const ShareConversationModal = ({
             remain private
           </p>
           <div className="flex items-baseline justify-between gap-2">
-            <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 p-3 shadow-inner">{`${domain}/shared/${
+            <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 p-3 shadow-inner">{`${domain}/share/${
               identifier ?? '....'
             }`}</span>
             {status === 'fetched' ? (
               <button
                 className="my-1 h-10 w-36 rounded-full border border-solid border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white"
-                onClick={() => handleCopyKey(`${domain}/shared/${identifier}`)}
+                onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
               >
                 {isCopied
                   ? t('modals.saveKey.copied')
