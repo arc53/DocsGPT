@@ -17,10 +17,10 @@ function MainLayout({ children }: { children: ReactElement }) {
   const { isMobile } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!isMobile);
   return (
-    <>
+    <div className="dark:bg-raisin-black">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <div
-        className={`min-h-screen dark:bg-raisin-black ${
+        className={`min-h-screen ${
           !isMobile
             ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
             : 'ml-0 md:ml-16'
@@ -28,7 +28,7 @@ function MainLayout({ children }: { children: ReactElement }) {
       >
         {children}
       </div>
-    </>
+    </div>
   );
 }
 
