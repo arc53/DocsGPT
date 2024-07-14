@@ -20,7 +20,7 @@ function MainLayout({ children }: { children: ReactElement }) {
     <>
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <div
-        className={` h-full dark:bg-raisin-black ${
+        className={`min-h-screen dark:bg-raisin-black ${
           !isMobile
             ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
             : 'ml-0 md:ml-16'
