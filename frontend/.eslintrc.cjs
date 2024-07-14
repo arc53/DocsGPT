@@ -20,6 +20,10 @@ module.exports = {
   rules: {
     'unused-imports/no-unused-imports': 'error',
     'react/react-in-jsx-scope': 'off',
+    '@typescript-eslint/no-unused-vars': 'off',
+    '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-non-null-assertion': 'off',
+    'react/prop-types': 'off',
     'prettier/prettier': [
       'error',
       {

@@ -33,10 +33,8 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const { t } = useTranslation();
 
-  const [inputValue, setInputValue] = useState('');
-
-  const handleInput = (e: any) => {
-    setInputValue(e.target.innerText);
+  const handleInput = (e: InputEvent) => {
+    // eslint-disable-line @typescript-eslint/no-unused-vars
     scrollToBottom();
   };
 
@@ -46,8 +44,6 @@ export default function Conversation() {
       inputBox.scrollTop = inputBox.scrollHeight;
     }
   };
-
-  
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
@@ -252,22 +248,22 @@ export default function Conversation() {
 
       <div className="bottom-safe  fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
         <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
-        <div
-          id="inputbox"
-          ref={inputRef}
-          tabIndex={1}
-          placeholder="Type your question here"
-          contentEditable
-          onPaste={handlePaste}
-          className={`inputbox-style  max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
-          onInput={(e) => handleInput(e)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleQuestionSubmission();
-            }
-          }}
-        ></div>
+          <div
+            id="inputbox"
+            ref={inputRef}
+            tabIndex={1}
+            placeholder={t('inputPlaceholder')}
+            contentEditable
+            onPaste={handlePaste}
+            className={`inputbox-style  max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            onInput={(e) => handleInput(e as unknown as InputEvent)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleQuestionSubmission();
+              }
+            }}
+          ></div>
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
