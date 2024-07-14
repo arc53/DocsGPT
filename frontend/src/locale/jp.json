@@ -113,7 +113,7 @@
   "sharedConv": {
     "subtitle": "作成者",
     "button": "DocsGPT を始める",
-    "meta": "GPT-3、Faiss、および LangChain を使用して質問に答えるチャットボットです"
+    "meta": "DocsGPT は GenAI を使用しています、情報源を使用して重要情報を確認してください。"
   },
   "convTile": {
     "share": "共有",

@@ -33,11 +33,7 @@ function MainLayout({ children }: { children: ReactElement }) {
 }
 
 function Layout({ children }: { children: ReactElement }) {
-  return (
-    <>
-      <div className={`h-full dark:bg-raisin-black`}>{children}</div>
-    </>
-  );
+  return <div className="h-full dark:bg-raisin-black">{children}</div>;
 }
 export default function App() {
   const [isDarkTheme] = useDarkTheme();

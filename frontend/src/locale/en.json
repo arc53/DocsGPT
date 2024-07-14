@@ -113,7 +113,7 @@
   "sharedConv": {
     "subtitle": "Created with",
     "button": "Get Started with DocsGPT",
-    "meta": "This is a chatbot that uses the GPT-3, Faiss and LangChain to answer questions."
+    "meta": "DocsGPT uses GenAI, please review critical information using sources."
   },
   "convTile": {
     "share": "Share",

@@ -113,7 +113,7 @@
   "sharedConv": {
     "subtitle": "Creado con",
     "button": "Comienza con DocsGPT",
-    "meta": "Este es un chatbot que utiliza GPT-3, Faiss y LangChain para responder preguntas."
+    "meta": "DocsGPT utiliza GenAI, por favor revise la información crítica utilizando fuentes."
   },
   "convTile": {
     "share": "Compartir",

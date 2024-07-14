@@ -113,7 +113,7 @@
   "sharedConv": {
     "subtitle": "使用创建",
     "button": "开始使用 DocsGPT",
-    "meta": "这是一个使用 GPT-3、Faiss 和 LangChain 来回答问题的聊天机器人。"
+    "meta": "DocsGPT 使用 GenAI，请使用资源查看关键信息。"
   },
   "convTile": {
     "share": "分享",
