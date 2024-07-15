@@ -68,7 +68,7 @@ export const ShareConversationModal = ({
               </button>
             ) : (
               <button
-                className="my-1 flex h-10 w-36 items-center justify-evenly rounded-full  border border-solid border-purple-30 p-2 text-center text-sm font-bold text-purple-30 hover:bg-purple-30 hover:text-white"
+                className="my-1 flex h-10 w-36 items-center justify-evenly rounded-full  border border-solid border-purple-30 p-2 text-center text-sm font-normal text-purple-30 hover:bg-purple-30 hover:text-white"
                 onClick={() => {
                   shareCoversationPublicly(false);
                 }}
