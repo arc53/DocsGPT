@@ -89,7 +89,7 @@ const SharedConversation = () => {
   }, []);
 
   return (
-    <div className="flex h-full flex-col items-center justify-between gap-2  overflow-y-hidden">
+    <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
       <div className="flex w-full justify-center overflow-auto">
         <div className="mt-0 w-11/12 md:w-10/12 lg:w-6/12">
           <div className="mb-2 w-full border-b pb-2">

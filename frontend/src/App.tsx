@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import { ReactElement, useEffect } from 'react';
+import { useEffect } from 'react';
 import Navigation from './Navigation';
 import Conversation from './conversation/Conversation';
 import About from './About';
@@ -9,11 +9,12 @@ import { useMediaQuery } from './hooks';
 import { useState } from 'react';
 import Setting from './settings';
 import './locale/i18n';
+import { Outlet } from 'react-router-dom';
 import SharedConversation from './conversation/SharedConversation';
 import { useDarkTheme } from './hooks';
 inject();
 
-function MainLayout({ children }: { children: ReactElement }) {
+function MainLayout() {
   const { isMobile } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!isMobile);
   return (
@@ -26,15 +27,12 @@ function MainLayout({ children }: { children: ReactElement }) {
             : 'ml-0 md:ml-16'
         }`}
       >
-        {children}
+        <Outlet />
       </div>
     </div>
   );
 }
 
-function Layout({ children }: { children: ReactElement }) {
-  return <div className="h-full dark:bg-raisin-black">{children}</div>;
-}
 export default function App() {
   const [isDarkTheme] = useDarkTheme();
   useEffect(() => {
@@ -50,47 +48,13 @@ export default function App() {
   return (
     <>
       <Routes>
-        <Route
-          path="/"
-          element={
-            <MainLayout>
-              <Conversation />
-            </MainLayout>
-          }
-        />
-        <Route
-          path="/about"
-          element={
-            <MainLayout>
-              <About />
-            </MainLayout>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <MainLayout>
-              <Setting />
-            </MainLayout>
-          }
-        />
-        <Route
-          path="/share/:identifier"
-          element={
-            <Layout>
-              <SharedConversation />
-            </Layout>
-          }
-        />
-        {/* default page */}
-        <Route
-          path="/*"
-          element={
-            <Layout>
-              <PageNotFound />
-            </Layout>
-          }
-        />
+        <Route element={<MainLayout />}>
+          <Route index element={<Conversation />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/settings" element={<Setting />} />
+        </Route>
+        <Route path="/share/:identifier" element={<SharedConversation />} />
+        <Route path="/*" element={<PageNotFound />} />
       </Routes>
     </>
   );
