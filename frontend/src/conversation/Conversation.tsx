@@ -259,7 +259,7 @@ export default function Conversation() {
           ) : (
             <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000">
               <img
-                className="ml-[4px] h-6 w-6 flex-shrink-0 text-white "
+                className="ml-[4px] h-6 w-6 text-white "
                 onClick={handleQuestionSubmission}
                 src={isDarkTheme ? SendDark : Send}
               ></img>
