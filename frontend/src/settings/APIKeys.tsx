@@ -10,6 +10,7 @@ import { selectSourceDocs } from '../preferences/preferenceSlice';
 import Exit from '../assets/exit.svg';
 import Trash from '../assets/trash.svg';
 import { useTranslation } from 'react-i18next';
+import Input from '../components/Input';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
@@ -237,12 +238,12 @@ const CreateAPIKeyModal: React.FC<CreateAPIKeyModalProps> = ({
           <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
             {t('modals.createAPIKey.apiKeyName')}
           </span>
-          <input
+          <Input
             type="text"
-            className="h-[42px] w-full rounded-md border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+            className="rounded-md"
             value={APIKeyName}
             onChange={(e) => setAPIKeyName(e.target.value)}
-          />
+          ></Input>
         </div>
         <div className="my-4">
           <Dropdown

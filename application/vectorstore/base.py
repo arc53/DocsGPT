@@ -14,7 +14,9 @@ class EmbeddingsSingleton:
     @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
         if embeddings_name not in EmbeddingsSingleton._instances:
-            EmbeddingsSingleton._instances[embeddings_name] = EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs)
+            EmbeddingsSingleton._instances[embeddings_name] = EmbeddingsSingleton._create_instance(
+                embeddings_name, *args, **kwargs
+            )
         return EmbeddingsSingleton._instances[embeddings_name]
 
     @staticmethod

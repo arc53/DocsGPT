@@ -11,6 +11,7 @@ import {
   selectStatus,
   updateQuery,
 } from './conversationSlice';
+import { selectConversationId } from '../preferences/preferenceSlice';
 import Send from './../assets/send.svg';
 import SendDark from './../assets/send_dark.svg';
 import Spinner from './../assets/spinner.svg';
@@ -20,9 +21,13 @@ import { sendFeedback } from './conversationApi';
 import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
 import RetryIcon from '../components/RetryIcon';
+import ShareIcon from '../assets/share.svg';
+import { ShareConversationModal } from '../modals/ShareConversationModal';
+
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
+  const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
@@ -31,6 +36,7 @@ export default function Conversation() {
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
 
   const handleUserInterruption = () => {
@@ -191,11 +197,36 @@ export default function Conversation() {
   };
 
   return (
-    <div className="flex h-screen flex-col gap-1">
+    <div className="flex h-screen flex-col gap-7 pb-2">
+      {conversationId && (
+        <>
+          <button
+            title="Share"
+            onClick={() => {
+              setShareModalState(true);
+            }}
+            className="fixed top-4 right-20 z-30 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+          >
+            <img
+              className="m-2 h-5 w-5 filter dark:invert"
+              alt="share"
+              src={ShareIcon}
+            />
+          </button>
+          {isShareModalOpen && (
+            <ShareConversationModal
+              close={() => {
+                setShareModalState(false);
+              }}
+              conversationId={conversationId}
+            />
+          )}
+        </>
+      )}
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[90%] w-full justify-center overflow-y-auto p-4 md:h-[83vh]"
+        className="flex h-[90%] w-full flex-1 justify-center overflow-y-auto p-4 md:h-[83vh]"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -234,8 +265,8 @@ export default function Conversation() {
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
 
-      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
-        <div className="flex h-full w-full items-center rounded-full border border-silver bg-white dark:bg-raisin-black">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
+        <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <div
             id="inputbox"
             ref={inputRef}
