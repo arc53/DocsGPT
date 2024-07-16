@@ -103,6 +103,22 @@
     "deleteConv": {
       "confirm": "您确定要删除所有对话吗？",
       "delete": "删除"
+    },
+    "shareConv": {
+      "label": "创建用于分享的公共页面",
+      "note": "源文档、个人信息和后续对话将保持私密",
+      "create": "创建"
     }
+  },
+  "sharedConv": {
+    "subtitle": "使用创建",
+    "button": "开始使用 DocsGPT",
+    "meta": "DocsGPT 使用 GenAI，请使用资源查看关键信息。"
+  },
+  "convTile": {
+    "share": "分享",
+    "delete": "删除",
+    "rename": "重命名",
+    "deleteWarning": "您确定要删除此对话吗？"
   }
 }

@@ -17,9 +17,13 @@ import { useTranslation } from 'react-i18next';
 import ArrowDown from './../assets/arrow-down.svg';
 import RetryIcon from '../components/RetryIcon';
 import { ConversationInputBox } from './ConversationInputBox';
+import ShareIcon from '../assets/share.svg';
+import { ShareConversationModal } from '../modals/ShareConversationModal';
+
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
+  const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
@@ -28,6 +32,7 @@ export default function Conversation() {
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
 
   const handleUserInterruption = () => {
@@ -189,6 +194,31 @@ export default function Conversation() {
 
   return (
     <div className="flex h-screen flex-col gap-7 pb-2">
+      {conversationId && (
+        <>
+          <button
+            title="Share"
+            onClick={() => {
+              setShareModalState(true);
+            }}
+            className="fixed top-4 right-20 z-30 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+          >
+            <img
+              className="m-2 h-5 w-5 filter dark:invert"
+              alt="share"
+              src={ShareIcon}
+            />
+          </button>
+          {isShareModalOpen && (
+            <ShareConversationModal
+              close={() => {
+                setShareModalState(false);
+              }}
+              conversationId={conversationId}
+            />
+          )}
+        </>
+      )}
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
