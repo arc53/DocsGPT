@@ -4,7 +4,6 @@ import shutil
 from flask import Blueprint, request, jsonify
 from urllib.parse import urlparse
 import requests
-import json
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from bson.binary import Binary, UuidRepresentation
@@ -555,7 +554,12 @@ def get_publicly_shared_conversations(identifier : str):
         else:
             return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
         date = conversation["_id"].generation_time.isoformat()
-        return jsonify({"success":True,"queries":conversation_queries,"title":conversation["name"],"timestamp":date}),200
+        return jsonify({
+            "success":True,
+            "queries":conversation_queries,
+            "title":conversation["name"],
+            "timestamp":date
+            }), 200
     except Exception as err:
         print (err)
         return jsonify({"success":False,"error":str(err)}),400
