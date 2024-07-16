@@ -288,9 +288,9 @@ export default function Conversation() {
               className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
-            <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
+            <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000">
               <img
-                className="w-6 text-white "
+                className="ml-[4px] h-6 w-6 text-white "
                 onClick={handleQuestionSubmission}
                 src={isDarkTheme ? SendDark : Send}
               ></img>
