@@ -103,6 +103,22 @@
     "deleteConv": {
       "confirm": "Are you sure you want to delete all the conversations?",
       "delete": "Delete"
+    },
+    "shareConv": {
+      "label": "Create a public page to share",
+      "note": "Source document, personal information and further conversation will remain private",
+      "create": "Create"
     }
+  },
+  "sharedConv": {
+    "subtitle": "Created with",
+    "button": "Get Started with DocsGPT",
+    "meta": "DocsGPT uses GenAI, please review critical information using sources."
+  },
+  "convTile": {
+    "share": "Share",
+    "delete": "Delete",
+    "rename": "Rename",
+    "deleteWarning": "Are you sure you want to delete this conversation?"
   }
 }

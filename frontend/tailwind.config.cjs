@@ -48,6 +48,7 @@ module.exports = {
         'soap':'#D8CCF1',
         'independence':'#54546D',
         'philippine-yellow':'#FFC700',
+        'bright-gray':'#EBEBEB'
       },
     },
   },
