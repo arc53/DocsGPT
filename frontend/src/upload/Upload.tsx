@@ -95,20 +95,6 @@ function Upload({
 
         {/* progress bar */}
         <ProgressBar progressPercent={progress?.percentage as number} />
-
-        <button
-          onClick={() => {
-            setDocName('');
-            setfiles([]);
-            setProgress(undefined);
-            setModalState('INACTIVE');
-          }}
-          className={`rounded-3xl bg-purple-30 px-4 py-2 text-sm font-medium text-white ${
-            isCancellable ? '' : 'hidden'
-          }`}
-        >
-          Finish
-        </button>
       </div>
     );
   }
@@ -164,6 +150,10 @@ function Upload({
                         failed: false,
                       },
                   );
+                  setDocName('');
+                  setfiles([]);
+                  setProgress(undefined);
+                  setModalState('INACTIVE');
                 }
               } else if (data.status == 'PROGRESS') {
                 setProgress(
