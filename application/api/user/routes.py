@@ -596,7 +596,7 @@ def share_conversation():
            })
             ## Identifier as route parameter in frontend
            return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),201
-    except ArithmeticError  as err:
+    except Exception  as err:
         print (err)
         return jsonify({"success":False,"error":str(err)}),400
 
@@ -619,13 +619,15 @@ def get_publicly_shared_conversations(identifier : str):
         else:
             return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
         date = conversation["_id"].generation_time.isoformat()
-        return jsonify({
+        res = {
             "success":True,
             "queries":conversation_queries,
             "title":conversation["name"],
             "timestamp":date
-            }), 200
+            }
+        if(shared["isPromptable"] and "api_key" in shared):
+            res["api_key"] = shared["api_key"]
+        return jsonify(res), 200
     except Exception as err:
         print (err)
         return jsonify({"success":False,"error":str(err)}),400
-    
