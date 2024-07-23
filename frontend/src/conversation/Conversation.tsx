@@ -193,7 +193,7 @@ export default function Conversation() {
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
+    inputRef.current && (inputRef.current.innerText = text);
   };
 
   return (

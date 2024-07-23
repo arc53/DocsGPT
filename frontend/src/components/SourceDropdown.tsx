@@ -77,7 +77,7 @@ function SourceDropdown({
         />
       </button>
       {isDocsListOpen && (
-        <div className="absolute left-0 right-0 z-50 -mt-1 max-h-40 overflow-y-auto rounded-b-xl border border-silver bg-white shadow-lg dark:border-silver/40 dark:bg-dark-charcoal">
+        <div className="absolute left-0 right-0 z-50 -mt-1 max-h-28 overflow-y-auto rounded-b-xl border border-silver bg-white shadow-lg dark:border-silver/40 dark:bg-dark-charcoal">
           {options ? (
             options.map((option: any, index: number) => {
               if (option.model === embeddingsName) {
