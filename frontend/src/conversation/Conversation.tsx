@@ -1,9 +1,22 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useDarkTheme } from '../hooks';
+
+import ArrowDown from '../assets/arrow-down.svg';
+import Send from '../assets/send.svg';
+import SendDark from '../assets/send_dark.svg';
+import ShareIcon from '../assets/share.svg';
+import SpinnerDark from '../assets/spinner-dark.svg';
+import Spinner from '../assets/spinner.svg';
+import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
+import { useDarkTheme } from '../hooks';
+import { ShareConversationModal } from '../modals/ShareConversationModal';
+import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
+import { handleSendFeedback } from './conversationHandlers';
+import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
   fetchAnswer,
@@ -11,18 +24,6 @@ import {
   selectStatus,
   updateQuery,
 } from './conversationSlice';
-import { selectConversationId } from '../preferences/preferenceSlice';
-import Send from './../assets/send.svg';
-import SendDark from './../assets/send_dark.svg';
-import Spinner from './../assets/spinner.svg';
-import SpinnerDark from './../assets/spinner-dark.svg';
-import { FEEDBACK, Query } from './conversationModels';
-import { sendFeedback } from './conversationApi';
-import { useTranslation } from 'react-i18next';
-import ArrowDown from './../assets/arrow-down.svg';
-import RetryIcon from '../components/RetryIcon';
-import ShareIcon from '../assets/share.svg';
-import { ShareConversationModal } from '../modals/ShareConversationModal';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -112,7 +113,7 @@ export default function Conversation() {
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
-    sendFeedback(query.prompt, query.response!, feedback).catch(() =>
+    handleSendFeedback(query.prompt, query.response!, feedback).catch(() =>
       dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
     );
   };

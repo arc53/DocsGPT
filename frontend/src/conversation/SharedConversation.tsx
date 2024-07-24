@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
-import { Query } from './conversationModels';
+import { Fragment, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router-dom';
+
+import conversationService from '../api/services/conversationService';
 import ConversationBubble from './ConversationBubble';
-import { Fragment } from 'react';
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-const SharedConversation = () => {
+import { Query } from './conversationModels';
+
+export default function SharedConversation() {
   const params = useParams();
   const navigate = useNavigate();
-  const { identifier } = params; //identifier is a uuid, not conversationId
+  const { identifier } = params;
   const [queries, setQueries] = useState<Query[]>([]);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
@@ -47,7 +47,8 @@ const SharedConversation = () => {
     return formattedDate;
   }
   const fetchQueris = () => {
-    fetch(`${apiHost}/api/shared_conversation/${identifier}`)
+    conversationService
+      .getSharedConversation(identifier || '')
       .then((res) => {
         if (res.status === 404 || res.status === 400) navigate('/pagenotfound');
         return res.json();
@@ -139,6 +140,4 @@ const SharedConversation = () => {
       </div>
     </div>
   );
-};
-
-export default SharedConversation;
+}
