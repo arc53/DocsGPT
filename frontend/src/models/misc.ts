@@ -21,7 +21,6 @@ export type PromptProps = {
   selectedPrompt: { name: string; id: string; type: string };
   onSelectPrompt: (name: string, id: string, type: string) => void;
   setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
-  apiHost: string;
 };
 
 export type DocumentsProps = {

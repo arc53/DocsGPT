@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import Spinner from '../assets/spinner.svg';
+
+import conversationService from '../api/services/conversationService';
 import Exit from '../assets/exit.svg';
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+import Spinner from '../assets/spinner.svg';
 
 export const ShareConversationModal = ({
   close,
@@ -25,13 +26,8 @@ export const ShareConversationModal = ({
     isPromptable = false,
   ) => {
     setStatus('loading');
-    fetch(`${apiHost}/api/share?isPromptable=${isPromptable}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ conversation_id: conversationId }),
-    })
+    conversationService
+      .shareConversation(isPromptable, { conversation_id: conversationId })
       .then((res) => {
         console.log(res.status);
         return res.json();

@@ -1,10 +1,14 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import store from '../store';
-import { fetchAnswerApi, fetchAnswerSteaming } from './conversationApi';
-import { searchEndpoint } from './conversationApi';
-import { Answer, ConversationState, Query, Status } from './conversationModels';
+
 import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
+import store from '../store';
+import {
+  handleFetchAnswer,
+  handleFetchAnswerSteaming,
+  handleSearch,
+} from './conversationHandlers';
+import { Answer, ConversationState, Query, Status } from './conversationModels';
 
 const initialState: ConversationState = {
   queries: [],
@@ -20,7 +24,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
     const state = getState() as RootState;
     if (state.preference) {
       if (API_STREAMING) {
-        await fetchAnswerSteaming(
+        await handleFetchAnswerSteaming(
           question,
           signal,
           state.preference.selectedDocs!,
@@ -45,7 +49,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                   console.error('Failed to fetch conversations: ', error);
                 });
 
-              searchEndpoint(
+              handleSearch(
                 //search for sources post streaming
                 question,
                 state.preference.selectedDocs!,
@@ -89,7 +93,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           },
         );
       } else {
-        const answer = await fetchAnswerApi(
+        const answer = await handleFetchAnswer(
           question,
           signal,
           state.preference.selectedDocs!,
