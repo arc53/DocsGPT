@@ -1,22 +1,22 @@
 import React from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import General from './General';
-import Documents from './Documents';
-import APIKeys from './APIKeys';
-import Widgets from './Widgets';
+import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
+
+import userService from '../api/services/userService';
+import ArrowLeft from '../assets/arrow-left.svg';
+import ArrowRight from '../assets/arrow-right.svg';
+import i18n from '../locale/i18n';
+import { Doc } from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
-import { Doc } from '../preferences/preferenceApi';
-import ArrowLeft from '../assets/arrow-left.svg';
-import ArrowRight from '../assets/arrow-right.svg';
-import { useTranslation } from 'react-i18next';
-import i18n from '../locale/i18n';
+import APIKeys from './APIKeys';
+import Documents from './Documents';
+import General from './General';
+import Widgets from './Widgets';
 
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-
-const Settings: React.FC = () => {
+export default function Settings() {
   const dispatch = useDispatch();
   const { t } = useTranslation();
   const tabs = [
@@ -33,11 +33,11 @@ const Settings: React.FC = () => {
   const updateWidgetScreenshot = (screenshot: File | null) => {
     setWidgetScreenshot(screenshot);
   };
+
   const handleDeleteClick = (index: number, doc: Doc) => {
     const docPath = 'indexes/' + 'local' + '/' + doc.name;
-    fetch(`${apiHost}/api/delete_old?path=${docPath}`, {
-      method: 'GET',
-    })
+    userService
+      .deletePath(docPath)
       .then((response) => {
         if (response.ok && documents) {
           const updatedDocuments = [
@@ -50,7 +50,6 @@ const Settings: React.FC = () => {
       .catch((error) => console.error(error));
   };
 
-  // persist active tab as the translated version of 'general' per language change
   React.useEffect(() => {
     setActiveTab(t('settings.general.label'));
   }, [i18n.language]);
@@ -134,6 +133,4 @@ const Settings: React.FC = () => {
         return null;
     }
   }
-};
-
-export default Settings;
+}

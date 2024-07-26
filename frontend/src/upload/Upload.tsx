@@ -1,13 +1,14 @@
-import React, { useRef } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
+
+import userService from '../api/services/userService';
+import Dropdown from '../components/Dropdown';
+import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSelectedDocs, setSourceDocs } from '../preferences/preferenceSlice';
-import Dropdown from '../components/Dropdown';
-import { useTranslation } from 'react-i18next';
-import Input from '../components/Input';
 
 function Upload({
   modalState,
@@ -95,20 +96,6 @@ function Upload({
 
         {/* progress bar */}
         <ProgressBar progressPercent={progress?.percentage as number} />
-
-        <button
-          onClick={() => {
-            setDocName('');
-            setfiles([]);
-            setProgress(undefined);
-            setModalState('INACTIVE');
-          }}
-          className={`rounded-3xl bg-purple-30 px-4 py-2 text-sm font-medium text-white ${
-            isCancellable ? '' : 'hidden'
-          }`}
-        >
-          Finish
-        </button>
       </div>
     );
   }
@@ -125,8 +112,8 @@ function Upload({
 
       if ((progress?.percentage ?? 0) < 100) {
         timeoutID = setTimeout(() => {
-          const apiHost = import.meta.env.VITE_API_HOST;
-          fetch(`${apiHost}/api/task_status?task_id=${progress?.taskId}`)
+          userService
+            .getTaskStatus(progress?.taskId as string)
             .then((data) => data.json())
             .then((data) => {
               if (data.status == 'SUCCESS') {
@@ -164,6 +151,10 @@ function Upload({
                         failed: false,
                       },
                   );
+                  setDocName('');
+                  setfiles([]);
+                  setProgress(undefined);
+                  setModalState('INACTIVE');
                 }
               } else if (data.status == 'PROGRESS') {
                 setProgress(

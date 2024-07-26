@@ -18,6 +18,8 @@ const embeddingsName =
 
 type StatusType = 'loading' | 'idle' | 'fetched' | 'failed';
 
+import conversationService from '../api/services/conversationService';
+
 export const ShareConversationModal = ({
   close,
   conversationId,
@@ -100,13 +102,8 @@ export const ShareConversationModal = ({
       payload.prompt_id = selectedPrompt.id;
       sourcePath && (payload.source = sourcePath.value);
     }
-    fetch(`${apiHost}/api/share?isPromptable=${isPromptable}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
+    conversationService
+      .shareConversation(isPromptable, payload)
       .then((res) => {
         console.log(res.status);
         return res.json();

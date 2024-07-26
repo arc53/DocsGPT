@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
 import { Query } from './conversationModels';
+import { Fragment, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router-dom';
+
+import conversationService from '../api/services/conversationService';
 import ConversationBubble from './ConversationBubble';
 import Send from '../assets/send.svg';
 import Spinner from '../assets/spinner.svg';
@@ -15,7 +16,6 @@ import {
   selectQueries,
 } from './sharedConversationSlice';
 import { useSelector } from 'react-redux';
-import { Fragment } from 'react';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const SharedConversation = () => {
   const params = useParams();
@@ -64,7 +64,8 @@ const SharedConversation = () => {
   }
   const fetchQueris = () => {
     identifier &&
-      fetch(`${apiHost}/api/shared_conversation/${identifier}`)
+      conversationService
+        .getSharedConversation(identifier || '')
         .then((res) => {
           if (res.status === 404 || res.status === 400)
             navigate('/pagenotfound');
@@ -200,5 +201,3 @@ const SharedConversation = () => {
     </div>
   );
 };
-
-export default SharedConversation;
