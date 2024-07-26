@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { Query } from './conversationModels';
@@ -6,19 +6,30 @@ import { useTranslation } from 'react-i18next';
 import ConversationBubble from './ConversationBubble';
 import Send from '../assets/send.svg';
 import Spinner from '../assets/spinner.svg';
-
+import { selectClientAPIKey, setClientApiKey } from './sharedConversationSlice';
+import { setIdentifier, setFetchedData } from './sharedConversationSlice';
+import { useDispatch } from 'react-redux';
+import {
+  selectDate,
+  selectTitle,
+  selectQueries,
+} from './sharedConversationSlice';
+import { useSelector } from 'react-redux';
 import { Fragment } from 'react';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const SharedConversation = () => {
   const params = useParams();
   const navigate = useNavigate();
   const { identifier } = params; //identifier is a uuid, not conversationId
-  const [queries, setQueries] = useState<Query[]>([]);
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
-  const [apiKey, setAPIKey] = useState<string | null>(null);
+
+  const queries = useSelector(selectQueries);
+  const title = useSelector(selectTitle);
+  const date = useSelector(selectDate);
+  const apiKey = useSelector(selectClientAPIKey);
   const inputRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+  const dispatch = useDispatch();
+  identifier && dispatch(setIdentifier(identifier));
   function formatISODate(isoDateStr: string) {
     const date = new Date(isoDateStr);
 
@@ -52,19 +63,26 @@ const SharedConversation = () => {
     return formattedDate;
   }
   const fetchQueris = () => {
-    fetch(`${apiHost}/api/shared_conversation/${identifier}`)
-      .then((res) => {
-        if (res.status === 404 || res.status === 400) navigate('/pagenotfound');
-        return res.json();
-      })
-      .then((data) => {
-        if (data.success) {
-          setQueries(data.queries);
-          setTitle(data.title);
-          setDate(formatISODate(data.timestamp));
-          data.api_key && setAPIKey(data.api_key);
-        }
-      });
+    identifier &&
+      fetch(`${apiHost}/api/shared_conversation/${identifier}`)
+        .then((res) => {
+          if (res.status === 404 || res.status === 400)
+            navigate('/pagenotfound');
+          return res.json();
+        })
+        .then((data) => {
+          if (data.success) {
+            dispatch(
+              setFetchedData({
+                queries: data.queries,
+                title: data.title,
+                date: data.date,
+                identifier,
+              }),
+            );
+            data.api_key && dispatch(setClientApiKey(data.api_key));
+          }
+        });
   };
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -150,7 +168,6 @@ const SharedConversation = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  //handleQuestionSubmission();
                 }
               }}
             ></div>
@@ -163,7 +180,6 @@ const SharedConversation = () => {
               <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000">
                 <img
                   className="ml-[4px] h-6 w-6 text-white filter dark:invert"
-                  //onClick={handleQuestionSubmission}
                   src={Send}
                 ></img>
               </div>
