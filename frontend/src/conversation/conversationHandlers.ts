@@ -212,7 +212,7 @@ export function handleSendFeedback(
     });
 }
 
-export function fetchSharedAnswerSteaming( //for shared conversations
+export function handleFetchSharedAnswerStreaming( //for shared conversations
   question: string,
   signal: AbortSignal,
   apiKey: string,
@@ -224,19 +224,13 @@ export function fetchSharedAnswerSteaming( //for shared conversations
   });
 
   return new Promise<Answer>((resolve, reject) => {
-    const body = {
+    const payload = {
       question: question,
       history: JSON.stringify(history),
-      apiKey: apiKey,
+      api_key: apiKey,
     };
-    fetch(apiHost + '/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal,
-    })
+    conversationService
+      .answerStream(payload, signal)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -283,4 +277,49 @@ export function fetchSharedAnswerSteaming( //for shared conversations
         reject(error);
       });
   });
+}
+
+export function handleFetchSharedAnswer(
+  question: string,
+  signal: AbortSignal,
+  apiKey: string,
+): Promise<
+  | {
+      result: any;
+      answer: any;
+      sources: any;
+      query: string;
+    }
+  | {
+      result: any;
+      answer: any;
+      sources: any;
+      query: string;
+      title: any;
+    }
+> {
+  return conversationService
+    .answer(
+      {
+        question: question,
+        api_key: apiKey,
+      },
+      signal,
+    )
+    .then((response) => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        return Promise.reject(new Error(response.statusText));
+      }
+    })
+    .then((data) => {
+      const result = data.answer;
+      return {
+        answer: result,
+        query: question,
+        result,
+        sources: data.sources,
+      };
+    });
 }

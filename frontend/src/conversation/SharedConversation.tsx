@@ -1,5 +1,5 @@
 import { Query } from './conversationModels';
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -7,9 +7,19 @@ import conversationService from '../api/services/conversationService';
 import ConversationBubble from './ConversationBubble';
 import Send from '../assets/send.svg';
 import Spinner from '../assets/spinner.svg';
-import { selectClientAPIKey, setClientApiKey } from './sharedConversationSlice';
+import {
+  selectClientAPIKey,
+  setClientApiKey,
+  updateQuery,
+  addQuery,
+  fetchSharedAnswer,
+  selectStatus,
+} from './sharedConversationSlice';
 import { setIdentifier, setFetchedData } from './sharedConversationSlice';
+
 import { useDispatch } from 'react-redux';
+import { AppDispatch } from '../store';
+
 import {
   selectDate,
   selectTitle,
@@ -17,19 +27,39 @@ import {
 } from './sharedConversationSlice';
 import { useSelector } from 'react-redux';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-const SharedConversation = () => {
-  const params = useParams();
+
+export const SharedConversation = () => {
   const navigate = useNavigate();
-  const { identifier } = params; //identifier is a uuid, not conversationId
+  const { identifier } = useParams(); //identifier is a uuid, not conversationId
 
   const queries = useSelector(selectQueries);
   const title = useSelector(selectTitle);
   const date = useSelector(selectDate);
   const apiKey = useSelector(selectClientAPIKey);
+  const status = useSelector(selectStatus);
+
   const inputRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
-  const dispatch = useDispatch();
-  identifier && dispatch(setIdentifier(identifier));
+  const dispatch = useDispatch<AppDispatch>();
+
+  const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [eventInterrupt, setEventInterrupt] = useState(false);
+  const endMessageRef = useRef<HTMLDivElement>(null);
+  const handleUserInterruption = () => {
+    if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
+  };
+  useEffect(() => {
+    !eventInterrupt && scrollIntoView();
+  }, [queries.length, queries[queries.length - 1]]);
+
+  useEffect(() => {
+    identifier && dispatch(setIdentifier(identifier));
+    const element = document.getElementById('inputbox') as HTMLInputElement;
+    if (element) {
+      element.focus();
+    }
+  }, []);
+
   function formatISODate(isoDateStr: string) {
     const date = new Date(isoDateStr);
 
@@ -62,7 +92,21 @@ const SharedConversation = () => {
     const formattedDate = `Published ${month} ${day}, ${year} at ${hours}:${minutesStr} ${ampm}`;
     return formattedDate;
   }
-  const fetchQueris = () => {
+  useEffect(() => {
+    if (queries.length) {
+      queries[queries.length - 1].error && setLastQueryReturnedErr(true);
+      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
+    }
+  }, [queries[queries.length - 1]]);
+
+  const scrollIntoView = () => {
+    endMessageRef?.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
+
+  const fetchQueries = () => {
     identifier &&
       conversationService
         .getSharedConversation(identifier || '')
@@ -113,8 +157,44 @@ const SharedConversation = () => {
     }
     return responseView;
   };
+  const handleQuestionSubmission = () => {
+    if (inputRef.current?.textContent && status !== 'loading') {
+      if (lastQueryReturnedErr) {
+        // update last failed query with new prompt
+        dispatch(
+          updateQuery({
+            index: queries.length - 1,
+            query: {
+              prompt: inputRef.current.textContent,
+            },
+          }),
+        );
+        handleQuestion({
+          question: queries[queries.length - 1].prompt,
+          isRetry: true,
+        });
+      } else {
+        handleQuestion({ question: inputRef.current.textContent });
+      }
+      inputRef.current.textContent = '';
+    }
+  };
+
+  const handleQuestion = ({
+    question,
+    isRetry = false,
+  }: {
+    question: string;
+    isRetry?: boolean;
+  }) => {
+    question = question.trim();
+    if (question === '') return;
+    setEventInterrupt(false);
+    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
+    dispatch(fetchSharedAnswer({ question: '' }));
+  };
   useEffect(() => {
-    fetchQueris();
+    fetchQueries();
   }, []);
 
   return (
@@ -169,6 +249,7 @@ const SharedConversation = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
+                  handleQuestionSubmission();
                 }
               }}
             ></div>
@@ -180,6 +261,7 @@ const SharedConversation = () => {
             ) : (
               <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000">
                 <img
+                  onClick={handleQuestionSubmission}
                   className="ml-[4px] h-6 w-6 text-white filter dark:invert"
                   src={Send}
                 ></img>
