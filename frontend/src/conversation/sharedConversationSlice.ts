@@ -12,7 +12,7 @@ const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
 interface SharedConversationsType {
   queries: Query[];
   apiKey?: string;
-  identifier: string | null;
+  identifier: string;
   status: Status;
   date?: string;
   title?: string;
@@ -20,15 +20,15 @@ interface SharedConversationsType {
 
 const initialState: SharedConversationsType = {
   queries: [],
-  identifier: null,
+  identifier: '',
   status: 'idle',
 };
 
 export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
   'shared/fetchAnswer',
   async ({ question }, { dispatch, getState, signal }) => {
-    console.log('bulaya sahab ji ?');
     const state = getState() as RootState;
+
     if (state.preference && state.sharedConversation.apiKey) {
       if (API_STREAMING) {
         await handleFetchSharedAnswerStreaming(
@@ -43,6 +43,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
             if (data.type === 'end') {
               // set status to 'idle'
               dispatch(sharedConversationSlice.actions.setStatus('idle'));
+              dispatch(saveToLocalStorage());
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
@@ -137,24 +138,6 @@ export const sharedConversationSlice = createSlice({
     },
     addQuery(state, action: PayloadAction<Query>) {
       state.queries.push(action.payload);
-      if (state.identifier) {
-        const previousQueriesStr = localStorage.getItem(state.identifier);
-        previousQueriesStr
-          ? localStorage.setItem(
-              state.identifier,
-              JSON.stringify([
-                ...JSON.parse(previousQueriesStr),
-                action.payload,
-              ]),
-            )
-          : localStorage.setItem(
-              state.identifier,
-              JSON.stringify([action.payload]),
-            );
-        if (action.payload.prompt) {
-          fetchSharedAnswer({ question: action.payload.prompt });
-        }
-      }
     },
     updateStreamingQuery(
       state,
@@ -188,6 +171,21 @@ export const sharedConversationSlice = createSlice({
       const { index, message } = action.payload;
       state.queries[index].error = message;
     },
+    saveToLocalStorage(state) {
+      const previousQueriesStr = localStorage.getItem(state.identifier);
+      previousQueriesStr
+        ? localStorage.setItem(
+            state.identifier,
+            JSON.stringify([
+              ...JSON.parse(previousQueriesStr),
+              state.queries[state.queries.length - 1],
+            ]),
+          )
+        : localStorage.setItem(
+            state.identifier,
+            JSON.stringify([state.queries[state.queries.length - 1]]),
+          );
+    },
   },
   extraReducers(builder) {
     builder
@@ -214,6 +212,7 @@ export const {
   updateQuery,
   updateStreamingQuery,
   addQuery,
+  saveToLocalStorage,
 } = sharedConversationSlice.actions;
 
 export const selectStatus = (state: RootState) => state.conversation.status;

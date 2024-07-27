@@ -105,7 +105,6 @@ export const ShareConversationModal = ({
     conversationService
       .shareConversation(isPromptable, payload)
       .then((res) => {
-        console.log(res.status);
         return res.json();
       })
       .then((data) => {

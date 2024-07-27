@@ -139,6 +139,7 @@ export const SharedConversation = () => {
     if (query.response) {
       responseView = (
         <ConversationBubble
+          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
@@ -148,6 +149,7 @@ export const SharedConversation = () => {
     } else if (query.error) {
       responseView = (
         <ConversationBubble
+          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
           key={`${index}ERROR`}
           message={query.error}
@@ -191,7 +193,7 @@ export const SharedConversation = () => {
     if (question === '') return;
     setEventInterrupt(false);
     !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
-    dispatch(fetchSharedAnswer({ question: '' }));
+    dispatch(fetchSharedAnswer({ question }));
   };
   useEffect(() => {
     fetchQueries();
@@ -220,6 +222,7 @@ export const SharedConversation = () => {
               return (
                 <Fragment key={index}>
                   <ConversationBubble
+                    ref={endMessageRef}
                     className={'mb-1 last:mb-28 md:mb-7'}
                     key={`${index}QUESTION`}
                     message={query.prompt}
