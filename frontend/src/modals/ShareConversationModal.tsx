@@ -129,7 +129,7 @@ export const ShareConversationModal = ({
           <h2 className="text-xl font-medium">{t('modals.shareConv.label')}</h2>
           <p className="text-sm">{t('modals.shareConv.note')}</p>
           <div className="flex items-center justify-between">
-            <span className="text-lg">Allow users to prompt further</span>
+            <span className="text-lg">{t('modals.shareConv.option')}</span>
             <label className=" cursor-pointer select-none items-center">
               <div className="relative">
                 <input
