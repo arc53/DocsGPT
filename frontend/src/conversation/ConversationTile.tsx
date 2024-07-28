@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
@@ -14,6 +14,7 @@ import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
+
 interface ConversationProps {
   name: string;
   id: string;
@@ -38,6 +39,7 @@ export default function ConversationTile({
   const [conversationName, setConversationsName] = useState('');
   const [isOpen, setOpen] = useState<boolean>(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,20 +81,24 @@ export default function ConversationTile({
   return (
     <div
       ref={tileRef}
+      onMouseEnter={() => {
+        setOpen(false);
+        setIsHovered(true);
+      }}
+      onMouseLeave={() => {
+        setIsHovered(false);
+      }}
       onClick={() => {
-        selectConversation(conversation.id);
+        conversationId !== conversation.id &&
+          selectConversation(conversation.id);
       }}
       className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-        conversationId === conversation.id
+        conversationId === conversation.id || isOpen
           ? 'bg-gray-100 dark:bg-[#28292E]'
           : ''
       }`}
     >
-      <div
-        className={`flex ${
-          conversationId === conversation.id ? 'w-[75%]' : 'w-[95%]'
-        } gap-4`}
-      >
+      <div className={`flex w-10/12 gap-4`}>
         <img
           src={isDarkTheme ? MessageDark : Message}
           className="ml-4 w-5 dark:text-white"
@@ -111,7 +117,7 @@ export default function ConversationTile({
           </p>
         )}
       </div>
-      {conversationId === conversation.id && (
+      {(conversationId === conversation.id || isHovered || isOpen) && (
         <div className="flex text-white dark:text-[#949494]" ref={menuRef}>
           {isEdit ? (
             <div className="flex gap-1">
@@ -120,34 +126,41 @@ export default function ConversationTile({
                 alt="Edit"
                 className="mr-2 h-4 w-4 cursor-pointer text-white hover:opacity-50"
                 id={`img-${conversation.id}`}
-                onClick={(event) => {
+                onClick={(event: SyntheticEvent) => {
                   event.stopPropagation();
                   handleSaveConversation({
-                    id: conversationId,
+                    id: conversation.id,
                     name: conversationName,
                   });
                 }}
               />
               <img
-                src={isEdit ? Exit : Trash}
+                src={Exit}
                 alt="Exit"
-                className={`mr-4 mt-px h-3 w-3 cursor-pointer hover:opacity-50`}
+                className={`mr-4 mt-px h-3 w-3 cursor-pointer filter hover:opacity-50 dark:invert`}
                 id={`img-${conversation.id}`}
-                onClick={(event) => {
+                onClick={(event: SyntheticEvent) => {
                   event.stopPropagation();
                   onClear();
                 }}
               />
             </div>
           ) : (
-            <button onClick={() => setOpen(!isOpen)}>
-              <img src={threeDots} className="mr-4 w-2" />
+            <button
+              onClick={(event: SyntheticEvent) => {
+                event.stopPropagation();
+                setOpen(true);
+              }}
+              className="mr-2 flex w-4 justify-center"
+            >
+              <img src={threeDots} width={8} />
             </button>
           )}
           {isOpen && (
-            <div className="flex-start absolute flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36">
+            <div className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36">
               <button
-                onClick={() => {
+                onClick={(event: SyntheticEvent) => {
+                  event.stopPropagation();
                   setShareModalState(true);
                   setOpen(false);
                 }}
@@ -164,9 +177,7 @@ export default function ConversationTile({
                 <span>{t('convTile.share')}</span>
               </button>
               <button
-                onClick={(event) => {
-                  handleEditConversation();
-                }}
+                onClick={handleEditConversation}
                 className="flex-start flex items-center gap-4 p-3 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
               >
                 <img
@@ -180,7 +191,8 @@ export default function ConversationTile({
                 <span>{t('convTile.rename')}</span>
               </button>
               <button
-                onClick={(event) => {
+                onClick={(event: SyntheticEvent) => {
+                  event.stopPropagation();
                   setDeleteModalState('ACTIVE');
                   setOpen(false);
                 }}
@@ -206,12 +218,13 @@ export default function ConversationTile({
         handleSubmit={() => onDeleteConversation(conversation.id)}
         submitLabel={t('convTile.delete')}
       />
-      {isShareModalOpen && conversationId && (
+      {isShareModalOpen && (
         <ShareConversationModal
           close={() => {
             setShareModalState(false);
+            isHovered && setIsHovered(false);
           }}
-          conversationId={conversationId}
+          conversationId={conversation.id}
         />
       )}
     </div>

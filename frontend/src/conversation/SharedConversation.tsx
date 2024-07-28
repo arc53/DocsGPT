@@ -262,7 +262,7 @@ export const SharedConversation = () => {
                 className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent filter dark:invert"
               ></img>
             ) : (
-              <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000">
+              <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
                 <img
                   onClick={handleQuestionSubmission}
                   className="ml-[4px] h-6 w-6 text-white filter dark:invert"

@@ -1,3 +1,4 @@
+import { SyntheticEvent } from 'react';
 import Exit from '../assets/exit.svg';
 import { ActiveState } from '../models/misc';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +22,7 @@ function ConfirmationModal({
   const { t } = useTranslation();
   return (
     <article
+      onClick={(event: SyntheticEvent) => event.stopPropagation()}
       className={`${
         modalState === 'ACTIVE' ? 'visible' : 'hidden'
       } fixed top-0 left-0 z-30  h-screen w-screen  bg-gray-alpha`}
