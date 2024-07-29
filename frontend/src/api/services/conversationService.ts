@@ -23,8 +23,8 @@ const conversationService = {
     apiClient.get(endpoints.CONVERSATION.SHARED_CONVERSATION(identifier)),
   delete: (id: string, data: any): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.DELETE(id), data),
-  deleteAll: (data: any): Promise<any> =>
-    apiClient.post(endpoints.CONVERSATION.DELETE_ALL, data),
+  deleteAll: (): Promise<any> =>
+    apiClient.get(endpoints.CONVERSATION.DELETE_ALL),
   update: (data: any): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.UPDATE, data),
 };

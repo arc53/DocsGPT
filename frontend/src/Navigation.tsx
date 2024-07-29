@@ -108,7 +108,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const handleDeleteAllConversations = () => {
     conversationService
-      .deleteAll({})
+      .deleteAll()
       .then(() => {
         fetchConversations();
       })
