@@ -206,7 +206,7 @@ export default function Conversation() {
             onClick={() => {
               setShareModalState(true);
             }}
-            className="fixed top-4 right-20 z-30 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+            className="fixed top-4 right-20 z-0 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
           >
             <img
               className="m-2 h-5 w-5 filter dark:invert"

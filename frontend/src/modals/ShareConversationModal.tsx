@@ -1,4 +1,4 @@
-import { SyntheticEvent, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import {
@@ -117,10 +117,7 @@ export const ShareConversationModal = ({
   };
 
   return (
-    <div
-      onClick={(event: SyntheticEvent) => event.stopPropagation()}
-      className="z-100 fixed top-0 left-0 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50 text-chinese-black dark:text-silver"
-    >
+    <div className="fixed top-0 left-0 z-40 flex h-screen w-screen cursor-default items-center justify-center bg-gray-alpha bg-opacity-50 text-chinese-black dark:text-silver">
       <div className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]">
         <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
           <img className="filter dark:invert" src={Exit} />
@@ -173,7 +170,7 @@ export const ShareConversationModal = ({
             </span>
             {status === 'fetched' ? (
               <button
-                className="my-1 h-10 w-28 rounded-full border border-solid border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white"
+                className="my-1 h-10 w-28 rounded-full border border-solid  bg-purple-30 p-2 text-sm text-white hover:bg-[#6F3FD1]"
                 onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
               >
                 {isCopied
@@ -182,7 +179,7 @@ export const ShareConversationModal = ({
               </button>
             ) : (
               <button
-                className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full  border border-solid border-purple-30 p-2 text-center text-sm font-normal text-purple-30 hover:bg-purple-30 hover:text-white"
+                className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full  border border-solid bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-[#6F3FD1]"
                 onClick={() => {
                   shareCoversationPublicly(allowPrompt);
                 }}

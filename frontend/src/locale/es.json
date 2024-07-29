@@ -108,7 +108,7 @@
       "label": "Crear una página pública para compartir",
       "note": "El documento original, la información personal y las conversaciones posteriores permanecerán privadas",
       "create": "Crear",
-      "option":"Permitir a los usuarios realizar más consultas."
+      "option": "Permitir a los usuarios realizar más consultas."
     }
   },
   "sharedConv": {

@@ -108,7 +108,7 @@
       "label": "Create a public page to share",
       "note": "Source document, personal information and further conversation will remain private",
       "create": "Create",
-      "option":"Allow users to prompt further"
+      "option": "Allow users to prompt further"
     }
   },
   "sharedConv": {
