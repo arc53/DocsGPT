@@ -10,7 +10,7 @@ import { useState } from 'react';
 import Setting from './settings';
 import './locale/i18n';
 import { Outlet } from 'react-router-dom';
-import SharedConversation from './conversation/SharedConversation';
+import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme } from './hooks';
 inject();
 
