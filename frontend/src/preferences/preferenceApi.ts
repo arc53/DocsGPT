@@ -1,3 +1,6 @@
+import conversationService from '../api/services/conversationService';
+import userService from '../api/services/userService';
+
 // not all properties in Doc are going to be present. Make some optional
 export type Doc = {
   location: string;
@@ -14,10 +17,7 @@ export type Doc = {
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(): Promise<Doc[] | null> {
   try {
-    const apiHost =
-      import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-
-    const response = await fetch(apiHost + '/api/combine');
+    const response = await userService.getDocs();
     const data = await response.json();
 
     const docs: Doc[] = [];
@@ -37,10 +37,7 @@ export async function getConversations(): Promise<
   { name: string; id: string }[] | null
 > {
   try {
-    const apiHost =
-      import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-
-    const response = await fetch(apiHost + '/api/get_conversations');
+    const response = await conversationService.getConversations();
     const data = await response.json();
 
     const conversations: { name: string; id: string }[] = [];
@@ -93,14 +90,9 @@ export function setLocalRecentDocs(doc: Doc): void {
     docPath =
       doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model + '/';
   }
-  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-  fetch(apiHost + '/api/docs_check', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  userService
+    .checkDocs({
       docs: docPath,
-    }),
-  }).then((response) => response.json());
+    })
+    .then((response) => response.json());
 }
