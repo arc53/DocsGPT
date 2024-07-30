@@ -10,7 +10,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa
 
 # Install necessary packages and Python
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv && \
+    apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* 
 
@@ -27,7 +27,7 @@ RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.z
     rm mpnet-base-v2.zip
 
 # Install Rust
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
 
 # Clean up to reduce container size
 RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
