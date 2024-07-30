@@ -1,12 +1,14 @@
-import React, { useRef } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
+
+import userService from '../api/services/userService';
+import Dropdown from '../components/Dropdown';
+import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSelectedDocs, setSourceDocs } from '../preferences/preferenceSlice';
-import Dropdown from '../components/Dropdown';
-import { useTranslation } from 'react-i18next';
 
 function Upload({
   modalState,
@@ -94,20 +96,6 @@ function Upload({
 
         {/* progress bar */}
         <ProgressBar progressPercent={progress?.percentage as number} />
-
-        <button
-          onClick={() => {
-            setDocName('');
-            setfiles([]);
-            setProgress(undefined);
-            setModalState('INACTIVE');
-          }}
-          className={`rounded-3xl bg-purple-30 px-4 py-2 text-sm font-medium text-white ${
-            isCancellable ? '' : 'hidden'
-          }`}
-        >
-          Finish
-        </button>
       </div>
     );
   }
@@ -124,8 +112,8 @@ function Upload({
 
       if ((progress?.percentage ?? 0) < 100) {
         timeoutID = setTimeout(() => {
-          const apiHost = import.meta.env.VITE_API_HOST;
-          fetch(`${apiHost}/api/task_status?task_id=${progress?.taskId}`)
+          userService
+            .getTaskStatus(progress?.taskId as string)
             .then((data) => data.json())
             .then((data) => {
               if (data.status == 'SUCCESS') {
@@ -163,6 +151,10 @@ function Upload({
                         failed: false,
                       },
                   );
+                  setDocName('');
+                  setfiles([]);
+                  setProgress(undefined);
+                  setModalState('INACTIVE');
                 }
               } else if (data.status == 'PROGRESS') {
                 setProgress(
@@ -272,7 +264,9 @@ function Upload({
     },
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
     const { name, value } = e.target;
     if (name === 'search_queries' && value.length > 0) {
       setRedditData({
@@ -323,12 +317,12 @@ function Upload({
 
         {activeTab === 'file' && (
           <>
-            <input
+            <Input
               type="text"
-              className="h-[42px] w-full rounded-full border-2 border-gray-5000 px-3 outline-none dark:bg-transparent dark:text-silver"
+              colorVariant="gray"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
-            ></input>
+            ></Input>
             <div className="relative bottom-12 left-2 mt-[-20px]">
               <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                 {t('modals.uploadDoc.name')}
@@ -373,25 +367,23 @@ function Upload({
             />
             {urlType.label !== 'Reddit' ? (
               <>
-                <input
+                <Input
                   placeholder={`Enter ${t('modals.uploadDoc.name')}`}
                   type="text"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   value={urlName}
                   onChange={(e) => setUrlName(e.target.value)}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.name')}
                   </span>
                 </div>
-                <input
+                <Input
                   placeholder={t('modals.uploadDoc.urlLink')}
                   type="text"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.link')}
@@ -400,66 +392,61 @@ function Upload({
               </>
             ) : (
               <>
-                <input
+                <Input
                   placeholder="Enter client ID"
                   type="text"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="client_id"
                   value={redditData.client_id}
                   onChange={handleChange}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.reddit.id')}
                   </span>
                 </div>
-                <input
+                <Input
                   placeholder="Enter client secret"
                   type="text"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="client_secret"
                   value={redditData.client_secret}
                   onChange={handleChange}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.reddit.secret')}
                   </span>
                 </div>
-                <input
+                <Input
                   placeholder="Enter user agent"
                   type="text"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="user_agent"
                   value={redditData.user_agent}
                   onChange={handleChange}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.reddit.agent')}
                   </span>
                 </div>
-                <input
+                <Input
                   placeholder="Enter search queries"
                   type="text"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="search_queries"
                   value={redditData.search_queries}
                   onChange={handleChange}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.reddit.searchQueries')}
                   </span>
                 </div>
-                <input
+                <Input
                   placeholder="Enter number of posts"
                   type="number"
-                  className="h-[42px] w-full rounded-full border-2 border-silver px-3 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
                   name="number_posts"
                   value={redditData.number_posts}
                   onChange={handleChange}
-                ></input>
+                ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.reddit.numberOfPosts')}

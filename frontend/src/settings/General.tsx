@@ -1,22 +1,22 @@
 import React from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import Prompts from './Prompts';
-import { useDarkTheme } from '../hooks';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
+
+import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
+import { useDarkTheme } from '../hooks';
 import {
-  selectPrompt,
-  setPrompt,
-  setChunks,
   selectChunks,
-  setTokenLimit,
+  selectPrompt,
   selectTokenLimit,
+  setChunks,
   setModalStateDeleteConv,
+  setPrompt,
+  setTokenLimit,
 } from '../preferences/preferenceSlice';
+import Prompts from './Prompts';
 
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-
-const General: React.FC = () => {
+export default function General() {
   const {
     t,
     i18n: { changeLanguage, language },
@@ -69,9 +69,9 @@ const General: React.FC = () => {
   const selectedPrompt = useSelector(selectPrompt);
 
   React.useEffect(() => {
-    const fetchPrompts = async () => {
+    const handleFetchPrompts = async () => {
       try {
-        const response = await fetch(`${apiHost}/api/get_prompts`);
+        const response = await userService.getPrompts();
         if (!response.ok) {
           throw new Error('Failed to fetch prompts');
         }
@@ -81,14 +81,13 @@ const General: React.FC = () => {
         console.error(error);
       }
     };
-    fetchPrompts();
+    handleFetchPrompts();
   }, []);
 
   React.useEffect(() => {
     localStorage.setItem('docsgpt-locale', selectedLanguage?.value as string);
     changeLanguage(selectedLanguage?.value);
   }, [selectedLanguage, changeLanguage]);
-
   return (
     <div className="mt-[59px]">
       <div className="mb-5">
@@ -171,7 +170,6 @@ const General: React.FC = () => {
             dispatch(setPrompt({ name: name, id: id, type: type }))
           }
           setPrompts={setPrompts}
-          apiHost={apiHost}
         />
       </div>
       <div className="w-56">
@@ -189,6 +187,4 @@ const General: React.FC = () => {
       </div>
     </div>
   );
-};
-
-export default General;
+}

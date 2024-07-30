@@ -1,46 +1,48 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
+
+import conversationService from './api/services/conversationService';
+import userService from './api/services/userService';
+import Add from './assets/add.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Hamburger from './assets/hamburger.svg';
 import HamburgerDark from './assets/hamburger-dark.svg';
+import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
-import Add from './assets/add.svg';
 import UploadIcon from './assets/upload.svg';
-import { ActiveState } from './models/misc';
-import APIKeyModal from './preferences/APIKeyModal';
-import DeleteConvModal from './modals/DeleteConvModal';
-
-import {
-  selectApiKeyStatus,
-  selectSelectedDocs,
-  selectSelectedDocsStatus,
-  selectSourceDocs,
-  setSelectedDocs,
-  selectConversations,
-  setConversations,
-  selectConversationId,
-  selectModalStateDeleteConv,
-  setModalStateDeleteConv,
-  setSourceDocs,
-} from './preferences/preferenceSlice';
+import SourceDropdown from './components/SourceDropdown';
 import {
   setConversation,
   updateConversationId,
 } from './conversation/conversationSlice';
-import { useMediaQuery, useOutsideAlerter } from './hooks';
-import Upload from './upload/Upload';
-import { Doc, getConversations, getDocs } from './preferences/preferenceApi';
-import SelectDocsModal from './preferences/SelectDocsModal';
 import ConversationTile from './conversation/ConversationTile';
-import { useDarkTheme } from './hooks';
-import SourceDropdown from './components/SourceDropdown';
-import { useTranslation } from 'react-i18next';
+import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
+import DeleteConvModal from './modals/DeleteConvModal';
+import { ActiveState } from './models/misc';
+import APIKeyModal from './preferences/APIKeyModal';
+import { Doc, getConversations, getDocs } from './preferences/preferenceApi';
+import {
+  selectApiKeyStatus,
+  selectConversationId,
+  selectConversations,
+  selectModalStateDeleteConv,
+  selectSelectedDocs,
+  selectSelectedDocsStatus,
+  selectSourceDocs,
+  setConversations,
+  setModalStateDeleteConv,
+  setSelectedDocs,
+  setSourceDocs,
+} from './preferences/preferenceSlice';
+import SelectDocsModal from './preferences/SelectDocsModal';
+import Upload from './upload/Upload';
+
 interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -85,7 +87,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     useState<ActiveState>('INACTIVE');
 
   const navRef = useRef(null);
-  const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
   const navigate = useNavigate();
 
@@ -106,9 +107,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }
 
   const handleDeleteAllConversations = () => {
-    fetch(`${apiHost}/api/delete_all_conversations`, {
-      method: 'POST',
-    })
+    conversationService
+      .deleteAll()
       .then(() => {
         fetchConversations();
       })
@@ -116,9 +116,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleDeleteConversation = (id: string) => {
-    fetch(`${apiHost}/api/delete_conversation?id=${id}`, {
-      method: 'POST',
-    })
+    conversationService
+      .delete(id, {})
       .then(() => {
         fetchConversations();
       })
@@ -128,17 +127,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const handleDeleteClick = (doc: Doc) => {
     const docPath = `indexes/local/${doc.name}`;
 
-    fetch(`${apiHost}/api/delete_old?path=${docPath}`, {
-      method: 'GET',
-    })
+    userService
+      .deletePath(docPath)
       .then(() => {
-        // remove the image element from the DOM
-        // const imageElement = document.querySelector(
-        //   `#img-${index}`,
-        // ) as HTMLElement;
-        // const parentElement = imageElement.parentNode as HTMLElement;
-        // parentElement.parentNode?.removeChild(parentElement);
-
         return getDocs();
       })
       .then((updatedDocs) => {
@@ -153,10 +144,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleConversationClick = (index: string) => {
-    // fetch the conversation from the server and setConversation in the store
-    fetch(`${apiHost}/api/get_single_conversation?id=${index}`, {
-      method: 'GET',
-    })
+    conversationService
+      .getConversation(index)
       .then((response) => response.json())
       .then((data) => {
         navigate('/');
@@ -173,13 +162,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     name: string;
     id: string;
   }) {
-    await fetch(`${apiHost}/api/update_conversation_name`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(updatedConversation),
-    })
+    await conversationService
+      .update(updatedConversation)
       .then((response) => response.json())
       .then((data) => {
         if (data) {

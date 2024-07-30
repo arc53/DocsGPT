@@ -1,9 +1,22 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useDarkTheme } from '../hooks';
+
+import ArrowDown from '../assets/arrow-down.svg';
+import Send from '../assets/send.svg';
+import SendDark from '../assets/send_dark.svg';
+import ShareIcon from '../assets/share.svg';
+import SpinnerDark from '../assets/spinner-dark.svg';
+import Spinner from '../assets/spinner.svg';
+import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
+import { useDarkTheme } from '../hooks';
+import { ShareConversationModal } from '../modals/ShareConversationModal';
+import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
+import { handleSendFeedback } from './conversationHandlers';
+import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
   fetchAnswer,
@@ -11,18 +24,11 @@ import {
   selectStatus,
   updateQuery,
 } from './conversationSlice';
-import Send from './../assets/send.svg';
-import SendDark from './../assets/send_dark.svg';
-import Spinner from './../assets/spinner.svg';
-import SpinnerDark from './../assets/spinner-dark.svg';
-import { FEEDBACK, Query } from './conversationModels';
-import { sendFeedback } from './conversationApi';
-import { useTranslation } from 'react-i18next';
-import ArrowDown from './../assets/arrow-down.svg';
-import RetryIcon from '../components/RetryIcon';
+
 export default function Conversation() {
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
+  const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
@@ -31,6 +37,7 @@ export default function Conversation() {
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
 
   const handleUserInterruption = () => {
@@ -106,7 +113,7 @@ export default function Conversation() {
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
-    sendFeedback(query.prompt, query.response!, feedback).catch(() =>
+    handleSendFeedback(query.prompt, query.response!, feedback).catch(() =>
       dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
     );
   };
@@ -187,11 +194,36 @@ export default function Conversation() {
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
+    inputRef.current && (inputRef.current.innerText = text);
   };
 
   return (
     <div className="flex h-screen flex-col gap-7 pb-2">
+      {conversationId && (
+        <>
+          <button
+            title="Share"
+            onClick={() => {
+              setShareModalState(true);
+            }}
+            className="fixed top-4 right-20 z-0 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+          >
+            <img
+              className="m-2 h-5 w-5 filter dark:invert"
+              alt="share"
+              src={ShareIcon}
+            />
+          </button>
+          {isShareModalOpen && (
+            <ShareConversationModal
+              close={() => {
+                setShareModalState(false);
+              }}
+              conversationId={conversationId}
+            />
+          )}
+        </>
+      )}
       <div
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
@@ -257,9 +289,9 @@ export default function Conversation() {
               className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
-            <div className="mx-1 cursor-pointer rounded-full p-4 text-center hover:bg-gray-3000">
+            <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
               <img
-                className="w-6 text-white "
+                className="ml-[4px] h-6 w-6 text-white "
                 onClick={handleQuestionSubmission}
                 src={isDarkTheme ? SendDark : Send}
               ></img>

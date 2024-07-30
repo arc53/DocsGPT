@@ -1,11 +1,9 @@
-import { Answer, FEEDBACK } from './conversationModels';
+import conversationService from '../api/services/conversationService';
 import { Doc } from '../preferences/preferenceApi';
-
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+import { Answer, FEEDBACK } from './conversationModels';
 
 function getDocPath(selectedDocs: Doc | null): string {
   let docPath = 'default';
-
   if (selectedDocs) {
     let namePath = selectedDocs.name;
     if (selectedDocs.language === namePath) {
@@ -27,10 +25,10 @@ function getDocPath(selectedDocs: Doc | null): string {
       docPath = selectedDocs.docLink;
     }
   }
-
   return docPath;
 }
-export function fetchAnswerApi(
+
+export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
   selectedDocs: Doc | null,
@@ -57,27 +55,22 @@ export function fetchAnswerApi(
     }
 > {
   const docPath = getDocPath(selectedDocs);
-  //in history array remove all keys except prompt and response
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
   });
-
-  return fetch(apiHost + '/api/answer', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      question: question,
-      history: history,
-      active_docs: docPath,
-      conversation_id: conversationId,
-      prompt_id: promptId,
-      chunks: chunks,
-      token_limit: token_limit,
-    }),
-    signal,
-  })
+  return conversationService
+    .answer(
+      {
+        question: question,
+        history: history,
+        active_docs: docPath,
+        conversation_id: conversationId,
+        prompt_id: promptId,
+        chunks: chunks,
+        token_limit: token_limit,
+      },
+      signal,
+    )
     .then((response) => {
       if (response.ok) {
         return response.json();
@@ -97,7 +90,7 @@ export function fetchAnswerApi(
     });
 }
 
-export function fetchAnswerSteaming(
+export function handleFetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
   selectedDocs: Doc | null,
@@ -109,29 +102,23 @@ export function fetchAnswerSteaming(
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   const docPath = getDocPath(selectedDocs);
-
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
   });
-
   return new Promise<Answer>((resolve, reject) => {
-    const body = {
-      question: question,
-      active_docs: docPath,
-      history: JSON.stringify(history),
-      conversation_id: conversationId,
-      prompt_id: promptId,
-      chunks: chunks,
-      token_limit: token_limit,
-    };
-    fetch(apiHost + '/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal,
-    })
+    conversationService
+      .answerStream(
+        {
+          question: question,
+          active_docs: docPath,
+          history: JSON.stringify(history),
+          conversation_id: conversationId,
+          prompt_id: promptId,
+          chunks: chunks,
+          token_limit: token_limit,
+        },
+        signal,
+      )
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -179,7 +166,8 @@ export function fetchAnswerSteaming(
       });
   });
 }
-export function searchEndpoint(
+
+export function handleSearch(
   question: string,
   selectedDocs: Doc | null,
   conversation_id: string | null,
@@ -188,48 +176,150 @@ export function searchEndpoint(
   token_limit: number,
 ) {
   const docPath = getDocPath(selectedDocs);
-
-  const body = {
-    question: question,
-    active_docs: docPath,
-    conversation_id,
-    history,
-    chunks: chunks,
-    token_limit: token_limit,
-  };
-  return fetch(`${apiHost}/api/search`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
+  return conversationService
+    .search({
+      question: question,
+      active_docs: docPath,
+      conversation_id,
+      history,
+      chunks: chunks,
+      token_limit: token_limit,
+    })
     .then((response) => response.json())
     .then((data) => {
       return data;
     })
     .catch((err) => console.log(err));
 }
-export function sendFeedback(
+
+export function handleSendFeedback(
   prompt: string,
   response: string,
   feedback: FEEDBACK,
 ) {
-  return fetch(`${apiHost}/api/feedback`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  return conversationService
+    .feedback({
       question: prompt,
       answer: response,
       feedback: feedback,
-    }),
-  }).then((response) => {
-    if (response.ok) {
-      return Promise.resolve();
-    } else {
-      return Promise.reject();
-    }
+    })
+    .then((response) => {
+      if (response.ok) {
+        return Promise.resolve();
+      } else {
+        return Promise.reject();
+      }
+    });
+}
+
+export function handleFetchSharedAnswerStreaming( //for shared conversations
+  question: string,
+  signal: AbortSignal,
+  apiKey: string,
+  history: Array<any> = [],
+  onEvent: (event: MessageEvent) => void,
+): Promise<Answer> {
+  history = history.map((item) => {
+    return { prompt: item.prompt, response: item.response };
   });
+
+  return new Promise<Answer>((resolve, reject) => {
+    const payload = {
+      question: question,
+      history: JSON.stringify(history),
+      api_key: apiKey,
+    };
+    conversationService
+      .answerStream(payload, signal)
+      .then((response) => {
+        if (!response.body) throw Error('No response body');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let counterrr = 0;
+        const processStream = ({
+          done,
+          value,
+        }: ReadableStreamReadResult<Uint8Array>) => {
+          if (done) {
+            console.log(counterrr);
+            return;
+          }
+
+          counterrr += 1;
+
+          const chunk = decoder.decode(value);
+
+          const lines = chunk.split('\n');
+
+          for (let line of lines) {
+            if (line.trim() == '') {
+              continue;
+            }
+            if (line.startsWith('data:')) {
+              line = line.substring(5);
+            }
+
+            const messageEvent: MessageEvent = new MessageEvent('message', {
+              data: line,
+            });
+
+            onEvent(messageEvent); // handle each message
+          }
+
+          reader.read().then(processStream).catch(reject);
+        };
+
+        reader.read().then(processStream).catch(reject);
+      })
+      .catch((error) => {
+        console.error('Connection failed:', error);
+        reject(error);
+      });
+  });
+}
+
+export function handleFetchSharedAnswer(
+  question: string,
+  signal: AbortSignal,
+  apiKey: string,
+): Promise<
+  | {
+      result: any;
+      answer: any;
+      sources: any;
+      query: string;
+    }
+  | {
+      result: any;
+      answer: any;
+      sources: any;
+      query: string;
+      title: any;
+    }
+> {
+  return conversationService
+    .answer(
+      {
+        question: question,
+        api_key: apiKey,
+      },
+      signal,
+    )
+    .then((response) => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        return Promise.reject(new Error(response.statusText));
+      }
+    })
+    .then((data) => {
+      const result = data.answer;
+      return {
+        answer: result,
+        query: question,
+        result,
+        sources: data.sources,
+      };
+    });
 }

@@ -103,6 +103,23 @@
     "deleteConv": {
       "confirm": "すべての会話を削除してもよろしいですか?",
       "delete": "削除"
+    },
+    "shareConv": {
+      "label": "共有ページを作成して共有する",
+      "note": "ソースドキュメント、個人情報、および以降の会話は非公開のままになります",
+      "create": "作成",
+      "option": "ユーザーがより多くのクエリを実行できるようにします。"
     }
+  },
+  "sharedConv": {
+    "subtitle": "作成者",
+    "button": "DocsGPT を始める",
+    "meta": "DocsGPT は GenAI を使用しています、情報源を使用して重要情報を確認してください。"
+  },
+  "convTile": {
+    "share": "共有",
+    "delete": "削除",
+    "rename": "名前変更",
+    "deleteWarning": "この会話を削除してもよろしいですか？"
   }
 }

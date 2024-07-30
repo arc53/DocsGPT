@@ -1,15 +1,17 @@
 import React from 'react';
-import { PromptProps, ActiveState } from '../models/misc';
-import Dropdown from '../components/Dropdown';
-import PromptsModal from '../preferences/PromptsModal';
 import { useTranslation } from 'react-i18next';
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-const Prompts: React.FC<PromptProps> = ({
+
+import userService from '../api/services/userService';
+import Dropdown from '../components/Dropdown';
+import { ActiveState, PromptProps } from '../models/misc';
+import PromptsModal from '../preferences/PromptsModal';
+
+export default function Prompts({
   prompts,
   selectedPrompt,
   onSelectPrompt,
   setPrompts,
-}) => {
+}: PromptProps) {
   const handleSelectPrompt = ({
     name,
     id,
@@ -37,17 +39,12 @@ const Prompts: React.FC<PromptProps> = ({
     t,
     i18n: { changeLanguage, language },
   } = useTranslation();
+
   const handleAddPrompt = async () => {
     try {
-      const response = await fetch(`${apiHost}/api/create_prompt`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: newPromptName,
-          content: newPromptContent,
-        }),
+      const response = await userService.createPrompt({
+        name: newPromptName,
+        content: newPromptContent,
       });
       if (!response.ok) {
         throw new Error('Failed to add prompt');
@@ -69,18 +66,12 @@ const Prompts: React.FC<PromptProps> = ({
 
   const handleDeletePrompt = (id: string) => {
     setPrompts(prompts.filter((prompt) => prompt.id !== id));
-    fetch(`${apiHost}/api/delete_prompt`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ id: id }),
-    })
+    userService
+      .deletePrompt({ id })
       .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to delete prompt');
         }
-        // get 1st prompt and set it as selected
         if (prompts.length > 0) {
           onSelectPrompt(prompts[0].name, prompts[0].id, prompts[0].type);
         }
@@ -90,18 +81,9 @@ const Prompts: React.FC<PromptProps> = ({
       });
   };
 
-  const fetchPromptContent = async (id: string) => {
-    console.log('fetching prompt content');
+  const handleFetchPromptContent = async (id: string) => {
     try {
-      const response = await fetch(
-        `${apiHost}/api/get_single_prompt?id=${id}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-      );
+      const response = await userService.getSinglePrompt(id);
       if (!response.ok) {
         throw new Error('Failed to fetch prompt content');
       }
@@ -113,17 +95,12 @@ const Prompts: React.FC<PromptProps> = ({
   };
 
   const handleSaveChanges = (id: string, type: string) => {
-    fetch(`${apiHost}/api/update_prompt`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    userService
+      .updatePrompt({
         id: id,
         name: editPromptName,
         content: editPromptContent,
-      }),
-    })
+      })
       .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to update prompt');
@@ -154,7 +131,6 @@ const Prompts: React.FC<PromptProps> = ({
         console.error(error);
       });
   };
-
   return (
     <>
       <div>
@@ -183,7 +159,7 @@ const Prompts: React.FC<PromptProps> = ({
               }) => {
                 setModalType('EDIT');
                 setEditPromptName(name);
-                fetchPromptContent(id);
+                handleFetchPromptContent(id);
                 setCurrentPromptEdit({ id: id, name: name, type: type });
                 setModalState('ACTIVE');
               }}
@@ -219,6 +195,4 @@ const Prompts: React.FC<PromptProps> = ({
       />
     </>
   );
-};
-
-export default Prompts;
+}
