@@ -10,7 +10,6 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import HamburgerDark from './assets/hamburger-dark.svg';
 import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
@@ -393,9 +392,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           onClick={() => setNavOpen(true)}
         >
           <img
-            src={isDarkTheme ? HamburgerDark : Hamburger}
+            src={Hamburger}
             alt="menu toggle"
-            className="w-7"
+            className="w-7 filter dark:invert"
           />
         </button>
       </div>
