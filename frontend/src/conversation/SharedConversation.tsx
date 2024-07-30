@@ -203,7 +203,7 @@ export const SharedConversation = () => {
     <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
       <div className="flex w-full justify-center overflow-auto">
         <div className="mt-0 w-11/12 md:w-10/12 lg:w-6/12">
-          <div className="mb-2 w-full border-b pb-2">
+          <div className="mb-2 w-full border-b pb-2 dark:border-b-silver">
             <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
               {title}
             </h1>
@@ -279,10 +279,10 @@ export const SharedConversation = () => {
             {t('sharedConv.button')}
           </button>
         )}
+        <span className="mb-2 hidden text-xs text-dark-charcoal dark:text-silver sm:inline">
+          {t('sharedConv.meta')}
+        </span>
       </div>
-      <span className="mb-2 hidden text-xs text-dark-charcoal dark:text-silver sm:inline">
-        {t('sharedConv.meta')}
-      </span>
     </div>
   );
 };

@@ -48,7 +48,8 @@ export default function ConversationTile({
     setConversationsName(conversation.name);
   }, [conversation.name]);
 
-  function handleEditConversation() {
+  function handleEditConversation(event: SyntheticEvent) {
+    event.stopPropagation();
     setIsEdit(true);
     setOpen(false);
   }
