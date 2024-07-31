@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { conversationSlice } from './conversation/conversationSlice';
+import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import {
   prefListenerMiddleware,
   prefSlice,
@@ -42,6 +43,7 @@ const store = configureStore({
   reducer: {
     preference: prefSlice.reducer,
     conversation: conversationSlice.reducer,
+    sharedConversation: sharedConversationSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(prefListenerMiddleware.middleware),

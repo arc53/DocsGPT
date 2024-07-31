@@ -1,5 +1,4 @@
 import { Routes, Route } from 'react-router-dom';
-import { useEffect } from 'react';
 import Navigation from './Navigation';
 import Conversation from './conversation/Conversation';
 import About from './About';
@@ -10,7 +9,7 @@ import { useState } from 'react';
 import Setting from './settings';
 import './locale/i18n';
 import { Outlet } from 'react-router-dom';
-import SharedConversation from './conversation/SharedConversation';
+import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme } from './hooks';
 inject();
 
@@ -34,17 +33,7 @@ function MainLayout() {
 }
 
 export default function App() {
-  const [isDarkTheme] = useDarkTheme();
-  useEffect(() => {
-    localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
-    if (isDarkTheme) {
-      document
-        .getElementById('root')
-        ?.classList.add('dark', 'dark:bg-raisin-black');
-    } else {
-      document.getElementById('root')?.classList.remove('dark');
-    }
-  }, [isDarkTheme]);
+  useDarkTheme();
   return (
     <>
       <Routes>

@@ -206,7 +206,7 @@ export default function Conversation() {
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
+    inputRef.current && (inputRef.current.innerText = text);
   };
 
   return (
@@ -218,7 +218,7 @@ export default function Conversation() {
             onClick={() => {
               setShareModalState(true);
             }}
-            className="fixed top-4 right-20 z-30 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+            className="fixed top-4 right-20 z-0 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
           >
             <img
               className="m-2 h-5 w-5 filter dark:invert"
@@ -277,8 +277,7 @@ export default function Conversation() {
 
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
-
-      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-8/12">
         <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <div
             id="inputbox"
@@ -302,7 +301,7 @@ export default function Conversation() {
               className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
             ></img>
           ) : (
-            <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000">
+            <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
               <img
                 className="ml-[4px] h-6 w-6 text-white "
                 onClick={handleQuestionSubmission}

@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+body.dark {
+  background-color: #202124; /* raisin-black */
+}
 ::-webkit-scrollbar {
   width: 8px;
 }

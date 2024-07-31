@@ -189,13 +189,14 @@ def complete_stream(question, retriever, conversation_id, user_api_key):
         llm = LLMCreator.create_llm(
             settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
             )
-        conversation_id = save_conversation(
-            conversation_id, question, response_full, source_log_docs, llm
-        )
-        
-        # send data.type = "end" to indicate that the stream has ended as json
-        data = json.dumps({"type": "id", "id": str(conversation_id)})
-        yield f"data: {data}\n\n"
+        if(user_api_key is None):
+            conversation_id = save_conversation(
+                conversation_id, question, response_full, source_log_docs, llm
+            )
+            # send data.type = "end" to indicate that the stream has ended as json
+            data = json.dumps({"type": "id", "id": str(conversation_id)})
+            yield f"data: {data}\n\n"
+            
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:

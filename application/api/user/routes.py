@@ -502,24 +502,88 @@ def delete_api_key():
 def share_conversation():
     try:
         data = request.get_json()
-        user = "local"
-        if(hasattr(data,"user")):
-            user = data["user"]
+        user = "local" if "user" not in data else data["user"]
         conversation_id = data["conversation_id"]
         isPromptable = request.args.get("isPromptable").lower() == "true"
+        
         conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
         current_n_queries = len(conversation["queries"])
+        
+         ##generate binary representation of uuid
+        explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)
+        
+        if(isPromptable):
+            source = "default" if "source" not in data else data["source"]
+            prompt_id = "default" if "prompt_id" not in data else data["prompt_id"]
+            chunks = "2" if "chunks" not in data else data["chunks"]
+            
+            name = conversation["name"]+"(shared)"
+            pre_existing_api_document = api_key_collection.find_one({
+                    "prompt_id":prompt_id,
+                    "chunks":chunks,
+                    "source":source,
+                    "user":user    
+                })
+            api_uuid = str(uuid.uuid4())
+            if(pre_existing_api_document):
+                 api_uuid = pre_existing_api_document["key"]
+                 pre_existing = shared_conversations_collections.find_one({
+                    "conversation_id":DBRef("conversations",ObjectId(conversation_id)),
+                    "isPromptable":isPromptable,
+                    "first_n_queries":current_n_queries,
+                    "user":user,
+                    "api_key":api_uuid
+                })
+                 if(pre_existing is not None):
+                     return jsonify({"success":True, "identifier":str(pre_existing["uuid"].as_uuid())}),200
+                 else:
+                     shared_conversations_collections.insert_one({
+                      "uuid":explicit_binary,
+                      "conversation_id": {
+                       "$ref":"conversations",
+                       "$id":ObjectId(conversation_id)
+                      } ,
+                     "isPromptable":isPromptable,
+                     "first_n_queries":current_n_queries,
+                     "user":user,
+                    "api_key":api_uuid
+                 })
+                     return jsonify({"success":True,"identifier":str(explicit_binary.as_uuid())})
+            else:
+                api_key_collection.insert_one(
+                   {
+                   "name": name,
+                   "key": api_uuid,
+                   "source": source,
+                   "user": user,
+                   "prompt_id": prompt_id,
+                   "chunks": chunks,
+                 } 
+               )       
+            shared_conversations_collections.insert_one({
+                "uuid":explicit_binary,
+                "conversation_id": {
+                  "$ref":"conversations",
+                  "$id":ObjectId(conversation_id)
+               } ,
+               "isPromptable":isPromptable,
+               "first_n_queries":current_n_queries,
+                "user":user,
+               "api_key":api_uuid
+           })
+            ## Identifier as route parameter in frontend
+            return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),201
+        
+        ##isPromptable = False
         pre_existing = shared_conversations_collections.find_one({
             "conversation_id":DBRef("conversations",ObjectId(conversation_id)),
             "isPromptable":isPromptable,
-            "first_n_queries":current_n_queries
+            "first_n_queries":current_n_queries,
+            "user":user
         })
-        print("pre_existing",pre_existing)
         if(pre_existing is not None):
-            explicit_binary = pre_existing["uuid"]
-            return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),200
-        else:
-           explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)       
+            return jsonify({"success":True, "identifier":str(pre_existing["uuid"].as_uuid())}),200
+        else:     
            shared_conversations_collections.insert_one({
            "uuid":explicit_binary,
            "conversation_id": {
@@ -532,7 +596,8 @@ def share_conversation():
            })
             ## Identifier as route parameter in frontend
            return jsonify({"success":True, "identifier":str(explicit_binary.as_uuid())}),201
-    except Exception as err:
+    except Exception  as err:
+        print (err)
         return jsonify({"success":False,"error":str(err)}),400
 
 #route to get publicly shared conversations
@@ -554,13 +619,15 @@ def get_publicly_shared_conversations(identifier : str):
         else:
             return jsonify({"sucess":False,"error":"might have broken url or the conversation does not exist"}),404
         date = conversation["_id"].generation_time.isoformat()
-        return jsonify({
+        res = {
             "success":True,
             "queries":conversation_queries,
             "title":conversation["name"],
             "timestamp":date
-            }), 200
+            }
+        if(shared["isPromptable"] and "api_key" in shared):
+            res["api_key"] = shared["api_key"]
+        return jsonify(res), 200
     except Exception as err:
         print (err)
         return jsonify({"success":False,"error":str(err)}),400
-    
