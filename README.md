@@ -23,6 +23,8 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
  
 </div>
 
+### Our livestream on Discord on 1st of August is [here](https://discord.com/events/1070046503302877216/1268149794099036223) Learn About optimizing RAG and Q&A session
+
 ### Production Support / Help for Companies:
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
@@ -46,9 +48,9 @@ You can find our roadmap [here](https://github.com/orgs/arc53/projects/2). Pleas
 
 If you don't have enough resources to run it, you can use bitsnbytes to quantize.
 
-## Features
+## End to End AI Framework for Information Retrieval
 
-![Main features of DocsGPT showcasing six main features](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
+![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
 
 ## Useful Links
 
