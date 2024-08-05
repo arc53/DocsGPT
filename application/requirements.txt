@@ -29,6 +29,6 @@ sentence-transformers
 tiktoken
 torch
 tqdm==4.66.3
-transformers==4.36.2
+transformers==4.43.4
 unstructured==0.12.2
 Werkzeug==3.0.3
