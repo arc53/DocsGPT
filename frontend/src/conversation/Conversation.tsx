@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -31,7 +31,7 @@ export default function Conversation() {
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
   const endMessageRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
   const fetchStream = useRef<any>(null);
@@ -48,7 +48,7 @@ export default function Conversation() {
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
-    const element = document.getElementById('inputbox') as HTMLInputElement;
+    const element = document.getElementById('inputbox') as HTMLTextAreaElement;
     if (element) {
       element.focus();
     }
@@ -119,14 +119,14 @@ export default function Conversation() {
   };
 
   const handleQuestionSubmission = () => {
-    if (inputRef.current?.textContent && status !== 'loading') {
+    if (inputRef.current?.value && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: inputRef.current.textContent,
+              prompt: inputRef.current.value,
             },
           }),
         );
@@ -135,9 +135,10 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: inputRef.current.textContent });
+        handleQuestion({ question: inputRef.current.value });
       }
-      inputRef.current.textContent = '';
+      inputRef.current.value = '';
+      handleInput();
     }
   };
 
@@ -191,12 +192,24 @@ export default function Conversation() {
     return responseView;
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    inputRef.current && (inputRef.current.innerText = text);
+  const handleInput = () => {
+    if (inputRef.current) {
+      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+      else inputRef.current.style.height = '64px';
+      inputRef.current.style.height = `${Math.min(
+        inputRef.current.scrollHeight,
+        96,
+      )}px`;
+    }
   };
 
+  useEffect(() => {
+    handleInput();
+    window.addEventListener('resize', handleInput);
+    return () => {
+      window.removeEventListener('resize', handleInput);
+    };
+  }, []);
   return (
     <div className="flex h-screen flex-col gap-7 pb-2">
       {conversationId && (
@@ -267,22 +280,21 @@ export default function Conversation() {
       </div>
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-8/12">
-        <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
-          <div
+        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
+          <textarea
             id="inputbox"
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            contentEditable
-            onPaste={handlePaste}
-            className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`inputbox-style h-16 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            onInput={handleInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleQuestionSubmission();
               }
             }}
-          ></div>
+          ></textarea>
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
