@@ -424,7 +424,8 @@ template {
   width: 0;
 }
 
-.inputbox-style[contenteditable] {
+.inputbox-style {
+  resize: none;
   padding-left: 36px;
   padding-right: 36px;
 }
