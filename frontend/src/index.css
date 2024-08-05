@@ -429,3 +429,7 @@ template {
   padding-left: 36px;
   padding-right: 36px;
 }
+
+.bottom-safe {
+  bottom: env(safe-area-inset-bottom, 0);
+}
