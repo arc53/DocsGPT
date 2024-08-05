@@ -3,7 +3,7 @@ boto3==1.34.6
 celery==5.3.6
 dataclasses_json==0.6.3
 docx2txt==0.8
-duckduckgo-search==5.3.0
+duckduckgo-search==6.2.6
 EbookLib==0.18
 elasticsearch==8.12.0
 escodegen==1.0.11
