@@ -22,6 +22,7 @@ import {
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
+import useDefaultDocument from './hooks/useDefaultDocument';
 import DeleteConvModal from './modals/DeleteConvModal';
 import { ActiveState } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
@@ -39,7 +40,6 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from './preferences/preferenceSlice';
-import SelectDocsModal from './preferences/SelectDocsModal';
 import Upload from './upload/Upload';
 
 interface NavigationProps {
@@ -192,6 +192,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   useEffect(() => {
     setNavOpen(!isMobile);
   }, [isMobile]);
+  useDefaultDocument();
   return (
     <>
       {!navOpen && (
@@ -398,12 +399,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           />
         </button>
       </div>
-
-      <SelectDocsModal
-        modalState={selectedDocsModalState}
-        setModalState={setSelectedDocsModalState}
-        isCancellable={isSelectedDocsSet}
-      />
       <APIKeyModal
         modalState={apiKeyModalState}
         setModalState={setApiKeyModalState}
