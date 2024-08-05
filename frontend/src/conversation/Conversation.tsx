@@ -138,6 +138,7 @@ export default function Conversation() {
         handleQuestion({ question: inputRef.current.value });
       }
       inputRef.current.value = '';
+      handleInput();
     }
   };
 
