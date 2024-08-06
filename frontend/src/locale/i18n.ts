@@ -6,6 +6,7 @@ import en from './en.json'; //English
 import es from './es.json'; //Spanish
 import jp from './jp.json'; //Japanese
 import zh from './zh.json'; //Mandarin
+import zhtw from './zhtw.json'; //Traditional Chinese
 
 i18n
   .use(LanguageDetector)
@@ -23,6 +24,9 @@ i18n
       },
       zh: {
         translation: zh,
+      },
+      zhtw: {
+        translation: zhtw,
       },
     },
     fallbackLng: 'en',
