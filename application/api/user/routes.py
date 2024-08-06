@@ -264,6 +264,7 @@ def combined_json():
     for index in vectors_collection.find({"user": user}).sort("date", -1):
         data.append(
             {
+                "id":str(index["_id"]),
                 "name": index["name"],
                 "language": index["language"],
                 "version": "",
@@ -453,7 +454,7 @@ def get_api_keys():
                 "id": str(key["_id"]),
                 "name": key["name"],
                 "key": key["key"][:4] + "..." + key["key"][-4:],
-                "source": key["source"],
+                "source": str(key["source"]),
                 "prompt_id": key["prompt_id"],
                 "chunks": key["chunks"],
             }
@@ -470,6 +471,8 @@ def create_api_key():
     chunks = data["chunks"]
     key = str(uuid.uuid4())
     user = "local"
+    if(ObjectId.is_valid(data["source"])):
+        source = DBRef("vectors",ObjectId(data["source"]))
     resp = api_key_collection.insert_one(
         {
             "name": name,
@@ -524,7 +527,7 @@ def share_conversation():
                 {
                     "prompt_id": prompt_id,
                     "chunks": chunks,
-                    "source": source,
+                    "source": DBRef("vectors",ObjectId(source)) if ObjectId.is_valid(source) else source,
                     "user": user,
                 }
             )
@@ -574,7 +577,7 @@ def share_conversation():
                     {
                         "name": name,
                         "key": api_uuid,
-                        "source": source,
+                        "source": DBRef("vectors",ObjectId(source)) if ObjectId.is_valid(source) else source,
                         "user": user,
                         "prompt_id": prompt_id,
                         "chunks": chunks,
