@@ -1,7 +1,7 @@
 anthropic==0.12.0
 boto3==1.34.153
 celery==5.3.6
-dataclasses_json==0.6.3
+dataclasses_json==0.6.7
 docx2txt==0.8
 duckduckgo-search==6.2.6
 EbookLib==0.18
