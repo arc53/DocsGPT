@@ -1,5 +1,6 @@
 from application.vectorstore.faiss import FaissStore
 from application.vectorstore.elasticsearch import ElasticsearchStore
+from application.vectorstore.milvus import MilvusStore
 from application.vectorstore.mongodb import MongoDBVectorStore
 from application.vectorstore.qdrant import QdrantStore
 
@@ -10,6 +11,7 @@ class VectorCreator:
         "elasticsearch": ElasticsearchStore,
         "mongodb": MongoDBVectorStore,
         "qdrant": QdrantStore,
+        "milvus": MilvusStore,
     }
 
     @classmethod
