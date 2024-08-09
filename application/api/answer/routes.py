@@ -77,23 +77,23 @@ def get_data_from_api_key(api_key):
     if data is None:
         raise Exception("Invalid API Key, please generate new key", 401)
 
-    if isinstance(data["source"], DBRef):
-        source_id = db.dereference(data["source"])["_id"]
-        data["source"] = get_source(source_id)
+    if "retriever" not in data:
+        data["retriever"] = "classic"
 
+    if "source" in data and isinstance(data["source"], DBRef):
+        source_doc = db.dereference(data["source"])
+        data["source"] = str(source_doc._id)
+        if "retriever" in source_doc:
+            data["retriever"] = source_doc["retriever"]
     return data
 
 
-def get_source(active_doc):
-    if ObjectId.is_valid(active_doc):
-        doc = vectors_collection.find_one({"_id": ObjectId(active_doc)})
-        if doc is None:
-            raise Exception("Source document does not exist", 404)
-        print("res", doc)
-        source = {"active_docs": "/".join(doc["location"].split("/")[-2:])}
-    else:
-        source = {"active_docs": active_doc}
-    return source
+def get_retriever(source_id: str):
+    doc = vectors_collection.find_one({"_id": ObjectId(source_id)})
+    if doc is None:
+        raise Exception("Source document does not exist", 404)
+    retriever_name = "classic" if "retriever" not in doc else doc["retriever"]
+    return retriever_name
 
 
 def get_vectorstore(data):
@@ -244,25 +244,31 @@ def stream():
         else:
             token_limit = settings.DEFAULT_MAX_HISTORY
 
-        # check if active_docs or api_key is set
+        ## retriever can be "brave_search, duckduck_search or classic"
+        retriever_name = data["retriever"] if "retriever" in data else "classic"
 
+        # check if active_docs or api_key is set
         if "api_key" in data:
             data_key = get_data_from_api_key(data["api_key"])
             chunks = int(data_key["chunks"])
             prompt_id = data_key["prompt_id"]
-            source = data_key["source"]
+            source = {"active_docs": data_key["source"]}
+            retriever_name = data_key["retriever"]
             user_api_key = data["api_key"]
+
         elif "active_docs" in data:
-            source = get_source(data["active_docs"])
+            source = {"active_docs" : data["active_docs"]}
+            retriever_name = get_retriever(data["active_docs"])    
             user_api_key = None
+
         else:
             source = {}
             user_api_key = None
 
-        if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
+        """ if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
             retriever_name = "classic"
         else:
-            retriever_name = source["active_docs"]
+            retriever_name = source["active_docs"] """
 
         prompt = get_prompt(prompt_id)
 
@@ -341,6 +347,9 @@ def api_answer():
     else:
         token_limit = settings.DEFAULT_MAX_HISTORY
 
+    ## retriever can be brave_search, duckduck_search or classic
+    retriever_name = data["retriever"] if "retriever" in data else "classic"
+
     # use try and except  to check for exception
     try:
         # check if the vectorstore is set
@@ -350,14 +359,9 @@ def api_answer():
             prompt_id = data_key["prompt_id"]
             source = data_key["source"]
             user_api_key = data["api_key"]
-        else:
-            source = get_source(data["active_docs"])
+        elif "active_docs" in data:
+            source = data["active_docs"]
             user_api_key = None
-
-        if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
-            retriever_name = "classic"
-        else:
-            retriever_name = source["active_docs"]
 
         prompt = get_prompt(prompt_id)
 
@@ -410,16 +414,16 @@ def api_search():
         source = data_key["source"]
         user_api_key = data_key["api_key"]
     elif "active_docs" in data:
-        source = get_source(data["active_docs"])
+        source = data["active_docs"]
         user_api_key = None
     else:
         source = {}
         user_api_key = None
 
-    if source["active_docs"].split("/")[0] == "default" or source["active_docs"].split("/")[0] == "local":
-        retriever_name = "classic"
+    if "retriever" in data:
+        retriever_name = data["retriever"]
     else:
-        retriever_name = source["active_docs"]
+        retriever_name = "classic"
     if "token_limit" in data:
         token_limit = data["token_limit"]
     else:
