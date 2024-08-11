@@ -116,18 +116,17 @@ def delete_by_ids():
 def delete_old():
     """Delete old indexes."""
     import shutil
-
-    path = request.args.get("path")
-    dirs = path.split("/")
-    dirs_clean = []
-    for i in range(0, len(dirs)):
-        dirs_clean.append(secure_filename(dirs[i]))
-    # check that path strats with indexes or vectors
-
-    if dirs_clean[0] not in ["indexes", "vectors"]:
-        return {"status": "error"}
-    path_clean = "/".join(dirs_clean)
-    vectors_collection.delete_one({"name": dirs_clean[-1], "user": dirs_clean[-2]})
+    name = request.args.get("name")
+    user = request.args.get("user")
+    doc = vectors_collection.find_one({
+        "user":user,
+        "name":name
+    })
+    print("user",user)
+    print("file",name)
+    if(doc is None):
+        return {"status":"not found"},404
+    path_clean = doc["location"]
     if settings.VECTOR_STORE == "faiss":
         try:
             shutil.rmtree(os.path.join(current_dir, path_clean))

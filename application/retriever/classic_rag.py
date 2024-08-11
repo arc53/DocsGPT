@@ -40,14 +40,7 @@ class ClassicRAG(BaseRetriever):
 
     def _get_vectorstore(self, source):
         if "active_docs" in source:
-            if source["active_docs"].split("/")[0] == "default":
-                vectorstore = ""
-            elif source["active_docs"].split("/")[0] == "local":
-                vectorstore = "indexes/" + source["active_docs"]
-            else:
-                vectorstore = "vectors/" + source["active_docs"]
-            if source["active_docs"] == "default":
-                vectorstore = ""
+            vectorstore = "indexes/"+source["active_docs"]
         else:
             vectorstore = ""
         vectorstore = os.path.join("application", vectorstore)

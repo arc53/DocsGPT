@@ -3,7 +3,7 @@ import datetime
 from flask import Blueprint, request, send_from_directory
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
-
+from bson.objectid import ObjectId
 
 from application.core.settings import settings
 mongo = MongoClient(settings.MONGO_URI)
@@ -35,7 +35,12 @@ def upload_index_files():
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
     tokens = secure_filename(request.form["tokens"])
-    save_dir = os.path.join(current_dir, "indexes", user, job_name)
+    """"
+    ObjectId serves as a dir name in application/indexes, 
+    and for indexing the vector metadata in the collection
+    """
+    _id = ObjectId()
+    save_dir = os.path.join(current_dir, "indexes", str(_id))
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
             print("No file part")
@@ -58,6 +63,7 @@ def upload_index_files():
     # create entry in vectors_collection
     vectors_collection.insert_one(
         {
+            "_id":_id,
             "user": user,
             "name": job_name,
             "language": job_name,
