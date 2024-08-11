@@ -82,9 +82,11 @@ def get_data_from_api_key(api_key):
 
     if "source" in data and isinstance(data["source"], DBRef):
         source_doc = db.dereference(data["source"])
-        data["source"] = str(source_doc._id)
+        data["source"] = str(source_doc["_id"])
         if "retriever" in source_doc:
             data["retriever"] = source_doc["retriever"]
+    else:
+        data["source"] = {}
     return data
 
 
@@ -357,10 +359,14 @@ def api_answer():
             data_key = get_data_from_api_key(data["api_key"])
             chunks = int(data_key["chunks"])
             prompt_id = data_key["prompt_id"]
-            source = data_key["source"]
+            source = {"active_docs": data_key["source"]}
+            retriever_name = data_key["retriever"]
             user_api_key = data["api_key"]
         elif "active_docs" in data:
-            source = data["active_docs"]
+            source = {"active_docs":data["active_docs"]}
+            user_api_key = None
+        else:
+            source = {}
             user_api_key = None
 
         prompt = get_prompt(prompt_id)
@@ -411,10 +417,10 @@ def api_search():
     if "api_key" in data:
         data_key = get_data_from_api_key(data["api_key"])
         chunks = int(data_key["chunks"])
-        source = data_key["source"]
+        source = {"active_docs":data_key["source"]}
         user_api_key = data_key["api_key"]
     elif "active_docs" in data:
-        source = data["active_docs"]
+        source = {"active_docs":data["active_docs"]}
         user_api_key = None
     else:
         source = {}

@@ -489,26 +489,31 @@ def share_conversation():
         isPromptable = request.args.get("isPromptable").lower() == "true"
 
         conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
+        if(conversation is None):
+            raise Exception("Conversation does not exist")
         current_n_queries = len(conversation["queries"])
 
         ##generate binary representation of uuid
         explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)
 
         if isPromptable:
-            source = "default" if "source" not in data else data["source"]
             prompt_id = "default" if "prompt_id" not in data else data["prompt_id"]
             chunks = "2" if "chunks" not in data else data["chunks"]
 
             name = conversation["name"] + "(shared)"
-            pre_existing_api_document = api_key_collection.find_one(
-                {
+            new_api_key_data =  {
                     "prompt_id": prompt_id,
                     "chunks": chunks,
-                    "source": DBRef("vectors", ObjectId(source)) if ObjectId.is_valid(source) else source,
                     "user": user,
                 }
+            if "source" in data and ObjectId.is_valid(data["source"]):
+                new_api_key_data["source"] = DBRef("vectors",ObjectId(data["source"]))
+            elif "retriever" in data:
+                new_api_key_data["retriever"] = data["retriever"]
+                 
+            pre_existing_api_document = api_key_collection.find_one(
+                new_api_key_data
             )
-            api_uuid = str(uuid.uuid4())
             if pre_existing_api_document:
                 api_uuid = pre_existing_api_document["key"]
                 pre_existing = shared_conversations_collections.find_one(
@@ -546,17 +551,16 @@ def share_conversation():
                     )
                     return jsonify({"success": True, "identifier": str(explicit_binary.as_uuid())})
             else:
-                api_key_collection.insert_one(
-                    {
-                        "name": name,
-                        "key": api_uuid,
-                        "source": DBRef("vectors", ObjectId(source)) if ObjectId.is_valid(source) else source,
-                        "user": user,
-                        "prompt_id": prompt_id,
-                        "chunks": chunks,
-                    }
-                )
-            shared_conversations_collections.insert_one(
+                
+                api_uuid = str(uuid.uuid4())
+                new_api_key_data["key"] = api_uuid
+                new_api_key_data["name"] = name
+                if "source" in data and ObjectId.is_valid(data["source"]):
+                    new_api_key_data["source"] = DBRef("vectors", ObjectId(data["source"]))
+                if "retriever" in data:
+                    new_api_key_data["retriever"] = data["retriever"]
+                api_key_collection.insert_one(new_api_key_data)
+                shared_conversations_collections.insert_one(
                 {
                     "uuid": explicit_binary,
                     "conversation_id": {
@@ -568,7 +572,7 @@ def share_conversation():
                     "user": user,
                     "api_key": api_uuid,
                 }
-            )
+              )
             ## Identifier as route parameter in frontend
             return (
                 jsonify({"success": True, "identifier": str(explicit_binary.as_uuid())}),
