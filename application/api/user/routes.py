@@ -426,9 +426,17 @@ def get_api_keys():
     keys = api_key_collection.find({"user": user})
     list_keys = []
     for key in keys:
-        source_name = (
-            db.dereference(key["source"])["name"] if isinstance(key["source"], DBRef) else key["source"].split("/")[0]
-        )
+        if "source" in key and isinstance(key["source"],DBRef):
+            source = db.dereference(key["source"])
+            if source is None:
+                continue
+            else:
+                source_name = source["name"]
+        elif "retriever" in key:
+            source_name = key["retriever"]
+        else:
+            continue
+            
         list_keys.append(
             {
                 "id": str(key["_id"]),
