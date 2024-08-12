@@ -30,5 +30,5 @@ sentence-transformers
 tiktoken
 torch
 tqdm==4.66.3
-transformers==4.43.4
+transformers==4.44.0
 Werkzeug==3.0.3
