@@ -3,7 +3,6 @@
 Contains parser for html files.
 
 """
-import re
 from pathlib import Path
 from typing import Dict, Union
 
