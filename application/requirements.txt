@@ -1,5 +1,6 @@
 anthropic==0.12.0
 boto3==1.34.153
+beautifulsoup4==4.12.3
 celery==5.3.6
 dataclasses_json==0.6.7
 docx2txt==0.8
@@ -30,5 +31,4 @@ tiktoken
 torch
 tqdm==4.66.3
 transformers==4.43.4
-unstructured==0.15.1
 Werkzeug==3.0.3
