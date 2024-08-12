@@ -30,5 +30,5 @@ tiktoken
 torch
 tqdm==4.66.3
 transformers==4.43.4
-unstructured==0.12.2
+unstructured==0.15.1
 Werkzeug==3.0.3
