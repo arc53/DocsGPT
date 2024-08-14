@@ -4,6 +4,7 @@ export type User = {
   avatar: string;
 };
 export type Doc = {
+  id?: string;
   location: string;
   name: string;
   language: string;

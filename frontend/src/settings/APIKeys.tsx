@@ -48,7 +48,8 @@ export default function APIKeys() {
 
   const handleCreateKey = (payload: {
     name: string;
-    source: string;
+    source?: string;
+    retriever?: string;
     prompt_id: string;
     chunks: string;
   }) => {

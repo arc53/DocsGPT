@@ -1,32 +1,6 @@
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../preferences/preferenceApi';
-import { Answer, FEEDBACK } from './conversationModels';
-
-function getDocPath(selectedDocs: Doc | null): string {
-  let docPath = 'default';
-  if (selectedDocs) {
-    let namePath = selectedDocs.name;
-    if (selectedDocs.language === namePath) {
-      namePath = '.project';
-    }
-    if (selectedDocs.location === 'local') {
-      docPath = 'local' + '/' + selectedDocs.name + '/';
-    } else if (selectedDocs.location === 'remote') {
-      docPath =
-        selectedDocs.language +
-        '/' +
-        namePath +
-        '/' +
-        selectedDocs.version +
-        '/' +
-        selectedDocs.model +
-        '/';
-    } else if (selectedDocs.location === 'custom') {
-      docPath = selectedDocs.docLink;
-    }
-  }
-  return docPath;
-}
+import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
 
 export function handleFetchAnswer(
   question: string,
@@ -54,23 +28,22 @@ export function handleFetchAnswer(
       title: any;
     }
 > {
-  const docPath = getDocPath(selectedDocs);
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
   });
+  const payload: RetrievalPayload = {
+    question: question,
+    history: JSON.stringify(history),
+    conversation_id: conversationId,
+    prompt_id: promptId,
+    chunks: chunks,
+    token_limit: token_limit,
+  };
+  if (selectedDocs && 'id' in selectedDocs)
+    payload.active_docs = selectedDocs.id as string;
+  else payload.retriever = selectedDocs?.docLink as string;
   return conversationService
-    .answer(
-      {
-        question: question,
-        history: history,
-        active_docs: docPath,
-        conversation_id: conversationId,
-        prompt_id: promptId,
-        chunks: chunks,
-        token_limit: token_limit,
-      },
-      signal,
-    )
+    .answer(payload, signal)
     .then((response) => {
       if (response.ok) {
         return response.json();
@@ -101,24 +74,24 @@ export function handleFetchAnswerSteaming(
   token_limit: number,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
-  const docPath = getDocPath(selectedDocs);
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
   });
+  const payload: RetrievalPayload = {
+    question: question,
+    history: JSON.stringify(history),
+    conversation_id: conversationId,
+    prompt_id: promptId,
+    chunks: chunks,
+    token_limit: token_limit,
+  };
+  if (selectedDocs && 'id' in selectedDocs)
+    payload.active_docs = selectedDocs.id as string;
+  else payload.retriever = selectedDocs?.docLink as string;
+
   return new Promise<Answer>((resolve, reject) => {
     conversationService
-      .answerStream(
-        {
-          question: question,
-          active_docs: docPath,
-          history: JSON.stringify(history),
-          conversation_id: conversationId,
-          prompt_id: promptId,
-          chunks: chunks,
-          token_limit: token_limit,
-        },
-        signal,
-      )
+      .answerStream(payload, signal)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -175,16 +148,21 @@ export function handleSearch(
   chunks: string,
   token_limit: number,
 ) {
-  const docPath = getDocPath(selectedDocs);
+  history = history.map((item) => {
+    return { prompt: item.prompt, response: item.response };
+  });
+  const payload: RetrievalPayload = {
+    question: question,
+    history: JSON.stringify(history),
+    conversation_id: conversation_id,
+    chunks: chunks,
+    token_limit: token_limit,
+  };
+  if (selectedDocs && 'id' in selectedDocs)
+    payload.active_docs = selectedDocs.id as string;
+  else payload.retriever = selectedDocs?.docLink as string;
   return conversationService
-    .search({
-      question: question,
-      active_docs: docPath,
-      conversation_id,
-      history,
-      chunks: chunks,
-      token_limit: token_limit,
-    })
+    .search(payload)
     .then((response) => response.json())
     .then((data) => {
       return data;
