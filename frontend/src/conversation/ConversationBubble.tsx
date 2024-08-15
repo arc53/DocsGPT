@@ -1,17 +1,20 @@
 import { forwardRef, useState } from 'react';
-import Avatar from '../components/Avatar';
-import CopyButton from '../components/CopyButton';
-import remarkGfm from 'remark-gfm';
-import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
-import classes from './ConversationBubble.module.css';
-import Alert from './../assets/alert.svg';
-import Like from './../assets/like.svg?react';
-import Dislike from './../assets/dislike.svg?react';
-
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import remarkGfm from 'remark-gfm';
+
+import Alert from '../assets/alert.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import Dislike from '../assets/dislike.svg?react';
+import Like from '../assets/like.svg?react';
+import Sources from '../assets/sources.svg';
+import Avatar from '../components/Avatar';
+import CopyButton from '../components/CopyButton';
+import Sidebar from '../components/Sidebar';
+import classes from './ConversationBubble.module.css';
+import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
 const ConversationBubble = forwardRef<
@@ -35,9 +38,10 @@ const ConversationBubble = forwardRef<
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isLikeClicked, setIsLikeClicked] = useState(false);
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
+  const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   let bubble;
-
   if (type === 'QUESTION') {
     bubble = (
       <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
@@ -55,18 +59,115 @@ const ConversationBubble = forwardRef<
         ref={ref}
         className={`flex flex-wrap self-start ${className} group flex-col  dark:text-bright-gray`}
       >
-        <div className="flex flex-wrap self-start lg:flex-nowrap">
-          <Avatar
-            className="mt-2 h-12 w-12 text-2xl"
-            avatar={
-              <img
-                src={DocsGPT3}
-                alt="DocsGPT"
-                className="h-full w-full object-cover"
+        {DisableSourceFE || type === 'ERROR' ? null : !sources ||
+          sources.length === 0 ? (
+          <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+            <div className="my-2 flex flex-row items-center justify-center gap-3">
+              <Avatar
+                className="h-[38px] w-[42px] text-xl"
+                avatar={
+                  <img
+                    src={Sources}
+                    alt="Sources"
+                    className="h-full w-full object-fill"
+                  />
+                }
               />
-            }
-          />
-
+              <p className="text-lg font-semibold">Sources</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="flex h-24 cursor-pointer flex-col items-start gap-1 rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                >
+                  <span className="h-px w-10 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
+                  <span className="h-px w-24 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
+                  <span className="h-px w-16 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
+                  <span className="h-px w-32 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
+                  <span className="h-px w-24 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+            <div className="my-2 flex flex-row items-center justify-center gap-3">
+              <Avatar
+                className="h-[38px] w-[42px] text-xl"
+                avatar={
+                  <img
+                    src={Sources}
+                    alt="Sources"
+                    className="h-full w-full object-fill"
+                  />
+                }
+              />
+              <p className="text-lg font-semibold">Sources</p>
+            </div>
+            <div className="ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                {sources?.slice(0, 3)?.map((source, index) => (
+                  <div key={index} className="relative">
+                    <div
+                      className="h-24 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
+                      onMouseOver={() => setActiveTooltip(index)}
+                      onMouseOut={() => setActiveTooltip(null)}
+                      onClick={() =>
+                        source.source && source.source !== 'local'
+                          ? window.open(
+                              source.source,
+                              '_blank',
+                              'noopener, noreferrer',
+                            )
+                          : setOpenSource(openSource === index ? null : index)
+                      }
+                    >
+                      <p className="ellipsis-text h-22 break-words text-xs">
+                        {source.title}
+                      </p>
+                    </div>
+                    {activeTooltip === index && (
+                      <div
+                        className={`absolute left-1/2 z-30 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver sm:w-56`}
+                        onMouseOver={() => setActiveTooltip(index)}
+                        onMouseOut={() => setActiveTooltip(null)}
+                      >
+                        <p className="max-h-[164px] overflow-y-auto break-words rounded-md text-sm">
+                          {source.text}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {(sources?.length ?? 0) > 3 && (
+                  <div
+                    className="flex h-24 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                    onClick={() => setIsSidebarOpen(true)}
+                  >
+                    <p className="ellipsis-text h-22 text-xs">{`View ${
+                      sources?.length ? sources.length - 3 : 0
+                    } more`}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+          <div className="my-2 flex flex-row items-center justify-center gap-3">
+            <Avatar
+              className="h-12 w-12 text-2xl"
+              avatar={
+                <img
+                  src={DocsGPT3}
+                  alt="DocsGPT"
+                  className="h-full w-full object-cover"
+                />
+              }
+            />
+            <p className="text-lg font-semibold">Answer</p>
+          </div>
           <div
             className={`ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
@@ -165,51 +266,9 @@ const ConversationBubble = forwardRef<
             >
               {message}
             </ReactMarkdown>
-            {DisableSourceFE ||
-            type === 'ERROR' ||
-            !sources ||
-            sources.length === 0 ? null : (
-              <>
-                <span className="mt-3 h-px w-full bg-[#DEDEDE]"></span>
-                <div className="mt-3 flex w-full flex-row flex-wrap items-center justify-start gap-2">
-                  <div className="py-1 text-base font-semibold">Sources:</div>
-                  <div className="flex flex-row flex-wrap items-center justify-start gap-2">
-                    {sources?.map((source, index) => (
-                      <div
-                        key={index}
-                        className={`max-w-xs cursor-pointer rounded-[28px] px-4 py-1 sm:max-w-sm md:max-w-md ${
-                          openSource === index
-                            ? 'bg-[#007DFF]'
-                            : 'bg-[#D7EBFD] hover:bg-[#BFE1FF]'
-                        }`}
-                        onClick={() =>
-                          source.source !== 'local'
-                            ? window.open(
-                                source.source,
-                                '_blank',
-                                'noopener, noreferrer',
-                              )
-                            : setOpenSource(openSource === index ? null : index)
-                        }
-                      >
-                        <p
-                          className={`truncate text-center text-base font-medium ${
-                            openSource === index
-                              ? 'text-white'
-                              : 'text-[#007DFF]'
-                          }`}
-                        >
-                          {index + 1}. {source.title.substring(0, 45)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
           </div>
         </div>
-        <div className="my-2 flex justify-start lg:ml-12">
+        <div className="my-2 ml-2 flex justify-start">
           <div
             className={`relative mr-5  block items-center justify-center lg:invisible 
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
@@ -292,24 +351,46 @@ const ConversationBubble = forwardRef<
             </>
           )}
         </div>
-
-        {sources && openSource !== null && sources[openSource] && (
-          <div className="ml-10 mt-12 max-w-[300px] break-words rounded-xl bg-blue-200 p-2 dark:bg-gun-metal sm:max-w-[800px] lg:mt-2">
-            <p className="m-1 w-3/4 truncate text-xs text-gray-500 dark:text-bright-gray">
-              Source: {sources[openSource].title}
-            </p>
-
-            <div className="m-2 rounded-xl border-2 border-gray-200 bg-white p-2 dark:border-chinese-silver dark:bg-dark-charcoal">
-              <p className="text-break text-black dark:text-bright-gray">
-                {sources[openSource].text}
-              </p>
-            </div>
-          </div>
+        {sources && (
+          <Sidebar
+            isOpen={isSidebarOpen}
+            toggleState={(state: boolean) => {
+              setIsSidebarOpen(state);
+            }}
+            children={<AllSources sources={sources} />}
+          />
         )}
       </div>
     );
   }
   return bubble;
 });
+
+type AllSourcesProps = {
+  sources: { title: string; text: string; source: string }[];
+};
+
+function AllSources(sources: AllSourcesProps) {
+  return (
+    <div className="h-full w-full">
+      <div className="w-full">
+        <p className="text-left text-xl">{`${sources.sources.length} Sources`}</p>
+        <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%] "></div>
+      </div>
+      <div className="mt-6 flex h-[90%] w-60 flex-col items-center gap-4 overflow-y-auto sm:w-80">
+        {sources.sources.map((source, index) => (
+          <div className="min-h-32 w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]">
+            <p className="ellipsis-text break-words text-left text-sm font-semibold">
+              {`${index + 1}. ${source.title}`}
+            </p>
+            <p className="mt-3 max-h-24 overflow-y-auto break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
+              {source.text}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default ConversationBubble;
