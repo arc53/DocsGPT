@@ -7,7 +7,9 @@ import remarkGfm from 'remark-gfm';
 import Alert from '../assets/alert.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
+import Document from '../assets/document.svg';
 import Like from '../assets/like.svg?react';
+import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
@@ -32,14 +34,12 @@ const ConversationBubble = forwardRef<
   { message, type, className, feedback, handleFeedback, sources, retryBtn },
   ref,
 ) {
-  const [openSource, setOpenSource] = useState<number | null>(null);
-
   const [isLikeHovered, setIsLikeHovered] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isLikeClicked, setIsLikeClicked] = useState(false);
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
   let bubble;
   if (type === 'QUESTION') {
@@ -94,7 +94,7 @@ const ConversationBubble = forwardRef<
           <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
-                className="h-[38px] w-[42px] text-xl"
+                className="h-[26px] w-[30px] text-xl"
                 avatar={
                   <img
                     src={Sources}
@@ -103,29 +103,54 @@ const ConversationBubble = forwardRef<
                   />
                 }
               />
-              <p className="text-lg font-semibold">Sources</p>
+              <p className="text-base font-semibold">Sources</p>
             </div>
             <div className="ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
               <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {sources?.slice(0, 3)?.map((source, index) => (
                   <div key={index} className="relative">
                     <div
-                      className="h-24 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
+                      className="h-28 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
                       onMouseOver={() => setActiveTooltip(index)}
                       onMouseOut={() => setActiveTooltip(null)}
-                      onClick={() =>
-                        source.source && source.source !== 'local'
-                          ? window.open(
-                              source.source,
-                              '_blank',
-                              'noopener, noreferrer',
-                            )
-                          : setOpenSource(openSource === index ? null : index)
-                      }
                     >
-                      <p className="ellipsis-text h-22 break-words text-xs">
-                        {source.title}
+                      <p className="ellipsis-text h-12 break-words text-xs">
+                        {source.text}
                       </p>
+                      <div
+                        className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
+                          source.source && source.source !== 'local'
+                            ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
+                            : ''
+                        }`}
+                        onClick={() =>
+                          source.source && source.source !== 'local'
+                            ? window.open(
+                                source.source,
+                                '_blank',
+                                'noopener, noreferrer',
+                              )
+                            : null
+                        }
+                      >
+                        <img
+                          src={Document}
+                          alt="Document"
+                          className="h-[17px] w-[17px] object-fill"
+                        />
+                        <p
+                          className="mt-[2px] truncate text-xs"
+                          title={
+                            source.source && source.source !== 'local'
+                              ? source.source
+                              : source.title
+                          }
+                        >
+                          {source.source && source.source !== 'local'
+                            ? source.source
+                            : source.title}
+                        </p>
+                      </div>
                     </div>
                     {activeTooltip === index && (
                       <div
@@ -157,7 +182,7 @@ const ConversationBubble = forwardRef<
         <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
           <div className="my-2 flex flex-row items-center justify-center gap-3">
             <Avatar
-              className="h-12 w-12 text-2xl"
+              className="h-[34px] w-[34px] text-2xl"
               avatar={
                 <img
                   src={DocsGPT3}
@@ -166,7 +191,7 @@ const ConversationBubble = forwardRef<
                 />
               }
             />
-            <p className="text-lg font-semibold">Answer</p>
+            <p className="text-base font-semibold">Answer</p>
           </div>
           <div
             className={`ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
@@ -380,9 +405,24 @@ function AllSources(sources: AllSourcesProps) {
       <div className="mt-6 flex h-[90%] w-60 flex-col items-center gap-4 overflow-y-auto sm:w-80">
         {sources.sources.map((source, index) => (
           <div className="min-h-32 w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]">
-            <p className="ellipsis-text break-words text-left text-sm font-semibold">
-              {`${index + 1}. ${source.title}`}
-            </p>
+            <span className="flex flex-row">
+              <p
+                title={source.title}
+                className="ellipsis-text break-words text-left text-sm font-semibold"
+              >
+                {`${index + 1}. ${source.title}`}
+              </p>
+              {source.source && source.source !== 'local' ? (
+                <img
+                  src={Link}
+                  alt="Link"
+                  className="h-3 w-3 cursor-pointer object-fill"
+                  onClick={() =>
+                    window.open(source.source, '_blank', 'noopener, noreferrer')
+                  }
+                ></img>
+              ) : null}
+            </span>
             <p className="mt-3 max-h-24 overflow-y-auto break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
               {source.text}
             </p>
