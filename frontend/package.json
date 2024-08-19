@@ -19,7 +19,7 @@
     ]
   },
   "dependencies": {
-    "@reduxjs/toolkit": "^1.9.2",
+    "@reduxjs/toolkit": "^2.2.7",
     "@vercel/analytics": "^0.1.10",
     "i18next": "^23.14.0",
     "i18next-browser-languagedetector": "^8.0.0",
