@@ -142,8 +142,8 @@ const Conversation = styled.div<{ size: string }>`
     @media only screen and (max-width: 768px) {
     width: 90vw !important;
     }
-    @media only screen and (min-width:768px ) and (max-width: 1023px) {
-    width:${props => props.size === 'medium' ? '400px' : '60vw'} !important;
+    @media only screen and (min-width:768px ) and (max-width: 1024px) {
+    width:${props => props.size === 'medium' ? '60vw' : '400px'} !important;
     }
     
 `;
@@ -160,7 +160,7 @@ const Message = styled.p<{ type: MESSAGE_TYPE }>`
     '#38383b'};
     color: #ffff;
     border: none;
-    max-width: 80%;
+    max-width: ${props => props.type === 'ANSWER' ? '100%' : '80'};
     overflow: auto;
     margin: 4px;
     display: block;
