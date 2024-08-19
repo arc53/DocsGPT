@@ -1,5 +1,6 @@
 import { forwardRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
@@ -14,6 +15,7 @@ import Sources from '../assets/sources.svg';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
+import { selectChunks } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 
@@ -34,6 +36,7 @@ const ConversationBubble = forwardRef<
   { message, type, className, feedback, handleFeedback, sources, retryBtn },
   ref,
 ) {
+  const chunks = useSelector(selectChunks);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isLikeClicked, setIsLikeClicked] = useState(false);
@@ -59,12 +62,17 @@ const ConversationBubble = forwardRef<
         ref={ref}
         className={`flex flex-wrap self-start ${className} group flex-col  dark:text-bright-gray`}
       >
-        {DisableSourceFE || type === 'ERROR' ? null : !sources ||
-          sources.length === 0 ? (
+        {DisableSourceFE ||
+        type === 'ERROR' ||
+        chunks === '0' ||
+        sources?.length === 0 ||
+        sources?.some(
+          (source) => source.source === 'None',
+        ) ? null : !sources ? (
           <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
-                className="h-[38px] w-[42px] text-xl"
+                className="h-[26px] w-[30px] text-xl"
                 avatar={
                   <img
                     src={Sources}
@@ -73,7 +81,7 @@ const ConversationBubble = forwardRef<
                   />
                 }
               />
-              <p className="text-lg font-semibold">Sources</p>
+              <p className="text-base font-semibold">Sources</p>
             </div>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
               {Array.from({ length: 4 }).map((_, index) => (
@@ -405,7 +413,10 @@ function AllSources(sources: AllSourcesProps) {
       </div>
       <div className="mt-6 flex h-[90%] w-60 flex-col items-center gap-4 overflow-y-auto sm:w-80">
         {sources.sources.map((source, index) => (
-          <div className="min-h-32 w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]">
+          <div
+            key={index}
+            className="min-h-32 w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]"
+          >
             <span className="flex flex-row">
               <p
                 title={source.title}

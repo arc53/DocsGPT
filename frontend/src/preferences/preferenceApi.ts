@@ -76,17 +76,17 @@ export function setLocalPrompt(prompt: string): void {
   localStorage.setItem('DocsGPTPrompt', prompt);
 }
 
-export function setLocalRecentDocs(doc: Doc): void {
+export function setLocalRecentDocs(doc: Doc | null): void {
   localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
-  let namePath = doc.name;
-  if (doc.language === namePath) {
+  let namePath = doc?.name;
+  if (doc?.language === namePath) {
     namePath = '.project';
   }
 
   let docPath = 'default';
-  if (doc.location === 'local') {
+  if (doc?.location === 'local') {
     docPath = 'local' + '/' + doc.name + '/';
-  } else if (doc.location === 'remote') {
+  } else if (doc?.location === 'remote') {
     docPath =
       doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model + '/';
   }
