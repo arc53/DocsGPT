@@ -5,7 +5,7 @@ import snarkdown from '@bpmn-io/snarkdown';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import MessageIcon from '../assets/message.svg';
-import { MESSAGE_TYPE, Query, Status } from '../types/index';
+import { MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming } from '../requests/streamingApi';
 
 const GlobalStyles = createGlobalStyle`
@@ -46,13 +46,12 @@ const WidgetContainer = styled.div`
     text-align: left;
 `;
 const StyledContainer = styled.div`
-    display: block;
+    display: flex;
     position: relative;
+    flex-direction: column;
+    justify-content: center;
     bottom: 0;
     left: 0;
-    width: 352px;
-    height: 407px;
-    max-height: 407px;
     border-radius: 0.75rem;
     background-color: #222327;
     font-family: sans-serif;
@@ -130,14 +129,23 @@ const Description = styled.p`
     color: #A1A1AA;
     margin-top: 0;
 `;
-const Conversation = styled.div`
-    height: 16rem;
+const Conversation = styled.div<{ size: string }>`
+    min-height: 300px;
+    height: ${props => props.size === 'medium' ? '70vh' : '320px'};
+    width: ${props => props.size === 'medium' ? '28vw' : '400px'};
     padding-inline: 0.5rem;
     border-radius: 0.375rem;
     text-align: left;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #4a4a4a transparent; /* thumb color track color */
+    @media only screen and (max-width: 768px) {
+    width: 90vw !important;
+    }
+    @media only screen and (min-width:768px ) and (max-width: 1023px) {
+    width:${props => props.size === 'medium' ? '400px' : '60vw'} !important;
+    }
+    
 `;
 
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
@@ -192,16 +200,13 @@ const Delay = styled(DotAnimation) <{ delay: number }>`
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
-  height: 36px;
-  position: absolute;
-  bottom: 25px;
-  left: 24px;
-  right: 24px;
+  height: 40px;
+  margin: 16px;
   display: flex;
   justify-content: space-evenly;
 `;
 const StyledInput = styled.input`
-  width: 260px;
+  width: 100%;
   height: 36px;
   border: 1px solid #686877;
   padding-left: 12px;
@@ -290,9 +295,9 @@ export const DocsGPTWidget = ({
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
   heroTitle = 'Welcome to DocsGPT !',
-  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
-}) => {
-
+  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
+  size = 'small'
+}: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([])
@@ -393,7 +398,7 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
+          <Conversation size={size} onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
                 return (
