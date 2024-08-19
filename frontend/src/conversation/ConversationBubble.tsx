@@ -15,7 +15,6 @@ import Sources from '../assets/sources.svg';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
-import { selectChunks } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 
@@ -36,7 +35,6 @@ const ConversationBubble = forwardRef<
   { message, type, className, feedback, handleFeedback, sources, retryBtn },
   ref,
 ) {
-  const chunks = useSelector(selectChunks);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isLikeClicked, setIsLikeClicked] = useState(false);
@@ -64,7 +62,6 @@ const ConversationBubble = forwardRef<
       >
         {DisableSourceFE ||
         type === 'ERROR' ||
-        chunks === '0' ||
         sources?.length === 0 ||
         sources?.some(
           (source) => source.source === 'None',
