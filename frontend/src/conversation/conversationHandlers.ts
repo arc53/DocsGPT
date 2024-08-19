@@ -116,6 +116,7 @@ export function handleFetchAnswerSteaming(
           prompt_id: promptId,
           chunks: chunks,
           token_limit: token_limit,
+          isNoneDoc: selectedDocs === null,
         },
         signal,
       )
@@ -184,6 +185,7 @@ export function handleSearch(
       history,
       chunks: chunks,
       token_limit: token_limit,
+      isNoneDoc: selectedDocs === null,
     })
     .then((response) => response.json())
     .then((data) => {
