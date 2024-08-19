@@ -15,6 +15,10 @@ import Sources from '../assets/sources.svg';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
+import {
+  selectChunks,
+  selectSelectedDocs,
+} from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 
@@ -35,6 +39,8 @@ const ConversationBubble = forwardRef<
   { message, type, className, feedback, handleFeedback, sources, retryBtn },
   ref,
 ) {
+  const chunks = useSelector(selectChunks);
+  const selectedDocs = useSelector(selectSelectedDocs);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isLikeClicked, setIsLikeClicked] = useState(false);
@@ -63,9 +69,9 @@ const ConversationBubble = forwardRef<
         {DisableSourceFE ||
         type === 'ERROR' ||
         sources?.length === 0 ||
-        sources?.some(
-          (source) => source.source === 'None',
-        ) ? null : !sources ? (
+        sources?.some((source) => source.source === 'None') ? null : !sources &&
+          chunks !== '0' &&
+          selectedDocs ? (
           <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
@@ -97,93 +103,95 @@ const ConversationBubble = forwardRef<
             </div>
           </div>
         ) : (
-          <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <Avatar
-                className="h-[26px] w-[30px] text-xl"
-                avatar={
-                  <img
-                    src={Sources}
-                    alt="Sources"
-                    className="h-full w-full object-fill"
-                  />
-                }
-              />
-              <p className="text-base font-semibold">Sources</p>
-            </div>
-            <div className="ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                {sources?.slice(0, 3)?.map((source, index) => (
-                  <div key={index} className="relative">
-                    <div
-                      className="h-28 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
-                      onMouseOver={() => setActiveTooltip(index)}
-                      onMouseOut={() => setActiveTooltip(null)}
-                    >
-                      <p className="ellipsis-text h-12 break-words text-xs">
-                        {source.text}
-                      </p>
+          sources && (
+            <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+              <div className="my-2 flex flex-row items-center justify-center gap-3">
+                <Avatar
+                  className="h-[26px] w-[30px] text-xl"
+                  avatar={
+                    <img
+                      src={Sources}
+                      alt="Sources"
+                      className="h-full w-full object-fill"
+                    />
+                  }
+                />
+                <p className="text-base font-semibold">Sources</p>
+              </div>
+              <div className="ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  {sources?.slice(0, 3)?.map((source, index) => (
+                    <div key={index} className="relative">
                       <div
-                        className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
-                          source.source && source.source !== 'local'
-                            ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
-                            : ''
-                        }`}
-                        onClick={() =>
-                          source.source && source.source !== 'local'
-                            ? window.open(
-                                source.source,
-                                '_blank',
-                                'noopener, noreferrer',
-                              )
-                            : null
-                        }
-                      >
-                        <img
-                          src={Document}
-                          alt="Document"
-                          className="h-[17px] w-[17px] object-fill"
-                        />
-                        <p
-                          className="mt-[2px] truncate text-xs"
-                          title={
-                            source.source && source.source !== 'local'
-                              ? source.source
-                              : source.title
-                          }
-                        >
-                          {source.source && source.source !== 'local'
-                            ? source.source
-                            : source.title}
-                        </p>
-                      </div>
-                    </div>
-                    {activeTooltip === index && (
-                      <div
-                        className={`absolute left-1/2 z-30 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver sm:w-56`}
+                        className="h-28 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
                         onMouseOver={() => setActiveTooltip(index)}
                         onMouseOut={() => setActiveTooltip(null)}
                       >
-                        <p className="max-h-[164px] overflow-y-auto break-words rounded-md text-sm">
+                        <p className="ellipsis-text h-12 break-words text-xs">
                           {source.text}
                         </p>
+                        <div
+                          className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
+                            source.source && source.source !== 'local'
+                              ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
+                              : ''
+                          }`}
+                          onClick={() =>
+                            source.source && source.source !== 'local'
+                              ? window.open(
+                                  source.source,
+                                  '_blank',
+                                  'noopener, noreferrer',
+                                )
+                              : null
+                          }
+                        >
+                          <img
+                            src={Document}
+                            alt="Document"
+                            className="h-[17px] w-[17px] object-fill"
+                          />
+                          <p
+                            className="mt-[2px] truncate text-xs"
+                            title={
+                              source.source && source.source !== 'local'
+                                ? source.source
+                                : source.title
+                            }
+                          >
+                            {source.source && source.source !== 'local'
+                              ? source.source
+                              : source.title}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-                {(sources?.length ?? 0) > 3 && (
-                  <div
-                    className="flex h-24 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
-                    onClick={() => setIsSidebarOpen(true)}
-                  >
-                    <p className="ellipsis-text h-22 text-xs">{`View ${
-                      sources?.length ? sources.length - 3 : 0
-                    } more`}</p>
-                  </div>
-                )}
+                      {activeTooltip === index && (
+                        <div
+                          className={`absolute left-1/2 z-30 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver sm:w-56`}
+                          onMouseOver={() => setActiveTooltip(index)}
+                          onMouseOut={() => setActiveTooltip(null)}
+                        >
+                          <p className="max-h-[164px] overflow-y-auto break-words rounded-md text-sm">
+                            {source.text}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {(sources?.length ?? 0) > 3 && (
+                    <div
+                      className="flex h-24 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                      onClick={() => setIsSidebarOpen(true)}
+                    >
+                      <p className="ellipsis-text h-22 text-xs">{`View ${
+                        sources?.length ? sources.length - 3 : 0
+                      } more`}</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )
         )}
         <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
           <div className="my-2 flex flex-row items-center justify-center gap-3">
