@@ -29,11 +29,11 @@
     "react-dom": "^18.3.1",
     "react-dropzone": "^14.2.3",
     "react-i18next": "^15.0.1",
-    "react-markdown": "^8.0.7",
+    "react-markdown": "^9.0.1",
     "react-redux": "^8.0.5",
     "react-router-dom": "^6.8.1",
     "react-syntax-highlighter": "^15.5.0",
-    "remark-gfm": "^3.0.1"
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.0.27",

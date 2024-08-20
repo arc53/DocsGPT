@@ -226,19 +226,19 @@ const ConversationBubble = forwardRef<
               className="whitespace-pre-wrap break-normal leading-normal"
               remarkPlugins={[remarkGfm]}
               components={{
-                code({ node, inline, className, children, ...props }) {
+                code(props) {
+                  const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
 
-                  return !inline && match ? (
+                  return match ? (
                     <div className="group relative">
                       <SyntaxHighlighter
+                        {...rest}
                         PreTag="div"
+                        children={String(children).replace(/\n$/, '')}
                         language={match[1]}
-                        {...props}
                         style={vscDarkPlus}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
+                      />
                       <div
                         className={`absolute right-3 top-3 lg:invisible 
                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
