@@ -95,8 +95,7 @@ prefListenerMiddleware.startListening({
   matcher: isAnyOf(setSelectedDocs),
   effect: (action, listenerApi) => {
     setLocalRecentDocs(
-      (listenerApi.getState() as RootState).preference.selectedDocs ??
-        ([] as unknown as Doc),
+      (listenerApi.getState() as RootState).preference.selectedDocs ?? null,
     );
   },
 });
