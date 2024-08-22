@@ -54,13 +54,9 @@ export default function Conversation() {
     }
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (status !== 'idle') {
-        fetchStream.current && fetchStream.current.abort(); //abort previous stream
-      }
-    };
-  }, [status]);
+  useEffect(()=>{
+    fetchStream.current && fetchStream.current.abort();
+  },[conversationId]);
 
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
