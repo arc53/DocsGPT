@@ -1,11 +1,7 @@
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed';
 export type FEEDBACK = 'LIKE' | 'DISLIKE';
-export type DIMENSION = {
-  width: string,
-  height: string
-}
-
+export type THEME = 'light' | 'dark';
 export interface Query {
   prompt: string;
   response?: string;
@@ -17,7 +13,6 @@ export interface Query {
 }
 export interface WidgetProps {
   apiHost?: string;
-  selectDocs?: string;
   apiKey?: string;
   avatar?: string;
   title?: string;
@@ -25,4 +20,7 @@ export interface WidgetProps {
   heroTitle?: string;
   heroDescription?: string;
   size?: 'small' | 'medium';
+  theme?:THEME,
+  buttonIcon?:string;
+  buttonBg?:string;
 }
