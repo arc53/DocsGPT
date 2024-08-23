@@ -4,10 +4,35 @@ import DOMPurify from 'dompurify';
 import snarkdown from '@bpmn-io/snarkdown';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
-import MessageIcon from '../assets/message.svg';
 import { MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming } from '../requests/streamingApi';
-
+import { ThemeProvider } from 'styled-components';
+const themes = {
+  dark: {
+    bg: '#222327',
+    text: '#fff',
+    primary: {
+      text: "#FAFAFA",
+      bg: '#222327'
+    },
+    secondary: {
+      text: "#A1A1AA",
+      bg: "#38383b"
+    }
+  },
+  light: {
+    bg: '#fff',
+    text: '#000',
+    primary: {
+      text: "#222327",
+      bg: "#fff"
+    },
+    secondary: {
+      text: "#A1A1AA",
+      bg: "#F6F6F6"
+    }
+  }
+}
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -53,12 +78,12 @@ const StyledContainer = styled.div`
     bottom: 0;
     left: 0;
     border-radius: 0.75rem;
-    background-color: #222327;
+    background-color: ${props => props.theme.primary.bg};
     font-family: sans-serif;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
-const FloatingButton = styled.div`
+const FloatingButton = styled.div<{bg:string}>`
     position: fixed;
     display: flex;
     z-index: 500;
@@ -69,7 +94,7 @@ const FloatingButton = styled.div`
     width: 5rem;
     height: 5rem;
     border-radius: 9999px;
-    background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
+    background: ${props => props.bg};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     &:hover {
@@ -119,14 +144,14 @@ const ContentWrapper = styled.div`
 const Title = styled.h3`
     font-size: 1rem;
     font-weight: normal;
-    color: #FAFAFA;
+    color: ${props => props.theme.primary.text};
     margin-top: 0;
     margin-bottom: 0.25rem;
 `;
 
 const Description = styled.p`
     font-size: 0.85rem;
-    color: #A1A1AA;
+    color: ${props => props.theme.secondary.text};
     margin-top: 0;
 `;
 const Conversation = styled.div<{ size: string }>`
@@ -154,11 +179,11 @@ const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     justify-content: ${props => props.type === 'QUESTION' ? 'flex-end' : 'flex-start'};
     margin: 0.5rem;
 `;
-const Message = styled.p<{ type: MESSAGE_TYPE }>`
+const Message = styled.div<{ type: MESSAGE_TYPE }>`
     background: ${props => props.type === 'QUESTION' ?
     'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
-    '#38383b'};
-    color: #ffff;
+    props.theme.secondary.bg};
+    color: ${props => props.type === 'ANSWER' ? props.theme.primary.text : '#fff'};
     border: none;
     max-width: ${props => props.type === 'ANSWER' ? '100%' : '80'};
     overflow: auto;
@@ -213,7 +238,7 @@ const StyledInput = styled.input`
   background-color: transparent;
   font-size: 16px;
   border-radius: 6px;
-  color: #ffff;
+  color: ${props => props.theme.text};
   outline: none;
 `;
 const StyledButton = styled.button`
@@ -250,7 +275,7 @@ const HeroContainer = styled.div`
   padding: 2px;
 `;
 const HeroWrapper = styled.div`
-  background-color: #222327;
+  background-color: ${props => props.theme.primary.bg};
   border-radius: 10px; 
   font-weight: normal;
   padding: 6px;
@@ -258,23 +283,22 @@ const HeroWrapper = styled.div`
   justify-content: space-between;
 `
 const HeroTitle = styled.h3`
-  color: #fff;
-  font-size: 17px;
+  color: ${props => props.theme.text};
   margin-bottom: 5px;
   padding: 2px;
 `;
 const HeroDescription = styled.p`
-  color: #fff;
+  color: ${props => props.theme.text};
   font-size: 14px;
   line-height: 1.5;
 `;
-const Hero = ({ title, description }: { title: string, description: string }) => {
+const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
   return (
     <>
       <HeroContainer>
         <HeroWrapper>
-          <IconWrapper style={{ marginTop: '8px' }}>
-            <RocketIcon color='white' width={20} height={20} />
+          <IconWrapper style={{ marginTop: '12px' }}>
+            <RocketIcon color={theme === 'light' ? 'black' : 'white'} width={20} height={20} />
           </IconWrapper>
           <div>
             <HeroTitle>{title}</HeroTitle>
@@ -289,14 +313,16 @@ const Hero = ({ title, description }: { title: string, description: string }) =>
 };
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
-  selectDocs = 'default',
   apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
   heroTitle = 'Welcome to DocsGPT !',
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
-  size = 'small'
+  size = 'small',
+  theme = 'light',
+  buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
+  buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)'
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
@@ -334,7 +360,6 @@ export const DocsGPTWidget = ({
           question: question,
           apiKey: apiKey,
           apiHost: apiHost,
-          selectedDocs: selectDocs,
           history: queries,
           conversationId: conversationId,
           onEvent: (event: MessageEvent) => {
@@ -377,16 +402,17 @@ export const DocsGPTWidget = ({
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
   return (
-    <>
+    <ThemeProvider theme={themes[theme]}>
       <WidgetContainer>
         <GlobalStyles />
-        {!open && <FloatingButton onClick={() => setOpen(true)} hidden={open}>
-          <MessageIcon style={{ marginTop: '8px' }} />
-        </FloatingButton>}
+        {!open &&
+          <FloatingButton bg={buttonBg} onClick={() => setOpen(true)} hidden={open}>
+            <img style={{maxHeight:'4rem',maxWidth:'4rem'}} src={buttonIcon} />
+          </FloatingButton>}
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
-              <Cross2Icon width={24} height={24} color='white' />
+              <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
             </CancelButton>
             <Header>
               <IconWrapper>
@@ -444,7 +470,7 @@ export const DocsGPTWidget = ({
                     }
                   </React.Fragment>)
               })
-                : <Hero title={heroTitle} description={heroDescription} />
+                : <Hero title={heroTitle} description={heroDescription} theme={theme} />
             }
           </Conversation>
 
@@ -460,6 +486,6 @@ export const DocsGPTWidget = ({
           </PromptContainer>
         </StyledContainer>}
       </WidgetContainer>
-    </>
+    </ThemeProvider>
   )
 }
