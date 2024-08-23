@@ -25,7 +25,7 @@ export function fetchAnswerStreaming({
       history: JSON.stringify(history),
       conversation_id: conversationId,
       model: 'default',
-      apiKey:apiKey
+      api_key:apiKey
     };
     fetch(apiHost + '/stream', {
       method: 'POST',
