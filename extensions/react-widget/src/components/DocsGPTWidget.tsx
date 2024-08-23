@@ -83,7 +83,7 @@ const StyledContainer = styled.div`
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
-const FloatingButton = styled.div<{bg:string}>`
+const FloatingButton = styled.div<{ bg: string }>`
     position: fixed;
     display: flex;
     z-index: 500;
@@ -366,12 +366,18 @@ export const DocsGPTWidget = ({
             const data = JSON.parse(event.data);
             // check if the 'end' event has been received
             if (data.type === 'end') {
-              // set status to 'idle'
               setStatus('idle');
-
-            } else if (data.type === 'id') {
+            }
+            else if (data.type === 'id') {
               setConversationId(data.id)
-            } else {
+            }
+            else if (data.type === 'error') {
+              const updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].error = data.error;
+              setQueries(updatedQueries);
+              setStatus('idle')
+            }
+            else {
               const result = data.answer;
               const streamingResponse = queries[queries.length - 1].response ? queries[queries.length - 1].response : '';
               const updatedQueries = [...queries];
@@ -383,7 +389,7 @@ export const DocsGPTWidget = ({
       );
     } catch (error) {
       const updatedQueries = [...queries];
-      updatedQueries[updatedQueries.length - 1].error = 'error'
+      updatedQueries[updatedQueries.length - 1].error = 'Something went wrong !'
       setQueries(updatedQueries);
       setStatus('idle')
       //setEventInterrupt(false)
@@ -407,7 +413,7 @@ export const DocsGPTWidget = ({
         <GlobalStyles />
         {!open &&
           <FloatingButton bg={buttonBg} onClick={() => setOpen(true)} hidden={open}>
-            <img style={{maxHeight:'4rem',maxWidth:'4rem'}} src={buttonIcon} />
+            <img style={{ maxHeight: '4rem', maxWidth: '4rem' }} src={buttonIcon} />
           </FloatingButton>}
         {open && <StyledContainer>
           <div>
@@ -455,7 +461,7 @@ export const DocsGPTWidget = ({
                               </IconWrapper>
                               <div>
                                 <h5 style={{ margin: 2 }}>Network Error</h5>
-                                <span style={{ margin: 2, fontSize: '13px' }}>Something went wrong !</span>
+                                <span style={{ margin: 2, fontSize: '13px' }}>{query.error}</span>
                               </div>
                             </ErrorAlert>
                               : <MessageBubble type='ANSWER'>
