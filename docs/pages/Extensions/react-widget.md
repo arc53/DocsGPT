@@ -39,8 +39,8 @@ DocsGPTWidget takes 8 **props** with default fallback values:
 7. `heroTitle`: Displays a welcome title when users interact with the chatbot.
 8. `heroDescription`: Provide additional introductory text or information about the chatbot's capabilities.
 9. `buttonIcon`: Specifies the url of the icon image for the widget.
-10 `buttonBg`: Allows to specify the Background color of the widget.
-11.`size`: Sets the size of the widget ( small, medium).
+10. `buttonBg`: Allows to specify the Background color of the widget.
+11. `size`: Sets the size of the widget ( small, medium).
 
 
 ### How to use DocsGPTWidget with [Nextra](https://nextra.site/) (Next.js + MDX)
