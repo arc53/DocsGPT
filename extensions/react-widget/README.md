@@ -27,15 +27,18 @@ To link the widget to your api and your documents you can pass parameters to the
 
     const App = () => {
       return <DocsGPTWidget
-             apiHost = 'http://localhost:7001',
-             selectDocs = 'default',
-             apiKey = '',
-             avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
-             title = 'Get AI assistance',
-             description = 'DocsGPT\'s AI Chatbot is here to help',
-             heroTitle = 'Welcome to DocsGPT !',
-             heroDescription='This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
-             />;
+               apiHost="https://your-docsgpt-api.com"
+               apiKey=""
+               avatar = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
+               title = "Get AI assistance"
+               description = "DocsGPT's AI Chatbot is here to help"
+               heroTitle = "Welcome to DocsGPT !"
+               heroDescription="This chatbot is built with DocsGPT and utilises GenAI, 
+               please review important information using sources."
+               theme = "dark"
+               buttonIcon = "https://your-icon"
+               buttonBg = "#222327"
+          />;
     };
 ```
 
@@ -80,15 +83,17 @@ To link the widget to your api and your documents you can pass parameters to the
         <script src="https://unpkg.com/docsgpt/dist/modern/main.js" type="module"></script>
         <script type="module">
           window.onload = function() {
-            renderDocsGPTWidget('app', , {
+            renderDocsGPTWidget('app', {
               apiHost: 'http://localhost:7001',
-              selectDocs: 'default',
-              apiKey: '',
+              apiKey:"",
               avatar: 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
               title: 'Get AI assistance',
               description: "DocsGPT's AI Chatbot is here to help",
-              heroTitle: 'Welcome to DocsGPT !',
-              heroDescription: 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
+              heroTitle: 'Welcome to DocsGPT!',
+              heroDescription: 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
+              theme:"dark",
+              buttonIcon:"https://your-icon.svg",
+              buttonBg:"#222327"
             });
           }
         </script>

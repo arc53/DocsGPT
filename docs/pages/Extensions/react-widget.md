@@ -18,10 +18,10 @@ Now, you can use the widget in your component like this :
 <DocsGPTWidget
   apiHost="https://your-docsgpt-api.com"
   apiKey=""
-  avatar = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png",
-  title = "Get AI assistance",
-  description = "DocsGPT's AI Chatbot is here to help",
-  heroTitle = "Welcome to DocsGPT !",
+  avatar = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
+  title = "Get AI assistance"
+  description = "DocsGPT's AI Chatbot is here to help"
+  heroTitle = "Welcome to DocsGPT !"
   heroDescription="This chatbot is built with DocsGPT and utilises GenAI, 
   please review important information using sources."
   theme = "dark"
@@ -29,7 +29,7 @@ Now, you can use the widget in your component like this :
   buttonBg = "#222327"
 />
 ```
-DocsGPTWidget takes 8 **props** with default fallback values:
+To tailor the widget to your needs, you can configure the following props in your component:
 1. `apiHost` — The URL of your DocsGPT API.
 2. `theme` — Allows to select your specific theme (dark or light).
 3. `apiKey` — Usually, it's empty.
@@ -111,7 +111,7 @@ To link the widget to your api and your documents you can pass parameters to the
         description: "DocsGPT's AI Chatbot is here to help",
         heroTitle: 'Welcome to DocsGPT!',
         heroDescription: 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
-        theme:"dark"
+        theme:"dark",
         buttonIcon:"https://your-icon",
         buttonBg:"#222327"
       });
