@@ -17,7 +17,7 @@ javalang==0.13.0
 langchain==0.1.4
 langchain-openai==0.0.5
 openapi3_parser==1.1.16
-pandas==2.2.0
+pandas==2.2.2
 pydantic_settings==2.4.0
 pymongo==4.8.0
 PyPDF2==3.0.1
