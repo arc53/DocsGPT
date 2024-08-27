@@ -19,7 +19,7 @@ export interface WidgetProps {
   description?: string;
   heroTitle?: string;
   heroDescription?: string;
-  size?: 'small' | 'medium';
+  size?: 'small' | 'medium' | 'large';
   theme?:THEME,
   buttonIcon?:string;
   buttonBg?:string;

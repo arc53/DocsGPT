@@ -59,16 +59,33 @@ const GlobalStyles = createGlobalStyle`
   background-color: #646464;
 }
 `;
-const WidgetContainer = styled.div`
+const Overlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  transition: opacity 0.5s;
+`
+const WidgetContainer = styled.div<{ modal: boolean }>`
     display: block;
     position: fixed;
-    right: 10px;
-    bottom: 10px;
+    right: ${props => props.modal ? '50%' : '10px'};
+    bottom: ${props => props.modal ? '50%' : '10px'};
     z-index: 1000;
     display: flex;
+    ${props => props.modal &&
+    "transform : translate(50%,50%);"
+  }
     flex-direction: column;
     align-items: center;
     text-align: left;
+    @media only screen and (max-width: 768px) {
+    max-height: 100vh !important;
+    overflow: auto;
+    }
 `;
 const StyledContainer = styled.div`
     display: flex;
@@ -83,7 +100,7 @@ const StyledContainer = styled.div`
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
-const FloatingButton = styled.div<{ bg: string }>`
+const FloatingButton = styled.div<{ bgColor: string }>`
     position: fixed;
     display: flex;
     z-index: 500;
@@ -94,7 +111,7 @@ const FloatingButton = styled.div<{ bg: string }>`
     width: 5rem;
     height: 5rem;
     border-radius: 9999px;
-    background: ${props => props.bg};
+    background: ${props => props.bgColor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     &:hover {
@@ -154,10 +171,12 @@ const Description = styled.p`
     color: ${props => props.theme.secondary.text};
     margin-top: 0;
 `;
+
 const Conversation = styled.div<{ size: string }>`
-    min-height: 300px;
-    height: ${props => props.size === 'medium' ? '70vh' : '320px'};
-    width: ${props => props.size === 'medium' ? '28vw' : '400px'};
+    min-height: 250px;
+    max-width: 968px;
+    height: ${props => props.size === 'large' ? '75vh' : props.size === 'medium' ? '70vh' : '320px'};
+    width: ${props => props.size === 'large' ? '60vw' : props.size === 'medium' ? '28vw' : '400px'};
     padding-inline: 0.5rem;
     border-radius: 0.375rem;
     text-align: left;
@@ -167,10 +186,9 @@ const Conversation = styled.div<{ size: string }>`
     @media only screen and (max-width: 768px) {
     width: 90vw !important;
     }
-    @media only screen and (min-width:768px ) and (max-width: 1024px) {
-    width:${props => props.size === 'medium' ? '60vw' : '400px'} !important;
+    @media only screen and (min-width:768px ) and (max-width: 1280px) {
+    width:${props => props.size === 'large' ? '90vw' : props.size === 'medium' ? '60vw' : '400px'} !important;
     }
-    
 `;
 
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
@@ -223,16 +241,15 @@ const DotAnimation = styled.div`
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
-const PromptContainer = styled.form`
+const PromptContainer = styled.form<{ size: string }>`
   background-color: transparent;
-  height: 40px;
+  height: ${props => props.size == 'large' ? '60px' : '40px'};
   margin: 16px;
   display: flex;
   justify-content: space-evenly;
 `;
 const StyledInput = styled.input`
   width: 100%;
-  height: 36px;
   border: 1px solid #686877;
   padding-left: 12px;
   background-color: transparent;
@@ -241,14 +258,14 @@ const StyledInput = styled.input`
   color: ${props => props.theme.text};
   outline: none;
 `;
-const StyledButton = styled.button`
+const StyledButton = styled.button<{ size: string }>`
   display: flex;
   justify-content: center;
   align-items: center;
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   border-radius: 6px;
-  width: 36px;
-  height: 36px;
+  min-width: ${props => props.size === 'large' ? '60px' : '36px'};
+  height: ${props => props.size === 'large' ? '60px' : '36px'};
   margin-left:8px;
   padding: 0px;
   border: none;
@@ -269,6 +286,7 @@ const HeroContainer = styled.div`
   align-items: middle;
   transform: translate(-50%, -50%);
   width: 80%;
+  max-width: 500px;
   background-image: linear-gradient(to bottom right, #5AF0EC, #ff1bf4);
   border-radius: 10px;
   margin: 0 auto;
@@ -347,7 +365,6 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
-
   React.useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
@@ -409,12 +426,16 @@ export const DocsGPTWidget = ({
   };
   return (
     <ThemeProvider theme={themes[theme]}>
-      <WidgetContainer>
+      {open && size === 'large' &&
+        <Overlay onClick={() => {
+          setOpen(false)
+        }} />
+      }
+      <FloatingButton bgColor={buttonBg} onClick={() => setOpen(!open)} hidden={open}>
+        <img style={{ maxHeight: '4rem', maxWidth: '4rem' }} src={buttonIcon} />
+      </FloatingButton>
+      <WidgetContainer modal={size === 'large'}>
         <GlobalStyles />
-        {!open &&
-          <FloatingButton bg={buttonBg} onClick={() => setOpen(true)} hidden={open}>
-            <img style={{ maxHeight: '4rem', maxWidth: '4rem' }} src={buttonIcon} />
-          </FloatingButton>}
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
@@ -479,13 +500,14 @@ export const DocsGPTWidget = ({
                 : <Hero title={heroTitle} description={heroDescription} theme={theme} />
             }
           </Conversation>
-
           <PromptContainer
+            size={size}
             onSubmit={handleSubmit}>
             <StyledInput
               value={prompt} onChange={(event) => setPrompt(event.target.value)}
               type='text' placeholder="What do you want to do?" />
             <StyledButton
+              size={size}
               disabled={prompt.length == 0 || status !== 'idle'}>
               <PaperPlaneIcon width={15} height={15} color='white' />
             </StyledButton>
