@@ -100,7 +100,7 @@ const StyledContainer = styled.div`
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
-const FloatingButton = styled.div<{ bgColor: string }>`
+const FloatingButton = styled.div<{ bgcolor: string }>`
     position: fixed;
     display: flex;
     z-index: 500;
@@ -111,7 +111,7 @@ const FloatingButton = styled.div<{ bgColor: string }>`
     width: 5rem;
     height: 5rem;
     border-radius: 9999px;
-    background: ${props => props.bgColor};
+    background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     &:hover {
@@ -431,10 +431,10 @@ export const DocsGPTWidget = ({
           setOpen(false)
         }} />
       }
-      <FloatingButton bgColor={buttonBg} onClick={() => setOpen(!open)} hidden={open}>
+      <FloatingButton bgcolor={buttonBg} onClick={() => setOpen(!open)} hidden={open}>
         <img style={{ maxHeight: '4rem', maxWidth: '4rem' }} src={buttonIcon} />
       </FloatingButton>
-      <WidgetContainer modal={size === 'large'}>
+      <WidgetContainer modal={size == 'large'}>
         <GlobalStyles />
         {open && <StyledContainer>
           <div>
