@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sys
-from flask import Blueprint, request, Response
+from flask import Blueprint, request, Response, current_app
 import json
 import datetime
 import logging
@@ -267,6 +267,10 @@ def stream():
         else:
             retriever_name = source["active_docs"]
 
+        current_app.logger.info(f"/stream - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})}
+        )
+
         prompt = get_prompt(prompt_id)
 
         retriever = RetrieverCreator.create_retriever(
@@ -301,7 +305,9 @@ def stream():
             mimetype="text/event-stream",
         )
     except Exception as e:
-        print("\033[91merr", str(e), file=sys.stderr)
+        current_app.logger.error(f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
+          extra={"error": str(e), "traceback": traceback.format_exc()}
+        )
         message = e.args[0]
         status_code = 400
         # # Custom exceptions with two arguments, index 1 as status code
@@ -345,7 +351,6 @@ def api_answer():
     else:
         token_limit = settings.DEFAULT_MAX_HISTORY
 
-    # use try and except  to check for exception
     try:
         # check if the vectorstore is set
         if "api_key" in data:
@@ -364,6 +369,10 @@ def api_answer():
             retriever_name = source["active_docs"]
 
         prompt = get_prompt(prompt_id)
+
+        current_app.logger.info(f"/api/answer - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})}
+        )
 
         retriever = RetrieverCreator.create_retriever(
             retriever_name,
@@ -399,9 +408,9 @@ def api_answer():
 
         return result
     except Exception as e:
-        # print whole traceback
-        traceback.print_exc()
-        print(str(e))
+        current_app.logger.error(f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
+          extra={"error": str(e), "traceback": traceback.format_exc()}
+        )
         return bad_request(500, str(e))
 
 
@@ -433,6 +442,10 @@ def api_search():
         token_limit = data["token_limit"]
     else:
         token_limit = settings.DEFAULT_MAX_HISTORY
+        
+    current_app.logger.info(f"/api/answer - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})}
+    )
 
     retriever = RetrieverCreator.create_retriever(
         retriever_name,
