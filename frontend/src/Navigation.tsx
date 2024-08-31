@@ -174,16 +174,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         console.error(err);
       });
   }
-  useOutsideAlerter(
-    navRef,
-    () => {
-      if (isMobile && navOpen && apiKeyModalState === 'INACTIVE') {
-        setNavOpen(false);
-        setIsDocsListOpen(false);
-      }
-    },
-    [navOpen, isDocsListOpen, apiKeyModalState],
-  );
+  useOutsideAlerter(navRef, () => {
+    if (isMobile && navOpen && apiKeyModalState === 'INACTIVE') {
+      setNavOpen(false);
+      setIsDocsListOpen(false);
+    }
+  }, [navOpen, isDocsListOpen, apiKeyModalState]);
 
   /*
     Needed to fix bug where if mobile nav was closed and then window was resized to desktop, nav would still be closed but the button to open would be gone, as per #1 on issue #146

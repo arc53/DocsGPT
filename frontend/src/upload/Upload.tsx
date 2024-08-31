@@ -259,6 +259,7 @@ function Upload({
       'application/zip': ['.zip'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
+      'text/csv': ['.csv'],
     },
   });
 

@@ -54,9 +54,9 @@ export default function Conversation() {
     }
   }, []);
 
-  useEffect(()=>{
+  useEffect(() => {
     fetchStream.current && fetchStream.current.abort();
-  },[conversationId]);
+  }, [conversationId]);
 
   useEffect(() => {
     const observerCallback: IntersectionObserverCallback = (entries) => {
