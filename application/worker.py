@@ -4,6 +4,7 @@ import string
 import zipfile
 import tiktoken
 from urllib.parse import urljoin
+import logging
 
 import requests
 
@@ -13,6 +14,7 @@ from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
+
 
 # Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):
@@ -41,7 +43,7 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
         max_depth (int): Maximum allowed depth of recursion to prevent infinite loops.
     """
     if current_depth > max_depth:
-        print(f"Reached maximum recursion depth of {max_depth}")
+        logging.warning(f"Reached maximum recursion depth of {max_depth}")
         return
 
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
@@ -88,16 +90,13 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     max_tokens = 1250
     recursion_depth = 2
     full_path = os.path.join(directory, user, name_job)
-    import sys
 
-    print(full_path, file=sys.stderr)
+    logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": name_job})
     # check if API_URL env variable is set
     file_data = {"name": name_job, "file": filename, "user": user}
     response = requests.get(
         urljoin(settings.API_URL, "/api/download"), params=file_data
     )
-    # check if file is in the response
-    print(response, file=sys.stderr)
     file = response.content
 
     if not os.path.exists(full_path):
@@ -137,7 +136,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     if sample:
         for i in range(min(5, len(raw_docs))):
-            print(raw_docs[i].text)
+            logging.info(f"Sample document {i}: {raw_docs[i]}")
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
@@ -180,6 +179,7 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     if not os.path.exists(full_path):
         os.makedirs(full_path)
     self.update_state(state="PROGRESS", meta={"current": 1})
+    logging.info(f"Remote job: {full_path}", extra={"user": user, "job": name_job, source_data: source_data})
 
     remote_loader = RemoteCreator.create_loader(loader)
     raw_docs = remote_loader.load_data(source_data)
