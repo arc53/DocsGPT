@@ -2,7 +2,6 @@ import os
 import shutil
 import string
 import zipfile
-import tiktoken
 from urllib.parse import urljoin
 import logging
 
@@ -14,6 +13,7 @@ from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
+from application.utils import count_tokens_docs
 
 
 # Define a function to extract metadata from a given filename.
@@ -213,25 +213,3 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
     shutil.rmtree(full_path)
 
     return {"urls": source_data, "name_job": name_job, "user": user, "limited": False}
-
-
-def count_tokens_docs(docs):
-    # Here we convert the docs list to a string and calculate the number of tokens the string represents.
-    # docs_content = (" ".join(docs))
-    docs_content = ""
-    for doc in docs:
-        docs_content += doc.page_content
-
-    tokens, total_price = num_tokens_from_string(
-        string=docs_content, encoding_name="cl100k_base"
-    )
-    # Here we print the number of tokens and the approx user cost with some visually appealing formatting.
-    return tokens
-
-
-def num_tokens_from_string(string: str, encoding_name: str) -> int:
-    # Function to convert string to tokens and estimate user cost.
-    encoding = tiktoken.get_encoding(encoding_name)
-    num_tokens = len(encoding.encode(string))
-    total_price = (num_tokens / 1000) * 0.0004
-    return num_tokens, total_price
