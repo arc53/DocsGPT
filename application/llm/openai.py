@@ -2,24 +2,22 @@ from application.llm.base import BaseLLM
 from application.core.settings import settings
 
 
+
 class OpenAILLM(BaseLLM):
 
     def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
-        global openai
         from openai import OpenAI
 
         super().__init__(*args, **kwargs)
-        self.client = OpenAI(
-            api_key=api_key,
-        )
+        if settings.OPENAI_BASE_URL:
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=settings.OPENAI_BASE_URL
+            )
+        else:
+            self.client = OpenAI(api_key=api_key)
         self.api_key = api_key
         self.user_api_key = user_api_key
-
-    def _get_openai(self):
-        # Import openai when needed
-        import openai
-
-        return openai
 
     def _raw_gen(
         self,
@@ -29,7 +27,7 @@ class OpenAILLM(BaseLLM):
         stream=False,
         engine=settings.AZURE_DEPLOYMENT_NAME,
         **kwargs
-    ):
+    ):  
         response = self.client.chat.completions.create(
             model=model, messages=messages, stream=stream, **kwargs
         )
@@ -44,7 +42,7 @@ class OpenAILLM(BaseLLM):
         stream=True,
         engine=settings.AZURE_DEPLOYMENT_NAME,
         **kwargs
-    ):
+    ):  
         response = self.client.chat.completions.create(
             model=model, messages=messages, stream=stream, **kwargs
         )
@@ -73,8 +71,3 @@ class AzureOpenAILLM(OpenAILLM):
             api_base=settings.OPENAI_API_BASE,
             deployment_name=settings.AZURE_DEPLOYMENT_NAME,
         )
-
-    def _get_openai(self):
-        openai = super()._get_openai()
-
-        return openai
