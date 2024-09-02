@@ -1,12 +1,12 @@
 "use client";
 import React from 'react'
 import DOMPurify from 'dompurify';
-import snarkdown from '@bpmn-io/snarkdown';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming } from '../requests/streamingApi';
 import { ThemeProvider } from 'styled-components';
+import MarkdownIt from 'markdown-it';
 const themes = {
   dark: {
     bg: '#222327',
@@ -41,6 +41,7 @@ const GlobalStyles = createGlobalStyle`
     border-radius: 6px;
     overflow-x: auto;
     background-color: #1B1C1F;
+    color: #fff !important;
 }
 .response h1{
   font-size: 20px;
@@ -51,12 +52,16 @@ const GlobalStyles = createGlobalStyle`
 .response h3{
   font-size: 16px;
 }
+.response p{
+  margin:0px;
+}
 .response code:not(pre code){
   border-radius: 6px;
   padding: 1px 3px 1px 3px;
   font-size: 12px;
   display: inline-block;
   background-color: #646464;
+  color: #fff !important;
 }
 `;
 const Overlay = styled.div`
@@ -338,7 +343,7 @@ export const DocsGPTWidget = ({
   heroTitle = 'Welcome to DocsGPT !',
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
   size = 'small',
-  theme = 'light',
+  theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)'
 }: WidgetProps) => {
@@ -349,6 +354,8 @@ export const DocsGPTWidget = ({
   const [open, setOpen] = React.useState<boolean>(false)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const md = new MarkdownIt();
+
   const handleUserInterrupt = () => {
     (status === 'loading') && setEventInterrupt(true);
   }
@@ -471,7 +478,10 @@ export const DocsGPTWidget = ({
                           type='ANSWER'
                           ref={(index === queries.length - 1) ? endMessageRef : null}
                         >
-                          <div className="response" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(snarkdown(query.response)) }} />
+                          <div
+                            className="response"
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
+                          />
                         </Message>
                       </MessageBubble>
                         : <div>
