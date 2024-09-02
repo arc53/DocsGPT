@@ -41,7 +41,7 @@ const GlobalStyles = createGlobalStyle`
     border-radius: 6px;
     overflow-x: auto;
     background-color: #1B1C1F;
-    color: #fff;
+    color: #fff !important;
 }
 .response h1{
   font-size: 20px;
@@ -61,7 +61,7 @@ const GlobalStyles = createGlobalStyle`
   font-size: 12px;
   display: inline-block;
   background-color: #646464;
-  color: #fff;
+  color: #fff !important;
 }
 `;
 const Overlay = styled.div`
