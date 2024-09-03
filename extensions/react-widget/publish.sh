@@ -2,6 +2,7 @@
 ## chmod +x publish.sh - to upgrade ownership
 set -e
 cat package.json >> package_copy.json
+cat package-lock.json >> package-lock_copy.json
 publish_package() {
   PACKAGE_NAME=$1
   BUILD_COMMAND=$2
@@ -24,6 +25,9 @@ publish_package() {
 
   # Publish to npm
   npm publish
+  # Clean up
+  mv package_copy.json package.json
+  mv package-lock_copy.json package-lock.json
   echo "Published ${PACKAGE_NAME}"
 }
 
@@ -33,7 +37,7 @@ publish_package "docsgpt" "build"
 # Publish docsgpt-react package
 publish_package "docsgpt-react" "build:react"
 
-# Clean up
-mv package_copy.json package.json
+
 rm -rf package_copy.json
+rm -rf package-lock_copy.json
 echo "---Process completed---"
