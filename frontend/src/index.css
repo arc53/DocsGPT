@@ -424,6 +424,26 @@ template {
   width: 0;
 }
 
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 50px white inset;
+}
+
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 50px white inset;
+}
+
+@media (prefers-color-scheme: dark) {
+  input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
+    -webkit-text-fill-color: white;
+  }
+
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
+    -webkit-text-fill-color: white;
+  }
+}
+
 .inputbox-style {
   resize: none;
   padding-left: 36px;

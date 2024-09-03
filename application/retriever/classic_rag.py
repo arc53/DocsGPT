@@ -61,13 +61,12 @@ class ClassicRAG(BaseRetriever):
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
             docs_temp = docsearch.search(self.question, k=self.chunks)
+            print(docs_temp)
             docs = [
                 {
-                    "title": (
-                        i.metadata["title"].split("/")[-1]
-                        if i.metadata
-                        else i.page_content
-                    ),
+                    "title": i.metadata.get(
+                        "title", i.metadata.get("post_title", i.page_content)
+                    ).split("/")[-1],
                     "text": i.page_content,
                     "source": (
                         i.metadata.get("source")
