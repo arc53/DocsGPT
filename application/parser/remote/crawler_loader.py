@@ -5,7 +5,7 @@ from application.parser.remote.base import BaseRemote
 
 class CrawlerLoader(BaseRemote):
     def __init__(self, limit=10):
-        from langchain.document_loaders import WebBaseLoader
+        from langchain_community.document_loaders import WebBaseLoader
         self.loader = WebBaseLoader  # Initialize the document loader
         self.limit = limit  # Set the limit for the number of pages to scrape
 

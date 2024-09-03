@@ -5,7 +5,7 @@ from application.parser.remote.base import BaseRemote
 
 class SitemapLoader(BaseRemote):
     def __init__(self, limit=20):
-        from langchain.document_loaders import WebBaseLoader
+        from langchain_community.document_loaders import WebBaseLoader
         self.loader = WebBaseLoader
         self.limit = limit  # Adding limit to control the number of URLs to process
 

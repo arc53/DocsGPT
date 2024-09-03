@@ -235,10 +235,11 @@ const ConversationBubble = forwardRef<
                       <SyntaxHighlighter
                         {...rest}
                         PreTag="div"
-                        children={String(children).replace(/\n$/, '')}
                         language={match[1]}
                         style={vscDarkPlus}
-                      />
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
                       <div
                         className={`absolute right-3 top-3 lg:invisible 
                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
@@ -396,8 +397,9 @@ const ConversationBubble = forwardRef<
             toggleState={(state: boolean) => {
               setIsSidebarOpen(state);
             }}
-            children={<AllSources sources={sources} />}
-          />
+          >
+            <AllSources sources={sources} />
+          </Sidebar>
         )}
       </div>
     );

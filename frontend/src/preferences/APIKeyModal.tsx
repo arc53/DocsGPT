@@ -22,15 +22,11 @@ export default function APIKeyModal({
   const modalRef = useRef(null);
   const { isMobile } = useMediaQuery();
 
-  useOutsideAlerter(
-    modalRef,
-    () => {
-      if (isMobile && modalState === 'ACTIVE') {
-        setModalState('INACTIVE');
-      }
-    },
-    [modalState],
-  );
+  useOutsideAlerter(modalRef, () => {
+    if (isMobile && modalState === 'ACTIVE') {
+      setModalState('INACTIVE');
+    }
+  }, [modalState]);
 
   function handleSubmit() {
     if (key.length <= 1) {
