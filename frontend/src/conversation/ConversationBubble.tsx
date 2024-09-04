@@ -250,7 +250,10 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code className={className ? className : ''} {...props}>
+                    <code
+                      className={className ? className : 'whitespace-pre-line'}
+                      {...props}
+                    >
                       {children}
                     </code>
                   );
