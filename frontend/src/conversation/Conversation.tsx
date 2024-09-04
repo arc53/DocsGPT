@@ -68,7 +68,7 @@ export default function Conversation() {
   const scrollIntoView = () => {
     if (!conversationRef?.current || eventInterrupt) return;
 
-    if (status === 'idle') {
+    if (status === 'idle' || !queries[queries.length - 1].response) {
       conversationRef.current.scrollTo({
         behavior: 'smooth',
         top: conversationRef.current.scrollHeight,
