@@ -57,7 +57,7 @@
       "tokenUsage": "トークン使用量"
     },
     "apiKeys": {
-      "label": "APIキー",
+      "label": "チャットボット",
       "name": "名前",
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",

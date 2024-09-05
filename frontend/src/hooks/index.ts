@@ -71,34 +71,17 @@ export function useDarkTheme() {
   );
 
   useEffect(() => {
-    // Check if dark mode preference exists in local storage
-    const savedMode: string | null = localStorage.getItem('selectedTheme');
-
-    // Set dark mode based on local storage preference
-    if (savedMode === 'Dark') {
-      setIsDarkTheme(true);
-      document
-        .getElementById('root')
-        ?.classList.add('dark', 'dark:bg-raisin-black');
-    } else {
-      // If no preference found, set to default (light mode)
-      setIsDarkTheme(false);
-      document.getElementById('root')?.classList.remove('dark');
-    }
-  }, []);
-  useEffect(() => {
     localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
     if (isDarkTheme) {
-      document
-        .getElementById('root')
-        ?.classList.add('dark', 'dark:bg-raisin-black');
+      document.body?.classList.add('dark');
     } else {
-      document.getElementById('root')?.classList.remove('dark');
+      document.body?.classList.remove('dark');
     }
   }, [isDarkTheme]);
-  //method to toggle theme
+
   const toggleTheme: any = () => {
     setIsDarkTheme(!isDarkTheme);
   };
+
   return [isDarkTheme, toggleTheme];
 }

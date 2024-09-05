@@ -4,14 +4,11 @@ FROM ubuntu:24.04 as builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y software-properties-common
-
-RUN add-apt-repository ppa:deadsnakes/ppa
-
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
 # Install necessary packages and Python
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc curl wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv && \
-    apt-get clean && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv && \
     rm -rf /var/lib/apt/lists/* 
 
 # Verify Python installation and setup symlink
@@ -27,7 +24,7 @@ RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.z
     rm mpnet-base-v2.zip
 
 # Install Rust
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
 
 # Clean up to reduce container size
 RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
@@ -50,12 +47,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM ubuntu:24.04 as final
 
 RUN apt-get update && \
-    apt-get install -y software-properties-common
-
-RUN add-apt-repository ppa:deadsnakes/ppa
-
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
 # Install Python
-RUN apt-get update && apt-get install -y --no-install-recommends python3.11 && \
+    apt-get update && apt-get install -y --no-install-recommends python3.11 && \
     ln -s /usr/bin/python3.11 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 

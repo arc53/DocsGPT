@@ -57,7 +57,7 @@
       "tokenUsage": "令牌使用"
     },
     "apiKeys": {
-      "label": "API 密钥",
+      "label": "聊天机器人",
       "name": "名称",
       "key": "API 密钥",
       "sourceDoc": "源文档",

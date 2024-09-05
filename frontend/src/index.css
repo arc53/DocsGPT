@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+body.dark {
+  background-color: #202124; /* raisin-black */
+}
 ::-webkit-scrollbar {
   width: 8px;
 }
@@ -421,7 +424,20 @@ template {
   width: 0;
 }
 
-.inputbox-style[contenteditable] {
+.inputbox-style {
+  resize: none;
   padding-left: 36px;
   padding-right: 36px;
+}
+
+.bottom-safe {
+  bottom: env(safe-area-inset-bottom, 0);
+}
+
+.ellipsis-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
 }

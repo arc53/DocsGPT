@@ -30,7 +30,7 @@ function Upload({
   const [activeTab, setActiveTab] = useState<string>('file');
   const [files, setfiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<{
-    type: 'UPLOAD' | 'TRAINIING';
+    type: 'UPLOAD' | 'TRAINING';
     percentage: number;
     taskId?: string;
     failed?: boolean;
@@ -61,10 +61,10 @@ function Upload({
     return (
       <div className="my-5 w-[50%]">
         <div
-          className={`h-4 overflow-hidden rounded-lg border border-purple-30 text-xs text-white outline-none `}
+          className={`h-8 overflow-hidden rounded-xl border border-purple-30 text-xs text-bright-gray outline-none `}
         >
           <div
-            className={`h-full border-none p-1 w-${
+            className={`h-full border-none text-xl w-${
               progress || 0
             }%  flex items-center justify-center bg-purple-30 outline-none transition-all`}
             style={{ width: `${progressPercent || 0}%` }}
@@ -86,15 +86,13 @@ function Upload({
     isFailed?: boolean;
   }) {
     return (
-      <div className="mt-5 flex flex-col items-center gap-2">
-        <p className="text-xl tracking-[0.15px]">{title}...</p>
-        <p className="text-sm text-gray-2000">This may take several minutes</p>
+      <div className="mt-5 flex flex-col items-center gap-2 text-gray-2000 dark:text-bright-gray">
+        <p className="text-gra text-xl tracking-[0.15px]">{title}...</p>
+        <p className="text-sm">This may take several minutes</p>
         <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
           Over the token limit, please consider uploading smaller document
         </p>
         {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
-
-        {/* progress bar */}
         <ProgressBar progressPercent={progress?.percentage as number} />
       </div>
     );
@@ -208,7 +206,7 @@ function Upload({
     xhr.onload = () => {
       const { task_id } = JSON.parse(xhr.responseText);
       setTimeoutRef.current = setTimeout(() => {
-        setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+        setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
       }, 3000);
     };
     xhr.open('POST', `${apiHost + '/api/upload'}`);
@@ -239,7 +237,7 @@ function Upload({
     xhr.onload = () => {
       const { task_id } = JSON.parse(xhr.responseText);
       setTimeoutRef.current = setTimeout(() => {
-        setProgress({ type: 'TRAINIING', percentage: 0, taskId: task_id });
+        setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
       }, 3000);
     };
     xhr.open('POST', `${apiHost + '/api/remote'}`);
@@ -261,6 +259,7 @@ function Upload({
       'application/zip': ['.zip'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
+      'text/csv': ['.csv'],
     },
   });
 
@@ -284,7 +283,7 @@ function Upload({
 
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
-  } else if (progress?.type === 'TRAINIING') {
+  } else if (progress?.type === 'TRAINING') {
     view = <TrainingProgress></TrainingProgress>;
   } else {
     view = (

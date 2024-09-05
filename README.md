@@ -46,9 +46,9 @@ You can find our roadmap [here](https://github.com/orgs/arc53/projects/2). Pleas
 
 If you don't have enough resources to run it, you can use bitsnbytes to quantize.
 
-## Features
+## End to End AI Framework for Information Retrieval
 
-![Main features of DocsGPT showcasing six main features](https://user-images.githubusercontent.com/17906039/220427472-2644cff4-7666-46a5-819f-fc4a521f63c7.png)
+![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
 
 ## Useful Links
 

@@ -36,6 +36,14 @@ List of latest supported LLMs are https://github.com/arc53/DocsGPT/blob/main/app
 Visit application/llm and select the file of your selected llm and there you will find the speicifc requirements needed to be filled in order to use it,i.e API key of that llm.
 </Steps>
 
+### For OpenAI-Compatible Endpoints:
+DocsGPT supports the use of OpenAI-compatible endpoints through base URL substitution. This feature allows you to use alternative AI models or services that implement the OpenAI API interface.
+
+
+Set the OPENAI_BASE_URL in your environment. You can change .env file with OPENAI_BASE_URL with the desired base URL or docker-compose.yml file and add the environment variable to the backend container.
+
+> Make sure you have the right API_KEY and correct LLM_NAME.
+
 
 
 

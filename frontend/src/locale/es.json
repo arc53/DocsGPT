@@ -57,7 +57,7 @@
       "tokenUsage": "Uso de Tokens"
     },
     "apiKeys": {
-      "label": "Claves API",
+      "label": "Chatbots",
       "name": "Nombre",
       "key": "Clave de API",
       "sourceDoc": "Documento Fuente",

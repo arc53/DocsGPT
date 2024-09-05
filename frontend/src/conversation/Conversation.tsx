@@ -30,8 +30,8 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
-  const endMessageRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLDivElement>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
   const fetchStream = useRef<any>(null);
@@ -48,39 +48,15 @@ export default function Conversation() {
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
-    const element = document.getElementById('inputbox') as HTMLInputElement;
+    const element = document.getElementById('inputbox') as HTMLTextAreaElement;
     if (element) {
       element.focus();
     }
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (status !== 'idle') {
-        fetchStream.current && fetchStream.current.abort(); //abort previous stream
-      }
-    };
-  }, [status]);
-
-  useEffect(() => {
-    const observerCallback: IntersectionObserverCallback = (entries) => {
-      entries.forEach((entry) => {
-        setHasScrolledToLast(entry.isIntersecting);
-      });
-    };
-
-    const observer = new IntersectionObserver(observerCallback, {
-      root: null,
-      threshold: [1, 0.8],
-    });
-    if (endMessageRef.current) {
-      observer.observe(endMessageRef.current);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [endMessageRef.current]);
+    fetchStream.current && fetchStream.current.abort();
+  }, [conversationId]);
 
   useEffect(() => {
     if (queries.length) {
@@ -90,10 +66,16 @@ export default function Conversation() {
   }, [queries[queries.length - 1]]);
 
   const scrollIntoView = () => {
-    endMessageRef?.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    if (!conversationRef?.current || eventInterrupt) return;
+
+    if (status === 'idle' || !queries[queries.length - 1].response) {
+      conversationRef.current.scrollTo({
+        behavior: 'smooth',
+        top: conversationRef.current.scrollHeight,
+      });
+    } else {
+      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+    }
   };
 
   const handleQuestion = ({
@@ -119,14 +101,14 @@ export default function Conversation() {
   };
 
   const handleQuestionSubmission = () => {
-    if (inputRef.current?.textContent && status !== 'loading') {
+    if (inputRef.current?.value && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: inputRef.current.textContent,
+              prompt: inputRef.current.value,
             },
           }),
         );
@@ -135,9 +117,10 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: inputRef.current.textContent });
+        handleQuestion({ question: inputRef.current.value });
       }
-      inputRef.current.textContent = '';
+      inputRef.current.value = '';
+      handleInput();
     }
   };
 
@@ -146,7 +129,6 @@ export default function Conversation() {
     if (query.response) {
       responseView = (
         <ConversationBubble
-          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
@@ -179,7 +161,6 @@ export default function Conversation() {
       );
       responseView = (
         <ConversationBubble
-          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
           key={`${index}ERROR`}
           message={query.error}
@@ -191,14 +172,26 @@ export default function Conversation() {
     return responseView;
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    inputRef.current && (inputRef.current.innerText = text);
+  const handleInput = () => {
+    if (inputRef.current) {
+      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+      else inputRef.current.style.height = '64px';
+      inputRef.current.style.height = `${Math.min(
+        inputRef.current.scrollHeight,
+        96,
+      )}px`;
+    }
   };
 
+  useEffect(() => {
+    handleInput();
+    window.addEventListener('resize', handleInput);
+    return () => {
+      window.removeEventListener('resize', handleInput);
+    };
+  }, []);
   return (
-    <div className="flex h-screen flex-col gap-7 pb-2">
+    <div className="flex h-[90vh] flex-col gap-7 pb-2 sm:h-[85vh]">
       {conversationId && (
         <>
           <button
@@ -225,6 +218,7 @@ export default function Conversation() {
         </>
       )}
       <div
+        ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
         className="flex h-[90%] w-full flex-1 justify-center overflow-y-auto p-4 md:h-[83vh]"
@@ -266,23 +260,22 @@ export default function Conversation() {
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
 
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-6/12">
-        <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
-          <div
+      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-1/2">
+        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
+          <textarea
             id="inputbox"
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            contentEditable
-            onPaste={handlePaste}
-            className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`inputbox-style h-16 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            onInput={handleInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleQuestionSubmission();
               }
             }}
-          ></div>
+          ></textarea>
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
@@ -299,7 +292,7 @@ export default function Conversation() {
           )}
         </div>
 
-        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent py-2 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
