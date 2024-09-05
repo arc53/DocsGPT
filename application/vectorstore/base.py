@@ -1,12 +1,29 @@
 from abc import ABC, abstractmethod
 import os
-from langchain_community.embeddings import (
-    HuggingFaceEmbeddings,
-    CohereEmbeddings,
-    HuggingFaceInstructEmbeddings,
-)
+from sentence_transformers import SentenceTransformer
 from langchain_openai import OpenAIEmbeddings
 from application.core.settings import settings
+
+class EmbeddingsWrapper:
+    def __init__(self, model_name, *args, **kwargs):
+        self.model = SentenceTransformer(model_name, config_kwargs={'allow_dangerous_deserialization': True}, *args, **kwargs)
+        self.dimension = self.model.get_sentence_embedding_dimension()
+
+    def embed_query(self, query: str):
+        return self.model.encode(query).tolist()
+    
+    def embed_documents(self, documents: list):
+        return self.model.encode(documents).tolist()
+    
+    def __call__(self, text):
+        if isinstance(text, str):
+            return self.embed_query(text)
+        elif isinstance(text, list):
+            return self.embed_documents(text)
+        else:
+            raise ValueError("Input must be a string or a list of strings")
+
+
 
 class EmbeddingsSingleton:
     _instances = {}
@@ -23,16 +40,15 @@ class EmbeddingsSingleton:
     def _create_instance(embeddings_name, *args, **kwargs):
         embeddings_factory = {
             "openai_text-embedding-ada-002": OpenAIEmbeddings,
-            "huggingface_sentence-transformers/all-mpnet-base-v2": HuggingFaceEmbeddings,
-            "huggingface_sentence-transformers-all-mpnet-base-v2": HuggingFaceEmbeddings,
-            "huggingface_hkunlp/instructor-large": HuggingFaceInstructEmbeddings,
-            "cohere_medium": CohereEmbeddings
+            "huggingface_sentence-transformers/all-mpnet-base-v2": lambda: EmbeddingsWrapper("sentence-transformers/all-mpnet-base-v2"),
+            "huggingface_sentence-transformers-all-mpnet-base-v2": lambda: EmbeddingsWrapper("sentence-transformers/all-mpnet-base-v2"),
+            "huggingface_hkunlp/instructor-large": lambda: EmbeddingsWrapper("hkunlp/instructor-large"),
         }
 
-        if embeddings_name not in embeddings_factory:
-            raise ValueError(f"Invalid embeddings_name: {embeddings_name}")
-
-        return embeddings_factory[embeddings_name](*args, **kwargs)
+        if embeddings_name in embeddings_factory:
+            return embeddings_factory[embeddings_name](*args, **kwargs)
+        else:
+            return EmbeddingsWrapper(embeddings_name, *args, **kwargs)
 
 class BaseVectorStore(ABC):
     def __init__(self):
@@ -58,22 +74,14 @@ class BaseVectorStore(ABC):
                     embeddings_name,
                     openai_api_key=embeddings_key
                 )
-        elif embeddings_name == "cohere_medium":
-            embedding_instance = EmbeddingsSingleton.get_instance(
-                embeddings_name,
-                cohere_api_key=embeddings_key
-            )
         elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
             if os.path.exists("./model/all-mpnet-base-v2"):
                 embedding_instance = EmbeddingsSingleton.get_instance(
-                    embeddings_name,
-                    model_name="./model/all-mpnet-base-v2",
-                    model_kwargs={"device": "cpu"}
+                    embeddings_name="./model/all-mpnet-base-v2",
                 )
             else:
                 embedding_instance = EmbeddingsSingleton.get_instance(
                     embeddings_name,
-                    model_kwargs={"device": "cpu"}
                 )
         else:
             embedding_instance = EmbeddingsSingleton.get_instance(embeddings_name)
