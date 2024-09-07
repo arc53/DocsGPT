@@ -5,15 +5,14 @@ import userService from '../api/services/userService';
 import Trash from '../assets/trash.svg';
 import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
 import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
+import { APIKeyData } from './types';
 
 export default function APIKeys() {
   const { t } = useTranslation();
   const [isCreateModalOpen, setCreateModal] = React.useState(false);
   const [isSaveKeyModalOpen, setSaveKeyModal] = React.useState(false);
   const [newKey, setNewKey] = React.useState('');
-  const [apiKeys, setApiKeys] = React.useState<
-    { name: string; key: string; source: string; id: string }[]
-  >([]);
+  const [apiKeys, setApiKeys] = React.useState<APIKeyData[]>([]);
 
   const handleFetchKeys = async () => {
     try {

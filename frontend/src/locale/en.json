@@ -62,6 +62,9 @@
       "key": "API Key",
       "sourceDoc": "Source Document",
       "createNew": "Create New"
+    },
+    "analytics": {
+      "label": "Analytics"
     }
   },
   "modals": {

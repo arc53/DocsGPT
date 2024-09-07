@@ -1,14 +1,17 @@
+import datetime
 import os
-import uuid
 import shutil
-from flask import Blueprint, request, jsonify
+import uuid
 from urllib.parse import urlparse
+
 import requests
-from pymongo import MongoClient
-from bson.objectid import ObjectId
 from bson.binary import Binary, UuidRepresentation
-from werkzeug.utils import secure_filename
 from bson.dbref import DBRef
+from bson.objectid import ObjectId
+from flask import Blueprint, jsonify, request
+from pymongo import MongoClient
+from werkzeug.utils import secure_filename
+
 from application.api.user.tasks import ingest, ingest_remote
 
 from application.core.settings import settings
@@ -21,6 +24,7 @@ vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
+token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
 
 user = Blueprint("user", __name__)
@@ -28,6 +32,27 @@ user = Blueprint("user", __name__)
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
+
+
+def generate_minute_range(start_date, end_date):
+    return {
+        (start_date + datetime.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:00"): 0
+        for i in range(int((end_date - start_date).total_seconds() // 60) + 1)
+    }
+
+
+def generate_hourly_range(start_date, end_date):
+    return {
+        (start_date + datetime.timedelta(hours=i)).strftime("%Y-%m-%d %H:00"): 0
+        for i in range(int((end_date - start_date).total_seconds() // 3600) + 1)
+    }
+
+
+def generate_date_range(start_date, end_date):
+    return {
+        (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d"): 0
+        for i in range((end_date - start_date).days + 1)
+    }
 
 
 @user.route("/api/delete_conversation", methods=["POST"])
@@ -96,6 +121,7 @@ def api_feedback():
             "question": question,
             "answer": answer,
             "feedback": feedback,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
         }
     )
     return {"status": "ok"}
@@ -697,3 +723,407 @@ def get_publicly_shared_conversations(identifier: str):
     except Exception as err:
         print(err)
         return jsonify({"success": False, "error": str(err)}), 400
+
+
+@user.route("/api/get_message_analytics", methods=["POST"])
+def get_message_analytics():
+    data = request.get_json()
+    api_key_id = data.get("api_key_id")
+    filter_option = data.get("filter_option", "last_30_days")
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+        group_format = "%Y-%m-%d %H:%M:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "minute": {
+                        "$dateToString": {"format": group_format, "date": "$date"}
+                    }
+                },
+                "total_messages": {"$sum": 1},
+            }
+        }
+
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+        group_format = "%Y-%m-%d %H:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "hour": {"$dateToString": {"format": group_format, "date": "$date"}}
+                },
+                "total_messages": {"$sum": 1},
+            }
+        }
+
+    else:
+        if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
+            filter_days = (
+                6
+                if filter_option == "last_7_days"
+                else (14 if filter_option == "last_15_days" else 29)
+            )
+        else:
+            return jsonify({"success": False, "error": "Invalid option"}), 400
+        start_date = end_date - datetime.timedelta(days=filter_days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        group_format = "%Y-%m-%d"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "day": {"$dateToString": {"format": group_format, "date": "$date"}}
+                },
+                "total_messages": {"$sum": 1},
+            }
+        }
+
+    try:
+        match_stage = {
+            "$match": {
+                "date": {"$gte": start_date, "$lte": end_date},
+            }
+        }
+        if api_key:
+            match_stage["$match"]["api_key"] = api_key
+        message_data = conversations_collection.aggregate(
+            [
+                match_stage,
+                group_stage,
+                {"$sort": {"_id": 1}},
+            ]
+        )
+
+        if filter_option == "last_hour":
+            intervals = generate_minute_range(start_date, end_date)
+        elif filter_option == "last_24_hour":
+            intervals = generate_hourly_range(start_date, end_date)
+        else:
+            intervals = generate_date_range(start_date, end_date)
+
+        daily_messages = {interval: 0 for interval in intervals}
+
+        for entry in message_data:
+            if filter_option == "last_hour":
+                daily_messages[entry["_id"]["minute"]] = entry["total_messages"]
+            elif filter_option == "last_24_hour":
+                daily_messages[entry["_id"]["hour"]] = entry["total_messages"]
+            else:
+                daily_messages[entry["_id"]["day"]] = entry["total_messages"]
+
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify({"success": True, "messages": daily_messages}), 200
+
+
+@user.route("/api/get_token_analytics", methods=["POST"])
+def get_token_analytics():
+    data = request.get_json()
+    api_key_id = data.get("api_key_id")
+    filter_option = data.get("filter_option", "last_30_days")
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+        group_format = "%Y-%m-%d %H:%M:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "minute": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    }
+                },
+                "total_tokens": {
+                    "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                },
+            }
+        }
+
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+        group_format = "%Y-%m-%d %H:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "hour": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    }
+                },
+                "total_tokens": {
+                    "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                },
+            }
+        }
+
+    else:
+        if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
+            filter_days = (
+                6
+                if filter_option == "last_7_days"
+                else (14 if filter_option == "last_15_days" else 29)
+            )
+        else:
+            return jsonify({"success": False, "error": "Invalid option"}), 400
+        start_date = end_date - datetime.timedelta(days=filter_days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        group_format = "%Y-%m-%d"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "day": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    }
+                },
+                "total_tokens": {
+                    "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                },
+            }
+        }
+
+    try:
+        match_stage = {
+            "$match": {
+                "timestamp": {"$gte": start_date, "$lte": end_date},
+            }
+        }
+        if api_key:
+            match_stage["$match"]["api_key"] = api_key
+
+        token_usage_data = token_usage_collection.aggregate(
+            [
+                match_stage,
+                group_stage,
+                {"$sort": {"_id": 1}},
+            ]
+        )
+
+        if filter_option == "last_hour":
+            intervals = generate_minute_range(start_date, end_date)
+        elif filter_option == "last_24_hour":
+            intervals = generate_hourly_range(start_date, end_date)
+        else:
+            intervals = generate_date_range(start_date, end_date)
+
+        daily_token_usage = {interval: 0 for interval in intervals}
+
+        for entry in token_usage_data:
+            if filter_option == "last_hour":
+                daily_token_usage[entry["_id"]["minute"]] = entry["total_tokens"]
+            elif filter_option == "last_24_hour":
+                daily_token_usage[entry["_id"]["hour"]] = entry["total_tokens"]
+            else:
+                daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
+
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify({"success": True, "token_usage": daily_token_usage}), 200
+
+
+@user.route("/api/get_feedback_analytics", methods=["POST"])
+def get_feedback_analytics():
+    data = request.get_json()
+    api_key_id = data.get("api_key_id")
+    filter_option = data.get("filter_option", "last_30_days")
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+        group_format = "%Y-%m-%d %H:%M:00"
+        group_stage_1 = {
+            "$group": {
+                "_id": {
+                    "minute": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    },
+                    "feedback": "$feedback",
+                },
+                "count": {"$sum": 1},
+            }
+        }
+        group_stage_2 = {
+            "$group": {
+                "_id": "$_id.minute",
+                "likes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "LIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+                "dislikes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "DISLIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+            }
+        }
+
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+        group_format = "%Y-%m-%d %H:00"
+        group_stage_1 = {
+            "$group": {
+                "_id": {
+                    "hour": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    },
+                    "feedback": "$feedback",
+                },
+                "count": {"$sum": 1},
+            }
+        }
+        group_stage_2 = {
+            "$group": {
+                "_id": "$_id.hour",
+                "likes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "LIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+                "dislikes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "DISLIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+            }
+        }
+
+    else:
+        if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
+            filter_days = (
+                6
+                if filter_option == "last_7_days"
+                else (14 if filter_option == "last_15_days" else 29)
+            )
+        else:
+            return jsonify({"success": False, "error": "Invalid option"}), 400
+        start_date = end_date - datetime.timedelta(days=filter_days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        group_format = "%Y-%m-%d"
+        group_stage_1 = {
+            "$group": {
+                "_id": {
+                    "day": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    },
+                    "feedback": "$feedback",
+                },
+                "count": {"$sum": 1},
+            }
+        }
+        group_stage_2 = {
+            "$group": {
+                "_id": "$_id.day",
+                "likes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "LIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+                "dislikes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "DISLIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+            }
+        }
+
+    try:
+        match_stage = {
+            "$match": {
+                "timestamp": {"$gte": start_date, "$lte": end_date},
+            }
+        }
+        if api_key:
+            match_stage["$match"]["api_key"] = api_key
+
+        feedback_data = feedback_collection.aggregate(
+            [
+                match_stage,
+                group_stage_1,
+                group_stage_2,
+                {"$sort": {"_id": 1}},
+            ]
+        )
+
+        if filter_option == "last_hour":
+            intervals = generate_minute_range(start_date, end_date)
+        elif filter_option == "last_24_hour":
+            intervals = generate_hourly_range(start_date, end_date)
+        else:
+            intervals = generate_date_range(start_date, end_date)
+
+        daily_feedback = {
+            interval: {"positive": 0, "negative": 0} for interval in intervals
+        }
+
+        for entry in feedback_data:
+            daily_feedback[entry["_id"]] = {
+                "positive": entry["likes"],
+                "negative": entry["dislikes"],
+            }
+
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify({"success": True, "feedback": daily_feedback}), 200

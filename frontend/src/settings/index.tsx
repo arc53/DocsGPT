@@ -11,6 +11,7 @@ import {
   selectSourceDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
+import Analytics from './Analytics';
 import APIKeys from './APIKeys';
 import Documents from './Documents';
 import General from './General';
@@ -23,6 +24,7 @@ export default function Settings() {
     t('settings.general.label'),
     t('settings.documents.label'),
     t('settings.apiKeys.label'),
+    t('settings.analytics.label'),
   ];
   const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
@@ -129,6 +131,8 @@ export default function Settings() {
         );
       case t('settings.apiKeys.label'):
         return <APIKeys />;
+      case t('settings.analytics.label'):
+        return <Analytics />;
       default:
         return null;
     }
