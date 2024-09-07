@@ -34,3 +34,4 @@ torch
 tqdm==4.66.3
 transformers==4.44.0
 Werkzeug==3.0.3
+lancedb==0.12.0
