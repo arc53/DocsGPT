@@ -6,7 +6,7 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
 import i18n from '../locale/i18n';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import {
   selectSourceDocs,
   setSourceDocs,

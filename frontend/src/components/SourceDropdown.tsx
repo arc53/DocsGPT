@@ -1,7 +1,7 @@
 import React from 'react';
 import Trash from '../assets/trash.svg';
 import Arrow2 from '../assets/dropdown-arrow.svg';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 type Props = {

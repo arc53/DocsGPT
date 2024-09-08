@@ -1,5 +1,5 @@
 import conversationService from '../api/services/conversationService';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
 
 export function handleFetchAnswer(

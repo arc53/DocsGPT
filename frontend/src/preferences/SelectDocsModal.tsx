@@ -93,9 +93,7 @@ export default function APIKeyModal({
                             }}
                             className="h-10 w-full cursor-pointer border-x-2 border-b-2 hover:bg-gray-100"
                           >
-                            <p className="ml-5 py-3">
-                              {doc.name} {doc.version}
-                            </p>
+                            <p className="ml-5 py-3">{doc.name}</p>
                           </div>
                         );
                       }

@@ -61,12 +61,10 @@ const Documents: React.FC<DocumentsProps> = ({
                       {document.tokens ? formatTokens(+document.tokens) : ''}
                     </td>
                     <td className="border-r border-t px-4 py-2">
-                      {document.location === 'remote'
-                        ? 'Pre-loaded'
-                        : 'Private'}
+                      {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
                     </td>
                     <td className="border-t px-4 py-2">
-                      {document.location !== 'remote' && (
+                      {document.type !== 'remote' && (
                         <img
                           src={Trash}
                           alt="Delete"
