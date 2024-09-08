@@ -63,9 +63,6 @@ function SourceDropdown({
             <p className="max-w-3/4 truncate whitespace-nowrap">
               {selectedDocs?.name || 'None'}
             </p>
-            <p className="flex flex-col items-center justify-center">
-              {selectedDocs?.version}
-            </p>
           </div>
         </span>
         <img

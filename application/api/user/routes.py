@@ -237,15 +237,11 @@ def combined_json():
     data = [
         {
             "name": "default",
-            "language": "default",
-            "version": "",
-            "description": "default",
-            "fullName": "default",
             "date": "default",
-            "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
             "location": "remote",
             "tokens": "",
+            "retriever": "classic",
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
@@ -255,35 +251,22 @@ def combined_json():
             {
                 "id": str(index["_id"]),
                 "name": index["name"],
-                "language": index["language"],
-                "version": "",
-                "description": index["name"],
-                "fullName": index["name"],
                 "date": index["date"],
-                "docLink": index["location"],
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "local",
                 "tokens": index["tokens"] if ("tokens" in index.keys()) else "",
+                "retriever": index["retriever"] if ("retriever" in index.keys()) else "classic",
             }
         )
-    if settings.VECTOR_STORE == "faiss":
-        data_remote = requests.get("https://d3dg1063dc54p9.cloudfront.net/combined.json").json()
-        for index in data_remote:
-            index["location"] = "remote"
-            data.append(index)
     if "duckduck_search" in settings.RETRIEVERS_ENABLED:
         data.append(
             {
                 "name": "DuckDuckGo Search",
-                "language": "en",
-                "version": "",
-                "description": "duckduck_search",
-                "fullName": "DuckDuckGo Search",
                 "date": "duckduck_search",
-                "docLink": "duckduck_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
                 "tokens": "",
+                "retriever": "duckduck_search",
             }
         )
     if "brave_search" in settings.RETRIEVERS_ENABLED:
@@ -291,14 +274,11 @@ def combined_json():
             {
                 "name": "Brave Search",
                 "language": "en",
-                "version": "",
-                "description": "brave_search",
-                "fullName": "Brave Search",
                 "date": "brave_search",
-                "docLink": "brave_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
                 "tokens": "",
+                "retriever": "brave_search",
             }
         )
 

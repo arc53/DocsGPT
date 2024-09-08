@@ -210,4 +210,3 @@ class ElasticsearchStore(BaseVectorStore):
     def delete_index(self):
         self._es_connection.delete_by_query(index=self.index_name, query={"match": {
                                       "metadata.store.keyword": self.path}},)
-

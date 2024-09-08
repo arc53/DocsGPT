@@ -35,12 +35,12 @@ def upload_index_files():
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
     tokens = secure_filename(request.form["tokens"])
-    """"
-    ObjectId serves as a dir name in application/indexes, 
-    and for indexing the vector metadata in the collection
-    """
-    _id = ObjectId()
-    save_dir = os.path.join(current_dir, "indexes", str(_id))
+    retriever = secure_filename(request.form["retriever"])
+    id = secure_filename(request.form["id"])
+    type = secure_filename(request.form["type"])
+    remote_data = secure_filename(request.form["remote_data"]) if "remote_data" in  request.form else None
+
+    save_dir = os.path.join(current_dir, "indexes", str(id))
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
             print("No file part")
@@ -63,15 +63,16 @@ def upload_index_files():
     # create entry in vectors_collection
     vectors_collection.insert_one(
         {
-            "_id":_id,
+            "_id": ObjectId(id),
             "user": user,
             "name": job_name,
             "language": job_name,
-            "location": save_dir,
             "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             "model": settings.EMBEDDINGS_NAME,
-            "type": "local",
-            "tokens": tokens
+            "type": type,
+            "tokens": tokens,
+            "retriever": retriever,
+            "remote_data": remote_data
         }
     )
     return {"status": "ok"}

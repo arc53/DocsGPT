@@ -41,7 +41,7 @@ export function handleFetchAnswer(
   };
   if (selectedDocs && 'id' in selectedDocs)
     payload.active_docs = selectedDocs.id as string;
-  else payload.retriever = selectedDocs?.docLink as string;
+  payload.retriever = selectedDocs?.retriever as string;
   return conversationService
     .answer(payload, signal)
     .then((response) => {
@@ -87,7 +87,7 @@ export function handleFetchAnswerSteaming(
   };
   if (selectedDocs && 'id' in selectedDocs)
     payload.active_docs = selectedDocs.id as string;
-  else payload.retriever = selectedDocs?.docLink as string;
+  payload.retriever = selectedDocs?.retriever as string;
 
   return new Promise<Answer>((resolve, reject) => {
     conversationService
@@ -160,7 +160,7 @@ export function handleSearch(
   };
   if (selectedDocs && 'id' in selectedDocs)
     payload.active_docs = selectedDocs.id as string;
-  else payload.retriever = selectedDocs?.docLink as string;
+  payload.retriever = selectedDocs?.retriever as string;
   return conversationService
     .search(payload)
     .then((response) => response.json())

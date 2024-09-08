@@ -3,15 +3,12 @@ import userService from '../api/services/userService';
 
 // not all properties in Doc are going to be present. Make some optional
 export type Doc = {
-  location: string;
+  id: string | null;
   name: string;
-  language: string;
-  version: string;
-  description: string;
-  fullName: string;
+  type: string;
   date: string;
-  docLink: string;
   model: string;
+  retriever: string;
 };
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
@@ -78,17 +75,10 @@ export function setLocalPrompt(prompt: string): void {
 
 export function setLocalRecentDocs(doc: Doc): void {
   localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
-  let namePath = doc.name;
-  if (doc.language === namePath) {
-    namePath = '.project';
-  }
 
   let docPath = 'default';
-  if (doc.location === 'local') {
+  if (doc.type === 'local') {
     docPath = 'local' + '/' + doc.name + '/';
-  } else if (doc.location === 'remote') {
-    docPath =
-      doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model + '/';
   }
   userService
     .checkDocs({

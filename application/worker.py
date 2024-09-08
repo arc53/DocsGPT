@@ -6,6 +6,7 @@ import tiktoken
 from urllib.parse import urljoin
 
 import requests
+from bson.objectid import ObjectId
 
 from application.core.settings import settings
 from application.parser.file.bulk import SimpleDirectoryReader
@@ -57,7 +58,7 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
 
 
 # Define the main function for ingesting and processing documents.
-def ingest_worker(self, directory, formats, name_job, filename, user):
+def ingest_worker(self, directory, formats, name_job, filename, user, retriever="classic"):
     """
     Ingest and process documents.
 
@@ -68,6 +69,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
         name_job (str): Name of the job for this ingestion task.
         filename (str): Name of the file to be ingested.
         user (str): Identifier for the user initiating the ingestion.
+        retriever (str): Type of retriever to use for processing the documents.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -136,7 +138,8 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    file_data = {"name": name_job, "user": user, "tokens": tokens}
+    id = ObjectId()
+    file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, "id": str(id), 'type': 'local'}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
@@ -160,7 +163,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     }
 
 
-def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
+def remote_worker(self, source_data, name_job, user, loader, directory="temp", retriever="classic"):
     token_check = True
     min_tokens = 150
     max_tokens = 1250
@@ -180,12 +183,14 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
         token_check=token_check,
     )
     # docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
-    call_openai_api(docs, full_path, self)
     tokens = count_tokens_docs(docs)
+    call_openai_api(docs, full_path, self)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user, "tokens": tokens}
+    id = ObjectId()
+    file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, 
+                 "id": str(id), 'type': loader, 'remote_data': source_data}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),

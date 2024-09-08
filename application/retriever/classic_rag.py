@@ -21,7 +21,7 @@ class ClassicRAG(BaseRetriever):
         user_api_key=None,
     ):
         self.question = question
-        self.vectorstore = self._get_vectorstore(source=source)
+        self.vectorstore = source['active_docs'] if 'active_docs' in source else None
         self.chat_history = chat_history
         self.prompt = prompt
         self.chunks = chunks
@@ -37,14 +37,6 @@ class ClassicRAG(BaseRetriever):
             )
         )
         self.user_api_key = user_api_key
-
-    def _get_vectorstore(self, source):
-        if "active_docs" in source:
-            vectorstore = "indexes/"+source["active_docs"]
-        else:
-            vectorstore = ""
-        vectorstore = os.path.join("application", vectorstore)
-        return vectorstore
 
     def _get_data(self):
         if self.chunks == 0:

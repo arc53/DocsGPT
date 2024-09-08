@@ -124,10 +124,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleDeleteClick = (doc: Doc) => {
-    const docPath = `indexes/local/${doc.name}`;
-
     userService
-      .deletePath(docPath)
+      .deletePath(doc.id ?? '')
       .then(() => {
         return getDocs();
       })

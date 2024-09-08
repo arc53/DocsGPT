@@ -1,12 +1,22 @@
 from langchain_community.vectorstores import FAISS
 from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
+import os
+
+def get_vectorstore(path):
+    if path:
+        vectorstore = "indexes/"+path
+        vectorstore = os.path.join("application", vectorstore)
+    else:
+        vectorstore = os.path.join("application")
+
+    return vectorstore
 
 class FaissStore(BaseVectorStore):
 
     def __init__(self, path, embeddings_key, docs_init=None):
         super().__init__()
-        self.path = path
+        self.path = get_vectorstore(path)
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
         if docs_init:
             self.docsearch = FAISS.from_documents(

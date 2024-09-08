@@ -35,9 +35,8 @@ export default function Settings() {
   };
 
   const handleDeleteClick = (index: number, doc: Doc) => {
-    const docPath = 'indexes/' + 'local' + '/' + doc.name;
     userService
-      .deletePath(docPath)
+      .deletePath(doc.id ?? '')
       .then((response) => {
         if (response.ok && documents) {
           const updatedDocuments = [
