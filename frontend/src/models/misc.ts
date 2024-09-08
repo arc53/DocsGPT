@@ -5,16 +5,12 @@ export type User = {
 };
 export type Doc = {
   id?: string;
-  location: string;
   name: string;
-  language: string;
-  version: string;
-  description: string;
-  fullName: string;
   date: string;
-  docLink: string;
   model: string;
   tokens?: string;
+  type?: string;
+  retriever?: string;
 };
 
 export type PromptProps = {

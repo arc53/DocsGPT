@@ -8,7 +8,8 @@ import {
   selectSourceDocs,
   selectSelectedDocs,
 } from './preferenceSlice';
-import { getDocs, Doc } from './preferenceApi';
+import { Doc } from '../models/misc';
+import { getDocs } from './preferenceApi';
 
 export default function APIKeyModal({
   modalState,
@@ -75,9 +76,7 @@ export default function APIKeyModal({
                 {!localSelectedDocs ? (
                   <p className="py-3 text-gray-500">Select</p>
                 ) : (
-                  <p className="py-3">
-                    {localSelectedDocs.name} {localSelectedDocs.version}
-                  </p>
+                  <p className="py-3">{localSelectedDocs.name}</p>
                 )}
               </div>
               {isDocsListOpen && (

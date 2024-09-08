@@ -50,9 +50,9 @@ export default function CreateAPIKeyModal({
               };
             }
             return {
-              name: doc.name as string,
-              id: doc.docLink as string,
-              type: 'default',
+              name: doc.name,
+              id: doc.id ?? 'default',
+              type: doc.type ?? 'default',
             };
           })
       : [];
