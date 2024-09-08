@@ -4,9 +4,9 @@ import {
   createSlice,
   isAnyOf,
 } from '@reduxjs/toolkit';
-import { Doc, setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
+import { setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
 import { RootState } from '../store';
-import { ActiveState } from '../models/misc';
+import { ActiveState, Doc } from '../models/misc';
 
 interface Preference {
   apiKey: string;
