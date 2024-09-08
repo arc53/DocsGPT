@@ -1,4 +1,3 @@
-import os
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
