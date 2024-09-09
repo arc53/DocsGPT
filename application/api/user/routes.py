@@ -286,39 +286,13 @@ def combined_json():
 
 @user.route("/api/docs_check", methods=["POST"])
 def check_docs():
-    # check if docs exist in a vectorstore folder
     data = request.get_json()
-    # split docs on / and take first part
-    if data["docs"].split("/")[0] == "local":
-        return {"status": "exists"}
+
     vectorstore = "vectors/" + secure_filename(data["docs"])
-    base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": "exists"}
     else:
-        file_url = urlparse(base_path + vectorstore + "index.faiss")
-
-        if (
-            file_url.scheme in ["https"]
-            and file_url.netloc == "raw.githubusercontent.com"
-            and file_url.path.startswith("/arc53/DocsHUB/main/")
-        ):
-            r = requests.get(file_url.geturl())
-            if r.status_code != 200:
-                return {"status": "null"}
-            else:
-                if not os.path.exists(vectorstore):
-                    os.makedirs(vectorstore)
-                with open(vectorstore + "index.faiss", "wb") as f:
-                    f.write(r.content)
-
-                r = requests.get(base_path + vectorstore + "index.pkl")
-                with open(vectorstore + "index.pkl", "wb") as f:
-                    f.write(r.content)
-        else:
-            return {"status": "null"}
-
-        return {"status": "loaded"}
+        return {"status": "not found"}
 
 
 @user.route("/api/create_prompt", methods=["POST"])
@@ -445,7 +419,7 @@ def create_api_key():
         "chunks": chunks,
     }
     if "source" in data and ObjectId.is_valid(data["source"]):
-        new_api_key["source"] = DBRef("vectors", ObjectId(data["source"]))
+        new_api_key["source"] = DBRef("sources", ObjectId(data["source"]))
     if "retriever" in data:
         new_api_key["retriever"] = data["retriever"]
     resp = api_key_collection.insert_one(new_api_key)
@@ -494,7 +468,7 @@ def share_conversation():
                     "user": user,
                 }
             if "source" in data and ObjectId.is_valid(data["source"]):
-                new_api_key_data["source"] = DBRef("vectors",ObjectId(data["source"]))
+                new_api_key_data["source"] = DBRef("sources",ObjectId(data["source"]))
             elif "retriever" in data:
                 new_api_key_data["retriever"] = data["retriever"]
                  
@@ -543,7 +517,7 @@ def share_conversation():
                 new_api_key_data["key"] = api_uuid
                 new_api_key_data["name"] = name
                 if "source" in data and ObjectId.is_valid(data["source"]):
-                    new_api_key_data["source"] = DBRef("vectors", ObjectId(data["source"]))
+                    new_api_key_data["source"] = DBRef("sources", ObjectId(data["source"]))
                 if "retriever" in data:
                     new_api_key_data["retriever"] = data["retriever"]
                 api_key_collection.insert_one(new_api_key_data)

@@ -98,21 +98,6 @@ def get_retriever(source_id: str):
     return retriever_name
 
 
-def get_vectorstore(data):
-    if "active_docs" in data:
-        if data["active_docs"].split("/")[0] == "default":
-            vectorstore = ""
-        elif data["active_docs"].split("/")[0] == "local":
-            vectorstore = "indexes/" + data["active_docs"]
-        else:
-            vectorstore = "vectors/" + data["active_docs"]
-        if data["active_docs"] == "default":
-            vectorstore = ""
-    else:
-        vectorstore = ""
-    vectorstore = os.path.join("application", vectorstore)
-    return vectorstore
-
 
 def is_azure_configured():
     return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
