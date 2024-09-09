@@ -2,8 +2,6 @@ import os
 import uuid
 import shutil
 from flask import Blueprint, request, jsonify
-from urllib.parse import urlparse
-import requests
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from bson.binary import Binary, UuidRepresentation
