@@ -31,5 +31,20 @@ def migrate_faiss_to_v1_vectorstore():
 
     client.close()
 
+def migrate_mongo_atlas_vector_to_v1_vectorstore():
+    client = pymongo.MongoClient("mongodb+srv://<username>:<password>@<cluster>/<dbname>?retryWrites=true&w=majority")
+    db = client["docsgpt"]
+    vectors_collection = db["vectors"]
+
+    for vector in vectors_collection.find():
+        if "location" in vector:
+            del vector["location"]
+        if "retriever" not in vector:
+            vector["retriever"] = "classic"
+            vector["remote_data"] = None
+        vectors_collection.update_one({"_id": vector["_id"]}, {"$set": vector})
+
+    client.close()
+
 migrate_faiss_to_v1_vectorstore()
 migrate_to_v1_vectorstore_mongo()
