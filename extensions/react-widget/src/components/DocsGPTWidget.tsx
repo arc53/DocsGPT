@@ -1,11 +1,13 @@
 "use client";
-import React from 'react'
+import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
-import { MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
-import { fetchAnswerStreaming } from '../requests/streamingApi';
+import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
+import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import { ThemeProvider } from 'styled-components';
+import Like from "../assets/like.svg"
+import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
 const themes = {
   dark: {
@@ -62,6 +64,14 @@ const GlobalStyles = createGlobalStyle`
   display: inline-block;
   background-color: #646464;
   color: #fff !important;
+}
+.feedback > .selected{
+  fill: #fff;
+  display: block !important;
+}
+.feedback > .default{
+  fill:#000;
+  display:block;
 }
 `;
 const Overlay = styled.div`
@@ -197,10 +207,15 @@ const Conversation = styled.div<{ size: string }>`
 `;
 
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
-    display: flex;
+    display: block;
     font-size: 16px;
-    justify-content: ${props => props.type === 'QUESTION' ? 'flex-end' : 'flex-start'};
-    margin: 0.5rem;
+    position: relative;
+    width: 100%;
+    float: right;
+    margin: 0rem;
+    &:hover .feedback-icons {
+    visibility: visible !important;
+  }
 `;
 const Message = styled.div<{ type: MESSAGE_TYPE }>`
     background: ${props => props.type === 'QUESTION' ?
@@ -208,6 +223,7 @@ const Message = styled.div<{ type: MESSAGE_TYPE }>`
     props.theme.secondary.bg};
     color: ${props => props.type === 'ANSWER' ? props.theme.primary.text : '#fff'};
     border: none;
+    float: ${props => props.type === 'QUESTION' ? 'right' : 'left'};
     max-width: ${props => props.type === 'ANSWER' ? '100%' : '80'};
     overflow: auto;
     margin: 4px;
@@ -315,6 +331,14 @@ const HeroDescription = styled.p`
   font-size: 14px;
   line-height: 1.5;
 `;
+const Feedback = styled.div`
+  background-color: transparent;
+  font-weight: normal;
+  gap: 12px;
+  display: flex;
+  padding: 6px;
+  clear: both;
+`
 const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
   return (
     <>
@@ -335,8 +359,8 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
   );
 };
 export const DocsGPTWidget = ({
-  apiHost = 'https://gptcloud.arc53.com',
-  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
+  apiHost = 'http://127.0.0.1:7091',
+  apiKey = "220a4876-014d-47c8-996b-936fbefd3a22",//'82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -345,7 +369,8 @@ export const DocsGPTWidget = ({
   size = 'small',
   theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
-  buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)'
+  buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
+  collectFeedback = false
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
@@ -353,6 +378,7 @@ export const DocsGPTWidget = ({
   const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState<boolean>(false)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const isBubbleHovered = useRef<boolean>(false)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
 
@@ -375,6 +401,36 @@ export const DocsGPTWidget = ({
   React.useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
+
+  async function handleFeedback(feedback: FEEDBACK, index: number) {
+    let query = queries[index]
+    if (!query.response)
+      return;
+    if (query.feedback != feedback) {
+      sendFeedback({
+        question: query.prompt,
+        answer: query.response,
+        feedback: feedback,
+        apikey: apiKey
+      }, apiHost)
+        .then(res => {
+          if (res.status == 200) {
+            query.feedback = feedback;
+            setQueries((prev: Query[]) => {
+              return prev.map((q, i) => (i === index ? query : q));
+            });
+          }
+        })
+
+    }
+    else {
+      delete query.feedback;
+      setQueries((prev: Query[]) => {
+        return prev.map((q, i) => (i === index ? query : q));
+      });
+
+    }
+  }
 
   async function stream(question: string) {
     setStatus('loading')
@@ -461,6 +517,8 @@ export const DocsGPTWidget = ({
           <Conversation size={size} onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
+                console.log(query.feedback);
+
                 return (
                   <React.Fragment key={index}>
                     {
@@ -473,7 +531,7 @@ export const DocsGPTWidget = ({
                       </MessageBubble>
                     }
                     {
-                      query.response ? <MessageBubble type='ANSWER'>
+                      query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
                         <Message
                           type='ANSWER'
                           ref={(index === queries.length - 1) ? endMessageRef : null}
@@ -483,6 +541,26 @@ export const DocsGPTWidget = ({
                             dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
                           />
                         </Message>
+
+                        {collectFeedback &&
+                          <Feedback className='feedback'>
+                            <Like
+                              style={{
+                                stroke: query.feedback == 'LIKE' ? '#800080' : '#38383b',
+                                visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
+                              }}
+                              fill='none'
+                              className='feedback-icons'
+                              onClick={() => handleFeedback("LIKE", index)} />
+                            <Dislike
+                              style={{
+                                stroke: query.feedback == 'DISLIKE' ? '#ec1c24' : '#38383b',
+                                visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
+                              }}
+                              fill='none'
+                              className='feedback-icons'
+                              onClick={() => handleFeedback("DISLIKE", index)} />
+                          </Feedback>}
                       </MessageBubble>
                         : <div>
                           {
@@ -518,7 +596,7 @@ export const DocsGPTWidget = ({
               type='text' placeholder="What do you want to do?" />
             <StyledButton
               size={size}
-              disabled={prompt.length == 0 || status !== 'idle'}>
+              disabled={prompt.trim().length == 0 || status !== 'idle'}>
               <PaperPlaneIcon width={15} height={15} color='white' />
             </StyledButton>
           </PromptContainer>

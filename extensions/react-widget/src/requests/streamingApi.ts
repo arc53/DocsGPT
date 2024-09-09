@@ -1,3 +1,4 @@
+import { FEEDBACK } from "@/types";
 interface HistoryItem {
   prompt: string;
   response?: string;
@@ -11,6 +12,12 @@ interface FetchAnswerStreamingProps {
   apiHost?: string;
   onEvent?: (event: MessageEvent) => void;
 }
+interface FeedbackPayload {
+  question: string;
+  answer: string;
+  apikey: string;
+  feedback: FEEDBACK;
+}
 export function fetchAnswerStreaming({
   question = '',
   apiKey = '',
@@ -20,12 +27,12 @@ export function fetchAnswerStreaming({
   onEvent = () => { console.log("Event triggered, but no handler provided."); }
 }: FetchAnswerStreamingProps): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const body= {
+    const body = {
       question: question,
       history: JSON.stringify(history),
       conversation_id: conversationId,
       model: 'default',
-      api_key:apiKey
+      api_key: apiKey
     };
     fetch(apiHost + '/stream', {
       method: 'POST',
@@ -81,3 +88,19 @@ export function fetchAnswerStreaming({
       });
   });
 }
+
+
+export const sendFeedback = (payload: FeedbackPayload,apiHost:string): Promise<Response> => {
+  return fetch(`${apiHost}/api/feedback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      question: payload.question,
+      answer: payload.answer,
+      feedback: payload.feedback,
+      api_key:payload.apikey
+    }),
+  });
+};
