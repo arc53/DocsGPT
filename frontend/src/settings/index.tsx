@@ -6,7 +6,7 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
 import i18n from '../locale/i18n';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import {
   selectSourceDocs,
   setSourceDocs,
@@ -35,9 +35,8 @@ export default function Settings() {
   };
 
   const handleDeleteClick = (index: number, doc: Doc) => {
-    const docPath = 'indexes/' + 'local' + '/' + doc.name;
     userService
-      .deletePath(docPath)
+      .deletePath(doc.id ?? '')
       .then((response) => {
         if (response.ok && documents) {
           const updatedDocuments = [

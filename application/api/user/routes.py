@@ -2,8 +2,6 @@ import os
 import uuid
 import shutil
 from flask import Blueprint, request, jsonify
-from urllib.parse import urlparse
-import requests
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from bson.binary import Binary, UuidRepresentation
@@ -17,7 +15,7 @@ from application.vectorstore.vector_creator import VectorCreator
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
-vectors_collection = db["vectors"]
+sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
@@ -25,9 +23,7 @@ shared_conversations_collections = db["shared_conversations"]
 
 user = Blueprint("user", __name__)
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 @user.route("/api/delete_conversation", methods=["POST"])
@@ -57,9 +53,7 @@ def get_conversations():
     conversations = conversations_collection.find().sort("date", -1).limit(30)
     list_conversations = []
     for conversation in conversations:
-        list_conversations.append(
-            {"id": str(conversation["_id"]), "name": conversation["name"]}
-        )
+        list_conversations.append({"id": str(conversation["_id"]), "name": conversation["name"]})
 
     # list_conversations = [{"id": "default", "name": "default"}, {"id": "jeff", "name": "jeff"}]
 
@@ -110,7 +104,7 @@ def delete_by_ids():
         return {"status": "error"}
 
     if settings.VECTOR_STORE == "faiss":
-        result = vectors_collection.delete_index(ids=ids)
+        result = sources_collection.delete_index(ids=ids)
         if result:
             return {"status": "ok"}
     return {"status": "error"}
@@ -120,28 +114,24 @@ def delete_by_ids():
 def delete_old():
     """Delete old indexes."""
     import shutil
-
-    path = request.args.get("path")
-    dirs = path.split("/")
-    dirs_clean = []
-    for i in range(0, len(dirs)):
-        dirs_clean.append(secure_filename(dirs[i]))
-    # check that path strats with indexes or vectors
-
-    if dirs_clean[0] not in ["indexes", "vectors"]:
-        return {"status": "error"}
-    path_clean = "/".join(dirs_clean)
-    vectors_collection.delete_one({"name": dirs_clean[-1], "user": dirs_clean[-2]})
+    source_id = request.args.get("source_id")
+    doc = sources_collection.find_one({
+        "_id": ObjectId(source_id),
+        "user": "local",
+    })
+    if(doc is None):
+        return {"status":"not found"},404
     if settings.VECTOR_STORE == "faiss":
         try:
-            shutil.rmtree(os.path.join(current_dir, path_clean))
+            shutil.rmtree(os.path.join(current_dir, str(doc["_id"])))
         except FileNotFoundError:
             pass
     else:
-        vetorstore = VectorCreator.create_vectorstore(
-            settings.VECTOR_STORE, path=os.path.join(current_dir, path_clean)
-        )
+        vetorstore = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id=str(doc["_id"]))
         vetorstore.delete_index()
+    sources_collection.delete_one({
+        "_id": ObjectId(source_id),
+    })
 
     return {"status": "ok"}
 
@@ -175,9 +165,7 @@ def upload_file():
             file.save(os.path.join(temp_dir, filename))
 
         # Use shutil.make_archive to zip the temp directory
-        zip_path = shutil.make_archive(
-            base_name=os.path.join(save_dir, job_name), format="zip", root_dir=temp_dir
-        )
+        zip_path = shutil.make_archive(base_name=os.path.join(save_dir, job_name), format="zip", root_dir=temp_dir)
         final_filename = os.path.basename(zip_path)
 
         # Clean up the temporary directory after zipping
@@ -219,9 +207,7 @@ def upload_remote():
     source_data = request.form["data"]
 
     if source_data:
-        task = ingest_remote.delay(
-            source_data=source_data, job_name=job_name, user=user, loader=source
-        )
+        task = ingest_remote.delay(source_data=source_data, job_name=job_name, user=user, loader=source)
         task_id = task.id
         return {"status": "ok", "task_id": task_id}
     else:
@@ -248,55 +234,36 @@ def combined_json():
     data = [
         {
             "name": "default",
-            "language": "default",
-            "version": "",
-            "description": "default",
-            "fullName": "default",
             "date": "default",
-            "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
             "location": "remote",
             "tokens": "",
+            "retriever": "classic",
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
-    # append data from vectors_collection in sorted order in descending order of date
-    for index in vectors_collection.find({"user": user}).sort("date", -1):
+    # append data from sources_collection in sorted order in descending order of date
+    for index in sources_collection.find({"user": user}).sort("date", -1):
         data.append(
             {
-                "id":str(index["_id"]),
+                "id": str(index["_id"]),
                 "name": index["name"],
-                "language": index["language"],
-                "version": "",
-                "description": index["name"],
-                "fullName": index["name"],
                 "date": index["date"],
-                "docLink": index["location"],
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "local",
                 "tokens": index["tokens"] if ("tokens" in index.keys()) else "",
+                "retriever": index["retriever"] if ("retriever" in index.keys()) else "classic",
             }
         )
-    if settings.VECTOR_STORE == "faiss":
-        data_remote = requests.get(
-            "https://d3dg1063dc54p9.cloudfront.net/combined.json"
-        ).json()
-        for index in data_remote:
-            index["location"] = "remote"
-            data.append(index)
     if "duckduck_search" in settings.RETRIEVERS_ENABLED:
         data.append(
             {
                 "name": "DuckDuckGo Search",
-                "language": "en",
-                "version": "",
-                "description": "duckduck_search",
-                "fullName": "DuckDuckGo Search",
                 "date": "duckduck_search",
-                "docLink": "duckduck_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
                 "tokens": "",
+                "retriever": "duckduck_search",
             }
         )
     if "brave_search" in settings.RETRIEVERS_ENABLED:
@@ -304,14 +271,11 @@ def combined_json():
             {
                 "name": "Brave Search",
                 "language": "en",
-                "version": "",
-                "description": "brave_search",
-                "fullName": "Brave Search",
                 "date": "brave_search",
-                "docLink": "brave_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
                 "tokens": "",
+                "retriever": "brave_search",
             }
         )
 
@@ -320,39 +284,13 @@ def combined_json():
 
 @user.route("/api/docs_check", methods=["POST"])
 def check_docs():
-    # check if docs exist in a vectorstore folder
     data = request.get_json()
-    # split docs on / and take first part
-    if data["docs"].split("/")[0] == "local":
-        return {"status": "exists"}
+
     vectorstore = "vectors/" + secure_filename(data["docs"])
-    base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": "exists"}
     else:
-        file_url = urlparse(base_path + vectorstore + "index.faiss")
-
-        if (
-            file_url.scheme in ["https"]
-            and file_url.netloc == "raw.githubusercontent.com"
-            and file_url.path.startswith("/arc53/DocsHUB/main/")
-        ):
-            r = requests.get(file_url.geturl())
-            if r.status_code != 200:
-                return {"status": "null"}
-            else:
-                if not os.path.exists(vectorstore):
-                    os.makedirs(vectorstore)
-                with open(vectorstore + "index.faiss", "wb") as f:
-                    f.write(r.content)
-
-                r = requests.get(base_path + vectorstore + "index.pkl")
-                with open(vectorstore + "index.pkl", "wb") as f:
-                    f.write(r.content)
-        else:
-            return {"status": "null"}
-
-        return {"status": "loaded"}
+        return {"status": "not found"}
 
 
 @user.route("/api/create_prompt", methods=["POST"])
@@ -383,9 +321,7 @@ def get_prompts():
     list_prompts.append({"id": "creative", "name": "creative", "type": "public"})
     list_prompts.append({"id": "strict", "name": "strict", "type": "public"})
     for prompt in prompts:
-        list_prompts.append(
-            {"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"}
-        )
+        list_prompts.append({"id": str(prompt["_id"]), "name": prompt["name"], "type": "private"})
 
     return jsonify(list_prompts)
 
@@ -394,21 +330,15 @@ def get_prompts():
 def get_single_prompt():
     prompt_id = request.args.get("id")
     if prompt_id == "default":
-        with open(
-            os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r"
-        ) as f:
+        with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
             chat_combine_template = f.read()
         return jsonify({"content": chat_combine_template})
     elif prompt_id == "creative":
-        with open(
-            os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r"
-        ) as f:
+        with open(os.path.join(current_dir, "prompts", "chat_combine_creative.txt"), "r") as f:
             chat_reduce_creative = f.read()
         return jsonify({"content": chat_reduce_creative})
     elif prompt_id == "strict":
-        with open(
-            os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
-        ) as f:
+        with open(os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r") as f:
             chat_reduce_strict = f.read()
         return jsonify({"content": chat_reduce_strict})
 
@@ -437,9 +367,7 @@ def update_prompt_name():
     # check if name is null
     if name == "":
         return {"status": "error"}
-    prompts_collection.update_one(
-        {"_id": ObjectId(id)}, {"$set": {"name": name, "content": content}}
-    )
+    prompts_collection.update_one({"_id": ObjectId(id)}, {"$set": {"name": name, "content": content}})
     return {"status": "ok"}
 
 
@@ -449,12 +377,23 @@ def get_api_keys():
     keys = api_key_collection.find({"user": user})
     list_keys = []
     for key in keys:
+        if "source" in key and isinstance(key["source"],DBRef):
+            source = db.dereference(key["source"])
+            if source is None:
+                continue
+            else:
+                source_name = source["name"]
+        elif "retriever" in key:
+            source_name = key["retriever"]
+        else:
+            continue
+            
         list_keys.append(
             {
                 "id": str(key["_id"]),
                 "name": key["name"],
                 "key": key["key"][:4] + "..." + key["key"][-4:],
-                "source": str(key["source"]),
+                "source": source_name,
                 "prompt_id": key["prompt_id"],
                 "chunks": key["chunks"],
             }
@@ -466,23 +405,22 @@ def get_api_keys():
 def create_api_key():
     data = request.get_json()
     name = data["name"]
-    source = data["source"]
     prompt_id = data["prompt_id"]
     chunks = data["chunks"]
     key = str(uuid.uuid4())
     user = "local"
-    if(ObjectId.is_valid(data["source"])):
-        source = DBRef("vectors",ObjectId(data["source"]))
-    resp = api_key_collection.insert_one(
-        {
-            "name": name,
-            "key": key,
-            "source": source,
-            "user": user,
-            "prompt_id": prompt_id,
-            "chunks": chunks,
-        }
-    )
+    new_api_key = {
+        "name": name,
+        "key": key,
+        "user": user,
+        "prompt_id": prompt_id,
+        "chunks": chunks,
+    }
+    if "source" in data and ObjectId.is_valid(data["source"]):
+        new_api_key["source"] = DBRef("sources", ObjectId(data["source"]))
+    if "retriever" in data:
+        new_api_key["retriever"] = data["retriever"]
+    resp = api_key_collection.insert_one(new_api_key)
     new_id = str(resp.inserted_id)
     return {"id": new_id, "key": key}
 
@@ -509,36 +447,37 @@ def share_conversation():
         conversation_id = data["conversation_id"]
         isPromptable = request.args.get("isPromptable").lower() == "true"
 
-        conversation = conversations_collection.find_one(
-            {"_id": ObjectId(conversation_id)}
-        )
+        conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
+        if(conversation is None):
+            raise Exception("Conversation does not exist")
         current_n_queries = len(conversation["queries"])
 
         ##generate binary representation of uuid
         explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)
 
         if isPromptable:
-            source = "default" if "source" not in data else data["source"]
             prompt_id = "default" if "prompt_id" not in data else data["prompt_id"]
             chunks = "2" if "chunks" not in data else data["chunks"]
 
             name = conversation["name"] + "(shared)"
-            pre_existing_api_document = api_key_collection.find_one(
-                {
+            new_api_key_data =  {
                     "prompt_id": prompt_id,
                     "chunks": chunks,
-                    "source": DBRef("vectors",ObjectId(source)) if ObjectId.is_valid(source) else source,
                     "user": user,
                 }
+            if "source" in data and ObjectId.is_valid(data["source"]):
+                new_api_key_data["source"] = DBRef("sources",ObjectId(data["source"]))
+            elif "retriever" in data:
+                new_api_key_data["retriever"] = data["retriever"]
+                 
+            pre_existing_api_document = api_key_collection.find_one(
+                new_api_key_data
             )
-            api_uuid = str(uuid.uuid4())
             if pre_existing_api_document:
                 api_uuid = pre_existing_api_document["key"]
                 pre_existing = shared_conversations_collections.find_one(
                     {
-                        "conversation_id": DBRef(
-                            "conversations", ObjectId(conversation_id)
-                        ),
+                        "conversation_id": DBRef("conversations", ObjectId(conversation_id)),
                         "isPromptable": isPromptable,
                         "first_n_queries": current_n_queries,
                         "user": user,
@@ -569,21 +508,18 @@ def share_conversation():
                             "api_key": api_uuid,
                         }
                     )
-                    return jsonify(
-                        {"success": True, "identifier": str(explicit_binary.as_uuid())}
-                    )
+                    return jsonify({"success": True, "identifier": str(explicit_binary.as_uuid())})
             else:
-                api_key_collection.insert_one(
-                    {
-                        "name": name,
-                        "key": api_uuid,
-                        "source": DBRef("vectors",ObjectId(source)) if ObjectId.is_valid(source) else source,
-                        "user": user,
-                        "prompt_id": prompt_id,
-                        "chunks": chunks,
-                    }
-                )
-            shared_conversations_collections.insert_one(
+                
+                api_uuid = str(uuid.uuid4())
+                new_api_key_data["key"] = api_uuid
+                new_api_key_data["name"] = name
+                if "source" in data and ObjectId.is_valid(data["source"]):
+                    new_api_key_data["source"] = DBRef("sources", ObjectId(data["source"]))
+                if "retriever" in data:
+                    new_api_key_data["retriever"] = data["retriever"]
+                api_key_collection.insert_one(new_api_key_data)
+                shared_conversations_collections.insert_one(
                 {
                     "uuid": explicit_binary,
                     "conversation_id": {
@@ -595,12 +531,10 @@ def share_conversation():
                     "user": user,
                     "api_key": api_uuid,
                 }
-            )
+              )
             ## Identifier as route parameter in frontend
             return (
-                jsonify(
-                    {"success": True, "identifier": str(explicit_binary.as_uuid())}
-                ),
+                jsonify({"success": True, "identifier": str(explicit_binary.as_uuid())}),
                 201,
             )
 
@@ -615,9 +549,7 @@ def share_conversation():
         )
         if pre_existing is not None:
             return (
-                jsonify(
-                    {"success": True, "identifier": str(pre_existing["uuid"].as_uuid())}
-                ),
+                jsonify({"success": True, "identifier": str(pre_existing["uuid"].as_uuid())}),
                 200,
             )
         else:
@@ -635,9 +567,7 @@ def share_conversation():
             )
             ## Identifier as route parameter in frontend
             return (
-                jsonify(
-                    {"success": True, "identifier": str(explicit_binary.as_uuid())}
-                ),
+                jsonify({"success": True, "identifier": str(explicit_binary.as_uuid())}),
                 201,
             )
     except Exception as err:
@@ -649,16 +579,10 @@ def share_conversation():
 @user.route("/api/shared_conversation/<string:identifier>", methods=["GET"])
 def get_publicly_shared_conversations(identifier: str):
     try:
-        query_uuid = Binary.from_uuid(
-            uuid.UUID(identifier), UuidRepresentation.STANDARD
-        )
+        query_uuid = Binary.from_uuid(uuid.UUID(identifier), UuidRepresentation.STANDARD)
         shared = shared_conversations_collections.find_one({"uuid": query_uuid})
         conversation_queries = []
-        if (
-            shared
-            and "conversation_id" in shared
-            and isinstance(shared["conversation_id"], DBRef)
-        ):
+        if shared and "conversation_id" in shared and isinstance(shared["conversation_id"], DBRef):
             # Resolve the DBRef
             conversation_ref = shared["conversation_id"]
             conversation = db.dereference(conversation_ref)
@@ -672,9 +596,7 @@ def get_publicly_shared_conversations(identifier: str):
                     ),
                     404,
                 )
-            conversation_queries = conversation["queries"][
-                : (shared["first_n_queries"])
-            ]
+            conversation_queries = conversation["queries"][: (shared["first_n_queries"])]
             for query in conversation_queries:
                 query.pop("sources")  ## avoid exposing sources
         else:

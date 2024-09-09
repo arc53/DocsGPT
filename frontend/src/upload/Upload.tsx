@@ -120,7 +120,7 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                        data?.find((d) => d.type?.toLowerCase() === 'local'),
                       ),
                     );
                   });
@@ -137,7 +137,7 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                        data?.find((d) => d.type?.toLowerCase() === 'local'),
                       ),
                     );
                   });

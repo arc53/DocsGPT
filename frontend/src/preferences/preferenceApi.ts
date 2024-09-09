@@ -1,18 +1,6 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
-
-// not all properties in Doc are going to be present. Make some optional
-export type Doc = {
-  location: string;
-  name: string;
-  language: string;
-  version: string;
-  description: string;
-  fullName: string;
-  date: string;
-  docLink: string;
-  model: string;
-};
+import { Doc } from '../models/misc';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(): Promise<Doc[] | null> {
@@ -78,17 +66,10 @@ export function setLocalPrompt(prompt: string): void {
 
 export function setLocalRecentDocs(doc: Doc): void {
   localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
-  let namePath = doc.name;
-  if (doc.language === namePath) {
-    namePath = '.project';
-  }
 
   let docPath = 'default';
-  if (doc.location === 'local') {
+  if (doc.type === 'local') {
     docPath = 'local' + '/' + doc.name + '/';
-  } else if (doc.location === 'remote') {
-    docPath =
-      doc.language + '/' + namePath + '/' + doc.version + '/' + doc.model + '/';
   }
   userService
     .checkDocs({

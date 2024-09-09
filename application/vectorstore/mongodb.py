@@ -5,7 +5,7 @@ from application.vectorstore.document_class import Document
 class MongoDBVectorStore(BaseVectorStore):
     def __init__(
         self,
-        path: str = "",
+        source_id: str = "",
         embeddings_key: str = "embeddings",
         collection: str = "documents",
         index_name: str = "vector_search_index",
@@ -18,7 +18,7 @@ class MongoDBVectorStore(BaseVectorStore):
         self._embedding_key = embedding_key
         self._embeddings_key = embeddings_key
         self._mongo_uri = settings.MONGO_URI
-        self._path = path.replace("application/indexes/", "").rstrip("/")
+        self._source_id = source_id.replace("application/indexes/", "").rstrip("/")
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
 
         try:
@@ -46,7 +46,7 @@ class MongoDBVectorStore(BaseVectorStore):
                     "numCandidates": k * 10, 
                     "index": self._index_name,
                     "filter": {
-                        "store": {"$eq": self._path}
+                        "source_id": {"$eq": self._source_id}
                     }
                 }
             }
@@ -123,4 +123,4 @@ class MongoDBVectorStore(BaseVectorStore):
         return result_ids
     
     def delete_index(self, *args, **kwargs):
-        self._collection.delete_many({"store": self._path})
+        self._collection.delete_many({"source_id": self._source_id})

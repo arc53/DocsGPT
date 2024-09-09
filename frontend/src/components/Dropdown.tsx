@@ -26,6 +26,7 @@ function Dropdown({
     | string
     | { label: string; value: string }
     | { value: number; description: string }
+    | { name: string; id: string; type: string }
     | null;
   onSelect:
     | ((value: string) => void)
@@ -96,6 +97,10 @@ function Dropdown({
                     ? selectedValue.value + ` (${selectedValue.description})`
                     : selectedValue.description
                 }`
+              : selectedValue &&
+                'name' in selectedValue &&
+                'id' in selectedValue
+              ? `${selectedValue.name}`
               : placeholder
               ? placeholder
               : 'From URL'}
