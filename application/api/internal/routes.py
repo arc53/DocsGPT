@@ -9,7 +9,7 @@ from application.core.settings import settings
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
-vectors_collection = db["vectors"]
+sources_collection = db["sources"]
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -60,8 +60,8 @@ def upload_index_files():
             os.makedirs(save_dir)
         file_faiss.save(os.path.join(save_dir, "index.faiss"))
         file_pkl.save(os.path.join(save_dir, "index.pkl"))
-    # create entry in vectors_collection
-    vectors_collection.insert_one(
+    # create entry in sources_collection
+    sources_collection.insert_one(
         {
             "_id": ObjectId(id),
             "user": user,

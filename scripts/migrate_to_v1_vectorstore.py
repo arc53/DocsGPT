@@ -5,6 +5,7 @@ def migrate_to_v1_vectorstore_mongo():
     client = pymongo.MongoClient("mongodb://localhost:27017/")
     db = client["docsgpt"]
     vectors_collection = db["vectors"]
+    sources_collection = db["sources"]
 
     for vector in vectors_collection.find():
         if "location" in vector:
@@ -13,6 +14,12 @@ def migrate_to_v1_vectorstore_mongo():
             vector["retriever"] = "classic"
             vector["remote_data"] = None
         vectors_collection.update_one({"_id": vector["_id"]}, {"$set": vector})
+
+    # move data from vectors_collection to sources_collection
+    for vector in vectors_collection.find():
+        sources_collection.insert_one(vector)
+
+    vectors_collection.drop()
 
     client.close()
 
@@ -36,13 +43,11 @@ def migrate_mongo_atlas_vector_to_v1_vectorstore():
     db = client["docsgpt"]
     vectors_collection = db["vectors"]
 
+    # mongodb atlas collection
+    documents_collection = db["documents"]
+
     for vector in vectors_collection.find():
-        if "location" in vector:
-            del vector["location"]
-        if "retriever" not in vector:
-            vector["retriever"] = "classic"
-            vector["remote_data"] = None
-        vectors_collection.update_one({"_id": vector["_id"]}, {"$set": vector})
+        documents_collection.update_many({"store": vector["user"] + "/" + vector["name"]}, {"$set": {"source_id": str(vector["_id"])}})
 
     client.close()
 

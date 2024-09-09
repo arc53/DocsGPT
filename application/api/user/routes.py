@@ -17,7 +17,7 @@ from application.vectorstore.vector_creator import VectorCreator
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
-vectors_collection = db["vectors"]
+sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
@@ -106,7 +106,7 @@ def delete_by_ids():
         return {"status": "error"}
 
     if settings.VECTOR_STORE == "faiss":
-        result = vectors_collection.delete_index(ids=ids)
+        result = sources_collection.delete_index(ids=ids)
         if result:
             return {"status": "ok"}
     return {"status": "error"}
@@ -116,9 +116,9 @@ def delete_by_ids():
 def delete_old():
     """Delete old indexes."""
     import shutil
-    path = request.args.get("path")
-    doc = vectors_collection.find_one({
-        "_id": ObjectId(path),
+    source_id = request.args.get("source_id")
+    doc = sources_collection.find_one({
+        "_id": ObjectId(source_id),
         "user": "local",
     })
     if(doc is None):
@@ -129,10 +129,10 @@ def delete_old():
         except FileNotFoundError:
             pass
     else:
-        vetorstore = VectorCreator.create_vectorstore(settings.VECTOR_STORE, path=str(doc["_id"]))
+        vetorstore = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id=str(doc["_id"]))
         vetorstore.delete_index()
-    vectors_collection.delete_one({
-        "_id": ObjectId(path),
+    sources_collection.delete_one({
+        "_id": ObjectId(source_id),
     })
 
     return {"status": "ok"}
@@ -244,8 +244,8 @@ def combined_json():
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
-    # append data from vectors_collection in sorted order in descending order of date
-    for index in vectors_collection.find({"user": user}).sort("date", -1):
+    # append data from sources_collection in sorted order in descending order of date
+    for index in sources_collection.find({"user": user}).sort("date", -1):
         data.append(
             {
                 "id": str(index["_id"]),

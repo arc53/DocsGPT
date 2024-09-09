@@ -12,8 +12,8 @@ from retry import retry
 
 @retry(tries=10, delay=60)
 def store_add_texts_with_retry(store, i, id):
-    # add store to the metadata 
-    i.metadata["store"] = str(id)
+    # add source_id to the metadata 
+    i.metadata["source_id"] = str(id)
     store.add_texts([i.page_content], metadatas=[i.metadata])
     # store_pine.add_texts([i.page_content], metadatas=[i.metadata])
 
@@ -34,13 +34,13 @@ def call_openai_api(docs, folder_name, id, task_status):
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
             docs_init=docs_init,
-            path=f"{folder_name}",
+            source_id=f"{folder_name}",
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     else:
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
-            path=str(id),
+            source_id=str(id),
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     # Uncomment for MPNet embeddings

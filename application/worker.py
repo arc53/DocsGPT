@@ -145,7 +145,6 @@ def ingest_worker(self, directory, formats, name_job, filename, user, retriever=
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
         response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
-        response = requests.get(urljoin(settings.API_URL, "/api/delete_old?name=" + name_job + "&?user=" + user))
     else:
         response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
 
@@ -197,7 +196,6 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp", r
         }
 
         requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
-        requests.get(urljoin(settings.API_URL, "/api/delete_old?name=" + name_job + "&?user=" + user))
     else:
         requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
 

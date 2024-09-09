@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
-vectors_collection = db["vectors"]
+sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 api_key_collection = db["api_keys"]
 answer = Blueprint("answer", __name__)
@@ -91,7 +91,7 @@ def get_data_from_api_key(api_key):
 
 
 def get_retriever(source_id: str):
-    doc = vectors_collection.find_one({"_id": ObjectId(source_id)})
+    doc = sources_collection.find_one({"_id": ObjectId(source_id)})
     if doc is None:
         raise Exception("Source document does not exist", 404)
     retriever_name = None if "retriever" not in doc else doc["retriever"]
