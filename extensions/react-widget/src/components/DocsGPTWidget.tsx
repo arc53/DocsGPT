@@ -65,13 +65,9 @@ const GlobalStyles = createGlobalStyle`
   background-color: #646464;
   color: #fff !important;
 }
-.feedback > .selected{
-  fill: #fff;
-  display: block !important;
-}
-.feedback > .default{
-  fill:#000;
-  display:block;
+.response code {
+  white-space: pre-wrap !important;
+  line-break: loose !important;
 }
 `;
 const Overlay = styled.div`
@@ -205,15 +201,22 @@ const Conversation = styled.div<{ size: string }>`
     width:${props => props.size === 'large' ? '90vw' : props.size === 'medium' ? '60vw' : '400px'} !important;
     }
 `;
-
+const Feedback = styled.div`
+  background-color: transparent;
+  font-weight: normal;
+  gap: 12px;
+  display: flex;
+  padding: 6px;
+  clear: both;
+`;
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     display: block;
     font-size: 16px;
     position: relative;
-    width: 100%;
+    width: 100%;;
     float: right;
     margin: 0rem;
-    &:hover .feedback-icons {
+    &:hover ${Feedback} * {
     visibility: visible !important;
   }
 `;
@@ -331,14 +334,7 @@ const HeroDescription = styled.p`
   font-size: 14px;
   line-height: 1.5;
 `;
-const Feedback = styled.div`
-  background-color: transparent;
-  font-weight: normal;
-  gap: 12px;
-  display: flex;
-  padding: 6px;
-  clear: both;
-`
+
 const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
   return (
     <>
@@ -359,8 +355,8 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
   );
 };
 export const DocsGPTWidget = ({
-  apiHost = 'http://127.0.0.1:7091',
-  apiKey = "220a4876-014d-47c8-996b-936fbefd3a22",//'82962c9a-aa77-4152-94e5-a4f84fd44c6a',
+  apiHost = 'https://gptcloud.arc53.com',
+  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -370,7 +366,7 @@ export const DocsGPTWidget = ({
   theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
-  collectFeedback = false
+  collectFeedback = true
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
@@ -543,22 +539,20 @@ export const DocsGPTWidget = ({
                         </Message>
 
                         {collectFeedback &&
-                          <Feedback className='feedback'>
+                          <Feedback>
                             <Like
                               style={{
-                                stroke: query.feedback == 'LIKE' ? '#800080' : '#38383b',
+                                stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
                                 visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
                               }}
                               fill='none'
-                              className='feedback-icons'
                               onClick={() => handleFeedback("LIKE", index)} />
                             <Dislike
                               style={{
-                                stroke: query.feedback == 'DISLIKE' ? '#ec1c24' : '#38383b',
+                                stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
                                 visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
                               }}
                               fill='none'
-                              className='feedback-icons'
                               onClick={() => handleFeedback("DISLIKE", index)} />
                           </Feedback>}
                       </MessageBubble>
