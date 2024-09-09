@@ -429,3 +429,15 @@ template {
   padding-left: 36px;
   padding-right: 36px;
 }
+
+.bottom-safe {
+  bottom: env(safe-area-inset-bottom, 0);
+}
+
+.ellipsis-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+}

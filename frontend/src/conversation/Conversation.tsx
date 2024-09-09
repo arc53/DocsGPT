@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -30,7 +30,7 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
-  const endMessageRef = useRef<HTMLDivElement>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
@@ -55,32 +55,8 @@ export default function Conversation() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (status !== 'idle') {
-        fetchStream.current && fetchStream.current.abort(); //abort previous stream
-      }
-    };
-  }, [status]);
-
-  useEffect(() => {
-    const observerCallback: IntersectionObserverCallback = (entries) => {
-      entries.forEach((entry) => {
-        setHasScrolledToLast(entry.isIntersecting);
-      });
-    };
-
-    const observer = new IntersectionObserver(observerCallback, {
-      root: null,
-      threshold: [1, 0.8],
-    });
-    if (endMessageRef.current) {
-      observer.observe(endMessageRef.current);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [endMessageRef.current]);
+    fetchStream.current && fetchStream.current.abort();
+  }, [conversationId]);
 
   useEffect(() => {
     if (queries.length) {
@@ -90,10 +66,16 @@ export default function Conversation() {
   }, [queries[queries.length - 1]]);
 
   const scrollIntoView = () => {
-    endMessageRef?.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    if (!conversationRef?.current || eventInterrupt) return;
+
+    if (status === 'idle' || !queries[queries.length - 1].response) {
+      conversationRef.current.scrollTo({
+        behavior: 'smooth',
+        top: conversationRef.current.scrollHeight,
+      });
+    } else {
+      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+    }
   };
 
   const handleQuestion = ({
@@ -147,7 +129,6 @@ export default function Conversation() {
     if (query.response) {
       responseView = (
         <ConversationBubble
-          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
@@ -180,7 +161,6 @@ export default function Conversation() {
       );
       responseView = (
         <ConversationBubble
-          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
           key={`${index}ERROR`}
           message={query.error}
@@ -211,7 +191,7 @@ export default function Conversation() {
     };
   }, []);
   return (
-    <div className="flex h-screen flex-col gap-7 pb-2">
+    <div className="flex h-[90vh] flex-col gap-7 pb-2 sm:h-[85vh]">
       {conversationId && (
         <>
           <button
@@ -238,6 +218,7 @@ export default function Conversation() {
         </>
       )}
       <div
+        ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
         className="flex h-[90%] w-full flex-1 justify-center overflow-y-auto p-4 md:h-[83vh]"
@@ -279,7 +260,7 @@ export default function Conversation() {
         {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
 
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-8/12">
+      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-1/2">
         <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <textarea
             id="inputbox"
@@ -311,7 +292,7 @@ export default function Conversation() {
           )}
         </div>
 
-        <p className="text-gray-595959 hidden w-[100vw] self-center  bg-white bg-transparent py-2 text-center text-xs dark:bg-raisin-black dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-595959 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>

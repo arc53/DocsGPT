@@ -62,7 +62,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 dispatch(
                   updateStreamingSource({
                     index: state.conversation.queries.length - 1,
-                    query: { sources },
+                    query: { sources: sources ?? [] },
                   }),
                 );
               });

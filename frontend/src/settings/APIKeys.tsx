@@ -78,7 +78,7 @@ export default function APIKeys() {
   }, []);
   return (
     <div className="mt-8">
-      <div className="flex w-full flex-col lg:w-max">
+      <div className="flex flex-col max-w-[876px]">
         <div className="flex justify-end">
           <button
             onClick={() => setCreateModal(true)}
@@ -104,7 +104,7 @@ export default function APIKeys() {
             <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
               <thead>
                 <tr>
-                  <th className="border-r p-4 md:w-[244px]">
+                  <th className="w-[244px] border-r p-4">
                     {t('settings.apiKeys.name')}
                   </th>
                   <th className="w-[244px] border-r px-4 py-2">

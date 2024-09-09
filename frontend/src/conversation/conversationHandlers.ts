@@ -91,7 +91,19 @@ export function handleFetchAnswerSteaming(
 
   return new Promise<Answer>((resolve, reject) => {
     conversationService
-      .answerStream(payload, signal)
+      .answerStream(
+        {
+          question: question,
+          active_docs: selectedDocs?.id as string,
+          history: JSON.stringify(history),
+          conversation_id: conversationId,
+          prompt_id: promptId,
+          chunks: chunks,
+          token_limit: token_limit,
+          isNoneDoc: selectedDocs === null,
+        },
+        signal,
+      )
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -162,7 +174,15 @@ export function handleSearch(
     payload.active_docs = selectedDocs.id as string;
   payload.retriever = selectedDocs?.retriever as string;
   return conversationService
-    .search(payload)
+    .search({
+      question: question,
+      active_docs: selectedDocs?.id as string,
+      conversation_id,
+      history,
+      chunks: chunks,
+      token_limit: token_limit,
+      isNoneDoc: selectedDocs === null,
+    })
     .then((response) => response.json())
     .then((data) => {
       return data;

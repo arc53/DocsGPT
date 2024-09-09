@@ -64,11 +64,11 @@ export function setLocalPrompt(prompt: string): void {
   localStorage.setItem('DocsGPTPrompt', prompt);
 }
 
-export function setLocalRecentDocs(doc: Doc): void {
+export function setLocalRecentDocs(doc: Doc | null): void {
   localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
 
   let docPath = 'default';
-  if (doc.type === 'local') {
+  if (doc?.type === 'local') {
     docPath = 'local' + '/' + doc.name + '/';
   }
   userService

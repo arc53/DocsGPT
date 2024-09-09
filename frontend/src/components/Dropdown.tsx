@@ -92,18 +92,14 @@ function Dropdown({
             {selectedValue && 'label' in selectedValue
               ? selectedValue.label
               : selectedValue && 'description' in selectedValue
-              ? `${
-                  selectedValue.value < 1e9
-                    ? selectedValue.value + ` (${selectedValue.description})`
-                    : selectedValue.description
-                }`
-              : selectedValue &&
-                'name' in selectedValue &&
-                'id' in selectedValue
-              ? `${selectedValue.name}`
-              : placeholder
-              ? placeholder
-              : 'From URL'}
+                ? `${
+                    selectedValue.value < 1e9
+                      ? selectedValue.value + ` (${selectedValue.description})`
+                      : selectedValue.description
+                  }`
+                : placeholder
+                  ? placeholder
+                  : 'From URL'}
           </span>
         )}
         <img
@@ -133,14 +129,14 @@ function Dropdown({
                 {typeof option === 'string'
                   ? option
                   : option.name
-                  ? option.name
-                  : option.label
-                  ? option.label
-                  : `${
-                      option.value < 1e9
-                        ? option.value + ` (${option.description})`
-                        : option.description
-                    }`}
+                    ? option.name
+                    : option.label
+                      ? option.label
+                      : `${
+                          option.value < 1e9
+                            ? option.value + ` (${option.description})`
+                            : option.description
+                        }`}
               </span>
               {showEdit && onEdit && (
                 <img

@@ -19,15 +19,11 @@ export default function DeleteConvModal({
   const dispatch = useDispatch();
   const { isMobile } = useMediaQuery();
   const { t } = useTranslation();
-  useOutsideAlerter(
-    modalRef,
-    () => {
-      if (isMobile && modalState === 'ACTIVE') {
-        dispatch(setModalState('INACTIVE'));
-      }
-    },
-    [modalState],
-  );
+  useOutsideAlerter(modalRef, () => {
+    if (isMobile && modalState === 'ACTIVE') {
+      dispatch(setModalState('INACTIVE'));
+    }
+  }, [modalState]);
 
   function handleSubmit() {
     handleDeleteAllConv();

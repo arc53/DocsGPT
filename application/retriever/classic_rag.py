@@ -3,7 +3,7 @@ from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
 from application.llm.llm_creator import LLMCreator
 
-from application.utils import count_tokens
+from application.utils import num_tokens_from_string
 
 
 class ClassicRAG(BaseRetriever):
@@ -82,7 +82,7 @@ class ClassicRAG(BaseRetriever):
             self.chat_history.reverse()
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
-                    tokens_batch = count_tokens(i["prompt"]) + count_tokens(
+                    tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
                         i["response"]
                     )
                     if tokens_current_history + tokens_batch < self.token_limit:
