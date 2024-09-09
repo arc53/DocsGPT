@@ -1,4 +1,3 @@
-import os
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
@@ -21,7 +20,7 @@ class ClassicRAG(BaseRetriever):
         user_api_key=None,
     ):
         self.question = question
-        self.vectorstore = self._get_vectorstore(source=source)
+        self.vectorstore = source['active_docs'] if 'active_docs' in source else None
         self.chat_history = chat_history
         self.prompt = prompt
         self.chunks = chunks
@@ -37,21 +36,6 @@ class ClassicRAG(BaseRetriever):
             )
         )
         self.user_api_key = user_api_key
-
-    def _get_vectorstore(self, source):
-        if "active_docs" in source:
-            if source["active_docs"].split("/")[0] == "default":
-                vectorstore = ""
-            elif source["active_docs"].split("/")[0] == "local":
-                vectorstore = "indexes/" + source["active_docs"]
-            else:
-                vectorstore = "vectors/" + source["active_docs"]
-            if source["active_docs"] == "default":
-                vectorstore = ""
-        else:
-            vectorstore = ""
-        vectorstore = os.path.join("application", vectorstore)
-        return vectorstore
 
     def _get_data(self):
         if self.chunks == 0:

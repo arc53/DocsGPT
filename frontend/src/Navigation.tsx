@@ -24,9 +24,9 @@ import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
 import DeleteConvModal from './modals/DeleteConvModal';
-import { ActiveState } from './models/misc';
+import { ActiveState, Doc } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
-import { Doc, getConversations, getDocs } from './preferences/preferenceApi';
+import { getConversations, getDocs } from './preferences/preferenceApi';
 import {
   selectApiKeyStatus,
   selectConversationId,
@@ -124,10 +124,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleDeleteClick = (doc: Doc) => {
-    const docPath = `indexes/local/${doc.name}`;
-
     userService
-      .deletePath(docPath)
+      .deletePath(doc.id ?? '')
       .then(() => {
         return getDocs();
       })

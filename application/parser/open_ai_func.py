@@ -11,12 +11,14 @@ from retry import retry
 
 
 @retry(tries=10, delay=60)
-def store_add_texts_with_retry(store, i):
+def store_add_texts_with_retry(store, i, id):
+    # add source_id to the metadata 
+    i.metadata["source_id"] = str(id)
     store.add_texts([i.page_content], metadatas=[i.metadata])
     # store_pine.add_texts([i.page_content], metadatas=[i.metadata])
 
 
-def call_openai_api(docs, folder_name, task_status):
+def call_openai_api(docs, folder_name, id, task_status):
     # Function to create a vector store from the documents and save it to disk
 
     if not os.path.exists(f"{folder_name}"):
@@ -32,13 +34,13 @@ def call_openai_api(docs, folder_name, task_status):
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
             docs_init=docs_init,
-            path=f"{folder_name}",
+            source_id=f"{folder_name}",
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     else:
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
-            path=f"{folder_name}",
+            source_id=str(id),
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     # Uncomment for MPNet embeddings
@@ -57,7 +59,7 @@ def call_openai_api(docs, folder_name, task_status):
             task_status.update_state(
                 state="PROGRESS", meta={"current": int((c1 / s1) * 100)}
             )
-            store_add_texts_with_retry(store, i)
+            store_add_texts_with_retry(store, i, id)
         except Exception as e:
             print(e)
             print("Error on ", i)

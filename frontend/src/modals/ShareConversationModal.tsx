@@ -46,27 +46,9 @@ export const ShareConversationModal = ({
       ? docs
           .filter((doc) => doc.model === embeddingsName)
           .map((doc: Doc) => {
-            let namePath = doc.name;
-            if (doc.language === namePath) {
-              namePath = '.project';
-            }
-            let docPath = 'default';
-            if (doc.location === 'local') {
-              docPath = 'local' + '/' + doc.name + '/';
-            } else if (doc.location === 'remote') {
-              docPath =
-                doc.language +
-                '/' +
-                namePath +
-                '/' +
-                doc.version +
-                '/' +
-                doc.model +
-                '/';
-            }
             return {
               label: doc.name,
-              value: docPath,
+              value: doc.id ?? 'default',
             };
           })
       : [];

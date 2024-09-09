@@ -5,12 +5,12 @@ from qdrant_client import models
 
 
 class QdrantStore(BaseVectorStore):
-    def __init__(self, path: str = "", embeddings_key: str = "embeddings"):
+    def __init__(self, source_id: str = "", embeddings_key: str = "embeddings"):
         self._filter = models.Filter(
             must=[
                 models.FieldCondition(
-                    key="metadata.store",
-                    match=models.MatchValue(value=path.replace("application/indexes/", "").rstrip("/")),
+                    key="metadata.source_id",
+                    match=models.MatchValue(value=source_id.replace("application/indexes/", "").rstrip("/")),
                 )
             ]
         )
