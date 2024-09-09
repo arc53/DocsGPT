@@ -116,25 +116,24 @@ def delete_by_ids():
 def delete_old():
     """Delete old indexes."""
     import shutil
-    name = request.args.get("name")
-    user = request.args.get("user")
+    path = request.args.get("path")
     doc = vectors_collection.find_one({
-        "user":user,
-        "name":name
+        "_id": ObjectId(path),
+        "user": "local",
     })
-    print("user",user)
-    print("file",name)
     if(doc is None):
         return {"status":"not found"},404
-    path_clean = doc["location"]
     if settings.VECTOR_STORE == "faiss":
         try:
-            shutil.rmtree(os.path.join(current_dir, path_clean))
+            shutil.rmtree(os.path.join(current_dir, str(doc["_id"])))
         except FileNotFoundError:
             pass
     else:
-        vetorstore = VectorCreator.create_vectorstore(settings.VECTOR_STORE, path=os.path.join(current_dir, path_clean))
+        vetorstore = VectorCreator.create_vectorstore(settings.VECTOR_STORE, path=str(doc["_id"]))
         vetorstore.delete_index()
+    vectors_collection.delete_one({
+        "_id": ObjectId(path),
+    })
 
     return {"status": "ok"}
 

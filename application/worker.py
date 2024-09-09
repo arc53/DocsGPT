@@ -18,8 +18,7 @@ from application.parser.token_func import group_split
 
 # Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):
-    store = "/".join(title.split("/")[1:3])
-    return {"title": title, "store": store}
+    return {"title": title}
 
 
 # Define a function to generate a random string of a given length.
@@ -189,7 +188,6 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp", r
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    id = ObjectId()
     file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, 
                  "id": str(id), 'type': loader, 'remote_data': source_data}
     if settings.VECTOR_STORE == "faiss":
