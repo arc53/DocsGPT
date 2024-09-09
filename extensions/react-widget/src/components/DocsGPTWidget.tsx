@@ -417,7 +417,7 @@ export const DocsGPTWidget = ({
             });
           }
         })
-
+        .catch(err => console.log("Connection failed",err))
     }
     else {
       delete query.feedback;
@@ -513,8 +513,6 @@ export const DocsGPTWidget = ({
           <Conversation size={size} onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
-                console.log(query.feedback);
-
                 return (
                   <React.Fragment key={index}>
                     {
