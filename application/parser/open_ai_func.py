@@ -16,7 +16,7 @@ def store_add_texts_with_retry(store, i):
     # store_pine.add_texts([i.page_content], metadatas=[i.metadata])
 
 
-def call_openai_api(docs, folder_name, task_status):
+def call_openai_api(docs, folder_name, id, task_status):
     # Function to create a vector store from the documents and save it to disk
 
     if not os.path.exists(f"{folder_name}"):
@@ -38,7 +38,7 @@ def call_openai_api(docs, folder_name, task_status):
     else:
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
-            path=f"{folder_name}",
+            path=id,
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     # Uncomment for MPNet embeddings

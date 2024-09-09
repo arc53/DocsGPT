@@ -127,8 +127,9 @@ def ingest_worker(self, directory, formats, name_job, filename, user, retriever=
     )
 
     docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+    id = ObjectId()
 
-    call_openai_api(docs, full_path, self)
+    call_openai_api(docs, full_path, id, self)
     tokens = count_tokens_docs(docs)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -138,7 +139,6 @@ def ingest_worker(self, directory, formats, name_job, filename, user, retriever=
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    id = ObjectId()
     file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, "id": str(id), 'type': 'local'}
     if settings.VECTOR_STORE == "faiss":
         files = {
@@ -184,7 +184,8 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp", r
     )
     # docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
     tokens = count_tokens_docs(docs)
-    call_openai_api(docs, full_path, self)
+    id = ObjectId()
+    call_openai_api(docs, full_path, id, self)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
