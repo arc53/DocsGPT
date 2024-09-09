@@ -14,9 +14,9 @@ def get_vectorstore(path):
 
 class FaissStore(BaseVectorStore):
 
-    def __init__(self, path, embeddings_key, docs_init=None):
+    def __init__(self, source_id, embeddings_key, docs_init=None):
         super().__init__()
-        self.path = get_vectorstore(path)
+        self.path = get_vectorstore(source_id)
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
         if docs_init:
             self.docsearch = FAISS.from_documents(
