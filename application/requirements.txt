@@ -9,7 +9,7 @@ EbookLib==0.18
 elasticsearch==8.14.0
 escodegen==1.0.11
 esprima==4.0.1
-Flask==3.0.1
+Flask==3.0.3
 faiss-cpu==1.8.0.post1
 gunicorn==23.0.0
 html2text==2020.1.16
