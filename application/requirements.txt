@@ -33,4 +33,4 @@ tiktoken==0.7.0
 torch
 tqdm==4.66.5
 transformers==4.44.2
-Werkzeug==3.0.3
+Werkzeug==3.0.4
