@@ -23,4 +23,5 @@ export interface WidgetProps {
   theme?:THEME,
   buttonIcon?:string;
   buttonBg?:string;
+  collectFeedback?:boolean
 }

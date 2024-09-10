@@ -84,14 +84,10 @@ def api_feedback():
     question = data["question"]
     answer = data["answer"]
     feedback = data["feedback"]
-
-    feedback_collection.insert_one(
-        {
-            "question": question,
-            "answer": answer,
-            "feedback": feedback,
-        }
-    )
+    new_doc = {"question": question, "answer": answer, "feedback": feedback}
+    if "api_key" in data:
+        new_doc["api_key"] = data["api_key"]
+    feedback_collection.insert_one(new_doc)
     return {"status": "ok"}
 
 
