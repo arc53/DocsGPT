@@ -23,6 +23,7 @@ conversations_collection = db["conversations"]
 vectors_collection = db["vectors"]
 prompts_collection = db["prompts"]
 api_key_collection = db["api_keys"]
+user_logs_collection = db["user_logs"]
 answer = Blueprint("answer", __name__)
 
 gpt_model = ""
@@ -202,6 +203,19 @@ def complete_stream(
             # send data.type = "end" to indicate that the stream has ended as json
             data = json.dumps({"type": "id", "id": str(conversation_id)})
             yield f"data: {data}\n\n"
+        
+        retriever_params = retriever.get_params()
+        user_logs_collection.insert_one({
+            "action": "stream_answer",
+            "level": "info",
+            "user": "local",
+            "api_key": user_api_key,
+            "date": datetime.datetime.utcnow(),
+            "question": question,
+            "response": response_full,
+            "sources": source_log_docs,
+            "retriever_params": retriever_params
+        })
 
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
@@ -405,6 +419,18 @@ def api_answer():
         result["conversation_id"] = save_conversation(
             conversation_id, question, response_full, source_log_docs, llm
         )
+        retriever_params = retriever.get_params()
+        user_logs_collection.insert_one({
+            "action": "api_answer",
+            "level": "info",
+            "user": "local",
+            "api_key": user_api_key,
+            "date": datetime.datetime.utcnow(),
+            "question": question,
+            "response": response_full,
+            "sources": source_log_docs,
+            "retriever_params": retriever_params
+        })
 
         return result
     except Exception as e:
@@ -459,6 +485,18 @@ def api_search():
         user_api_key=user_api_key,
     )
     docs = retriever.search()
+
+    retriever_params = retriever.get_params()
+    user_logs_collection.insert_one({
+        "action": "api_search",
+        "level": "info",
+        "user": "local",
+        "api_key": user_api_key,
+        "date": datetime.datetime.utcnow(),
+        "question": question,
+        "sources": docs,
+        "retriever_params": retriever_params
+    })
 
     if data.get("isNoneDoc"):
         for doc in docs:
