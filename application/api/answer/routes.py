@@ -203,19 +203,21 @@ def complete_stream(
             # send data.type = "end" to indicate that the stream has ended as json
             data = json.dumps({"type": "id", "id": str(conversation_id)})
             yield f"data: {data}\n\n"
-        
+
         retriever_params = retriever.get_params()
-        user_logs_collection.insert_one({
-            "action": "stream_answer",
-            "level": "info",
-            "user": "local",
-            "api_key": user_api_key,
-            "date": datetime.datetime.utcnow(),
-            "question": question,
-            "response": response_full,
-            "sources": source_log_docs,
-            "retriever_params": retriever_params
-        })
+        user_logs_collection.insert_one(
+            {
+                "action": "stream_answer",
+                "level": "info",
+                "user": "local",
+                "api_key": user_api_key,
+                "question": question,
+                "response": response_full,
+                "sources": source_log_docs,
+                "retriever_params": retriever_params,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
+        )
 
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
@@ -281,8 +283,9 @@ def stream():
         else:
             retriever_name = source["active_docs"]
 
-        current_app.logger.info(f"/stream - request_data: {data}, source: {source}",
-            extra={"data": json.dumps({"request_data": data, "source": source})}
+        current_app.logger.info(
+            f"/stream - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})},
         )
 
         prompt = get_prompt(prompt_id)
@@ -319,8 +322,9 @@ def stream():
             mimetype="text/event-stream",
         )
     except Exception as e:
-        current_app.logger.error(f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
-          extra={"error": str(e), "traceback": traceback.format_exc()}
+        current_app.logger.error(
+            f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
+            extra={"error": str(e), "traceback": traceback.format_exc()},
         )
         message = e.args[0]
         status_code = 400
@@ -384,8 +388,9 @@ def api_answer():
 
         prompt = get_prompt(prompt_id)
 
-        current_app.logger.info(f"/api/answer - request_data: {data}, source: {source}",
-            extra={"data": json.dumps({"request_data": data, "source": source})}
+        current_app.logger.info(
+            f"/api/answer - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})},
         )
 
         retriever = RetrieverCreator.create_retriever(
@@ -420,22 +425,25 @@ def api_answer():
             conversation_id, question, response_full, source_log_docs, llm
         )
         retriever_params = retriever.get_params()
-        user_logs_collection.insert_one({
-            "action": "api_answer",
-            "level": "info",
-            "user": "local",
-            "api_key": user_api_key,
-            "date": datetime.datetime.utcnow(),
-            "question": question,
-            "response": response_full,
-            "sources": source_log_docs,
-            "retriever_params": retriever_params
-        })
+        user_logs_collection.insert_one(
+            {
+                "action": "api_answer",
+                "level": "info",
+                "user": "local",
+                "api_key": user_api_key,
+                "question": question,
+                "response": response_full,
+                "sources": source_log_docs,
+                "retriever_params": retriever_params,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
+        )
 
         return result
     except Exception as e:
-        current_app.logger.error(f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
-          extra={"error": str(e), "traceback": traceback.format_exc()}
+        current_app.logger.error(
+            f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
+            extra={"error": str(e), "traceback": traceback.format_exc()},
         )
         return bad_request(500, str(e))
 
@@ -468,9 +476,10 @@ def api_search():
         token_limit = data["token_limit"]
     else:
         token_limit = settings.DEFAULT_MAX_HISTORY
-        
-    current_app.logger.info(f"/api/answer - request_data: {data}, source: {source}",
-            extra={"data": json.dumps({"request_data": data, "source": source})}
+
+    current_app.logger.info(
+        f"/api/answer - request_data: {data}, source: {source}",
+        extra={"data": json.dumps({"request_data": data, "source": source})},
     )
 
     retriever = RetrieverCreator.create_retriever(
@@ -487,16 +496,18 @@ def api_search():
     docs = retriever.search()
 
     retriever_params = retriever.get_params()
-    user_logs_collection.insert_one({
-        "action": "api_search",
-        "level": "info",
-        "user": "local",
-        "api_key": user_api_key,
-        "date": datetime.datetime.utcnow(),
-        "question": question,
-        "sources": docs,
-        "retriever_params": retriever_params
-    })
+    user_logs_collection.insert_one(
+        {
+            "action": "api_search",
+            "level": "info",
+            "user": "local",
+            "api_key": user_api_key,
+            "question": question,
+            "sources": docs,
+            "retriever_params": retriever_params,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+        }
+    )
 
     if data.get("isNoneDoc"):
         for doc in docs:

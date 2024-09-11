@@ -65,6 +65,9 @@
     },
     "analytics": {
       "label": "Analytics"
+    },
+    "logs": {
+      "label": "Logs"
     }
   },
   "modals": {

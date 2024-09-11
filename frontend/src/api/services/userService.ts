@@ -29,6 +29,8 @@ const userService = {
     apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data),
   getFeedbackAnalytics: (data: any): Promise<any> =>
     apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data),
+  getLogs: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.LOGS, data),
 };
 
 export default userService;

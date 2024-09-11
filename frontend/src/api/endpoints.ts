@@ -15,6 +15,7 @@ const endpoints = {
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
+    LOGS: `/api/get_user_logs`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

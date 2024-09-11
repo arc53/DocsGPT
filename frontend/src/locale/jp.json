@@ -65,6 +65,9 @@
     },
     "analytics": {
       "label": "分析"
+    },
+    "logs": {
+      "label": "ログ"
     }
   },
   "modals": {

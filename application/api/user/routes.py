@@ -26,6 +26,7 @@ feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
 token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
+user_logs_collection = db["user_logs"]
 
 user = Blueprint("user", __name__)
 
@@ -1127,3 +1128,62 @@ def get_feedback_analytics():
         return jsonify({"success": False, "error": str(err)}), 400
 
     return jsonify({"success": True, "feedback": daily_feedback}), 200
+
+
+@user.route("/api/get_user_logs", methods=["POST"])
+def get_user_logs():
+    data = request.get_json()
+    page = int(data.get("page", 1))
+    api_key_id = data.get("api_key_id")
+    page_size = int(data.get("page_size", 10))
+    skip = (page - 1) * page_size
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    query = {}
+    if api_key:
+        query = {"api_key": api_key}
+    items_cursor = (
+        user_logs_collection.find(query)
+        .sort("timestamp", -1)
+        .skip(skip)
+        .limit(page_size + 1)
+    )
+    items = list(items_cursor)
+
+    results = []
+    for item in items[:page_size]:
+        results.append(
+            {
+                "id": str(item.get("_id")),
+                "action": item.get("action"),
+                "level": item.get("level"),
+                "user": item.get("user"),
+                "question": item.get("question"),
+                "sources": item.get("sources"),
+                "retriever_params": item.get("retriever_params"),
+                "timestamp": item.get("timestamp"),
+            }
+        )
+    has_more = len(items) > page_size
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "logs": results,
+                "page": page,
+                "page_size": page_size,
+                "has_more": has_more,
+            }
+        ),
+        200,
+    )
