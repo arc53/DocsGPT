@@ -190,6 +190,27 @@ export function handleSearch(
     .catch((err) => console.log(err));
 }
 
+export function handleSearchViaApiKey(
+  question: string,
+  api_key: string,
+  history: Array<any> = [],
+) {
+  history = history.map((item) => {
+    return { prompt: item.prompt, response: item.response };
+  });
+  return conversationService
+    .search({
+      question: question,
+      history: JSON.stringify(history),
+      api_key: api_key,
+    })
+    .then((response) => response.json())
+    .then((data) => {
+      return data;
+    })
+    .catch((err) => console.log(err));
+}
+
 export function handleSendFeedback(
   prompt: string,
   response: string,

@@ -671,8 +671,6 @@ def get_publicly_shared_conversations(identifier: str):
             conversation_queries = conversation["queries"][
                 : (shared["first_n_queries"])
             ]
-            for query in conversation_queries:
-                query.pop("sources")  ## avoid exposing sources
         else:
             return (
                 jsonify(
