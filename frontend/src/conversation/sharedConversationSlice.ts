@@ -187,9 +187,12 @@ export const sharedConversationSlice = createSlice({
     ) {
       const { index, query } = action.payload;
       if (!state.queries[index].sources) {
-        state.queries[index].sources = query?.sources;
-      } else {
-        state.queries[index].sources!.push(query.sources![0]);
+        state.queries[index].sources = query.sources ?? [];
+      } else if (query.sources && query.sources.length > 0) {
+        state.queries[index].sources = [
+          ...(state.queries[index].sources ?? []),
+          ...query.sources,
+        ];
       }
     },
     raiseError(
