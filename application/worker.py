@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 import logging
 
 import requests
+from bson.objectid import ObjectId
 
 from application.core.settings import settings
 from application.parser.file.bulk import SimpleDirectoryReader
@@ -16,10 +17,10 @@ from application.parser.token_func import group_split
 from application.utils import count_tokens_docs
 
 
+
 # Define a function to extract metadata from a given filename.
 def metadata_from_filename(title):
-    store = "/".join(title.split("/")[1:3])
-    return {"title": title, "store": store}
+    return {"title": title}
 
 
 # Define a function to generate a random string of a given length.
@@ -27,9 +28,7 @@ def generate_random_string(length):
     return "".join([string.ascii_letters[i % 52] for i in range(length)])
 
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
@@ -60,7 +59,7 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
 
 
 # Define the main function for ingesting and processing documents.
-def ingest_worker(self, directory, formats, name_job, filename, user):
+def ingest_worker(self, directory, formats, name_job, filename, user, retriever="classic"):
     """
     Ingest and process documents.
 
@@ -71,6 +70,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
         name_job (str): Name of the job for this ingestion task.
         filename (str): Name of the file to be ingested.
         user (str): Identifier for the user initiating the ingestion.
+        retriever (str): Type of retriever to use for processing the documents.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -106,9 +106,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # check if file is .zip and extract it
     if filename.endswith(".zip"):
-        extract_zip_recursive(
-            os.path.join(full_path, filename), full_path, 0, recursion_depth
-        )
+        extract_zip_recursive(os.path.join(full_path, filename), full_path, 0, recursion_depth)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -129,8 +127,9 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     )
 
     docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+    id = ObjectId()
 
-    call_openai_api(docs, full_path, self)
+    call_openai_api(docs, full_path, id, self)
     tokens = count_tokens_docs(docs)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -140,22 +139,15 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    file_data = {"name": name_job, "user": user, "tokens":tokens}
+    file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, "id": str(id), 'type': 'local'}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
-        response = requests.post(
-            urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
-        )
-        response = requests.get(
-            urljoin(settings.API_URL, "/api/delete_old?path=" + full_path)
-        )
+        response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
     else:
-        response = requests.post(
-            urljoin(settings.API_URL, "/api/upload_index"), data=file_data
-        )
+        response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
 
     # delete local
     shutil.rmtree(full_path)
@@ -170,7 +162,7 @@ def ingest_worker(self, directory, formats, name_job, filename, user):
     }
 
 
-def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
+def remote_worker(self, source_data, name_job, user, loader, directory="temp", retriever="classic"):
     token_check = True
     min_tokens = 150
     max_tokens = 1250
@@ -191,22 +183,21 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp"):
         token_check=token_check,
     )
     # docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
-    call_openai_api(docs, full_path, self)
     tokens = count_tokens_docs(docs)
+    id = ObjectId()
+    call_openai_api(docs, full_path, id, self)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user, "tokens":tokens}
+    file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, 
+                 "id": str(id), 'type': loader, 'remote_data': source_data}
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
-        
-        requests.post(
-            urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
-        )
-        requests.get(urljoin(settings.API_URL, "/api/delete_old?path=" + full_path))
+
+        requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
     else:
         requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
 

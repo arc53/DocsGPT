@@ -27,6 +27,7 @@ function Dropdown({
     | string
     | { label: string; value: string }
     | { value: number; description: string }
+    | { name: string; id: string; type: string }
     | null;
   onSelect:
     | ((value: string) => void)

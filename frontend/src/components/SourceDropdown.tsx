@@ -1,7 +1,7 @@
 import React from 'react';
 import Trash from '../assets/trash.svg';
 import Arrow2 from '../assets/dropdown-arrow.svg';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 type Props = {
@@ -62,9 +62,6 @@ function SourceDropdown({
           <div className="flex flex-row gap-2">
             <p className="max-w-3/4 truncate whitespace-nowrap">
               {selectedDocs?.name || 'None'}
-            </p>
-            <p className="flex flex-col items-center justify-center">
-              {selectedDocs?.version}
             </p>
           </div>
         </span>

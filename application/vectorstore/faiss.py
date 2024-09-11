@@ -1,12 +1,22 @@
 from langchain_community.vectorstores import FAISS
 from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
+import os
+
+def get_vectorstore(path):
+    if path:
+        vectorstore = "indexes/"+path
+        vectorstore = os.path.join("application", vectorstore)
+    else:
+        vectorstore = os.path.join("application")
+
+    return vectorstore
 
 class FaissStore(BaseVectorStore):
 
-    def __init__(self, path, embeddings_key, docs_init=None):
+    def __init__(self, source_id, embeddings_key, docs_init=None):
         super().__init__()
-        self.path = path
+        self.path = get_vectorstore(source_id)
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
         if docs_init:
             self.docsearch = FAISS.from_documents(
@@ -14,7 +24,8 @@ class FaissStore(BaseVectorStore):
             )
         else:
             self.docsearch = FAISS.load_local(
-                self.path, embeddings
+                self.path, embeddings, 
+                allow_dangerous_deserialization=True
             )
         self.assert_embedding_dimensions(embeddings)
 
@@ -37,10 +48,10 @@ class FaissStore(BaseVectorStore):
         """
         if settings.EMBEDDINGS_NAME == "huggingface_sentence-transformers/all-mpnet-base-v2":
             try:
-                word_embedding_dimension = embeddings.client[1].word_embedding_dimension
+                word_embedding_dimension = embeddings.dimension
             except AttributeError as e:
-                raise AttributeError("word_embedding_dimension not found in embeddings.client[1]") from e
+                raise AttributeError("'dimension' attribute not found in embeddings instance. Make sure the embeddings object is properly initialized.") from e
             docsearch_index_dimension = self.docsearch.index.d
             if word_embedding_dimension != docsearch_index_dimension:
-                raise ValueError(f"word_embedding_dimension ({word_embedding_dimension}) " +
-                                 f"!= docsearch_index_word_embedding_dimension ({docsearch_index_dimension})")
+                raise ValueError(f"Embedding dimension mismatch: embeddings.dimension ({word_embedding_dimension}) " +
+                                 f"!= docsearch index dimension ({docsearch_index_dimension})")

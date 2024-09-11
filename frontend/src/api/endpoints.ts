@@ -10,7 +10,7 @@ const endpoints = {
     DELETE_PROMPT: '/api/delete_prompt',
     UPDATE_PROMPT: '/api/update_prompt',
     SINGLE_PROMPT: (id: string) => `/api/get_single_prompt?id=${id}`,
-    DELETE_PATH: (docPath: string) => `/api/delete_old?path=${docPath}`,
+    DELETE_PATH: (docPath: string) => `/api/delete_old?source_id=${docPath}`,
     TASK_STATUS: (task_id: string) => `/api/task_status?task_id=${task_id}`,
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
