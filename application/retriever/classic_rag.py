@@ -45,13 +45,12 @@ class ClassicRAG(BaseRetriever):
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
             docs_temp = docsearch.search(self.question, k=self.chunks)
+            print(docs_temp)
             docs = [
                 {
-                    "title": (
-                        i.metadata["title"].split("/")[-1]
-                        if i.metadata
-                        else i.page_content
-                    ),
+                    "title": i.metadata.get(
+                        "title", i.metadata.get("post_title", i.page_content)
+                    ).split("/")[-1],
                     "text": i.page_content,
                     "source": (
                         i.metadata.get("source")
@@ -105,3 +104,15 @@ class ClassicRAG(BaseRetriever):
 
     def search(self):
         return self._get_data()
+    
+    def get_params(self):
+        return {
+            "question": self.question,
+            "source": self.vectorstore,
+            "chat_history": self.chat_history,
+            "prompt": self.prompt,
+            "chunks": self.chunks,
+            "token_limit": self.token_limit,
+            "gpt_model": self.gpt_model,
+            "user_api_key": self.user_api_key
+        }

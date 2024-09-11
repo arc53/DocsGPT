@@ -101,3 +101,15 @@ class BraveRetSearch(BaseRetriever):
 
     def search(self):
         return self._get_data()
+
+    def get_params(self):
+        return {
+            "question": self.question,
+            "source": self.source,
+            "chat_history": self.chat_history,
+            "prompt": self.prompt,
+            "chunks": self.chunks,
+            "token_limit": self.token_limit,
+            "gpt_model": self.gpt_model,
+            "user_api_key": self.user_api_key
+        }

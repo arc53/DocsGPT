@@ -2,6 +2,7 @@ export type InputProps = {
   type: 'text' | 'number';
   value: string | string[] | number;
   colorVariant?: 'silver' | 'jet' | 'gray';
+  borderVariant?: 'thin' | 'thick';
   isAutoFocused?: boolean;
   id?: string;
   maxLength?: number;

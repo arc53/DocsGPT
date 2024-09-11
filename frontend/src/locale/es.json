@@ -62,6 +62,12 @@
       "key": "Clave de API",
       "sourceDoc": "Documento Fuente",
       "createNew": "Crear Nuevo"
+    },
+    "analytics": {
+      "label": "Analítica"
+    },
+    "logs": {
+      "label": "Registros"
     }
   },
   "modals": {

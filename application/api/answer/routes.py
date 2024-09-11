@@ -24,6 +24,7 @@ conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 api_key_collection = db["api_keys"]
+user_logs_collection = db["user_logs"]
 answer = Blueprint("answer", __name__)
 
 gpt_model = ""
@@ -37,7 +38,9 @@ if settings.MODEL_NAME:  # in case there is particular model name configured
     gpt_model = settings.MODEL_NAME
 
 # load the prompts
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 with open(os.path.join(current_dir, "prompts", "chat_combine_default.txt"), "r") as f:
     chat_combine_template = f.read()
 
@@ -98,9 +101,12 @@ def get_retriever(source_id: str):
     return retriever_name
 
 
-
 def is_azure_configured():
-    return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
+    return (
+        settings.OPENAI_API_BASE
+        and settings.OPENAI_API_VERSION
+        and settings.AZURE_DEPLOYMENT_NAME
+    )
 
 
 def save_conversation(conversation_id, question, response, source_log_docs, llm):
@@ -201,6 +207,21 @@ def complete_stream(
             data = json.dumps({"type": "id", "id": str(conversation_id)})
             yield f"data: {data}\n\n"
 
+        retriever_params = retriever.get_params()
+        user_logs_collection.insert_one(
+            {
+                "action": "stream_answer",
+                "level": "info",
+                "user": "local",
+                "api_key": user_api_key,
+                "question": question,
+                "response": response_full,
+                "sources": source_log_docs,
+                "retriever_params": retriever_params,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
+        )
+
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
@@ -258,7 +279,7 @@ def stream():
             user_api_key = data["api_key"]
 
         elif "active_docs" in data:
-            source = {"active_docs" : data["active_docs"]}
+            source = {"active_docs": data["active_docs"]}
             retriever_name = get_retriever(data["active_docs"]) or retriever_name
             user_api_key = None
 
@@ -266,12 +287,13 @@ def stream():
             source = {}
             user_api_key = None
 
-        current_app.logger.info(f"/stream - request_data: {data}, source: {source}",
-            extra={"data": json.dumps({"request_data": data, "source": source})}
+        current_app.logger.info(
+            f"/stream - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})},
         )
 
         prompt = get_prompt(prompt_id)
-       
+
         retriever = RetrieverCreator.create_retriever(
             retriever_name,
             question=question,
@@ -304,8 +326,9 @@ def stream():
             mimetype="text/event-stream",
         )
     except Exception as e:
-        current_app.logger.error(f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
-          extra={"error": str(e), "traceback": traceback.format_exc()}
+        current_app.logger.error(
+            f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
+            extra={"error": str(e), "traceback": traceback.format_exc()},
         )
         message = e.args[0]
         status_code = 400
@@ -364,7 +387,7 @@ def api_answer():
             retriever_name = data_key["retriever"] or retriever_name
             user_api_key = data["api_key"]
         elif "active_docs" in data:
-            source = {"active_docs":data["active_docs"]}
+            source = {"active_docs": data["active_docs"]}
             retriever_name = get_retriever(data["active_docs"]) or retriever_name
             user_api_key = None
         else:
@@ -373,8 +396,9 @@ def api_answer():
 
         prompt = get_prompt(prompt_id)
 
-        current_app.logger.info(f"/api/answer - request_data: {data}, source: {source}",
-            extra={"data": json.dumps({"request_data": data, "source": source})}
+        current_app.logger.info(
+            f"/api/answer - request_data: {data}, source: {source}",
+            extra={"data": json.dumps({"request_data": data, "source": source})},
         )
 
         retriever = RetrieverCreator.create_retriever(
@@ -406,13 +430,30 @@ def api_answer():
 
         result = {"answer": response_full, "sources": source_log_docs}
         result["conversation_id"] = str(
-            save_conversation(conversation_id, question, response_full, source_log_docs, llm)
+            save_conversation(
+                conversation_id, question, response_full, source_log_docs, llm
+            )
+        )
+        retriever_params = retriever.get_params()
+        user_logs_collection.insert_one(
+            {
+                "action": "api_answer",
+                "level": "info",
+                "user": "local",
+                "api_key": user_api_key,
+                "question": question,
+                "response": response_full,
+                "sources": source_log_docs,
+                "retriever_params": retriever_params,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
         )
 
         return result
     except Exception as e:
-        current_app.logger.error(f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
-          extra={"error": str(e), "traceback": traceback.format_exc()}
+        current_app.logger.error(
+            f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
+            extra={"error": str(e), "traceback": traceback.format_exc()},
         )
         return bad_request(500, str(e))
 
@@ -431,7 +472,7 @@ def api_search():
         source = {"active_docs":data_key["source"]}
         user_api_key = data["api_key"]
     elif "active_docs" in data:
-        source = {"active_docs":data["active_docs"]}
+        source = {"active_docs": data["active_docs"]}
         user_api_key = None
     else:
         source = {}
@@ -445,9 +486,10 @@ def api_search():
         token_limit = data["token_limit"]
     else:
         token_limit = settings.DEFAULT_MAX_HISTORY
-        
-    current_app.logger.info(f"/api/answer - request_data: {data}, source: {source}",
-            extra={"data": json.dumps({"request_data": data, "source": source})}
+
+    current_app.logger.info(
+        f"/api/answer - request_data: {data}, source: {source}",
+        extra={"data": json.dumps({"request_data": data, "source": source})},
     )
 
     retriever = RetrieverCreator.create_retriever(
@@ -462,6 +504,20 @@ def api_search():
         user_api_key=user_api_key,
     )
     docs = retriever.search()
+
+    retriever_params = retriever.get_params()
+    user_logs_collection.insert_one(
+        {
+            "action": "api_search",
+            "level": "info",
+            "user": "local",
+            "api_key": user_api_key,
+            "question": question,
+            "sources": docs,
+            "retriever_params": retriever_params,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+        }
+    )
 
     if data.get("isNoneDoc"):
         for doc in docs:

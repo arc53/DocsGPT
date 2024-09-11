@@ -1,16 +1,24 @@
-import { useState } from 'react';
-import Copy from './../assets/copy.svg?react';
-import CheckMark from './../assets/checkmark.svg?react';
 import copy from 'copy-to-clipboard';
+import { useState } from 'react';
 
-export default function CoppyButton({ text }: { text: string }) {
+import CheckMark from '../assets/checkmark.svg?react';
+import Copy from '../assets/copy.svg?react';
+
+export default function CoppyButton({
+  text,
+  colorLight,
+  colorDark,
+}: {
+  text: string;
+  colorLight?: string;
+  colorDark?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const [isCopyHovered, setIsCopyHovered] = useState(false);
 
   const handleCopyClick = (text: string) => {
     copy(text);
     setCopied(true);
-    // Reset copied to false after a few seconds
     setTimeout(() => {
       setCopied(false);
     }, 3000);
@@ -20,8 +28,8 @@ export default function CoppyButton({ text }: { text: string }) {
     <div
       className={`flex items-center justify-center rounded-full p-2 ${
         isCopyHovered
-          ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
-          : 'bg-[#ffffff] dark:bg-transparent'
+          ? `bg-[#EEEEEE] dark:bg-purple-taupe`
+          : `bg-[${colorLight ? colorLight : '#FFFFFF'}] dark:bg-[${colorDark ? colorDark : 'transparent'}]`
       }`}
     >
       {copied ? (

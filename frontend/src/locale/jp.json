@@ -62,6 +62,12 @@
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
       "createNew": "新規作成"
+    },
+    "analytics": {
+      "label": "分析"
+    },
+    "logs": {
+      "label": "ログ"
     }
   },
   "modals": {
