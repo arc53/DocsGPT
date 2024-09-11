@@ -2,7 +2,6 @@ import datetime
 import os
 import shutil
 import uuid
-from urllib.parse import urlparse
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
