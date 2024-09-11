@@ -180,7 +180,7 @@ const ConversationBubble = forwardRef<
                   ))}
                   {(sources?.length ?? 0) > 3 && (
                     <div
-                      className="flex h-24 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                      className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                       onClick={() => setIsSidebarOpen(true)}
                     >
                       <p className="ellipsis-text h-22 text-xs">{`View ${
