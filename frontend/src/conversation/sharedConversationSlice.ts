@@ -6,6 +6,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import {
   handleFetchSharedAnswer,
   handleFetchSharedAnswerStreaming,
+  handleSearchViaApiKey,
 } from './conversationHandlers';
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
@@ -44,6 +45,22 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
               // set status to 'idle'
               dispatch(sharedConversationSlice.actions.setStatus('idle'));
               dispatch(saveToLocalStorage());
+
+              state.sharedConversation.apiKey &&
+                handleSearchViaApiKey(
+                  question,
+                  state.sharedConversation.apiKey,
+                  state.sharedConversation.queries,
+                ).then((sources) => {
+                  //dispatch streaming sources
+                  sources &&
+                    dispatch(
+                      updateStreamingSource({
+                        index: state.sharedConversation.queries.length - 1,
+                        query: { sources: sources ?? [] },
+                      }),
+                    );
+                });
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
@@ -164,6 +181,17 @@ export const sharedConversationSlice = createSlice({
         ...query,
       };
     },
+    updateStreamingSource(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const { index, query } = action.payload;
+      if (!state.queries[index].sources) {
+        state.queries[index].sources = query?.sources;
+      } else {
+        state.queries[index].sources!.push(query.sources![0]);
+      }
+    },
     raiseError(
       state,
       action: PayloadAction<{ index: number; message: string }>,
@@ -213,6 +241,7 @@ export const {
   updateStreamingQuery,
   addQuery,
   saveToLocalStorage,
+  updateStreamingSource,
 } = sharedConversationSlice.actions;
 
 export const selectStatus = (state: RootState) => state.conversation.status;

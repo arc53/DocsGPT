@@ -429,7 +429,7 @@ def api_search():
         data_key = get_data_from_api_key(data["api_key"])
         chunks = int(data_key["chunks"])
         source = {"active_docs":data_key["source"]}
-        user_api_key = data_key["api_key"]
+        user_api_key = data["api_key"]
     elif "active_docs" in data:
         source = {"active_docs":data["active_docs"]}
         user_api_key = None
