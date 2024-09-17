@@ -57,7 +57,7 @@ export default function Settings() {
     setActiveTab(t('settings.general.label'));
   }, [i18n.language]);
   return (
-    <div className="p-4 pt-20 md:p-12 h-[100dvh] overflow-auto">
+    <div className="p-4 md:p-12 h-full overflow-auto">
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
         {t('settings.label')}
       </p>

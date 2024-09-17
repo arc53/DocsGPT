@@ -71,7 +71,8 @@ body {
 Avoid changing height in mobile browsers
 */
 @media only screen and (max-width: 500px) {
-  body,html {
+  body,
+  html {
     height: 100%;
     position: fixed;
     width: 100%;

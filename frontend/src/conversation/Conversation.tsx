@@ -191,7 +191,7 @@ export default function Conversation() {
     };
   }, []);
   return (
-    <div className="flex flex-col gap-1 h-[92%] sm:h-full justify-end">
+    <div className="flex flex-col gap-1 h-full justify-end">
       {conversationId && (
         <>
           {' '}
@@ -222,7 +222,7 @@ export default function Conversation() {
         ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex justify-center w-full overflow-y-auto h-auto min-h-full"
+        className="flex justify-center w-full overflow-y-auto h-screen sm:mt-12"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -239,12 +239,12 @@ export default function Conversation() {
         )}
 
         {queries.length > 0 ? (
-          <div className="w-full h-full md:w-8/12">
+          <div className="w-full md:w-8/12 px-1">
             {queries.map((query, index) => {
               return (
                 <Fragment key={index}>
                   <ConversationBubble
-                    className={'mb-1 last:mb-28 md:mb-7 first:mt-40'}
+                    className={'first:mt-5'}
                     key={`${index}QUESTION`}
                     message={query.prompt}
                     type="QUESTION"
