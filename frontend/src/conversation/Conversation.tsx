@@ -191,15 +191,16 @@ export default function Conversation() {
     };
   }, []);
   return (
-    <div className="flex h-[90vh] flex-col gap-7 pb-2 sm:h-[85vh]">
+    <div className="flex flex-col gap-1 h-[92%] sm:h-full justify-end">
       {conversationId && (
         <>
+          {' '}
           <button
             title="Share"
             onClick={() => {
               setShareModalState(true);
             }}
-            className="fixed top-4 right-20 z-0 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+            className="absolute top-4 right-20 z-20 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
           >
             <img
               className="m-2 h-5 w-5 filter dark:invert"
@@ -221,7 +222,7 @@ export default function Conversation() {
         ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex h-[90%] w-full flex-1 justify-center overflow-y-auto p-4 md:h-[83vh]"
+        className="flex justify-center w-full overflow-y-auto h-auto min-h-full"
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
@@ -237,13 +238,13 @@ export default function Conversation() {
           </button>
         )}
 
-        {queries.length > 0 && (
-          <div className="mt-16 w-full md:w-8/12">
+        {queries.length > 0 ? (
+          <div className="w-full h-full md:w-8/12">
             {queries.map((query, index) => {
               return (
                 <Fragment key={index}>
                   <ConversationBubble
-                    className={'mb-1 last:mb-28 md:mb-7'}
+                    className={'mb-1 last:mb-28 md:mb-7 first:mt-40'}
                     key={`${index}QUESTION`}
                     message={query.prompt}
                     type="QUESTION"
@@ -255,12 +256,12 @@ export default function Conversation() {
               );
             })}
           </div>
+        ) : (
+          <Hero handleQuestion={handleQuestion} />
         )}
-
-        {queries.length === 0 && <Hero handleQuestion={handleQuestion} />}
       </div>
 
-      <div className="bottom-safe fixed flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-1/2">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-[62%] h-auto">
         <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <textarea
             id="inputbox"

@@ -19,7 +19,7 @@ export default function Hero({
   }>;
   return (
     <div
-      className={`mb-1 mt-16 flex w-full flex-col justify-end text-black-1000 dark:text-bright-gray sm:w-full md:mb-10 lg:mt-6`}
+      className={`pt-20 sm:pt-0 pb-6 sm:pb-12 flex h-full  w-full flex-col  text-black-1000 dark:text-bright-gray sm:w-full px-2 sm:px-0`}
     >
       <div className="flex h-full w-full flex-col items-center justify-center">
         <div className="flex items-center">

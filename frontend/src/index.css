@@ -67,7 +67,17 @@ body {
   overflow-x: hidden;
   font-family: 'Inter', sans-serif;
 }
-
+/*
+Avoid changing height in mobile browsers
+*/
+@media only screen and (max-width: 500px) {
+  body,html {
+    height: 100%;
+    position: fixed;
+    width: 100%;
+    overflow-y: none;
+  }
+}
 /**
  * Render the `main` element consistently in IE.
  */
@@ -427,7 +437,7 @@ template {
 }
 
 ::-webkit-scrollbar {
-  width: 0;
+  width: 10;
 }
 
 input:-webkit-autofill {

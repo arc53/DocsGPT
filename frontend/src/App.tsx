@@ -16,11 +16,12 @@ inject();
 function MainLayout() {
   const { isMobile } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!isMobile);
+
   return (
-    <div className="dark:bg-raisin-black">
+    <div className="dark:bg-raisin-black relative h-full">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <div
-        className={`min-h-screen ${
+        className={`h-full ${
           !isMobile
             ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
             : 'ml-0 md:ml-16'
@@ -35,7 +36,7 @@ function MainLayout() {
 export default function App() {
   useDarkTheme();
   return (
-    <>
+    <div className="h-full relative overflow-auto">
       <Routes>
         <Route element={<MainLayout />}>
           <Route index element={<Conversation />} />
@@ -45,6 +46,6 @@ export default function App() {
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/*" element={<PageNotFound />} />
       </Routes>
-    </>
+    </div>
   );
 }
