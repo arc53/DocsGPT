@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import {
+  Preference,
   prefListenerMiddleware,
   prefSlice,
 } from './preferences/preferenceSlice';
@@ -12,31 +13,32 @@ const chunks = localStorage.getItem('DocsGPTChunks');
 const token_limit = localStorage.getItem('DocsGPTTokenLimit');
 const doc = localStorage.getItem('DocsGPTRecentDocs');
 
-const store = configureStore({
-  preloadedState: {
-    preference: {
-      apiKey: key ?? '',
-      prompt:
-        prompt !== null
-          ? JSON.parse(prompt)
-          : { name: 'default', id: 'default', type: 'private' },
-      chunks: JSON.parse(chunks ?? '2').toString(),
-      token_limit: token_limit ? parseInt(token_limit) : 2000,
-      selectedDocs: doc !== null ? JSON.parse(doc) : null,
-      conversations: null,
-      sourceDocs: [
-        {
-          name: 'default',
-          date: '',
-          model: '1.0',
-          type: 'remote',
-          id: 'default',
-          retriever: 'clasic',
-        },
-      ],
-      modalState: 'INACTIVE',
-    },
+const preloadedState: { preference: Preference } = {
+  preference: {
+    apiKey: key ?? '',
+    prompt:
+      prompt !== null
+        ? JSON.parse(prompt)
+        : { name: 'default', id: 'default', type: 'private' },
+    chunks: JSON.parse(chunks ?? '2').toString(),
+    token_limit: token_limit ? parseInt(token_limit) : 2000,
+    selectedDocs: doc !== null ? JSON.parse(doc) : null,
+    conversations: null,
+    sourceDocs: [
+      {
+        name: 'default',
+        date: '',
+        model: '1.0',
+        type: 'remote',
+        id: 'default',
+        retriever: 'clasic',
+      },
+    ],
+    modalState: 'INACTIVE',
   },
+};
+const store = configureStore({
+  preloadedState: preloadedState,
   reducer: {
     preference: prefSlice.reducer,
     conversation: conversationSlice.reducer,
