@@ -16,6 +16,7 @@ function Dropdown({
   showDelete,
   onDelete,
   placeholder,
+  contentSize = 'text-base',
 }: {
   options:
     | string[]
@@ -26,6 +27,7 @@ function Dropdown({
     | string
     | { label: string; value: string }
     | { value: number; description: string }
+    | { name: string; id: string; type: string }
     | null;
   onSelect:
     | ((value: string) => void)
@@ -41,6 +43,7 @@ function Dropdown({
   showDelete?: boolean;
   onDelete?: (value: string) => void;
   placeholder?: string;
+  contentSize?: string;
 }) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = React.useState(false);
@@ -84,21 +87,21 @@ function Dropdown({
           </span>
         ) : (
           <span
-            className={`overflow-hidden text-ellipsis dark:text-bright-gray ${
+            className={`truncate overflow-hidden dark:text-bright-gray ${
               !selectedValue && 'text-silver dark:text-gray-400'
-            }`}
+            } ${contentSize}`}
           >
             {selectedValue && 'label' in selectedValue
               ? selectedValue.label
               : selectedValue && 'description' in selectedValue
-              ? `${
-                  selectedValue.value < 1e9
-                    ? selectedValue.value + ` (${selectedValue.description})`
-                    : selectedValue.description
-                }`
-              : placeholder
-              ? placeholder
-              : 'From URL'}
+                ? `${
+                    selectedValue.value < 1e9
+                      ? selectedValue.value + ` (${selectedValue.description})`
+                      : selectedValue.description
+                  }`
+                : placeholder
+                  ? placeholder
+                  : 'From URL'}
           </span>
         )}
         <img
@@ -123,19 +126,19 @@ function Dropdown({
                   onSelect(option);
                   setIsOpen(false);
                 }}
-                className="ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray"
+                className={`ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray ${contentSize}`}
               >
                 {typeof option === 'string'
                   ? option
                   : option.name
-                  ? option.name
-                  : option.label
-                  ? option.label
-                  : `${
-                      option.value < 1e9
-                        ? option.value + ` (${option.description})`
-                        : option.description
-                    }`}
+                    ? option.name
+                    : option.label
+                      ? option.label
+                      : `${
+                          option.value < 1e9
+                            ? option.value + ` (${option.description})`
+                            : option.description
+                        }`}
               </span>
               {showEdit && onEdit && (
                 <img

@@ -26,15 +26,12 @@ const store = configureStore({
       conversations: null,
       sourceDocs: [
         {
-          location: '',
-          language: '',
           name: 'default',
-          version: '',
           date: '',
-          description: '',
-          docLink: '',
-          fullName: '',
           model: '1.0',
+          type: 'remote',
+          id: 'default',
+          retriever: 'clasic',
         },
       ],
       modalState: 'INACTIVE',

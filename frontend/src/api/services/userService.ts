@@ -23,6 +23,14 @@ const userService = {
     apiClient.get(endpoints.USER.DELETE_PATH(docPath)),
   getTaskStatus: (task_id: string): Promise<any> =>
     apiClient.get(endpoints.USER.TASK_STATUS(task_id)),
+  getMessageAnalytics: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data),
+  getTokenAnalytics: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data),
+  getFeedbackAnalytics: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data),
+  getLogs: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.LOGS, data),
 };
 
 export default userService;

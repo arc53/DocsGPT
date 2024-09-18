@@ -1,6 +1,6 @@
 {
   "name": "docsgpt",
-  "version": "0.3.9",
+  "version": "0.4.2",
   "private": false,
   "description": "DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖.",
   "source": "./src/index.html",
@@ -31,6 +31,7 @@
   },
   "scripts": {
     "build": "parcel build src/main.tsx --public-url ./",
+    "build:react": "parcel build src/index.ts",
     "dev": "parcel src/index.html -p 3000",
     "test": "jest",
     "lint": "eslint",
@@ -39,7 +40,6 @@
   },
   "dependencies": {
     "@babel/plugin-transform-flow-strip-types": "^7.23.3",
-    "@bpmn-io/snarkdown": "^2.2.0",
     "@parcel/resolver-glob": "^2.12.0",
     "@parcel/transformer-svg-react": "^2.12.0",
     "@parcel/transformer-typescript-tsc": "^2.12.0",
@@ -51,6 +51,7 @@
     "flow-bin": "^0.229.2",
     "i": "^0.3.7",
     "install": "^0.13.0",
+    "markdown-it": "^14.1.0",
     "npm": "^10.5.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -63,6 +64,7 @@
     "@parcel/packager-ts": "^2.12.0",
     "@parcel/transformer-typescript-types": "^2.12.0",
     "@types/dompurify": "^3.0.5",
+    "@types/markdown-it": "^14.1.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "babel-loader": "^8.0.4",

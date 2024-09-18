@@ -51,12 +51,13 @@ const ConversationBubble = forwardRef<
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
-      <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
+      <div
+        ref={ref}
+        className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+      >
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white">
-          <ReactMarkdown className="whitespace-pre-wrap break-normal leading-normal">
-            {message}
-          </ReactMarkdown>
+        <div className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal break-normal">
+          {message}
         </div>
       </div>
     );
@@ -180,7 +181,7 @@ const ConversationBubble = forwardRef<
                   ))}
                   {(sources?.length ?? 0) > 3 && (
                     <div
-                      className="flex h-24 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                      className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                       onClick={() => setIsSidebarOpen(true)}
                     >
                       <p className="ellipsis-text h-22 text-xs">{`View ${
@@ -226,15 +227,16 @@ const ConversationBubble = forwardRef<
               className="whitespace-pre-wrap break-normal leading-normal"
               remarkPlugins={[remarkGfm]}
               components={{
-                code({ node, inline, className, children, ...props }) {
+                code(props) {
+                  const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
 
-                  return !inline && match ? (
+                  return match ? (
                     <div className="group relative">
                       <SyntaxHighlighter
+                        {...rest}
                         PreTag="div"
                         language={match[1]}
-                        {...props}
                         style={vscDarkPlus}
                       >
                         {String(children).replace(/\n$/, '')}
@@ -249,7 +251,10 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code className={className ? className : ''} {...props}>
+                    <code
+                      className={className ? className : 'whitespace-pre-line'}
+                      {...props}
+                    >
                       {children}
                     </code>
                   );
@@ -396,8 +401,9 @@ const ConversationBubble = forwardRef<
             toggleState={(state: boolean) => {
               setIsSidebarOpen(state);
             }}
-            children={<AllSources sources={sources} />}
-          />
+          >
+            <AllSources sources={sources} />
+          </Sidebar>
         )}
       </div>
     );

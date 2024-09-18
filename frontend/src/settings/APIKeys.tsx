@@ -5,15 +5,14 @@ import userService from '../api/services/userService';
 import Trash from '../assets/trash.svg';
 import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
 import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
+import { APIKeyData } from './types';
 
 export default function APIKeys() {
   const { t } = useTranslation();
   const [isCreateModalOpen, setCreateModal] = React.useState(false);
   const [isSaveKeyModalOpen, setSaveKeyModal] = React.useState(false);
   const [newKey, setNewKey] = React.useState('');
-  const [apiKeys, setApiKeys] = React.useState<
-    { name: string; key: string; source: string; id: string }[]
-  >([]);
+  const [apiKeys, setApiKeys] = React.useState<APIKeyData[]>([]);
 
   const handleFetchKeys = async () => {
     try {
@@ -48,7 +47,8 @@ export default function APIKeys() {
 
   const handleCreateKey = (payload: {
     name: string;
-    source: string;
+    source?: string;
+    retriever?: string;
     prompt_id: string;
     chunks: string;
   }) => {
@@ -77,7 +77,7 @@ export default function APIKeys() {
   }, []);
   return (
     <div className="mt-8">
-      <div className="flex w-full flex-col lg:w-max">
+      <div className="flex flex-col max-w-[876px]">
         <div className="flex justify-end">
           <button
             onClick={() => setCreateModal(true)}
@@ -103,7 +103,7 @@ export default function APIKeys() {
             <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
               <thead>
                 <tr>
-                  <th className="border-r p-4 md:w-[244px]">
+                  <th className="w-[244px] border-r p-4">
                     {t('settings.apiKeys.name')}
                   </th>
                   <th className="w-[244px] border-r px-4 py-2">

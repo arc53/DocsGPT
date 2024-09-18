@@ -1,7 +1,7 @@
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
-from application.utils import count_tokens
+from application.utils import num_tokens_from_string
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
@@ -95,7 +95,7 @@ class DuckDuckSearch(BaseRetriever):
             self.chat_history.reverse()
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
-                    tokens_batch = count_tokens(i["prompt"]) + count_tokens(
+                    tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
                         i["response"]
                     )
                     if tokens_current_history + tokens_batch < self.token_limit:
@@ -118,3 +118,15 @@ class DuckDuckSearch(BaseRetriever):
 
     def search(self):
         return self._get_data()
+    
+    def get_params(self):
+        return {
+            "question": self.question,
+            "source": self.source,
+            "chat_history": self.chat_history,
+            "prompt": self.prompt,
+            "chunks": self.chunks,
+            "token_limit": self.token_limit,
+            "gpt_model": self.gpt_model,
+            "user_api_key": self.user_api_key
+        }

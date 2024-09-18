@@ -4,9 +4,9 @@ import {
   createSlice,
   isAnyOf,
 } from '@reduxjs/toolkit';
-import { Doc, setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
+import { setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
 import { RootState } from '../store';
-import { ActiveState } from '../models/misc';
+import { ActiveState, Doc } from '../models/misc';
 
 interface Preference {
   apiKey: string;
@@ -25,15 +25,13 @@ const initialState: Preference = {
   chunks: '2',
   token_limit: 2000,
   selectedDocs: {
+    id: 'default',
     name: 'default',
-    language: 'default',
-    location: 'default',
-    version: 'default',
-    description: 'default',
-    fullName: 'default',
+    type: 'remote',
     date: 'default',
     docLink: 'default',
     model: 'openai_text-embedding-ada-002',
+    retriever: 'classic',
   } as Doc,
   sourceDocs: null,
   conversations: null,

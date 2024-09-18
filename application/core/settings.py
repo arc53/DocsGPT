@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DEFAULT_MAX_HISTORY: int = 150
     MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
-    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant"
+    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant" or "milvus"
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for answering
     AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for embeddings
+    OPENAI_BASE_URL: Optional[str] = None # openai base url for open ai compatable models
 
     # elasticsearch
     ELASTIC_CLOUD_ID: Optional[str] = None  # cloud id for elasticsearch
@@ -60,6 +61,11 @@ class Settings(BaseSettings):
     QDRANT_HOST: Optional[str] = None
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
+
+    # Milvus vectorstore config
+    MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
+    MILVUS_URI: Optional[str] = "./milvus_local.db"   # milvus lite version as default
+    MILVUS_TOKEN: Optional[str] = ""
 
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 

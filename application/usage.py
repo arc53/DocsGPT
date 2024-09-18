@@ -2,7 +2,7 @@ import sys
 from pymongo import MongoClient
 from datetime import datetime
 from application.core.settings import settings
-from application.utils import count_tokens
+from application.utils import num_tokens_from_string
 
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
@@ -24,9 +24,9 @@ def update_token_usage(user_api_key, token_usage):
 def gen_token_usage(func):
     def wrapper(self, model, messages, stream, **kwargs):
         for message in messages:
-            self.token_usage["prompt_tokens"] += count_tokens(message["content"])
+            self.token_usage["prompt_tokens"] += num_tokens_from_string(message["content"])
         result = func(self, model, messages, stream, **kwargs)
-        self.token_usage["generated_tokens"] += count_tokens(result)
+        self.token_usage["generated_tokens"] += num_tokens_from_string(result)
         update_token_usage(self.user_api_key, self.token_usage)
         return result
 
@@ -36,14 +36,14 @@ def gen_token_usage(func):
 def stream_token_usage(func):
     def wrapper(self, model, messages, stream, **kwargs):
         for message in messages:
-            self.token_usage["prompt_tokens"] += count_tokens(message["content"])
+            self.token_usage["prompt_tokens"] += num_tokens_from_string(message["content"])
         batch = []
         result = func(self, model, messages, stream, **kwargs)
         for r in result:
             batch.append(r)
             yield r
         for line in batch:
-            self.token_usage["generated_tokens"] += count_tokens(line)
+            self.token_usage["generated_tokens"] += num_tokens_from_string(line)
         update_token_usage(self.user_api_key, self.token_usage)
 
     return wrapper

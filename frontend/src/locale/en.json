@@ -62,6 +62,12 @@
       "key": "API Key",
       "sourceDoc": "Source Document",
       "createNew": "Create New"
+    },
+    "analytics": {
+      "label": "Analytics"
+    },
+    "logs": {
+      "label": "Logs"
     }
   },
   "modals": {
@@ -71,7 +77,7 @@
       "remote": "Remote",
       "name": "Name",
       "choose": "Choose Files",
-      "info": "Please upload .pdf, .txt, .rst, .docx, .md, .zip limited to 25mb",
+      "info": "Please upload .pdf, .txt, .rst, .csv, .docx, .md, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",

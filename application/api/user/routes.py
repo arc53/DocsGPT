@@ -1,14 +1,15 @@
+import datetime
 import os
-import uuid
 import shutil
-from flask import Blueprint, request, jsonify
-from urllib.parse import urlparse
-import requests
-from pymongo import MongoClient
-from bson.objectid import ObjectId
+import uuid
+
 from bson.binary import Binary, UuidRepresentation
-from werkzeug.utils import secure_filename
 from bson.dbref import DBRef
+from bson.objectid import ObjectId
+from flask import Blueprint, jsonify, request
+from pymongo import MongoClient
+from werkzeug.utils import secure_filename
+
 from application.api.user.tasks import ingest, ingest_remote
 
 from application.core.settings import settings
@@ -17,17 +18,40 @@ from application.vectorstore.vector_creator import VectorCreator
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
-vectors_collection = db["vectors"]
+sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
+token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
+user_logs_collection = db["user_logs"]
 
 user = Blueprint("user", __name__)
 
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
+
+
+def generate_minute_range(start_date, end_date):
+    return {
+        (start_date + datetime.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:00"): 0
+        for i in range(int((end_date - start_date).total_seconds() // 60) + 1)
+    }
+
+
+def generate_hourly_range(start_date, end_date):
+    return {
+        (start_date + datetime.timedelta(hours=i)).strftime("%Y-%m-%d %H:00"): 0
+        for i in range(int((end_date - start_date).total_seconds() // 3600) + 1)
+    }
+
+
+def generate_date_range(start_date, end_date):
+    return {
+        (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d"): 0
+        for i in range((end_date - start_date).days + 1)
+    }
 
 
 @user.route("/api/delete_conversation", methods=["POST"])
@@ -90,14 +114,15 @@ def api_feedback():
     question = data["question"]
     answer = data["answer"]
     feedback = data["feedback"]
-
-    feedback_collection.insert_one(
-        {
-            "question": question,
-            "answer": answer,
-            "feedback": feedback,
-        }
-    )
+    new_doc = {
+        "question": question,
+        "answer": answer,
+        "feedback": feedback,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc),
+    }
+    if "api_key" in data:
+        new_doc["api_key"] = data["api_key"]
+    feedback_collection.insert_one(new_doc)
     return {"status": "ok"}
 
 
@@ -110,7 +135,7 @@ def delete_by_ids():
         return {"status": "error"}
 
     if settings.VECTOR_STORE == "faiss":
-        result = vectors_collection.delete_index(ids=ids)
+        result = sources_collection.delete_index(ids=ids)
         if result:
             return {"status": "ok"}
     return {"status": "error"}
@@ -121,27 +146,30 @@ def delete_old():
     """Delete old indexes."""
     import shutil
 
-    path = request.args.get("path")
-    dirs = path.split("/")
-    dirs_clean = []
-    for i in range(0, len(dirs)):
-        dirs_clean.append(secure_filename(dirs[i]))
-    # check that path strats with indexes or vectors
-
-    if dirs_clean[0] not in ["indexes", "vectors"]:
-        return {"status": "error"}
-    path_clean = "/".join(dirs_clean)
-    vectors_collection.delete_one({"name": dirs_clean[-1], "user": dirs_clean[-2]})
+    source_id = request.args.get("source_id")
+    doc = sources_collection.find_one(
+        {
+            "_id": ObjectId(source_id),
+            "user": "local",
+        }
+    )
+    if doc is None:
+        return {"status": "not found"}, 404
     if settings.VECTOR_STORE == "faiss":
         try:
-            shutil.rmtree(os.path.join(current_dir, path_clean))
+            shutil.rmtree(os.path.join(current_dir, str(doc["_id"])))
         except FileNotFoundError:
             pass
     else:
         vetorstore = VectorCreator.create_vectorstore(
-            settings.VECTOR_STORE, path=os.path.join(current_dir, path_clean)
+            settings.VECTOR_STORE, source_id=str(doc["_id"])
         )
         vetorstore.delete_index()
+    sources_collection.delete_one(
+        {
+            "_id": ObjectId(source_id),
+        }
+    )
 
     return {"status": "ok"}
 
@@ -248,54 +276,38 @@ def combined_json():
     data = [
         {
             "name": "default",
-            "language": "default",
-            "version": "",
-            "description": "default",
-            "fullName": "default",
             "date": "default",
-            "docLink": "default",
             "model": settings.EMBEDDINGS_NAME,
             "location": "remote",
             "tokens": "",
+            "retriever": "classic",
         }
     ]
     # structure: name, language, version, description, fullName, date, docLink
-    # append data from vectors_collection in sorted order in descending order of date
-    for index in vectors_collection.find({"user": user}).sort("date", -1):
+    # append data from sources_collection in sorted order in descending order of date
+    for index in sources_collection.find({"user": user}).sort("date", -1):
         data.append(
             {
+                "id": str(index["_id"]),
                 "name": index["name"],
-                "language": index["language"],
-                "version": "",
-                "description": index["name"],
-                "fullName": index["name"],
                 "date": index["date"],
-                "docLink": index["location"],
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "local",
                 "tokens": index["tokens"] if ("tokens" in index.keys()) else "",
+                "retriever": (
+                    index["retriever"] if ("retriever" in index.keys()) else "classic"
+                ),
             }
         )
-    if settings.VECTOR_STORE == "faiss":
-        data_remote = requests.get(
-            "https://d3dg1063dc54p9.cloudfront.net/combined.json"
-        ).json()
-        for index in data_remote:
-            index["location"] = "remote"
-            data.append(index)
     if "duckduck_search" in settings.RETRIEVERS_ENABLED:
         data.append(
             {
                 "name": "DuckDuckGo Search",
-                "language": "en",
-                "version": "",
-                "description": "duckduck_search",
-                "fullName": "DuckDuckGo Search",
                 "date": "duckduck_search",
-                "docLink": "duckduck_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
                 "tokens": "",
+                "retriever": "duckduck_search",
             }
         )
     if "brave_search" in settings.RETRIEVERS_ENABLED:
@@ -303,14 +315,11 @@ def combined_json():
             {
                 "name": "Brave Search",
                 "language": "en",
-                "version": "",
-                "description": "brave_search",
-                "fullName": "Brave Search",
                 "date": "brave_search",
-                "docLink": "brave_search",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "custom",
                 "tokens": "",
+                "retriever": "brave_search",
             }
         )
 
@@ -319,39 +328,13 @@ def combined_json():
 
 @user.route("/api/docs_check", methods=["POST"])
 def check_docs():
-    # check if docs exist in a vectorstore folder
     data = request.get_json()
-    # split docs on / and take first part
-    if data["docs"].split("/")[0] == "local":
-        return {"status": "exists"}
+
     vectorstore = "vectors/" + secure_filename(data["docs"])
-    base_path = "https://raw.githubusercontent.com/arc53/DocsHUB/main/"
     if os.path.exists(vectorstore) or data["docs"] == "default":
         return {"status": "exists"}
     else:
-        file_url = urlparse(base_path + vectorstore + "index.faiss")
-
-        if (
-            file_url.scheme in ["https"]
-            and file_url.netloc == "raw.githubusercontent.com"
-            and file_url.path.startswith("/arc53/DocsHUB/main/")
-        ):
-            r = requests.get(file_url.geturl())
-            if r.status_code != 200:
-                return {"status": "null"}
-            else:
-                if not os.path.exists(vectorstore):
-                    os.makedirs(vectorstore)
-                with open(vectorstore + "index.faiss", "wb") as f:
-                    f.write(r.content)
-
-                r = requests.get(base_path + vectorstore + "index.pkl")
-                with open(vectorstore + "index.pkl", "wb") as f:
-                    f.write(r.content)
-        else:
-            return {"status": "null"}
-
-        return {"status": "loaded"}
+        return {"status": "not found"}
 
 
 @user.route("/api/create_prompt", methods=["POST"])
@@ -448,12 +431,23 @@ def get_api_keys():
     keys = api_key_collection.find({"user": user})
     list_keys = []
     for key in keys:
+        if "source" in key and isinstance(key["source"], DBRef):
+            source = db.dereference(key["source"])
+            if source is None:
+                continue
+            else:
+                source_name = source["name"]
+        elif "retriever" in key:
+            source_name = key["retriever"]
+        else:
+            continue
+
         list_keys.append(
             {
                 "id": str(key["_id"]),
                 "name": key["name"],
                 "key": key["key"][:4] + "..." + key["key"][-4:],
-                "source": key["source"],
+                "source": source_name,
                 "prompt_id": key["prompt_id"],
                 "chunks": key["chunks"],
             }
@@ -465,21 +459,22 @@ def get_api_keys():
 def create_api_key():
     data = request.get_json()
     name = data["name"]
-    source = data["source"]
     prompt_id = data["prompt_id"]
     chunks = data["chunks"]
     key = str(uuid.uuid4())
     user = "local"
-    resp = api_key_collection.insert_one(
-        {
-            "name": name,
-            "key": key,
-            "source": source,
-            "user": user,
-            "prompt_id": prompt_id,
-            "chunks": chunks,
-        }
-    )
+    new_api_key = {
+        "name": name,
+        "key": key,
+        "user": user,
+        "prompt_id": prompt_id,
+        "chunks": chunks,
+    }
+    if "source" in data and ObjectId.is_valid(data["source"]):
+        new_api_key["source"] = DBRef("sources", ObjectId(data["source"]))
+    if "retriever" in data:
+        new_api_key["retriever"] = data["retriever"]
+    resp = api_key_collection.insert_one(new_api_key)
     new_id = str(resp.inserted_id)
     return {"id": new_id, "key": key}
 
@@ -509,26 +504,29 @@ def share_conversation():
         conversation = conversations_collection.find_one(
             {"_id": ObjectId(conversation_id)}
         )
+        if conversation is None:
+            raise Exception("Conversation does not exist")
         current_n_queries = len(conversation["queries"])
 
         ##generate binary representation of uuid
         explicit_binary = Binary.from_uuid(uuid.uuid4(), UuidRepresentation.STANDARD)
 
         if isPromptable:
-            source = "default" if "source" not in data else data["source"]
             prompt_id = "default" if "prompt_id" not in data else data["prompt_id"]
             chunks = "2" if "chunks" not in data else data["chunks"]
 
             name = conversation["name"] + "(shared)"
-            pre_existing_api_document = api_key_collection.find_one(
-                {
-                    "prompt_id": prompt_id,
-                    "chunks": chunks,
-                    "source": source,
-                    "user": user,
-                }
-            )
-            api_uuid = str(uuid.uuid4())
+            new_api_key_data = {
+                "prompt_id": prompt_id,
+                "chunks": chunks,
+                "user": user,
+            }
+            if "source" in data and ObjectId.is_valid(data["source"]):
+                new_api_key_data["source"] = DBRef("sources", ObjectId(data["source"]))
+            elif "retriever" in data:
+                new_api_key_data["retriever"] = data["retriever"]
+
+            pre_existing_api_document = api_key_collection.find_one(new_api_key_data)
             if pre_existing_api_document:
                 api_uuid = pre_existing_api_document["key"]
                 pre_existing = shared_conversations_collections.find_one(
@@ -570,29 +568,30 @@ def share_conversation():
                         {"success": True, "identifier": str(explicit_binary.as_uuid())}
                     )
             else:
-                api_key_collection.insert_one(
+
+                api_uuid = str(uuid.uuid4())
+                new_api_key_data["key"] = api_uuid
+                new_api_key_data["name"] = name
+                if "source" in data and ObjectId.is_valid(data["source"]):
+                    new_api_key_data["source"] = DBRef(
+                        "sources", ObjectId(data["source"])
+                    )
+                if "retriever" in data:
+                    new_api_key_data["retriever"] = data["retriever"]
+                api_key_collection.insert_one(new_api_key_data)
+                shared_conversations_collections.insert_one(
                     {
-                        "name": name,
-                        "key": api_uuid,
-                        "source": source,
+                        "uuid": explicit_binary,
+                        "conversation_id": {
+                            "$ref": "conversations",
+                            "$id": ObjectId(conversation_id),
+                        },
+                        "isPromptable": isPromptable,
+                        "first_n_queries": current_n_queries,
                         "user": user,
-                        "prompt_id": prompt_id,
-                        "chunks": chunks,
+                        "api_key": api_uuid,
                     }
                 )
-            shared_conversations_collections.insert_one(
-                {
-                    "uuid": explicit_binary,
-                    "conversation_id": {
-                        "$ref": "conversations",
-                        "$id": ObjectId(conversation_id),
-                    },
-                    "isPromptable": isPromptable,
-                    "first_n_queries": current_n_queries,
-                    "user": user,
-                    "api_key": api_uuid,
-                }
-            )
             ## Identifier as route parameter in frontend
             return (
                 jsonify(
@@ -672,8 +671,6 @@ def get_publicly_shared_conversations(identifier: str):
             conversation_queries = conversation["queries"][
                 : (shared["first_n_queries"])
             ]
-            for query in conversation_queries:
-                query.pop("sources")  ## avoid exposing sources
         else:
             return (
                 jsonify(
@@ -697,3 +694,466 @@ def get_publicly_shared_conversations(identifier: str):
     except Exception as err:
         print(err)
         return jsonify({"success": False, "error": str(err)}), 400
+
+
+@user.route("/api/get_message_analytics", methods=["POST"])
+def get_message_analytics():
+    data = request.get_json()
+    api_key_id = data.get("api_key_id")
+    filter_option = data.get("filter_option", "last_30_days")
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+        group_format = "%Y-%m-%d %H:%M:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "minute": {
+                        "$dateToString": {"format": group_format, "date": "$date"}
+                    }
+                },
+                "total_messages": {"$sum": 1},
+            }
+        }
+
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+        group_format = "%Y-%m-%d %H:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "hour": {"$dateToString": {"format": group_format, "date": "$date"}}
+                },
+                "total_messages": {"$sum": 1},
+            }
+        }
+
+    else:
+        if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
+            filter_days = (
+                6
+                if filter_option == "last_7_days"
+                else (14 if filter_option == "last_15_days" else 29)
+            )
+        else:
+            return jsonify({"success": False, "error": "Invalid option"}), 400
+        start_date = end_date - datetime.timedelta(days=filter_days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        group_format = "%Y-%m-%d"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "day": {"$dateToString": {"format": group_format, "date": "$date"}}
+                },
+                "total_messages": {"$sum": 1},
+            }
+        }
+
+    try:
+        match_stage = {
+            "$match": {
+                "date": {"$gte": start_date, "$lte": end_date},
+            }
+        }
+        if api_key:
+            match_stage["$match"]["api_key"] = api_key
+        message_data = conversations_collection.aggregate(
+            [
+                match_stage,
+                group_stage,
+                {"$sort": {"_id": 1}},
+            ]
+        )
+
+        if filter_option == "last_hour":
+            intervals = generate_minute_range(start_date, end_date)
+        elif filter_option == "last_24_hour":
+            intervals = generate_hourly_range(start_date, end_date)
+        else:
+            intervals = generate_date_range(start_date, end_date)
+
+        daily_messages = {interval: 0 for interval in intervals}
+
+        for entry in message_data:
+            if filter_option == "last_hour":
+                daily_messages[entry["_id"]["minute"]] = entry["total_messages"]
+            elif filter_option == "last_24_hour":
+                daily_messages[entry["_id"]["hour"]] = entry["total_messages"]
+            else:
+                daily_messages[entry["_id"]["day"]] = entry["total_messages"]
+
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify({"success": True, "messages": daily_messages}), 200
+
+
+@user.route("/api/get_token_analytics", methods=["POST"])
+def get_token_analytics():
+    data = request.get_json()
+    api_key_id = data.get("api_key_id")
+    filter_option = data.get("filter_option", "last_30_days")
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+        group_format = "%Y-%m-%d %H:%M:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "minute": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    }
+                },
+                "total_tokens": {
+                    "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                },
+            }
+        }
+
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+        group_format = "%Y-%m-%d %H:00"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "hour": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    }
+                },
+                "total_tokens": {
+                    "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                },
+            }
+        }
+
+    else:
+        if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
+            filter_days = (
+                6
+                if filter_option == "last_7_days"
+                else (14 if filter_option == "last_15_days" else 29)
+            )
+        else:
+            return jsonify({"success": False, "error": "Invalid option"}), 400
+        start_date = end_date - datetime.timedelta(days=filter_days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        group_format = "%Y-%m-%d"
+        group_stage = {
+            "$group": {
+                "_id": {
+                    "day": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    }
+                },
+                "total_tokens": {
+                    "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                },
+            }
+        }
+
+    try:
+        match_stage = {
+            "$match": {
+                "timestamp": {"$gte": start_date, "$lte": end_date},
+            }
+        }
+        if api_key:
+            match_stage["$match"]["api_key"] = api_key
+
+        token_usage_data = token_usage_collection.aggregate(
+            [
+                match_stage,
+                group_stage,
+                {"$sort": {"_id": 1}},
+            ]
+        )
+
+        if filter_option == "last_hour":
+            intervals = generate_minute_range(start_date, end_date)
+        elif filter_option == "last_24_hour":
+            intervals = generate_hourly_range(start_date, end_date)
+        else:
+            intervals = generate_date_range(start_date, end_date)
+
+        daily_token_usage = {interval: 0 for interval in intervals}
+
+        for entry in token_usage_data:
+            if filter_option == "last_hour":
+                daily_token_usage[entry["_id"]["minute"]] = entry["total_tokens"]
+            elif filter_option == "last_24_hour":
+                daily_token_usage[entry["_id"]["hour"]] = entry["total_tokens"]
+            else:
+                daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
+
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify({"success": True, "token_usage": daily_token_usage}), 200
+
+
+@user.route("/api/get_feedback_analytics", methods=["POST"])
+def get_feedback_analytics():
+    data = request.get_json()
+    api_key_id = data.get("api_key_id")
+    filter_option = data.get("filter_option", "last_30_days")
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+        group_format = "%Y-%m-%d %H:%M:00"
+        group_stage_1 = {
+            "$group": {
+                "_id": {
+                    "minute": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    },
+                    "feedback": "$feedback",
+                },
+                "count": {"$sum": 1},
+            }
+        }
+        group_stage_2 = {
+            "$group": {
+                "_id": "$_id.minute",
+                "likes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "LIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+                "dislikes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "DISLIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+            }
+        }
+
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+        group_format = "%Y-%m-%d %H:00"
+        group_stage_1 = {
+            "$group": {
+                "_id": {
+                    "hour": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    },
+                    "feedback": "$feedback",
+                },
+                "count": {"$sum": 1},
+            }
+        }
+        group_stage_2 = {
+            "$group": {
+                "_id": "$_id.hour",
+                "likes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "LIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+                "dislikes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "DISLIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+            }
+        }
+
+    else:
+        if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
+            filter_days = (
+                6
+                if filter_option == "last_7_days"
+                else (14 if filter_option == "last_15_days" else 29)
+            )
+        else:
+            return jsonify({"success": False, "error": "Invalid option"}), 400
+        start_date = end_date - datetime.timedelta(days=filter_days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        group_format = "%Y-%m-%d"
+        group_stage_1 = {
+            "$group": {
+                "_id": {
+                    "day": {
+                        "$dateToString": {"format": group_format, "date": "$timestamp"}
+                    },
+                    "feedback": "$feedback",
+                },
+                "count": {"$sum": 1},
+            }
+        }
+        group_stage_2 = {
+            "$group": {
+                "_id": "$_id.day",
+                "likes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "LIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+                "dislikes": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$_id.feedback", "DISLIKE"]},
+                            "$count",
+                            0,
+                        ]
+                    }
+                },
+            }
+        }
+
+    try:
+        match_stage = {
+            "$match": {
+                "timestamp": {"$gte": start_date, "$lte": end_date},
+            }
+        }
+        if api_key:
+            match_stage["$match"]["api_key"] = api_key
+
+        feedback_data = feedback_collection.aggregate(
+            [
+                match_stage,
+                group_stage_1,
+                group_stage_2,
+                {"$sort": {"_id": 1}},
+            ]
+        )
+
+        if filter_option == "last_hour":
+            intervals = generate_minute_range(start_date, end_date)
+        elif filter_option == "last_24_hour":
+            intervals = generate_hourly_range(start_date, end_date)
+        else:
+            intervals = generate_date_range(start_date, end_date)
+
+        daily_feedback = {
+            interval: {"positive": 0, "negative": 0} for interval in intervals
+        }
+
+        for entry in feedback_data:
+            daily_feedback[entry["_id"]] = {
+                "positive": entry["likes"],
+                "negative": entry["dislikes"],
+            }
+
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    return jsonify({"success": True, "feedback": daily_feedback}), 200
+
+
+@user.route("/api/get_user_logs", methods=["POST"])
+def get_user_logs():
+    data = request.get_json()
+    page = int(data.get("page", 1))
+    api_key_id = data.get("api_key_id")
+    page_size = int(data.get("page_size", 10))
+    skip = (page - 1) * page_size
+
+    try:
+        api_key = (
+            api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+            if api_key_id
+            else None
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"success": False, "error": str(err)}), 400
+
+    query = {}
+    if api_key:
+        query = {"api_key": api_key}
+    items_cursor = (
+        user_logs_collection.find(query)
+        .sort("timestamp", -1)
+        .skip(skip)
+        .limit(page_size + 1)
+    )
+    items = list(items_cursor)
+
+    results = []
+    for item in items[:page_size]:
+        results.append(
+            {
+                "id": str(item.get("_id")),
+                "action": item.get("action"),
+                "level": item.get("level"),
+                "user": item.get("user"),
+                "question": item.get("question"),
+                "sources": item.get("sources"),
+                "retriever_params": item.get("retriever_params"),
+                "timestamp": item.get("timestamp"),
+            }
+        )
+    has_more = len(items) > page_size
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "logs": results,
+                "page": page,
+                "page_size": page_size,
+                "has_more": has_more,
+            }
+        ),
+        200,
+    )

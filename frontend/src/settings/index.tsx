@@ -6,14 +6,16 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
 import i18n from '../locale/i18n';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import {
   selectSourceDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
+import Analytics from './Analytics';
 import APIKeys from './APIKeys';
 import Documents from './Documents';
 import General from './General';
+import Logs from './Logs';
 import Widgets from './Widgets';
 
 export default function Settings() {
@@ -23,6 +25,8 @@ export default function Settings() {
     t('settings.general.label'),
     t('settings.documents.label'),
     t('settings.apiKeys.label'),
+    t('settings.analytics.label'),
+    t('settings.logs.label'),
   ];
   const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
@@ -35,9 +39,8 @@ export default function Settings() {
   };
 
   const handleDeleteClick = (index: number, doc: Doc) => {
-    const docPath = 'indexes/' + 'local' + '/' + doc.name;
     userService
-      .deletePath(docPath)
+      .deletePath(doc.id ?? '')
       .then((response) => {
         if (response.ok && documents) {
           const updatedDocuments = [
@@ -129,6 +132,10 @@ export default function Settings() {
         );
       case t('settings.apiKeys.label'):
         return <APIKeys />;
+      case t('settings.analytics.label'):
+        return <Analytics />;
+      case t('settings.logs.label'):
+        return <Logs />;
       default:
         return null;
     }

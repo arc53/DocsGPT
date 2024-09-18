@@ -120,7 +120,7 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                        data?.find((d) => d.type?.toLowerCase() === 'local'),
                       ),
                     );
                   });
@@ -137,7 +137,7 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                        data?.find((d) => d.type?.toLowerCase() === 'local'),
                       ),
                     );
                   });
@@ -259,6 +259,7 @@ function Upload({
       'application/zip': ['.zip'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
+      'text/csv': ['.csv'],
     },
   });
 
@@ -274,7 +275,7 @@ function Upload({
     } else
       setRedditData({
         ...redditData,
-        [name]: value,
+        [name]: name === 'number_posts' ? parseInt(value) : value,
       });
   };
 
@@ -320,6 +321,7 @@ function Upload({
               colorVariant="gray"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
+              borderVariant="thin"
             ></Input>
             <div className="relative bottom-12 left-2 mt-[-20px]">
               <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
@@ -355,6 +357,7 @@ function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
+              border="border"
               options={urlOptions}
               selectedValue={urlType}
               onSelect={(value: { label: string; value: string }) =>
@@ -370,6 +373,7 @@ function Upload({
                   type="text"
                   value={urlName}
                   onChange={(e) => setUrlName(e.target.value)}
+                  borderVariant="thin"
                 ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
@@ -381,6 +385,7 @@ function Upload({
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
+                  borderVariant="thin"
                 ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
@@ -389,68 +394,83 @@ function Upload({
                 </div>
               </>
             ) : (
-              <>
-                <Input
-                  placeholder="Enter client ID"
-                  type="text"
-                  name="client_id"
-                  value={redditData.client_id}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.id')}
-                  </span>
+              <div className="flex flex-col gap-1 mt-2">
+                <div>
+                  <Input
+                    placeholder="Enter client ID"
+                    type="text"
+                    name="client_id"
+                    value={redditData.client_id}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.id')}
+                    </span>
+                  </div>
                 </div>
-                <Input
-                  placeholder="Enter client secret"
-                  type="text"
-                  name="client_secret"
-                  value={redditData.client_secret}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.secret')}
-                  </span>
+                <div>
+                  <Input
+                    placeholder="Enter client secret"
+                    type="text"
+                    name="client_secret"
+                    value={redditData.client_secret}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.secret')}
+                    </span>
+                  </div>
                 </div>
-                <Input
-                  placeholder="Enter user agent"
-                  type="text"
-                  name="user_agent"
-                  value={redditData.user_agent}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.agent')}
-                  </span>
+                <div>
+                  <Input
+                    placeholder="Enter user agent"
+                    type="text"
+                    name="user_agent"
+                    value={redditData.user_agent}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.agent')}
+                    </span>
+                  </div>
                 </div>
-                <Input
-                  placeholder="Enter search queries"
-                  type="text"
-                  name="search_queries"
-                  value={redditData.search_queries}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.searchQueries')}
-                  </span>
+                <div>
+                  <Input
+                    placeholder="Enter search queries"
+                    type="text"
+                    name="search_queries"
+                    value={redditData.search_queries}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.searchQueries')}
+                    </span>
+                  </div>
                 </div>
-                <Input
-                  placeholder="Enter number of posts"
-                  type="number"
-                  name="number_posts"
-                  value={redditData.number_posts}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.numberOfPosts')}
-                  </span>
+                <div>
+                  <Input
+                    placeholder="Enter number of posts"
+                    type="number"
+                    name="number_posts"
+                    value={redditData.number_posts}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.numberOfPosts')}
+                    </span>
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </>
         )}

@@ -62,6 +62,12 @@
       "key": "API 密钥",
       "sourceDoc": "源文档",
       "createNew": "创建新的"
+    },
+    "analytics": {
+      "label": "分析"
+    },
+    "logs": {
+      "label": "日志"
     }
   },
   "modals": {

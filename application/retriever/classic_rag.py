@@ -1,10 +1,9 @@
-import os
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
 from application.llm.llm_creator import LLMCreator
 
-from application.utils import count_tokens
+from application.utils import num_tokens_from_string
 
 
 class ClassicRAG(BaseRetriever):
@@ -21,7 +20,7 @@ class ClassicRAG(BaseRetriever):
         user_api_key=None,
     ):
         self.question = question
-        self.vectorstore = self._get_vectorstore(source=source)
+        self.vectorstore = source['active_docs'] if 'active_docs' in source else None
         self.chat_history = chat_history
         self.prompt = prompt
         self.chunks = chunks
@@ -38,21 +37,6 @@ class ClassicRAG(BaseRetriever):
         )
         self.user_api_key = user_api_key
 
-    def _get_vectorstore(self, source):
-        if "active_docs" in source:
-            if source["active_docs"].split("/")[0] == "default":
-                vectorstore = ""
-            elif source["active_docs"].split("/")[0] == "local":
-                vectorstore = "indexes/" + source["active_docs"]
-            else:
-                vectorstore = "vectors/" + source["active_docs"]
-            if source["active_docs"] == "default":
-                vectorstore = ""
-        else:
-            vectorstore = ""
-        vectorstore = os.path.join("application", vectorstore)
-        return vectorstore
-
     def _get_data(self):
         if self.chunks == 0:
             docs = []
@@ -61,13 +45,12 @@ class ClassicRAG(BaseRetriever):
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
             docs_temp = docsearch.search(self.question, k=self.chunks)
+            print(docs_temp)
             docs = [
                 {
-                    "title": (
-                        i.metadata["title"].split("/")[-1]
-                        if i.metadata
-                        else i.page_content
-                    ),
+                    "title": i.metadata.get(
+                        "title", i.metadata.get("post_title", i.page_content)
+                    ).split("/")[-1],
                     "text": i.page_content,
                     "source": (
                         i.metadata.get("source")
@@ -98,7 +81,7 @@ class ClassicRAG(BaseRetriever):
             self.chat_history.reverse()
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
-                    tokens_batch = count_tokens(i["prompt"]) + count_tokens(
+                    tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
                         i["response"]
                     )
                     if tokens_current_history + tokens_batch < self.token_limit:
@@ -121,3 +104,15 @@ class ClassicRAG(BaseRetriever):
 
     def search(self):
         return self._get_data()
+    
+    def get_params(self):
+        return {
+            "question": self.question,
+            "source": self.vectorstore,
+            "chat_history": self.chat_history,
+            "prompt": self.prompt,
+            "chunks": self.chunks,
+            "token_limit": self.token_limit,
+            "gpt_model": self.gpt_model,
+            "user_api_key": self.user_api_key
+        }

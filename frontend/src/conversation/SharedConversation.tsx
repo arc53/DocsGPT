@@ -144,6 +144,7 @@ export const SharedConversation = () => {
           key={`${index}ANSWER`}
           message={query.response}
           type={'ANSWER'}
+          sources={query.sources ?? []}
         ></ConversationBubble>
       );
     } else if (query.error) {

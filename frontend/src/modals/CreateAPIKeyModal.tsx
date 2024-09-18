@@ -22,8 +22,9 @@ export default function CreateAPIKeyModal({
 
   const [APIKeyName, setAPIKeyName] = React.useState<string>('');
   const [sourcePath, setSourcePath] = React.useState<{
-    label: string;
-    value: string;
+    name: string;
+    id: string;
+    type: string;
   } | null>(null);
   const [prompt, setPrompt] = React.useState<{
     name: string;
@@ -41,27 +42,17 @@ export default function CreateAPIKeyModal({
       ? docs
           .filter((doc) => doc.model === embeddingsName)
           .map((doc: Doc) => {
-            let namePath = doc.name;
-            if (doc.language === namePath) {
-              namePath = '.project';
-            }
-            let docPath = 'default';
-            if (doc.location === 'local') {
-              docPath = 'local' + '/' + doc.name + '/';
-            } else if (doc.location === 'remote') {
-              docPath =
-                doc.language +
-                '/' +
-                namePath +
-                '/' +
-                doc.version +
-                '/' +
-                doc.model +
-                '/';
+            if ('id' in doc) {
+              return {
+                name: doc.name,
+                id: doc.id as string,
+                type: 'local',
+              };
             }
             return {
-              label: doc.name,
-              value: docPath,
+              name: doc.name,
+              id: doc.id ?? 'default',
+              type: doc.type ?? 'default',
             };
           })
       : [];
@@ -107,9 +98,14 @@ export default function CreateAPIKeyModal({
           <Dropdown
             placeholder={t('modals.createAPIKey.sourceDoc')}
             selectedValue={sourcePath}
-            onSelect={(selection: { label: string; value: string }) =>
-              setSourcePath(selection)
-            }
+            onSelect={(selection: {
+              name: string;
+              id: string;
+              type: string;
+            }) => {
+              setSourcePath(selection);
+              console.log(selection);
+            }}
             options={extractDocPaths()}
             size="w-full"
             rounded="xl"
@@ -142,16 +138,22 @@ export default function CreateAPIKeyModal({
         </div>
         <button
           disabled={!sourcePath || APIKeyName.length === 0 || !prompt}
-          onClick={() =>
-            sourcePath &&
-            prompt &&
-            createAPIKey({
-              name: APIKeyName,
-              source: sourcePath.value,
-              prompt_id: prompt.id,
-              chunks: chunk,
-            })
-          }
+          onClick={() => {
+            if (sourcePath && prompt) {
+              const payload: any = {
+                name: APIKeyName,
+                prompt_id: prompt.id,
+                chunks: chunk,
+              };
+              if (sourcePath.type === 'default') {
+                payload.retriever = sourcePath.id;
+              }
+              if (sourcePath.type === 'local') {
+                payload.source = sourcePath.id;
+              }
+              createAPIKey(payload);
+            }
+          }}
           className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
         >
           {t('modals.createAPIKey.create')}

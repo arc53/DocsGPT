@@ -1,13 +1,40 @@
 "use client";
-import React from 'react'
+import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
-import snarkdown from '@bpmn-io/snarkdown';
 import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
-import MessageIcon from '../assets/message.svg';
-import { MESSAGE_TYPE, Query, Status } from '../types/index';
-import { fetchAnswerStreaming } from '../requests/streamingApi';
-
+import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
+import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
+import { ThemeProvider } from 'styled-components';
+import Like from "../assets/like.svg"
+import Dislike from "../assets/dislike.svg"
+import MarkdownIt from 'markdown-it';
+const themes = {
+  dark: {
+    bg: '#222327',
+    text: '#fff',
+    primary: {
+      text: "#FAFAFA",
+      bg: '#222327'
+    },
+    secondary: {
+      text: "#A1A1AA",
+      bg: "#38383b"
+    }
+  },
+  light: {
+    bg: '#fff',
+    text: '#000',
+    primary: {
+      text: "#222327",
+      bg: "#fff"
+    },
+    secondary: {
+      text: "#A1A1AA",
+      bg: "#F6F6F6"
+    }
+  }
+}
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -16,6 +43,7 @@ const GlobalStyles = createGlobalStyle`
     border-radius: 6px;
     overflow-x: auto;
     background-color: #1B1C1F;
+    color: #fff !important;
 }
 .response h1{
   font-size: 20px;
@@ -26,40 +54,64 @@ const GlobalStyles = createGlobalStyle`
 .response h3{
   font-size: 16px;
 }
+.response p{
+  margin:0px;
+}
 .response code:not(pre code){
   border-radius: 6px;
   padding: 1px 3px 1px 3px;
   font-size: 12px;
   display: inline-block;
   background-color: #646464;
+  color: #fff !important;
+}
+.response code {
+  white-space: pre-wrap !important;
+  line-break: loose !important;
 }
 `;
-const WidgetContainer = styled.div`
+const Overlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  transition: opacity 0.5s;
+`
+const WidgetContainer = styled.div<{ modal: boolean }>`
     display: block;
     position: fixed;
-    right: 10px;
-    bottom: 10px;
+    right: ${props => props.modal ? '50%' : '10px'};
+    bottom: ${props => props.modal ? '50%' : '10px'};
     z-index: 1000;
     display: flex;
+    ${props => props.modal &&
+    "transform : translate(50%,50%);"
+  }
     flex-direction: column;
     align-items: center;
     text-align: left;
+    @media only screen and (max-width: 768px) {
+    max-height: 100vh !important;
+    overflow: auto;
+    }
 `;
 const StyledContainer = styled.div`
-    display: block;
+    display: flex;
     position: relative;
+    flex-direction: column;
+    justify-content: center;
     bottom: 0;
     left: 0;
-    width: 352px;
-    height: 407px;
-    max-height: 407px;
     border-radius: 0.75rem;
-    background-color: #222327;
+    background-color: ${props => props.theme.primary.bg};
     font-family: sans-serif;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
-const FloatingButton = styled.div`
+const FloatingButton = styled.div<{ bgcolor: string }>`
     position: fixed;
     display: flex;
     z-index: 500;
@@ -70,7 +122,7 @@ const FloatingButton = styled.div`
     width: 5rem;
     height: 5rem;
     border-radius: 9999px;
-    background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
+    background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     &:hover {
@@ -120,39 +172,62 @@ const ContentWrapper = styled.div`
 const Title = styled.h3`
     font-size: 1rem;
     font-weight: normal;
-    color: #FAFAFA;
+    color: ${props => props.theme.primary.text};
     margin-top: 0;
     margin-bottom: 0.25rem;
 `;
 
 const Description = styled.p`
     font-size: 0.85rem;
-    color: #A1A1AA;
+    color: ${props => props.theme.secondary.text};
     margin-top: 0;
 `;
-const Conversation = styled.div`
-    height: 16rem;
+
+const Conversation = styled.div<{ size: string }>`
+    min-height: 250px;
+    max-width: 968px;
+    height: ${props => props.size === 'large' ? '75vh' : props.size === 'medium' ? '70vh' : '320px'};
+    width: ${props => props.size === 'large' ? '60vw' : props.size === 'medium' ? '28vw' : '400px'};
     padding-inline: 0.5rem;
     border-radius: 0.375rem;
     text-align: left;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #4a4a4a transparent; /* thumb color track color */
+    @media only screen and (max-width: 768px) {
+    width: 90vw !important;
+    }
+    @media only screen and (min-width:768px ) and (max-width: 1280px) {
+    width:${props => props.size === 'large' ? '90vw' : props.size === 'medium' ? '60vw' : '400px'} !important;
+    }
 `;
-
+const Feedback = styled.div`
+  background-color: transparent;
+  font-weight: normal;
+  gap: 12px;
+  display: flex;
+  padding: 6px;
+  clear: both;
+`;
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
-    display: flex;
+    display: block;
     font-size: 16px;
-    justify-content: ${props => props.type === 'QUESTION' ? 'flex-end' : 'flex-start'};
-    margin: 0.5rem;
+    position: relative;
+    width: 100%;;
+    float: right;
+    margin: 0rem;
+    &:hover ${Feedback} * {
+    visibility: visible !important;
+  }
 `;
-const Message = styled.p<{ type: MESSAGE_TYPE }>`
+const Message = styled.div<{ type: MESSAGE_TYPE }>`
     background: ${props => props.type === 'QUESTION' ?
     'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
-    '#38383b'};
-    color: #ffff;
+    props.theme.secondary.bg};
+    color: ${props => props.type === 'ANSWER' ? props.theme.primary.text : '#fff'};
     border: none;
-    max-width: 80%;
+    float: ${props => props.type === 'QUESTION' ? 'right' : 'left'};
+    max-width: ${props => props.type === 'ANSWER' ? '100%' : '80'};
     overflow: auto;
     margin: 4px;
     display: block;
@@ -190,35 +265,31 @@ const DotAnimation = styled.div`
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
-const PromptContainer = styled.form`
+const PromptContainer = styled.form<{ size: string }>`
   background-color: transparent;
-  height: 36px;
-  position: absolute;
-  bottom: 25px;
-  left: 24px;
-  right: 24px;
+  height: ${props => props.size == 'large' ? '60px' : '40px'};
+  margin: 16px;
   display: flex;
   justify-content: space-evenly;
 `;
 const StyledInput = styled.input`
-  width: 260px;
-  height: 36px;
+  width: 100%;
   border: 1px solid #686877;
   padding-left: 12px;
   background-color: transparent;
   font-size: 16px;
   border-radius: 6px;
-  color: #ffff;
+  color: ${props => props.theme.text};
   outline: none;
 `;
-const StyledButton = styled.button`
+const StyledButton = styled.button<{ size: string }>`
   display: flex;
   justify-content: center;
   align-items: center;
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   border-radius: 6px;
-  width: 36px;
-  height: 36px;
+  min-width: ${props => props.size === 'large' ? '60px' : '36px'};
+  height: ${props => props.size === 'large' ? '60px' : '36px'};
   margin-left:8px;
   padding: 0px;
   border: none;
@@ -239,13 +310,14 @@ const HeroContainer = styled.div`
   align-items: middle;
   transform: translate(-50%, -50%);
   width: 80%;
+  max-width: 500px;
   background-image: linear-gradient(to bottom right, #5AF0EC, #ff1bf4);
   border-radius: 10px;
   margin: 0 auto;
   padding: 2px;
 `;
 const HeroWrapper = styled.div`
-  background-color: #222327;
+  background-color: ${props => props.theme.primary.bg};
   border-radius: 10px; 
   font-weight: normal;
   padding: 6px;
@@ -253,23 +325,23 @@ const HeroWrapper = styled.div`
   justify-content: space-between;
 `
 const HeroTitle = styled.h3`
-  color: #fff;
-  font-size: 17px;
+  color: ${props => props.theme.text};
   margin-bottom: 5px;
   padding: 2px;
 `;
 const HeroDescription = styled.p`
-  color: #fff;
+  color: ${props => props.theme.text};
   font-size: 14px;
   line-height: 1.5;
 `;
-const Hero = ({ title, description }: { title: string, description: string }) => {
+
+const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
   return (
     <>
       <HeroContainer>
         <HeroWrapper>
-          <IconWrapper style={{ marginTop: '8px' }}>
-            <RocketIcon color='white' width={20} height={20} />
+          <IconWrapper style={{ marginTop: '12px' }}>
+            <RocketIcon color={theme === 'light' ? 'black' : 'white'} width={20} height={20} />
           </IconWrapper>
           <div>
             <HeroTitle>{title}</HeroTitle>
@@ -284,22 +356,28 @@ const Hero = ({ title, description }: { title: string, description: string }) =>
 };
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
-  selectDocs = 'default',
   apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
   heroTitle = 'Welcome to DocsGPT !',
-  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.'
-}) => {
-
+  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
+  size = 'small',
+  theme = 'dark',
+  buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
+  buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
+  collectFeedback = true
+}: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([])
   const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState<boolean>(false)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const isBubbleHovered = useRef<boolean>(false)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const md = new MarkdownIt();
+
   const handleUserInterrupt = () => {
     (status === 'loading') && setEventInterrupt(true);
   }
@@ -316,10 +394,39 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
-
   React.useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
+
+  async function handleFeedback(feedback: FEEDBACK, index: number) {
+    let query = queries[index]
+    if (!query.response)
+      return;
+    if (query.feedback != feedback) {
+      sendFeedback({
+        question: query.prompt,
+        answer: query.response,
+        feedback: feedback,
+        apikey: apiKey
+      }, apiHost)
+        .then(res => {
+          if (res.status == 200) {
+            query.feedback = feedback;
+            setQueries((prev: Query[]) => {
+              return prev.map((q, i) => (i === index ? query : q));
+            });
+          }
+        })
+        .catch(err => console.log("Connection failed",err))
+    }
+    else {
+      delete query.feedback;
+      setQueries((prev: Query[]) => {
+        return prev.map((q, i) => (i === index ? query : q));
+      });
+
+    }
+  }
 
   async function stream(question: string) {
     setStatus('loading')
@@ -329,19 +436,24 @@ export const DocsGPTWidget = ({
           question: question,
           apiKey: apiKey,
           apiHost: apiHost,
-          selectedDocs: selectDocs,
           history: queries,
           conversationId: conversationId,
           onEvent: (event: MessageEvent) => {
             const data = JSON.parse(event.data);
             // check if the 'end' event has been received
             if (data.type === 'end') {
-              // set status to 'idle'
               setStatus('idle');
-
-            } else if (data.type === 'id') {
+            }
+            else if (data.type === 'id') {
               setConversationId(data.id)
-            } else {
+            }
+            else if (data.type === 'error') {
+              const updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].error = data.error;
+              setQueries(updatedQueries);
+              setStatus('idle')
+            }
+            else {
               const result = data.answer;
               const streamingResponse = queries[queries.length - 1].response ? queries[queries.length - 1].response : '';
               const updatedQueries = [...queries];
@@ -353,7 +465,7 @@ export const DocsGPTWidget = ({
       );
     } catch (error) {
       const updatedQueries = [...queries];
-      updatedQueries[updatedQueries.length - 1].error = 'error'
+      updatedQueries[updatedQueries.length - 1].error = 'Something went wrong !'
       setQueries(updatedQueries);
       setStatus('idle')
       //setEventInterrupt(false)
@@ -372,16 +484,21 @@ export const DocsGPTWidget = ({
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
   return (
-    <>
-      <WidgetContainer>
+    <ThemeProvider theme={themes[theme]}>
+      {open && size === 'large' &&
+        <Overlay onClick={() => {
+          setOpen(false)
+        }} />
+      }
+      <FloatingButton bgcolor={buttonBg} onClick={() => setOpen(!open)} hidden={open}>
+        <img style={{ maxHeight: '4rem', maxWidth: '4rem' }} src={buttonIcon} />
+      </FloatingButton>
+      <WidgetContainer modal={size == 'large'}>
         <GlobalStyles />
-        {!open && <FloatingButton onClick={() => setOpen(true)} hidden={open}>
-          <MessageIcon style={{ marginTop: '8px' }} />
-        </FloatingButton>}
         {open && <StyledContainer>
           <div>
             <CancelButton onClick={() => setOpen(false)}>
-              <Cross2Icon width={24} height={24} color='white' />
+              <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
             </CancelButton>
             <Header>
               <IconWrapper>
@@ -393,7 +510,7 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
+          <Conversation size={size} onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
                 return (
@@ -408,13 +525,34 @@ export const DocsGPTWidget = ({
                       </MessageBubble>
                     }
                     {
-                      query.response ? <MessageBubble type='ANSWER'>
+                      query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
                         <Message
                           type='ANSWER'
                           ref={(index === queries.length - 1) ? endMessageRef : null}
                         >
-                          <div className="response" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(snarkdown(query.response)) }} />
+                          <div
+                            className="response"
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
+                          />
                         </Message>
+
+                        {collectFeedback &&
+                          <Feedback>
+                            <Like
+                              style={{
+                                stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
+                                visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
+                              }}
+                              fill='none'
+                              onClick={() => handleFeedback("LIKE", index)} />
+                            <Dislike
+                              style={{
+                                stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
+                                visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
+                              }}
+                              fill='none'
+                              onClick={() => handleFeedback("DISLIKE", index)} />
+                          </Feedback>}
                       </MessageBubble>
                         : <div>
                           {
@@ -424,7 +562,7 @@ export const DocsGPTWidget = ({
                               </IconWrapper>
                               <div>
                                 <h5 style={{ margin: 2 }}>Network Error</h5>
-                                <span style={{ margin: 2, fontSize: '13px' }}>Something went wrong !</span>
+                                <span style={{ margin: 2, fontSize: '13px' }}>{query.error}</span>
                               </div>
                             </ErrorAlert>
                               : <MessageBubble type='ANSWER'>
@@ -439,22 +577,23 @@ export const DocsGPTWidget = ({
                     }
                   </React.Fragment>)
               })
-                : <Hero title={heroTitle} description={heroDescription} />
+                : <Hero title={heroTitle} description={heroDescription} theme={theme} />
             }
           </Conversation>
-
           <PromptContainer
+            size={size}
             onSubmit={handleSubmit}>
             <StyledInput
               value={prompt} onChange={(event) => setPrompt(event.target.value)}
               type='text' placeholder="What do you want to do?" />
             <StyledButton
-              disabled={prompt.length == 0 || status !== 'idle'}>
+              size={size}
+              disabled={prompt.trim().length == 0 || status !== 'idle'}>
               <PaperPlaneIcon width={15} height={15} color='white' />
             </StyledButton>
           </PromptContainer>
         </StyledContainer>}
       </WidgetContainer>
-    </>
+    </ThemeProvider>
   )
 }

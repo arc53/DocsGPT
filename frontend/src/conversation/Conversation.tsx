@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -30,7 +30,7 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
-  const endMessageRef = useRef<HTMLDivElement>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isDarkTheme] = useDarkTheme();
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
@@ -55,32 +55,8 @@ export default function Conversation() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (status !== 'idle') {
-        fetchStream.current && fetchStream.current.abort(); //abort previous stream
-      }
-    };
-  }, [status]);
-
-  useEffect(() => {
-    const observerCallback: IntersectionObserverCallback = (entries) => {
-      entries.forEach((entry) => {
-        setHasScrolledToLast(entry.isIntersecting);
-      });
-    };
-
-    const observer = new IntersectionObserver(observerCallback, {
-      root: null,
-      threshold: [1, 0.8],
-    });
-    if (endMessageRef.current) {
-      observer.observe(endMessageRef.current);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [endMessageRef.current]);
+    fetchStream.current && fetchStream.current.abort();
+  }, [conversationId]);
 
   useEffect(() => {
     if (queries.length) {
@@ -90,10 +66,16 @@ export default function Conversation() {
   }, [queries[queries.length - 1]]);
 
   const scrollIntoView = () => {
-    endMessageRef?.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    if (!conversationRef?.current || eventInterrupt) return;
+
+    if (status === 'idle' || !queries[queries.length - 1].response) {
+      conversationRef.current.scrollTo({
+        behavior: 'smooth',
+        top: conversationRef.current.scrollHeight,
+      });
+    } else {
+      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+    }
   };
 
   const handleQuestion = ({
@@ -147,7 +129,6 @@ export default function Conversation() {
     if (query.response) {
       responseView = (
         <ConversationBubble
-          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
@@ -180,7 +161,6 @@ export default function Conversation() {
       );
       responseView = (
         <ConversationBubble
-          ref={endMessageRef}
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
           key={`${index}ERROR`}
           message={query.error}
@@ -238,6 +218,7 @@ export default function Conversation() {
         </>
       )}
       <div
+        ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
         className="flex h-[90%] w-full flex-1 justify-center overflow-y-auto p-4 md:h-[83vh]"

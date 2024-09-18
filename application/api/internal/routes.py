@@ -3,13 +3,13 @@ import datetime
 from flask import Blueprint, request, send_from_directory
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
-
+from bson.objectid import ObjectId
 
 from application.core.settings import settings
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
-vectors_collection = db["vectors"]
+sources_collection = db["sources"]
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,7 +35,12 @@ def upload_index_files():
         return {"status": "no name"}
     job_name = secure_filename(request.form["name"])
     tokens = secure_filename(request.form["tokens"])
-    save_dir = os.path.join(current_dir, "indexes", user, job_name)
+    retriever = secure_filename(request.form["retriever"])
+    id = secure_filename(request.form["id"])
+    type = secure_filename(request.form["type"])
+    remote_data = secure_filename(request.form["remote_data"]) if "remote_data" in  request.form else None
+
+    save_dir = os.path.join(current_dir, "indexes", str(id))
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
             print("No file part")
@@ -55,17 +60,19 @@ def upload_index_files():
             os.makedirs(save_dir)
         file_faiss.save(os.path.join(save_dir, "index.faiss"))
         file_pkl.save(os.path.join(save_dir, "index.pkl"))
-    # create entry in vectors_collection
-    vectors_collection.insert_one(
+    # create entry in sources_collection
+    sources_collection.insert_one(
         {
+            "_id": ObjectId(id),
             "user": user,
             "name": job_name,
             "language": job_name,
-            "location": save_dir,
             "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             "model": settings.EMBEDDINGS_NAME,
-            "type": "local",
-            "tokens": tokens
+            "type": type,
+            "tokens": tokens,
+            "retriever": retriever,
+            "remote_data": remote_data
         }
     )
     return {"status": "ok"}

@@ -420,8 +420,34 @@ template {
   src: url('/fonts/Inter-Variable.ttf');
 }
 
+@font-face {
+  font-family: 'IBMPlexMono-Medium';
+  font-weight: 500;
+  src: url('/fonts/IBMPlexMono-Medium.ttf');
+}
+
 ::-webkit-scrollbar {
   width: 0;
+}
+
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 50px white inset;
+}
+
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 50px white inset;
+}
+
+@media (prefers-color-scheme: dark) {
+  input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
+    -webkit-text-fill-color: white;
+  }
+
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
+    -webkit-text-fill-color: white;
+  }
 }
 
 .inputbox-style {
@@ -440,4 +466,8 @@ template {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   text-overflow: ellipsis;
+}
+
+.logs-table {
+  font-family: 'IBMPlexMono-Medium', system-ui;
 }
