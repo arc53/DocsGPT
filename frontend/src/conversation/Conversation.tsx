@@ -246,7 +246,7 @@ export default function Conversation() {
         )}
 
         {queries.length > 0 ? (
-          <div className="w-full md:w-8/12 px-1">
+          <div className="w-full md:w-8/12">
             {queries.map((query, index) => {
               return (
                 <Fragment key={index}>
