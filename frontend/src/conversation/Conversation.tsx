@@ -182,12 +182,19 @@ export default function Conversation() {
       )}px`;
     }
   };
-
+  const checkScroll = () => {
+    const el = conversationRef.current;
+    if (!el) return;
+    const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
+    setHasScrolledToLast(isBottom);
+  };
   useEffect(() => {
     handleInput();
     window.addEventListener('resize', handleInput);
+    conversationRef.current?.addEventListener('scroll', checkScroll);
     return () => {
       window.removeEventListener('resize', handleInput);
+      conversationRef.current?.removeEventListener('scroll', checkScroll);
     };
   }, []);
   return (
