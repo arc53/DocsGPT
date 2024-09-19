@@ -1,6 +1,8 @@
 services:
   frontend:
     build: ./frontend
+    volumes:
+    - ./frontend/src:/app/src
     environment:
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
