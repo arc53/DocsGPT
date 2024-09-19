@@ -8,7 +8,7 @@
 
 @supports (height: 100dvh) {
   :root {
-      --viewport-height: 100dvh; /* Use dvh where supported */
+    --viewport-height: 100dvh; /* Use dvh where supported */
   }
 }
 

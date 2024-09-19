@@ -218,7 +218,7 @@ const ConversationBubble = forwardRef<
             {type === 'ERROR' && (
               <>
                 <img src={Alert} alt="alert" className="mr-2 inline" />
-                <div className="absolute -right-32 top-1/2 -translate-y-1/2">
+                <div className="absolute right-0 lg:-right-32 top-1/2 translate-y-full lg:-translate-y-1/2">
                   {retryBtn}
                 </div>
               </>
