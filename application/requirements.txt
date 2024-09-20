@@ -18,6 +18,7 @@ langchain==0.2.16
 langchain-community==0.2.16
 langchain-core==0.2.38
 langchain-openai==0.1.23
+lancedb==0.13.0
 openapi3_parser==1.1.16
 pandas==2.2.2
 pydantic_settings==2.4.0
