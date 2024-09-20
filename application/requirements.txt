@@ -16,7 +16,7 @@ html2text==2020.1.16
 javalang==0.13.0
 langchain==0.2.16
 langchain-community==0.2.16
-langchain-core==0.2.38
+langchain-core==0.3.2
 langchain-openai==0.1.23
 openapi3_parser==1.1.16
 pandas==2.2.2
