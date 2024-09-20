@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --viewport-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --viewport-height: 100dvh; /* Use dvh where supported */
+  }
+}
+
 body.dark {
   background-color: #202124; /* raisin-black */
 }
@@ -63,11 +73,21 @@ html {
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: var(--viewport-height);
   overflow-x: hidden;
   font-family: 'Inter', sans-serif;
 }
-
+/*
+Avoid over-scrolling in mobile browsers
+*/
+@media only screen and (max-width: 500px) {
+  body,
+  html {
+    min-height: var(--viewport-height);
+    position: fixed;
+    width: 100%;
+  }
+}
 /**
  * Render the `main` element consistently in IE.
  */
@@ -427,7 +447,7 @@ template {
 }
 
 ::-webkit-scrollbar {
-  width: 0;
+  width: 10;
 }
 
 input:-webkit-autofill {

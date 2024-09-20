@@ -57,11 +57,11 @@ export default function Settings() {
     setActiveTab(t('settings.general.label'));
   }, [i18n.language]);
   return (
-    <div className="wa p-4 pt-20 md:p-12">
+    <div className="p-4 md:p-12 h-full overflow-auto">
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
         {t('settings.label')}
       </p>
-      <div className="mt-6 flex flex-row items-center space-x-4 overflow-x-auto md:space-x-8 ">
+      <div className="mt-6 flex flex-row items-center space-x-4 overflow-auto md:space-x-8 ">
         <div className="md:hidden">
           <button
             onClick={() => scrollTabs(-1)}
@@ -70,7 +70,7 @@ export default function Settings() {
             <img src={ArrowLeft} alt="left-arrow" className="h-6 w-6" />
           </button>
         </div>
-        <div className="flex flex-nowrap space-x-4 overflow-x-auto md:space-x-8">
+        <div className="flex flex-nowrap space-x-4 overflow-x-auto no-scrollbar md:space-x-8">
           {tabs.map((tab, index) => (
             <button
               key={index}
