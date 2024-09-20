@@ -44,7 +44,7 @@ numpy==1.26.4
 openai==1.46.1
 openapi-schema-validator==0.6.2
 openapi-spec-validator==0.6.0
-openapi3-parser==1.1.16
+openapi3-parser==1.1.18
 orjson==3.10.7
 packaging==24.1
 pandas==2.2.2
