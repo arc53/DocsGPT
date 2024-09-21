@@ -184,6 +184,13 @@ def complete_stream(
         response_full = ""
         source_log_docs = []
         answer = retriever.gen()
+        sources = retriever.search()
+        for source in sources:
+            if("text" in source):
+                source["text"] = source["text"][:100].strip()+"..."
+        if(len(sources) > 0):
+            data = json.dumps({"type":"source","source":sources})
+            yield f"data: {data}\n\n"
         for line in answer:
             if "answer" in line:
                 response_full += str(line["answer"])
@@ -221,13 +228,6 @@ def complete_stream(
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
             }
         )
-        sources = retriever.search()
-        for source in sources:
-            if("text" in source):
-                source["text"] = source["text"][:100].strip()+"..."
-        if(len(sources) > 0):
-            data = json.dumps({"type":"source","source":sources})
-            yield f"data: {data}\n\n"
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
