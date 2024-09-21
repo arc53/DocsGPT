@@ -8,7 +8,7 @@ import { setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
 import { RootState } from '../store';
 import { ActiveState, Doc } from '../models/misc';
 
-interface Preference {
+export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
   chunks: string;

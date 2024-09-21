@@ -47,8 +47,8 @@ function Upload({
   ];
 
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: 'Link',
-    value: 'url',
+    label: 'Crawler',
+    value: 'crawler',
   });
 
   useEffect(() => {
