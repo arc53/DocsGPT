@@ -6,7 +6,6 @@ import store from '../store';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
-  handleSearch,
 } from './conversationHandlers';
 import { Answer, ConversationState, Query, Status } from './conversationModels';
 
@@ -48,47 +47,19 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
                 });
-
-              handleSearch(
-                //search for sources post streaming
-                question,
-                state.preference.selectedDocs!,
-                state.conversation.conversationId,
-                state.conversation.queries,
-                state.preference.chunks,
-                state.preference.token_limit,
-              ).then((sources) => {
-                //dispatch streaming sources
-                dispatch(
-                  updateStreamingSource({
-                    index: state.conversation.queries.length - 1,
-                    query: { sources: sources ?? [] },
-                  }),
-                );
-              });
             } else if (data.type === 'id') {
               dispatch(
                 updateConversationId({
                   query: { conversationId: data.id },
                 }),
               );
-              handleSearch(
-                //search for sources post streaming
-                question,
-                state.preference.selectedDocs!,
-                state.conversation.conversationId,
-                state.conversation.queries,
-                state.preference.chunks,
-                state.preference.token_limit,
-              ).then((sources) => {
-                //dispatch streaming sources
-                dispatch(
-                  updateStreamingSource({
-                    index: state.conversation.queries.length - 1,
-                    query: { sources: sources ?? [] },
-                  }),
-                );
-              });
+            } else if (data.type === 'source') {
+              dispatch(
+                updateStreamingSource({
+                  index: state.conversation.queries.length - 1,
+                  query: { sources: data.source ?? [] },
+                }),
+              );
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(conversationSlice.actions.setStatus('failed'));
