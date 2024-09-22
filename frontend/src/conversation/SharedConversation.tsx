@@ -26,7 +26,6 @@ import {
   selectQueries,
 } from './sharedConversationSlice';
 import { useSelector } from 'react-redux';
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();
@@ -39,6 +38,7 @@ export const SharedConversation = () => {
   const status = useSelector(selectStatus);
 
   const inputRef = useRef<HTMLDivElement>(null);
+  const sharedConversationRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
@@ -60,38 +60,6 @@ export const SharedConversation = () => {
     }
   }, []);
 
-  function formatISODate(isoDateStr: string) {
-    const date = new Date(isoDateStr);
-
-    const monthNames = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'June',
-      'July',
-      'Aug',
-      'Sept',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    const month = monthNames[date.getMonth()];
-    const day = date.getDate();
-    const year = date.getFullYear();
-
-    let hours = date.getHours();
-    const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-    const formattedDate = `Published ${month} ${day}, ${year} at ${hours}:${minutesStr} ${ampm}`;
-    return formattedDate;
-  }
   useEffect(() => {
     if (queries.length) {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
@@ -100,10 +68,17 @@ export const SharedConversation = () => {
   }, [queries[queries.length - 1]]);
 
   const scrollIntoView = () => {
-    endMessageRef?.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    if (!sharedConversationRef?.current || eventInterrupt) return;
+
+    if (status === 'idle' || !queries[queries.length - 1].response) {
+      sharedConversationRef.current.scrollTo({
+        behavior: 'smooth',
+        top: sharedConversationRef.current.scrollHeight,
+      });
+    } else {
+      sharedConversationRef.current.scrollTop =
+        sharedConversationRef.current.scrollHeight;
+    }
   };
 
   const fetchQueries = () => {
@@ -202,7 +177,12 @@ export const SharedConversation = () => {
 
   return (
     <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
-      <div className="flex w-full justify-center overflow-auto">
+      <div
+        ref={sharedConversationRef}
+        onWheel={handleUserInterruption}
+        onTouchMove={handleUserInterruption}
+        className="flex w-full justify-center overflow-auto"
+      >
         <div className="mt-0 w-11/12 md:w-10/12 lg:w-6/12">
           <div className="mb-2 w-full border-b pb-2 dark:border-b-silver">
             <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">

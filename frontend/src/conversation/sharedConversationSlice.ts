@@ -6,7 +6,6 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import {
   handleFetchSharedAnswer,
   handleFetchSharedAnswerStreaming,
-  handleSearchViaApiKey,
 } from './conversationHandlers';
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
@@ -45,22 +44,13 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
               // set status to 'idle'
               dispatch(sharedConversationSlice.actions.setStatus('idle'));
               dispatch(saveToLocalStorage());
-
-              state.sharedConversation.apiKey &&
-                handleSearchViaApiKey(
-                  question,
-                  state.sharedConversation.apiKey,
-                  state.sharedConversation.queries,
-                ).then((sources) => {
-                  //dispatch streaming sources
-                  sources &&
-                    dispatch(
-                      updateStreamingSource({
-                        index: state.sharedConversation.queries.length - 1,
-                        query: { sources: sources ?? [] },
-                      }),
-                    );
-                });
+            } else if (data.type === 'source') {
+              dispatch(
+                updateStreamingSource({
+                  index: state.sharedConversation.queries.length - 1,
+                  query: { sources: data.source ?? [] },
+                }),
+              );
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
@@ -247,7 +237,8 @@ export const {
   updateStreamingSource,
 } = sharedConversationSlice.actions;
 
-export const selectStatus = (state: RootState) => state.conversation.status;
+export const selectStatus = (state: RootState) =>
+  state.sharedConversation.status;
 export const selectClientAPIKey = (state: RootState) =>
   state.sharedConversation.apiKey;
 export const selectQueries = (state: RootState) =>
