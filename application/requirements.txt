@@ -47,7 +47,7 @@ openapi-spec-validator==0.6.0
 openapi3-parser==1.1.18
 orjson==3.10.7
 packaging==24.1
-pandas==2.2.2
+pandas==2.2.3
 pathable==0.4.3
 pillow==10.4.0
 portalocker==2.10.1
