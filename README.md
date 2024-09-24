@@ -23,6 +23,8 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
  
 </div>
 
+### 🎃 [Hacktoberfest Prizes, Rules & Q&A](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md) 🎃
+
 ### Production Support / Help for Companies:
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
