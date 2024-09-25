@@ -21,7 +21,7 @@ import {
   updateConversationId,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
-import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
+import { useMediaQuery, useOutsideAlerter } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
 import DeleteConvModal from './modals/DeleteConvModal';
 import { ActiveState, Doc } from './models/misc';
@@ -29,11 +29,9 @@ import APIKeyModal from './preferences/APIKeyModal';
 import { getConversations, getDocs } from './preferences/preferenceApi';
 import {
   selectApiKeyStatus,
-  selectConversationId,
   selectConversations,
   selectModalStateDeleteConv,
   selectSelectedDocs,
-  selectSelectedDocsStatus,
   selectSourceDocs,
   setConversations,
   setModalStateDeleteConv,
@@ -67,20 +65,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
-  const conversationId = useSelector(selectConversationId);
 
   const { isMobile } = useMediaQuery();
-  const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
 
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
-
-  const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
-  const [selectedDocsModalState, setSelectedDocsModalState] =
-    useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');

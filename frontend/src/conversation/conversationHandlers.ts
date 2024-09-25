@@ -285,7 +285,6 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
 
             onEvent(messageEvent); // handle each message
           }
-
           reader.read().then(processStream).catch(reject);
         };
 

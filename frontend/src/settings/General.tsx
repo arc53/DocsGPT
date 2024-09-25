@@ -19,7 +19,7 @@ import Prompts from './Prompts';
 export default function General() {
   const {
     t,
-    i18n: { changeLanguage, language },
+    i18n: { changeLanguage },
   } = useTranslation();
   const themes = ['Light', 'Dark'];
 
@@ -150,13 +150,9 @@ export default function General() {
             value: selectedTokenLimit,
             description: token_limits.get(selectedTokenLimit) as string,
           }}
-          onSelect={({
-            value,
-            description,
-          }: {
-            value: number;
-            description: string;
-          }) => dispatch(setTokenLimit(value))}
+          onSelect={({ value }: { value: number; description: string }) =>
+            dispatch(setTokenLimit(value))
+          }
           size="w-56"
           rounded="3xl"
           border="border"

@@ -78,7 +78,6 @@ function Upload({
 
   function Progress({
     title,
-    isCancellable = false,
     isFailed = false,
   }: {
     title: string;
@@ -244,7 +243,7 @@ function Upload({
     xhr.send(formData);
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     multiple: true,
     onDragEnter: doNothing,

@@ -11,7 +11,6 @@ import Dropdown from '../components/Dropdown';
 import { Doc } from '../models/misc';
 import Spinner from '../assets/spinner.svg';
 import Exit from '../assets/exit.svg';
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
   'huggingface_sentence-transformers/all-mpnet-base-v2';
@@ -95,7 +94,7 @@ export const ShareConversationModal = ({
           setStatus('fetched');
         } else setStatus('failed');
       })
-      .catch((err) => setStatus('failed'));
+      .catch(() => setStatus('failed'));
   };
 
   return (

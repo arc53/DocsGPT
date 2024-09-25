@@ -19,7 +19,6 @@ const Widgets: React.FC<{
     widgetTypes[0],
   );
 
-  // const [widgetScreenshot, setWidgetScreenshot] = useState<File | null>(null);
   const [widgetCode, setWidgetCode] = React.useState<string>(''); // Your widget code state
 
   const handleScreenshotChange = (

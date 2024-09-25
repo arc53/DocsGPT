@@ -2,7 +2,6 @@ import { ReactNode } from 'react';
 
 export default function Avatar({
   avatar,
-  size,
   className,
 }: {
   avatar: string | ReactNode;

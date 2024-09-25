@@ -35,10 +35,7 @@ export default function Prompts({
   });
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
-  const {
-    t,
-    i18n: { changeLanguage, language },
-  } = useTranslation();
+  const { t } = useTranslation();
 
   const handleAddPrompt = async () => {
     try {
