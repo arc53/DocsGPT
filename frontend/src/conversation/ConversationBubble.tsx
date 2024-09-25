@@ -24,6 +24,7 @@ import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
+/* eslint-disable react/prop-types */
 const ConversationBubble = forwardRef<
   HTMLDivElement,
   {
