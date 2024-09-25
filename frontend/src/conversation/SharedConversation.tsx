@@ -227,7 +227,6 @@ export const SharedConversation = () => {
               ref={inputRef}
               tabIndex={1}
               onPaste={handlePaste}
-              placeholder={t('inputPlaceholder')}
               contentEditable
               className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
               onKeyDown={(e) => {
