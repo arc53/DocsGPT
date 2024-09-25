@@ -1,6 +1,7 @@
-from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
+from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
+
 
 class MongoDBVectorStore(BaseVectorStore):
     def __init__(
@@ -33,27 +34,24 @@ class MongoDBVectorStore(BaseVectorStore):
         self._database = self._client[database]
         self._collection = self._database[collection]
 
-        
     def search(self, question, k=2, *args, **kwargs):
         query_vector = self._embedding.embed_query(question)
 
         pipeline = [
             {
                 "$vectorSearch": {
-                    "queryVector": query_vector, 
+                    "queryVector": query_vector,
                     "path": self._embedding_key,
-                    "limit": k, 
-                    "numCandidates": k * 10, 
+                    "limit": k,
+                    "numCandidates": k * 10,
                     "index": self._index_name,
-                    "filter": {
-                        "source_id": {"$eq": self._source_id}
-                    }
+                    "filter": {"source_id": {"$eq": self._source_id}},
                 }
             }
         ]
 
         cursor = self._collection.aggregate(pipeline)
-        
+
         results = []
         for doc in cursor:
             text = doc[self._text_key]
@@ -63,30 +61,32 @@ class MongoDBVectorStore(BaseVectorStore):
             metadata = doc
             results.append(Document(text, metadata))
         return results
-    
+
     def _insert_texts(self, texts, metadatas):
         if not texts:
             return []
         embeddings = self._embedding.embed_documents(texts)
+
         to_insert = [
             {self._text_key: t, self._embedding_key: embedding, **m}
             for t, m, embedding in zip(texts, metadatas, embeddings)
         ]
-        # insert the documents in MongoDB Atlas
+
         insert_result = self._collection.insert_many(to_insert)
         return insert_result.inserted_ids
-    
-    def add_texts(self,
+
+    def add_texts(
+        self,
         texts,
-        metadatas = None,
-        ids = None,
-        refresh_indices = True,
-        create_index_if_not_exists = True,
-        bulk_kwargs = None,
-        **kwargs,):
+        metadatas=None,
+        ids=None,
+        refresh_indices=True,
+        create_index_if_not_exists=True,
+        bulk_kwargs=None,
+        **kwargs,
+    ):
 
-
-        #dims = self._embedding.client[1].word_embedding_dimension
+        # dims = self._embedding.client[1].word_embedding_dimension
         # # check if index exists
         # if create_index_if_not_exists:
         #     # check if index exists
@@ -121,6 +121,6 @@ class MongoDBVectorStore(BaseVectorStore):
         if texts_batch:
             result_ids.extend(self._insert_texts(texts_batch, metadatas_batch))
         return result_ids
-    
+
     def delete_index(self, *args, **kwargs):
         self._collection.delete_many({"source_id": self._source_id})

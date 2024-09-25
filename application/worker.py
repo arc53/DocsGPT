@@ -1,21 +1,26 @@
+import logging
 import os
 import shutil
 import string
 import zipfile
+from collections import Counter
 from urllib.parse import urljoin
-import logging
 
 import requests
 from bson.objectid import ObjectId
+from pymongo import MongoClient
 
 from application.core.settings import settings
 from application.parser.file.bulk import SimpleDirectoryReader
-from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.open_ai_func import call_openai_api
+from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
 from application.parser.token_func import group_split
 from application.utils import count_tokens_docs
 
+mongo = MongoClient(settings.MONGO_URI)
+db = mongo["docsgpt"]
+sources_collection = db["sources"]
 
 
 # Define a function to extract metadata from a given filename.
@@ -28,7 +33,9 @@ def generate_random_string(length):
     return "".join([string.ascii_letters[i % 52] for i in range(length)])
 
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
 def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
@@ -59,7 +66,9 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
 
 
 # Define the main function for ingesting and processing documents.
-def ingest_worker(self, directory, formats, name_job, filename, user, retriever="classic"):
+def ingest_worker(
+    self, directory, formats, name_job, filename, user, retriever="classic"
+):
     """
     Ingest and process documents.
 
@@ -106,7 +115,9 @@ def ingest_worker(self, directory, formats, name_job, filename, user, retriever=
 
     # check if file is .zip and extract it
     if filename.endswith(".zip"):
-        extract_zip_recursive(os.path.join(full_path, filename), full_path, 0, recursion_depth)
+        extract_zip_recursive(
+            os.path.join(full_path, filename), full_path, 0, recursion_depth
+        )
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -139,15 +150,26 @@ def ingest_worker(self, directory, formats, name_job, filename, user, retriever=
 
     # get files from outputs/inputs/index.faiss and outputs/inputs/index.pkl
     # and send them to the server (provide user and name in form)
-    file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, "id": str(id), 'type': 'local'}
+    file_data = {
+        "name": name_job,
+        "user": user,
+        "tokens": tokens,
+        "retriever": retriever,
+        "id": str(id),
+        "type": "local",
+    }
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
-        response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
+        response = requests.post(
+            urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
+        )
     else:
-        response = requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
+        response = requests.post(
+            urljoin(settings.API_URL, "/api/upload_index"), data=file_data
+        )
 
     # delete local
     shutil.rmtree(full_path)
@@ -162,7 +184,18 @@ def ingest_worker(self, directory, formats, name_job, filename, user, retriever=
     }
 
 
-def remote_worker(self, source_data, name_job, user, loader, directory="temp", retriever="classic"):
+def remote_worker(
+    self,
+    source_data,
+    name_job,
+    user,
+    loader,
+    directory="temp",
+    retriever="classic",
+    sync_frequency="never",
+    operation_mode="upload",
+    doc_id=None,
+):
     token_check = True
     min_tokens = 150
     max_tokens = 1250
@@ -171,7 +204,10 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp", r
     if not os.path.exists(full_path):
         os.makedirs(full_path)
     self.update_state(state="PROGRESS", meta={"current": 1})
-    logging.info(f"Remote job: {full_path}", extra={"user": user, "job": name_job, source_data: source_data})
+    logging.info(
+        f"Remote job: {full_path}",
+        extra={"user": user, "job": name_job, source_data: source_data},
+    )
 
     remote_loader = RemoteCreator.create_loader(loader)
     raw_docs = remote_loader.load_data(source_data)
@@ -184,23 +220,93 @@ def remote_worker(self, source_data, name_job, user, loader, directory="temp", r
     )
     # docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
     tokens = count_tokens_docs(docs)
-    id = ObjectId()
-    call_openai_api(docs, full_path, id, self)
+    if operation_mode == "upload":
+        id = ObjectId()
+        call_openai_api(docs, full_path, id, self)
+    elif operation_mode == "sync":
+        if not doc_id or not ObjectId.is_valid(doc_id):
+            raise ValueError("doc_id must be provided for sync operation.")
+        id = ObjectId(doc_id)
+        call_openai_api(docs, full_path, id, self)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     # Proceed with uploading and cleaning as in the original function
-    file_data = {"name": name_job, "user": user, "tokens": tokens, "retriever": retriever, 
-                 "id": str(id), 'type': loader, 'remote_data': source_data}
+    file_data = {
+        "name": name_job,
+        "user": user,
+        "tokens": tokens,
+        "retriever": retriever,
+        "id": str(id),
+        "type": loader,
+        "remote_data": source_data,
+        "sync_frequency": sync_frequency,
+    }
     if settings.VECTOR_STORE == "faiss":
         files = {
             "file_faiss": open(full_path + "/index.faiss", "rb"),
             "file_pkl": open(full_path + "/index.pkl", "rb"),
         }
 
-        requests.post(urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data)
+        requests.post(
+            urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
+        )
     else:
         requests.post(urljoin(settings.API_URL, "/api/upload_index"), data=file_data)
 
     shutil.rmtree(full_path)
 
     return {"urls": source_data, "name_job": name_job, "user": user, "limited": False}
+
+
+def sync(
+    self,
+    source_data,
+    name_job,
+    user,
+    loader,
+    sync_frequency,
+    retriever,
+    doc_id=None,
+    directory="temp",
+):
+    try:
+        remote_worker(
+            self,
+            source_data,
+            name_job,
+            user,
+            loader,
+            directory,
+            retriever,
+            sync_frequency,
+            "sync",
+            doc_id,
+        )
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+    return {"status": "success"}
+
+
+def sync_worker(self, frequency):
+    sync_counts = Counter()
+    sources = sources_collection.find()
+    for doc in sources:
+        if doc.get("sync_frequency") == frequency:
+            name = doc.get("name")
+            user = doc.get("user")
+            source_type = doc.get("type")
+            source_data = doc.get("remote_data")
+            retriever = doc.get("retriever")
+            doc_id = str(doc.get("_id"))
+            resp = sync(
+                self, source_data, name, user, source_type, frequency, retriever, doc_id
+            )
+            sync_counts["total_sync_count"] += 1
+            sync_counts[
+                "sync_success" if resp["status"] == "success" else "sync_failure"
+            ] += 1
+
+    return {
+        key: sync_counts[key]
+        for key in ["total_sync_count", "sync_success", "sync_failure"]
+    }

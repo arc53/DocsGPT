@@ -16,6 +16,7 @@ const endpoints = {
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     LOGS: `/api/get_user_logs`,
+    MANAGE_SYNC: '/api/manage_sync',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

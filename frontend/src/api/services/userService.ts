@@ -31,6 +31,8 @@ const userService = {
     apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data),
   getLogs: (data: any): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data),
+  manageSync: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.MANAGE_SYNC, data),
 };
 
 export default userService;

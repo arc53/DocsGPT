@@ -11,6 +11,7 @@ export type Doc = {
   tokens?: string;
   type?: string;
   retriever?: string;
+  syncFrequency?: string;
 };
 
 export type PromptProps = {
