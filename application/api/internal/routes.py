@@ -6,15 +6,20 @@ from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
 
 from application.core.settings import settings
+
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
-internal = Blueprint('internal', __name__)
+internal = Blueprint("internal", __name__)
+
+
 @internal.route("/api/download", methods=["get"])
 def download_file():
     user = secure_filename(request.args.get("user"))
@@ -22,7 +27,6 @@ def download_file():
     filename = secure_filename(request.args.get("file"))
     save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
     return send_from_directory(save_dir, filename, as_attachment=True)
-
 
 
 @internal.route("/api/upload_index", methods=["POST"])
@@ -38,7 +42,8 @@ def upload_index_files():
     retriever = secure_filename(request.form["retriever"])
     id = secure_filename(request.form["id"])
     type = secure_filename(request.form["type"])
-    remote_data = secure_filename(request.form["remote_data"]) if "remote_data" in  request.form else None
+    remote_data = request.form["remote_data"] if "remote_data" in request.form else None
+    sync_frequency = secure_filename(request.form["sync_frequency"])
 
     save_dir = os.path.join(current_dir, "indexes", str(id))
     if settings.VECTOR_STORE == "faiss":
@@ -55,24 +60,45 @@ def upload_index_files():
         if file_pkl.filename == "":
             return {"status": "no file name"}
         # saves index files
-        
+
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         file_faiss.save(os.path.join(save_dir, "index.faiss"))
         file_pkl.save(os.path.join(save_dir, "index.pkl"))
-    # create entry in sources_collection
-    sources_collection.insert_one(
-        {
-            "_id": ObjectId(id),
-            "user": user,
-            "name": job_name,
-            "language": job_name,
-            "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            "model": settings.EMBEDDINGS_NAME,
-            "type": type,
-            "tokens": tokens,
-            "retriever": retriever,
-            "remote_data": remote_data
-        }
-    )
+
+    existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
+    if existing_entry:
+        sources_collection.update_one(
+            {"_id": ObjectId(id)},
+            {
+                "$set": {
+                    "user": user,
+                    "name": job_name,
+                    "language": job_name,
+                    "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "type": type,
+                    "tokens": tokens,
+                    "retriever": retriever,
+                    "remote_data": remote_data,
+                    "sync_frequency": sync_frequency,
+                }
+            },
+        )
+    else:
+        sources_collection.insert_one(
+            {
+                "_id": ObjectId(id),
+                "user": user,
+                "name": job_name,
+                "language": job_name,
+                "date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "model": settings.EMBEDDINGS_NAME,
+                "type": type,
+                "tokens": tokens,
+                "retriever": retriever,
+                "remote_data": remote_data,
+                "sync_frequency": sync_frequency,
+            }
+        )
     return {"status": "ok"}

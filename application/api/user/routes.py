@@ -289,14 +289,13 @@ def combined_json():
         data.append(
             {
                 "id": str(index["_id"]),
-                "name": index["name"],
-                "date": index["date"],
+                "name": index.get("name"),
+                "date": index.get("date"),
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "local",
-                "tokens": index["tokens"] if ("tokens" in index.keys()) else "",
-                "retriever": (
-                    index["retriever"] if ("retriever" in index.keys()) else "classic"
-                ),
+                "tokens": index.get("tokens", ""),
+                "retriever": index.get("retriever", "classic"),
+                "syncFrequency": index.get("sync_frequency", ""),
             }
         )
     if "duckduck_search" in settings.RETRIEVERS_ENABLED:
@@ -1157,3 +1156,27 @@ def get_user_logs():
         ),
         200,
     )
+
+
+@user.route("/api/manage_sync", methods=["POST"])
+def manage_sync():
+    data = request.get_json()
+    source_id = data.get("source_id")
+    sync_frequency = data.get("sync_frequency")
+
+    if sync_frequency not in ["never", "daily", "weekly", "monthly"]:
+        return jsonify({"status": "invalid frequency"}), 400
+
+    update_data = {"$set": {"sync_frequency": sync_frequency}}
+    try:
+        sources_collection.update_one(
+            {
+                "_id": ObjectId(source_id),
+                "user": "local",
+            },
+            update_data,
+        )
+    except Exception as err:
+        print(err)
+        return jsonify({"status": "error"}), 400
+    return jsonify({"status": "ok"}), 200
