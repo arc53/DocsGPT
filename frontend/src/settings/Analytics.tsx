@@ -181,8 +181,8 @@ export default function Analytics() {
             border="border"
           />
         </div>
-        <div className="mt-8 w-full flex flex-col sm:flex-row gap-3">
-          <div className="h-[345px] sm:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
+        <div className="mt-8 w-full flex flex-col [@media(min-width:1080px)]:flex-row gap-3">
+          <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
                 Messages
@@ -227,7 +227,7 @@ export default function Analytics() {
               />
             </div>
           </div>
-          <div className="h-[345px] sm:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
+          <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
                 Token Usage
