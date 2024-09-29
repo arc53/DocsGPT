@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "docker-compose",
+      "label": "docker-compose: debug:frontend",
+      "dockerCompose": {
+        "up": {
+          "detached": true,
+          "services": [
+            "frontend"
+          ],
+          "build": true
+        },
+        "files": [
+          "${workspaceFolder}/docker-compose.yaml"
+        ]
+      }
+    }
+  ]
+}
