@@ -230,7 +230,7 @@ class DeleteByIds(Resource):
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
-        return make_response(jsonify({"success": False, "error": str(err)}), 400)
+        return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/delete_old")
