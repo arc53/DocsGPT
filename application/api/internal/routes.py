@@ -43,7 +43,7 @@ def upload_index_files():
     id = secure_filename(request.form["id"])
     type = secure_filename(request.form["type"])
     remote_data = request.form["remote_data"] if "remote_data" in request.form else None
-    sync_frequency = secure_filename(request.form["sync_frequency"])
+    sync_frequency = secure_filename(request.form["sync_frequency"]) if "sync_frequency" in request.form else None
 
     save_dir = os.path.join(current_dir, "indexes", str(id))
     if settings.VECTOR_STORE == "faiss":
