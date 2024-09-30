@@ -7,7 +7,7 @@ All contributors with accepted PRs will receive a cool Holopin! 🤩 (Watch out 
 ### 🏆 Top 50 contributors will recieve a special T-shirt
 
 ### 🏆 LLM Document analysis by LexEU competition: 
-A separate competition is available for those sumbit best new retrieval method that will analyze a Document using EU laws.
+A separate competition is available for those sumbit best new retrieval / workflow method that will analyze a Document using EU laws.
 You will find more information about it on 1st of October.
 
 ## 📜 Here's How to Contribute:
