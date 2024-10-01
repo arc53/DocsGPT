@@ -2,15 +2,15 @@
 
 ## Our Pledge
 
-We as members, contributors and leaders pledge to make participation in our
+We as members, contributors, and leaders pledge to participation in our
 community, a harassment-free experience for everyone, regardless of age, body
 size, visible or invisible disability, ethnicity, sex characteristics, gender
 identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, religion or sexual identity
+nationality, personal appearance, race, religion, or sexual identity
 and orientation.
 
 We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive and a healthy community.
+diverse, inclusive, and a healthy community.
 
 ## Our Standards
 
@@ -33,7 +33,7 @@ Examples of unacceptable behavior include:
 3. Public or private harassment
 4. Publishing other's private information, such as a physical or email
   address, without their explicit permission
-5. Other conduct which could reasonably be considered inappropriate in a
+5. Other conduct that could reasonably be considered inappropriate in a
   professional setting
 
 ## Enforcement Responsibilities
@@ -45,7 +45,7 @@ or harmful.
 
 Community leaders have the right and responsibility to remove, edit, or reject
 comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct and will communicate reasons for moderation
+not aligned with this Code of Conduct and will communicate reasons for moderation
 decisions when appropriate.
 
 ## Scope
@@ -63,7 +63,7 @@ reported to the community leaders responsible for enforcement at
 contact@arc53.com.
 All complaints will be reviewed and investigated promptly and fairly.
 
-All community leaders are obligated to be respectful towards the privacy and security of the
+All community leaders are obligated to be respectful of the privacy and security of the
 reporter of any incident.
 
 ## Enforcement Guidelines
@@ -75,9 +75,7 @@ the consequences for any action that they deem in violation of this Code of Cond
 * **Community Impact**: Use of inappropriate language or other behavior deemed
 unprofessional or unwelcome in the community space.
 
-* **Consequence**: A private, written warning from community leaders, providing
-clarity around the nature of the violation and an explanation of why the
-behavior was inappropriate. A public apology may be requested.
+* **Consequence**: A private, written warning from community leaders, providing clarity around the nature of the violation and an explanation of why the behavior was inappropriate. A public apology may be requested.
 
 ### 2. Warning
 * **Community Impact**: A violation through a single incident or series
@@ -85,7 +83,7 @@ of actions.
 
 * **Consequence**: A warning with consequences for continued behavior. No
 interaction with the people involved, including unsolicited interaction with
-those enforcing the Code of Conduct, for a specified period of time. This
+those enforcing the Code of Conduct, for a specified period. This
 includes avoiding interactions in community spaces as well as external channels
 like social media. Violating these terms may lead to a temporary or
 permanent ban.
@@ -95,14 +93,14 @@ permanent ban.
 sustained inappropriate behavior.
 
 * **Consequence**: A temporary ban from any sort of interaction or public
-communication with the community for a specified period of time. No public or
+communication with the community for a specified period. No public or
 private interaction with the people involved, including unsolicited interaction
 with those enforcing the Code of Conduct, is allowed during this period.
 Violating these terms may lead to a permanent ban.
 
 ### 4. Permanent Ban
 * **Community Impact**: Demonstrating a pattern of violation of community
-standards, including sustained inappropriate behavior,harassment of an
+standards, including sustained inappropriate behavior, harassment of an
 individual or aggression towards or disparagement of classes of individuals.
 
 * **Consequence**: A permanent ban from any sort of public interaction within
