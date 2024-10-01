@@ -62,7 +62,8 @@
       "name": "Name",
       "key": "API Key",
       "sourceDoc": "Source Document",
-      "createNew": "Create New"
+      "createNew": "Create New",
+      "noData": "No existing Chatbots"
     },
     "analytics": {
       "label": "Analytics"

@@ -62,7 +62,8 @@
       "name": "Nombre",
       "key": "Clave de API",
       "sourceDoc": "Documento Fuente",
-      "createNew": "Crear Nuevo"
+      "createNew": "Crear Nuevo",
+      "noData": "No hay chatbots existentes"
     },
     "analytics": {
       "label": "Analítica"

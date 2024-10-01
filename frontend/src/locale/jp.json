@@ -62,7 +62,8 @@
       "name": "名前",
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
-      "createNew": "新規作成"
+      "createNew": "新規作成",
+      "noData": "既存のチャットボットはありません"
     },
     "analytics": {
       "label": "分析"

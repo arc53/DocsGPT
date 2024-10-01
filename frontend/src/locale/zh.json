@@ -62,7 +62,8 @@
       "name": "名称",
       "key": "API 密钥",
       "sourceDoc": "源文档",
-      "createNew": "创建新的"
+      "createNew": "创建新的",
+      "noData": "没有现有的聊天机器人"
     },
     "analytics": {
       "label": "分析"
