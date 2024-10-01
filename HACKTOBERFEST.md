@@ -8,6 +8,7 @@ All contributors with accepted PRs will receive a cool Holopin! 🤩 (Watch out 
 
 ### 🏆 [LLM Document analysis by LexEU competition](https://github.com/arc53/DocsGPT/blob/main/lexeu-competition.md): 
 A separate competition is available for those sumbit best new retrieval / workflow method that will analyze a Document using EU laws.
+With 200$, 100$, 50$ prize for 1st, 2nd and 3rd place respectively.
 You can find more information [here](https://github.com/arc53/DocsGPT/blob/main/lexeu-competition.md)
 
 ## 📜 Here's How to Contribute:
