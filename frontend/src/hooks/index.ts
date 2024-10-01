@@ -66,9 +66,34 @@ export function useMediaQuery() {
 }
 
 export function useDarkTheme() {
-  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(
-    localStorage.getItem('selectedTheme') === 'Dark' || false,
-  );
+  const getSystemThemePreference = () => {
+    return (
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    );
+  };
+
+  const getInitialTheme = () => {
+    const storedTheme = localStorage.getItem('selectedTheme');
+    if (storedTheme === 'Dark' || storedTheme === 'Light') {
+      return storedTheme === 'Dark';
+    }
+    return getSystemThemePreference();
+  };
+
+  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(getInitialTheme());
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (localStorage.getItem('selectedTheme') === null) {
+        setIsDarkTheme(mediaQuery.matches);
+      }
+    };
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
@@ -79,9 +104,9 @@ export function useDarkTheme() {
     }
   }, [isDarkTheme]);
 
-  const toggleTheme: any = () => {
+  const toggleTheme = () => {
     setIsDarkTheme(!isDarkTheme);
   };
 
-  return [isDarkTheme, toggleTheme];
+  return [isDarkTheme, toggleTheme] as const;
 }
