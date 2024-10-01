@@ -54,7 +54,8 @@
       "name": "文件名称",
       "date": "向量日期",
       "type": "类型",
-      "tokenUsage": "令牌使用"
+      "tokenUsage": "令牌使用",
+      "noData": "没有现有的文档"
     },
     "apiKeys": {
       "label": "聊天机器人",

@@ -54,7 +54,8 @@
       "name": "Document Name",
       "date": "Vector Date",
       "type": "Type",
-      "tokenUsage": "Token Usage"
+      "tokenUsage": "Token Usage",
+      "noData": "No existing Documents"
     },
     "apiKeys": {
       "label": "Chatbots",

@@ -54,7 +54,8 @@
       "name": "ドキュメント名",
       "date": "ベクトル日付",
       "type": "タイプ",
-      "tokenUsage": "トークン使用量"
+      "tokenUsage": "トークン使用量",
+      "noData": "既存のドキュメントはありません"
     },
     "apiKeys": {
       "label": "チャットボット",
