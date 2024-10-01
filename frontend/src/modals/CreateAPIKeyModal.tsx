@@ -97,14 +97,13 @@ export default function CreateAPIKeyModal({
         <div className="my-4">
           <Dropdown
             placeholder={t('modals.createAPIKey.sourceDoc')}
-            selectedValue={sourcePath}
+            selectedValue={sourcePath ? sourcePath.name : null}
             onSelect={(selection: {
               name: string;
               id: string;
               type: string;
             }) => {
               setSourcePath(selection);
-              console.log(selection);
             }}
             options={extractDocPaths()}
             size="w-full"

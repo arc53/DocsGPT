@@ -82,12 +82,12 @@ function Dropdown({
         }`}
       >
         {typeof selectedValue === 'string' ? (
-          <span className="overflow-hidden text-ellipsis dark:text-bright-gray">
+          <span className="truncate dark:text-bright-gray">
             {selectedValue}
           </span>
         ) : (
           <span
-            className={`truncate overflow-hidden dark:text-bright-gray ${
+            className={`truncate dark:text-bright-gray ${
               !selectedValue && 'text-silver dark:text-gray-400'
             } ${contentSize}`}
           >
