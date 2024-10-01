@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
-import { ActiveState } from '../models/misc';
+import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
-import { setSelectedDocs, setSourceDocs } from '../preferences/preferenceSlice';
+import {
+  setSelectedDocs,
+  setSourceDocs,
+  selectSourceDocs,
+} from '../preferences/preferenceSlice';
 
 function Upload({
   modalState,
@@ -51,6 +55,7 @@ function Upload({
     value: 'crawler',
   });
 
+  const sourceDocs = useSelector(selectSourceDocs);
   useEffect(() => {
     if (setTimeoutRef.current) {
       clearTimeout(setTimeoutRef.current);
@@ -135,11 +140,16 @@ function Upload({
                 } else {
                   getDocs().then((data) => {
                     dispatch(setSourceDocs(data));
-                    dispatch(
-                      setSelectedDocs(
-                        data?.find((d) => d.type?.toLowerCase() === 'local'),
-                      ),
+                    const docIds = new Set(
+                      sourceDocs?.map((doc: Doc) => (doc.id ? doc.id : null)),
                     );
+                    data?.map((updatedDoc: Doc) => {
+                      if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
+                        //select the doc not present in the intersection of current Docs and fetched data
+                        dispatch(setSelectedDocs(updatedDoc));
+                        return;
+                      }
+                    });
                   });
                   setProgress(
                     (progress) =>
