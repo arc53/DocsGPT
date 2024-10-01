@@ -31,8 +31,11 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
-- [Book Enterprise / teams Demo :wave:](https://cal.com/arc53/docsgpt-demo-b2b?date=2024-09-27&month=2024-09)
-- [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
+<a href ="https://cal.com/arc53/docsgpt-demo-b2b">
+    <img alt="Let's chat" src="https://cal.com/book-with-cal-dark.svg" />
+</a>
+
+[Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
 
