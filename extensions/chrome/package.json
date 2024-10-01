@@ -1,0 +1,20 @@
+{
+  "name": "docsgpt-chrome-extension",
+  "version": "0.0.1", 
+  "description": "DocsGPT - Documentation AI butler",
+  "main": "popup.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "npx tailwindcss -i ./styles.css -o ./dist/output.css --watch"
+  },
+  "keywords": [
+    "DocsGPT",
+    "Documentation",
+    "Chrome",
+    "extension"
+  ],
+  "devDependencies": {
+    "tailwindcss": "^3.2.4"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "DocsGPT - Documentation AI butler",
+  "version": "0.0.1",
+  "manifest_version": 3,
+  "description": "AI assistant for developers, that helps you answer your questions about the documentation you are reading.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "default_locale": "en",
+  "background": {
+    "service_worker": "src/bg/service-worker.js"
+  },
+  "action": {
+    "default_title": "DocsGPT - Documentation AI butler",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "content_scripts": [{
+    "js": ["popup.js"],
+    "matches": ["https://github.com/*"]
+  }]
+
+}

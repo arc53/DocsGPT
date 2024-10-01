@@ -1,0 +1,14 @@
+{
+  "Chatwoot-extension": {
+    "title": "💬️ Chatwoot Extension",
+    "href": "/Extensions/Chatwoot-extension"
+  },
+  "react-widget": {
+    "title": "🏗️ Widget setup",
+    "href": "/Extensions/react-widget"
+  },
+  "Chrome-extension": {
+    "title": "🌐 Chrome Extension",
+    "href": "/Extensions/Chrome-extension"
+  }
+}

@@ -1,0 +1,17 @@
+name: Python linting
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    types: [ opened, synchronize ]
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Lint with Ruff
+        uses: chartboost/ruff-action@v1
