@@ -31,7 +31,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
-- [Book Enterprise / teams Demo :wave:](https://cal.com/arc53/docsgpt-demo-b2b?date=2024-09-27&month=2024-09)
+- [Book Enterprise/teams Demo :wave:](https://cal.com/arc53/docsgpt-demo-b2b?date=2024-09-27&month=2024-09)
 - [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
 ![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
@@ -48,9 +48,9 @@ You can find our roadmap [here](https://github.com/orgs/arc53/projects/2). Pleas
 | [Docsgpt-14b](https://huggingface.co/Arc53/docsgpt-14b)               | llama-2-14b | 2xA10 gpu's               |
 | [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon) | falcon-40b  | 8xA10G gpu's              |
 
-If you don't have enough resources to run it, you can use bitsnbytes to quantize.
+If you don't have enough resources to run it, you can use bits bytes to quantize.
 
-## End to End AI Framework for Information Retrieval
+## End-to-End AI Framework for Information Retrieval
 
 ![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
 
@@ -68,7 +68,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - :house: :closed_lock_with_key: [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM)
 
-## Project Structure
+## 🌟 Project Structure
 
 - Application - Flask app (main application).
 
@@ -78,7 +78,7 @@ If you don't have enough resources to run it, you can use bitsnbytes to quantize
 
 - Frontend - Frontend uses <a href="https://vitejs.dev/">Vite</a> and <a href="https://react.dev/">React</a>.
 
-## QuickStart
+# 🚀 QuickStart
 
 > [!Note]
 > Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
@@ -122,7 +122,7 @@ docker compose -f docker-compose-dev.yaml build
 docker compose -f docker-compose-dev.yaml up -d
 ```
 
-### Run the Backend
+### 📋 Run the Backend
 
 > [!Note]
 > Make sure you have Python 3.10 or 3.11 installed.
@@ -149,8 +149,8 @@ python -m venv venv
  venv/Scripts/activate
 ```
 
-3. Download embedding model and save it in the `model/` folder:
-You can use the script below, or download it manually from [here](https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip), unzip it and save it in the `model/` folder.
+3. Download the embedding model and save it in the `model/` folder:
+You can use the script below, or download it manually from [here](https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip), unzip it, and save it in the `model/` folder.
 
 ```commandline
 wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip
@@ -167,7 +167,7 @@ pip install -r application/requirements.txt
 5. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
 6. Start worker with `celery -A application.app.celery worker -l INFO`.
 
-### Start Frontend
+### 🛠️ Start Frontend
 
 > [!Note]
 > Make sure you have Node version 16 or higher.
@@ -187,7 +187,7 @@ npm install vite -g
 
 Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information about how to get involved. We welcome issues, questions, and pull requests.
 
-## Code Of Conduct
+## ⚠️ Code Of Conduct
 
 We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
 
@@ -197,8 +197,11 @@ We as members, contributors, and leaders, pledge to make participation in our co
   <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" alt="Contributors" />
 </a>
 
-## License
+## 📄 License
 
 The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
 Built with [:bird: :link: LangChain](https://github.com/hwchase17/langchain)
+
+---
+<p align="center">If you find DocsGPT helpful, please give us a ⭐️!</p>
