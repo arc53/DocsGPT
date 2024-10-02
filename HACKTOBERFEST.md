@@ -16,7 +16,10 @@ You can find more information [here](https://github.com/arc53/DocsGPT/blob/main/
 🛠️ Code: This is the golden ticket! Make meaningful contributions through PRs.
 
 🧩 API extension: Build an app utilising DocsGPT API. We prefer submissions that showcase original ideas and turn the API into an AI agent.
-They can be a completely separate repo. For example [Telegram bot](https://github.com/arc53/tg-bot-docsgpt-extenstion) or [CLI extension](https://github.com/arc53/DocsGPT-cli)
+They can be a completely separate repo. 
+For example: 
+https://github.com/arc53/tg-bot-docsgpt-extenstion or 
+https://github.com/arc53/DocsGPT-cli
 
 Non-Code Contributions:
 
