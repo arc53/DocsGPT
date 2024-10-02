@@ -76,7 +76,7 @@ const Documents: React.FC<DocumentsProps> = ({
             <tbody>
               {!documents?.length && (
                 <tr>
-                  <td colSpan={5} className="border-r border-t p-4">
+                  <td colSpan={5} className="border-t p-4">
                     {t('settings.documents.noData')}
                   </td>
                 </tr>

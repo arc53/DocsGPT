@@ -118,7 +118,7 @@ export default function APIKeys() {
               <tbody>
                 {!apiKeys?.length && (
                   <tr>
-                    <td colSpan={4} className="border-r border-t p-4">
+                    <td colSpan={4} className="border-t p-4">
                       {t('settings.apiKeys.noData')}
                     </td>
                   </tr>
