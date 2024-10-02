@@ -74,6 +74,13 @@ const Documents: React.FC<DocumentsProps> = ({
               </tr>
             </thead>
             <tbody>
+              {!documents?.length && (
+                <tr>
+                  <td colSpan={5} className="border-t p-4">
+                    {t('settings.documents.noData')}
+                  </td>
+                </tr>
+              )}
               {documents &&
                 documents.map((document, index) => (
                   <tr key={index}>
