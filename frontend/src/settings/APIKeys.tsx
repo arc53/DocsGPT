@@ -116,6 +116,13 @@ export default function APIKeys() {
                 </tr>
               </thead>
               <tbody>
+                {!apiKeys?.length && (
+                  <tr>
+                    <td colSpan={4} className="border-t p-4">
+                      {t('settings.apiKeys.noData')}
+                    </td>
+                  </tr>
+                )}
                 {apiKeys?.map((element, index) => (
                   <tr key={index}>
                     <td className="border-r border-t p-4">{element.name}</td>
