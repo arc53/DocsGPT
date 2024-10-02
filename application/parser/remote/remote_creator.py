@@ -2,7 +2,7 @@ from application.parser.remote.sitemap_loader import SitemapLoader
 from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.remote.web_loader import WebLoader
 from application.parser.remote.reddit_loader import RedditPostsLoaderRemote
-
+from application.parser.remote.dropbox_loader import DropboxLoaderRemote
 
 class RemoteCreator:
     loaders = {
@@ -10,6 +10,7 @@ class RemoteCreator:
         "sitemap": SitemapLoader,
         "crawler": CrawlerLoader,
         "reddit": RedditPostsLoaderRemote,
+        "dropbox" : DropboxLoaderRemote,
     }
 
     @classmethod
