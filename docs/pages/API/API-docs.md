@@ -108,7 +108,7 @@ Response will include:
 
 Example of JSON in Docshub and local:
 
-<img width="295" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
+<img width="300" alt="image" src="https://user-images.githubusercontent.com/15183589/224714085-f09f51a4-7a9a-4efb-bd39-798029bb4273.png">
 
 ### 4. /api/upload
 **Description:**
@@ -261,8 +261,8 @@ JSON response with a list of created API keys:
         "name": "string",
         "key": "string",
         "source": "string"
-      },
-      ...
+      }
+
     ]
 ```
 
