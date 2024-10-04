@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
-
+import { ShareConversationModal } from './modals/ShareConversationModal';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Add from './assets/add.svg';
@@ -10,7 +10,6 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
@@ -41,6 +40,7 @@ import {
   setSourceDocs,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
+import ShareIcon from './assets/share.svg';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -73,7 +73,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
-
+  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
@@ -383,15 +383,46 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       </div>
       <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
         <button
-          className="mt-5 ml-6 h-6 w-6 md:hidden"
-          onClick={() => setNavOpen(true)}
+          className="m-5"
+          onClick={() => {
+            setNavOpen(!navOpen);
+          }}
         >
           <img
-            src={Hamburger}
+            src={Expand}
             alt="menu toggle"
-            className="w-7 filter dark:invert"
+            className={`${
+              !navOpen ? 'rotate-180' : 'rotate-0'
+            } m-auto transition-all duration-200`}
           />
         </button>
+
+        {conversationId && (
+          <>
+            {' '}
+            <button
+              title="Share"
+              onClick={() => {
+                setShareModalState(true);
+              }}
+              className="absolute top-4 right-20 z-20 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+            >
+              <img
+                className="m-2 h-5 w-5 filter dark:invert"
+                alt="share"
+                src={ShareIcon}
+              />
+            </button>
+            {isShareModalOpen && (
+              <ShareConversationModal
+                close={() => {
+                  setShareModalState(false);
+                }}
+                conversationId={conversationId}
+              />
+            )}
+          </>
+        )}
       </div>
       <APIKeyModal
         modalState={apiKeyModalState}
