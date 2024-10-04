@@ -10,7 +10,7 @@ import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
@@ -39,6 +39,7 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
+  const { isMobile } = useMediaQuery();
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
@@ -153,10 +154,12 @@ export default function Conversation() {
           }}
         >
           <RetryIcon
+            width={isMobile ? 10 : 16}
+            height={isMobile ? 10 : 16}
             fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
             stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
           />
-          Retry
+          <p className="hidden lg:block">Retry</p>
         </button>
       );
       responseView = (
