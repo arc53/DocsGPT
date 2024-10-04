@@ -119,6 +119,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .delete(id, {})
       .then(() => {
         fetchConversations();
+        resetConversation();
       })
       .catch((error) => console.error(error));
   };
@@ -153,6 +154,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }),
         );
       });
+  };
+
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
   };
 
   async function updateConversationName(updatedConversation: {
@@ -235,14 +245,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
         <NavLink
           to={'/'}
-          onClick={() => {
-            dispatch(setConversation([]));
-            dispatch(
-              updateConversationId({
-                query: { conversationId: null },
-              }),
-            );
-          }}
+          onClick={resetConversation}
           className={({ isActive }) =>
             `${
               isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
@@ -310,6 +313,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
+              onClick={resetConversation}
             >
               <img
                 src={SettingGear}
@@ -329,6 +333,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
                 }`
               }
+              onClick={resetConversation}
             >
               <img
                 src={Info}
