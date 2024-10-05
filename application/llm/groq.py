@@ -1,5 +1,4 @@
 from application.llm.base import BaseLLM
-from application.core.settings import settings
 
 
 
