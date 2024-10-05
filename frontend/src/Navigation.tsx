@@ -225,8 +225,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
         >
           <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
-            <img className="mb-2 h-10" src={DocsGPT3} alt="" />
-            <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            <a href="/" className="flex gap-1">
+              <img className="mb-2 h-10" src={DocsGPT3} alt="" />
+              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            </a>
           </div>
           <button
             className="float-right mr-5"
