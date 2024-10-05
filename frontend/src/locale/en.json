@@ -85,6 +85,7 @@
       "train": "Train",
       "link": "Link",
       "urlLink": "URL Link",
+      "repoUrl": "Repository URL",
       "reddit": {
         "id": "Client ID",
         "secret": "Client Secret",
