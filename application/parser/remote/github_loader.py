@@ -48,5 +48,6 @@ class GitHubLoader(BaseRemote):
         documents = []
         for file_path in files:
             content = self.fetch_file_content(repo_name, file_path)
-            documents.append(Document(page_content=content, metadata={"file_path": file_path}))
+            documents.append(Document(page_content=content, metadata={"title": file_path, 
+            "source": f"https://github.com/{repo_name}/blob/main/{file_path}"}))
         return documents
