@@ -70,7 +70,7 @@ export default function Settings() {
             <img src={ArrowLeft} alt="left-arrow" className="h-6 w-6" />
           </button>
         </div>
-        <div className="flex flex-nowrap space-x-4 overflow-x-auto no-scrollbar md:space-x-8">
+        <div className="flex flex-nowrap space-x-4 overflow-x-auto no-scrollbar md:space-x-8 md:!mx-0">
           {tabs.map((tab, index) => (
             <button
               key={index}
