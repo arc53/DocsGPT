@@ -31,8 +31,7 @@ class GitHubLoader(BaseRemote):
 
     def fetch_repo_files(self, repo_url: str, path: str = "") -> List[str]:
         url = f"https://api.github.com/repos/{repo_url}/contents/{path}"
-        response = requests.get(url, headers=self.headers)
-        response.raise_for_status()
+        response = requests.get(url, headers={**self.headers, "Accept": "application/vnd.github.v3.raw"})
         contents = response.json()
         files = []
         for item in contents:
