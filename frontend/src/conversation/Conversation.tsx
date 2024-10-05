@@ -55,10 +55,6 @@ export default function Conversation() {
   }, []);
 
   useEffect(() => {
-    fetchStream.current && fetchStream.current.abort();
-  }, [conversationId]);
-
-  useEffect(() => {
     if (queries.length) {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
       queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
