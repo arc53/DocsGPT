@@ -229,8 +229,10 @@ export default function Conversation() {
         ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
+        style={{ overflowX: 'hidden' }} // Prevent horizontal scrolling
         className="flex justify-center w-full overflow-y-auto h-screen sm:mt-12"
-      >
+        >
+
         {queries.length > 0 && !hasScrolledToLast && (
           <button
             onClick={scrollIntoView}
@@ -270,20 +272,22 @@ export default function Conversation() {
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-[62%] h-auto">
         <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
-          <textarea
-            id="inputbox"
-            ref={inputRef}
-            tabIndex={1}
-            placeholder={t('inputPlaceholder')}
-            className={`inputbox-style h-16 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
-            onInput={handleInput}
-            onKeyDown={(e) => {
+        <textarea
+          id="inputbox"
+          ref={inputRef}
+          tabIndex={1}
+          placeholder={t('inputPlaceholder')}
+          style={{ overflowX: 'hidden' }} // Prevent horizontal scrolling
+          className={`inputbox-style h-16 w-full overflow-y-auto whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+          onInput={handleInput}
+          onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleQuestionSubmission();
-              }
-            }}
+                  e.preventDefault();
+                  handleQuestionSubmission();
+                }
+              }}
           ></textarea>
+
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
