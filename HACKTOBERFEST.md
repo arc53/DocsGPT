@@ -7,7 +7,7 @@ All contributors with accepted PRs will receive a cool Holopin! 🤩 (Watch out 
 ### 🏆 Top 50 contributors will recieve a special T-shirt
 
 ### 🏆 [LLM Document analysis by LexEU competition](https://github.com/arc53/DocsGPT/blob/main/lexeu-competition.md): 
-A separate competition is available for those who sumbit new retrieval / workflow method that will analyze a Document using EU laws.
+A separate competition is available for those who sumbit a new retrieval / workflow method that will analyze a Document using EU laws.
 With 200$, 100$, 50$ prize for 1st, 2nd and 3rd place respectively.
 You can find more information [here](https://github.com/arc53/DocsGPT/blob/main/lexeu-competition.md)
 
@@ -32,7 +32,7 @@ Non-Code Contributions:
 
 ### 📝 Guidelines for Pull Requests:
 - Familiarize yourself with the current contributions and our [Roadmap](https://github.com/orgs/arc53/projects/2).
-- Before contributing we highly advise that you check existing [issues](https://github.com/arc53/DocsGPT/issues) or [create](https://github.com/arc53/DocsGPT/issues/new/choose) an issue and wait to get assigned.
+- Before contributing, we highly advise that you check existing [issues](https://github.com/arc53/DocsGPT/issues) or [create](https://github.com/arc53/DocsGPT/issues/new/choose) an issue and wait to get assigned.
 - Once you are finished with your contribution, please fill in this [form](https://airtable.com/appikMaJwdHhC1SDP/pagoblCJ9W29wf6Hf/form).
 - Refer to the [Documentation](https://docs.docsgpt.cloud/).
 - Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU) server. We're here to help newcomers, so don't hesitate to jump in! Join us [here](https://discord.gg/n5BX8dh8rU).
