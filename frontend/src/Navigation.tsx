@@ -369,9 +369,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               ></img>
               <Dropdown
                 placeholder={"Help"}
+                selectedValue={null}
                 contentSize='50'
                 options={[ { label: "Docs", value: "documentation" }, { label: "Email Us", value: "email" }, ]}
-                onSelect={(selectedOption) => {
+                onSelect={(selectedOption: { label: string; value: string }) => {
                   if (selectedOption.value === "documentation") {
                     window.open(" https://docs.docsgpt.cloud/", "_blank");
                   } else if (selectedOption.value === "email"){

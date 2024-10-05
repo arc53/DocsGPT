@@ -47,14 +47,13 @@ function Dropdown({
 }) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = React.useState(false);
+  const [dropdownPosition, setDropdownPosition] = React.useState({ top: 0});
+  
   const borderRadius = rounded === 'xl' ? 'rounded-xl' : 'rounded-3xl';
   const borderTopRadius = rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl';
 
   const handleClickOutside = (event: MouseEvent) => {
-    if (
-      dropdownRef.current &&
-      !dropdownRef.current.contains(event.target as Node)
-    ) {
+    if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
       setIsOpen(false);
     }
   };
@@ -65,56 +64,50 @@ function Dropdown({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  const handleToggleDropdown = () => {
+    setIsOpen(prev => !prev);
+    if (!isOpen) {
+      adjustDropdownPosition();
+    }
+  };
+
+  const adjustDropdownPosition = () => {
+    if (dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const dropdownMenuHeight = Math.min(200, options.length * 40); // Adjust height based on options
+      const viewportHeight = window.innerHeight;
+
+      // Check if dropdown overflows the bottom of the viewport
+      const newPosition = {
+        top: rect.bottom + dropdownMenuHeight > viewportHeight ? -dropdownMenuHeight : 0,
+        left: 0,
+      };
+
+      setDropdownPosition(newPosition);
+    }
+  };
+
   return (
     <div
-      className={[
-        typeof selectedValue === 'string'
-          ? 'relative mt-2'
-          : 'relative align-middle',
-        size,
-      ].join(' ')}
+      className={[typeof selectedValue === 'string' ? 'relative mt-2' : 'relative align-middle', size].join(' ')}
       ref={dropdownRef}
     >
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${borderColor}/40 dark:bg-transparent ${
-          isOpen ? `${borderTopRadius}` : `${borderRadius}`
-        }`}
+        onClick={handleToggleDropdown}
+        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${borderColor}/40 dark:bg-transparent ${isOpen ? borderTopRadius : borderRadius}`}
       >
-        {typeof selectedValue === 'string' ? (
-          <span className="truncate dark:text-bright-gray">
-            {selectedValue}
-          </span>
-        ) : (
-          <span
-            className={`truncate dark:text-bright-gray ${
-              !selectedValue && 'text-silver dark:text-gray-400'
-            } ${contentSize}`}
-          >
-            {selectedValue && 'label' in selectedValue
-              ? selectedValue.label
-              : selectedValue && 'description' in selectedValue
-                ? `${
-                    selectedValue.value < 1e9
-                      ? selectedValue.value + ` (${selectedValue.description})`
-                      : selectedValue.description
-                  }`
-                : placeholder
-                  ? placeholder
-                  : 'From URL'}
-          </span>
-        )}
-        <img
-          src={Arrow2}
-          alt="arrow"
-          className={`transform ${
-            isOpen ? 'rotate-180' : 'rotate-0'
-          } h-3 w-3 transition-transform`}
-        />
+        <span className={`truncate dark:text-bright-gray ${contentSize}`}>
+          {selectedValue && 'label' in selectedValue ? selectedValue.label : placeholder}
+        </span>
+        <img src={Arrow2} alt="arrow" className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'} h-3 w-3 transition-transform`} />
       </button>
       {isOpen && (
         <div
           className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-white shadow-lg dark:border-${borderColor}/40 dark:bg-dark-charcoal`}
+          style={{
+            transform: `translateY(${dropdownPosition.top}px)`, // Adjust Y position
+          }}
         >
           {options.map((option: any, index) => (
             <div
@@ -128,17 +121,7 @@ function Dropdown({
                 }}
                 className={`ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray ${contentSize}`}
               >
-                {typeof option === 'string'
-                  ? option
-                  : option.name
-                    ? option.name
-                    : option.label
-                      ? option.label
-                      : `${
-                          option.value < 1e9
-                            ? option.value + ` (${option.description})`
-                            : option.description
-                        }`}
+                {typeof option === 'string' ? option : option.name || option.label || option.description}
               </span>
               {showEdit && onEdit && (
                 <img
@@ -146,11 +129,7 @@ function Dropdown({
                   alt="Edit"
                   className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
                   onClick={() => {
-                    onEdit({
-                      id: option.id,
-                      name: option.name,
-                      type: option.type,
-                    });
+                    onEdit(option);
                     setIsOpen(false);
                   }}
                 />
@@ -163,11 +142,7 @@ function Dropdown({
                   <img
                     src={Trash}
                     alt="Delete"
-                    className={`mr-2 h-4 w-4 cursor-pointer hover:opacity-50 ${
-                      option.type === 'public'
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
+                    className={`mr-2 h-4 w-4 cursor-pointer hover:opacity-50 ${option.type === 'public' ? 'cursor-not-allowed opacity-50' : ''}`}
                   />
                 </button>
               )}
