@@ -85,6 +85,7 @@
       "train": "训练",
       "link": "链接",
       "urlLink": "URL 链接",
+      "repoUrl": "存储库 URL",
       "reddit": {
         "id": "客户端 ID",
         "secret": "客户端密钥",
