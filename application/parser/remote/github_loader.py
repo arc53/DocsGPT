@@ -23,6 +23,7 @@ class GitHubLoader(BaseRemote):
                     decoded_content = base64.b64decode(content["content"]).decode("utf-8")
                     return decoded_content
                 except Exception as e:
+                    print(f"Error decoding content for {file_path}: {e}")
                     raise
             else:
                 return content["content"]
