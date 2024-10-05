@@ -11,7 +11,6 @@ import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
-import Info from './assets/info.svg';
 import InfoDark from './assets/info-dark.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
@@ -362,24 +361,27 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </NavLink>
           </div>
           <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
-          <div className="flex my-4 mx-4 flex gap-2">
-              <img
-                className="ml-2 w-5 filter dark:invert"
-                src={InfoDark}
-              ></img>
+            <div className="flex my-4 mx-4 flex gap-2">
+              <img className="ml-2 w-5 filter dark:invert" src={InfoDark}></img>
               <Dropdown
-                placeholder={"Help"}
+                placeholder={'Help'}
                 selectedValue={null}
-                contentSize='50'
-                options={[ { label: "Docs", value: "documentation" }, { label: "Email Us", value: "email" }, ]}
-                onSelect={(selectedOption: { label: string; value: string }) => {
-                  if (selectedOption.value === "documentation") {
-                    window.open(" https://docs.docsgpt.cloud/", "_blank");
-                  } else if (selectedOption.value === "email"){
+                contentSize="50"
+                options={[
+                  { label: 'Docs', value: 'documentation' },
+                  { label: 'Email Us', value: 'email' },
+                ]}
+                onSelect={(selectedOption: {
+                  label: string;
+                  value: string;
+                }) => {
+                  if (selectedOption.value === 'documentation') {
+                    window.open(' https://docs.docsgpt.cloud/', '_blank');
+                  } else if (selectedOption.value === 'email') {
                     window.location.href = `mailto:contact@arc53.com`;
                   }
                 }}
-                />
+              />
             </div>
             <div className="flex items-center justify-evenly gap-1 px-1">
               <NavLink

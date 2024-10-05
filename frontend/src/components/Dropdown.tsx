@@ -47,13 +47,16 @@ function Dropdown({
 }) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = React.useState(false);
-  const [dropdownPosition, setDropdownPosition] = React.useState({ top: 0});
-  
+  const [dropdownPosition, setDropdownPosition] = React.useState({ top: 0 });
+
   const borderRadius = rounded === 'xl' ? 'rounded-xl' : 'rounded-3xl';
   const borderTopRadius = rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl';
 
   const handleClickOutside = (event: MouseEvent) => {
-    if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    if (
+      dropdownRef.current &&
+      !dropdownRef.current.contains(event.target as Node)
+    ) {
       setIsOpen(false);
     }
   };
@@ -66,7 +69,7 @@ function Dropdown({
   }, []);
 
   const handleToggleDropdown = () => {
-    setIsOpen(prev => !prev);
+    setIsOpen((prev) => !prev);
     if (!isOpen) {
       adjustDropdownPosition();
     }
@@ -80,7 +83,10 @@ function Dropdown({
 
       // Check if dropdown overflows the bottom of the viewport
       const newPosition = {
-        top: rect.bottom + dropdownMenuHeight > viewportHeight ? -dropdownMenuHeight : 0,
+        top:
+          rect.bottom + dropdownMenuHeight > viewportHeight
+            ? -dropdownMenuHeight
+            : 0,
         left: 0,
       };
 
@@ -90,7 +96,12 @@ function Dropdown({
 
   return (
     <div
-      className={[typeof selectedValue === 'string' ? 'relative mt-2' : 'relative align-middle', size].join(' ')}
+      className={[
+        typeof selectedValue === 'string'
+          ? 'relative mt-2'
+          : 'relative align-middle',
+        size,
+      ].join(' ')}
       ref={dropdownRef}
     >
       <button
@@ -98,9 +109,17 @@ function Dropdown({
         className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${borderColor}/40 dark:bg-transparent ${isOpen ? borderTopRadius : borderRadius}`}
       >
         <span className={`truncate dark:text-bright-gray ${contentSize}`}>
-          {selectedValue && 'label' in selectedValue ? selectedValue.label : placeholder}
+          {typeof selectedValue === 'object' &&
+          selectedValue &&
+          'label' in selectedValue
+            ? selectedValue.label
+            : placeholder}
         </span>
-        <img src={Arrow2} alt="arrow" className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'} h-3 w-3 transition-transform`} />
+        <img
+          src={Arrow2}
+          alt="arrow"
+          className={`transform ${isOpen ? 'rotate-180' : 'rotate-0'} h-3 w-3 transition-transform`}
+        />
       </button>
       {isOpen && (
         <div
@@ -121,7 +140,9 @@ function Dropdown({
                 }}
                 className={`ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray ${contentSize}`}
               >
-                {typeof option === 'string' ? option : option.name || option.label || option.description}
+                {typeof option === 'string'
+                  ? option
+                  : option.name || option.label || option.description}
               </span>
               {showEdit && onEdit && (
                 <img
