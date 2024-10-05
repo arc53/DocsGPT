@@ -21,7 +21,7 @@ Thank you for choosing to contribute to DocsGPT! We are all very grateful!
 - If you're interested in contributing code, here are some important things to know:
 
 - We have a frontend built on React (Vite) and a backend in Python.
-=======
+
 Before creating issues, please check out how the latest version of our app looks and works by launching it via [Quickstart](https://github.com/arc53/DocsGPT#quickstart) the version on our live demo is slightly modified with login. Your issues should relate to the version that you can launch via [Quickstart](https://github.com/arc53/DocsGPT#quickstart).
 
 ### 👨‍💻 If you're interested in contributing code, here are some important things to know:
