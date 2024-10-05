@@ -1,32 +1,88 @@
-from application.parser.remote.base import BaseRemote
-from langchain_community.document_loaders import WebBaseLoader
+# Builder Stage
+FROM ubuntu:24.04 as builder
 
-headers = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*"
-    ";q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Referer": "https://www.google.com/",
-    "DNT": "1",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+# Install necessary packages and Python
+    apt-get update && \
+    apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv tesseract-ocr && \
+    rm -rf /var/lib/apt/lists/* 
 
-class WebLoader(BaseRemote):
-    def __init__(self):
-        self.loader = WebBaseLoader
+# Verify Python installation and setup symlink
+RUN if [ -f /usr/bin/python3.11 ]; then \
+        ln -s /usr/bin/python3.11 /usr/bin/python; \
+    else \
+        echo "Python 3.11 not found"; exit 1; \
+    fi
 
-    def load_data(self, inputs):
-        urls = inputs
-        if isinstance(urls, str):
-            urls = [urls]
-        documents = []
-        for url in urls:
-            try:
-                loader = self.loader([url], header_template=headers)
-                documents.extend(loader.load())
-            except Exception as e:
-                print(f"Error processing URL {url}: {e}")
-                continue
-        return documents
+# Download and unzip the model
+RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
+    unzip mpnet-base-v2.zip -d model && \
+    rm mpnet-base-v2.zip
+
+# Install Rust
+RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
+
+# Clean up to reduce container size
+RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements.txt
+COPY requirements.txt ./
+
+# Setup Python virtual environment
+RUN python3.11 -m venv /venv
+
+# Activate virtual environment and install Python packages
+ENV PATH="/venv/bin:$PATH"
+
+# Install Python packages
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir tiktoken && \
+    pip install --no-cache-dir pytesseract && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Final Stage
+FROM ubuntu:24.04 as final
+
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+# Install Python and Tesseract
+    apt-get update && apt-get install -y --no-install-recommends python3.11 tesseract-ocr && \
+    ln -s /usr/bin/python3.11 /usr/bin/python && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Create a non-root user: `appuser`
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser
+
+# Copy the virtual environment and model from the builder stage
+COPY --from=builder /venv /venv
+COPY --from=builder /model /app/model
+
+# Copy your application code
+COPY . /app/application
+
+# Change the ownership of the /app directory to the appuser
+RUN mkdir -p /app/application/inputs/local
+RUN chown -R appuser:appuser /app
+
+# Set environment variables
+ENV FLASK_APP=app.py \
+    FLASK_DEBUG=true \
+    PATH="/venv/bin:$PATH"
+
+# Expose the port the app runs on
+EXPOSE 7091
+
+# Switch to non-root user
+USER appuser
+
+# Start Gunicorn
+CMD ["gunicorn", "-w", "2", "--timeout", "120", "--bind", "0.0.0.0:7091", "application.wsgi:app"]
