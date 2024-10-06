@@ -363,6 +363,7 @@ class UploadRemote(Resource):
                 ),
                 "name": fields.String(required=True, description="Job name"),
                 "data": fields.String(required=True, description="Data to process"),
+                "repo_url": fields.String(description="GitHub repository URL"),
             },
         )
     )
@@ -377,11 +378,18 @@ class UploadRemote(Resource):
             return missing_fields
 
         try:
+            if "repo_url" in data:
+                source_data = data["repo_url"]
+                loader = "github"
+            else:
+                source_data = data["data"]
+                loader = data["source"]
+
             task = ingest_remote.delay(
-                source_data=data["data"],
+                source_data=source_data,
                 job_name=data["name"],
                 user=data["user"],
-                loader=data["source"],
+                loader=loader,
             )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)

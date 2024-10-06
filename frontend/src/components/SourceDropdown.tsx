@@ -121,7 +121,9 @@ function SourceDropdown({
             className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
             onClick={handleEmptyDocumentSelect}
           >
-            <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
+            <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3" onClick = {() => {
+              handlePostDocumentSelect(null);
+            }}>
               {t('none')}
             </span>
           </div>

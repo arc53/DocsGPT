@@ -119,6 +119,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .delete(id, {})
       .then(() => {
         fetchConversations();
+        resetConversation();
       })
       .catch((error) => console.error(error));
   };
@@ -153,6 +154,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }),
         );
       });
+  };
+
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
   };
 
   async function updateConversationName(updatedConversation: {
@@ -240,12 +250,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             if (isMobile) {
               setNavOpen(!navOpen);
             }
-            dispatch(setConversation([]));
-            dispatch(
-              updateConversationId({
-                query: { conversationId: null },
-              }),
-            );
+            resetConversation();
           }}
           className={({ isActive }) =>
             `${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
@@ -321,6 +326,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 if (isMobile) {
                   setNavOpen(!navOpen);
                 }
+                resetConversation();
               }}
               to="/settings"
               className={({ isActive }) =>
@@ -344,6 +350,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 if (isMobile) {
                   setNavOpen(!navOpen);
                 }
+                resetConversation();
               }}
               to="/about"
               className={({ isActive }) =>
