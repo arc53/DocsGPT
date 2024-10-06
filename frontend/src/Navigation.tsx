@@ -11,7 +11,6 @@ import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
-import InfoDark from './assets/info-dark.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -41,7 +40,7 @@ import {
   setSourceDocs,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
-import Dropdown from './components/Dropdown';
+import Help from './components/Help';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -305,7 +304,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <></>
           )}
         </div>
-
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
             <div className="relative my-4 mx-4 flex gap-2">
@@ -360,30 +358,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-          <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
-            <div className="flex my-4 mx-4 flex gap-2">
-              <img className="ml-2 w-5 filter dark:invert" src={InfoDark}></img>
-              <Dropdown
-                placeholder={'Help'}
-                selectedValue={null}
-                contentSize="50"
-                options={[
-                  { label: 'Docs', value: 'documentation' },
-                  { label: 'Email Us', value: 'email' },
-                ]}
-                onSelect={(selectedOption: {
-                  label: string;
-                  value: string;
-                }) => {
-                  if (selectedOption.value === 'documentation') {
-                    window.open(' https://docs.docsgpt.cloud/', '_blank');
-                  } else if (selectedOption.value === 'email') {
-                    window.location.href = `mailto:contact@arc53.com`;
-                  }
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-evenly gap-1 px-1">
+          <div>
+            <div className="flex items-center justify-evenly gap-1 px-1 py-1">
+              <div className="rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]">
+                <Help />
+              </div>
               <NavLink
                 target="_blank"
                 to={'https://discord.gg/WHJdfbQDR4'}
