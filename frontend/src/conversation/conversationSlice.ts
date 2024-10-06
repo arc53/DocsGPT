@@ -151,6 +151,7 @@ export const conversationSlice = createSlice({
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
+      if (state.status === 'idle') return;
       const { index, query } = action.payload;
       if (query.response != undefined) {
         state.queries[index].response =
@@ -167,6 +168,7 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ query: Partial<Query> }>,
     ) {
       state.conversationId = action.payload.query.conversationId ?? null;
+      state.status = 'idle';
     },
     updateStreamingSource(
       state,

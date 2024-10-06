@@ -54,14 +54,16 @@
       "name": "文件名称",
       "date": "向量日期",
       "type": "类型",
-      "tokenUsage": "令牌使用"
+      "tokenUsage": "令牌使用",
+      "noData": "没有现有的文档"
     },
     "apiKeys": {
       "label": "聊天机器人",
       "name": "名称",
       "key": "API 密钥",
       "sourceDoc": "源文档",
-      "createNew": "创建新的"
+      "createNew": "创建新的",
+      "noData": "没有现有的聊天机器人"
     },
     "analytics": {
       "label": "分析"
@@ -83,6 +85,7 @@
       "train": "训练",
       "link": "链接",
       "urlLink": "URL 链接",
+      "repoUrl": "存储库 URL",
       "reddit": {
         "id": "客户端 ID",
         "secret": "客户端密钥",

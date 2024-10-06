@@ -54,14 +54,16 @@
       "name": "ドキュメント名",
       "date": "ベクトル日付",
       "type": "タイプ",
-      "tokenUsage": "トークン使用量"
+      "tokenUsage": "トークン使用量",
+      "noData": "既存のドキュメントはありません"
     },
     "apiKeys": {
       "label": "チャットボット",
       "name": "名前",
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
-      "createNew": "新規作成"
+      "createNew": "新規作成",
+      "noData": "既存のチャットボットはありません"
     },
     "analytics": {
       "label": "分析"
@@ -83,6 +85,7 @@
       "train": "トレーニング",
       "link": "リンク",
       "urlLink": "URLリンク",
+      "repoUrl": "リポジトリURL",
       "reddit": {
         "id": "クライアントID",
         "secret": "クライアントシークレット",
