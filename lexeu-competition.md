@@ -22,7 +22,7 @@ Participants are required to analyze a given test contract by scraping EU law da
 ### Steps to Participate:
 
 1. **Download Test Contract:** You can download it via this [link](https://docs.google.com/document/d/198d7gFJbVWttkIS9ZRUs_PTKIjhsOUeR/edit?usp=sharing&ouid=107667025862106683614&rtpof=true&sd=true).
-2. **Ingest EU Law Data:** Gathe and store data in any format, its available [here](https://eur-lex.europa.eu/browse/directories/legislation.html?displayProfile=lastConsDocProfile&classification=in-force).
+2. **Ingest EU Law Data:** Gather and store data in any format, its available [here](https://eur-lex.europa.eu/browse/directories/legislation.html?displayProfile=lastConsDocProfile&classification=in-force).
 3. **Optimized Data Retrieval:** Implement methods to retrieve only small, relevant portions of the law data for efficient analysis of the test contract. Try to create a custom retriever and parser
 4. **Analyze the Contract:** Use your optimized retrieval method to analyze the test contract against the EU law data.
 5. **Submission Criteria:** Your solution will be judged based on:
