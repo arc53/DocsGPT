@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import {
   BarElement,
   CategoryScale,
@@ -7,7 +8,6 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
-import React from 'react';
 import { Bar } from 'react-chartjs-2';
 
 import userService from '../api/services/userService';
@@ -17,6 +17,7 @@ import { formatDate } from '../utils/dateTimeUtils';
 import { APIKeyData } from './types';
 
 import type { ChartData } from 'chart.js';
+import SkeletonLoader from '../utils/loader';
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -35,36 +36,36 @@ const filterOptions = [
 ];
 
 export default function Analytics() {
-  const [messagesData, setMessagesData] = React.useState<Record<
+  const [messagesData, setMessagesData] = useState<Record<
     string,
     number
   > | null>(null);
-  const [tokenUsageData, setTokenUsageData] = React.useState<Record<
+  const [tokenUsageData, setTokenUsageData] = useState<Record<
     string,
     number
   > | null>(null);
-  const [feedbackData, setFeedbackData] = React.useState<Record<
+  const [feedbackData, setFeedbackData] = useState<Record<
     string,
-    {
-      positive: number;
-      negative: number;
-    }
+    { positive: number; negative: number }
   > | null>(null);
-  const [chatbots, setChatbots] = React.useState<APIKeyData[]>([]);
-  const [selectedChatbot, setSelectedChatbot] =
-    React.useState<APIKeyData | null>();
-  const [messagesFilter, setMessagesFilter] = React.useState<{
+  const [chatbots, setChatbots] = useState<APIKeyData[]>([]);
+  const [selectedChatbot, setSelectedChatbot] = useState<APIKeyData | null>();
+  const [messagesFilter, setMessagesFilter] = useState<{
     label: string;
     value: string;
   }>({ label: '30 Days', value: 'last_30_days' });
-  const [tokenUsageFilter, setTokenUsageFilter] = React.useState<{
+  const [tokenUsageFilter, setTokenUsageFilter] = useState<{
     label: string;
     value: string;
   }>({ label: '30 Days', value: 'last_30_days' });
-  const [feedbackFilter, setFeedbackFilter] = React.useState<{
+  const [feedbackFilter, setFeedbackFilter] = useState<{
     label: string;
     value: string;
   }>({ label: '30 Days', value: 'last_30_days' });
+
+  const [loadingMessages, setLoadingMessages] = useState(true); // Loading state for messages
+  const [loadingTokens, setLoadingTokens] = useState(true); // Loading state for tokens
+  const [loadingFeedback, setLoadingFeedback] = useState(true); // Loading state for feedback
 
   const fetchChatbots = async () => {
     try {
@@ -80,6 +81,7 @@ export default function Analytics() {
   };
 
   const fetchMessagesData = async (chatbot_id?: string, filter?: string) => {
+    setLoadingMessages(true); // Start loading
     try {
       const response = await userService.getMessageAnalytics({
         api_key_id: chatbot_id,
@@ -92,10 +94,13 @@ export default function Analytics() {
       setMessagesData(data.messages);
     } catch (error) {
       console.error(error);
+    } finally {
+      setLoadingMessages(false); // Stop loading
     }
   };
 
   const fetchTokenData = async (chatbot_id?: string, filter?: string) => {
+    setLoadingTokens(true); // Start loading
     try {
       const response = await userService.getTokenAnalytics({
         api_key_id: chatbot_id,
@@ -108,10 +113,13 @@ export default function Analytics() {
       setTokenUsageData(data.token_usage);
     } catch (error) {
       console.error(error);
+    } finally {
+      setLoadingTokens(false); // Stop loading
     }
   };
 
   const fetchFeedbackData = async (chatbot_id?: string, filter?: string) => {
+    setLoadingFeedback(true); // Start loading
     try {
       const response = await userService.getFeedbackAnalytics({
         api_key_id: chatbot_id,
@@ -124,30 +132,33 @@ export default function Analytics() {
       setFeedbackData(data.feedback);
     } catch (error) {
       console.error(error);
+    } finally {
+      setLoadingFeedback(false);
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchChatbots();
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const id = selectedChatbot?.id;
     const filter = messagesFilter;
     fetchMessagesData(id, filter?.value);
   }, [selectedChatbot, messagesFilter]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const id = selectedChatbot?.id;
     const filter = tokenUsageFilter;
     fetchTokenData(id, filter?.value);
   }, [selectedChatbot, tokenUsageFilter]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const id = selectedChatbot?.id;
     const filter = feedbackFilter;
     fetchFeedbackData(id, filter?.value);
   }, [selectedChatbot, feedbackFilter]);
+
   return (
     <div className="mt-12">
       <div className="flex flex-col items-start">
@@ -181,6 +192,8 @@ export default function Analytics() {
             border="border"
           />
         </div>
+
+        {/* Messages Analytics */}
         <div className="mt-8 w-full flex flex-col [@media(min-width:1080px)]:flex-row gap-3">
           <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
             <div className="flex flex-row items-center justify-start gap-3">
@@ -208,25 +221,31 @@ export default function Analytics() {
                 id="legend-container-1"
                 className="flex flex-row items-center justify-end"
               ></div>
-              <AnalyticsChart
-                data={{
-                  labels: Object.keys(messagesData || {}).map((item) =>
-                    formatDate(item),
-                  ),
-                  datasets: [
-                    {
-                      label: 'Messages',
-                      data: Object.values(messagesData || {}),
-                      backgroundColor: '#7D54D1',
-                    },
-                  ],
-                }}
-                legendID="legend-container-1"
-                maxTicksLimitInX={8}
-                isStacked={false}
-              />
+              {loadingMessages ? (
+                <SkeletonLoader count={1} />
+              ) : (
+                <AnalyticsChart
+                  data={{
+                    labels: Object.keys(messagesData || {}).map((item) =>
+                      formatDate(item),
+                    ),
+                    datasets: [
+                      {
+                        label: 'Messages',
+                        data: Object.values(messagesData || {}),
+                        backgroundColor: '#7D54D1',
+                      },
+                    ],
+                  }}
+                  legendID="legend-container-1"
+                  maxTicksLimitInX={8}
+                  isStacked={false}
+                />
+              )}
             </div>
           </div>
+
+          {/* Token Usage Analytics */}
           <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
@@ -253,26 +272,32 @@ export default function Analytics() {
                 id="legend-container-2"
                 className="flex flex-row items-center justify-end"
               ></div>
-              <AnalyticsChart
-                data={{
-                  labels: Object.keys(tokenUsageData || {}).map((item) =>
-                    formatDate(item),
-                  ),
-                  datasets: [
-                    {
-                      label: 'Tokens',
-                      data: Object.values(tokenUsageData || {}),
-                      backgroundColor: '#7D54D1',
-                    },
-                  ],
-                }}
-                legendID="legend-container-2"
-                maxTicksLimitInX={8}
-                isStacked={false}
-              />
+              {loadingTokens ? (
+                <SkeletonLoader count={1} />
+              ) : (
+                <AnalyticsChart
+                  data={{
+                    labels: Object.keys(tokenUsageData || {}).map((item) =>
+                      formatDate(item),
+                    ),
+                    datasets: [
+                      {
+                        label: 'Tokens',
+                        data: Object.values(tokenUsageData || {}),
+                        backgroundColor: '#7D54D1',
+                      },
+                    ],
+                  }}
+                  legendID="legend-container-2"
+                  maxTicksLimitInX={8}
+                  isStacked={false}
+                />
+              )}
             </div>
           </div>
         </div>
+
+        {/* Feedback Analytics */}
         <div className="mt-8 w-full">
           <div className="h-[345px] w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
             <div className="flex flex-row items-center justify-start gap-3">
@@ -300,32 +325,36 @@ export default function Analytics() {
                 id="legend-container-3"
                 className="flex flex-row items-center justify-end"
               ></div>
-              <AnalyticsChart
-                data={{
-                  labels: Object.keys(feedbackData || {}).map((item) =>
-                    formatDate(item),
-                  ),
-                  datasets: [
-                    {
-                      label: 'Positive',
-                      data: Object.values(feedbackData || {}).map(
-                        (item) => item.positive,
-                      ),
-                      backgroundColor: '#8BD154',
-                    },
-                    {
-                      label: 'Negative',
-                      data: Object.values(feedbackData || {}).map(
-                        (item) => item.negative,
-                      ),
-                      backgroundColor: '#D15454',
-                    },
-                  ],
-                }}
-                legendID="legend-container-3"
-                maxTicksLimitInX={10}
-                isStacked={true}
-              />
+              {loadingFeedback ? (
+                <SkeletonLoader count={1} />
+              ) : (
+                <AnalyticsChart
+                  data={{
+                    labels: Object.keys(feedbackData || {}).map((item) =>
+                      formatDate(item),
+                    ),
+                    datasets: [
+                      {
+                        label: 'Positive',
+                        data: Object.values(feedbackData || {}).map(
+                          (item) => item.positive,
+                        ),
+                        backgroundColor: '#8BD154',
+                      },
+                      {
+                        label: 'Negative',
+                        data: Object.values(feedbackData || {}).map(
+                          (item) => item.negative,
+                        ),
+                        backgroundColor: '#D15454',
+                      },
+                    ],
+                  }}
+                  legendID="legend-container-3"
+                  maxTicksLimitInX={10}
+                  isStacked={true}
+                />
+              )}
             </div>
           </div>
         </div>
