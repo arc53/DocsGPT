@@ -7,9 +7,9 @@
 </p>
 
 <p align="left">
-  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in the project documentation. With its integration of the powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
+  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is a cutting-edge open-source solution that streamlines the process of finding information in the project documentation. By integrating powerful <strong>GPT</strong> models, developers can easily ask questions about a project and receive accurate answers.
   
-Say goodbye to time-consuming manual searches, and let <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and be a part of the future of AI-powered assistance.
+Say goodbye to time-consuming manual searches and let <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> help you quickly find the information you need. Try it out and see how it revolutionizes your project documentation experience. Contribute to its development and become part of the future of AI-powered assistance.
 </p>
 
 <div align="center">
@@ -166,12 +166,12 @@ pip install -r application/requirements.txt
 ```
 
 5. Run the app using `flask --app application/app.py run --host=0.0.0.0 --port=7091`.
-6. Start worker with `celery -A application.app.celery worker -l INFO`.
+6. Start the worker with `celery -A application.app.celery worker -l INFO`.
 
 ### Start Frontend
 
 > [!Note]
-> Make sure you have Node version 16 or higher.
+> Make sure you have installed Node version 16 or higher.
 
 1. Navigate to the [/frontend](https://github.com/arc53/DocsGPT/tree/main/frontend) folder.
 2. Install the required packages `husky` and `vite` (ignore if already installed).
