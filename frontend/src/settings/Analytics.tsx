@@ -63,9 +63,9 @@ export default function Analytics() {
     value: string;
   }>({ label: '30 Days', value: 'last_30_days' });
 
-  const [loadingMessages, setLoadingMessages] = useState(true); // Loading state for messages
-  const [loadingTokens, setLoadingTokens] = useState(true); // Loading state for tokens
-  const [loadingFeedback, setLoadingFeedback] = useState(true); // Loading state for feedback
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [loadingTokens, setLoadingTokens] = useState(true);
+  const [loadingFeedback, setLoadingFeedback] = useState(true);
 
   const fetchChatbots = async () => {
     try {
@@ -81,7 +81,7 @@ export default function Analytics() {
   };
 
   const fetchMessagesData = async (chatbot_id?: string, filter?: string) => {
-    setLoadingMessages(true); // Start loading
+    setLoadingMessages(true);
     try {
       const response = await userService.getMessageAnalytics({
         api_key_id: chatbot_id,
@@ -95,7 +95,7 @@ export default function Analytics() {
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingMessages(false); // Stop loading
+      setLoadingMessages(false);
     }
   };
 
@@ -114,12 +114,12 @@ export default function Analytics() {
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingTokens(false); // Stop loading
+      setLoadingTokens(false);
     }
   };
 
   const fetchFeedbackData = async (chatbot_id?: string, filter?: string) => {
-    setLoadingFeedback(true); // Start loading
+    setLoadingFeedback(true);
     try {
       const response = await userService.getFeedbackAnalytics({
         api_key_id: chatbot_id,
