@@ -24,6 +24,11 @@ function Upload({
   const [docName, setDocName] = useState('');
   const [urlName, setUrlName] = useState('');
   const [url, setUrl] = useState('');
+  const [dropboxData, setDropboxData] = useState({
+    access_token: '',
+    folder_path: '',
+    recursive: false,
+  });
   const [redditData, setRedditData] = useState({
     client_id: '',
     client_secret: '',
@@ -48,6 +53,7 @@ function Upload({
     // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' },
     { label: 'Reddit', value: 'reddit' },
+    { label: 'Dropbox', value: 'dropbox' },
   ];
 
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
@@ -238,7 +244,18 @@ function Upload({
       formData.set('name', 'other');
       formData.set('data', JSON.stringify(redditData));
     }
-    const apiHost = import.meta.env.VITE_API_HOST;
+    if (
+      dropboxData.access_token.length > 0 &&
+      dropboxData.folder_path.length > 0
+    ) {
+      const modifiedDropboxData = {
+        ...dropboxData,
+        recursive: dropboxData.recursive ? 'True' : 'False',
+      };
+      formData.set('name', 'other');
+      formData.set('data', JSON.stringify(modifiedDropboxData));
+    }
+    const apiHost = import.meta.env.VITE_API_HOST || 'http://127.0.0.1:7091';
     const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (event) => {
       const progress = +((event.loaded / event.total) * 100).toFixed(2);
@@ -250,6 +267,7 @@ function Upload({
         setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
       }, 3000);
     };
+
     xhr.open('POST', `${apiHost + '/api/remote'}`);
     xhr.send(formData);
   };
@@ -281,6 +299,12 @@ function Upload({
       setRedditData({
         ...redditData,
         [name]: value.split(',').map((item) => item.trim()),
+      });
+    } else if (name in dropboxData) {
+      setDropboxData({
+        ...dropboxData,
+        [name]:
+          name === 'recursive' ? (e.target as HTMLInputElement).checked : value,
       });
     } else
       setRedditData({
@@ -376,7 +400,52 @@ function Upload({
               size="w-full"
               rounded="3xl"
             />
-            {urlType.label !== 'Reddit' ? (
+            {urlType.label === 'Dropbox' ? (
+              <div className="flex flex-col gap-1 mt-2">
+                <div>
+                  <Input
+                    placeholder="Enter access token"
+                    type="text"
+                    name="access_token"
+                    value={dropboxData.access_token}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      Access Token
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Input
+                    placeholder="Enter folder path"
+                    type="text"
+                    name="folder_path"
+                    value={dropboxData.folder_path}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      Folder Path
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="recursive"
+                      checked={dropboxData.recursive}
+                      onChange={handleChange}
+                      className="mr-2"
+                    />
+                    Recursive
+                  </label>
+                </div>
+              </div>
+            ) : urlType.label !== 'Reddit' ? (
               <>
                 <Input
                   placeholder={`Enter ${t('modals.uploadDoc.name')}`}
