@@ -58,7 +58,6 @@ const ConversationBubble = forwardRef<
         ref={ref}
         className={`flex flex-row-reverse self-end flex-wrap ${className}`}
       >
-        <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div
           style={{
             wordBreak: 'break-word',
