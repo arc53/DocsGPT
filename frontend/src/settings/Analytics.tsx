@@ -18,6 +18,7 @@ import { APIKeyData } from './types';
 
 import type { ChartData } from 'chart.js';
 import SkeletonLoader from '../utils/loader';
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -100,7 +101,7 @@ export default function Analytics() {
   };
 
   const fetchTokenData = async (chatbot_id?: string, filter?: string) => {
-    setLoadingTokens(true); // Start loading
+    setLoadingTokens(true);
     try {
       const response = await userService.getTokenAnalytics({
         api_key_id: chatbot_id,
@@ -195,7 +196,7 @@ export default function Analytics() {
 
         {/* Messages Analytics */}
         <div className="mt-8 w-full flex flex-col [@media(min-width:1080px)]:flex-row gap-3">
-          <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
+          <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
                 Messages
@@ -246,7 +247,7 @@ export default function Analytics() {
           </div>
 
           {/* Token Usage Analytics */}
-          <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
+          <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
                 Token Usage
@@ -273,7 +274,7 @@ export default function Analytics() {
                 className="flex flex-row items-center justify-end"
               ></div>
               {loadingTokens ? (
-                <SkeletonLoader count={1} />
+                <SkeletonLoader />
               ) : (
                 <AnalyticsChart
                   data={{
@@ -298,11 +299,11 @@ export default function Analytics() {
         </div>
 
         {/* Feedback Analytics */}
-        <div className="mt-8 w-full">
-          <div className="h-[345px] w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40">
+        <div className="mt-8 w-full flex flex-col gap-3">
+          <div className="h-[345px] w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
-                User Feedback
+                Feedback
               </p>
               <Dropdown
                 size="w-[125px]"
@@ -326,7 +327,7 @@ export default function Analytics() {
                 className="flex flex-row items-center justify-end"
               ></div>
               {loadingFeedback ? (
-                <SkeletonLoader count={1} />
+                <SkeletonLoader />
               ) : (
                 <AnalyticsChart
                   data={{
@@ -335,24 +336,24 @@ export default function Analytics() {
                     ),
                     datasets: [
                       {
-                        label: 'Positive',
+                        label: 'Positive Feedback',
                         data: Object.values(feedbackData || {}).map(
                           (item) => item.positive,
                         ),
-                        backgroundColor: '#8BD154',
+                        backgroundColor: '#7D54D1',
                       },
                       {
-                        label: 'Negative',
+                        label: 'Negative Feedback',
                         data: Object.values(feedbackData || {}).map(
                           (item) => item.negative,
                         ),
-                        backgroundColor: '#D15454',
+                        backgroundColor: '#FF6384',
                       },
                     ],
                   }}
                   legendID="legend-container-3"
-                  maxTicksLimitInX={10}
-                  isStacked={true}
+                  maxTicksLimitInX={8}
+                  isStacked={false}
                 />
               )}
             </div>

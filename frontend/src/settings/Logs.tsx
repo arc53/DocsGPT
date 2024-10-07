@@ -69,7 +69,7 @@ export default function Logs() {
             Filter by chatbot
           </p>
           {loadingChatbots ? (
-            <SkeletonLoader count={1} />
+            <SkeletonLoader />
           ) : (
             <Dropdown
               size="w-[55vw] sm:w-[360px]"
@@ -105,7 +105,7 @@ export default function Logs() {
 
       <div className="mt-8">
         {loadingLogs ? (
-          <SkeletonLoader count={3} />
+          <SkeletonLoader />
         ) : (
           <LogsTable logs={logs} setPage={setPage} />
         )}

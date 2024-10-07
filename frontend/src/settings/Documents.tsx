@@ -64,7 +64,7 @@ const Documents: React.FC<DocumentsProps> = ({
       <div className="flex flex-col relative">
         <div className="z-10 w-full overflow-x-auto">
           {loading ? (
-            <SkeletonLoader count={3} />
+            <SkeletonLoader />
           ) : (
             <table className="table-default">
               <thead>

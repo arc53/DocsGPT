@@ -107,7 +107,7 @@ export default function APIKeys() {
         <div className="mt-[27px] w-full">
           <div className="w-full overflow-x-auto">
             {loading ? (
-              <SkeletonLoader count={3} />
+              <SkeletonLoader />
             ) : (
               <table className="table-default">
                 <thead>
