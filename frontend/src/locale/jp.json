@@ -85,6 +85,7 @@
       "train": "トレーニング",
       "link": "リンク",
       "urlLink": "URLリンク",
+      "repoUrl": "リポジトリURL",
       "reddit": {
         "id": "クライアントID",
         "secret": "クライアントシークレット",

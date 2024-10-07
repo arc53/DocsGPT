@@ -3,6 +3,8 @@ from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.remote.web_loader import WebLoader
 from application.parser.remote.reddit_loader import RedditPostsLoaderRemote
 from application.parser.remote.dropbox_loader import DropboxLoaderRemote
+from application.parser.remote.github_loader import GitHubLoader
+
 
 class RemoteCreator:
     loaders = {
@@ -11,6 +13,7 @@ class RemoteCreator:
         "crawler": CrawlerLoader,
         "reddit": RedditPostsLoaderRemote,
         "dropbox" : DropboxLoaderRemote,
+        "github": GitHubLoader,
     }
 
     @classmethod

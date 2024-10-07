@@ -85,6 +85,7 @@
       "train": "Entrenar",
       "link": "Enlace",
       "urlLink": "Enlace URL",
+      "repoUrl": "URL del Repositorio",
       "reddit": {
         "id": "ID de Cliente",
         "secret": "Secreto de Cliente",

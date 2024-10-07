@@ -119,6 +119,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .delete(id, {})
       .then(() => {
         fetchConversations();
+        resetConversation();
       })
       .catch((error) => console.error(error));
   };
@@ -153,6 +154,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }),
         );
       });
+  };
+
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
   };
 
   async function updateConversationName(updatedConversation: {
@@ -215,8 +225,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
         >
           <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
-            <img className="mb-2 h-10" src={DocsGPT3} alt="" />
-            <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            <a href="/" className="flex gap-1.5">
+              <img className="mb-2 h-10" src={DocsGPT3} alt="" />
+              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            </a>
           </div>
           <button
             className="float-right mr-5"
@@ -235,14 +247,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
         <NavLink
           to={'/'}
-          onClick={() => {
-            dispatch(setConversation([]));
-            dispatch(
-              updateConversationId({
-                query: { conversationId: null },
-              }),
-            );
-          }}
+          onClick={resetConversation}
           className={({ isActive }) =>
             `${
               isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
@@ -310,6 +315,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
+              onClick={resetConversation}
             >
               <img
                 src={SettingGear}
@@ -329,6 +335,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
                 }`
               }
+              onClick={resetConversation}
             >
               <img
                 src={Info}

@@ -37,7 +37,7 @@ export default function Hero({
               <Fragment key={key}>
                 <button
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className="w-full rounded-full border-2 border-silver px-6 py-4 text-left hover:border-gray-4000 dark:hover:border-gray-3000 xl:min-w-[24vw]"
+                  className="w-full rounded-full border border-silver px-6 py-4 text-left hover:border-gray-4000 dark:hover:border-gray-3000 xl:min-w-[24vw]"
                 >
                   <p className="mb-1 font-semibold text-black dark:text-silver">
                     {demo.header}
