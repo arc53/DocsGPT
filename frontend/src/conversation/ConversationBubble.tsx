@@ -61,7 +61,7 @@ const ConversationBubble = forwardRef<
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div
           style={{
-            'word-break': 'break-word',
+            wordBreak: 'break-word',
           }}
           className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
         >
