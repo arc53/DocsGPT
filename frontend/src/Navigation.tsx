@@ -209,24 +209,29 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <img
             src={Expand}
             alt="menu toggle"
-            className={`${!navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto transition-all duration-200`}
+            className={`${
+              !navOpen ? 'rotate-180' : 'rotate-0'
+            } m-auto transition-all duration-200`}
           />
         </button>
       )}
       <div
         ref={navRef}
-        className={`${!navOpen && '-ml-96 md:-ml-[18rem]'
-          } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+        className={`${
+          !navOpen && '-ml-96 md:-ml-[18rem]'
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
         >
-          <div className="my-auto mx-4 flex cursor-pointer gap-1.5" onClick={() => {
-            if (isMobile) {
-              setNavOpen(!navOpen);
-            }
-          }}>
+          <div
+            className="my-auto mx-4 flex cursor-pointer gap-1.5"
+            onClick={() => {
+              if (isMobile) {
+                setNavOpen(!navOpen);
+              }
+            }}
+          >
             <a href="/" className="flex gap-1.5">
               <img className="mb-2 h-10" src={DocsGPT3} alt="" />
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
@@ -241,8 +246,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img
               src={Expand}
               alt="menu toggle"
-              className={`${!navOpen ? 'rotate-180' : 'rotate-0'
-                } m-auto transition-all duration-200`}
+              className={`${
+                !navOpen ? 'rotate-180' : 'rotate-0'
+              } m-auto transition-all duration-200`}
             />
           </button>
         </div>
@@ -255,7 +261,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             resetConversation();
           }}
           className={({ isActive }) =>
-            `${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+            `${
+              isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
             } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000 dark:border-purple-taupe dark:text-white dark:hover:bg-transparent`
           }
         >
@@ -280,7 +287,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     key={conversation.id}
                     conversation={conversation}
                     selectConversation={(id) => handleConversationClick(id)}
-                    onCoversationClick={() => {if (isMobile) { setNavOpen(false) }}}
+                    onCoversationClick={() => {
+                      if (isMobile) {
+                        setNavOpen(false);
+                      }
+                    }}
                     onDeleteConversation={(id) => handleDeleteConversation(id)}
                     onSave={(conversation) =>
                       updateConversationName(conversation)
@@ -306,7 +317,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 handleDeleteClick={handleDeleteClick}
                 handlePostDocumentSelect={(option?: string) => {
                   if (isMobile) {
-                    setNavOpen(!navOpen)
+                    setNavOpen(!navOpen);
                   }
                 }}
               />
@@ -314,12 +325,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 className="mt-2 h-9 w-9 hover:cursor-pointer"
                 src={UploadIcon}
                 onClick={() => {
-                  setUploadModalState('ACTIVE')
+                  setUploadModalState('ACTIVE');
                   if (isMobile) {
                     setNavOpen(!navOpen);
                   }
-                }
-                }></img>
+                }}
+              ></img>
             </div>
             <p className="ml-5 mt-3 text-sm font-semibold">{t('sourceDocs')}</p>
           </div>
@@ -333,7 +344,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+                  isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
             >
@@ -357,7 +369,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/about"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+                  isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
                 }`
               }
             >

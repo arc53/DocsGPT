@@ -275,7 +275,9 @@ function Upload({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
       'text/csv': ['.csv'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
     },
   });
 
