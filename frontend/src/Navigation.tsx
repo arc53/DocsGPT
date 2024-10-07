@@ -304,7 +304,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 isDocsListOpen={isDocsListOpen}
                 setIsDocsListOpen={setIsDocsListOpen}
                 handleDeleteClick={handleDeleteClick}
-                handlePostDocumentSelect={(doc) => {
+                handlePostDocumentSelect={(option?: string) => {
                   if (isMobile) {
                     setNavOpen(!navOpen)
                   }
