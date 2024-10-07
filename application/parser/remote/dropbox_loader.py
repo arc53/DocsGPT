@@ -6,8 +6,14 @@ class DropboxLoaderRemote(BaseRemote):
         data = eval(inputs)
         access_token = data.get("access_token")
         folder_path = data.get("folder_path", "")
-        recursive = data.get("recursive", False)
-
+        recursive = data.get("recursive")
+        if(recursive == "True"):
+            recursive = True
+        else:
+            recursive = False
+        
+        
+        print(f"Loading documents from Dropbox with access token {access_token}")
         
         self.loader = DropboxLoader(
             access_token=access_token,
