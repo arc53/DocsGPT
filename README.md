@@ -25,8 +25,6 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 
 ### 🎃 [Hacktoberfest Prizes, Rules & Q&A](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md) 🎃
 
-### Our [Livestream to Dive into Hacktoberfest! Prizes, Rules & Q&A 🎉](https://www.youtube.com/watch?v=5QQaFFu9BC8) on 3rd of October 
-
 ### Production Support / Help for Companies:
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.

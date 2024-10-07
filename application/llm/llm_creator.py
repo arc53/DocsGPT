@@ -1,3 +1,4 @@
+from application.llm.groq import GroqLLM
 from application.llm.openai import OpenAILLM, AzureOpenAILLM
 from application.llm.sagemaker import SagemakerAPILLM
 from application.llm.huggingface import HuggingFaceLLM
@@ -17,6 +18,7 @@ class LLMCreator:
         "anthropic": AnthropicLLM,
         "docsgpt": DocsGPTAPILLM,
         "premai": PremAILLM,
+        "groq": GroqLLM
     }
 
     @classmethod
