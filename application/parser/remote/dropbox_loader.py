@@ -19,8 +19,15 @@ class DropboxLoaderRemote(BaseRemote):
             access_token=access_token,
             folder_path=folder_path,
             recursive=recursive,
-            
         )
-        documents = self.loader.load()
-        print(f"Loaded {len(documents)} documents from Dropbox")
-        return documents
+        print("access token", access_token)
+        print("folder path", folder_path)
+        try:
+            print("Loading documents from Dropbox")
+            documents = self.loader.load()
+            print(f"Loaded {len(documents)} documents from Dropbox")
+            return documents
+        except Exception as e:
+            print(f"Error loading documents from Dropbox: {e}")
+        
+    
