@@ -22,7 +22,7 @@ class FaissStore(BaseVectorStore):
             else:
                 self.docsearch = FAISS.load_local(self.path, embeddings, allow_dangerous_deserialization=True)
         except Exception:
-            raise  # Just re-raise the exception without assigning to e
+            raise
 
         self.assert_embedding_dimensions(embeddings)
 

@@ -227,8 +227,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               setNavOpen(!navOpen);
             }
           }}>
-            <img className="mb-2 h-10" src={DocsGPT3} alt="" />
-            <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            <a href="/" className="flex gap-1.5">
+              <img className="mb-2 h-10" src={DocsGPT3} alt="" />
+              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            </a>
           </div>
           <button
             className="float-right mr-5"

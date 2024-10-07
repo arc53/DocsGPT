@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
-import ArrowRight from '../assets/arrow-right.svg';
+import SettingsBar from '../components/SettingsBar';
 import i18n from '../locale/i18n';
 import { Doc } from '../models/misc';
 import {
@@ -21,13 +20,6 @@ import Widgets from './Widgets';
 export default function Settings() {
   const dispatch = useDispatch();
   const { t } = useTranslation();
-  const tabs = [
-    t('settings.general.label'),
-    t('settings.documents.label'),
-    t('settings.apiKeys.label'),
-    t('settings.analytics.label'),
-    t('settings.logs.label'),
-  ];
   const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
   const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
     null,
@@ -61,39 +53,7 @@ export default function Settings() {
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
         {t('settings.label')}
       </p>
-      <div className="mt-6 flex flex-row items-center space-x-4 overflow-auto md:space-x-8 ">
-        <div className="md:hidden">
-          <button
-            onClick={() => scrollTabs(-1)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-purple-30 transition-all hover:bg-gray-100"
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-6 w-6" />
-          </button>
-        </div>
-        <div className="flex flex-nowrap space-x-4 overflow-x-auto no-scrollbar md:space-x-8">
-          {tabs.map((tab, index) => (
-            <button
-              key={index}
-              onClick={() => setActiveTab(tab)}
-              className={`h-9 rounded-3xl px-4 font-bold ${
-                activeTab === tab
-                  ? 'bg-purple-3000 text-purple-30 dark:bg-dark-charcoal'
-                  : 'text-gray-6000'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-        <div className="md:hidden">
-          <button
-            onClick={() => scrollTabs(1)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-purple-30 hover:bg-gray-100"
-          >
-            <img src={ArrowRight} alt="right-arrow" className="h-6 w-6" />
-          </button>
-        </div>
-      </div>
+      <SettingsBar activeTab={activeTab} setActiveTab={setActiveTab} />
       {renderActiveTab()}
 
       {/* {activeTab === 'Widgets' && (
@@ -104,13 +64,6 @@ export default function Settings() {
       )} */}
     </div>
   );
-
-  function scrollTabs(direction: number) {
-    const container = document.querySelector('.flex-nowrap');
-    if (container) {
-      container.scrollLeft += direction * 100; // Adjust the scroll amount as needed
-    }
-  }
 
   function renderActiveTab() {
     switch (activeTab) {
