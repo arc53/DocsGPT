@@ -59,7 +59,12 @@ const ConversationBubble = forwardRef<
         className={`flex flex-row-reverse self-end flex-wrap ${className}`}
       >
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal break-normal">
+        <div
+          style={{
+            wordBreak: 'break-word',
+          }}
+          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+        >
           {message}
         </div>
       </div>
