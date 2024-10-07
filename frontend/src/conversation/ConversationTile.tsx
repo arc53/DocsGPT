@@ -161,7 +161,12 @@ export default function ConversationTile({
               </button>
             )}
             {isOpen && (
-              <div className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36">
+              <div
+                className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36"
+                style={{
+                  top: `${(tileRef.current?.getBoundingClientRect().top ?? 0) + window.scrollY + 8}px`,
+                }}
+              >
                 <button
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
