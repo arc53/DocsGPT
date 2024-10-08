@@ -2,8 +2,6 @@ import { SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
-import Message from '../assets/message.svg';
-import MessageDark from '../assets/message-dark.svg';
 import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CheckMark2 from '../assets/checkMark2.svg';
@@ -100,10 +98,7 @@ export default function ConversationTile({
         }`}
       >
         <div className={`flex w-10/12 gap-4`}>
-          <img
-            src={isDarkTheme ? MessageDark : Message}
-            className="ml-4 w-5 dark:text-white"
-          />
+          <div></div>
           {isEdit ? (
             <input
               autoFocus
