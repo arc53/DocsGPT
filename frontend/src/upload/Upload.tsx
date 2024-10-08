@@ -27,7 +27,6 @@ function Upload({
   const [dropboxData, setDropboxData] = useState({
     access_token: '',
     folder_path: '',
-    recursive: false,
   });
   const [repoUrl, setRepoUrl] = useState(''); // P3f93
   const [redditData, setRedditData] = useState({
@@ -251,12 +250,8 @@ function Upload({
       dropboxData.access_token.length > 0 &&
       dropboxData.folder_path.length > 0
     ) {
-      const modifiedDropboxData = {
-        ...dropboxData,
-        recursive: dropboxData.recursive ? 'True' : 'False',
-      };
       formData.set('name', 'other');
-      formData.set('data', JSON.stringify(modifiedDropboxData));
+      formData.set('data', JSON.stringify(dropboxData));
     }
     if (urlType.value === 'github') {
       formData.append('repo_url', repoUrl); // Pdeac
@@ -312,8 +307,7 @@ function Upload({
     } else if (name in dropboxData) {
       setDropboxData({
         ...dropboxData,
-        [name]:
-          name === 'recursive' ? (e.target as HTMLInputElement).checked : value,
+        [name]: value,
       });
     } else
       setRedditData({
@@ -440,18 +434,6 @@ function Upload({
                       Folder Path
                     </span>
                   </div>
-                </div>
-                <div>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="recursive"
-                      checked={dropboxData.recursive}
-                      onChange={handleChange}
-                      className="mr-2"
-                    />
-                    Recursive
-                  </label>
                 </div>
               </div>
             ) : urlType.label !== 'Reddit' &&

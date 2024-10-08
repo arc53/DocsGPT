@@ -372,7 +372,6 @@ class UploadRemote(Resource):
     )
     def post(self):
         data = request.form
-        print(data)
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
@@ -393,10 +392,8 @@ class UploadRemote(Resource):
                 loader=loader,
             )
         except Exception as err:
-            print("error", err)
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
-        print("no errpr")
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -411,7 +408,6 @@ class TaskStatus(Resource):
     @api.doc(description="Get celery job status")
     def get(self):
         task_id = request.args.get("task_id")
-        print("task_id", task_id)
         if not task_id:
             return make_response(
                 jsonify({"success": False, "message": "Task ID is required"}), 400
@@ -428,7 +424,6 @@ class TaskStatus(Resource):
         if isinstance(task_meta, Exception):
             task_meta = str(task_meta)
             
-        print("task", task.status,"taskmeta", task_meta)
         return make_response(jsonify({"status": task.status, "result": task_meta}), 200)
 
 
