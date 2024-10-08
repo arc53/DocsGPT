@@ -1,10 +1,8 @@
 name: Build and push DocsGPT Docker image
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
 
 jobs:
   deploy:
@@ -43,5 +41,7 @@ jobs:
           context: ./application
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
-            ghcr.io/${{ github.repository_owner }}/docsgpt:latest
+            ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }},${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
+            ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }},ghcr.io/${{ github.repository_owner }}/docsgpt:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
+          cache-to: type=inline
