@@ -75,8 +75,12 @@
   "modals": {
     "uploadDoc": {
       "label": "Subir Nueva Documentación",
-      "file": "Desde Archivo",
-      "remote": "Remota",
+      "select": "Elija cómo cargar su documento en DocsGPT",
+      "file": "Subir desde el dispositivo",
+      "back": "Atrás",
+      "wait": "Espere por favor ...",
+      "remote": "Recoger desde un sitio web",
+      "start": "Empezar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
       "info": "Por favor, suba archivos .pdf, .txt, .rst, .docx, .md, .zip limitados a 25 MB",

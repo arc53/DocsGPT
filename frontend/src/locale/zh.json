@@ -75,8 +75,12 @@
   "modals": {
     "uploadDoc": {
       "label": "上传新文档资料",
-      "file": "从文件",
-      "remote": "远程",
+      "select": "选择如何将文档上传到 DocsGPT",
+      "file": "从设备上传",
+      "back": "后退",
+      "wait": "请稍等 ...",
+      "remote": "从网站收集",
+      "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
       "info": "请上传 .pdf, .txt, .rst, .docx, .md, .zip 文件，限 25MB",
