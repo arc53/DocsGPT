@@ -35,9 +35,8 @@ def metadata_from_filename(title):
 def generate_random_string(length):
     return "".join([string.ascii_letters[i % 52] for i in range(length)])
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 
 def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
     """
@@ -71,8 +70,7 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
 
 def download_file(url, params, dest_path):
     try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
+        response = requests.get(url, params=params)        
         with open(dest_path, "wb") as f:
             f.write(response.content)
     except requests.RequestException as e:
@@ -127,12 +125,11 @@ def ingest_worker(
     exclude = True
     sample = False
     token_check = True
-    full_path = os.path.join(directory, user, name_job)
+    
+    full_path = os.path.join(current_dir, directory, user, name_job)
 
-    logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": name_job})
     file_data = {"name": name_job, "file": filename, "user": user}
     download_file(urljoin(settings.API_URL, "/api/download"), file_data, os.path.join(full_path, filename))
-
     if not os.path.exists(full_path):
         os.makedirs(full_path)
 
