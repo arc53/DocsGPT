@@ -24,6 +24,7 @@ function Upload({
   const [docName, setDocName] = useState('');
   const [urlName, setUrlName] = useState('');
   const [url, setUrl] = useState('');
+  const [repoUrl, setRepoUrl] = useState(''); // P3f93
   const [redditData, setRedditData] = useState({
     client_id: '',
     client_secret: '',
@@ -48,6 +49,7 @@ function Upload({
     // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' },
     { label: 'Reddit', value: 'reddit' },
+    { label: 'GitHub', value: 'github' }, // P3f93
   ];
 
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
@@ -238,6 +240,9 @@ function Upload({
       formData.set('name', 'other');
       formData.set('data', JSON.stringify(redditData));
     }
+    if (urlType.value === 'github') {
+      formData.append('repo_url', repoUrl); // Pdeac
+    }
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (event) => {
@@ -270,6 +275,7 @@ function Upload({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
       'text/csv': ['.csv'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
     },
   });
 
@@ -376,7 +382,7 @@ function Upload({
               size="w-full"
               rounded="3xl"
             />
-            {urlType.label !== 'Reddit' ? (
+            {urlType.label !== 'Reddit' && urlType.label !== 'GitHub' ? (
               <>
                 <Input
                   placeholder={`Enter ${t('modals.uploadDoc.name')}`}
@@ -400,6 +406,33 @@ function Upload({
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
                     {t('modals.uploadDoc.link')}
+                  </span>
+                </div>
+              </>
+            ) : urlType.label === 'GitHub' ? ( // P3f93
+              <>
+                <Input
+                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
+                  type="text"
+                  value={urlName}
+                  onChange={(e) => setUrlName(e.target.value)}
+                  borderVariant="thin"
+                ></Input>
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                    {t('modals.uploadDoc.name')}
+                  </span>
+                </div>
+                <Input
+                  placeholder={t('modals.uploadDoc.repoUrl')}
+                  type="text"
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  borderVariant="thin"
+                ></Input>
+                <div className="relative bottom-12 left-2 mt-[-20px]">
+                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                    {t('modals.uploadDoc.repoUrl')}
                   </span>
                 </div>
               </>

@@ -131,10 +131,10 @@ def ingest_worker(
 
     logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": name_job})
     file_data = {"name": name_job, "file": filename, "user": user}
-    download_file(urljoin(settings.API_URL, "/api/download"), file_data, os.path.join(full_path, filename))
 
     if not os.path.exists(full_path):
         os.makedirs(full_path)
+    download_file(urljoin(settings.API_URL, "/api/download"), file_data, os.path.join(full_path, filename))
 
     # check if file is .zip and extract it
     if filename.endswith(".zip"):

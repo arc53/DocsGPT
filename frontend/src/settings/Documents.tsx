@@ -55,28 +55,20 @@ const Documents: React.FC<DocumentsProps> = ({
     <div className="mt-8">
       <div className="flex flex-col relative">
         <div className="z-10 w-full overflow-x-auto">
-          <table className="block w-max table-auto content-center justify-center rounded-xl border text-center dark:border-chinese-silver dark:text-bright-gray">
+          <table className="table-default">
             <thead>
               <tr>
-                <th className="border-r p-4 md:w-[244px]">
-                  {t('settings.documents.name')}
-                </th>
-                <th className="w-[244px] border-r px-4 py-2">
-                  {t('settings.documents.date')}
-                </th>
-                <th className="w-[244px] border-r px-4 py-2">
-                  {t('settings.documents.tokenUsage')}
-                </th>
-                <th className="w-[244px] border-r px-4 py-2">
-                  {t('settings.documents.type')}
-                </th>
-                <th className="px-4 py-2"></th>
+                <th>{t('settings.documents.name')}</th>
+                <th>{t('settings.documents.date')}</th>
+                <th>{t('settings.documents.tokenUsage')}</th>
+                <th>{t('settings.documents.type')}</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {!documents?.length && (
                 <tr>
-                  <td colSpan={5} className="border-t p-4">
+                  <td colSpan={5} className="!p-4">
                     {t('settings.documents.noData')}
                   </td>
                 </tr>
@@ -84,19 +76,15 @@ const Documents: React.FC<DocumentsProps> = ({
               {documents &&
                 documents.map((document, index) => (
                   <tr key={index}>
-                    <td className="border-r border-t px-4 py-2">
-                      {document.name}
-                    </td>
-                    <td className="border-r border-t px-4 py-2">
-                      {document.date}
-                    </td>
-                    <td className="border-r border-t px-4 py-2">
+                    <td>{document.name}</td>
+                    <td>{document.date}</td>
+                    <td>
                       {document.tokens ? formatTokens(+document.tokens) : ''}
                     </td>
-                    <td className="border-r border-t px-4 py-2">
+                    <td>
                       {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
                     </td>
-                    <td className="border-t px-4 py-2">
+                    <td>
                       <div className="flex flex-row items-center">
                         {document.type !== 'remote' && (
                           <img
