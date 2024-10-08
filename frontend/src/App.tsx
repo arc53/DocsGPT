@@ -32,7 +32,10 @@ function MainLayout() {
 }
 
 export default function App() {
-  useDarkTheme();
+  const [,,componentMounted] = useDarkTheme();
+  if(!componentMounted) {
+    return <div />
+  }
   return (
     <div className="h-full relative overflow-auto">
       <Routes>
