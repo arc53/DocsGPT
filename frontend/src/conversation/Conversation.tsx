@@ -144,7 +144,7 @@ export default function Conversation() {
     } else if (query.error) {
       const retryBtn = (
         <button
-          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          className="flex items-center justify-center gap-3 self-center rounded-full py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
           disabled={status === 'loading'}
           onClick={() => {
             handleQuestion({
@@ -154,12 +154,12 @@ export default function Conversation() {
           }}
         >
           <RetryIcon
-            width={isMobile ? 10 : 16}
-            height={isMobile ? 10 : 16}
+            width={isMobile ? 12 : 12} // change the width and height according to device size if necessary
+            height={isMobile ? 12 : 12}
             fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
             stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+            strokeWidth={10}
           />
-          <p className="hidden lg:block">Retry</p>
         </button>
       );
       responseView = (

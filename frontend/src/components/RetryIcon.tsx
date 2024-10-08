@@ -7,7 +7,8 @@ const RetryIcon = (props: SVGProps<SVGSVGElement>) => (
     width={props.width ? props.width : 16}
     height={props.height ? props.height : 16}
     fill={props.fill}
-    stroke={props.stroke}
+    stroke={props.stroke ? props.stroke : 'none'}
+    strokeWidth={props.strokeWidth ? props.strokeWidth : 10}
     viewBox="0 0 383.748 383.748"
     {...props}
   >
