@@ -634,12 +634,15 @@ video {
 }
 
 #chat-container {
-  width: 500px;
+  width: 100%;
+  max-width: 500px;
   height: 450px;
   background-color: white;
   padding: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
 }
+
 
 .bg-gray-200 {
   background-color: #edf2f7;

@@ -4,12 +4,15 @@
 
 
 #chat-container {
-    width: 500px;
-    height: 450px;
-    background-color: white;
-    padding: 10px;
-    overflow: auto;
+  width: 100%;
+  max-width: 500px;
+  height: 450px;
+  background-color: white;
+  padding: 10px;
+  overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
 }
+
 
 
 
