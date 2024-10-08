@@ -1,10 +1,8 @@
 name: Build and push DocsGPT-FE Docker image
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
 
 jobs:
   deploy:
@@ -44,5 +42,7 @@ jobs:
           context: ./frontend
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:latest
-            ghcr.io/${{ github.repository_owner }}/docsgpt-fe:latest
+            ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:${{ github.event.release.tag_name }},${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:latest
+            ghcr.io/${{ github.repository_owner }}/docsgpt-fe:${{ github.event.release.tag_name }},ghcr.io/${{ github.repository_owner }}/docsgpt-fe:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:latest
+          cache-to: type=inline
