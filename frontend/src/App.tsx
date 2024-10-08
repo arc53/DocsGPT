@@ -3,7 +3,6 @@ import Navigation from './Navigation';
 import Conversation from './conversation/Conversation';
 import About from './About';
 import PageNotFound from './PageNotFound';
-import { inject } from '@vercel/analytics';
 import { useMediaQuery } from './hooks';
 import { useState } from 'react';
 import Setting from './settings';
@@ -11,7 +10,6 @@ import './locale/i18n';
 import { Outlet } from 'react-router-dom';
 import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme } from './hooks';
-inject();
 
 function MainLayout() {
   const { isMobile } = useMediaQuery();

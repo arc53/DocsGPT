@@ -22,6 +22,7 @@ interface ConversationProps {
 interface ConversationTileProps {
   conversation: ConversationProps;
   selectConversation: (arg1: string) => void;
+  onCoversationClick: () => void; //Callback to handle click on conversation tile regardless of selected or not
   onDeleteConversation: (arg1: string) => void;
   onSave: ({ name, id }: ConversationProps) => void;
 }
@@ -29,6 +30,7 @@ interface ConversationTileProps {
 export default function ConversationTile({
   conversation,
   selectConversation,
+  onCoversationClick,
   onDeleteConversation,
   onSave,
 }: ConversationTileProps) {
@@ -90,6 +92,7 @@ export default function ConversationTile({
           setIsHovered(false);
         }}
         onClick={() => {
+          onCoversationClick();
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
@@ -158,7 +161,12 @@ export default function ConversationTile({
               </button>
             )}
             {isOpen && (
-              <div className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36">
+              <div
+                className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36"
+                style={{
+                  top: `${(tileRef.current?.getBoundingClientRect().top ?? 0) + window.scrollY + 8}px`,
+                }}
+              >
                 <button
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
