@@ -91,14 +91,13 @@ export default function ConversationTile({
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
           conversationId === conversation.id || isOpen || isHovered
             ? 'bg-gray-100 dark:bg-[#28292E]'
             : ''
         }`}
       >
         <div className={`flex w-10/12 gap-4`}>
-          <div></div>
           {isEdit ? (
             <input
               autoFocus
