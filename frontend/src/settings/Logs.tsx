@@ -105,7 +105,7 @@ export default function Logs() {
 
       <div className="mt-8">
         {loadingLogs ? (
-          <SkeletonLoader />
+          <SkeletonLoader component={'logs'} />
         ) : (
           <LogsTable logs={logs} setPage={setPage} />
         )}

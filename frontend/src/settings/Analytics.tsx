@@ -223,7 +223,7 @@ export default function Analytics() {
                 className="flex flex-row items-center justify-end"
               ></div>
               {loadingMessages ? (
-                <SkeletonLoader count={1} />
+                <SkeletonLoader count={1} component={'analysis'} />
               ) : (
                 <AnalyticsChart
                   data={{
@@ -274,7 +274,7 @@ export default function Analytics() {
                 className="flex flex-row items-center justify-end"
               ></div>
               {loadingTokens ? (
-                <SkeletonLoader />
+                <SkeletonLoader count={1} component={'analysis'} />
               ) : (
                 <AnalyticsChart
                   data={{
@@ -327,7 +327,7 @@ export default function Analytics() {
                 className="flex flex-row items-center justify-end"
               ></div>
               {loadingFeedback ? (
-                <SkeletonLoader />
+                <SkeletonLoader count={1} component={'analysis'} />
               ) : (
                 <AnalyticsChart
                   data={{
