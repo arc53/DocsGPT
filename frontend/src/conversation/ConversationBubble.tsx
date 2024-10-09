@@ -331,12 +331,11 @@ const ConversationBubble = forwardRef<
               <CopyButton text={message} />
             </div>
           </div>
-          <div
-            className={`relative mr-5  block items-center justify-center  
-            ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
-          >
-            <div>{retryBtn}</div>
-          </div>
+          {type === 'ERROR' && (
+            <div className="relative mr-5 block items-center justify-center">
+              <div>{retryBtn}</div>
+            </div>
+          )}
           {handleFeedback && (
             <>
               <div
