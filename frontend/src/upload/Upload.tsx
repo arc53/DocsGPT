@@ -128,13 +128,13 @@ function Upload({
                 setProgress(undefined);
                 setModalState('INACTIVE');
               }}
-              className="cursor-pointer rounded-3xl px-6 py-2 text-sm bg-purple-30 text-white hover:bg-[#6F3FD1] shadow-lg"
+              className="cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D1] text-white hover:bg-[#6F3FD1] shadow-lg"
             >
               {t('modals.uploadDoc.start')}
             </button>
           ) : (
             <button
-              className="ml-2 cursor-pointer rounded-3xl text-sm py-2 px-6 bg-purple-300 text-gray-300 shadow-lg"
+              className="ml-2 cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D14D] text-gray-300 shadow-lg"
               disabled
             >
               {t('modals.uploadDoc.wait')}
