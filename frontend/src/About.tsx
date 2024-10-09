@@ -64,9 +64,9 @@ export default function About() {
 
         <p>
           Currently It uses{' '}
-          <span className="text-blue-950 font-medium">DocsGPT</span>{' '}
+          <span className="text-blue-500 font-medium">DocsGPT</span>{' '}
           documentation, so it will respond to information relevant to{' '}
-          <span className="text-blue-950 font-medium">DocsGPT</span>. If you
+          <span className="text-blue-500 font-medium">DocsGPT</span>. If you
           want to train it on different documentation - please follow
           <a
             className="text-blue-500"
