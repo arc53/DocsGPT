@@ -16,14 +16,14 @@ You can find more information [here](https://github.com/arc53/DocsGPT/blob/main/
 🛠️ Code: This is the golden ticket! Make meaningful contributions through PRs.
 
 🧩 API extension: Build an app utilising DocsGPT API. We prefer submissions that showcase original ideas and turn the API into an AI agent.
-They can be a completely separate repo. 
+They can be a completely separate repos. 
 For example: 
 https://github.com/arc53/tg-bot-docsgpt-extenstion or 
 https://github.com/arc53/DocsGPT-cli
 
 Non-Code Contributions:
 
-📚 Wiki: Improve our documentation, Create a guide or change existing documentation.
+📚 Wiki: Improve our documentation, create a guide or change existing documentation.
 
 🖥️ Design: Improve the UI/UX or design a new feature.
 
@@ -37,5 +37,5 @@ Non-Code Contributions:
 - Refer to the [Documentation](https://docs.docsgpt.cloud/).
 - Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU) server. We're here to help newcomers, so don't hesitate to jump in! Join us [here](https://discord.gg/n5BX8dh8rU).
   
-Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typo) could earn you a stylish new t-shirt and other prizes as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
+Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typos) could earn you a stylish new t-shirt and other prizes as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
 
