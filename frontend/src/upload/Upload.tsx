@@ -567,7 +567,7 @@ function Upload({
           </>
         )}
         {activeTab && (
-          <div className="flex flex-row-reverse">
+          <div className="flex w-full justify-between flex-row-reverse">
             {activeTab === 'file' ? (
               <button
                 onClick={uploadFile}
@@ -599,7 +599,10 @@ function Upload({
               }}
               className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50 flex items-center gap-1"
             >
-              <img src={ArrowLeft} className="w-[12px] h-[12px]" />
+              <img
+                src={ArrowLeft}
+                className="w-[10px] h-[10px] dark:filter dark:invert"
+              />
               {t('modals.uploadDoc.back')}
             </button>
           </div>
