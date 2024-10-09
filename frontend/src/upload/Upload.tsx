@@ -134,7 +134,7 @@ function Upload({
             </button>
           ) : (
             <button
-              className="ml-2 cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D14D] text-gray-300 shadow-lg"
+              className="ml-2 cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D14D] text-white shadow-lg"
               disabled
             >
               {t('modals.uploadDoc.wait')}
