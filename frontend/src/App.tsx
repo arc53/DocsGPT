@@ -32,9 +32,9 @@ function MainLayout() {
 }
 
 export default function App() {
-  const [,,componentMounted] = useDarkTheme();
-  if(!componentMounted) {
-    return <div />
+  const [, , componentMounted] = useDarkTheme();
+  if (!componentMounted) {
+    return <div />;
   }
   return (
     <div className="h-full relative overflow-auto">

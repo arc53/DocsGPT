@@ -25,7 +25,7 @@ i18n
       zh: {
         translation: zh,
       },
-      "zh-TW": {
+      'zh-TW': {
         translation: zhTW,
       },
     },

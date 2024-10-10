@@ -11,7 +11,6 @@ import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
-import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -41,6 +40,7 @@ import {
   setSourceDocs,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
+import Help from './components/Help';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -359,29 +359,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-          <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
-            <NavLink
-              onClick={() => {
-                if (isMobile) {
-                  setNavOpen(!navOpen);
-                }
-                resetConversation();
-              }}
-              to="/about"
-              className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-                  isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
-                }`
-              }
-            >
-              <img
-                src={Info}
-                alt="icon"
-                className="ml-2 w-5 filter dark:invert"
-              />
-              <p className="my-auto pr-1 text-sm">{t('about')}</p>
-            </NavLink>
-            <div className="flex items-center justify-evenly gap-1 px-1">
+          <div>
+            <div className="flex items-center justify-evenly gap-1 px-1 py-1">
+              <div className="rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]">
+                <Help />
+              </div>
               <NavLink
                 target="_blank"
                 to={'https://discord.gg/WHJdfbQDR4'}
