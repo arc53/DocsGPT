@@ -93,37 +93,14 @@ class RstParser(BaseParser):
 
     def chunk_by_token_count(self, text: str, max_tokens: int = 100) -> List[str]:
         """Chunk text by token count."""
-        # words = text.split()
-        # chunks = []
-        # current_chunk = []
-        # current_token_count = 0
-
-        # for word in words:
-        #     word_token_len = len(word.split())  # Token count
-        #     if current_token_count + word_token_len > max_tokens:
-        #         chunks.append(" ".join(current_chunk))
-        #         current_chunk = []
-        #         current_token_count = 0
-        #     current_chunk.append(word)
-        #     current_token_count += word_token_len
-
-        # if current_chunk:
-        #     chunks.append(" ".join(current_chunk))
-
-        # return chunks
     
-
         avg_token_length = 5
     
-        # Calculate approximate chunk size in characters
         chunk_size = max_tokens * avg_token_length
-        
-        # Split text into chunks
+
         chunks = []
         for i in range(0, len(text), chunk_size):
             chunk = text[i:i+chunk_size]
-            
-            # Adjust chunk to end at a word boundary
             if i + chunk_size < len(text):
                 last_space = chunk.rfind(' ')
                 if last_space != -1:
