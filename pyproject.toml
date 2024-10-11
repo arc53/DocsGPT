@@ -1,0 +1,7 @@
+[project]
+name = "DocsGPT"
+version = "0.1.0"
+description = "Chatbot for documentation, that allows you to chat with your data. Privately deployable, provides AI knowledge sharing and integrates knowledge into your AI workflow"
+
+[tool.uv]
+requirements = "application/requirements.txt"
