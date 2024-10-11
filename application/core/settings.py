@@ -69,10 +69,7 @@ class Settings(BaseSettings):
 
     # LanceDB vectorstore config
     LANCEDB_PATH: str = "/tmp/lancedb"  # Path where LanceDB stores its local data
-    LANCEDB_URI: Optional[str] = "db://localhost:5432/lancedb"  # URI for connecting to a LanceDB instance
-    LANCEDB_TABLE_NAME: Optional[str] = "gptcache"  # Name of the table to use for storing vectors
-    LANCEDB_API_KEY: Optional[str] = None  # API key for connecting to LanceDB cloud (if applicable)
-    LANCEDB_REGION: Optional[str] = None  # Region for LanceDB cloud (if using cloud deployment)
+    LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
