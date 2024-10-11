@@ -91,6 +91,48 @@ class RstParser(BaseParser):
             ]
         return rst_tups
 
+    def chunk_by_token_count(self, text: str, max_tokens: int = 100) -> List[str]:
+        """Chunk text by token count."""
+        # words = text.split()
+        # chunks = []
+        # current_chunk = []
+        # current_token_count = 0
+
+        # for word in words:
+        #     word_token_len = len(word.split())  # Token count
+        #     if current_token_count + word_token_len > max_tokens:
+        #         chunks.append(" ".join(current_chunk))
+        #         current_chunk = []
+        #         current_token_count = 0
+        #     current_chunk.append(word)
+        #     current_token_count += word_token_len
+
+        # if current_chunk:
+        #     chunks.append(" ".join(current_chunk))
+
+        # return chunks
+    
+
+        avg_token_length = 5
+    
+        # Calculate approximate chunk size in characters
+        chunk_size = max_tokens * avg_token_length
+        
+        # Split text into chunks
+        chunks = []
+        for i in range(0, len(text), chunk_size):
+            chunk = text[i:i+chunk_size]
+            
+            # Adjust chunk to end at a word boundary
+            if i + chunk_size < len(text):
+                last_space = chunk.rfind(' ')
+                if last_space != -1:
+                    chunk = chunk[:last_space]
+            
+            chunks.append(chunk.strip())
+        
+        return chunks
+    
     def remove_images(self, content: str) -> str:
         pattern = r"\.\. image:: (.*)"
         content = re.sub(pattern, "", content)
@@ -136,7 +178,7 @@ class RstParser(BaseParser):
         return {}
 
     def parse_tups(
-            self, filepath: Path, errors: str = "ignore"
+            self, filepath: Path, errors: str = "ignore",max_tokens: Optional[int] = 1000
     ) -> List[Tuple[Optional[str], str]]:
         """Parse file into tuples."""
         with open(filepath, "r") as f:
@@ -156,6 +198,15 @@ class RstParser(BaseParser):
             rst_tups = self.remove_whitespaces_excess(rst_tups)
         if self._remove_characters_excess:
             rst_tups = self.remove_characters_excess(rst_tups)
+
+        # Apply chunking if max_tokens is provided
+        if max_tokens is not None:
+            chunked_tups = []
+            for header, text in rst_tups:
+                chunks = self.chunk_by_token_count(text, max_tokens)
+                for idx, chunk in enumerate(chunks):
+                    chunked_tups.append((f"{header} - Chunk {idx + 1}", chunk))
+            return chunked_tups    
         return rst_tups
 
     def parse_file(
