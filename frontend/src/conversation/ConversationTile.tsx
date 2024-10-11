@@ -75,6 +75,15 @@ export default function ConversationTile({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    const conversationsMainDiv = document.getElementById(
+      'conversationsMainDiv',
+    );
+    conversationsMainDiv &&
+      (conversationsMainDiv.style.overflowY = isOpen ? 'hidden' : 'auto');
+  }, [isOpen]);
+
   function onClear() {
     setConversationsName(conversation.name);
     setIsEdit(false);
@@ -147,7 +156,7 @@ export default function ConversationTile({
               <button
                 onClick={(event: SyntheticEvent) => {
                   event.stopPropagation();
-                  setOpen(true);
+                  setOpen(!isOpen);
                 }}
                 className="mr-2 flex w-4 justify-center"
               >
