@@ -22,21 +22,6 @@ check_and_start_docker() {
             Linux)
                 sudo systemctl start docker
                 ;;
-            CYGWIN*|MINGW32*|MSYS*|MINGW*)
-                echo "Detected Windows."
-
-                # Check if Docker Desktop is located at the default path
-                DOCKER_DESKTOP_PATH="/c/Program Files/Docker/Docker/Docker Desktop.exe"
-                
-                if [ -f "$DOCKER_DESKTOP_PATH" ]; then
-                    echo "Starting Docker Desktop..."
-                    "$DOCKER_DESKTOP_PATH" &
-                else
-                    echo "Docker Desktop not found at the default location."
-                    echo "Please start Docker Desktop manually."
-                    exit 1
-                fi
-                ;;
             *)
                 echo "Unsupported platform. Please start Docker manually."
                 exit 1
