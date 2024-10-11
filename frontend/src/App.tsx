@@ -19,7 +19,7 @@ function MainLayout() {
     <div className="dark:bg-raisin-black relative h-screen overflow-auto">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <div
-        className={`h-[calc(100dvh-64px)] sm:h-screen ${
+        className={`h-[calc(100dvh-64px)] md:h-screen ${
           !isMobile
             ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
             : 'ml-0 md:ml-16'
@@ -32,9 +32,9 @@ function MainLayout() {
 }
 
 export default function App() {
-  const [,,componentMounted] = useDarkTheme();
-  if(!componentMounted) {
-    return <div />
+  const [, , componentMounted] = useDarkTheme();
+  if (!componentMounted) {
+    return <div />;
   }
   return (
     <div className="h-full relative overflow-auto">
