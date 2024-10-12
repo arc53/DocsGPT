@@ -19,6 +19,7 @@ from application.extensions import api
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import check_required_fields
+from application.redis_cache import RedisCache
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +293,7 @@ class Stream(Resource):
     def post(self):
         data = request.get_json()
         required_fields = ["question"]
+
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
@@ -422,7 +424,7 @@ class Answer(Resource):
     @api.doc(description="Provide an answer based on the question and retriever")
     def post(self):
         data = request.get_json()
-        required_fields = ["question"]
+        required_fields = ["question"]       
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
