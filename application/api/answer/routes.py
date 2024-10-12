@@ -19,7 +19,6 @@ from application.extensions import api
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import check_required_fields
-from application.redis_cache import RedisCache
 
 logger = logging.getLogger(__name__)
 
