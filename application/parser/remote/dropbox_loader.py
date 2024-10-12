@@ -9,9 +9,9 @@ class DropboxLoaderRemote(BaseRemote):
         recursive = True
         
         self.loader = DropboxLoader(
-            access_token=access_token,
-            folder_path=folder_path,
-            recursive=recursive,
+            dropbox_access_token=access_token,
+            dropbox_folder_path=folder_path,
+            recursive=recursive
         )
 
         try:
