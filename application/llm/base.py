@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from application.usage import gen_token_usage, stream_token_usage
-from application.cache import gen_cache, stream_cache
+from application.cache import stream_cache, gen_cache
 
 
 class BaseLLM(ABC):
@@ -17,7 +17,7 @@ class BaseLLM(ABC):
         pass
 
     def gen(self, model, messages, stream=False, *args, **kwargs):
-        decorators = [gen_cache, gen_token_usage]
+        decorators = [gen_token_usage, gen_cache]
         return self._apply_decorator(self._raw_gen, decorators=decorators, model=model, messages=messages, stream=stream, *args, **kwargs)
 
     @abstractmethod
@@ -25,9 +25,5 @@ class BaseLLM(ABC):
         pass
 
     def gen_stream(self, model, messages, stream=True, *args, **kwargs):
-        """
-        Stream a response from the LLM with caching and token usage tracking.
-        """
-        # List of decorators to apply for streaming generation
         decorators = [stream_cache, stream_token_usage]
         return self._apply_decorator(self._raw_gen_stream, decorators=decorators, model=model, messages=messages, stream=stream, *args, **kwargs)
