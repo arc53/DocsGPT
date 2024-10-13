@@ -63,7 +63,7 @@ const Help = () => {
         <img
           src={InfoDark}
           alt="icon"
-          className="mr-2 w-5 filter dark:invert"
+          className="m-2 w-6 self-center text-sm filter dark:invert"
         />
         Help
       </button>

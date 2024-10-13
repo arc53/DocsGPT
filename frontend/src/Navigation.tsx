@@ -358,50 +358,54 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-          <div>
-            <div className="flex items-center justify-evenly gap-1 px-1 py-1">
-              <div className="rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]">
-                <Help />
+          <div className="flex flex-col justify-end text-eerie-black dark:text-white">
+            <div className="flex justify-between items-center px-1 py-1">
+              <div className="flex items-center gap-1">
+                <div className="rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]">
+                  <Help />
+                </div>
               </div>
-              <NavLink
-                target="_blank"
-                to={'https://discord.gg/WHJdfbQDR4'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Discord}
-                  alt="discord"
-                  className="m-2 w-6 self-center filter dark:invert"
-                />
-              </NavLink>
-              <NavLink
-                target="_blank"
-                to={'https://twitter.com/docsgptai'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Twitter}
-                  alt="x"
-                  className="m-2 w-5 self-center filter dark:invert"
-                />
-              </NavLink>
-              <NavLink
-                target="_blank"
-                to={'https://github.com/arc53/docsgpt'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Github}
-                  alt="github"
-                  className="m-2 w-6 self-center filter dark:invert"
-                />
-              </NavLink>
+              <div className="flex items-center gap-1">
+                <NavLink
+                  target="_blank"
+                  to={'https://discord.gg/WHJdfbQDR4'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Discord}
+                    alt="discord"
+                    className="m-2 w-6 self-center filter dark:invert"
+                  />
+                </NavLink>
+                <NavLink
+                  target="_blank"
+                  to={'https://twitter.com/docsgptai'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Twitter}
+                    alt="x"
+                    className="m-2 w-5 self-center filter dark:invert"
+                  />
+                </NavLink>
+                <NavLink
+                  target="_blank"
+                  to={'https://github.com/arc53/docsgpt'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Github}
+                    alt="github"
+                    className="m-2 w-6 self-center filter dark:invert"
+                  />
+                </NavLink>
+              </div>
             </div>
           </div>
         </div>
