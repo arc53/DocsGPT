@@ -230,12 +230,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               if (isMobile) {
                 setNavOpen(!navOpen);
               }
+              resetConversation();
             }}
           >
-            <a href="/" className="flex gap-1.5">
+            <div className="flex gap-1.5">
               <img className="mb-2 h-10" src={DocsGPT3} alt="" />
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
-            </a>
+            </div>
           </div>
           <button
             className="float-right mr-5"
