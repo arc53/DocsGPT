@@ -82,6 +82,7 @@ export function useDarkTheme() {
   };
 
   const [isDarkTheme, setIsDarkTheme] = useState<boolean>(getInitialTheme());
+  const [componentMounted, setComponentMounted] = useState(false);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -102,11 +103,12 @@ export function useDarkTheme() {
     } else {
       document.body?.classList.remove('dark');
     }
+    setComponentMounted(true);
   }, [isDarkTheme]);
 
   const toggleTheme = () => {
     setIsDarkTheme(!isDarkTheme);
   };
 
-  return [isDarkTheme, toggleTheme] as const;
+  return [isDarkTheme, toggleTheme, componentMounted] as const;
 }

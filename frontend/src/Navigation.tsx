@@ -119,6 +119,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .delete(id, {})
       .then(() => {
         fetchConversations();
+        resetConversation();
       })
       .catch((error) => console.error(error));
   };
@@ -153,6 +154,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }),
         );
       });
+  };
+
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
   };
 
   async function updateConversationName(updatedConversation: {
@@ -214,9 +224,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
         >
-          <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
-            <img className="mb-2 h-10" src={DocsGPT3} alt="" />
-            <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+          <div
+            className="my-auto mx-4 flex cursor-pointer gap-1.5"
+            onClick={() => {
+              if (isMobile) {
+                setNavOpen(!navOpen);
+              }
+            }}
+          >
+            <a href="/" className="flex gap-1.5">
+              <img className="mb-2 h-10" src={DocsGPT3} alt="" />
+              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            </a>
           </div>
           <button
             className="float-right mr-5"
@@ -236,12 +255,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <NavLink
           to={'/'}
           onClick={() => {
-            dispatch(setConversation([]));
-            dispatch(
-              updateConversationId({
-                query: { conversationId: null },
-              }),
-            );
+            if (isMobile) {
+              setNavOpen(!navOpen);
+            }
+            resetConversation();
           }}
           className={({ isActive }) =>
             `${
@@ -270,6 +287,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     key={conversation.id}
                     conversation={conversation}
                     selectConversation={(id) => handleConversationClick(id)}
+                    onCoversationClick={() => {
+                      if (isMobile) {
+                        setNavOpen(false);
+                      }
+                    }}
                     onDeleteConversation={(id) => handleDeleteConversation(id)}
                     onSave={(conversation) =>
                       updateConversationName(conversation)
@@ -293,17 +315,33 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 isDocsListOpen={isDocsListOpen}
                 setIsDocsListOpen={setIsDocsListOpen}
                 handleDeleteClick={handleDeleteClick}
+                handlePostDocumentSelect={(option?: string) => {
+                  if (isMobile) {
+                    setNavOpen(!navOpen);
+                  }
+                }}
               />
               <img
                 className="mt-2 h-9 w-9 hover:cursor-pointer"
                 src={UploadIcon}
-                onClick={() => setUploadModalState('ACTIVE')}
+                onClick={() => {
+                  setUploadModalState('ACTIVE');
+                  if (isMobile) {
+                    setNavOpen(!navOpen);
+                  }
+                }}
               ></img>
             </div>
             <p className="ml-5 mt-3 text-sm font-semibold">{t('sourceDocs')}</p>
           </div>
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
+              onClick={() => {
+                if (isMobile) {
+                  setNavOpen(!navOpen);
+                }
+                resetConversation();
+              }}
               to="/settings"
               className={({ isActive }) =>
                 `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
@@ -323,6 +361,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
           <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
             <NavLink
+              onClick={() => {
+                if (isMobile) {
+                  setNavOpen(!navOpen);
+                }
+                resetConversation();
+              }}
               to="/about"
               className={({ isActive }) =>
                 `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
@@ -437,6 +481,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       <Upload
         modalState={uploadModalState}
         setModalState={setUploadModalState}
+        isOnboarding={false}
       ></Upload>
     </>
   );

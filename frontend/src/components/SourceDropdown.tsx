@@ -11,6 +11,7 @@ type Props = {
   isDocsListOpen: boolean;
   setIsDocsListOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleDeleteClick: any;
+  handlePostDocumentSelect: any;
 };
 
 function SourceDropdown({
@@ -20,6 +21,7 @@ function SourceDropdown({
   setIsDocsListOpen,
   isDocsListOpen,
   handleDeleteClick,
+  handlePostDocumentSelect, // Callback function fired after a document is selected
 }: Props) {
   const dispatch = useDispatch();
   const { t } = useTranslation();
@@ -85,6 +87,7 @@ function SourceDropdown({
                     onClick={() => {
                       dispatch(setSelectedDocs(option));
                       setIsDocsListOpen(false);
+                      handlePostDocumentSelect(option);
                     }}
                   >
                     <span
@@ -118,7 +121,9 @@ function SourceDropdown({
             className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
             onClick={handleEmptyDocumentSelect}
           >
-            <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
+            <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3" onClick = {() => {
+              handlePostDocumentSelect(null);
+            }}>
               {t('none')}
             </span>
           </div>

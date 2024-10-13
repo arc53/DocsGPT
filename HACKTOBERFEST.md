@@ -4,10 +4,10 @@ Welcome, contributors! We're excited to announce that DocsGPT is participating i
 
 All contributors with accepted PRs will receive a cool Holopin! 🤩 (Watch out for a reply in your PR to collect it).
 
-### 🏆 Top 50 contributors will recieve a special T-shirt
+### 🏆 Top 50 contributors will receive a special T-shirt
 
 ### 🏆 [LLM Document analysis by LexEU competition](https://github.com/arc53/DocsGPT/blob/main/lexeu-competition.md): 
-A separate competition is available for those who sumbit new retrieval / workflow method that will analyze a Document using EU laws.
+A separate competition is available for those who submit new retrieval / workflow method that will analyze a Document using EU laws.
 With 200$, 100$, 50$ prize for 1st, 2nd and 3rd place respectively.
 You can find more information [here](https://github.com/arc53/DocsGPT/blob/main/lexeu-competition.md)
 
@@ -16,14 +16,14 @@ You can find more information [here](https://github.com/arc53/DocsGPT/blob/main/
 🛠️ Code: This is the golden ticket! Make meaningful contributions through PRs.
 
 🧩 API extension: Build an app utilising DocsGPT API. We prefer submissions that showcase original ideas and turn the API into an AI agent.
-They can be a completely separate repo. 
+They can be a completely separate repos. 
 For example: 
 https://github.com/arc53/tg-bot-docsgpt-extenstion or 
 https://github.com/arc53/DocsGPT-cli
 
 Non-Code Contributions:
 
-📚 Wiki: Improve our documentation, Create a guide or change existing documentation.
+📚 Wiki: Improve our documentation, create a guide or change existing documentation.
 
 🖥️ Design: Improve the UI/UX or design a new feature.
 
@@ -37,5 +37,5 @@ Non-Code Contributions:
 - Refer to the [Documentation](https://docs.docsgpt.cloud/).
 - Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU) server. We're here to help newcomers, so don't hesitate to jump in! Join us [here](https://discord.gg/n5BX8dh8rU).
   
-Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typo) could earn you a stylish new t-shirt and other prizes as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
+Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typos) could earn you a stylish new t-shirt and other prizes as a token of our appreciation. 🎁 Join us, and let's code together! 🚀
 

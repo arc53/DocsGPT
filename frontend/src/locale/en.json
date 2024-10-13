@@ -7,7 +7,7 @@
   "about": "About",
   "inputPlaceholder": "Type your message here...",
   "tagline": "DocsGPT uses GenAI, please review critical information using sources.",
-  "sourceDocs": "Source Docs",
+  "sourceDocs": "Source",
   "none": "None",
   "cancel": "Cancel",
   "demo": [
@@ -75,16 +75,21 @@
   "modals": {
     "uploadDoc": {
       "label": "Upload New Documentation",
-      "file": "From File",
-      "remote": "Remote",
+      "select": "Choose how to upload your document to DocsGPT",
+      "file": "Upload from device",
+      "back": "Back",
+      "wait": "Please wait ...",
+      "remote": "Collect from a website",
+      "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "info": "Please upload .pdf, .txt, .rst, .csv, .docx, .md, .zip limited to 25mb",
+      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",
       "link": "Link",
       "urlLink": "URL Link",
+      "repoUrl": "Repository URL",
       "reddit": {
         "id": "Client ID",
         "secret": "Client Secret",

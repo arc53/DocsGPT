@@ -10,7 +10,7 @@ import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
@@ -39,6 +39,7 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
+  const { isMobile } = useMediaQuery();
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
@@ -53,10 +54,6 @@ export default function Conversation() {
       element.focus();
     }
   }, []);
-
-  useEffect(() => {
-    fetchStream.current && fetchStream.current.abort();
-  }, [conversationId]);
 
   useEffect(() => {
     if (queries.length) {
@@ -143,7 +140,7 @@ export default function Conversation() {
     } else if (query.error) {
       const retryBtn = (
         <button
-          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          className="flex items-center justify-center gap-3 self-center rounded-full py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
           disabled={status === 'loading'}
           onClick={() => {
             handleQuestion({
@@ -153,10 +150,12 @@ export default function Conversation() {
           }}
         >
           <RetryIcon
+            width={isMobile ? 12 : 12} // change the width and height according to device size if necessary
+            height={isMobile ? 12 : 12}
             fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
             stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+            strokeWidth={10}
           />
-          Retry
         </button>
       );
       responseView = (

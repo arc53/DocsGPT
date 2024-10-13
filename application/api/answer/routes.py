@@ -40,6 +40,8 @@ if settings.LLM_NAME == "openai":
     gpt_model = "gpt-3.5-turbo"
 elif settings.LLM_NAME == "anthropic":
     gpt_model = "claude-2"
+elif settings.LLM_NAME == "groq":
+    gpt_model = "llama3-8b-8192"
 
 if settings.MODEL_NAME:  # in case there is particular model name configured
     gpt_model = settings.MODEL_NAME

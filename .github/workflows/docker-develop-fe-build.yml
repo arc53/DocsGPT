@@ -1,8 +1,10 @@
-name: Build and push DocsGPT Docker image
+name: Build and push DocsGPT FE Docker image for development
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -36,12 +38,12 @@ jobs:
       - name: Build and push Docker images to docker.io and ghcr.io
         uses: docker/build-push-action@v4
         with:
-          file: './application/Dockerfile'
+          file: './frontend/Dockerfile'
           platforms: linux/amd64
-          context: ./application
+          context: ./frontend
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }},${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
-            ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }},ghcr.io/${{ github.repository_owner }}/docsgpt:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
+            ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:develop
+            ghcr.io/${{ github.repository_owner }}/docsgpt-fe:develop
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:develop
           cache-to: type=inline

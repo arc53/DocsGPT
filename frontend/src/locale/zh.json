@@ -7,7 +7,7 @@
   "about": "关于",
   "inputPlaceholder": "在这里输入您的消息...",
   "tagline": "DocsGPT 使用 GenAI, 请使用来源审核关键信息.",
-  "sourceDocs": "来源文档",
+  "sourceDocs": "源",
   "none": "无",
   "cancel": "取消",
   "demo": [
@@ -75,8 +75,12 @@
   "modals": {
     "uploadDoc": {
       "label": "上传新文档资料",
-      "file": "从文件",
-      "remote": "远程",
+      "select": "选择如何将文档上传到 DocsGPT",
+      "file": "从设备上传",
+      "back": "后退",
+      "wait": "请稍等 ...",
+      "remote": "从网站收集",
+      "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
       "info": "请上传 .pdf, .txt, .rst, .docx, .md, .zip 文件，限 25MB",
@@ -85,6 +89,7 @@
       "train": "训练",
       "link": "链接",
       "urlLink": "URL 链接",
+      "repoUrl": "存储库 URL",
       "reddit": {
         "id": "客户端 ID",
         "secret": "客户端密钥",
