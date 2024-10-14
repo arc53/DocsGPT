@@ -2,11 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import Info from '../assets/info.svg';
 import PageIcon from '../assets/documentation.svg';
 import EmailIcon from '../assets/envelope.svg';
-
+import { useTranslation } from 'react-i18next';
 const Help = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const { t } = useTranslation();
 
   const toggleDropdown = () => {
     setIsOpen((prev) => !prev);
@@ -38,11 +39,11 @@ const Help = () => {
         className="my-auto mx-4 w-full flex items-center h-9 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
       >
         <img src={Info} alt="info" className="ml-1 w-5 filter dark:invert" />
-        Help
+        {t('help')}
       </button>
       {isOpen && (
         <div
-          className={`absolute -translate-y-28 z-10 w-48 shadow-lg bg-white dark:bg-[#444654] rounded-xl`}
+          className={`absolute translate-x-4 -translate-y-28 z-10 w-48 shadow-lg bg-white dark:bg-[#444654] rounded-xl`}
         >
           <a
             href="https://docs.docsgpt.cloud/"
@@ -56,7 +57,7 @@ const Help = () => {
               className="filter dark:invert"
               width={20}
             />
-            Documentation
+            {t('documentation')}
           </a>
           <a
             href="mailto:contact@arc53.com"
@@ -68,7 +69,7 @@ const Help = () => {
               className="filter dark:invert p-0.5"
               width={20}
             />
-            Email Us
+            {t('emailUs')}
           </a>
         </div>
       )}
