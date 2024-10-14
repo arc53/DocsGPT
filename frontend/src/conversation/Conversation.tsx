@@ -44,6 +44,7 @@ export default function Conversation() {
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
   };
+
   useEffect(() => {
     !eventInterrupt && scrollIntoView();
   }, [queries.length, queries[queries.length - 1]]);
@@ -58,7 +59,7 @@ export default function Conversation() {
   useEffect(() => {
     if (queries.length) {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
-      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
+      queries[queries.length - 1].response && setLastQueryReturnedErr(false); // considering a query that initially returned error can later include a response property on retry
     }
   }, [queries[queries.length - 1]]);
 
@@ -85,7 +86,7 @@ export default function Conversation() {
     question = question.trim();
     if (question === '') return;
     setEventInterrupt(false);
-    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
+    !isRetry && dispatch(addQuery({ prompt: question })); // dispatch only new queries
     fetchStream.current = dispatch(fetchAnswer({ question }));
   };
 
@@ -181,12 +182,40 @@ export default function Conversation() {
       )}px`;
     }
   };
+
   const checkScroll = () => {
     const el = conversationRef.current;
     if (!el) return;
     const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
     setHasScrolledToLast(isBottom);
   };
+
+  // Prevent Safari refresh by touch scrolling beyond bounds
+  useEffect(() => {
+    const handleTouchMove = (e: TouchEvent) => {
+      const conversationDiv = conversationRef.current;
+      if (conversationDiv) {
+        const { scrollTop, scrollHeight, clientHeight } = conversationDiv;
+
+        // Prevent default if trying to scroll beyond top or bottom
+        if ((scrollTop === 0 && e.touches[0].clientY > 0) || (scrollTop + clientHeight >= scrollHeight)) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    const conversationDiv = conversationRef.current;
+    if (conversationDiv) {
+      conversationDiv.addEventListener('touchmove', handleTouchMove, { passive: false });
+    }
+
+    return () => {
+      if (conversationDiv) {
+        conversationDiv.removeEventListener('touchmove', handleTouchMove);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     handleInput();
     window.addEventListener('resize', handleInput);
@@ -196,6 +225,7 @@ export default function Conversation() {
       conversationRef.current?.removeEventListener('scroll', checkScroll);
     };
   }, []);
+
   return (
     <div className="flex flex-col gap-1 h-full justify-end">
       {conversationId && (
@@ -232,76 +262,85 @@ export default function Conversation() {
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
-            onClick={scrollIntoView}
-            aria-label="scroll to bottom"
-            className="fixed bottom-40 right-14 z-10 flex h-7 w-7  items-center justify-center rounded-full border-[0.5px] border-gray-alpha bg-gray-100 bg-opacity-50 dark:bg-purple-taupe md:h-9 md:w-9 md:bg-opacity-100 "
+            className="absolute bottom-32 z-10 flex h-8 w-8 animate-bounce items-center justify-center rounded-full border-0 bg-white p-1 drop-shadow-md dark:bg-black dark:ring-bright-gray dark:hover:bg-[#28292E]"
+            title={t('scroll-to-bottom')}
+            onClick={() =>
+              conversationRef.current?.scrollTo({
+                behavior: 'smooth',
+                top: conversationRef.current.scrollHeight,
+              })
+            }
           >
             <img
-              src={ArrowDown}
+              className="filter dark:invert"
               alt="arrow down"
-              className="h-4 w-4 opacity-50 md:h-5 md:w-5"
+              src={ArrowDown}
             />
           </button>
         )}
-
-        {queries.length > 0 ? (
-          <div className="w-full md:w-8/12">
-            {queries.map((query, index) => {
-              return (
-                <Fragment key={index}>
-                  <ConversationBubble
-                    className={'first:mt-5'}
-                    key={`${index}QUESTION`}
-                    message={query.prompt}
-                    type="QUESTION"
-                    sources={query.sources}
-                  ></ConversationBubble>
-
-                  {prepResponseView(query, index)}
-                </Fragment>
-              );
-            })}
-          </div>
-        ) : (
-          <Hero handleQuestion={handleQuestion} />
-        )}
+        <div className="min-w-9/12 flex w-full flex-col sm:max-w-2xl">
+          <Hero />
+          {queries.length > 0 &&
+            queries.map((query, index) => (
+              <Fragment key={index}>
+                <ConversationBubble
+                  className={'mt-7'}
+                  key={`${index}PROMPT`}
+                  message={query.prompt}
+                  type={'PROMPT'}
+                />
+                {prepResponseView(query, index)}
+              </Fragment>
+            ))}
+          {status === 'loading' && (
+            <ConversationBubble
+              className={'mb-32'}
+              type={'ANSWER'}
+              message={
+                <div className="w-full text-center">
+                  <img
+                    alt="spinner"
+                    className="m-auto h-8 w-8 animate-spin dark:hidden"
+                    src={Spinner}
+                  />
+                  <img
+                    alt="spinner"
+                    className="m-auto hidden h-8 w-8 animate-spin dark:inline"
+                    src={SpinnerDark}
+                  />
+                </div>
+              }
+            />
+          )}
+        </div>
       </div>
-
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-[62%] h-auto">
-        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
+      <div className="fixed bottom-0 z-20 flex w-full bg-white py-2 dark:bg-[#202123] sm:relative sm:bg-transparent">
+        <div className="mx-2 flex h-10 w-full max-w-2xl flex-row gap-2">
           <textarea
             id="inputbox"
-            ref={inputRef}
-            tabIndex={1}
-            placeholder={t('inputPlaceholder')}
-            className={`inputbox-style h-16 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
             onInput={handleInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+            className="block w-full resize-none overflow-hidden rounded-lg border-0 bg-[#F4F4F5] px-4 text-black shadow-xl outline-none focus:outline-none dark:bg-[#343541] dark:text-white sm:rounded-none sm:rounded-bl-lg sm:border-b sm:border-l sm:border-bright-gray"
+            placeholder={t('ask-placeholder') as string}
+            rows={1}
+            ref={inputRef}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
                 handleQuestionSubmission();
               }
             }}
-          ></textarea>
-          {status === 'loading' ? (
+          />
+          <button
+            onClick={handleQuestionSubmission}
+            className="rounded-lg bg-[#19C37D] py-2 pr-2 shadow-xl hover:bg-[#13a067] active:bg-[#13a067] dark:bg-[#10a37f] dark:hover:bg-[#0e7e63] sm:rounded-none sm:rounded-br-lg"
+          >
             <img
-              src={isDarkTheme ? SpinnerDark : Spinner}
-              className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
-            ></img>
-          ) : (
-            <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
-              <img
-                className="ml-[4px] h-6 w-6 text-white "
-                onClick={handleQuestionSubmission}
-                src={isDarkTheme ? SendDark : Send}
-              ></img>
-            </div>
-          )}
+              src={isDarkTheme ? SendDark : Send}
+              alt="send"
+              className="mx-3 inline-block h-5 w-5"
+            />
+          </button>
         </div>
-
-        <p className="text-gray-595959 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-bright-gray md:inline md:w-full">
-          {t('tagline')}
-        </p>
       </div>
     </div>
   );
