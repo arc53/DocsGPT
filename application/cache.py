@@ -70,7 +70,10 @@ def gen_cache(func):
                 return cached_response.decode('utf-8')
             
             result = func(self, model, messages, *args, **kwargs)
-            redis_client.set(cache_key, result, ex=3600)
+
+            # expire the cache after 30 minutes
+            # set time in seconds
+            redis_client.set(cache_key, result, ex=1800)
 
             return result
         except ValueError as e:
