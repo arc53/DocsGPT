@@ -52,28 +52,38 @@ class TestSagemakerAPILLM(unittest.TestCase):
         self.response['Body'].read.return_value.decode.return_value = json.dumps(self.result)
         
     def test_gen(self):
-        with patch.object(self.sagemaker.runtime, 'invoke_endpoint', 
-                          return_value=self.response) as mock_invoke_endpoint:
-            output = self.sagemaker.gen(None, self.messages)
-            mock_invoke_endpoint.assert_called_once_with(
-                EndpointName=self.sagemaker.endpoint,
-                ContentType='application/json',
-                Body=self.body_bytes
-            )
-            self.assertEqual(output, 
-                             self.result[0]['generated_text'][len(self.prompt):])
+        with patch('application.cache.make_redis') as mock_make_redis:
+            mock_redis_instance = mock_make_redis.return_value
+            mock_redis_instance.get.return_value = None
+
+            with patch.object(self.sagemaker.runtime, 'invoke_endpoint', 
+                            return_value=self.response) as mock_invoke_endpoint:
+                output = self.sagemaker.gen(None, self.messages)
+                mock_invoke_endpoint.assert_called_once_with(
+                    EndpointName=self.sagemaker.endpoint,
+                    ContentType='application/json',
+                    Body=self.body_bytes
+                )
+                self.assertEqual(output, 
+                                self.result[0]['generated_text'][len(self.prompt):])
+            mock_make_redis.assert_called_once()
+            mock_redis_instance.set.assert_called_once()
     
     def test_gen_stream(self):
-        with patch.object(self.sagemaker.runtime, 'invoke_endpoint_with_response_stream', 
-                          return_value=self.response) as mock_invoke_endpoint:
-            output = list(self.sagemaker.gen_stream(None, self.messages))
-            mock_invoke_endpoint.assert_called_once_with(
-                EndpointName=self.sagemaker.endpoint,
-                ContentType='application/json',
-                Body=self.body_bytes_stream
-            )
-            self.assertEqual(output, [])
-            
+        with patch('application.cache.make_redis') as mock_make_redis:
+            mock_redis_instance = mock_make_redis.return_value
+            mock_redis_instance.get.return_value = None
+
+            with patch.object(self.sagemaker.runtime, 'invoke_endpoint_with_response_stream', 
+                            return_value=self.response) as mock_invoke_endpoint:
+                output = list(self.sagemaker.gen_stream(None, self.messages))
+                mock_invoke_endpoint.assert_called_once_with(
+                    EndpointName=self.sagemaker.endpoint,
+                    ContentType='application/json',
+                    Body=self.body_bytes_stream
+                )
+                self.assertEqual(output, [])
+            mock_redis_instance.set.assert_called_once()
 class TestLineIterator(unittest.TestCase):
     
     def setUp(self):
