@@ -360,11 +360,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
           <div className="flex flex-col justify-end text-eerie-black dark:text-white">
             <div className="flex justify-between items-center px-1 py-1">
-              <div className="flex items-center gap-1">
-                <div className="rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]">
-                  <Help />
-                </div>
-              </div>
+              <Help />
+
               <div className="flex items-center gap-1">
                 <NavLink
                   target="_blank"
