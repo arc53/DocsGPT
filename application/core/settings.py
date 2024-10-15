@@ -22,9 +22,7 @@ class Settings(BaseSettings):
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
 
     # LLM Cache
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
+    CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
