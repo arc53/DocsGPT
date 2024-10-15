@@ -10,6 +10,9 @@
   "sourceDocs": "原始文件",
   "none": "無",
   "cancel": "取消",
+  "help":"聯繫支援",
+  "emailUs": "寄送電子郵件給我們",
+  "documentation": "文件",
   "demo": [
     {
       "header": "了解 DocsGPT",

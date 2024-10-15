@@ -10,6 +10,9 @@
   "sourceDocs": "Fuente",
   "none": "Nada",
   "cancel": "Cancelar",
+  "help":"Asistencia",
+  "emailUs": "Envíanos un correo",
+  "documentation": "documentación",
   "demo": [
     {
       "header": "Aprende sobre DocsGPT",
