@@ -8,7 +8,6 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
-import Alert from '../assets/alert.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
@@ -238,14 +237,6 @@ const ConversationBubble = forwardRef<
                 : 'flex-col rounded-3xl'
             }`}
           >
-            {type === 'ERROR' && (
-              <>
-                <img src={Alert} alt="alert" className="mr-2 inline" />
-                <div className="absolute right-0 lg:-right-32 top-1/2 translate-y-full lg:-translate-y-1/2">
-                  {retryBtn}
-                </div>
-              </>
-            )}
             <ReactMarkdown
               className="whitespace-pre-wrap break-normal leading-normal"
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -339,12 +330,17 @@ const ConversationBubble = forwardRef<
         <div className="my-2 ml-2 flex justify-start">
           <div
             className={`relative mr-5  block items-center justify-center lg:invisible 
-            ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
+            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
               <CopyButton text={message} />
             </div>
           </div>
+          {type === 'ERROR' && (
+            <div className="relative mr-5 block items-center justify-center">
+              <div>{retryBtn}</div>
+            </div>
+          )}
           {handleFeedback && (
             <>
               <div

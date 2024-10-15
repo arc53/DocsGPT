@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant" or "milvus"
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
 
+    # LLM Cache
+    CACHE_REDIS_URL: str = "redis://localhost:6379/2"
+
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
     API_KEY: Optional[str] = None  # LLM api key

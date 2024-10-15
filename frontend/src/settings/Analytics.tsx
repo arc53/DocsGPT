@@ -17,7 +17,7 @@ import { formatDate } from '../utils/dateTimeUtils';
 import { APIKeyData } from './types';
 
 import type { ChartData } from 'chart.js';
-import SkeletonLoader from '../utils/loader';
+import SkeletonLoader from '../components/SkeletonLoader';
 
 ChartJS.register(
   CategoryScale,

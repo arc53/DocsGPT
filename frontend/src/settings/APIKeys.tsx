@@ -6,7 +6,7 @@ import Trash from '../assets/trash.svg';
 import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
 import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
 import { APIKeyData } from './types';
-import SkeletonLoader from '../utils/loader';
+import SkeletonLoader from '../components/SkeletonLoader';
 
 export default function APIKeys() {
   const { t } = useTranslation();

@@ -4,7 +4,7 @@ beautifulsoup4==4.12.3
 celery==5.3.6
 dataclasses-json==0.6.7
 docx2txt==0.8
-duckduckgo-search==6.2.6
+duckduckgo-search==6.3.0
 ebooklib==0.18
 elastic-transport==8.15.0
 elasticsearch==8.15.1
@@ -54,7 +54,7 @@ pathable==0.4.3
 pillow==10.4.0
 portalocker==2.10.1
 prance==23.6.21.0
-primp==0.6.2
+primp==0.6.3
 prompt-toolkit==3.0.47
 protobuf==5.28.2
 py==1.11.0

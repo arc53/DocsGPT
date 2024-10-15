@@ -1,9 +1,13 @@
-import { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import {
+  SyntheticEvent,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
-import Message from '../assets/message.svg';
-import MessageDark from '../assets/message-dark.svg';
 import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CheckMark2 from '../assets/checkMark2.svg';
@@ -77,6 +81,36 @@ export default function ConversationTile({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  const preventScroll = useCallback((event: WheelEvent | TouchEvent) => {
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const conversationsMainDiv = document.getElementById(
+      'conversationsMainDiv',
+    );
+
+    if (conversationsMainDiv) {
+      if (isOpen) {
+        conversationsMainDiv.addEventListener('wheel', preventScroll, {
+          passive: false,
+        });
+        conversationsMainDiv.addEventListener('touchmove', preventScroll, {
+          passive: false,
+        });
+      } else {
+        conversationsMainDiv.removeEventListener('wheel', preventScroll);
+        conversationsMainDiv.removeEventListener('touchmove', preventScroll);
+      }
+
+      return () => {
+        conversationsMainDiv.removeEventListener('wheel', preventScroll);
+        conversationsMainDiv.removeEventListener('touchmove', preventScroll);
+      };
+    }
+  }, [isOpen]);
+
   function onClear() {
     setConversationsName(conversation.name);
     setIsEdit(false);
@@ -96,17 +130,13 @@ export default function ConversationTile({
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
           conversationId === conversation.id || isOpen || isHovered
             ? 'bg-gray-100 dark:bg-[#28292E]'
             : ''
         }`}
       >
         <div className={`flex w-10/12 gap-4`}>
-          <img
-            src={isDarkTheme ? MessageDark : Message}
-            className="ml-4 w-5 dark:text-white"
-          />
           {isEdit ? (
             <input
               autoFocus
@@ -153,7 +183,7 @@ export default function ConversationTile({
               <button
                 onClick={(event: SyntheticEvent) => {
                   event.stopPropagation();
-                  setOpen(true);
+                  setOpen(!isOpen);
                 }}
                 className="mr-2 flex w-4 justify-center"
               >

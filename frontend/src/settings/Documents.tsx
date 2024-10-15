@@ -7,7 +7,7 @@ import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/trash.svg';
 import DropdownMenu from '../components/DropdownMenu';
-import SkeletonLoader from '../utils/loader';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Doc, DocumentsProps } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';

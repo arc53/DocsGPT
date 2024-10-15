@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
 import Dropdown from '../components/Dropdown';
-import SkeletonLoader from '../utils/loader';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { APIKeyData, LogData } from './types';
 import CoppyButton from '../components/CopyButton';
 
