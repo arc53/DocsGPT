@@ -9,6 +9,7 @@ import DropdownMenu from '../components/DropdownMenu';
 import { Doc, DocumentsProps } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
+import Input from '../components/Input';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -55,6 +56,20 @@ const Documents: React.FC<DocumentsProps> = ({
     <div className="mt-8">
       <div className="flex flex-col relative">
         <div className="z-10 w-full overflow-x-auto">
+          <div className="my-3 flex justify-between items-center ">
+            <div className="p-1">
+              <Input
+                maxLength={256}
+                placeholder="Search..."
+                name="Document-search-input"
+                type="text"
+                id="document-search-input"
+              />
+            </div>
+            <button className="rounded-full  w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]">
+              Add New
+            </button>
+          </div>
           <table className="table-default">
             <thead>
               <tr>
@@ -90,7 +105,8 @@ const Documents: React.FC<DocumentsProps> = ({
                           <img
                             src={Trash}
                             alt="Delete"
-                            className="h-4 w-4 cursor-pointer hover:opacity-50"
+                            className="h-4 w-4 cursor-pointer opacity-60
+                            hover:opacity-100"
                             id={`img-${index}`}
                             onClick={(event) => {
                               event.stopPropagation();

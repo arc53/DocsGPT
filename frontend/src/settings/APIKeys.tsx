@@ -6,6 +6,7 @@ import Trash from '../assets/trash.svg';
 import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
 import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
 import { APIKeyData } from './types';
+import Input from '../components/Input';
 
 export default function APIKeys() {
   const { t } = useTranslation();
@@ -78,7 +79,16 @@ export default function APIKeys() {
   return (
     <div className="mt-8">
       <div className="flex flex-col max-w-[876px]">
-        <div className="flex justify-end">
+        <div className="flex justify-between">
+          <div className="p-1">
+            <Input
+              maxLength={256}
+              placeholder="Search..."
+              name="Document-search-input"
+              type="text"
+              id="document-search-input"
+            />
+          </div>
           <button
             onClick={() => setCreateModal(true)}
             className="rounded-full bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
@@ -126,7 +136,8 @@ export default function APIKeys() {
                       <img
                         src={Trash}
                         alt="Delete"
-                        className="h-4 w-4 cursor-pointer hover:opacity-50"
+                        className="h-4 w-4 cursor-pointer opacity-60
+                        hover:opacity-100"
                         id={`img-${index}`}
                         onClick={() => handleDeleteKey(element.id)}
                       />
