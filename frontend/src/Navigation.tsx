@@ -275,7 +275,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             {t('newChat')}
           </p>
         </NavLink>
-        <div className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white">
+        <div
+          id="conversationsMainDiv"
+          className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
+        >
           {conversations && conversations.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">

@@ -1,4 +1,10 @@
-import { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import {
+  SyntheticEvent,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
@@ -75,6 +81,36 @@ export default function ConversationTile({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  const preventScroll = useCallback((event: WheelEvent | TouchEvent) => {
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const conversationsMainDiv = document.getElementById(
+      'conversationsMainDiv',
+    );
+
+    if (conversationsMainDiv) {
+      if (isOpen) {
+        conversationsMainDiv.addEventListener('wheel', preventScroll, {
+          passive: false,
+        });
+        conversationsMainDiv.addEventListener('touchmove', preventScroll, {
+          passive: false,
+        });
+      } else {
+        conversationsMainDiv.removeEventListener('wheel', preventScroll);
+        conversationsMainDiv.removeEventListener('touchmove', preventScroll);
+      }
+
+      return () => {
+        conversationsMainDiv.removeEventListener('wheel', preventScroll);
+        conversationsMainDiv.removeEventListener('touchmove', preventScroll);
+      };
+    }
+  }, [isOpen]);
+
   function onClear() {
     setConversationsName(conversation.name);
     setIsEdit(false);
@@ -147,7 +183,7 @@ export default function ConversationTile({
               <button
                 onClick={(event: SyntheticEvent) => {
                   event.stopPropagation();
-                  setOpen(true);
+                  setOpen(!isOpen);
                 }}
                 className="mr-2 flex w-4 justify-center"
               >
