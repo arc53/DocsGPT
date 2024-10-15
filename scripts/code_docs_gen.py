@@ -1,5 +1,6 @@
 import ast
 import json
+import logging
 from pathlib import Path
 
 import dotenv
@@ -16,6 +17,13 @@ for p in ps:
         data.append(f.read())
     sources.append(p)
 
+def write_to_file(file_path, content, mode='w'):
+    """Write content to a file, creating it if it doesn't exist."""
+    try:
+        with open(file_path, mode) as f:
+            f.write(content)
+    except IOError as e:
+        logging.error(f"Error writing to file {file_path}: {e}")
 
 def get_functions_in_class(node):
     functions = []
@@ -24,9 +32,7 @@ def get_functions_in_class(node):
         if isinstance(child, ast.FunctionDef):
             functions.append(child.name)
             functions_code.append(ast.unparse(child))
-
     return functions, functions_code
-
 
 def get_classes_and_functions(source_code):
     tree = ast.parse(source_code)
@@ -35,11 +41,9 @@ def get_classes_and_functions(source_code):
         if isinstance(node, ast.ClassDef):
             class_name = node.name
             function_name, function = get_functions_in_class(node)
-            # join function name and function code
             functions = dict(zip(function_name, function))
             classes[class_name] = functions
     return classes
-
 
 structure_dict = {}
 c1 = 0
@@ -49,9 +53,11 @@ for code in data:
     structure_dict[source] = classes
     c1 += 1
 
-# save the structure dict as json
-with open('structure_dict.json', 'w') as f:
-    json.dump(structure_dict, f)
+# Save the structure dict as JSON
+try:
+    write_to_file('structure_dict.json', json.dumps(structure_dict), mode='w')
+except Exception as e:
+    logging.error(f"Error saving structure_dict.json: {e}")
 
 if not Path("outputs").exists():
     Path("outputs").mkdir()
@@ -66,15 +72,9 @@ for source, classes in structure_dict.items():
     for class_name, functions in classes.items():
         f2 += 1
         print(f"Processing class {f2}/{f1}")
-        source_w = source.replace("inputs/", "")
-        source_w = source_w.replace(".py", ".txt")
-        if not Path(f"outputs/{source_w}").exists():
-            with open(f"outputs/{source_w}", "w") as f:
-                f.write(f"Class: {class_name}")
-        else:
-            with open(f"outputs/{source_w}", "a") as f:
-                f.write(f"\n\nClass: {class_name}")
-        # append class name to the front
+        source_w = source.replace("inputs/", "").replace(".py", ".txt")
+        write_to_file(f"outputs/{source_w}", f"Class: {class_name}", mode='a')
+
         for function in functions:
             b1 = len(functions)
             b2 = 0
@@ -87,9 +87,4 @@ for source, classes in structure_dict.items():
             llm = OpenAI(temperature=0)
             response = llm(prompt.format(code=functions[function]))
 
-            if not Path(f"outputs/{source_w}").exists():
-                with open(f"outputs/{source_w}", "w") as f:
-                    f.write(f"Function: {functions[function]}, \nDocumentation: {response}")
-            else:
-                with open(f"outputs/{source_w}", "a") as f:
-                    f.write(f"\n\nFunction: {functions[function]}, \nDocumentation: {response}")
+            write_to_file(f"outputs/{source_w}", f"\n\nFunction: {functions[function]}, \nDocumentation: {response}", mode='a')
