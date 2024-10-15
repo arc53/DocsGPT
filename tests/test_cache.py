@@ -27,7 +27,7 @@ def test_gen_cache_key_invalid_message_format():
     assert str(context.exception) == "All messages must be dictionaries."
 
 # Test for gen_cache decorator
-@patch('application.cache.make_redis')  # Mock the Redis client
+@patch('application.cache.get_redis_instance')  # Mock the Redis client
 def test_gen_cache_hit(mock_make_redis):
     # Arrange
     mock_redis_instance = MagicMock()
@@ -50,7 +50,7 @@ def test_gen_cache_hit(mock_make_redis):
     mock_redis_instance.set.assert_not_called()  # Ensure the function result is not cached again
 
 
-@patch('application.cache.make_redis')  # Mock the Redis client
+@patch('application.cache.get_redis_instance')  # Mock the Redis client
 def test_gen_cache_miss(mock_make_redis):
     # Arrange
     mock_redis_instance = MagicMock()
@@ -73,7 +73,7 @@ def test_gen_cache_miss(mock_make_redis):
     assert result == "new_result"
     mock_redis_instance.get.assert_called_once() 
 
-@patch('application.cache.make_redis')  
+@patch('application.cache.get_redis_instance')  
 def test_stream_cache_hit(mock_make_redis):
     # Arrange
     mock_redis_instance = MagicMock()
@@ -98,7 +98,7 @@ def test_stream_cache_hit(mock_make_redis):
     mock_redis_instance.set.assert_not_called()
 
 
-@patch('application.cache.make_redis')
+@patch('application.cache.get_redis_instance')
 def test_stream_cache_miss(mock_make_redis):
     # Arrange
     mock_redis_instance = MagicMock()

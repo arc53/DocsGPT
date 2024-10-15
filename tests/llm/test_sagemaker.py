@@ -52,7 +52,7 @@ class TestSagemakerAPILLM(unittest.TestCase):
         self.response['Body'].read.return_value.decode.return_value = json.dumps(self.result)
         
     def test_gen(self):
-        with patch('application.cache.make_redis') as mock_make_redis:
+        with patch('application.cache.get_redis_instance') as mock_make_redis:
             mock_redis_instance = mock_make_redis.return_value
             mock_redis_instance.get.return_value = None
 
@@ -70,7 +70,7 @@ class TestSagemakerAPILLM(unittest.TestCase):
             mock_redis_instance.set.assert_called_once()
     
     def test_gen_stream(self):
-        with patch('application.cache.make_redis') as mock_make_redis:
+        with patch('application.cache.get_redis_instance') as mock_make_redis:
             mock_redis_instance = mock_make_redis.return_value
             mock_redis_instance.get.return_value = None
 

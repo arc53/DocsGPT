@@ -22,7 +22,7 @@ class TestAnthropicLLM(unittest.TestCase):
         mock_response = Mock()
         mock_response.completion = "test completion"
 
-        with patch("application.cache.make_redis") as mock_make_redis:
+        with patch("application.cache.get_redis_instance") as mock_make_redis:
             mock_redis_instance = mock_make_redis.return_value
             mock_redis_instance.get.return_value = None
             mock_redis_instance.set = Mock()
@@ -47,7 +47,7 @@ class TestAnthropicLLM(unittest.TestCase):
         ]
         mock_responses = [Mock(completion="response_1"), Mock(completion="response_2")]
 
-        with patch("application.cache.make_redis") as mock_make_redis:
+        with patch("application.cache.get_redis_instance") as mock_make_redis:
             mock_redis_instance = mock_make_redis.return_value
             mock_redis_instance.get.return_value = None
             mock_redis_instance.set = Mock()
