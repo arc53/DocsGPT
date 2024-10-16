@@ -7,10 +7,11 @@ import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/trash.svg';
 import DropdownMenu from '../components/DropdownMenu';
-import { Doc, DocumentsProps } from '../models/misc';
+import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
 import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import Input from '../components/Input';
+import Upload from '../upload/Upload'; // Import the Upload component
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -38,6 +39,9 @@ const Documents: React.FC<DocumentsProps> = ({
 
   // State for search input
   const [searchTerm, setSearchTerm] = useState('');
+  // State for modal: active/inactive
+  const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
+  const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
 
   const syncOptions = [
     { label: 'Never', value: 'never' },
@@ -79,7 +83,13 @@ const Documents: React.FC<DocumentsProps> = ({
                 onChange={(e) => setSearchTerm(e.target.value)} // Handle search input change
               />
             </div>
-            <button className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]">
+            <button
+              className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+              onClick={() => {
+                setIsOnboarding(false); // Set onboarding flag if needed
+                setModalState('ACTIVE'); // Open the upload modal
+              }}
+            >
               Add New
             </button>
           </div>
@@ -146,6 +156,14 @@ const Documents: React.FC<DocumentsProps> = ({
             </tbody>
           </table>
         </div>
+        {/* Conditionally render the Upload modal based on modalState */}
+        {modalState === 'ACTIVE' && (
+          <Upload
+            modalState={modalState}
+            setModalState={setModalState}
+            isOnboarding={isOnboarding} // Pass the onboarding flag
+          />
+        )}
       </div>
     </div>
   );
