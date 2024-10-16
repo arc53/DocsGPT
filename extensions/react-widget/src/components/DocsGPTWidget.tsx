@@ -1,14 +1,15 @@
 "use client";
-import React, { useRef } from 'react'
+import React, { useRef, useState } from 'react'
 import DOMPurify from 'dompurify';
-import styled, { keyframes, createGlobalStyle } from 'styled-components';
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
+import styled, { keyframes, createGlobalStyle, ThemeProvider } from 'styled-components';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon, ExternalLinkIcon } from '@radix-ui/react-icons';
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
-import { ThemeProvider } from 'styled-components';
 import Like from "../assets/like.svg"
 import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
+
+
 const themes = {
   dark: {
     bg: '#222327',
@@ -35,6 +36,7 @@ const themes = {
     }
   }
 }
+
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -70,6 +72,7 @@ const GlobalStyles = createGlobalStyle`
   line-break: loose !important;
 }
 `;
+
 const Overlay = styled.div`
   position: fixed;
   top: 0;
@@ -80,6 +83,7 @@ const Overlay = styled.div`
   z-index: 999;
   transition: opacity 0.5s;
 `
+
 const WidgetContainer = styled.div<{ modal: boolean }>`
     display: block;
     position: fixed;
@@ -98,6 +102,7 @@ const WidgetContainer = styled.div<{ modal: boolean }>`
     overflow: auto;
     }
 `;
+
 const StyledContainer = styled.div`
     display: flex;
     position: relative;
@@ -111,6 +116,7 @@ const StyledContainer = styled.div`
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: visibility 0.3s, opacity 0.3s;
 `;
+
 const FloatingButton = styled.div<{ bgcolor: string }>`
     position: fixed;
     display: flex;
@@ -130,6 +136,7 @@ const FloatingButton = styled.div<{ bgcolor: string }>`
         transition: transform 0.2s ease-in-out;
     }
 `;
+
 const CancelButton = styled.button`
     cursor: pointer;
     position: absolute;
@@ -201,6 +208,7 @@ const Conversation = styled.div<{ size: string }>`
     width:${props => props.size === 'large' ? '90vw' : props.size === 'medium' ? '60vw' : '400px'} !important;
     }
 `;
+
 const Feedback = styled.div`
   background-color: transparent;
   font-weight: normal;
@@ -209,6 +217,7 @@ const Feedback = styled.div`
   padding: 6px;
   clear: both;
 `;
+
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     display: block;
     font-size: 16px;
@@ -220,6 +229,7 @@ const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     visibility: visible !important;
   }
 `;
+
 const Message = styled.div<{ type: MESSAGE_TYPE }>`
     background: ${props => props.type === 'QUESTION' ?
     'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
@@ -235,6 +245,7 @@ const Message = styled.div<{ type: MESSAGE_TYPE }>`
     padding: 0.75rem;
     border-radius: 0.375rem;
 `;
+
 const ErrorAlert = styled.div`
   color: #b91c1c;
   border:0.1px solid #b91c1c;
@@ -247,6 +258,7 @@ const ErrorAlert = styled.div`
   border-radius: 0.375rem;
   justify-content: space-evenly;
 `
+
 //dot loading animation
 const dotBounce = keyframes`
   0%, 80%, 100% {
@@ -261,10 +273,12 @@ const DotAnimation = styled.div`
   display: inline-block;
   animation: ${dotBounce} 1s infinite ease-in-out;
 `;
+
 // delay classes as styled components
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
+
 const PromptContainer = styled.form<{ size: string }>`
   background-color: transparent;
   height: ${props => props.size == 'large' ? '60px' : '40px'};
@@ -272,6 +286,7 @@ const PromptContainer = styled.form<{ size: string }>`
   display: flex;
   justify-content: space-evenly;
 `;
+
 const StyledInput = styled.input`
   width: 100%;
   border: 1px solid #686877;
@@ -282,6 +297,7 @@ const StyledInput = styled.input`
   color: ${props => props.theme.text};
   outline: none;
 `;
+
 const StyledButton = styled.button<{ size: string }>`
   display: flex;
   justify-content: center;
@@ -301,6 +317,7 @@ const StyledButton = styled.button<{ size: string }>`
   &:disabled {
     opacity: 60%;
   }`;
+
 const HeroContainer = styled.div`
   position: absolute;
   top: 50%;
@@ -316,6 +333,7 @@ const HeroContainer = styled.div`
   margin: 0 auto;
   padding: 2px;
 `;
+
 const HeroWrapper = styled.div`
   background-color: ${props => props.theme.primary.bg};
   border-radius: 10px; 
@@ -329,10 +347,49 @@ const HeroTitle = styled.h3`
   margin-bottom: 5px;
   padding: 2px;
 `;
+
 const HeroDescription = styled.p`
   color: ${props => props.theme.text};
   font-size: 14px;
   line-height: 1.5;
+`;
+
+const SourcesContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+`;
+
+const SourceBox = styled.div`
+  background-color: ${props => props.theme.secondary.bg};
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const LoadingIndicator = styled.div`
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid ${props => props.theme.secondary.text};
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+  
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 `;
 
 const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
@@ -354,6 +411,7 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
     </>
   );
 };
+
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
   apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
@@ -366,14 +424,15 @@ export const DocsGPTWidget = ({
   theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
-  collectFeedback = true
+  collectFeedback = true,
+  showSources = true
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([])
   const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState<boolean>(false)
-  const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false);
   const isBubbleHovered = useRef<boolean>(false)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
@@ -381,6 +440,7 @@ export const DocsGPTWidget = ({
   const handleUserInterrupt = () => {
     (status === 'loading') && setEventInterrupt(true);
   }
+  
   const scrollToBottom = (element: Element | null) => {
     //recursive function to scroll to the last child of the last child ...
     // to get to the bottom most element
@@ -394,6 +454,7 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
+  
   React.useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
@@ -440,7 +501,6 @@ export const DocsGPTWidget = ({
           conversationId: conversationId,
           onEvent: (event: MessageEvent) => {
             const data = JSON.parse(event.data);
-            // check if the 'end' event has been received
             if (data.type === 'end') {
               setStatus('idle');
             }
@@ -452,6 +512,11 @@ export const DocsGPTWidget = ({
               updatedQueries[updatedQueries.length - 1].error = data.error;
               setQueries(updatedQueries);
               setStatus('idle')
+            }
+            else if (data.type === 'sources') {
+              const updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].sources = data.sources;
+              setQueries(updatedQueries);
             }
             else {
               const result = data.answer;
@@ -468,11 +533,9 @@ export const DocsGPTWidget = ({
       updatedQueries[updatedQueries.length - 1].error = 'Something went wrong !'
       setQueries(updatedQueries);
       setStatus('idle')
-      //setEventInterrupt(false)
     }
-
   }
-  // submit handler
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setEventInterrupt(false);
@@ -480,9 +543,11 @@ export const DocsGPTWidget = ({
     setPrompt('')
     await stream(prompt)
   }
+  
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
+
   return (
     <ThemeProvider theme={themes[theme]}>
       {open && size === 'large' &&
@@ -525,36 +590,51 @@ export const DocsGPTWidget = ({
                       </MessageBubble>
                     }
                     {
-                      query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
-                        <Message
-                          type='ANSWER'
-                          ref={(index === queries.length - 1) ? endMessageRef : null}
-                        >
-                          <div
-                            className="response"
-                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
-                          />
-                        </Message>
-
-                        {collectFeedback &&
-                          <Feedback>
-                            <Like
-                              style={{
-                                stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
-                                visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
-                              }}
-                              fill='none'
-                              onClick={() => handleFeedback("LIKE", index)} />
-                            <Dislike
-                              style={{
-                                stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
-                                visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
-                              }}
-                              fill='none'
-                              onClick={() => handleFeedback("DISLIKE", index)} />
-                          </Feedback>}
-                      </MessageBubble>
-                        : <div>
+                      query.response ? (
+                        <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
+                          {showSources && query.sources && (
+                            <SourcesContainer>
+                              {query.sources.map((source, sourceIndex) => (
+                                <SourceBox 
+                                  key={sourceIndex}
+                                  onClick={() => window.open(source.source, '_blank', 'noopener,noreferrer')}
+                                  title={source.title}
+                                >
+                                  {source.title}
+                                  <ExternalLinkIcon />
+                                </SourceBox>
+                              ))}
+                            </SourcesContainer>
+                          )}
+                          <Message
+                            type='ANSWER'
+                            ref={(index === queries.length - 1) ? endMessageRef : null}
+                          >
+                            <div
+                              className="response"
+                              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
+                            />
+                          </Message>
+                          {collectFeedback &&
+                            <Feedback>
+                              <Like
+                                style={{
+                                  stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
+                                  visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
+                                }}
+                                fill='none'
+                                onClick={() => handleFeedback("LIKE", index)} />
+                              <Dislike
+                                style={{
+                                  stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
+                                  visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
+                                }}
+                                fill='none'
+                                onClick={() => handleFeedback("DISLIKE", index)} />
+                            </Feedback>}
+                        </MessageBubble>
+                      ) : (
+                        <div>
                           {
                             query.error ? <ErrorAlert>
                               <IconWrapper>
@@ -574,10 +654,12 @@ export const DocsGPTWidget = ({
                               </MessageBubble>
                           }
                         </div>
+                      )
                     }
-                  </React.Fragment>)
+                  </React.Fragment>
+                );
               })
-                : <Hero title={heroTitle} description={heroDescription} theme={theme} />
+              : <Hero title={heroTitle} description={heroDescription} theme={theme} />
             }
           </Conversation>
           <PromptContainer
