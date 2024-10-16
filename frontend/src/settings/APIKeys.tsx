@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
@@ -10,10 +10,12 @@ import Input from '../components/Input';
 
 export default function APIKeys() {
   const { t } = useTranslation();
-  const [isCreateModalOpen, setCreateModal] = React.useState(false);
-  const [isSaveKeyModalOpen, setSaveKeyModal] = React.useState(false);
-  const [newKey, setNewKey] = React.useState('');
-  const [apiKeys, setApiKeys] = React.useState<APIKeyData[]>([]);
+  const [isCreateModalOpen, setCreateModal] = useState(false);
+  const [isSaveKeyModalOpen, setSaveKeyModal] = useState(false);
+  const [newKey, setNewKey] = useState('');
+  const [apiKeys, setApiKeys] = useState<APIKeyData[]>([]);
+  const [searchTerm, setSearchTerm] = useState(''); // Added state for search term
+  const [filteredKeys, setFilteredKeys] = useState<APIKeyData[]>([]); // State for filtered API keys
 
   const handleFetchKeys = async () => {
     try {
@@ -23,6 +25,7 @@ export default function APIKeys() {
       }
       const apiKeys = await response.json();
       setApiKeys(apiKeys);
+      setFilteredKeys(apiKeys); // Initialize the filtered keys as the fetched ones
     } catch (error) {
       console.log(error);
     }
@@ -38,8 +41,12 @@ export default function APIKeys() {
         return response.json();
       })
       .then((data) => {
-        data.status === 'ok' &&
+        if (data.status === 'ok') {
           setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
+          setFilteredKeys((previous) =>
+            previous.filter((elem) => elem.id !== id),
+          );
+        }
       })
       .catch((error) => {
         console.error(error);
@@ -63,6 +70,7 @@ export default function APIKeys() {
       })
       .then((data) => {
         setApiKeys([...apiKeys, data]);
+        setFilteredKeys([...apiKeys, data]); // Update filtered keys too
         setCreateModal(false);
         setNewKey(data.key);
         setSaveKeyModal(true);
@@ -73,9 +81,22 @@ export default function APIKeys() {
       });
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     handleFetchKeys();
   }, []);
+
+  // Filter API keys when the search term changes
+  useEffect(() => {
+    setFilteredKeys(
+      apiKeys.filter(
+        (key) =>
+          key.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          key.source?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          key.key.toLowerCase().includes(searchTerm.toLowerCase()),
+      ),
+    );
+  }, [searchTerm, apiKeys]);
+
   return (
     <div className="mt-8">
       <div className="flex flex-col max-w-[876px]">
@@ -84,9 +105,11 @@ export default function APIKeys() {
             <Input
               maxLength={256}
               placeholder="Search..."
-              name="Document-search-input"
+              name="APIkey-search-input"
               type="text"
-              id="document-search-input"
+              id="apikey-search-input"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)} // Update search term
             />
           </div>
           <button
@@ -120,14 +143,14 @@ export default function APIKeys() {
                 </tr>
               </thead>
               <tbody>
-                {!apiKeys?.length && (
+                {!filteredKeys.length && (
                   <tr>
                     <td colSpan={4} className="!p-4">
                       {t('settings.apiKeys.noData')}
                     </td>
                   </tr>
                 )}
-                {apiKeys?.map((element, index) => (
+                {filteredKeys.map((element, index) => (
                   <tr key={index}>
                     <td>{element.name}</td>
                     <td>{element.source}</td>

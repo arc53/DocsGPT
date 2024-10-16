@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
@@ -34,6 +35,10 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
+
+  // State for search input
+  const [searchTerm, setSearchTerm] = useState('');
+
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
@@ -52,6 +57,12 @@ const Documents: React.FC<DocumentsProps> = ({
       })
       .catch((error) => console.error(error));
   };
+
+  // Filter documents based on the search term
+  const filteredDocuments = documents?.filter((document) =>
+    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
@@ -64,9 +75,11 @@ const Documents: React.FC<DocumentsProps> = ({
                 name="Document-search-input"
                 type="text"
                 id="document-search-input"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)} // Handle search input change
               />
             </div>
-            <button className="rounded-full  w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]">
+            <button className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]">
               Add New
             </button>
           </div>
@@ -81,15 +94,15 @@ const Documents: React.FC<DocumentsProps> = ({
               </tr>
             </thead>
             <tbody>
-              {!documents?.length && (
+              {!filteredDocuments?.length && (
                 <tr>
                   <td colSpan={5} className="!p-4">
                     {t('settings.documents.noData')}
                   </td>
                 </tr>
               )}
-              {documents &&
-                documents.map((document, index) => (
+              {filteredDocuments &&
+                filteredDocuments.map((document, index) => (
                   <tr key={index}>
                     <td>{document.name}</td>
                     <td>{document.date}</td>
@@ -105,8 +118,7 @@ const Documents: React.FC<DocumentsProps> = ({
                           <img
                             src={Trash}
                             alt="Delete"
-                            className="h-4 w-4 cursor-pointer opacity-60
-                            hover:opacity-100"
+                            className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
                             id={`img-${index}`}
                             onClick={(event) => {
                               event.stopPropagation();
@@ -138,8 +150,10 @@ const Documents: React.FC<DocumentsProps> = ({
     </div>
   );
 };
+
 Documents.propTypes = {
   documents: PropTypes.array.isRequired,
   handleDeleteDocument: PropTypes.func.isRequired,
 };
+
 export default Documents;
