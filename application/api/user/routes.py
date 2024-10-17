@@ -420,7 +420,10 @@ class TaskStatus(Resource):
             task_meta = task.info
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
+        
+        if isinstance(task_meta, Exception):
+            task_meta = str(task_meta)
+            
         return make_response(jsonify({"status": task.status, "result": task_meta}), 200)
 
 
