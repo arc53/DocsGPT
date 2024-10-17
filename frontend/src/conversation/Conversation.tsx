@@ -5,13 +5,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import ArrowDown from '../assets/arrow-down.svg';
 import Send from '../assets/send.svg';
 import SendDark from '../assets/send_dark.svg';
-import ShareIcon from '../assets/share.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
 import { useDarkTheme, useMediaQuery } from '../hooks';
-import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
@@ -24,6 +22,7 @@ import {
   selectStatus,
   updateQuery,
 } from './conversationSlice';
+import ShareButton from '../components/ShareButton';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -37,7 +36,6 @@ export default function Conversation() {
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
 
@@ -199,30 +197,9 @@ export default function Conversation() {
   return (
     <div className="flex flex-col gap-1 h-full justify-end">
       {conversationId && (
-        <>
-          {' '}
-          <button
-            title="Share"
-            onClick={() => {
-              setShareModalState(true);
-            }}
-            className="absolute top-4 right-20 z-20 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
-          >
-            <img
-              className="m-2 h-5 w-5 filter dark:invert"
-              alt="share"
-              src={ShareIcon}
-            />
-          </button>
-          {isShareModalOpen && (
-            <ShareConversationModal
-              close={() => {
-                setShareModalState(false);
-              }}
-              conversationId={conversationId}
-            />
-          )}
-        </>
+        <div className="hidden md:block">
+          <ShareButton conversationId={conversationId} />
+        </div>
       )}
       <div
         ref={conversationRef}
