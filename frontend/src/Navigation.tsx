@@ -41,6 +41,7 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from './preferences/preferenceSlice';
+import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
 
 interface NavigationProps {
@@ -64,6 +65,7 @@ NavImage.propTypes = {
 }; */
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
+  const queries = useSelector(selectQueries);
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
@@ -221,14 +223,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 } m-auto transition-all duration-200`}
               />
             </button>
-            <img
-              src={openNewChat}
-              alt="open new chat icon"
-              className="cursor-pointer"
-              onClick={() => {
-                newChat();
-              }}
-            />
+            {queries?.length > 0 && (
+              <button
+                onClick={() => {
+                  newChat();
+                }}
+              >
+                <img
+                  src={openNewChat}
+                  alt="open new chat icon"
+                  className="cursor-pointer"
+                />
+              </button>
+            )}
             <div className="text-[#949494] font-medium text-[20px]">
               DocsGPT
             </div>
