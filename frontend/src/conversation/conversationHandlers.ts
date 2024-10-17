@@ -38,9 +38,11 @@ export function handleFetchAnswer(
     prompt_id: promptId,
     chunks: chunks,
     token_limit: token_limit,
+    isNoneDoc: selectedDocs === null,
   };
-  if (selectedDocs && 'id' in selectedDocs)
+  if (selectedDocs && 'id' in selectedDocs) {
     payload.active_docs = selectedDocs.id as string;
+  }
   payload.retriever = selectedDocs?.retriever as string;
   return conversationService
     .answer(payload, signal)
@@ -84,26 +86,16 @@ export function handleFetchAnswerSteaming(
     prompt_id: promptId,
     chunks: chunks,
     token_limit: token_limit,
+    isNoneDoc: selectedDocs === null,
   };
-  if (selectedDocs && 'id' in selectedDocs)
+  if (selectedDocs && 'id' in selectedDocs) {
     payload.active_docs = selectedDocs.id as string;
+  }
   payload.retriever = selectedDocs?.retriever as string;
 
   return new Promise<Answer>((resolve, reject) => {
     conversationService
-      .answerStream(
-        {
-          question: question,
-          active_docs: selectedDocs?.id as string,
-          history: JSON.stringify(history),
-          conversation_id: conversationId,
-          prompt_id: promptId,
-          chunks: chunks,
-          token_limit: token_limit,
-          isNoneDoc: selectedDocs === null,
-        },
-        signal,
-      )
+      .answerStream(payload, signal)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -169,20 +161,13 @@ export function handleSearch(
     conversation_id: conversation_id,
     chunks: chunks,
     token_limit: token_limit,
+    isNoneDoc: selectedDocs === null,
   };
   if (selectedDocs && 'id' in selectedDocs)
     payload.active_docs = selectedDocs.id as string;
   payload.retriever = selectedDocs?.retriever as string;
   return conversationService
-    .search({
-      question: question,
-      active_docs: selectedDocs?.id as string,
-      conversation_id,
-      history,
-      chunks: chunks,
-      token_limit: token_limit,
-      isNoneDoc: selectedDocs === null,
-    })
+    .search(payload)
     .then((response) => response.json())
     .then((data) => {
       return data;
