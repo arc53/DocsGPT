@@ -1,56 +1,49 @@
 # Welcome to DocsGPT Contributing Guidelines
 
-Thank you for choosing to contribute to DocsGPT! We are all very grateful! 
+Thank you for choosing to contribute to DocsGPT! We are very grateful for your support! 
 
-# We accept different types of contributions
+# We Accept Different Types of Contributions
 
 📣 **Discussions** - Engage in conversations, start new topics, or help answer questions.
 
-🐞 **Issues** - This is where we keep track of tasks. It could be bugs, fixes or suggestions for new features.
+🐞 **Issues** - This is where we keep track of tasks. It could be bugs, fixes, or suggestions for new features.
 
-🛠️ **Pull requests** - Suggest changes to our repository, either by working on existing issues or adding new features.
+🛠️ **Pull Requests** - Suggest changes to our repository, either by working on existing issues or adding new features.
 
 📚 **Wiki** - This is where our documentation resides.
 
-
-## 🐞 Issues and Pull requests
+## 🐞 Issues and Pull Requests
 
 - We value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
 
-
 - If you're interested in contributing code, here are some important things to know:
+  - We have a frontend built on React (Vite) and a backend in Python.
 
-- We have a frontend built on React (Vite) and a backend in Python.
+Before creating issues, please check out how the latest version of our app looks and works by launching it via [Quickstart](https://github.com/arc53/DocsGPT#quickstart). The version on our live demo has slight modifications for login functionality. Your issues should relate to the version you can launch via [Quickstart](https://github.com/arc53/DocsGPT#quickstart).
 
-  
-Before creating issues, please check out how the latest version of our app looks and works by launching it via [Quickstart](https://github.com/arc53/DocsGPT#quickstart) the version on our live demo is slightly modified with login. Your issues should relate to the version you can launch via [Quickstart](https://github.com/arc53/DocsGPT#quickstart).
+### 👨‍💻 If You're Interested in Contributing Code, Here Are Some Important Things to Know:
 
-### 👨‍💻 If you're interested in contributing code, here are some important things to know:
-
-
-Tech Stack Overview:
-
-- 🌐 Frontend: Built with React (Vite) ⚛️,
-
+**Tech Stack Overview:**
+- 🌐 Frontend: Built with React (Vite) ⚛️
 - 🖥 Backend: Developed in Python 🐍
 
-### 🌐 If you are looking to contribute to frontend (⚛️React, Vite):
+### 🌐 If You Are Looking to Contribute to Frontend (⚛️ React, Vite):
 
-- The current frontend is being migrated from [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) to [`/frontend`](https://github.com/arc53/DocsGPT/tree/main/frontend) with a new design, so please contribute to the new one.
+- The current frontend is being migrated from [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) to [`/frontend`](https://github.com/arc53/DocsGPT/tree/main/frontend) with a new design, so please contribute to the new frontend repository.
 - Check out this [milestone](https://github.com/arc53/DocsGPT/milestone/1) and its issues.
 - The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).
 
-Please try to follow the guidelines.
+We encourage you to follow these guidelines.
 
-### 🖥 If you are looking to contribute to Backend (🐍 Python):
+### 🖥 If You Are Looking to Contribute to Backend (🐍 Python):
 
-- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) or [`/scripts`](https://github.com/arc53/DocsGPT/tree/main/scripts) (please disregard old [`ingest_rst.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst.py) [`ingest_rst_sphinx.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst_sphinx.py) files; these will be deprecated soon).
-- All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
+- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) or [`/scripts`](https://github.com/arc53/DocsGPT/tree/main/scripts) (and please disregard old [`ingest_rst.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst.py) and [`ingest_rst_sphinx.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst_sphinx.py); these old files will be deprecated soon).
+- All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under the [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
 - Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
-  
+
 ### Testing
 
-To run unit tests from the root of the repository, execute:
+To run unit tests from the root of the repository, run the following command:
 ```
 python -m pytest
 ```
@@ -64,12 +57,12 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
 
 2. **Clone the Forked Repository:**
    - Clone the repository using:
-      ``` shell
+      ```shell
       git clone https://github.com/<your-github-username>/DocsGPT.git
       ```
 
-3. **Keep your Fork in Sync:**
-   - Before you make any changes, make sure that your fork is in sync to avoid merge conflicts using:
+3. **Keep Your Fork in Sync:**
+   - Before making any changes, ensure your fork is in sync to avoid merge conflicts by running:
      ```shell
      git remote add upstream https://github.com/arc53/DocsGPT.git
      git pull upstream main
@@ -103,27 +96,23 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
      ```
 
 9. **Submit a Pull Request (PR):**
-   - Create a Pull Request from your branch to the main repository. Make sure to include a detailed description of your changes and reference any related issues.
+   - Create a Pull Request from your branch to the main repository. Be sure to include a detailed description of your changes and reference any related issues.
 
 10. **Collaborate:**
-   - Be responsive to comments and feedback on your PR.
-   - Make necessary updates as suggested.
-   - Once your PR is approved, it will be merged into the main repository.
+    - Be responsive to comments and feedback on your PR.
+    - Make necessary updates as suggested.
+    - Once your PR is approved, it will be merged into the main repository.
 
 11. **Testing:**
-   - Before submitting a Pull Request, ensure your code passes all unit tests.
-   - To run unit tests from the root of the repository, execute:
-     ```shell
-     python -m pytest
-     ```
+    - Before submitting a Pull Request, ensure your code passes all unit tests.
+    - To run unit tests from the root of the repository, execute:
+      ```shell
+      python -m pytest
+      ```
 
-*Note: You should run the unit test only after making the changes to the backend code.*
+*Note: You should run the unit test only after making changes to the backend code.*
 
 12. **Questions and Collaboration:**
-    - Feel free to join our Discord. We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
+    - Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
 
 Thank you for considering contributing to DocsGPT! 🙏
-
-## Questions/collaboration
-Feel free to join our [Discord](https://discord.gg/n5BX8dh8rU). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
-# Thank you so much for considering to contributing DocsGPT!🙏
