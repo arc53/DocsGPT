@@ -5,7 +5,6 @@ import newChatIcon from '../assets/openNewChat.svg';
 import ArrowDown from '../assets/arrow-down.svg';
 import Send from '../assets/send.svg';
 import SendDark from '../assets/send_dark.svg';
-import ShareIcon from '../assets/share.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
@@ -19,6 +18,7 @@ import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
+import ShareIcon from '../assets/share.svg';
 import {
   addQuery,
   fetchAnswer,

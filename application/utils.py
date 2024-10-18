@@ -1,5 +1,7 @@
 import tiktoken
+import hashlib
 from flask import jsonify, make_response
+
 
 _encoding = None
 
@@ -39,3 +41,8 @@ def check_required_fields(data, required_fields):
             400,
         )
     return None
+
+
+def get_hash(data):
+    return hashlib.md5(data.encode()).hexdigest()
+
