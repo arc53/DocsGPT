@@ -1,13 +1,13 @@
 import os
 import datetime
 from flask import Blueprint, request, send_from_directory
-from pymongo import MongoClient
+from core.mongo_db import MongoDB
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
 
 from application.core.settings import settings
 
-mongo = MongoClient(settings.MONGO_URI)
+mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
