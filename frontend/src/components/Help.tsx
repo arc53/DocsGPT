@@ -38,7 +38,7 @@ const Help = () => {
         onClick={toggleDropdown}
         className="my-auto mx-4 w-full flex items-center h-9 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
       >
-        <img src={Info} alt="info" className="ml-1 w-5 filter dark:invert" />
+        <img src={Info} alt="info" className="ml-2 w-5 filter dark:invert" />
         {t('help')}
       </button>
       {isOpen && (
