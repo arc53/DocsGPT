@@ -27,10 +27,8 @@ class GitHubLoader(BaseRemote):
                         decoded_content = base64.b64decode(content["content"]).decode("utf-8")
                         return f"Filename: {file_path}\n\n{decoded_content}"
                     except Exception as e:
-                        # print(f"Error decoding content for {file_path}: {e}")
-                        raise
+                        raise e
                 else:
-                    # print(f"Skipping binary file: {file_path} (MIME type: {mime_type})")
                     return f"Filename: {file_path} is a binary file and was skipped."
             else:
                 return f"Filename: {file_path}\n\n{content['content']}"
