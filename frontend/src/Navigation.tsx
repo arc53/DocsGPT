@@ -42,7 +42,9 @@ import {
 } from './preferences/preferenceSlice';
 import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
+import ShareButton from './components/ShareButton';
 import Help from './components/Help';
+
 
 interface NavigationProps {
   navOpen: boolean;
