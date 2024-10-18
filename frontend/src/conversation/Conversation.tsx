@@ -49,6 +49,9 @@ export default function Conversation() {
   };
   useEffect(() => {
     !eventInterrupt && scrollIntoView();
+    if (queries.length == 0) {
+      resetConversation();
+    }
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
@@ -132,8 +135,7 @@ export default function Conversation() {
     );
   };
   const newChat = () => {
-    resetConversation();
-    navigate('/');
+    if (queries && queries.length > 0) resetConversation();
   };
 
   const prepResponseView = (query: Query, index: number) => {
@@ -213,11 +215,11 @@ export default function Conversation() {
   }, []);
   return (
     <div className="flex flex-col gap-1 h-full justify-end ">
-      {conversationId && (
+      {conversationId && queries.length > 0 && (
         <div className="absolute top-4 right-20 z-20 ">
           {' '}
           <div className="flex items-center gap-4 ">
-            {isMobile && (
+            {isMobile && queries.length > 0 && (
               <button
                 title="Open New Chat"
                 onClick={() => {
@@ -227,7 +229,7 @@ export default function Conversation() {
               >
                 <img
                   className=" h-5 w-5 filter dark:invert "
-                  alt="share"
+                  alt="NewChat"
                   src={newChatIcon}
                 />
               </button>

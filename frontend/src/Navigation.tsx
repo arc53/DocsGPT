@@ -96,6 +96,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (!conversations) {
       fetchConversations();
     }
+    if (queries.length === 0) {
+      resetConversation();
+    }
   }, [conversations, dispatch]);
 
   async function fetchConversations() {
@@ -168,9 +171,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     );
   };
   const newChat = () => {
-    if (conversations && conversations?.length > 0) {
+    if (queries && queries?.length > 0) {
       resetConversation();
-      navigate('/');
     }
   };
   async function updateConversationName(updatedConversation: {
