@@ -939,7 +939,7 @@ class ShareConversation(Resource):
                     "conversation_id": DBRef(
                         "conversations", ObjectId(conversation_id)
                     ),
-                    "isPromptable": not is_promptable,
+                    "isPromptable": is_promptable,
                     "first_n_queries": current_n_queries,
                     "user": user,
                 }
@@ -962,7 +962,7 @@ class ShareConversation(Resource):
                             "$ref": "conversations",
                             "$id": ObjectId(conversation_id),
                         },
-                        "isPromptable": not is_promptable,
+                        "isPromptable": is_promptable,
                         "first_n_queries": current_n_queries,
                         "user": user,
                     }
