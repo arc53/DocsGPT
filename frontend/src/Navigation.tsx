@@ -37,10 +37,11 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from './preferences/preferenceSlice';
+import Spinner from './assets/spinner.svg';
+import SpinnerDark from './assets/spinner-dark.svg';
 import Upload from './upload/Upload';
 import ShareButton from './components/ShareButton';
 import Help from './components/Help';
-
 
 interface NavigationProps {
   navOpen: boolean;
@@ -89,18 +90,20 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!conversations) {
+    if (!conversations?.data) {
       fetchConversations();
     }
-  }, [conversations, dispatch]);
+  }, [conversations?.data, dispatch]);
 
   async function fetchConversations() {
+    dispatch(setConversations({ data: null, loading: true }));
     return await getConversations()
       .then((fetchedConversations) => {
         dispatch(setConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
+        dispatch(setConversations({ data: null, loading: false }));
       });
   }
 
@@ -196,6 +199,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!isMobile);
   }, [isMobile]);
   useDefaultDocument();
+
   return (
     <>
       {!navOpen && (
@@ -278,13 +282,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           id="conversationsMainDiv"
           className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
         >
-          {conversations && conversations.length > 0 ? (
+          {conversations?.loading && (
+            <div className="my-auto mx-4 mt-2 flex h-6 items-center justify-center">
+              <img
+                src={isDarkTheme ? SpinnerDark : Spinner}
+                className="relative animate-spin cursor-pointer self-end bg-transparent"
+              ></img>
+            </div>
+          )}
+
+          {conversations?.data && conversations.data.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
-                {conversations?.map((conversation) => (
+                {conversations.data?.map((conversation) => (
                   <ConversationTile
                     key={conversation.id}
                     conversation={conversation}
