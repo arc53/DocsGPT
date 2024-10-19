@@ -39,9 +39,10 @@ RUN python3.11 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 # Install Python packages
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir tiktoken && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install uv && \
+    uv pip install --no-cache-dir --upgrade pip && \
+    uv pip install --no-cache-dir tiktoken && \
+    uv pip install --no-cache-dir -r requirements.txt
 
 # Final Stage
 FROM ubuntu:24.04 as final
