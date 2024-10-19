@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DEFAULT_MAX_HISTORY: int = 150
     MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
-    VECTOR_STORE: str = "faiss"  # "faiss" or "elasticsearch" or "qdrant" or "milvus"
+    VECTOR_STORE: str = "faiss" #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
 
     # LLM Cache
@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     MILVUS_URI: Optional[str] = "./milvus_local.db"   # milvus lite version as default
     MILVUS_TOKEN: Optional[str] = ""
 
+    # LanceDB vectorstore config
+    LANCEDB_PATH: str = "/tmp/lancedb"  # Path where LanceDB stores its local data
+    LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
