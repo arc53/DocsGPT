@@ -89,7 +89,7 @@ export default function General() {
     changeLanguage(selectedLanguage?.value);
   }, [selectedLanguage, changeLanguage]);
   return (
-    <div className="mt-[59px]">
+    <div className="mt-12">
       <div className="mb-5">
         <p className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}

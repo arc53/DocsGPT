@@ -1,7 +1,8 @@
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Doc, getDocs } from '../preferences/preferenceApi';
+import { getDocs } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import {
   selectSelectedDocs,
   setSelectedDocs,

@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --viewport-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --viewport-height: 100dvh; /* Use dvh where supported */
+  }
+}
+
 body.dark {
   background-color: #202124; /* raisin-black */
 }
@@ -37,6 +47,28 @@ body.dark {
   }
 }
 
+@layer components {
+  .table-default {
+    @apply block w-max table-auto content-center justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray;
+  }
+
+  .table-default th {
+    @apply border-r border-silver dark:border-silver/40 p-4 w-[244px];
+  }
+
+  .table-default th:last-child {
+    @apply w-[auto] border-r-0;
+  }
+
+  .table-default td {
+    @apply border-r border-t border-silver dark:border-silver/40 px-4 py-2;
+  }
+
+  .table-default td:last-child {
+    @apply border-r-0;
+  }
+}
+
 /*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
 
 /* Document
@@ -63,11 +95,21 @@ html {
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: var(--viewport-height);
   overflow-x: hidden;
   font-family: 'Inter', sans-serif;
 }
-
+/*
+Avoid over-scrolling in mobile browsers
+*/
+@media only screen and (max-width: 500px) {
+  body,
+  html {
+    min-height: var(--viewport-height);
+    position: fixed;
+    width: 100%;
+  }
+}
 /**
  * Render the `main` element consistently in IE.
  */
@@ -420,8 +462,34 @@ template {
   src: url('/fonts/Inter-Variable.ttf');
 }
 
+@font-face {
+  font-family: 'IBMPlexMono-Medium';
+  font-weight: 500;
+  src: url('/fonts/IBMPlexMono-Medium.ttf');
+}
+
 ::-webkit-scrollbar {
-  width: 0;
+  width: 10;
+}
+
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 50px white inset;
+}
+
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 50px white inset;
+}
+
+@media (prefers-color-scheme: dark) {
+  input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
+    -webkit-text-fill-color: white;
+  }
+
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
+    -webkit-text-fill-color: white;
+  }
 }
 
 .inputbox-style {
@@ -440,4 +508,8 @@ template {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   text-overflow: ellipsis;
+}
+
+.logs-table {
+  font-family: 'IBMPlexMono-Medium', system-ui;
 }

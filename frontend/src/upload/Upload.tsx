@@ -1,25 +1,36 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import Exit from '../assets/exit.svg';
+import ArrowLeft from '../assets/arrow-left.svg';
+import FileUpload from '../assets/file_upload.svg';
+import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
-import { ActiveState } from '../models/misc';
+import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
-import { setSelectedDocs, setSourceDocs } from '../preferences/preferenceSlice';
+import {
+  setSelectedDocs,
+  setSourceDocs,
+  selectSourceDocs,
+} from '../preferences/preferenceSlice';
 
 function Upload({
   modalState,
   setModalState,
+  isOnboarding,
 }: {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
+  isOnboarding: boolean;
 }) {
   const [docName, setDocName] = useState('');
   const [urlName, setUrlName] = useState('');
   const [url, setUrl] = useState('');
+  const [repoUrl, setRepoUrl] = useState(''); // P3f93
   const [redditData, setRedditData] = useState({
     client_id: '',
     client_secret: '',
@@ -27,7 +38,7 @@ function Upload({
     search_queries: [''],
     number_posts: 10,
   });
-  const [activeTab, setActiveTab] = useState<string>('file');
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [files, setfiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<{
     type: 'UPLOAD' | 'TRAINING';
@@ -44,13 +55,15 @@ function Upload({
     // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' },
     { label: 'Reddit', value: 'reddit' },
+    { label: 'GitHub', value: 'github' }, // P3f93
   ];
 
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: 'Link',
-    value: 'url',
+    label: 'Crawler',
+    value: 'crawler',
   });
 
+  const sourceDocs = useSelector(selectSourceDocs);
   useEffect(() => {
     if (setTimeoutRef.current) {
       clearTimeout(setTimeoutRef.current);
@@ -59,18 +72,24 @@ function Upload({
 
   function ProgressBar({ progressPercent }: { progressPercent: number }) {
     return (
-      <div className="my-5 w-[50%]">
-        <div
-          className={`h-8 overflow-hidden rounded-xl border border-purple-30 text-xs text-bright-gray outline-none `}
-        >
+      <div className="flex items-center justify-center h-full w-full my-8">
+        <div className="relative w-32 h-32 rounded-full">
+          <div className="absolute inset-0 rounded-full shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset] dark:shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset]"></div>
           <div
-            className={`h-full border-none text-xl w-${
-              progress || 0
-            }%  flex items-center justify-center bg-purple-30 outline-none transition-all`}
-            style={{ width: `${progressPercent || 0}%` }}
-          >
-            {progressPercent >= 5 && `${progressPercent}%`}
+            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'shadow-xl shadow-lime-300/50 dark:shadow-lime-300/50 bg-gradient-to-r from-white to-gray-400 dark:bg-gradient-to-br dark:from-gray-500 dark:to-gray-300' : 'shadow-[0_2px_0_#FF3D00_inset] dark:shadow-[0_2px_0_#FF3D00_inset]'}`}
+            style={{
+              animation: `${progressPercent === 100 ? 'none' : 'rotate 2s linear infinite'}`,
+            }}
+          ></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-2xl font-bold">{progressPercent}%</span>
           </div>
+          <style>
+            {`@keyframes rotate {
+                0% { transform: rotate(0deg); }
+                100%{ transform: rotate(360deg); }
+              }`}
+          </style>
         </div>
       </div>
     );
@@ -80,20 +99,47 @@ function Upload({
     title,
     isCancellable = false,
     isFailed = false,
+    isTraining = false,
   }: {
     title: string;
     isCancellable?: boolean;
     isFailed?: boolean;
+    isTraining?: boolean;
   }) {
     return (
       <div className="mt-5 flex flex-col items-center gap-2 text-gray-2000 dark:text-bright-gray">
-        <p className="text-gra text-xl tracking-[0.15px]">{title}...</p>
+        <p className="text-gra text-xl tracking-[0.15px]">
+          {isTraining &&
+            (progress?.percentage === 100 ? 'Training completed' : title)}
+          {!isTraining && title}
+        </p>
         <p className="text-sm">This may take several minutes</p>
         <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
           Over the token limit, please consider uploading smaller document
         </p>
         {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
-        <ProgressBar progressPercent={progress?.percentage as number} />
+        <ProgressBar progressPercent={progress?.percentage || 0} />
+        {isTraining &&
+          (progress?.percentage === 100 ? (
+            <button
+              onClick={() => {
+                setDocName('');
+                setfiles([]);
+                setProgress(undefined);
+                setModalState('INACTIVE');
+              }}
+              className="cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D1] text-white hover:bg-[#6F3FD1] shadow-lg"
+            >
+              {t('modals.uploadDoc.start')}
+            </button>
+          ) : (
+            <button
+              className="ml-2 cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D14D] text-white shadow-lg"
+              disabled
+            >
+              {t('modals.uploadDoc.wait')}
+            </button>
+          ))}
       </div>
     );
   }
@@ -120,7 +166,7 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.location.toLowerCase() === 'local'),
+                        data?.find((d) => d.type?.toLowerCase() === 'local'),
                       ),
                     );
                   });
@@ -135,11 +181,16 @@ function Upload({
                 } else {
                   getDocs().then((data) => {
                     dispatch(setSourceDocs(data));
-                    dispatch(
-                      setSelectedDocs(
-                        data?.find((d) => d.location.toLowerCase() === 'local'),
-                      ),
+                    const docIds = new Set(
+                      sourceDocs?.map((doc: Doc) => (doc.id ? doc.id : null)),
                     );
+                    data?.map((updatedDoc: Doc) => {
+                      if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
+                        //select the doc not present in the intersection of current Docs and fetched data
+                        dispatch(setSelectedDocs(updatedDoc));
+                        return;
+                      }
+                    });
                   });
                   setProgress(
                     (progress) =>
@@ -179,6 +230,7 @@ function Upload({
         title="Training is in progress"
         isCancellable={progress?.percentage === 100}
         isFailed={progress?.failed === true}
+        isTraining={true}
       ></Progress>
     );
   }
@@ -228,6 +280,9 @@ function Upload({
       formData.set('name', 'other');
       formData.set('data', JSON.stringify(redditData));
     }
+    if (urlType.value === 'github') {
+      formData.append('repo_url', repoUrl); // Pdeac
+    }
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (event) => {
@@ -260,6 +315,9 @@ function Upload({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
       'text/csv': ['.csv'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
     },
   });
 
@@ -275,7 +333,7 @@ function Upload({
     } else
       setRedditData({
         ...redditData,
-        [name]: value,
+        [name]: name === 'number_posts' ? parseInt(value) : value,
       });
   };
 
@@ -287,32 +345,39 @@ function Upload({
     view = <TrainingProgress></TrainingProgress>;
   } else {
     view = (
-      <>
-        <p className="text-xl text-jet dark:text-bright-gray">
+      <div className="flex flex-col gap-4 w-full">
+        <p className="text-xl text-jet dark:text-bright-gray text-center font-semibold">
           {t('modals.uploadDoc.label')}
         </p>
-        <div>
-          <button
-            onClick={() => setActiveTab('file')}
-            className={`${
-              activeTab === 'file'
-                ? 'bg-soap text-purple-30 dark:bg-independence dark:text-purple-400'
-                : 'text-sonic-silver  hover:text-purple-30'
-            } mr-4 rounded-full px-[20px] py-[5px] text-sm font-semibold`}
-          >
-            {t('modals.uploadDoc.file')}
-          </button>
-          <button
-            onClick={() => setActiveTab('remote')}
-            className={`${
-              activeTab === 'remote'
-                ? 'bg-soap text-purple-30 dark:bg-independence dark:text-purple-400'
-                : 'text-sonic-silver  hover:text-purple-30'
-            } mr-4 rounded-full px-[20px] py-[5px] text-sm font-semibold`}
-          >
-            {t('modals.uploadDoc.remote')}
-          </button>
-        </div>
+        {!activeTab && (
+          <div>
+            <p className="text-gray-6000 dark:text-light-gray text-sm text-center">
+              {t('modals.uploadDoc.select')}
+            </p>
+            <div className="w-full gap-4 h-full p-4 flex flex-col md:flex-row md:gap-4 justify-center items-center">
+              <button
+                onClick={() => setActiveTab('file')}
+                className="rounded-3xl text-md font-medium border flex flex-col items-center justify-center hover:shadow-lg dark:hover:shadow-lg p-8 dark:active:shadow-lg gap-4 bg-white dark:bg-outer-space dark:text-light-gray hover:bg-gray-100 dark:hover:bg-[#767183]/50 hover:text-purple-30 dark:hover:text-gray-30 border-purple-30 dark:border-gray-700 h-40 w-40 md:w-52 md:h-52"
+              >
+                <img
+                  src={FileUpload}
+                  className="w-8 h-8 mr-2 dark:filter dark:invert"
+                />
+                {t('modals.uploadDoc.file')}
+              </button>
+              <button
+                onClick={() => setActiveTab('remote')}
+                className="rounded-3xl text-md font-medium border flex flex-col items-center justify-center hover:shadow-lg dark:hover:shadow-lg p-8 dark:active:shadow-lg gap-4 bg-white dark:bg-outer-space dark:text-light-gray hover:bg-gray-100 dark:hover:bg-[#767183]/50 hover:text-purple-30 dark:hover:text-gray-30 border-purple-30 dark:border-gray-700 h-40 w-40 md:w-52 md:h-52"
+              >
+                <img
+                  src={WebsiteCollect}
+                  className="w-8 h-8 mr-2 dark:filter dark:invert"
+                />
+                {t('modals.uploadDoc.remote')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeTab === 'file' && (
           <>
@@ -321,6 +386,7 @@ function Upload({
               colorVariant="gray"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
+              borderVariant="thin"
             ></Input>
             <div className="relative bottom-12 left-2 mt-[-20px]">
               <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
@@ -356,6 +422,7 @@ function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
+              border="border"
               options={urlOptions}
               selectedValue={urlType}
               onSelect={(value: { label: string; value: string }) =>
@@ -364,13 +431,14 @@ function Upload({
               size="w-full"
               rounded="3xl"
             />
-            {urlType.label !== 'Reddit' ? (
+            {urlType.label !== 'Reddit' && urlType.label !== 'GitHub' ? (
               <>
                 <Input
                   placeholder={`Enter ${t('modals.uploadDoc.name')}`}
                   type="text"
                   value={urlName}
                   onChange={(e) => setUrlName(e.target.value)}
+                  borderVariant="thin"
                 ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
@@ -382,6 +450,7 @@ function Upload({
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
+                  borderVariant="thin"
                 ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
@@ -389,109 +458,156 @@ function Upload({
                   </span>
                 </div>
               </>
-            ) : (
+            ) : urlType.label === 'GitHub' ? ( // P3f93
               <>
                 <Input
-                  placeholder="Enter client ID"
+                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
                   type="text"
-                  name="client_id"
-                  value={redditData.client_id}
-                  onChange={handleChange}
+                  value={urlName}
+                  onChange={(e) => setUrlName(e.target.value)}
+                  borderVariant="thin"
                 ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.id')}
+                    {t('modals.uploadDoc.name')}
                   </span>
                 </div>
                 <Input
-                  placeholder="Enter client secret"
+                  placeholder={t('modals.uploadDoc.repoUrl')}
                   type="text"
-                  name="client_secret"
-                  value={redditData.client_secret}
-                  onChange={handleChange}
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  borderVariant="thin"
                 ></Input>
                 <div className="relative bottom-12 left-2 mt-[-20px]">
                   <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.secret')}
-                  </span>
-                </div>
-                <Input
-                  placeholder="Enter user agent"
-                  type="text"
-                  name="user_agent"
-                  value={redditData.user_agent}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.agent')}
-                  </span>
-                </div>
-                <Input
-                  placeholder="Enter search queries"
-                  type="text"
-                  name="search_queries"
-                  value={redditData.search_queries}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.searchQueries')}
-                  </span>
-                </div>
-                <Input
-                  placeholder="Enter number of posts"
-                  type="number"
-                  name="number_posts"
-                  value={redditData.number_posts}
-                  onChange={handleChange}
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.reddit.numberOfPosts')}
+                    {t('modals.uploadDoc.repoUrl')}
                   </span>
                 </div>
               </>
+            ) : (
+              <div className="flex flex-col gap-1 mt-2">
+                <div>
+                  <Input
+                    placeholder="Enter client ID"
+                    type="text"
+                    name="client_id"
+                    value={redditData.client_id}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.id')}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Input
+                    placeholder="Enter client secret"
+                    type="text"
+                    name="client_secret"
+                    value={redditData.client_secret}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.secret')}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Input
+                    placeholder="Enter user agent"
+                    type="text"
+                    name="user_agent"
+                    value={redditData.user_agent}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.agent')}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Input
+                    placeholder="Enter search queries"
+                    type="text"
+                    name="search_queries"
+                    value={redditData.search_queries}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.searchQueries')}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Input
+                    placeholder="Enter number of posts"
+                    type="number"
+                    name="number_posts"
+                    value={redditData.number_posts}
+                    onChange={handleChange}
+                    borderVariant="thin"
+                  ></Input>
+                  <div className="relative bottom-[52px] left-2">
+                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+                      {t('modals.uploadDoc.reddit.numberOfPosts')}
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
           </>
         )}
-
-        <div className="flex flex-row-reverse">
-          {activeTab === 'file' ? (
+        {activeTab && (
+          <div className="flex w-full justify-between flex-row-reverse">
+            {activeTab === 'file' ? (
+              <button
+                onClick={uploadFile}
+                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 text-sm text-white ${
+                  files.length > 0 && docName.trim().length > 0
+                    ? 'hover:bg-[#6F3FD1]'
+                    : 'bg-opacity-75 text-opacity-80'
+                } py-2 px-6`}
+                disabled={
+                  (files.length === 0 || docName.trim().length === 0) &&
+                  activeTab === 'file'
+                }
+              >
+                {t('modals.uploadDoc.train')}
+              </button>
+            ) : (
+              <button
+                onClick={uploadRemote}
+                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1]`}
+              >
+                {t('modals.uploadDoc.train')}
+              </button>
+            )}
             <button
-              onClick={uploadFile}
-              className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 text-sm text-white ${
-                files.length > 0 && docName.trim().length > 0
-                  ? 'hover:bg-[#6F3FD1]'
-                  : 'bg-opacity-75 text-opacity-80'
-              } py-2 px-6`}
-              disabled={
-                (files.length === 0 || docName.trim().length === 0) &&
-                activeTab === 'file'
-              }
+              onClick={() => {
+                setDocName('');
+                setfiles([]);
+                setActiveTab(null);
+              }}
+              className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50 flex items-center gap-1"
             >
-              {t('modals.uploadDoc.train')}
+              <img
+                src={ArrowLeft}
+                className="w-[10px] h-[10px] dark:filter dark:invert"
+              />
+              {t('modals.uploadDoc.back')}
             </button>
-          ) : (
-            <button
-              onClick={uploadRemote}
-              className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1]`}
-            >
-              {t('modals.uploadDoc.train')}
-            </button>
-          )}
-          <button
-            onClick={() => {
-              setDocName('');
-              setfiles([]);
-              setModalState('INACTIVE');
-            }}
-            className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
-          >
-            {t('modals.uploadDoc.cancel')}
-          </button>
-        </div>
-      </>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -499,9 +615,22 @@ function Upload({
     <article
       className={`${
         modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } absolute z-30  h-screen w-screen  bg-gray-alpha`}
+      } absolute z-30 bg-gray-alpha flex items-center justify-center h-[calc(100vh-4rem)] md:h-screen w-full`}
     >
-      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg dark:bg-outer-space">
+      <article className="relative mx-auto flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg dark:bg-outer-space h-fit-content">
+        {!isOnboarding && !progress && (
+          <button
+            className="absolute top-4 right-4 m-1 w-3"
+            onClick={() => {
+              setDocName('');
+              setfiles([]);
+              setModalState('INACTIVE');
+              setActiveTab(null);
+            }}
+          >
+            <img className="filter dark:invert" src={Exit} />
+          </button>
+        )}
         {view}
       </article>
     </article>

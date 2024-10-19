@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
-
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Add from './assets/add.svg';
@@ -10,8 +9,6 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Hamburger from './assets/hamburger.svg';
-import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -24,9 +21,9 @@ import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
 import DeleteConvModal from './modals/DeleteConvModal';
-import { ActiveState } from './models/misc';
+import { ActiveState, Doc } from './models/misc';
 import APIKeyModal from './preferences/APIKeyModal';
-import { Doc, getConversations, getDocs } from './preferences/preferenceApi';
+import { getConversations, getDocs } from './preferences/preferenceApi';
 import {
   selectApiKeyStatus,
   selectConversationId,
@@ -41,6 +38,9 @@ import {
   setSourceDocs,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
+import ShareButton from './components/ShareButton';
+import Help from './components/Help';
+
 
 interface NavigationProps {
   navOpen: boolean;
@@ -73,7 +73,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
-
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
@@ -119,15 +118,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .delete(id, {})
       .then(() => {
         fetchConversations();
+        resetConversation();
       })
       .catch((error) => console.error(error));
   };
 
   const handleDeleteClick = (doc: Doc) => {
-    const docPath = `indexes/local/${doc.name}`;
-
     userService
-      .deletePath(docPath)
+      .deletePath(doc.id ?? '')
       .then(() => {
         return getDocs();
       })
@@ -155,6 +153,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }),
         );
       });
+  };
+
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
   };
 
   async function updateConversationName(updatedConversation: {
@@ -216,9 +223,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
         >
-          <div className="my-auto mx-4 flex cursor-pointer gap-1.5">
-            <img className="mb-2 h-10" src={DocsGPT3} alt="" />
-            <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+          <div
+            className="my-auto mx-4 flex cursor-pointer gap-1.5"
+            onClick={() => {
+              if (isMobile) {
+                setNavOpen(!navOpen);
+              }
+            }}
+          >
+            <a href="/" className="flex gap-1.5">
+              <img className="mb-2 h-10" src={DocsGPT3} alt="" />
+              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            </a>
           </div>
           <button
             className="float-right mr-5"
@@ -238,12 +254,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <NavLink
           to={'/'}
           onClick={() => {
-            dispatch(setConversation([]));
-            dispatch(
-              updateConversationId({
-                query: { conversationId: null },
-              }),
-            );
+            if (isMobile) {
+              setNavOpen(!navOpen);
+            }
+            resetConversation();
           }}
           className={({ isActive }) =>
             `${
@@ -260,7 +274,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             {t('newChat')}
           </p>
         </NavLink>
-        <div className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white">
+        <div
+          id="conversationsMainDiv"
+          className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
+        >
           {conversations && conversations.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
@@ -272,6 +289,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     key={conversation.id}
                     conversation={conversation}
                     selectConversation={(id) => handleConversationClick(id)}
+                    onCoversationClick={() => {
+                      if (isMobile) {
+                        setNavOpen(false);
+                      }
+                    }}
                     onDeleteConversation={(id) => handleDeleteConversation(id)}
                     onSave={(conversation) =>
                       updateConversationName(conversation)
@@ -284,7 +306,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <></>
           )}
         </div>
-
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
             <div className="relative my-4 mx-4 flex gap-2">
@@ -295,17 +316,33 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 isDocsListOpen={isDocsListOpen}
                 setIsDocsListOpen={setIsDocsListOpen}
                 handleDeleteClick={handleDeleteClick}
+                handlePostDocumentSelect={(option?: string) => {
+                  if (isMobile) {
+                    setNavOpen(!navOpen);
+                  }
+                }}
               />
               <img
                 className="mt-2 h-9 w-9 hover:cursor-pointer"
                 src={UploadIcon}
-                onClick={() => setUploadModalState('ACTIVE')}
+                onClick={() => {
+                  setUploadModalState('ACTIVE');
+                  if (isMobile) {
+                    setNavOpen(!navOpen);
+                  }
+                }}
               ></img>
             </div>
             <p className="ml-5 mt-3 text-sm font-semibold">{t('sourceDocs')}</p>
           </div>
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
+              onClick={() => {
+                if (isMobile) {
+                  setNavOpen(!navOpen);
+                }
+                resetConversation();
+              }}
               to="/settings"
               className={({ isActive }) =>
                 `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
@@ -323,77 +360,72 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-          <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
-            <NavLink
-              to="/about"
-              className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-                  isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
-                }`
-              }
-            >
-              <img
-                src={Info}
-                alt="icon"
-                className="ml-2 w-5 filter dark:invert"
-              />
-              <p className="my-auto pr-1 text-sm">{t('about')}</p>
-            </NavLink>
-            <div className="flex items-center justify-evenly gap-1 px-1">
-              <NavLink
-                target="_blank"
-                to={'https://discord.gg/WHJdfbQDR4'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Discord}
-                  alt="discord"
-                  className="m-2 w-6 self-center filter dark:invert"
-                />
-              </NavLink>
-              <NavLink
-                target="_blank"
-                to={'https://twitter.com/docsgptai'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Twitter}
-                  alt="x"
-                  className="m-2 w-5 self-center filter dark:invert"
-                />
-              </NavLink>
-              <NavLink
-                target="_blank"
-                to={'https://github.com/arc53/docsgpt'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Github}
-                  alt="github"
-                  className="m-2 w-6 self-center filter dark:invert"
-                />
-              </NavLink>
+          <div className="flex flex-col justify-end text-eerie-black dark:text-white">
+            <div className="flex justify-between items-center px-1 py-1">
+              <Help />
+
+              <div className="flex items-center gap-1">
+                <NavLink
+                  target="_blank"
+                  to={'https://discord.gg/WHJdfbQDR4'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Discord}
+                    alt="discord"
+                    className="m-2 w-6 self-center filter dark:invert"
+                  />
+                </NavLink>
+                <NavLink
+                  target="_blank"
+                  to={'https://twitter.com/docsgptai'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Twitter}
+                    alt="x"
+                    className="m-2 w-5 self-center filter dark:invert"
+                  />
+                </NavLink>
+                <NavLink
+                  target="_blank"
+                  to={'https://github.com/arc53/docsgpt'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Github}
+                    alt="github"
+                    className="m-2 w-6 self-center filter dark:invert"
+                  />
+                </NavLink>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <div className="fixed z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
+      <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
         <button
-          className="mt-5 ml-6 h-6 w-6 md:hidden"
-          onClick={() => setNavOpen(true)}
+          className="m-5"
+          onClick={() => {
+            setNavOpen(!navOpen);
+          }}
         >
           <img
-            src={Hamburger}
+            src={Expand}
             alt="menu toggle"
-            className="w-7 filter dark:invert"
+            className={`${
+              !navOpen ? 'rotate-180' : 'rotate-0'
+            } m-auto transition-all duration-200`}
           />
         </button>
+
+        {conversationId && <ShareButton conversationId={conversationId} />}
       </div>
       <APIKeyModal
         modalState={apiKeyModalState}
@@ -408,6 +440,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       <Upload
         modalState={uploadModalState}
         setModalState={setUploadModalState}
+        isOnboarding={false}
       ></Upload>
     </>
   );

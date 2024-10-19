@@ -4,8 +4,10 @@ import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
-import Alert from '../assets/alert.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
@@ -51,16 +53,37 @@ const ConversationBubble = forwardRef<
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
-      <div ref={ref} className={`flex flex-row-reverse self-end ${className}`}>
+      <div
+        ref={ref}
+        className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+      >
         <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
-        <div className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white">
-          <ReactMarkdown className="whitespace-pre-wrap break-normal leading-normal">
-            {message}
-          </ReactMarkdown>
+        <div
+          style={{
+            wordBreak: 'break-word',
+          }}
+          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+        >
+          {message}
         </div>
       </div>
     );
   } else {
+    const preprocessLaTeX = (content: string) => {
+      // Replace block-level LaTeX delimiters \[ \] with $$ $$
+      const blockProcessedContent = content.replace(
+        /\\\[(.*?)\\\]/gs,
+        (_, equation) => `$$${equation}$$`,
+      );
+
+      // Replace inline LaTeX delimiters \( \) with $ $
+      const inlineProcessedContent = blockProcessedContent.replace(
+        /\\\((.*?)\\\)/gs,
+        (_, equation) => `$${equation}$`,
+      );
+
+      return inlineProcessedContent;
+    };
     bubble = (
       <div
         ref={ref}
@@ -180,7 +203,7 @@ const ConversationBubble = forwardRef<
                   ))}
                   {(sources?.length ?? 0) > 3 && (
                     <div
-                      className="flex h-24 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                      className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                       onClick={() => setIsSidebarOpen(true)}
                     >
                       <p className="ellipsis-text h-22 text-xs">{`View ${
@@ -214,17 +237,10 @@ const ConversationBubble = forwardRef<
                 : 'flex-col rounded-3xl'
             }`}
           >
-            {type === 'ERROR' && (
-              <>
-                <img src={Alert} alt="alert" className="mr-2 inline" />
-                <div className="absolute -right-32 top-1/2 -translate-y-1/2">
-                  {retryBtn}
-                </div>
-              </>
-            )}
             <ReactMarkdown
               className="whitespace-pre-wrap break-normal leading-normal"
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={{
                 code(props) {
                   const { children, className, node, ref, ...rest } = props;
@@ -307,19 +323,24 @@ const ConversationBubble = forwardRef<
                 },
               }}
             >
-              {message}
+              {preprocessLaTeX(message)}
             </ReactMarkdown>
           </div>
         </div>
         <div className="my-2 ml-2 flex justify-start">
           <div
             className={`relative mr-5  block items-center justify-center lg:invisible 
-            ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
+            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
               <CopyButton text={message} />
             </div>
           </div>
+          {type === 'ERROR' && (
+            <div className="relative mr-5 block items-center justify-center">
+              <div>{retryBtn}</div>
+            </div>
+          )}
           {handleFeedback && (
             <>
               <div

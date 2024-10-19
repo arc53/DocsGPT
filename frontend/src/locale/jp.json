@@ -7,9 +7,12 @@
   "about": "について",
   "inputPlaceholder": "ここにメッセージを入力してください...",
   "tagline": "DocsGPTはGenAIを使用しています。重要な情報はソースで確認してください。",
-  "sourceDocs": "ソースドキュメント",
+  "sourceDocs": "ソース",
   "none": "なし",
   "cancel": "キャンセル",
+  "help": "ヘルプ",
+  "emailUs": "メールを送る",
+  "documentation": "ドキュメント",
   "demo": [
     {
       "header": "DocsGPTについて学ぶ",
@@ -54,21 +57,33 @@
       "name": "ドキュメント名",
       "date": "ベクトル日付",
       "type": "タイプ",
-      "tokenUsage": "トークン使用量"
+      "tokenUsage": "トークン使用量",
+      "noData": "既存のドキュメントはありません"
     },
     "apiKeys": {
       "label": "チャットボット",
       "name": "名前",
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
-      "createNew": "新規作成"
+      "createNew": "新規作成",
+      "noData": "既存のチャットボットはありません"
+    },
+    "analytics": {
+      "label": "分析"
+    },
+    "logs": {
+      "label": "ログ"
     }
   },
   "modals": {
     "uploadDoc": {
       "label": "新規書類のアップロード",
-      "file": "ファイルから",
-      "remote": "リモート",
+      "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
+      "file": "デバイスからアップロード",
+      "back": "戻る",
+      "wait": "お待ちください ...",
+      "remote": "ウェブサイトから収集する",
+      "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
       "info": ".pdf, .txt, .rst, .docx, .md, .zipファイルを25MBまでアップロードしてください",
@@ -77,6 +92,7 @@
       "train": "トレーニング",
       "link": "リンク",
       "urlLink": "URLリンク",
+      "repoUrl": "リポジトリURL",
       "reddit": {
         "id": "クライアントID",
         "secret": "クライアントシークレット",

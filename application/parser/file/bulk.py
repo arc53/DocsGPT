@@ -10,13 +10,14 @@ from application.parser.file.epub_parser import EpubParser
 from application.parser.file.html_parser import HTMLParser
 from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.file.rst_parser import RstParser
-from application.parser.file.tabular_parser import PandasCSVParser
+from application.parser.file.tabular_parser import PandasCSVParser,ExcelParser
 from application.parser.schema.base import Document
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".pdf": PDFParser(),
     ".docx": DocxParser(),
     ".csv": PandasCSVParser(),
+    ".xlsx":ExcelParser(),
     ".epub": EpubParser(),
     ".md": MarkdownParser(),
     ".rst": RstParser(),

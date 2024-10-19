@@ -4,16 +4,14 @@ export type User = {
   avatar: string;
 };
 export type Doc = {
-  location: string;
+  id?: string;
   name: string;
-  language: string;
-  version: string;
-  description: string;
-  fullName: string;
   date: string;
-  docLink: string;
   model: string;
   tokens?: string;
+  type?: string;
+  retriever?: string;
+  syncFrequency?: string;
 };
 
 export type PromptProps = {

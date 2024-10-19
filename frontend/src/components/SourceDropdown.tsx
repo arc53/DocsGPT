@@ -1,7 +1,7 @@
 import React from 'react';
 import Trash from '../assets/trash.svg';
 import Arrow2 from '../assets/dropdown-arrow.svg';
-import { Doc } from '../preferences/preferenceApi';
+import { Doc } from '../models/misc';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
   isDocsListOpen: boolean;
   setIsDocsListOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleDeleteClick: any;
+  handlePostDocumentSelect: any;
 };
 
 function SourceDropdown({
@@ -20,6 +21,7 @@ function SourceDropdown({
   setIsDocsListOpen,
   isDocsListOpen,
   handleDeleteClick,
+  handlePostDocumentSelect, // Callback function fired after a document is selected
 }: Props) {
   const dispatch = useDispatch();
   const { t } = useTranslation();
@@ -63,9 +65,6 @@ function SourceDropdown({
             <p className="max-w-3/4 truncate whitespace-nowrap">
               {selectedDocs?.name || 'None'}
             </p>
-            <p className="flex flex-col items-center justify-center">
-              {selectedDocs?.version}
-            </p>
           </div>
         </span>
         <img
@@ -88,6 +87,7 @@ function SourceDropdown({
                     onClick={() => {
                       dispatch(setSelectedDocs(option));
                       setIsDocsListOpen(false);
+                      handlePostDocumentSelect(option);
                     }}
                   >
                     <span
@@ -121,7 +121,12 @@ function SourceDropdown({
             className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
             onClick={handleEmptyDocumentSelect}
           >
-            <span className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3">
+            <span
+              className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
+              onClick={() => {
+                handlePostDocumentSelect(null);
+              }}
+            >
               {t('none')}
             </span>
           </div>

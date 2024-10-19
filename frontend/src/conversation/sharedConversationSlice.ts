@@ -44,6 +44,13 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
               // set status to 'idle'
               dispatch(sharedConversationSlice.actions.setStatus('idle'));
               dispatch(saveToLocalStorage());
+            } else if (data.type === 'source') {
+              dispatch(
+                updateStreamingSource({
+                  index: state.sharedConversation.queries.length - 1,
+                  query: { sources: data.source ?? [] },
+                }),
+              );
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
@@ -164,6 +171,20 @@ export const sharedConversationSlice = createSlice({
         ...query,
       };
     },
+    updateStreamingSource(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const { index, query } = action.payload;
+      if (!state.queries[index].sources) {
+        state.queries[index].sources = query.sources ?? [];
+      } else if (query.sources && query.sources.length > 0) {
+        state.queries[index].sources = [
+          ...(state.queries[index].sources ?? []),
+          ...query.sources,
+        ];
+      }
+    },
     raiseError(
       state,
       action: PayloadAction<{ index: number; message: string }>,
@@ -213,9 +234,11 @@ export const {
   updateStreamingQuery,
   addQuery,
   saveToLocalStorage,
+  updateStreamingSource,
 } = sharedConversationSlice.actions;
 
-export const selectStatus = (state: RootState) => state.conversation.status;
+export const selectStatus = (state: RootState) =>
+  state.sharedConversation.status;
 export const selectClientAPIKey = (state: RootState) =>
   state.sharedConversation.apiKey;
 export const selectQueries = (state: RootState) =>

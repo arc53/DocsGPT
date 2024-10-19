@@ -6,7 +6,6 @@ import store from '../store';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
-  handleSearch,
 } from './conversationHandlers';
 import { Answer, ConversationState, Query, Status } from './conversationModels';
 
@@ -48,28 +47,17 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
                 });
-
-              handleSearch(
-                //search for sources post streaming
-                question,
-                state.preference.selectedDocs!,
-                state.conversation.conversationId,
-                state.conversation.queries,
-                state.preference.chunks,
-                state.preference.token_limit,
-              ).then((sources) => {
-                //dispatch streaming sources
-                dispatch(
-                  updateStreamingSource({
-                    index: state.conversation.queries.length - 1,
-                    query: { sources: sources ?? [] },
-                  }),
-                );
-              });
             } else if (data.type === 'id') {
               dispatch(
                 updateConversationId({
                   query: { conversationId: data.id },
+                }),
+              );
+            } else if (data.type === 'source') {
+              dispatch(
+                updateStreamingSource({
+                  index: state.conversation.queries.length - 1,
+                  query: { sources: data.source ?? [] },
                 }),
               );
             } else if (data.type === 'error') {
@@ -163,6 +151,7 @@ export const conversationSlice = createSlice({
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
+      if (state.status === 'idle') return;
       const { index, query } = action.payload;
       if (query.response != undefined) {
         state.queries[index].response =
@@ -179,6 +168,7 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ query: Partial<Query> }>,
     ) {
       state.conversationId = action.payload.query.conversationId ?? null;
+      state.status = 'idle';
     },
     updateStreamingSource(
       state,

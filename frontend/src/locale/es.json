@@ -7,9 +7,12 @@
   "about": "Acerca de",
   "inputPlaceholder": "Escribe tu mensaje aquí...",
   "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
-  "sourceDocs": "Documentos Fuente",
+  "sourceDocs": "Fuente",
   "none": "Nada",
   "cancel": "Cancelar",
+  "help": "Asistencia",
+  "emailUs": "Envíanos un correo",
+  "documentation": "documentación",
   "demo": [
     {
       "header": "Aprende sobre DocsGPT",
@@ -54,21 +57,33 @@
       "name": "Nombre del Documento",
       "date": "Fecha Vector",
       "type": "Tipo",
-      "tokenUsage": "Uso de Tokens"
+      "tokenUsage": "Uso de Tokens",
+      "noData": "No hay documentos existentes"
     },
     "apiKeys": {
       "label": "Chatbots",
       "name": "Nombre",
       "key": "Clave de API",
       "sourceDoc": "Documento Fuente",
-      "createNew": "Crear Nuevo"
+      "createNew": "Crear Nuevo",
+      "noData": "No hay chatbots existentes"
+    },
+    "analytics": {
+      "label": "Analítica"
+    },
+    "logs": {
+      "label": "Registros"
     }
   },
   "modals": {
     "uploadDoc": {
       "label": "Subir Nueva Documentación",
-      "file": "Desde Archivo",
-      "remote": "Remota",
+      "select": "Elija cómo cargar su documento en DocsGPT",
+      "file": "Subir desde el dispositivo",
+      "back": "Atrás",
+      "wait": "Espere por favor ...",
+      "remote": "Recoger desde un sitio web",
+      "start": "Empezar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
       "info": "Por favor, suba archivos .pdf, .txt, .rst, .docx, .md, .zip limitados a 25 MB",
@@ -77,6 +92,7 @@
       "train": "Entrenar",
       "link": "Enlace",
       "urlLink": "Enlace URL",
+      "repoUrl": "URL del Repositorio",
       "reddit": {
         "id": "ID de Cliente",
         "secret": "Secreto de Cliente",

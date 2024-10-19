@@ -1,0 +1,133 @@
+{
+  "language": "繁體中文（臺灣）",
+  "chat": "對話",
+  "chats": "對話",
+  "newChat": "新對話",
+  "myPlan": "我的方案",
+  "about": "關於",
+  "inputPlaceholder": "在此輸入您的訊息...",
+  "tagline": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。",
+  "sourceDocs": "原始文件",
+  "none": "無",
+  "cancel": "取消",
+  "help": "聯繫支援",
+  "emailUs": "寄送電子郵件給我們",
+  "documentation": "文件",
+  "demo": [
+    {
+      "header": "了解 DocsGPT",
+      "query": "什麼是 DocsGPT？"
+    },
+    {
+      "header": "摘要文件",
+      "query": "摘要目前的內容"
+    },
+    {
+      "header": "撰寫程式碼",
+      "query": "為 /api/answer 撰寫 API 請求程式碼"
+    },
+    {
+      "header": "學習輔助",
+      "query": "為此內容撰寫可能的問題"
+    }
+  ],
+  "settings": {
+    "label": "設定",
+    "general": {
+      "label": "一般",
+      "selectTheme": "選擇主題",
+      "light": "淺色",
+      "dark": "深色",
+      "selectLanguage": "選擇語言",
+      "chunks": "每次查詢處理的區塊數",
+      "prompt": "使用中的提示",
+      "deleteAllLabel": "刪除所有對話",
+      "deleteAllBtn": "全部刪除",
+      "addNew": "新增",
+      "convHistory": "對話歷史記錄",
+      "none": "無",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "unlimited": "無限制",
+      "default": "預設"
+    },
+    "documents": {
+      "label": "文件",
+      "name": "文件名稱",
+      "date": "向量日期",
+      "type": "類型",
+      "tokenUsage": "Token 使用量"
+    },
+    "apiKeys": {
+      "label": "API 金鑰",
+      "name": "名稱",
+      "key": "API 金鑰",
+      "sourceDoc": "來源文件",
+      "createNew": "新增"
+    },
+    "analytics": {
+      "label": "分析"
+    },
+    "logs": {
+      "label": "日誌"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "上傳新文件",
+      "file": "從檔案",
+      "remote": "遠端",
+      "name": "名稱",
+      "choose": "選擇檔案",
+      "info": "請上傳 .pdf, .txt, .rst, .docx, .md, .zip 檔案，大小限制為 25MB",
+      "uploadedFiles": "已上傳的檔案",
+      "cancel": "取消",
+      "train": "訓練",
+      "link": "連結",
+      "urlLink": "URL 連結",
+      "reddit": {
+        "id": "用戶端 ID",
+        "secret": "用戶端金鑰",
+        "agent": "使用者代理(User-Agent)",
+        "searchQueries": "搜尋查詢",
+        "numberOfPosts": "貼文數量"
+      }
+    },
+    "createAPIKey": {
+      "label": "建立新的 API 金鑰",
+      "apiKeyName": "API 金鑰名稱",
+      "chunks": "每次查詢處理的區塊數",
+      "prompt": "選擇使用中的提示",
+      "sourceDoc": "來源文件",
+      "create": "建立"
+    },
+    "saveKey": {
+      "note": "請儲存您的金鑰",
+      "disclaimer": "這是唯一一次顯示您的金鑰。",
+      "copy": "複製",
+      "copied": "已複製",
+      "confirm": "我已儲存金鑰"
+    },
+    "deleteConv": {
+      "confirm": "您確定要刪除所有對話嗎？",
+      "delete": "刪除"
+    },
+    "shareConv": {
+      "label": "建立公開頁面以分享",
+      "note": "來源文件、個人資訊和後續對話將保持私密",
+      "create": "建立"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "使用以下工具建立",
+    "button": "開始使用 DocsGPT",
+    "meta": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。"
+  },
+  "convTile": {
+    "share": "分享",
+    "delete": "刪除",
+    "rename": "重新命名",
+    "deleteWarning": "您確定要刪除這個對話嗎？"
+  }
+}

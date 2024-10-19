@@ -9,9 +9,9 @@ import elasticsearch
 class ElasticsearchStore(BaseVectorStore):
     _es_connection = None  # Class attribute to hold the Elasticsearch connection
 
-    def __init__(self, path, embeddings_key, index_name=settings.ELASTIC_INDEX):
+    def __init__(self, source_id, embeddings_key, index_name=settings.ELASTIC_INDEX):
         super().__init__()
-        self.path = path.replace("application/indexes/", "").rstrip("/")
+        self.source_id = source_id.replace("application/indexes/", "").rstrip("/")
         self.embeddings_key = embeddings_key
         self.index_name = index_name
         
@@ -81,7 +81,7 @@ class ElasticsearchStore(BaseVectorStore):
         embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
         vector = embeddings.embed_query(question)
         knn = {
-            "filter": [{"match": {"metadata.store.keyword": self.path}}],
+            "filter": [{"match": {"metadata.source_id.keyword": self.source_id}}],
             "field": "vector",
             "k": k,
             "num_candidates": 100,
@@ -100,7 +100,7 @@ class ElasticsearchStore(BaseVectorStore):
                             }
                         }
                     ],
-                    "filter": [{"match": {"metadata.store.keyword": self.path}}],
+                    "filter": [{"match": {"metadata.source_id.keyword": self.source_id}}],
                 }
             },
             "rank": {"rrf": {}},
@@ -209,5 +209,4 @@ class ElasticsearchStore(BaseVectorStore):
 
     def delete_index(self):
         self._es_connection.delete_by_query(index=self.index_name, query={"match": {
-                                      "metadata.store.keyword": self.path}},)
-
+                                      "metadata.source_id.keyword": self.source_id}},)

@@ -1,9 +1,13 @@
-import { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import {
+  SyntheticEvent,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
 import Exit from '../assets/exit.svg';
-import Message from '../assets/message.svg';
-import MessageDark from '../assets/message-dark.svg';
 import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CheckMark2 from '../assets/checkMark2.svg';
@@ -22,6 +26,7 @@ interface ConversationProps {
 interface ConversationTileProps {
   conversation: ConversationProps;
   selectConversation: (arg1: string) => void;
+  onCoversationClick: () => void; //Callback to handle click on conversation tile regardless of selected or not
   onDeleteConversation: (arg1: string) => void;
   onSave: ({ name, id }: ConversationProps) => void;
 }
@@ -29,6 +34,7 @@ interface ConversationTileProps {
 export default function ConversationTile({
   conversation,
   selectConversation,
+  onCoversationClick,
   onDeleteConversation,
   onSave,
 }: ConversationTileProps) {
@@ -75,6 +81,36 @@ export default function ConversationTile({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  const preventScroll = useCallback((event: WheelEvent | TouchEvent) => {
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const conversationsMainDiv = document.getElementById(
+      'conversationsMainDiv',
+    );
+
+    if (conversationsMainDiv) {
+      if (isOpen) {
+        conversationsMainDiv.addEventListener('wheel', preventScroll, {
+          passive: false,
+        });
+        conversationsMainDiv.addEventListener('touchmove', preventScroll, {
+          passive: false,
+        });
+      } else {
+        conversationsMainDiv.removeEventListener('wheel', preventScroll);
+        conversationsMainDiv.removeEventListener('touchmove', preventScroll);
+      }
+
+      return () => {
+        conversationsMainDiv.removeEventListener('wheel', preventScroll);
+        conversationsMainDiv.removeEventListener('touchmove', preventScroll);
+      };
+    }
+  }, [isOpen]);
+
   function onClear() {
     setConversationsName(conversation.name);
     setIsEdit(false);
@@ -90,20 +126,17 @@ export default function ConversationTile({
           setIsHovered(false);
         }}
         onClick={() => {
+          onCoversationClick();
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
           conversationId === conversation.id || isOpen || isHovered
             ? 'bg-gray-100 dark:bg-[#28292E]'
             : ''
         }`}
       >
         <div className={`flex w-10/12 gap-4`}>
-          <img
-            src={isDarkTheme ? MessageDark : Message}
-            className="ml-4 w-5 dark:text-white"
-          />
           {isEdit ? (
             <input
               autoFocus
@@ -150,7 +183,7 @@ export default function ConversationTile({
               <button
                 onClick={(event: SyntheticEvent) => {
                   event.stopPropagation();
-                  setOpen(true);
+                  setOpen(!isOpen);
                 }}
                 className="mr-2 flex w-4 justify-center"
               >
@@ -158,7 +191,12 @@ export default function ConversationTile({
               </button>
             )}
             {isOpen && (
-              <div className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36">
+              <div
+                className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36"
+                style={{
+                  top: `${(tileRef.current?.getBoundingClientRect().top ?? 0) + window.scrollY + 8}px`,
+                }}
+              >
                 <button
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
