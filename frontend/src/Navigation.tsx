@@ -103,7 +103,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
-        dispatch(setConversations({ ...conversations, loading: false }));
+        dispatch(setConversations({ data: null, loading: false }));
       });
   }
 
