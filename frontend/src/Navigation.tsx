@@ -96,14 +96,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }, [conversations?.data, dispatch]);
 
   async function fetchConversations() {
-    dispatch(setConversations({ data: null, loading: true }));
+    dispatch(setConversations({ ...conversations, loading: true }));
     return await getConversations()
       .then((fetchedConversations) => {
         dispatch(setConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
-        dispatch(setConversations({ data: null, loading: false }));
+        dispatch(setConversations({ ...conversations, loading: false }));
       });
   }
 
