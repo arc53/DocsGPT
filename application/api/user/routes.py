@@ -8,7 +8,7 @@ from bson.dbref import DBRef
 from bson.objectid import ObjectId
 from flask import Blueprint, jsonify, make_response, request
 from flask_restx import inputs, fields, Namespace, Resource
-from pymongo import MongoClient
+from core.mongo_db import MongoDB
 from werkzeug.utils import secure_filename
 
 from application.api.user.tasks import ingest, ingest_remote
@@ -18,7 +18,7 @@ from application.extensions import api
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
 
-mongo = MongoClient(settings.MONGO_URI)
+mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]

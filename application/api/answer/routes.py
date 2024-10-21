@@ -11,7 +11,7 @@ from bson.objectid import ObjectId
 from flask import Blueprint, current_app, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
-from pymongo import MongoClient
+from core.mongo_db import MongoDB
 
 from application.core.settings import settings
 from application.error import bad_request
@@ -22,7 +22,7 @@ from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
 
-mongo = MongoClient(settings.MONGO_URI)
+mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
