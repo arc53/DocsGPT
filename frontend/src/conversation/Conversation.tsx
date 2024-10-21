@@ -302,7 +302,7 @@ export default function Conversation() {
         )}
       </div>
 
-      <div className="flex w-[90%] sm:w-[90%] md:w-[80%]  flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 h-auto my-2 sm:my-0">
+      <div className="flex w-[90%] flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 h-auto my-2 sm:my-0">
         <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <textarea
             id="inputbox"
