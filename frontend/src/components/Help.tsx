@@ -60,7 +60,7 @@ const Help = () => {
             {t('documentation')}
           </a>
           <a
-            href="mailto:contact@arc53.com"
+            href="mailto:support@docsgpt.cloud"
             className="flex items-start gap-4 px-4 py-2 text-black dark:text-white hover:bg-bright-gray dark:hover:bg-[#545561] rounded-b-xl"
           >
             <img
