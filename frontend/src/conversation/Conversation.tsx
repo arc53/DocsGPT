@@ -1,22 +1,24 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-
+import newChatIcon from '../assets/openNewChat.svg';
 import ArrowDown from '../assets/arrow-down.svg';
 import Send from '../assets/send.svg';
 import SendDark from '../assets/send_dark.svg';
-import ShareIcon from '../assets/share.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
+import { useNavigate } from 'react-router-dom';
 import Hero from '../Hero';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
+import { setConversation, updateConversationId } from './conversationSlice';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
+import ShareIcon from '../assets/share.svg';
 import {
   addQuery,
   fetchAnswer,
@@ -27,6 +29,7 @@ import {
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
+  const navigate = useNavigate();
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
@@ -39,12 +42,16 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
+  const { isMobile } = useMediaQuery();
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
   };
   useEffect(() => {
     !eventInterrupt && scrollIntoView();
+    if (queries.length == 0) {
+      resetConversation();
+    }
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
@@ -119,6 +126,17 @@ export default function Conversation() {
       handleInput();
     }
   };
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
+  };
+  const newChat = () => {
+    if (queries && queries.length > 0) resetConversation();
+  };
 
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
@@ -139,7 +157,7 @@ export default function Conversation() {
     } else if (query.error) {
       const retryBtn = (
         <button
-          className="flex items-center justify-center gap-3 self-center rounded-full border border-silver py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          className="flex items-center justify-center gap-3 self-center rounded-full py-3 px-5  text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
           disabled={status === 'loading'}
           onClick={() => {
             handleQuestion({
@@ -149,10 +167,12 @@ export default function Conversation() {
           }}
         >
           <RetryIcon
+            width={isMobile ? 12 : 12} // change the width and height according to device size if necessary
+            height={isMobile ? 12 : 12}
             fill={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
             stroke={isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)'}
+            strokeWidth={10}
           />
-          Retry
         </button>
       );
       responseView = (
@@ -194,23 +214,41 @@ export default function Conversation() {
     };
   }, []);
   return (
-    <div className="flex flex-col gap-1 h-full justify-end">
-      {conversationId && (
-        <>
+    <div className="flex flex-col gap-1 h-full justify-end ">
+      {conversationId && queries.length > 0 && (
+        <div className="absolute top-4 right-20 z-20 ">
           {' '}
-          <button
-            title="Share"
-            onClick={() => {
-              setShareModalState(true);
-            }}
-            className="absolute top-4 right-20 z-20 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
-          >
-            <img
-              className="m-2 h-5 w-5 filter dark:invert"
-              alt="share"
-              src={ShareIcon}
-            />
-          </button>
+          <div className="flex items-center gap-4 ">
+            {isMobile && queries.length > 0 && (
+              <button
+                title="Open New Chat"
+                onClick={() => {
+                  newChat();
+                }}
+                className="hover:bg-bright-gray dark:hover:bg-[#28292E]"
+              >
+                <img
+                  className=" h-5 w-5 filter dark:invert "
+                  alt="NewChat"
+                  src={newChatIcon}
+                />
+              </button>
+            )}
+
+            <button
+              title="Share"
+              onClick={() => {
+                setShareModalState(true);
+              }}
+              className=" hover:bg-bright-gray dark:hover:bg-[#28292E]"
+            >
+              <img
+                className=" h-5 w-5 filter dark:invert"
+                alt="share"
+                src={ShareIcon}
+              />
+            </button>
+          </div>
           {isShareModalOpen && (
             <ShareConversationModal
               close={() => {
@@ -219,7 +257,7 @@ export default function Conversation() {
               conversationId={conversationId}
             />
           )}
-        </>
+        </div>
       )}
       <div
         ref={conversationRef}

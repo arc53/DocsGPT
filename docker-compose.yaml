@@ -20,6 +20,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - CACHE_REDIS_URL=redis://redis:6379/2
     ports:
       - "7091:7091"
     volumes:
@@ -41,6 +42,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:7091
+      - CACHE_REDIS_URL=redis://redis:6379/2
     depends_on:
       - redis
       - mongo

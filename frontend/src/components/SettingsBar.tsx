@@ -71,9 +71,9 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
           <button
             key={index}
             onClick={() => setActiveTab(tab)}
-            className={`snap-start h-9 rounded-3xl px-4 font-bold ${
+            className={`snap-start h-9 rounded-3xl px-4 font-bold hover:text-neutral-600 dark:hover:text-white/60 ${
               activeTab === tab
-                ? 'bg-purple-3000 text-purple-30 dark:bg-dark-charcoal'
+                ? 'bg-neutral-100 text-neutral-600  dark:bg-dark-charcoal dark:text-white/60'
                 : 'text-gray-6000'
             }`}
           >
