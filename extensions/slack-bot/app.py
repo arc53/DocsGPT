@@ -64,8 +64,6 @@ async def generate_answer(question: str, messages: list, conversation_id: str | 
 async def message_docs(message, say):
     client = app.client
     channel = message['channel']
-    # history = await client.conversations_history(channel=message['client_msg_id'])
-    # print(history)
     thread_ts = message['thread_ts']
     user_query = message['text']    
     await client.assistant_threads_setStatus(
