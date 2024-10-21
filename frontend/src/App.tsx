@@ -37,7 +37,7 @@ export default function App() {
     return <div />;
   }
   return (
-    <div className="h-full relative overflow-auto">
+    <div className="relative overflow-auto">
       <Routes>
         <Route element={<MainLayout />}>
           <Route index element={<Conversation />} />
