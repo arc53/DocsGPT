@@ -1,5 +1,5 @@
 anthropic==0.34.2
-boto3==1.34.153
+boto3==1.34.45 #Update Library from version 1.34.153 to 1.34.45
 beautifulsoup4==4.12.3
 celery==5.3.6
 dataclasses-json==0.6.7
@@ -12,7 +12,7 @@ escodegen==1.0.11
 esprima==4.0.1
 esutils==1.0.1
 Flask==3.0.3
-faiss-cpu==1.8.0.post1
+faiss-cpu==1.9.0.post1 Update from version 1.8.0post1 to 1.9.0.post1
 flask-restx==1.3.0
 gunicorn==23.0.0
 html2text==2024.2.26
