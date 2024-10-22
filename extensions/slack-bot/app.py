@@ -42,7 +42,6 @@ async def generate_answer(question: str, messages: list, conversation_id: str | 
         "api_key": DOCSGPT_API_KEY,
         "history": messages,
         "conversation_id": conversation_id,
-        "source_id": None
     }
     headers = {
         "Content-Type": "application/json; charset=utf-8"
@@ -73,7 +72,7 @@ async def message_docs(message, say):
     )
 
     docs_gpt_channel_id = encode_conversation_id(thread_ts)
-    print('Id ', docs_gpt_channel_id)
+    
     # Get response from DocsGPT
     response = await generate_answer(user_query,[], docs_gpt_channel_id)
     answer = convert_to_slack_markdown(response['answer'])
