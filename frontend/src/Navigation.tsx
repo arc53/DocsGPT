@@ -72,6 +72,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
@@ -114,6 +115,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }
 
   const handleDeleteAllConversations = () => {
+    setIsDeletingConversation(true);
     conversationService
       .deleteAll()
       .then(() => {
@@ -123,6 +125,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleDeleteConversation = (id: string) => {
+    setIsDeletingConversation(true);
     conversationService
       .delete(id, {})
       .then(() => {
@@ -311,7 +314,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           id="conversationsMainDiv"
           className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
         >
-          {conversations?.loading && (
+          {conversations?.loading && !isDeletingConversation && (
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
               <img
                 src={isDarkTheme ? SpinnerDark : Spinner}
