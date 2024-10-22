@@ -11,7 +11,6 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -44,7 +43,6 @@ import Spinner from './assets/spinner.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
 import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
-import ShareButton from './components/ShareButton';
 import Help from './components/Help';
 
 interface NavigationProps {
@@ -314,14 +312,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
         >
           {conversations?.loading && (
-            <div className="my-auto mx-4 mt-2 flex h-6 items-center justify-center">
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
               <img
                 src={isDarkTheme ? SpinnerDark : Spinner}
-                className="relative animate-spin cursor-pointer self-end bg-transparent"
-              ></img>
+                className="animate-spin cursor-pointer bg-transparent"
+                alt="Loading..."
+              />
             </div>
           )}
-
           {conversations?.data && conversations.data.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
