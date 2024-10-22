@@ -1,6 +1,6 @@
 import sys
-from core.mongo_db import MongoDB
 from datetime import datetime
+from application.core.mongo_db import MongoDB
 from application.utils import num_tokens_from_string
 
 mongo = MongoDB.get_client()

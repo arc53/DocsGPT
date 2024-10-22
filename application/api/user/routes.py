@@ -8,11 +8,11 @@ from bson.dbref import DBRef
 from bson.objectid import ObjectId
 from flask import Blueprint, jsonify, make_response, request
 from flask_restx import inputs, fields, Namespace, Resource
-from core.mongo_db import MongoDB
 from werkzeug.utils import secure_filename
 
 from application.api.user.tasks import ingest, ingest_remote
 
+from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
 from application.utils import check_required_fields
