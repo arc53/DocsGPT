@@ -38,7 +38,7 @@ const Help = () => {
         onClick={toggleDropdown}
         className="my-auto mx-4 w-full flex items-center h-9 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
       >
-        <img src={Info} alt="info" className="ml-1 w-5 filter dark:invert" />
+        <img src={Info} alt="info" className="ml-2 w-5 filter dark:invert" />
         {t('help')}
       </button>
       {isOpen && (
@@ -60,7 +60,7 @@ const Help = () => {
             {t('documentation')}
           </a>
           <a
-            href="mailto:contact@arc53.com"
+            href="mailto:support@docsgpt.cloud"
             className="flex items-start gap-4 px-4 py-2 text-black dark:text-white hover:bg-bright-gray dark:hover:bg-[#545561] rounded-b-xl"
           >
             <img

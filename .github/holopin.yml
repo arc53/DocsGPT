@@ -1,5 +1,11 @@
-organization: arc53
-defaultSticker: clqmdf0ed34290glbvqh0kzxd
+organization: docsgpt
+defaultSticker: cm1ulwkkl180570cl82rtzympu
 stickers:
-  - id: clqmdf0ed34290glbvqh0kzxd
-    alias: festive
+  - id: cm1ulwkkl180570cl82rtzympu
+    alias: contributor2024
+  - id: cm1ureg8o130450cl8c1po6mil
+    alias: api
+  - id: cm1urhmag148240cl8yvqxkthx
+    alias: lpc
+  - id: cm1urlcpq622090cl2tvu4w71y
+    alias: lexeu

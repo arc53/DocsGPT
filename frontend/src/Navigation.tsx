@@ -5,10 +5,13 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Add from './assets/add.svg';
+import openNewChat from './assets/openNewChat.svg';
+import Hamburger from './assets/hamburger.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
+import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -39,6 +42,7 @@ import {
 } from './preferences/preferenceSlice';
 import Spinner from './assets/spinner.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
+import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
 import ShareButton from './components/ShareButton';
 import Help from './components/Help';
@@ -64,6 +68,7 @@ NavImage.propTypes = {
 }; */
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
+  const queries = useSelector(selectQueries);
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
@@ -92,6 +97,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   useEffect(() => {
     if (!conversations?.data) {
       fetchConversations();
+    }
+    if (queries.length === 0) {
+      resetConversation();
     }
   }, [conversations?.data, dispatch]);
 
@@ -166,7 +174,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       }),
     );
   };
-
+  const newChat = () => {
+    if (queries && queries?.length > 0) {
+      resetConversation();
+    }
+  };
   async function updateConversationName(updatedConversation: {
     name: string;
     id: string;
@@ -203,26 +215,45 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   return (
     <>
       {!navOpen && (
-        <button
-          className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block"
-          onClick={() => {
-            setNavOpen(!navOpen);
-          }}
-        >
-          <img
-            src={Expand}
-            alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
-          />
-        </button>
+        <div className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block">
+          <div className="flex gap-3 items-center">
+            <button
+              onClick={() => {
+                setNavOpen(!navOpen);
+              }}
+            >
+              <img
+                src={Expand}
+                alt="menu toggle"
+                className={`${
+                  !navOpen ? 'rotate-180' : 'rotate-0'
+                } m-auto transition-all duration-200`}
+              />
+            </button>
+            {queries?.length > 0 && (
+              <button
+                onClick={() => {
+                  newChat();
+                }}
+              >
+                <img
+                  src={openNewChat}
+                  alt="open new chat icon"
+                  className="cursor-pointer"
+                />
+              </button>
+            )}
+            <div className="text-[#949494] font-medium text-[20px]">
+              DocsGPT
+            </div>
+          </div>
+        </div>
       )}
       <div
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+        } duration-20 fixed top-0 z-40 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -423,22 +454,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
       </div>
       <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
-        <button
-          className="m-5"
-          onClick={() => {
-            setNavOpen(!navOpen);
-          }}
-        >
-          <img
-            src={Expand}
-            alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
-          />
-        </button>
-
-        {conversationId && <ShareButton conversationId={conversationId} />}
+        <div className="flex gap-6 items-center h-full ml-6 ">
+          <button
+            className=" h-6 w-6 md:hidden"
+            onClick={() => setNavOpen(true)}
+          >
+            <img
+              src={Hamburger}
+              alt="menu toggle"
+              className="w-7 filter dark:invert"
+            />
+          </button>
+          <div className="text-[#949494] font-medium text-[20px]">DocsGPT</div>
+        </div>
       </div>
       <APIKeyModal
         modalState={apiKeyModalState}
