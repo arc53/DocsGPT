@@ -53,21 +53,23 @@ body.dark {
   }
 
   .table-default th {
-    @apply border-r border-silver dark:border-silver/40 p-4 w-[244px];
+    @apply p-4 w-[244px] font-normal text-gray-400; /* Remove border-r */
   }
 
   .table-default th:last-child {
-    @apply w-[auto] border-r-0;
+    @apply w-[auto];
   }
 
   .table-default td {
-    @apply border-r border-t border-silver dark:border-silver/40 px-4 py-2;
+    @apply border-t border-silver dark:border-silver/40 px-4 py-2; /* Remove border-r */
   }
 
   .table-default td:last-child {
-    @apply border-r-0;
+    @apply border-r-0; /* Ensure no right border on the last column */
   }
+
 }
+
 
 /*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
 

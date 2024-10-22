@@ -6,6 +6,7 @@ import { useDispatch } from 'react-redux';
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/trash.svg';
+import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
 import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
 import { getDocs } from '../preferences/preferenceApi';
@@ -97,9 +98,24 @@ const Documents: React.FC<DocumentsProps> = ({
             <thead>
               <tr>
                 <th>{t('settings.documents.name')}</th>
-                <th>{t('settings.documents.date')}</th>
-                <th>{t('settings.documents.tokenUsage')}</th>
-                <th>{t('settings.documents.type')}</th>
+                <th>
+                  <div className="flex justify-center items-center">
+                    {t('settings.documents.date')}{' '}
+                    <img src={caretSort} alt="" />{' '}
+                  </div>
+                </th>
+                <th>
+                  <div className="flex justify-center items-center">
+                    {t('settings.documents.tokenUsage')}{' '}
+                    <img src={caretSort} alt="" />
+                  </div>
+                </th>
+                <th>
+                  <div className="flex justify-center items-center">
+                    {t('settings.documents.type')}{' '}
+                    <img src={caretSort} alt="" />
+                  </div>
+                </th>
                 <th></th>
               </tr>
             </thead>
@@ -158,11 +174,16 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
         {/* Conditionally render the Upload modal based on modalState */}
         {modalState === 'ACTIVE' && (
-          <Upload
-            modalState={modalState}
-            setModalState={setModalState}
-            isOnboarding={isOnboarding} // Pass the onboarding flag
-          />
+          <div className="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center bg-transparent">
+            <div className="w-full h-full bg-transparent flex flex-col items-center justify-center p-8">
+              {/* Your Upload component */}
+              <Upload
+                modalState={modalState}
+                setModalState={setModalState}
+                isOnboarding={isOnboarding}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>
