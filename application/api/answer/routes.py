@@ -11,8 +11,8 @@ from bson.objectid import ObjectId
 from flask import Blueprint, current_app, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
-from core.mongo_db import MongoDB
 
+from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.error import bad_request
 from application.extensions import api

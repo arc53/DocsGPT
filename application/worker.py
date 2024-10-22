@@ -8,8 +8,8 @@ from urllib.parse import urljoin
 
 import requests
 from bson.objectid import ObjectId
-from core.mongo_db import MongoDB
 
+from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.file.bulk import SimpleDirectoryReader
 from application.parser.open_ai_func import call_openai_api

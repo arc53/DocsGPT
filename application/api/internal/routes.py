@@ -1,10 +1,10 @@
 import os
 import datetime
 from flask import Blueprint, request, send_from_directory
-from core.mongo_db import MongoDB
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
 
+from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 
 mongo = MongoDB.get_client()
