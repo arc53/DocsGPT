@@ -9,6 +9,39 @@ prompt_user() {
     read -p "Enter your choice (1, 2 or 3): " choice
 }
 
+check_and_start_docker() {
+    # Check if Docker is running
+    if ! docker info > /dev/null 2>&1; then
+        echo "Docker is not running. Starting Docker..."
+
+        # Check the operating system
+        case "$(uname -s)" in
+            Darwin)
+                open -a Docker
+                ;;
+            Linux)
+                sudo systemctl start docker
+                ;;
+            *)
+                echo "Unsupported platform. Please start Docker manually."
+                exit 1
+                ;;
+        esac
+
+        # Wait for Docker to be fully operational with animated dots
+        echo -n "Waiting for Docker to start"
+        while ! docker system info > /dev/null 2>&1; do
+            for i in {1..3}; do
+                echo -n "."
+                sleep 1
+            done
+            echo -ne "\rWaiting for Docker to start   " # Reset to overwrite previous dots
+        done
+
+        echo -e "\nDocker has started!"
+    fi
+}
+
 # Function to handle the choice to download the model locally
 download_locally() {
     echo "LLM_NAME=llama.cpp" > .env
@@ -30,6 +63,9 @@ download_locally() {
         echo "Model already exists."
     fi
    
+    # Call the function to check and start Docker if needed
+    check_and_start_docker
+
     docker-compose -f docker-compose-local.yaml build && docker-compose -f docker-compose-local.yaml up -d
     #python -m venv venv
     #source venv/bin/activate
@@ -59,9 +95,10 @@ use_openai() {
     echo "VITE_API_STREAMING=true" >> .env
     echo "The .env file has been created with API_KEY set to your provided key."
 
+    # Call the function to check and start Docker if needed
+    check_and_start_docker
+    
     docker-compose build && docker-compose up -d
-
-
 
     echo "The application will run on http://localhost:5173"
     echo "You can stop the application by running the following command:"
@@ -72,6 +109,9 @@ use_docsgpt() {
     echo "LLM_NAME=docsgpt" > .env
     echo "VITE_API_STREAMING=true" >> .env
     echo "The .env file has been created with API_KEY set to your provided key."
+
+    # Call the function to check and start Docker if needed
+    check_and_start_docker
 
     docker-compose build && docker-compose up -d
 

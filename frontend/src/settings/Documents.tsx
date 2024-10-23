@@ -9,6 +9,7 @@ import Trash from '../assets/trash.svg';
 import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
 import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
+import SkeletonLoader from '../components/SkeletonLoader';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import Input from '../components/Input';
@@ -43,6 +44,7 @@ const Documents: React.FC<DocumentsProps> = ({
   // State for modal: active/inactive
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
   const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
+  const [loading, setLoading] = useState(false);
 
   const syncOptions = [
     { label: 'Never', value: 'never' },
@@ -52,6 +54,7 @@ const Documents: React.FC<DocumentsProps> = ({
   ];
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
+    setLoading(true);
     userService
       .manageSync({ source_id: doc.id, sync_frequency })
       .then(() => {
@@ -60,7 +63,10 @@ const Documents: React.FC<DocumentsProps> = ({
       .then((data) => {
         dispatch(setSourceDocs(data));
       })
-      .catch((error) => console.error(error));
+      .catch((error) => console.error(error))
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   // Filter documents based on the search term
@@ -72,7 +78,7 @@ const Documents: React.FC<DocumentsProps> = ({
     <div className="mt-8">
       <div className="flex flex-col relative">
         <div className="z-10 w-full overflow-x-auto">
-          <div className="my-3 flex justify-between items-center ">
+          <div className="my-3 flex justify-between items-center">
             <div className="p-1">
               <Input
                 maxLength={256}
@@ -94,83 +100,87 @@ const Documents: React.FC<DocumentsProps> = ({
               Add New
             </button>
           </div>
-          <table className="table-default">
-            <thead>
-              <tr>
-                <th>{t('settings.documents.name')}</th>
-                <th>
-                  <div className="flex justify-center items-center">
-                    {t('settings.documents.date')}{' '}
-                    <img src={caretSort} alt="" />{' '}
-                  </div>
-                </th>
-                <th>
-                  <div className="flex justify-center items-center">
-                    {t('settings.documents.tokenUsage')}{' '}
-                    <img src={caretSort} alt="" />
-                  </div>
-                </th>
-                <th>
-                  <div className="flex justify-center items-center">
-                    {t('settings.documents.type')}{' '}
-                    <img src={caretSort} alt="" />
-                  </div>
-                </th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {!filteredDocuments?.length && (
+          {loading ? (
+            <SkeletonLoader count={1} />
+          ) : (
+            <table className="table-default">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="!p-4">
-                    {t('settings.documents.noData')}
-                  </td>
+                  <th>{t('settings.documents.name')}</th>
+                  <th>
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.date')}
+                      <img src={caretSort} alt="" />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.tokenUsage')}
+                      <img src={caretSort} alt="" />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.type')}
+                      <img src={caretSort} alt="" />
+                    </div>
+                  </th>
+                  <th></th>
                 </tr>
-              )}
-              {filteredDocuments &&
-                filteredDocuments.map((document, index) => (
-                  <tr key={index}>
-                    <td>{document.name}</td>
-                    <td>{document.date}</td>
-                    <td>
-                      {document.tokens ? formatTokens(+document.tokens) : ''}
-                    </td>
-                    <td>
-                      {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
-                    </td>
-                    <td>
-                      <div className="flex flex-row items-center">
-                        {document.type !== 'remote' && (
-                          <img
-                            src={Trash}
-                            alt="Delete"
-                            className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
-                            id={`img-${index}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleDeleteDocument(index, document);
-                            }}
-                          />
-                        )}
-                        {document.syncFrequency && (
-                          <div className="ml-2">
-                            <DropdownMenu
-                              name="Sync"
-                              options={syncOptions}
-                              onSelect={(value: string) => {
-                                handleManageSync(document, value);
-                              }}
-                              defaultValue={document.syncFrequency}
-                              icon={SyncIcon}
-                            />
-                          </div>
-                        )}
-                      </div>
+              </thead>
+              <tbody>
+                {!filteredDocuments?.length && (
+                  <tr>
+                    <td colSpan={5} className="!p-4">
+                      {t('settings.documents.noData')}
                     </td>
                   </tr>
-                ))}
-            </tbody>
-          </table>
+                )}
+                {filteredDocuments &&
+                  filteredDocuments.map((document, index) => (
+                    <tr key={index}>
+                      <td>{document.name}</td>
+                      <td>{document.date}</td>
+                      <td>
+                        {document.tokens ? formatTokens(+document.tokens) : ''}
+                      </td>
+                      <td>
+                        {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
+                      </td>
+                      <td>
+                        <div className="flex flex-row items-center">
+                          {document.type !== 'remote' && (
+                            <img
+                              src={Trash}
+                              alt="Delete"
+                              className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
+                              id={`img-${index}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteDocument(index, document);
+                              }}
+                            />
+                          )}
+                          {document.syncFrequency && (
+                            <div className="ml-2">
+                              <DropdownMenu
+                                name="Sync"
+                                options={syncOptions}
+                                onSelect={(value: string) => {
+                                  handleManageSync(document, value);
+                                }}
+                                defaultValue={document.syncFrequency}
+                                icon={SyncIcon}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
         </div>
         {/* Conditionally render the Upload modal based on modalState */}
         {modalState === 'ACTIVE' && (

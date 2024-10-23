@@ -6,18 +6,22 @@ import Trash from '../assets/trash.svg';
 import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
 import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
 import { APIKeyData } from './types';
+import SkeletonLoader from '../components/SkeletonLoader';
 import Input from '../components/Input';
 
 export default function APIKeys() {
   const { t } = useTranslation();
-  const [isCreateModalOpen, setCreateModal] = useState(false);
-  const [isSaveKeyModalOpen, setSaveKeyModal] = useState(false);
-  const [newKey, setNewKey] = useState('');
-  const [apiKeys, setApiKeys] = useState<APIKeyData[]>([]);
+  const [isCreateModalOpen, setCreateModal] = React.useState(false);
+  const [isSaveKeyModalOpen, setSaveKeyModal] = React.useState(false);
+  const [newKey, setNewKey] = React.useState('');
+  const [apiKeys, setApiKeys] = React.useState<APIKeyData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState(''); // Added state for search term
   const [filteredKeys, setFilteredKeys] = useState<APIKeyData[]>([]); // State for filtered API keys
 
+
   const handleFetchKeys = async () => {
+    setLoading(true);
     try {
       const response = await userService.getAPIKeys();
       if (!response.ok) {
@@ -28,6 +32,8 @@ export default function APIKeys() {
       setFilteredKeys(apiKeys); // Initialize the filtered keys as the fetched ones
     } catch (error) {
       console.log(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,7 +47,8 @@ export default function APIKeys() {
         return response.json();
       })
       .then((data) => {
-        if (data.status === 'ok') {
+
+        data.success === true &&
           setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
           setFilteredKeys((previous) =>
             previous.filter((elem) => elem.id !== id),
@@ -133,6 +140,9 @@ export default function APIKeys() {
         )}
         <div className="mt-[27px] w-full">
           <div className="w-full overflow-x-auto">
+         {loading ? (
+              <SkeletonLoader count={1} component={'chatbot'} />
+            ) : (
             <table className="table-default">
               <thead>
                 <tr>
@@ -166,9 +176,34 @@ export default function APIKeys() {
                       />
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {!apiKeys?.length && (
+                    <tr>
+                      <td colSpan={4} className="!p-4">
+                        {t('settings.apiKeys.noData')}
+                      </td>
+                    </tr>
+                  )}
+                  {apiKeys?.map((element, index) => (
+                    <tr key={index}>
+                      <td>{element.name}</td>
+                      <td>{element.source}</td>
+                      <td>{element.key}</td>
+                      <td>
+                        <img
+                          src={Trash}
+                          alt="Delete"
+                          className="h-4 w-4 cursor-pointer hover:opacity-50"
+                          id={`img-${index}`}
+                          onClick={() => handleDeleteKey(element.id)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

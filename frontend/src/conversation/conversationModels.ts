@@ -40,4 +40,5 @@ export interface RetrievalPayload {
   prompt_id?: string | null;
   chunks: string;
   token_limit: number;
+  isNoneDoc: boolean;
 }

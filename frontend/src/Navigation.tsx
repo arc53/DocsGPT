@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
-
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Add from './assets/add.svg';
+import openNewChat from './assets/openNewChat.svg';
+import Hamburger from './assets/hamburger.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Hamburger from './assets/hamburger.svg';
 import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
@@ -40,7 +40,11 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from './preferences/preferenceSlice';
+import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
+import ShareButton from './components/ShareButton';
+import Help from './components/Help';
+
 
 interface NavigationProps {
   navOpen: boolean;
@@ -63,6 +67,7 @@ NavImage.propTypes = {
 }; */
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
+  const queries = useSelector(selectQueries);
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
@@ -73,7 +78,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
-
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
@@ -92,6 +96,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   useEffect(() => {
     if (!conversations) {
       fetchConversations();
+    }
+    if (queries.length === 0) {
+      resetConversation();
     }
   }, [conversations, dispatch]);
 
@@ -164,7 +171,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       }),
     );
   };
-
+  const newChat = () => {
+    if (queries && queries?.length > 0) {
+      resetConversation();
+    }
+  };
   async function updateConversationName(updatedConversation: {
     name: string;
     id: string;
@@ -200,26 +211,45 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   return (
     <>
       {!navOpen && (
-        <button
-          className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block"
-          onClick={() => {
-            setNavOpen(!navOpen);
-          }}
-        >
-          <img
-            src={Expand}
-            alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
-          />
-        </button>
+        <div className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block">
+          <div className="flex gap-3 items-center">
+            <button
+              onClick={() => {
+                setNavOpen(!navOpen);
+              }}
+            >
+              <img
+                src={Expand}
+                alt="menu toggle"
+                className={`${
+                  !navOpen ? 'rotate-180' : 'rotate-0'
+                } m-auto transition-all duration-200`}
+              />
+            </button>
+            {queries?.length > 0 && (
+              <button
+                onClick={() => {
+                  newChat();
+                }}
+              >
+                <img
+                  src={openNewChat}
+                  alt="open new chat icon"
+                  className="cursor-pointer"
+                />
+              </button>
+            )}
+            <div className="text-[#949494] font-medium text-[20px]">
+              DocsGPT
+            </div>
+          </div>
+        </div>
       )}
       <div
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+        } duration-20 fixed top-0 z-40 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -275,7 +305,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             {t('newChat')}
           </p>
         </NavLink>
-        <div className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white">
+        <div
+          id="conversationsMainDiv"
+          className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
+        >
           {conversations && conversations.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
@@ -304,7 +337,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <></>
           )}
         </div>
-
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
             <div className="relative my-4 mx-4 flex gap-2">
@@ -359,83 +391,69 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               </p>
             </NavLink>
           </div>
-          <div className="flex justify-between gap-2 border-b-[1.5px] py-2 dark:border-b-purple-taupe">
-            <NavLink
-              onClick={() => {
-                if (isMobile) {
-                  setNavOpen(!navOpen);
-                }
-                resetConversation();
-              }}
-              to="/about"
-              className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-                  isActive ? 'bg-gray-3000 dark:bg-[#28292E]' : ''
-                }`
-              }
-            >
-              <img
-                src={Info}
-                alt="icon"
-                className="ml-2 w-5 filter dark:invert"
-              />
-              <p className="my-auto pr-1 text-sm">{t('about')}</p>
-            </NavLink>
-            <div className="flex items-center justify-evenly gap-1 px-1">
-              <NavLink
-                target="_blank"
-                to={'https://discord.gg/WHJdfbQDR4'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Discord}
-                  alt="discord"
-                  className="m-2 w-6 self-center filter dark:invert"
-                />
-              </NavLink>
-              <NavLink
-                target="_blank"
-                to={'https://twitter.com/docsgptai'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Twitter}
-                  alt="x"
-                  className="m-2 w-5 self-center filter dark:invert"
-                />
-              </NavLink>
-              <NavLink
-                target="_blank"
-                to={'https://github.com/arc53/docsgpt'}
-                className={
-                  'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                }
-              >
-                <img
-                  src={Github}
-                  alt="github"
-                  className="m-2 w-6 self-center filter dark:invert"
-                />
-              </NavLink>
+          <div className="flex flex-col justify-end text-eerie-black dark:text-white">
+            <div className="flex justify-between items-center px-1 py-1">
+              <Help />
+
+              <div className="flex items-center gap-1">
+                <NavLink
+                  target="_blank"
+                  to={'https://discord.gg/WHJdfbQDR4'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Discord}
+                    alt="discord"
+                    className="m-2 w-6 self-center filter dark:invert"
+                  />
+                </NavLink>
+                <NavLink
+                  target="_blank"
+                  to={'https://twitter.com/docsgptai'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Twitter}
+                    alt="x"
+                    className="m-2 w-5 self-center filter dark:invert"
+                  />
+                </NavLink>
+                <NavLink
+                  target="_blank"
+                  to={'https://github.com/arc53/docsgpt'}
+                  className={
+                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                  }
+                >
+                  <img
+                    src={Github}
+                    alt="github"
+                    className="m-2 w-6 self-center filter dark:invert"
+                  />
+                </NavLink>
+              </div>
             </div>
           </div>
         </div>
       </div>
       <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
-        <button
-          className="mt-5 ml-6 h-6 w-6 md:hidden"
-          onClick={() => setNavOpen(true)}
-        >
-          <img
-            src={Hamburger}
-            alt="menu toggle"
-            className="w-7 filter dark:invert"
-          />
-        </button>
+        <div className="flex gap-6 items-center h-full ml-6 ">
+          <button
+            className=" h-6 w-6 md:hidden"
+            onClick={() => setNavOpen(true)}
+          >
+            <img
+              src={Hamburger}
+              alt="menu toggle"
+              className="w-7 filter dark:invert"
+            />
+          </button>
+          <div className="text-[#949494] font-medium text-[20px]">DocsGPT</div>
+        </div>
       </div>
       <APIKeyModal
         modalState={apiKeyModalState}
