@@ -42,7 +42,7 @@ export default function APIKeys() {
         return response.json();
       })
       .then((data) => {
-        data.status === 'ok' &&
+        data.success === true &&
           setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
       })
       .catch((error) => {

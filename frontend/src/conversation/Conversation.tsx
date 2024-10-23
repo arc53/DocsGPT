@@ -1,20 +1,24 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-
+import newChatIcon from '../assets/openNewChat.svg';
 import ArrowDown from '../assets/arrow-down.svg';
 import Send from '../assets/send.svg';
 import SendDark from '../assets/send_dark.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
+import { useNavigate } from 'react-router-dom';
 import Hero from '../Hero';
 import { useDarkTheme, useMediaQuery } from '../hooks';
+import { ShareConversationModal } from '../modals/ShareConversationModal';
+import { setConversation, updateConversationId } from './conversationSlice';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
+import ShareIcon from '../assets/share.svg';
 import {
   addQuery,
   fetchAnswer,
@@ -22,10 +26,10 @@ import {
   selectStatus,
   updateQuery,
 } from './conversationSlice';
-import ShareButton from '../components/ShareButton';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
+  const navigate = useNavigate();
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
@@ -36,6 +40,7 @@ export default function Conversation() {
   const fetchStream = useRef<any>(null);
   const [eventInterrupt, setEventInterrupt] = useState(false);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
 
@@ -44,6 +49,9 @@ export default function Conversation() {
   };
   useEffect(() => {
     !eventInterrupt && scrollIntoView();
+    if (queries.length == 0) {
+      resetConversation();
+    }
   }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
@@ -117,6 +125,17 @@ export default function Conversation() {
       inputRef.current.value = '';
       handleInput();
     }
+  };
+  const resetConversation = () => {
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
+  };
+  const newChat = () => {
+    if (queries && queries.length > 0) resetConversation();
   };
 
   const prepResponseView = (query: Query, index: number) => {
@@ -195,10 +214,49 @@ export default function Conversation() {
     };
   }, []);
   return (
-    <div className="flex flex-col gap-1 h-full justify-end">
-      {conversationId && (
-        <div className="hidden md:block">
-          <ShareButton conversationId={conversationId} />
+    <div className="flex flex-col gap-1 h-full justify-end ">
+      {conversationId && queries.length > 0 && (
+        <div className="absolute top-4 right-20 z-20 ">
+          {' '}
+          <div className="flex items-center gap-4 ">
+            {isMobile && queries.length > 0 && (
+              <button
+                title="Open New Chat"
+                onClick={() => {
+                  newChat();
+                }}
+                className="hover:bg-bright-gray dark:hover:bg-[#28292E]"
+              >
+                <img
+                  className=" h-5 w-5 filter dark:invert "
+                  alt="NewChat"
+                  src={newChatIcon}
+                />
+              </button>
+            )}
+
+            <button
+              title="Share"
+              onClick={() => {
+                setShareModalState(true);
+              }}
+              className=" hover:bg-bright-gray dark:hover:bg-[#28292E]"
+            >
+              <img
+                className=" h-5 w-5 filter dark:invert"
+                alt="share"
+                src={ShareIcon}
+              />
+            </button>
+          </div>
+          {isShareModalOpen && (
+            <ShareConversationModal
+              close={() => {
+                setShareModalState(false);
+              }}
+              conversationId={conversationId}
+            />
+          )}
         </div>
       )}
       <div
