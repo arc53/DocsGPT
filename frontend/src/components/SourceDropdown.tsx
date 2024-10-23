@@ -33,7 +33,6 @@ function SourceDropdown({
   const handleEmptyDocumentSelect = () => {
     dispatch(setSelectedDocs(null));
     setIsDocsListOpen(false);
-    handlePostDocumentSelect(null); // Ensure the model receives no documents
   };
 
   const handleClickOutside = (event: MouseEvent) => {

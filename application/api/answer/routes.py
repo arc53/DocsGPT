@@ -303,8 +303,9 @@ class Stream(Resource):
             history = json.loads(history)
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
-            if "selectedDocs" in data and data["selectedDocs"] is None:
+            if "active_docs" in data and data["active_docs"] is None:
                 chunks = 0
+                source = {}
             else:
                 chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
