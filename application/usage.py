@@ -1,10 +1,9 @@
 import sys
-from pymongo import MongoClient
 from datetime import datetime
-from application.core.settings import settings
+from application.core.mongo_db import MongoDB
 from application.utils import num_tokens_from_string
 
-mongo = MongoClient(settings.MONGO_URI)
+mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 usage_collection = db["token_usage"]
 
