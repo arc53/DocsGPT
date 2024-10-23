@@ -479,6 +479,19 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
+
+            if "twitter_search" in settings.RETRIEVERS_ENABLED:
+                data.append(
+                    {
+                        "name": "Twitter Search",
+                        "language": "en",
+                        "date": "twitter_search",
+                        "model": settings.EMBEDDINGS_NAME,
+                        "location": "custom",
+                        "tokens": "",
+                        "retriever": "twitter_search",
+                    }
+                )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
