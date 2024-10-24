@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
     VECTOR_STORE: str = "faiss" #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
-    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
+    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search", "twitter_search"] # also brave_search
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
@@ -74,7 +74,8 @@ class Settings(BaseSettings):
     LANCEDB_PATH: str = "/tmp/lancedb"  # Path where LanceDB stores its local data
     LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
     BRAVE_SEARCH_API_KEY: Optional[str] = None
-
+    TWITTER_API_KEY: Optional[str] = None
+    TWITTER_API_KEY_SECRET: Optional[str] = None
     FLASK_DEBUG_MODE: bool = False
 
 

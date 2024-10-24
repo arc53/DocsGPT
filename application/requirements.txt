@@ -70,6 +70,7 @@ redis==5.0.1
 referencing==0.30.2
 regex==2024.9.11
 requests==2.32.3
+requests-oauthlib==2.0.0
 retry==0.9.2
 sentence-transformers==3.0.1
 tiktoken==0.7.0

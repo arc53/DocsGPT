@@ -1,7 +1,7 @@
 from application.retriever.classic_rag import ClassicRAG
 from application.retriever.duckduck_search import DuckDuckSearch
 from application.retriever.brave_search import BraveRetSearch
-
+from application.retriever.twitter_search import TwitterRetSearch
 
 
 class RetrieverCreator:
@@ -9,6 +9,7 @@ class RetrieverCreator:
         'classic': ClassicRAG,
         'duckduck_search': DuckDuckSearch,
         'brave_search': BraveRetSearch,
+        'twitter_search': TwitterRetSearch,
         'default': ClassicRAG
     }
 
