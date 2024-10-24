@@ -611,13 +611,38 @@ function Upload({
     );
   }
 
+  const modalRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    console.log('Modal State:', modalState);
+
+    const handleClickOutside = (event: MouseEvent) => {
+      console.log('Clicked:', event.target);
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(event.target as Node)
+      ) {
+        console.log('Click outside detected, closing modal');
+        setModalState('INACTIVE');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [setModalState]);
+
   return (
     <article
       className={`${
         modalState === 'ACTIVE' ? 'visible' : 'hidden'
       } absolute z-30 bg-gray-alpha flex items-center justify-center h-[calc(100vh-4rem)] md:h-screen w-full`}
     >
-      <article className="relative mx-auto flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg dark:bg-outer-space h-fit-content">
+      <article
+        ref={modalRef}
+        className="relative mx-auto flex w-[90vw] max-w-lg flex-col gap-4 rounded-lg bg-white p-6 shadow-lg dark:bg-outer-space h-fit-content"
+      >
         {!isOnboarding && !progress && (
           <button
             className="absolute top-4 right-4 m-1 w-3"
