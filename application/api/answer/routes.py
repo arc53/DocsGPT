@@ -302,6 +302,7 @@ class Stream(Resource):
             prompt_id = data.get("prompt_id", "default")
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
+            chunks = int(data_key.get("chunks", 2))
 
             if "api_key" in data:
                 data_key = get_data_from_api_key(data["api_key"])
