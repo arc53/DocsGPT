@@ -615,14 +615,11 @@ function Upload({
 
   useEffect(() => {
     console.log('Modal State:', modalState);
-
     const handleClickOutside = (event: MouseEvent) => {
-      console.log('Clicked:', event.target);
       if (
         modalRef.current &&
         !modalRef.current.contains(event.target as Node)
       ) {
-        console.log('Click outside detected, closing modal');
         setModalState('INACTIVE');
       }
     };
