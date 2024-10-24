@@ -340,6 +340,7 @@ class UploadFile(Resource):
                         ".epub",
                         ".html",
                         ".mdx",
+                        ".json"
                     ],
                     job_name,
                     final_filename,

@@ -314,6 +314,7 @@ function Upload({
       'application/zip': ['.zip'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         ['.docx'],
+      'application/json': ['.json'],
       'text/csv': ['.csv'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
         '.xlsx',
