@@ -269,9 +269,6 @@ class Stream(Resource):
             "prompt_id": fields.String(
                 required=False, default="default", description="Prompt ID"
             ),
-            "selectedDocs": fields.String(
-                required=False, description="Selected documents"
-            ),
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
@@ -303,12 +300,9 @@ class Stream(Resource):
             history = json.loads(history)
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
-            if "selectedDocs" in data and data["selectedDocs"] is None:
-                chunks = 0
-            else:
-                chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
+            chunks = int(data_key.get("chunks", 2))
 
             if "api_key" in data:
                 data_key = get_data_from_api_key(data["api_key"])
@@ -333,7 +327,9 @@ class Stream(Resource):
             )
 
             prompt = get_prompt(prompt_id)
-
+            if "isNoneDoc" in data and data["isNoneDoc"] is True:
+                chunks = 0
+                
             retriever = RetrieverCreator.create_retriever(
                 retriever_name,
                 question=question,
