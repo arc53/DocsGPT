@@ -13,37 +13,37 @@
 }
 
 body.dark {
-  background-color: #202124; /* raisin-black */
+  background-color: #202124; 
 }
 
 /* WebKit-based scrollbar styling (Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
-  width: 8px; /* Consistent scrollbar width */
+  width: 8px; 
 }
 ::-webkit-scrollbar-track {
-  background: #f1f1f1; /* Light gray track for all themes */
+  background: #f1f1f1; 
 }
 .dark ::-webkit-scrollbar-track {
-  background: #2f3036; /* Darker track for dark mode */
+  background: #2f3036; 
 }
 ::-webkit-scrollbar-thumb {
-  background: #888; /* Unified gray thumb for both themes */
+  background: #888; 
   border-radius: 40px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555; /* Darker thumb on hover */
+  background: #555; 
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #b1afaf; /* Slightly lighter thumb on hover for better contrast in dark mode */
+  background: #b1afaf; 
 }
 
 /* Firefox scrollbar styling */
 .scrollbar {
-  scrollbar-color: #888 #f1f1f1; /* Thumb and track color */
-  scrollbar-width: thin; /* Consistent width for Firefox  */
+  scrollbar-color: #888 #f1f1f1; 
+  scrollbar-width: thin; 
 }
 .dark.scrollbar {
-  scrollbar-color: #b1afaf #2f3036; /* Dark mode thumb and track color for Firefox */
+  scrollbar-color: #b1afaf #2f3036; 
 }
 
 /* Custom scrollbar trick for Firefox (forcing it to behave like Chrome) */
@@ -51,8 +51,7 @@ body.scrollbar {
   overflow: overlay; /* This makes the scrollbar overlay content, matching WebKit behavior */
 }
 body.scrollbar::-moz-scrollbar {
-  width: 8px; /* This still won't work in Firefox, but forces consistency */
-}
+  width: 8px; 
 
 /* Utility: Remove scrollbars */
 @layer utilities {
