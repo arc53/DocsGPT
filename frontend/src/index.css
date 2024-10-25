@@ -67,9 +67,7 @@ body.dark {
   .table-default td:last-child {
     @apply border-r-0; /* Ensure no right border on the last column */
   }
-
 }
-
 
 /*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
 
