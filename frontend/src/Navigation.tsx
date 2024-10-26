@@ -11,7 +11,6 @@ import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Info from './assets/info.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -42,9 +41,7 @@ import {
 } from './preferences/preferenceSlice';
 import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
-import ShareButton from './components/ShareButton';
 import Help from './components/Help';
-
 
 interface NavigationProps {
   navOpen: boolean;
@@ -392,10 +389,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </NavLink>
           </div>
           <div className="flex flex-col justify-end text-eerie-black dark:text-white">
-            <div className="flex justify-between items-center px-1 py-1">
+            <div className="flex justify-between items-center py-1">
               <Help />
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 pr-4">
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/WHJdfbQDR4'}
