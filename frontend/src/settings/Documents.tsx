@@ -6,11 +6,14 @@ import { useDispatch } from 'react-redux';
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/trash.svg';
+import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
+import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Doc, DocumentsProps } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
+import Input from '../components/Input';
+import Upload from '../upload/Upload'; // Import the Upload component
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -35,7 +38,14 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
+
+  // State for search input
+  const [searchTerm, setSearchTerm] = useState('');
+  // State for modal: active/inactive
+  const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
+  const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
   const [loading, setLoading] = useState(false);
+
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
@@ -59,10 +69,37 @@ const Documents: React.FC<DocumentsProps> = ({
       });
   };
 
+  // Filter documents based on the search term
+  const filteredDocuments = documents?.filter((document) =>
+    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
         <div className="z-10 w-full overflow-x-auto">
+          <div className="my-3 flex justify-between items-center">
+            <div className="p-1">
+              <Input
+                maxLength={256}
+                placeholder="Search..."
+                name="Document-search-input"
+                type="text"
+                id="document-search-input"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)} // Handle search input change
+              />
+            </div>
+            <button
+              className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+              onClick={() => {
+                setIsOnboarding(false); // Set onboarding flag if needed
+                setModalState('ACTIVE'); // Open the upload modal
+              }}
+            >
+              Add New
+            </button>
+          </div>
           {loading ? (
             <SkeletonLoader count={1} />
           ) : (
@@ -70,22 +107,37 @@ const Documents: React.FC<DocumentsProps> = ({
               <thead>
                 <tr>
                   <th>{t('settings.documents.name')}</th>
-                  <th>{t('settings.documents.date')}</th>
-                  <th>{t('settings.documents.tokenUsage')}</th>
-                  <th>{t('settings.documents.type')}</th>
+                  <th>
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.date')}
+                      <img src={caretSort} alt="" />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.tokenUsage')}
+                      <img src={caretSort} alt="" />
+                    </div>
+                  </th>
+                  <th>
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.type')}
+                      <img src={caretSort} alt="" />
+                    </div>
+                  </th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {!documents?.length && (
+                {!filteredDocuments?.length && (
                   <tr>
                     <td colSpan={5} className="!p-4">
                       {t('settings.documents.noData')}
                     </td>
                   </tr>
                 )}
-                {documents &&
-                  documents.map((document, index) => (
+                {filteredDocuments &&
+                  filteredDocuments.map((document, index) => (
                     <tr key={index}>
                       <td>{document.name}</td>
                       <td>{document.date}</td>
@@ -101,7 +153,7 @@ const Documents: React.FC<DocumentsProps> = ({
                             <img
                               src={Trash}
                               alt="Delete"
-                              className="h-4 w-4 cursor-pointer hover:opacity-50"
+                              className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
                               id={`img-${index}`}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -130,6 +182,19 @@ const Documents: React.FC<DocumentsProps> = ({
             </table>
           )}
         </div>
+        {/* Conditionally render the Upload modal based on modalState */}
+        {modalState === 'ACTIVE' && (
+          <div className="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center bg-transparent">
+            <div className="w-full h-full bg-transparent flex flex-col items-center justify-center p-8">
+              {/* Your Upload component */}
+              <Upload
+                modalState={modalState}
+                setModalState={setModalState}
+                isOnboarding={isOnboarding}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

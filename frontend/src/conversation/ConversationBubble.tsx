@@ -354,7 +354,7 @@ const ConversationBubble = forwardRef<
               >
                 <div>
                   <div
-                    className={`flex items-center justify-center rounded-full p-2 dark:bg-transparent ${
+                    className={`flex items-center justify-center rounded-full p-2 ${
                       isLikeHovered
                         ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
                         : 'bg-[#ffffff] dark:bg-transparent'
