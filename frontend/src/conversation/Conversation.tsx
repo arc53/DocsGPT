@@ -302,14 +302,17 @@ export default function Conversation() {
         )}
       </div>
 
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 sm:w-[62%] h-auto">
-        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[62%] h-auto">
+        <div
+          className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black"
+          style={{ height: '60px' }}
+        >
           <textarea
             id="inputbox"
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className={`inputbox-style h-16 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
+            className={`inputbox-style w-full overflow-y-hidden overflow-x-hidden whitespace-pre-wrap rounded-full bg-transparent py-5 text-base leading-tight opacity-100 focus:outline-none dark:bg-transparent dark:text-bright-gray`}
             onInput={handleInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
