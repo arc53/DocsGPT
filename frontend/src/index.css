@@ -3,45 +3,52 @@
 @tailwind utilities;
 
 :root {
-  --viewport-height: 100vh;
+  --viewport-height: 100vh; 
 }
 
 @supports (height: 100dvh) {
   :root {
-    --viewport-height: 100dvh;
+    --viewport-height: 100dvh; 
   }
 }
 
 body.dark {
-  background-color: #202124;
+  background-color: #202124; 
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 8px; 
 }
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f1f1f1; 
 }
 .dark ::-webkit-scrollbar-track {
-  background: #2f3036;
+  background: #2f3036; 
 }
 ::-webkit-scrollbar-thumb {
-  background: #888;
+  background: #888; 
   border-radius: 40px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #555; 
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #b1afaf;
+  background: #b1afaf; 
 }
 
 .scrollbar {
-  scrollbar-color: #888 #f1f1f1;
-  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1; 
+  scrollbar-width: thin; 
 }
 .dark.scrollbar {
-  scrollbar-color: #b1afaf #2f3036;
+  scrollbar-color: #b1afaf #2f3036; 
+}
+
+body.scrollbar {
+  overflow: overlay; 
+}
+body.scrollbar::-moz-scrollbar {
+  width: 8px; 
 }
 
 @layer utilities {
@@ -50,8 +57,8 @@ body.dark {
   }
 
   .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+    -ms-overflow-style: none; 
+    scrollbar-width: none; 
   }
 }
 
@@ -76,7 +83,6 @@ body.dark {
     @apply border-r-0;
   }
 }
-
 
 
 
