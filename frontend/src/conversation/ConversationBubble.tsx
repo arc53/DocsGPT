@@ -9,6 +9,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import usericon from '../assets/UserIcon.png';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
 import Like from '../assets/like.svg?react';
@@ -55,14 +56,23 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+        className={`flex flex-row-reverse self-end flex-wrap my-4 md:my-2 ${className}`}
       >
-        <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
+        <Avatar
+          className="h-7 w-7 text-2xl flex translate-y-3"
+          avatar={
+            <img
+              src={usericon}
+              alt="user"
+              className="h-full w-full object-cover"
+            />
+          }
+        />
         <div
           style={{
             wordBreak: 'break-word',
           }}
-          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-6 md:py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
         >
           {message}
         </div>
@@ -87,7 +97,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex flex-wrap self-start ${className} group flex-col  dark:text-bright-gray`}
+        className={`flex flex-wrap self-start my-4 md:my-2 ${className} group flex-col dark:text-bright-gray`}
       >
         {DisableSourceFE ||
         type === 'ERROR' ||
@@ -231,9 +241,9 @@ const ConversationBubble = forwardRef<
             <p className="text-base font-semibold">Answer</p>
           </div>
           <div
-            className={`ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
+            className={`ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-6 md:py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
-                ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
+                ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000 dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
             }`}
           >

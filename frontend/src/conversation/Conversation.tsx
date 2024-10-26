@@ -214,7 +214,7 @@ export default function Conversation() {
     };
   }, []);
   return (
-    <div className="flex flex-col gap-1 h-full justify-end ">
+    <div className="flex flex-col gap-1 h-full justify-end sm:mx-4 md:mx-4 mx-4">
       {conversationId && queries.length > 0 && (
         <div className="absolute top-4 right-20 z-20 ">
           {' '}
@@ -263,7 +263,7 @@ export default function Conversation() {
         ref={conversationRef}
         onWheel={handleUserInterruption}
         onTouchMove={handleUserInterruption}
-        className="flex justify-center w-full overflow-y-auto h-screen sm:mt-12"
+        className="flex justify-center w-full overflow-y-auto h-screen sm:mt-12 "
       >
         {queries.length > 0 && !hasScrolledToLast && (
           <button
