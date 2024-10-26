@@ -302,7 +302,7 @@ export default function Conversation() {
         )}
       </div>
 
-      <div className="flex w-[90%] flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 h-auto my-2 sm:my-0">
+      <div className="flex w-9/12 md:w-7/12 flex-col items-end self-center rounded-2xl bg-opacity-0 pb-1 h-auto">
         <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <textarea
             id="inputbox"
@@ -334,7 +334,7 @@ export default function Conversation() {
           )}
         </div>
 
-        <p className="text-gray-595959 hidden sm:flex my-3 sm:my-5 self-center bg-transparent py-2 text-center text-xs dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-595959 my-1 self-center bg-transparent py-2 text-center text-xs dark:text-bright-gray md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
