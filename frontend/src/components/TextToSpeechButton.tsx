@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Speaker from '../assets/speaker.svg?react';
 import Stopspeech from '../assets/stopspeech.svg?react';
+import EasySpeech from 'easy-speech';
 
 export default function SpeakButton({
   text,
@@ -14,26 +15,28 @@ export default function SpeakButton({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSpeakHovered, setIsSpeakHovered] = useState(false);
 
-  const handleSpeakClick = (text: string) => {
+  const handleSpeakClick = async (text: string) => {
     if (isSpeaking) {
-      window.speechSynthesis.cancel();
+      EasySpeech.cancel();
       setIsSpeaking(false);
       return;
     } // Stop ongoing speech if already speaking
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    setIsSpeaking(true);
-
-    utterance.onend = () => {
-      setIsSpeaking(false); // Reset when speech ends
-    };
-
-    utterance.onerror = () => {
-      console.error('Speech synthesis failed.');
-      setIsSpeaking(false);
-    };
-
-    window.speechSynthesis.speak(utterance);
+    try {
+      await EasySpeech.init(); // Initialize EasySpeech
+      setIsSpeaking(true);
+      
+      EasySpeech.speak({
+        text,
+        onend: () => setIsSpeaking(false),  // Reset when speech ends
+        onerror: () => {
+          console.error('Speech synthesis failed.');
+          setIsSpeaking(false);
+        },
+      });
+    } catch (error) {
+      console.error('Failed to initialize speech synthesis', error);
+    }
   };
 
   return (
