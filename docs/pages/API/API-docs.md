@@ -51,7 +51,7 @@ In response, you will get a JSON document containing the `answer`, `query` and `
 
 **Description:**
 
-This endpoint will make sure documentation is loaded on the server (just run it every time user is switching between libraries (documentations)).
+This endpoint will make sure documentation is loaded on the server (just run it every time the user is switching between libraries (documentations)).
 
 **Request:**
 
@@ -113,7 +113,7 @@ Example of JSON in Docshub and local:
 ### 4. /api/upload
 **Description:**
 
-This endpoint is used to upload a file that needs to be trained, response is JSON with task ID, which can be used to check on task's progress.
+This endpoint is used to upload a file that needs to be trained; the response is JSON with a task ID, which can be used to check on the task's progress.
 
 **Request:**
 
