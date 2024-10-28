@@ -86,7 +86,7 @@
       "start": "Empezar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .zip limitados a 25 MB",
+      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .zip limitados a 25 MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",
