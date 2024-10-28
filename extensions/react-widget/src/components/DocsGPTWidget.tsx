@@ -1,41 +1,14 @@
 "use client";
-import React, { useRef, useState } from 'react'
+import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
-import styled, { keyframes, createGlobalStyle, ThemeProvider } from 'styled-components';
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon, ExternalLinkIcon } from '@radix-ui/react-icons';
+import styled, { keyframes, createGlobalStyle, } from 'styled-components';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon, } from '@radix-ui/react-icons';
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
+import QuerySources from "./QuerySources";
 import Like from "../assets/like.svg"
 import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
-
-
-const themes = {
-  dark: {
-    bg: '#222327',
-    text: '#fff',
-    primary: {
-      text: "#FAFAFA",
-      bg: '#222327'
-    },
-    secondary: {
-      text: "#A1A1AA",
-      bg: "#38383b"
-    }
-  },
-  light: {
-    bg: '#fff',
-    text: '#000',
-    primary: {
-      text: "#222327",
-      bg: "#fff"
-    },
-    secondary: {
-      text: "#A1A1AA",
-      bg: "#F6F6F6"
-    }
-  }
-}
 
 const GlobalStyles = createGlobalStyle`
 .response pre {
@@ -354,44 +327,6 @@ const HeroDescription = styled.p`
   line-height: 1.5;
 `;
 
-const SourcesContainer = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-`;
-
-const SourceBox = styled.div`
-  background-color: ${props => props.theme.secondary.bg};
-  border-radius: 6px;
-  padding: 8px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-`;
-
-const LoadingIndicator = styled.div`
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2px solid ${props => props.theme.secondary.text};
-  border-radius: 50%;
-  border-top-color: transparent;
-  animation: spin 1s linear infinite;
-  
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-`;
-
 const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
   return (
     <>
@@ -411,6 +346,8 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
     </>
   );
 };
+
+
 
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
@@ -494,13 +431,14 @@ export const DocsGPTWidget = ({
     try {
       await fetchAnswerStreaming(
         {
-          question: question,
-          apiKey: apiKey,
-          apiHost: apiHost,
+          question,
+          apiKey,
+          apiHost,
           history: queries,
-          conversationId: conversationId,
+          conversationId,
           onEvent: (event: MessageEvent) => {
             const data = JSON.parse(event.data);
+            
             if (data.type === 'end') {
               setStatus('idle');
             }
@@ -513,10 +451,11 @@ export const DocsGPTWidget = ({
               setQueries(updatedQueries);
               setStatus('idle')
             }
-            else if (data.type === 'sources') {
+            else if (data.type === 'source') {           
               const updatedQueries = [...queries];
-              updatedQueries[updatedQueries.length - 1].sources = data.sources;
-              setQueries(updatedQueries);
+              updatedQueries[updatedQueries.length - 1].sources = data.source;
+              setQueries(updatedQueries);         
+
             }
             else {
               const result = data.answer;
@@ -549,15 +488,17 @@ export const DocsGPTWidget = ({
   };
 
   return (
-    <ThemeProvider theme={themes[theme]}>
+<>
       {open && size === 'large' &&
         <Overlay onClick={() => {
           setOpen(false)
         }} />
       }
+
       <FloatingButton bgcolor={buttonBg} onClick={() => setOpen(!open)} hidden={open}>
         <img style={{ maxHeight: '4rem', maxWidth: '4rem' }} src={buttonIcon} />
       </FloatingButton>
+
       <WidgetContainer modal={size == 'large'}>
         <GlobalStyles />
         {open && <StyledContainer>
@@ -593,18 +534,7 @@ export const DocsGPTWidget = ({
                       query.response ? (
                         <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
                           {showSources && query.sources && (
-                            <SourcesContainer>
-                              {query.sources.map((source, sourceIndex) => (
-                                <SourceBox 
-                                  key={sourceIndex}
-                                  onClick={() => window.open(source.source, '_blank', 'noopener,noreferrer')}
-                                  title={source.title}
-                                >
-                                  {source.title}
-                                  <ExternalLinkIcon />
-                                </SourceBox>
-                              ))}
-                            </SourcesContainer>
+                            <QuerySources sources={query.sources} theme={theme}/>
                           )}
                           <Message
                             type='ANSWER'
@@ -662,6 +592,7 @@ export const DocsGPTWidget = ({
               : <Hero title={heroTitle} description={heroDescription} theme={theme} />
             }
           </Conversation>
+
           <PromptContainer
             size={size}
             onSubmit={handleSubmit}>
@@ -676,6 +607,6 @@ export const DocsGPTWidget = ({
           </PromptContainer>
         </StyledContainer>}
       </WidgetContainer>
-    </ThemeProvider>
+    </>
   )
 }
