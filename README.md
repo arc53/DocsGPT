@@ -35,7 +35,8 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 
 [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
-![video-example-of-docs-gpt](https://d3dg1063dc54p9.cloudfront.net/videos/demov3.gif)
+
+<img src="https://github.com/user-attachments/assets/9a1f21de-7a15-4e42-9424-70d22ba5a913" alt="video-example-of-docs-gpt" width="1000" height="500">
 
 ## Roadmap
 
@@ -202,4 +203,9 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
-Built with [:bird: :link: LangChain](https://github.com/hwchase17/langchain)
+<p>This project is supported by:</p>
+<p>
+  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
+    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px">
+  </a>
+</p>

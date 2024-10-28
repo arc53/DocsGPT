@@ -10,6 +10,9 @@
   "sourceDocs": "原始文件",
   "none": "無",
   "cancel": "取消",
+  "help": "聯繫支援",
+  "emailUs": "寄送電子郵件給我們",
+  "documentation": "文件",
   "demo": [
     {
       "header": "了解 DocsGPT",
@@ -77,7 +80,7 @@
       "remote": "遠端",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳 .pdf, .txt, .rst, .docx, .md, .zip 檔案，大小限制為 25MB",
+      "info": "請上傳 .pdf, .txt, .rst, .docx, .md, .json, .zip 檔案，大小限制為 25MB",
       "uploadedFiles": "已上傳的檔案",
       "cancel": "取消",
       "train": "訓練",

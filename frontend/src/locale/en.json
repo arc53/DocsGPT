@@ -10,6 +10,9 @@
   "sourceDocs": "Source",
   "none": "None",
   "cancel": "Cancel",
+  "help": "Help",
+  "emailUs": "Email us",
+  "documentation": "documentation",
   "demo": [
     {
       "header": "Learn about DocsGPT",
@@ -83,7 +86,7 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .zip limited to 25mb",
+      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",

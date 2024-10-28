@@ -7,7 +7,7 @@ from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
 from flask import Blueprint, jsonify, make_response, request
-from flask_restx import fields, Namespace, Resource
+from flask_restx import inputs, fields, Namespace, Resource
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 
@@ -340,6 +340,8 @@ class UploadFile(Resource):
                         ".epub",
                         ".html",
                         ".mdx",
+                        ".json",
+                        ".xlsx",
                     ],
                     job_name,
                     final_filename,
@@ -802,7 +804,7 @@ class ShareConversation(Resource):
         if missing_fields:
             return missing_fields
 
-        is_promptable = request.args.get("isPromptable")
+        is_promptable = request.args.get("isPromptable", type=inputs.boolean)
         if is_promptable is None:
             return make_response(
                 jsonify({"success": False, "message": "isPromptable is required"}), 400
@@ -831,7 +833,7 @@ class ShareConversation(Resource):
                 uuid.uuid4(), UuidRepresentation.STANDARD
             )
 
-            if is_promptable.lower() == "true":
+            if is_promptable:
                 prompt_id = data.get("prompt_id", "default")
                 chunks = data.get("chunks", "2")
 
@@ -859,7 +861,7 @@ class ShareConversation(Resource):
                             "conversation_id": DBRef(
                                 "conversations", ObjectId(conversation_id)
                             ),
-                            "isPromptable": is_promptable.lower() == "true",
+                            "isPromptable": is_promptable,
                             "first_n_queries": current_n_queries,
                             "user": user,
                             "api_key": api_uuid,
@@ -883,7 +885,7 @@ class ShareConversation(Resource):
                                     "$ref": "conversations",
                                     "$id": ObjectId(conversation_id),
                                 },
-                                "isPromptable": is_promptable.lower() == "true",
+                                "isPromptable": is_promptable,
                                 "first_n_queries": current_n_queries,
                                 "user": user,
                                 "api_key": api_uuid,
@@ -918,7 +920,7 @@ class ShareConversation(Resource):
                                 "$ref": "conversations",
                                 "$id": ObjectId(conversation_id),
                             },
-                            "isPromptable": is_promptable.lower() == "true",
+                            "isPromptable": is_promptable,
                             "first_n_queries": current_n_queries,
                             "user": user,
                             "api_key": api_uuid,
@@ -939,7 +941,7 @@ class ShareConversation(Resource):
                     "conversation_id": DBRef(
                         "conversations", ObjectId(conversation_id)
                     ),
-                    "isPromptable": is_promptable.lower() == "false",
+                    "isPromptable": is_promptable,
                     "first_n_queries": current_n_queries,
                     "user": user,
                 }
@@ -962,7 +964,7 @@ class ShareConversation(Resource):
                             "$ref": "conversations",
                             "$id": ObjectId(conversation_id),
                         },
-                        "isPromptable": is_promptable.lower() == "false",
+                        "isPromptable": is_promptable,
                         "first_n_queries": current_n_queries,
                         "user": user,
                     }

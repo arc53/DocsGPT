@@ -3,6 +3,7 @@ import requests
 from typing import List
 from application.parser.remote.base import BaseRemote
 from langchain_core.documents import Document
+import mimetypes
 
 class GitHubLoader(BaseRemote):
     def __init__(self):
@@ -18,13 +19,17 @@ class GitHubLoader(BaseRemote):
 
         if response.status_code == 200:
             content = response.json()
+            mime_type, _ = mimetypes.guess_type(file_path)  # Guess the MIME type based on the file extension
+
             if content.get("encoding") == "base64":
-                try:
-                    decoded_content = base64.b64decode(content["content"]).decode("utf-8")
-                    return f"Filename: {file_path}\n\n{decoded_content}"
-                except Exception as e:
-                    print(f"Error decoding content for {file_path}: {e}")
-                    raise
+                if mime_type and mime_type.startswith("text"):  # Handle only text files
+                    try:
+                        decoded_content = base64.b64decode(content["content"]).decode("utf-8")
+                        return f"Filename: {file_path}\n\n{decoded_content}"
+                    except Exception as e:
+                        raise e
+                else:
+                    return f"Filename: {file_path} is a binary file and was skipped."
             else:
                 return f"Filename: {file_path}\n\n{content['content']}"
         else:

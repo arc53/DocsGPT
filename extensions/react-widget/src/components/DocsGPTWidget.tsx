@@ -458,7 +458,7 @@ export const DocsGPTWidget = ({
 
             }
             else {
-              const result = data.answer;
+              const result = data.answer ? data.answer : ''; //Fallback to an empty string if data.answer is undefined
               const streamingResponse = queries[queries.length - 1].response ? queries[queries.length - 1].response : '';
               const updatedQueries = [...queries];
               updatedQueries[updatedQueries.length - 1].response = streamingResponse + result;
