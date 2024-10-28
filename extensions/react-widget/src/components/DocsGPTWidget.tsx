@@ -183,23 +183,53 @@ const Description = styled.p`
     margin-top: 0;
 `;
 
-const Conversation = styled.div<{ size: string }>`
-    min-height: 250px;
-    max-width: 968px;
-    height: ${props => props.size === 'large' ? '75vh' : props.size === 'medium' ? '70vh' : '320px'};
-    width: ${props => props.size === 'large' ? '60vw' : props.size === 'medium' ? '28vw' : '400px'};
-    padding-inline: 0.5rem;
-    border-radius: 0.375rem;
-    text-align: left;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: #4a4a4a transparent; /* thumb color track color */
-    @media only screen and (max-width: 768px) {
+const Conversation = styled.div<{ size: WidgetProps["size"] }>`
+  min-height: 250px;
+  max-height: ${(props) =>
+    typeof props.size === "object" &&
+    "custom" in props.size 
+      && (props.size as { custom: { maxHeight: string } }).custom
+          .maxHeight || ""
+          };
+  max-width: ${(props) =>
+    (typeof props.size === "object" &&
+      "custom" in props.size ?
+      (props.size as { custom: { maxWidth: string } }).custom
+        .maxWidth || "" : "968px")
+    };
+  height: ${(props) =>
+    props.size === "large"
+      ? "75vh"
+      : props.size === "medium"
+      ? "70vh"
+      : typeof props.size === "object" && "custom" in props.size
+      ? (props.size as { custom: { height: string } }).custom.height
+      : "320px"};
+  width: ${(props) =>
+    props.size === "large"
+      ? "60vw"
+      : props.size === "medium"
+      ? "28vw"
+      : typeof props.size === "object" && "custom" in props.size
+      ? (props.size as { custom: { width: string } }).custom.width
+      : "400px"};
+  padding-inline: 0.5rem;
+  border-radius: 0.375rem;
+  text-align: left;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent; /* thumb color track color */
+  @media only screen and (max-width: 768px) {
     width: 90vw !important;
-    }
-    @media only screen and (min-width:768px ) and (max-width: 1280px) {
-    width:${props => props.size === 'large' ? '90vw' : props.size === 'medium' ? '60vw' : '400px'} !important;
-    }
+  }
+  @media only screen and (min-width: 768px) and (max-width: 1280px) {
+    width: ${(props) =>
+      props.size === "large"
+        ? "90vw"
+        : props.size === "medium"
+        ? "60vw"
+        : "400px"} !important;
+  }
 `;
 const Feedback = styled.div`
   background-color: transparent;
@@ -265,7 +295,7 @@ const DotAnimation = styled.div`
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
-const PromptContainer = styled.form<{ size: string }>`
+const PromptContainer = styled.form<{ size: WidgetProps['size'] }>`
   background-color: transparent;
   height: ${props => props.size == 'large' ? '60px' : '40px'};
   margin: 16px;
@@ -282,7 +312,7 @@ const StyledInput = styled.input`
   color: ${props => props.theme.text};
   outline: none;
 `;
-const StyledButton = styled.button<{ size: string }>`
+const StyledButton = styled.button<{ size: WidgetProps['size'] }>`
   display: flex;
   justify-content: center;
   align-items: center;
@@ -366,13 +396,14 @@ export const DocsGPTWidget = ({
   theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
-  collectFeedback = true
+  collectFeedback = true,
+  deafultOpen = false
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([])
   const [conversationId, setConversationId] = React.useState<string | null>(null)
-  const [open, setOpen] = React.useState<boolean>(false)
+  const [open, setOpen] = React.useState<boolean>(deafultOpen)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
   const isBubbleHovered = useRef<boolean>(false)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
