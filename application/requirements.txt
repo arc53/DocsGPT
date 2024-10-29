@@ -85,3 +85,4 @@ vine==5.1.0
 wcwidth==0.2.13
 werkzeug==3.0.4
 yarl==1.11.1
+gTTS==2.3.2
