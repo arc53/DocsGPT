@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import Speaker from '../assets/speaker.svg?react';
 import Stopspeech from '../assets/stopspeech.svg?react';
+import LoadingIcon from '../assets/Loading.svg?react'; // Add a loading icon SVG here
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 export default function SpeakButton({
@@ -13,12 +14,13 @@ export default function SpeakButton({
   colorDark?: string;
 }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSpeakHovered, setIsSpeakHovered] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null); // Reference to the audio object
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const handleSpeakClick = async () => {
     if (isSpeaking) {
-      // Stop audio if currently playing and reset the state
+      // Stop audio if it's currently playing
       audioRef.current?.pause();
       audioRef.current = null;
       setIsSpeaking(false);
@@ -26,9 +28,9 @@ export default function SpeakButton({
     }
 
     try {
-      setIsSpeaking(true);
+      // Set loading state and initiate TTS request
+      setIsLoading(true);
 
-      // Make a POST request to the /api/tts endpoint
       const response = await fetch(apiHost + '/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -38,22 +40,27 @@ export default function SpeakButton({
       const data = await response.json();
 
       if (data.success && data.audio_base64) {
+        // Create and play the audio
         const audio = new Audio(`data:audio/mp3;base64,${data.audio_base64}`);
-        audioRef.current = audio; // Store the audio object in ref for later control
-        audio.play();
+        audioRef.current = audio;
 
-        // Reset state when audio ends
-        audio.onended = () => {
-          setIsSpeaking(false);
-          audioRef.current = null;
-        };
+        audio.play().then(() => {
+          setIsSpeaking(true);
+          setIsLoading(false);
+
+          // Reset when audio ends
+          audio.onended = () => {
+            setIsSpeaking(false);
+            audioRef.current = null;
+          };
+        });
       } else {
         console.error('Failed to retrieve audio.');
-        setIsSpeaking(false);
+        setIsLoading(false);
       }
     } catch (error) {
       console.error('Error fetching audio from TTS endpoint', error);
-      setIsSpeaking(false);
+      setIsLoading(false);
     }
   };
 
@@ -65,7 +72,9 @@ export default function SpeakButton({
           : `bg-[${colorLight ? colorLight : '#FFFFFF'}] dark:bg-[${colorDark ? colorDark : 'transparent'}]`
       }`}
     >
-      {isSpeaking ? (
+      {isLoading ? (
+        <LoadingIcon className="animate-spin" />
+      ) : isSpeaking ? (
         <Stopspeech
           className="cursor-pointer fill-none"
           onClick={handleSpeakClick}
