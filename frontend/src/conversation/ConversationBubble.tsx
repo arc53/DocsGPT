@@ -56,18 +56,21 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex flex-row-reverse self-end flex-wrap my-4 md:my-2 ${className}`}
+        className={`flex flex-col my-4 md:my-2 items-end ${className}`}
       >
-        <Avatar
-          className="h-7 w-7 text-2xl flex translate-y-3"
-          avatar={
-            <img
-              src={usericon}
-              alt="user"
-              className="h-full w-full object-cover"
-            />
-          }
-        />
+        <div className="flex flex-row items-center justify-center gap-3 my-2 -ml-3">
+          <p className="text-base font-semibold text-white">Prompt</p>
+          <Avatar
+            className="h-7 w-7 text-2xl"
+            avatar={
+              <img
+                src={usericon}
+                alt="user"
+                className="h-full w-full object-cover"
+              />
+            }
+          />
+        </div>
         <div
           style={{
             wordBreak: 'break-word',
