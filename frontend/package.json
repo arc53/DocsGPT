@@ -21,7 +21,6 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.2.7",
     "chart.js": "^4.4.4",
-    "easy-speech": "^2.4.0",
     "i18next": "^23.15.1",
     "i18next-browser-languagedetector": "^8.0.0",
     "prop-types": "^15.8.1",
