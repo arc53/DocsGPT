@@ -17,6 +17,7 @@ from application.core.settings import settings
 from application.extensions import api
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
+from application.tts.google_tts import GoogleTTS
 
 mongo = MongoClient(settings.MONGO_URI)
 db = mongo["docsgpt"]
@@ -1663,3 +1664,27 @@ class ManageSync(Resource):
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
         return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/tts")
+class TextToSpeech(Resource):
+    tts_model = api.model(
+        "TextToSpeechModel",
+        {
+            "text": fields.String(required=True, description="Text to be synthesized as audio"),
+        },
+    )
+
+    @api.expect(tts_model)
+    @api.doc(description="Synthesize audio speech from text")
+    def post(self):
+        data = request.get_json()
+        text = data["text"]
+        try:
+            tts_instance = GoogleTTS(text)
+            audio_base64, detected_language = tts_instance.text_to_speech()
+            return make_response(jsonify({"success": True,'audio_base64': audio_base64,'lang':detected_language}), 200)
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
