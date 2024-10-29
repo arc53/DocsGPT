@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Speaker from '../assets/speaker.svg?react';
 import Stopspeech from '../assets/stopspeech.svg?react';
-import EasySpeech from 'easy-speech';
+const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 export default function SpeakButton({
   text,
@@ -14,28 +14,46 @@ export default function SpeakButton({
 }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSpeakHovered, setIsSpeakHovered] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null); // Reference to the audio object
 
-  const handleSpeakClick = async (text: string) => {
+  const handleSpeakClick = async () => {
     if (isSpeaking) {
-      EasySpeech.cancel();
+      // Stop audio if currently playing and reset the state
+      audioRef.current?.pause();
+      audioRef.current = null;
       setIsSpeaking(false);
       return;
-    } // Stop ongoing speech if already speaking
+    }
 
     try {
-      await EasySpeech.init(); // Initialize EasySpeech
       setIsSpeaking(true);
-      
-      EasySpeech.speak({
-        text,
-        onend: () => setIsSpeaking(false),  // Reset when speech ends
-        onerror: () => {
-          console.error('Speech synthesis failed.');
-          setIsSpeaking(false);
-        },
+
+      // Make a POST request to the /api/tts endpoint
+      const response = await fetch(apiHost + '/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
       });
+
+      const data = await response.json();
+
+      if (data.success && data.audio_base64) {
+        const audio = new Audio(`data:audio/mp3;base64,${data.audio_base64}`);
+        audioRef.current = audio; // Store the audio object in ref for later control
+        audio.play();
+
+        // Reset state when audio ends
+        audio.onended = () => {
+          setIsSpeaking(false);
+          audioRef.current = null;
+        };
+      } else {
+        console.error('Failed to retrieve audio.');
+        setIsSpeaking(false);
+      }
     } catch (error) {
-      console.error('Failed to initialize speech synthesis', error);
+      console.error('Error fetching audio from TTS endpoint', error);
+      setIsSpeaking(false);
     }
   };
 
@@ -50,14 +68,14 @@ export default function SpeakButton({
       {isSpeaking ? (
         <Stopspeech
           className="cursor-pointer fill-none"
-          onClick={() => handleSpeakClick(text)}
+          onClick={handleSpeakClick}
           onMouseEnter={() => setIsSpeakHovered(true)}
           onMouseLeave={() => setIsSpeakHovered(false)}
         />
       ) : (
         <Speaker
           className="cursor-pointer fill-none"
-          onClick={() => handleSpeakClick(text)}
+          onClick={handleSpeakClick}
           onMouseEnter={() => setIsSpeakHovered(true)}
           onMouseLeave={() => setIsSpeakHovered(false)}
         />
