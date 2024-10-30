@@ -27,6 +27,27 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 # Store conversation history per user
 conversation_histories = {}
 
+def chunk_string(text, max_length=2000):
+    """Splits a string into chunks of a specified maximum length."""
+    # Create list to store the split strings
+    chunks = []
+    # Loop through the text, create substrings with max_length
+    while len(text) > max_length:
+        # Find last space within the limit
+        idx = text.rfind(' ', 0, max_length)
+        # Ensure we don't have an empty part
+        if idx == -1:
+            # If no spaces, just take chunk
+            chunks.append(text[:max_length])
+            text = text[max_length:]
+        else:
+            # Push whatever we've got up to the last space
+            chunks.append(text[:idx])
+            text = text[idx+1:]
+    # Catches the remaining part
+    chunks.append(text)
+    return chunks
+
 def escape_markdown(text):
     """Escapes Discord markdown characters."""
     escape_chars = r'\*_$$$$()~>#+-=|{}.!'
@@ -124,9 +145,9 @@ async def on_message(message):
     answer = response_doc["answer"]
     conversation_id = response_doc["conversation_id"]
 
-    # Escape markdown characters
-
-    await message.channel.send(answer)
+    answer_chunks = chunk_string(answer)
+    for chunk in answer_chunks:
+        await message.channel.send(chunk)
 
     conversation["history"][-1]["response"] = answer
     conversation["conversation_id"] = conversation_id
