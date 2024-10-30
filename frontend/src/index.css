@@ -3,64 +3,80 @@
 @tailwind utilities;
 
 :root {
-  --viewport-height: 100vh; 
+  --viewport-height: 100vh;
+  --scrollbar-width: 8px;
+  --scrollbar-bg: #f1f1f1;
+  --scrollbar-thumb: #888;
+  --scrollbar-thumb-hover: #555;
+  --dark-scrollbar-bg: #2f3036;
+  --dark-scrollbar-thumb: #b1afaf;
+  --dark-scrollbar-thumb-hover: #a1a1a1;
 }
 
 @supports (height: 100dvh) {
   :root {
-    --viewport-height: 100dvh; 
+    --viewport-height: 100dvh;
   }
 }
 
+/* Body background for dark mode */
 body.dark {
-  background-color: #202124; 
+  background-color: #202124;
 }
 
+/* Scrollbar styling for WebKit browsers (e.g., Chrome, Safari) */
 ::-webkit-scrollbar {
-  width: 8px; 
+  width: var(--scrollbar-width);
 }
+
 ::-webkit-scrollbar-track {
-  background: #f1f1f1; 
+  background: var(--scrollbar-bg);
+  border-radius: 4px; /* Ensures rounded scrollbar track */
 }
-.dark ::-webkit-scrollbar-track {
-  background: #2f3036; 
-}
+
 ::-webkit-scrollbar-thumb {
-  background: #888; 
-  border-radius: 40px;
+  background: var
+  border-radius: 4px; 
+  min-height: 20px; 
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #555; 
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #b1afaf; 
+  background: var
 }
 
-.scrollbar {
-  scrollbar-color: #888 #f1f1f1; 
-  scrollbar-width: thin; 
-}
-.dark.scrollbar {
-  scrollbar-color: #b1afaf #2f3036; 
+body.dark ::-webkit-scrollbar-track {
+  background: var
 }
 
-body.scrollbar {
-  overflow: overlay; 
+body.dark ::-webkit-scrollbar-thumb {
+  background: var
 }
-body.scrollbar::-moz-scrollbar {
-  width: 8px; 
+
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: var
 }
+
+/* Scrollbar styling for Firefox */
+body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-bg); /* Match Firefox scrollbar color to Chrome */
+}
+
+body.dark {
+  scrollbar-color: var(--dark-scrollbar-thumb) var(--dark-scrollbar-bg);
+}
+
 
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
-
   .no-scrollbar {
     -ms-overflow-style: none; 
     scrollbar-width: none; 
   }
 }
+
 
 @layer components {
   .table-default {
@@ -72,7 +88,7 @@ body.scrollbar::-moz-scrollbar {
   }
 
   .table-default th:last-child {
-    @apply w-[auto];
+    @apply w-auto;
   }
 
   .table-default td {
