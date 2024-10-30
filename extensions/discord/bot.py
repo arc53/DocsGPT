@@ -125,7 +125,6 @@ async def on_message(message):
     conversation_id = response_doc["conversation_id"]
 
     # Escape markdown characters
-    answer = escape_markdown(answer)
 
     await message.channel.send(answer)
 
