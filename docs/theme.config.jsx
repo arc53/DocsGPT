@@ -51,6 +51,9 @@ const config = {
   footer: {
     text: `MIT ${new Date().getFullYear()} © DocsGPT`,
   },
+  editLink: {
+    content: 'Edit this page on GitHub',
+  },
   logo() {
     return (
       <div className="flex items-center gap-2">
