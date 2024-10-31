@@ -21,9 +21,10 @@ export async function getDocs(): Promise<Doc[] | null> {
   }
 }
 
-export async function getConversations(): Promise<
-  { name: string; id: string }[] | null
-> {
+export async function getConversations(): Promise<{
+  data: { name: string; id: string }[] | null;
+  loading: boolean;
+}> {
   try {
     const response = await conversationService.getConversations();
     const data = await response.json();
@@ -34,10 +35,10 @@ export async function getConversations(): Promise<
       conversations.push(conversation as { name: string; id: string });
     });
 
-    return conversations;
+    return { data: conversations, loading: false };
   } catch (error) {
     console.log(error);
-    return null;
+    return { data: null, loading: false };
   }
 }
 
