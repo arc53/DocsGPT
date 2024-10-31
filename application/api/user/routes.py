@@ -343,6 +343,7 @@ class UploadFile(Resource):
                         ".mdx",
                         ".json",
                         ".xlsx",
+                        ".pptx",
                     ],
                     job_name,
                     final_filename,
