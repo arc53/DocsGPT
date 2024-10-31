@@ -78,7 +78,6 @@ class ClassicRAG(BaseRetriever):
         if len(self.chat_history) > 1:
             tokens_current_history = 0
             # count tokens in history
-            self.chat_history.reverse()
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
                     tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
@@ -97,7 +96,6 @@ class ClassicRAG(BaseRetriever):
         llm = LLMCreator.create_llm(
             settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
         )
-
         completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
         for line in completion:
             yield {"answer": str(line)}
