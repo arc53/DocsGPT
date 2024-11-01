@@ -86,7 +86,7 @@
       "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
-      "info": "请上传 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .zip 文件，限 25MB",
+      "info": "请上传 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip 文件，限 25MB",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "训练",

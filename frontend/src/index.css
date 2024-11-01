@@ -4,6 +4,7 @@
 
 :root {
   --viewport-height: 100vh;
+  font-synthesis: none !important;
 }
 
 @supports (height: 100dvh) {
