@@ -303,10 +303,7 @@ export default function Conversation() {
       </div>
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[62%] h-auto">
-        <div
-          className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black"
-          style={{ height: '60px' }}
-        >
+        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
           <textarea
             id="inputbox"
             ref={inputRef}
