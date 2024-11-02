@@ -1682,8 +1682,8 @@ class TextToSpeech(Resource):
         data = request.get_json()
         text = data["text"]
         try:
-            tts_instance = GoogleTTS(text)
-            audio_base64, detected_language = tts_instance.text_to_speech()
+            tts_instance = GoogleTTS()
+            audio_base64, detected_language = tts_instance.text_to_speech(text)
             return make_response(jsonify({"success": True,'audio_base64': audio_base64,'lang':detected_language}), 200)
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
