@@ -15,7 +15,10 @@ export interface Preference {
   token_limit: number;
   selectedDocs: Doc | null;
   sourceDocs: Doc[] | null;
-  conversations: { name: string; id: string }[] | null;
+  conversations: {
+    data: { name: string; id: string }[] | null;
+    loading: boolean;
+  };
   modalState: ActiveState;
 }
 
@@ -34,7 +37,10 @@ const initialState: Preference = {
     retriever: 'classic',
   } as Doc,
   sourceDocs: null,
-  conversations: null,
+  conversations: {
+    data: null,
+    loading: false,
+  },
   modalState: 'INACTIVE',
 };
 

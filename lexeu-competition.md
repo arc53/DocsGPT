@@ -12,8 +12,8 @@ Welcome to the LLM Document Analysis by [LexEU](https://www.lexeu.ai/) competiti
 
 ### 📆 Timeline:
 - **Competition Announcement:** 1st October
-- **Deadline for Submissions:** 27th October
-- **Results Announcement:** Early November/ Late October
+- **Deadline for Submissions:** 8th November
+- **Results Announcement:** Early November
 
 ## 📜 How to Participate:
 

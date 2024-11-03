@@ -80,7 +80,7 @@
       "remote": "遠端",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳 .pdf, .txt, .rst, .docx, .md, .json, .zip 檔案，大小限制為 25MB",
+      "info": "請上傳 .pdf, .txt, .rst, .docx, .md, .json, .pptx, .zip 檔案，大小限制為 25MB",
       "uploadedFiles": "已上傳的檔案",
       "cancel": "取消",
       "train": "訓練",
