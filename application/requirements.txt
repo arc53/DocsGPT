@@ -1,6 +1,6 @@
 anthropic==0.34.2
-boto3==1.34.45 #Update Library from version 1.34.153 to 1.34.45
-beautifulsoup4==4.12.3 #No direct imports for web scraping found.
+boto3==1.34.45 
+beautifulsoup4==4.12.3 
 celery==5.3.6
 dataclasses-json==0.6.7
 docx2txt==0.8
@@ -12,7 +12,7 @@ escodegen==1.0.11
 esprima==4.0.1
 esutils==1.0.1
 Flask==3.0.3
-faiss-cpu==1.9.0.post1 #Update from version 1.8.0post1 to 1.9.0.post1
+faiss-cpu==1.9.0.post1 
 flask-restx==1.3.0
 gTTS==2.3.2
 gunicorn==23.0.0
@@ -23,7 +23,7 @@ jiter==0.5.0
 jmespath==1.0.1
 joblib==1.4.2
 jsonpatch==1.33
-jsonpointer==3.0.0  #No direct imports found, Implicitly Included in jsonPatch
+jsonpointer==3.0.0 
 jsonschema==4.23.0
 jsonschema-spec==0.2.4
 jsonschema-specifications==2023.7.1
@@ -38,7 +38,7 @@ lazy-object-proxy==1.10.0
 lxml==5.3.0
 markupsafe==2.1.5
 marshmallow==3.22.0
-mpmath==1.3.0  #No imports related to this library.
+mpmath==1.3.0 
 multidict==6.1.0
 mypy-extensions==1.0.0
 networkx==3.3
@@ -57,7 +57,7 @@ portalocker==2.10.1
 prance==23.6.21.0
 primp==0.6.3
 prompt-toolkit==3.0.47
-protobuf==5.28.2 #Could be redundant unless using serialization (check usage)
+protobuf==5.28.2
 py==1.11.0
 pydantic==2.9.2
 pydantic-core==2.23.4
