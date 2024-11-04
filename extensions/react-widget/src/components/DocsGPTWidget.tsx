@@ -9,6 +9,7 @@ import { ThemeProvider } from 'styled-components';
 import Like from "../assets/like.svg"
 import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
+
 const themes = {
   dark: {
     bg: '#222327',
@@ -35,6 +36,20 @@ const themes = {
     }
   }
 }
+
+const sizesConfig = {
+  small: { size:'small', width: '400px', height: '320px' },
+  medium: { size:'medium', width: '28vw', height: '70vh'},
+  large: { size:'large', width: '60vw', height: '75vh'},
+  getCustom: (custom: { width: string; height: string; maxWidth?: string; maxHeight?: string }) => ({
+    size:'custom',
+    width: custom.width,
+    height: custom.height,
+    maxWidth: custom.maxWidth || '968px',
+    maxHeight: custom.maxHeight || '70vh',
+  }),
+};
+
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -80,7 +95,7 @@ const Overlay = styled.div`
   z-index: 999;
   transition: opacity 0.5s;
 `
-const WidgetContainer = styled.div<{ modal: boolean }>`
+const WidgetContainer = styled.div<{ modal?: boolean }>`
     display: block;
     position: fixed;
     right: ${props => props.modal ? '50%' : '10px'};
@@ -183,36 +198,12 @@ const Description = styled.p`
     margin-top: 0;
 `;
 
-const Conversation = styled.div<{ size: WidgetProps["size"] }>`
+const Conversation = styled.div`
   min-height: 250px;
-  max-height: ${(props) =>
-    typeof props.size === "object" &&
-    "custom" in props.size 
-      && (props.size as { custom: { maxHeight: string } }).custom
-          .maxHeight || ""
-          };
-  max-width: ${(props) =>
-    (typeof props.size === "object" &&
-      "custom" in props.size ?
-      (props.size as { custom: { maxWidth: string } }).custom
-        .maxWidth || "" : "968px")
-    };
-  height: ${(props) =>
-    props.size === "large"
-      ? "75vh"
-      : props.size === "medium"
-      ? "70vh"
-      : typeof props.size === "object" && "custom" in props.size
-      ? (props.size as { custom: { height: string } }).custom.height
-      : "320px"};
-  width: ${(props) =>
-    props.size === "large"
-      ? "60vw"
-      : props.size === "medium"
-      ? "28vw"
-      : typeof props.size === "object" && "custom" in props.size
-      ? (props.size as { custom: { width: string } }).custom.width
-      : "400px"};
+  max-height: ${(props) => props.theme.dimensions.maxHeight};
+  max-width: ${(props) => props.theme.dimensions.maxWidth};
+  height: ${(props) => props.theme.dimensions.height};
+  width: ${(props) => props.theme.dimensions.width};
   padding-inline: 0.5rem;
   border-radius: 0.375rem;
   text-align: left;
@@ -224,9 +215,9 @@ const Conversation = styled.div<{ size: WidgetProps["size"] }>`
   }
   @media only screen and (min-width: 768px) and (max-width: 1280px) {
     width: ${(props) =>
-      props.size === "large"
+      props.theme.dimensions.size === "large"
         ? "90vw"
-        : props.size === "medium"
+        :  props.theme.dimensions.size === "medium"
         ? "60vw"
         : "400px"} !important;
   }
@@ -295,9 +286,9 @@ const DotAnimation = styled.div`
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
-const PromptContainer = styled.form<{ size: WidgetProps['size'] }>`
+const PromptContainer = styled.form`
   background-color: transparent;
-  height: ${props => props.size == 'large' ? '60px' : '40px'};
+  height: ${props => props.theme.dimensions.size == 'large' ? '60px' : '40px'};
   margin: 16px;
   display: flex;
   justify-content: space-evenly;
@@ -312,14 +303,14 @@ const StyledInput = styled.input`
   color: ${props => props.theme.text};
   outline: none;
 `;
-const StyledButton = styled.button<{ size: WidgetProps['size'] }>`
+const StyledButton = styled.button`
   display: flex;
   justify-content: center;
   align-items: center;
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   border-radius: 6px;
-  min-width: ${props => props.size === 'large' ? '60px' : '36px'};
-  height: ${props => props.size === 'large' ? '60px' : '36px'};
+  min-width: ${props => props.theme.dimensions.size === 'large' ? '60px' : '36px'};
+  height: ${props => props.theme.dimensions.size === 'large' ? '60px' : '36px'};
   margin-left:8px;
   padding: 0px;
   border: none;
@@ -517,8 +508,13 @@ export const DocsGPTWidget = ({
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
+
+  const dimensions =
+    typeof size === 'object' && 'custom' in size
+      ? sizesConfig.getCustom(size.custom)
+      : sizesConfig[size];
   return (
-    <ThemeProvider theme={themes[theme]}>
+    <ThemeProvider theme={{...themes[theme], dimensions}}>
       {open && size === 'large' &&
         <Overlay onClick={() => {
           setOpen(false)
@@ -544,7 +540,7 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <Conversation size={size} onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
+          <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
                 return (
@@ -615,13 +611,11 @@ export const DocsGPTWidget = ({
             }
           </Conversation>
           <PromptContainer
-            size={size}
             onSubmit={handleSubmit}>
             <StyledInput
               value={prompt} onChange={(event) => setPrompt(event.target.value)}
               type='text' placeholder="What do you want to do?" />
             <StyledButton
-              size={size}
               disabled={prompt.trim().length == 0 || status !== 'idle'}>
               <PaperPlaneIcon width={15} height={15} color='white' />
             </StyledButton>
