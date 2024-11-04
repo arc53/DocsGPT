@@ -11,8 +11,8 @@ from bson.objectid import ObjectId
 from flask import Blueprint, current_app, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
-from pymongo import MongoClient
 
+from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.error import bad_request
 from application.extensions import api
@@ -22,7 +22,7 @@ from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
 
-mongo = MongoClient(settings.MONGO_URI)
+mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
@@ -269,9 +269,6 @@ class Stream(Resource):
             "prompt_id": fields.String(
                 required=False, default="default", description="Prompt ID"
             ),
-            "selectedDocs": fields.String(
-                required=False, description="Selected documents"
-            ),
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
@@ -303,10 +300,9 @@ class Stream(Resource):
             history = json.loads(history)
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
-            if "selectedDocs" in data and data["selectedDocs"] is None:
-                chunks = 0
-            else:
-                chunks = int(data.get("chunks", 2))
+            
+
+            chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
 
@@ -333,7 +329,8 @@ class Stream(Resource):
             )
 
             prompt = get_prompt(prompt_id)
-
+            if "isNoneDoc" in data and data["isNoneDoc"] is True:
+                chunks = 0
             retriever = RetrieverCreator.create_retriever(
                 retriever_name,
                 question=question,

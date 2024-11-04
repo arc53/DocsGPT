@@ -39,6 +39,8 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from './preferences/preferenceSlice';
+import Spinner from './assets/spinner.svg';
+import SpinnerDark from './assets/spinner-dark.svg';
 import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
 import Help from './components/Help';
@@ -70,6 +72,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
@@ -91,25 +94,28 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!conversations) {
+    if (!conversations?.data) {
       fetchConversations();
     }
     if (queries.length === 0) {
       resetConversation();
     }
-  }, [conversations, dispatch]);
+  }, [conversations?.data, dispatch]);
 
   async function fetchConversations() {
+    dispatch(setConversations({ ...conversations, loading: true }));
     return await getConversations()
       .then((fetchedConversations) => {
         dispatch(setConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
+        dispatch(setConversations({ data: null, loading: false }));
       });
   }
 
   const handleDeleteAllConversations = () => {
+    setIsDeletingConversation(true);
     conversationService
       .deleteAll()
       .then(() => {
@@ -119,6 +125,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleDeleteConversation = (id: string) => {
+    setIsDeletingConversation(true);
     conversationService
       .delete(id, {})
       .then(() => {
@@ -205,6 +212,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!isMobile);
   }, [isMobile]);
   useDefaultDocument();
+
   return (
     <>
       {!navOpen && (
@@ -306,13 +314,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           id="conversationsMainDiv"
           className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
         >
-          {conversations && conversations.length > 0 ? (
+          {conversations?.loading && !isDeletingConversation && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+              <img
+                src={isDarkTheme ? SpinnerDark : Spinner}
+                className="animate-spin cursor-pointer bg-transparent"
+                alt="Loading..."
+              />
+            </div>
+          )}
+          {conversations?.data && conversations.data.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
-                {conversations?.map((conversation) => (
+                {conversations.data?.map((conversation) => (
                   <ConversationTile
                     key={conversation.id}
                     conversation={conversation}

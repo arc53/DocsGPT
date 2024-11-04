@@ -7,7 +7,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
@@ -23,6 +22,7 @@ import {
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+import SpeakButton from '../components/TextToSpeechButton';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -334,6 +334,14 @@ const ConversationBubble = forwardRef<
           >
             <div>
               <CopyButton text={message} />
+            </div>
+          </div>
+          <div
+            className={`relative mr-5 block items-center justify-center lg:invisible 
+            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
+          >
+            <div>
+              <SpeakButton text={message} /> {/* Add SpeakButton here */}
             </div>
           </div>
           {type === 'ERROR' && (
