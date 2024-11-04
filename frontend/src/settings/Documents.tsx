@@ -45,14 +45,30 @@ const Documents: React.FC<DocumentsProps> = ({
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
   const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
   const [loading, setLoading] = useState(false);
-
+  const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
     { label: 'Weekly', value: 'weekly' },
     { label: 'Monthly', value: 'monthly' },
   ];
-
+  const refreshDocs = (field: 'date' | 'tokens') => {
+    if (field === sortField) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortOrder('desc');
+      setSortField(field);
+    }
+    getDocs(sortField, sortOrder)
+      .then((data) => {
+        dispatch(setSourceDocs(data));
+      })
+      .catch((error) => console.error(error))
+      .finally(() => {
+        setLoading(false);
+      });
+  };
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
     userService
@@ -110,19 +126,28 @@ const Documents: React.FC<DocumentsProps> = ({
                   <th>
                     <div className="flex justify-center items-center">
                       {t('settings.documents.date')}
-                      <img src={caretSort} alt="" />
+                      <img
+                        className="cursor-pointer"
+                        onClick={() => refreshDocs('date')}
+                        src={caretSort}
+                        alt="sort"
+                      />
                     </div>
                   </th>
                   <th>
                     <div className="flex justify-center items-center">
                       {t('settings.documents.tokenUsage')}
-                      <img src={caretSort} alt="" />
+                      <img
+                        className="cursor-pointer"
+                        onClick={() => refreshDocs('tokens')}
+                        src={caretSort}
+                        alt="sort"
+                      />
                     </div>
                   </th>
                   <th>
                     <div className="flex justify-center items-center">
                       {t('settings.documents.type')}
-                      <img src={caretSort} alt="" />
                     </div>
                   </th>
                   <th></th>
