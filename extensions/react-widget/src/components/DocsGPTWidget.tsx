@@ -454,7 +454,9 @@ export const DocsGPTWidget = ({
             else if (data.type === 'source') {           
               const updatedQueries = [...queries];
               updatedQueries[updatedQueries.length - 1].sources = data.source;
-              setQueries(updatedQueries);         
+              setQueries(updatedQueries);    
+              console.log("SOURCE:", data);
+                   
 
             }
             else {
