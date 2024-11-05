@@ -19,9 +19,17 @@ export interface WidgetProps {
   description?: string;
   heroTitle?: string;
   heroDescription?: string;
-  size?: 'small' | 'medium' | 'large';
+  size?: 'small' | 'medium' | 'large' | {
+    custom: {
+      width: string;
+      height: string;
+      maxWidth?: string;
+      maxHeight?: string;
+    };
+  };
   theme?:THEME,
   buttonIcon?:string;
   buttonBg?:string;
-  collectFeedback?:boolean
+  collectFeedback?:boolean;
+  deafultOpen?: boolean;
 }
