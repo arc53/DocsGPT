@@ -4,7 +4,7 @@ import { ExternalLinkIcon, FileTextIcon } from '@radix-ui/react-icons'
 
 
 const SourcesWrapper = styled.div`
-padding: 12px;
+padding: 8px;
 margin-left: 4px;
 margin-bottom: 0.75rem;
 display: flex;
@@ -46,7 +46,8 @@ flex-direction: column;
 justify-content: space-between;
 border-radius: 1.25rem;
 background-color: ${props =>props.theme.secondary.bg};
-padding: 1rem; 
+padding-left: 0.75rem;
+padding-right: 0.75rem;
 color:${props => props.theme.text};
 transform: background-color .2s, color .2s;
 
