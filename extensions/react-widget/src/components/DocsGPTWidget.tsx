@@ -9,6 +9,7 @@ import { ThemeProvider } from 'styled-components';
 import Like from "../assets/like.svg"
 import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
+
 const themes = {
   dark: {
     bg: '#222327',
@@ -35,6 +36,20 @@ const themes = {
     }
   }
 }
+
+const sizesConfig = {
+  small: { size:'small', width: '400px', height: '320px' },
+  medium: { size:'medium', width: '28vw', height: '70vh'},
+  large: { size:'large', width: '60vw', height: '75vh'},
+  getCustom: (custom: { width: string; height: string; maxWidth?: string; maxHeight?: string }) => ({
+    size:'custom',
+    width: custom.width,
+    height: custom.height,
+    maxWidth: custom.maxWidth || '968px',
+    maxHeight: custom.maxHeight || '70vh',
+  }),
+};
+
 const GlobalStyles = createGlobalStyle`
 .response pre {
     padding: 8px;
@@ -80,7 +95,7 @@ const Overlay = styled.div`
   z-index: 999;
   transition: opacity 0.5s;
 `
-const WidgetContainer = styled.div<{ modal: boolean }>`
+const WidgetContainer = styled.div<{ modal?: boolean }>`
     display: block;
     position: fixed;
     right: ${props => props.modal ? '50%' : '10px'};
@@ -183,23 +198,29 @@ const Description = styled.p`
     margin-top: 0;
 `;
 
-const Conversation = styled.div<{ size: string }>`
-    min-height: 250px;
-    max-width: 968px;
-    height: ${props => props.size === 'large' ? '75vh' : props.size === 'medium' ? '70vh' : '320px'};
-    width: ${props => props.size === 'large' ? '60vw' : props.size === 'medium' ? '28vw' : '400px'};
-    padding-inline: 0.5rem;
-    border-radius: 0.375rem;
-    text-align: left;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: #4a4a4a transparent; /* thumb color track color */
-    @media only screen and (max-width: 768px) {
+const Conversation = styled.div`
+  min-height: 250px;
+  max-height: ${(props) => props.theme.dimensions.maxHeight};
+  max-width: ${(props) => props.theme.dimensions.maxWidth};
+  height: ${(props) => props.theme.dimensions.height};
+  width: ${(props) => props.theme.dimensions.width};
+  padding-inline: 0.5rem;
+  border-radius: 0.375rem;
+  text-align: left;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent; /* thumb color track color */
+  @media only screen and (max-width: 768px) {
     width: 90vw !important;
-    }
-    @media only screen and (min-width:768px ) and (max-width: 1280px) {
-    width:${props => props.size === 'large' ? '90vw' : props.size === 'medium' ? '60vw' : '400px'} !important;
-    }
+  }
+  @media only screen and (min-width: 768px) and (max-width: 1280px) {
+    width: ${(props) =>
+      props.theme.dimensions.size === "large"
+        ? "90vw"
+        :  props.theme.dimensions.size === "medium"
+        ? "60vw"
+        : "400px"} !important;
+  }
 `;
 const Feedback = styled.div`
   background-color: transparent;
@@ -265,9 +286,9 @@ const DotAnimation = styled.div`
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
 `;
-const PromptContainer = styled.form<{ size: string }>`
+const PromptContainer = styled.form`
   background-color: transparent;
-  height: ${props => props.size == 'large' ? '60px' : '40px'};
+  height: ${props => props.theme.dimensions.size == 'large' ? '60px' : '40px'};
   margin: 16px;
   display: flex;
   justify-content: space-evenly;
@@ -282,14 +303,14 @@ const StyledInput = styled.input`
   color: ${props => props.theme.text};
   outline: none;
 `;
-const StyledButton = styled.button<{ size: string }>`
+const StyledButton = styled.button`
   display: flex;
   justify-content: center;
   align-items: center;
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   border-radius: 6px;
-  min-width: ${props => props.size === 'large' ? '60px' : '36px'};
-  height: ${props => props.size === 'large' ? '60px' : '36px'};
+  min-width: ${props => props.theme.dimensions.size === 'large' ? '60px' : '36px'};
+  height: ${props => props.theme.dimensions.size === 'large' ? '60px' : '36px'};
   margin-left:8px;
   padding: 0px;
   border: none;
@@ -366,13 +387,14 @@ export const DocsGPTWidget = ({
   theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
-  collectFeedback = true
+  collectFeedback = true,
+  deafultOpen = false
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([])
   const [conversationId, setConversationId] = React.useState<string | null>(null)
-  const [open, setOpen] = React.useState<boolean>(false)
+  const [open, setOpen] = React.useState<boolean>(deafultOpen)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
   const isBubbleHovered = useRef<boolean>(false)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
@@ -486,8 +508,13 @@ export const DocsGPTWidget = ({
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
+
+  const dimensions =
+    typeof size === 'object' && 'custom' in size
+      ? sizesConfig.getCustom(size.custom)
+      : sizesConfig[size];
   return (
-    <ThemeProvider theme={themes[theme]}>
+    <ThemeProvider theme={{...themes[theme], dimensions}}>
       {open && size === 'large' &&
         <Overlay onClick={() => {
           setOpen(false)
@@ -513,7 +540,7 @@ export const DocsGPTWidget = ({
               </ContentWrapper>
             </Header>
           </div>
-          <Conversation size={size} onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
+          <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
             {
               queries.length > 0 ? queries?.map((query, index) => {
                 return (
@@ -584,13 +611,11 @@ export const DocsGPTWidget = ({
             }
           </Conversation>
           <PromptContainer
-            size={size}
             onSubmit={handleSubmit}>
             <StyledInput
               value={prompt} onChange={(event) => setPrompt(event.target.value)}
               type='text' placeholder="What do you want to do?" />
             <StyledButton
-              size={size}
               disabled={prompt.trim().length == 0 || status !== 'idle'}>
               <PaperPlaneIcon width={15} height={15} color='white' />
             </StyledButton>

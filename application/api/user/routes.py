@@ -433,6 +433,8 @@ class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
     def get(self):
         user = "local"
+        sort_field = request.args.get('sort', 'date')  # Default to 'date'
+        sort_order = request.args.get('order', "desc")  # Default to 'desc'
         data = [
             {
                 "name": "default",
@@ -445,7 +447,7 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort("date", -1):
+            for index in sources_collection.find({"user": user}).sort(sort_field, 1 if sort_order=="asc" else -1):
                 data.append(
                     {
                         "id": str(index["_id"]),
