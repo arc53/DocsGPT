@@ -31,7 +31,6 @@ kombu==5.4.2
 langchain==0.3.0
 langchain-community==0.3.0
 langchain-core==0.3.2
-langchain-milvus==0.1.6
 langchain-openai==0.2.0
 langchain-text-splitters==0.3.0
 langsmith==0.1.125
