@@ -598,7 +598,7 @@ export const DocsGPTWidget = ({
                 <PaperPlaneIcon width={18} height={18} color='white' />
               </StyledButton>
             </PromptContainer>
-            <p style={{ textAlign: "center", color: themes[theme].primary.text, padding: "2px 0px 2px 2px", fontSize: 12 }}>
+            <p style={{ textAlign: "center", color: themes[theme].secondary.text, padding: "4px 0px 4px 0px", fontSize: 12 }}>
               Powered by&nbsp;
               <Hyperlink target='_blank' href='https://github.com/arc53/DocsGPT'>DocsGPT</Hyperlink>
             </p>
