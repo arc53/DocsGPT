@@ -6,9 +6,16 @@ import { Doc } from '../models/misc';
 export async function getDocs(
   sort = 'date',
   order = 'desc',
+  pageNumber = 1,
+  rowsPerPage = 5,
 ): Promise<Doc[] | null> {
   try {
-    const response = await userService.getDocs(sort, order);
+    const response = await userService.getDocs(
+      sort,
+      order,
+      pageNumber,
+      rowsPerPage,
+    );
     const data = await response.json();
 
     const docs: Doc[] = [];
