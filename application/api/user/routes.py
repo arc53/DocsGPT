@@ -488,7 +488,7 @@ class CombinedJson(Resource):
                     }
                 )
 
-            first_index = (int(page_number) - 1) * int(rows_per_page)
+            first_index = (int(page) - 1) * int(rows_per_page)
             last_index = first_index + int(rows_per_page)
             paginated_docs = data[first_index:last_index]
 
