@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
@@ -14,6 +14,7 @@ import { getDocs } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import Input from '../components/Input';
 import Upload from '../upload/Upload'; // Import the Upload component
+import Pagination from '../components/DocumentPagination';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -47,22 +48,55 @@ const Documents: React.FC<DocumentsProps> = ({
   const [loading, setLoading] = useState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // Pagination
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
+  const [totalPages, setTotalPages] = useState<number>(0);
+  const [fetchedDocuments, setFetchedDocuments] = useState<Doc[]>([]);
+  // Filter documents based on the search term
+  const filteredDocuments = documents?.filter((document) =>
+    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+  // State for documents
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const endIndex = startIndex + rowsPerPage;
+  const currentDocuments = filteredDocuments
+    ? filteredDocuments.slice(startIndex, endIndex)
+    : [];
+
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
     { label: 'Weekly', value: 'weekly' },
     { label: 'Monthly', value: 'monthly' },
   ];
-  const refreshDocs = (field: 'date' | 'tokens') => {
+
+  useEffect(() => {
+    if (fetchedDocuments && rowsPerPage > 0) {
+      setTotalPages(
+        Math.max(1, Math.ceil(fetchedDocuments.length / rowsPerPage)),
+      );
+    } else {
+      setTotalPages(0);
+    }
+  }, [fetchedDocuments, rowsPerPage]);
+
+  const refreshDocs = (
+    field: 'date' | 'tokens',
+    pageNumber = currentPage,
+    rows = rowsPerPage,
+  ) => {
     if (field === sortField) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortOrder('desc');
       setSortField(field);
     }
-    getDocs(sortField, sortOrder)
+    console.log('refreshDocs', field, sortOrder, pageNumber, rows);
+    getDocs(sortField, sortOrder, pageNumber, rows)
       .then((data) => {
         dispatch(setSourceDocs(data));
+        setFetchedDocuments(data ? data : []);
       })
       .catch((error) => console.error(error))
       .finally(() => {
@@ -84,11 +118,6 @@ const Documents: React.FC<DocumentsProps> = ({
         setLoading(false);
       });
   };
-
-  // Filter documents based on the search term
-  const filteredDocuments = documents?.filter((document) =>
-    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
 
   return (
     <div className="mt-8">
@@ -154,15 +183,15 @@ const Documents: React.FC<DocumentsProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {!filteredDocuments?.length && (
+                {!currentDocuments?.length && (
                   <tr>
                     <td colSpan={5} className="!p-4">
                       {t('settings.documents.noData')}
                     </td>
                   </tr>
                 )}
-                {filteredDocuments &&
-                  filteredDocuments.map((document, index) => (
+                {Array.isArray(currentDocuments) &&
+                  currentDocuments.map((document, index) => (
                     <tr key={index}>
                       <td>{document.name}</td>
                       <td>{document.date}</td>
@@ -221,6 +250,20 @@ const Documents: React.FC<DocumentsProps> = ({
           </div>
         )}
       </div>
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(page) => {
+          setCurrentPage(page);
+          refreshDocs(sortField, page, rowsPerPage);
+        }}
+        onRowsPerPageChange={(rows) => {
+          setRowsPerPage(rows);
+          setCurrentPage(1);
+          refreshDocs(sortField, 1, rows);
+        }}
+      />
     </div>
   );
 };
