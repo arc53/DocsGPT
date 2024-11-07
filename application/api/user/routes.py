@@ -74,8 +74,7 @@ class DeleteConversation(Resource):
             )
 
         try:
-            conversations_collection.delete_one(
-                {"_id": ObjectId(conversation_id)})
+            conversations_collection.delete_one({"_id": ObjectId(conversation_id)})
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
         return make_response(jsonify({"success": True}), 200)
@@ -222,8 +221,7 @@ class DeleteByIds(Resource):
         ids = request.args.get("path")
         if not ids:
             return make_response(
-                jsonify(
-                    {"success": False, "message": "Missing required fields"}), 400
+                jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
         try:
@@ -246,8 +244,7 @@ class DeleteOldIndexes(Resource):
         source_id = request.args.get("source_id")
         if not source_id:
             return make_response(
-                jsonify(
-                    {"success": False, "message": "Missing required fields"}), 400
+                jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
         try:
@@ -258,8 +255,7 @@ class DeleteOldIndexes(Resource):
                 return make_response(jsonify({"status": "not found"}), 404)
 
             if settings.VECTOR_STORE == "faiss":
-                shutil.rmtree(os.path.join(
-                    current_dir, "indexes", str(doc["_id"])))
+                shutil.rmtree(os.path.join(current_dir, "indexes", str(doc["_id"])))
             else:
                 vectorstore = VectorCreator.create_vectorstore(
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
@@ -309,8 +305,7 @@ class UploadFile(Resource):
         user = secure_filename(request.form["user"])
         job_name = secure_filename(request.form["name"])
         try:
-            save_dir = os.path.join(
-                current_dir, settings.UPLOAD_FOLDER, user, job_name)
+            save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
             os.makedirs(save_dir, exist_ok=True)
 
             if len(files) > 1:
@@ -440,8 +435,6 @@ class CombinedJson(Resource):
         user = "local"
         sort_field = request.args.get('sort', 'date')  # Default to 'date'
         sort_order = request.args.get('order', "desc")  # Default to 'desc'
-        page_number = request.args.get('page', 1)  # Default to 1
-        rows_per_page = request.args.get('rows', 10)  # Default to 10
         data = [
             {
                 "name": "default",
@@ -454,7 +447,7 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort(sort_field, 1 if sort_order == "asc" else -1):
+            for index in sources_collection.find({"user": user}).sort(sort_field, 1 if sort_order=="asc" else -1):
                 data.append(
                     {
                         "id": str(index["_id"]),
@@ -492,14 +485,10 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
-                
-            first_index = (int(page_number) - 1) * int(rows_per_page)
-            last_index = first_index + int(rows_per_page)
-            paginated_docs = data[first_index:last_index]
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
-        return make_response(jsonify(paginated_data), 200)
+        return make_response(jsonify(data), 200)
 
 
 @user_ns.route("/api/docs_check")
@@ -606,8 +595,7 @@ class GetSinglePrompt(Resource):
         try:
             if prompt_id == "default":
                 with open(
-                    os.path.join(current_dir, "prompts",
-                                 "chat_combine_default.txt"),
+                    os.path.join(current_dir, "prompts", "chat_combine_default.txt"),
                     "r",
                 ) as f:
                     chat_combine_template = f.read()
@@ -615,8 +603,7 @@ class GetSinglePrompt(Resource):
 
             elif prompt_id == "creative":
                 with open(
-                    os.path.join(current_dir, "prompts",
-                                 "chat_combine_creative.txt"),
+                    os.path.join(current_dir, "prompts", "chat_combine_creative.txt"),
                     "r",
                 ) as f:
                     chat_reduce_creative = f.read()
@@ -624,8 +611,7 @@ class GetSinglePrompt(Resource):
 
             elif prompt_id == "strict":
                 with open(
-                    os.path.join(current_dir, "prompts",
-                                 "chat_combine_strict.txt"), "r"
+                    os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
                 ) as f:
                     chat_reduce_strict = f.read()
                 return make_response(jsonify({"content": chat_reduce_strict}), 200)
@@ -641,8 +627,7 @@ class GetSinglePrompt(Resource):
 class DeletePrompt(Resource):
     delete_prompt_model = api.model(
         "DeletePromptModel",
-        {"id": fields.String(
-            required=True, description="Prompt ID to delete")},
+        {"id": fields.String(required=True, description="Prompt ID to delete")},
     )
 
     @api.expect(delete_prompt_model)
@@ -762,8 +747,7 @@ class CreateApiKey(Resource):
                 "chunks": data["chunks"],
             }
             if "source" in data and ObjectId.is_valid(data["source"]):
-                new_api_key["source"] = DBRef(
-                    "sources", ObjectId(data["source"]))
+                new_api_key["source"] = DBRef("sources", ObjectId(data["source"]))
             if "retriever" in data:
                 new_api_key["retriever"] = data["retriever"]
 
@@ -779,8 +763,7 @@ class CreateApiKey(Resource):
 class DeleteApiKey(Resource):
     delete_api_key_model = api.model(
         "DeleteApiKeyModel",
-        {"id": fields.String(
-            required=True, description="API Key ID to delete")},
+        {"id": fields.String(required=True, description="API Key ID to delete")},
     )
 
     @api.expect(delete_api_key_model)
@@ -793,8 +776,7 @@ class DeleteApiKey(Resource):
             return missing_fields
 
         try:
-            result = api_key_collection.delete_one(
-                {"_id": ObjectId(data["id"])})
+            result = api_key_collection.delete_one({"_id": ObjectId(data["id"])})
             if result.deleted_count == 0:
                 return {"success": False, "message": "API Key not found"}, 404
         except Exception as err:
@@ -829,8 +811,7 @@ class ShareConversation(Resource):
         is_promptable = request.args.get("isPromptable", type=inputs.boolean)
         if is_promptable is None:
             return make_response(
-                jsonify(
-                    {"success": False, "message": "isPromptable is required"}), 400
+                jsonify({"success": False, "message": "isPromptable is required"}), 400
             )
 
         user = data.get("user", "local")
@@ -994,8 +975,7 @@ class ShareConversation(Resource):
                 )
                 return make_response(
                     jsonify(
-                        {"success": True, "identifier": str(
-                            explicit_binary.as_uuid())}
+                        {"success": True, "identifier": str(explicit_binary.as_uuid())}
                     ),
                     201,
                 )
@@ -1011,8 +991,7 @@ class GetPubliclySharedConversations(Resource):
             query_uuid = Binary.from_uuid(
                 uuid.UUID(identifier), UuidRepresentation.STANDARD
             )
-            shared = shared_conversations_collections.find_one(
-                {"uuid": query_uuid})
+            shared = shared_conversations_collections.find_one({"uuid": query_uuid})
             conversation_queries = []
 
             if (
@@ -1092,8 +1071,7 @@ class GetMessageAnalytics(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
                 if api_key_id
                 else None
             )
@@ -1141,8 +1119,7 @@ class GetMessageAnalytics(Resource):
                     jsonify({"success": False, "message": "Invalid option"}), 400
                 )
             start_date = end_date - datetime.timedelta(days=filter_days)
-            start_date = start_date.replace(
-                hour=0, minute=0, second=0, microsecond=0)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = end_date.replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
@@ -1185,14 +1162,11 @@ class GetMessageAnalytics(Resource):
 
             for entry in message_data:
                 if filter_option == "last_hour":
-                    daily_messages[entry["_id"]["minute"]
-                                   ] = entry["total_messages"]
+                    daily_messages[entry["_id"]["minute"]] = entry["total_messages"]
                 elif filter_option == "last_24_hour":
-                    daily_messages[entry["_id"]["hour"]
-                                   ] = entry["total_messages"]
+                    daily_messages[entry["_id"]["hour"]] = entry["total_messages"]
                 else:
-                    daily_messages[entry["_id"]["day"]
-                                   ] = entry["total_messages"]
+                    daily_messages[entry["_id"]["day"]] = entry["total_messages"]
 
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
@@ -1232,8 +1206,7 @@ class GetTokenAnalytics(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
                 if api_key_id
                 else None
             )
@@ -1291,8 +1264,7 @@ class GetTokenAnalytics(Resource):
                     jsonify({"success": False, "message": "Invalid option"}), 400
                 )
             start_date = end_date - datetime.timedelta(days=filter_days)
-            start_date = start_date.replace(
-                hour=0, minute=0, second=0, microsecond=0)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = end_date.replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
@@ -1341,14 +1313,11 @@ class GetTokenAnalytics(Resource):
 
             for entry in token_usage_data:
                 if filter_option == "last_hour":
-                    daily_token_usage[entry["_id"]
-                                      ["minute"]] = entry["total_tokens"]
+                    daily_token_usage[entry["_id"]["minute"]] = entry["total_tokens"]
                 elif filter_option == "last_24_hour":
-                    daily_token_usage[entry["_id"]
-                                      ["hour"]] = entry["total_tokens"]
+                    daily_token_usage[entry["_id"]["hour"]] = entry["total_tokens"]
                 else:
-                    daily_token_usage[entry["_id"]
-                                      ["day"]] = entry["total_tokens"]
+                    daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
 
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
@@ -1388,8 +1357,7 @@ class GetFeedbackAnalytics(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
                 if api_key_id
                 else None
             )
@@ -1491,8 +1459,7 @@ class GetFeedbackAnalytics(Resource):
                     jsonify({"success": False, "message": "Invalid option"}), 400
                 )
             start_date = end_date - datetime.timedelta(days=filter_days)
-            start_date = start_date.replace(
-                hour=0, minute=0, second=0, microsecond=0)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = end_date.replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
@@ -1608,8 +1575,7 @@ class GetUserLogs(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
                 if api_key_id
                 else None
             )
@@ -1720,6 +1686,8 @@ class TextToSpeech(Resource):
         try:
             tts_instance = GoogleTTS()
             audio_base64, detected_language = tts_instance.text_to_speech(text)
-            return make_response(jsonify({"success": True, 'audio_base64': audio_base64, 'lang': detected_language}), 200)
+            return make_response(jsonify({"success": True,'audio_base64': audio_base64,'lang':detected_language}), 200)
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
