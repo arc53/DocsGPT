@@ -33,13 +33,9 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
-const Documents: React.FC<DocumentsProps> = ({
-  documents,
-  handleDeleteDocument,
-}) => {
+const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-
   // State for search input
   const [searchTerm, setSearchTerm] = useState('');
   // State for modal: active/inactive
@@ -73,7 +69,6 @@ const Documents: React.FC<DocumentsProps> = ({
     pageNumber?: number,
     rows?: number,
   ) => {
-    console.log(`field: ${field}, pageNumber: ${pageNumber}, rows: ${rows}`);
     const page = pageNumber ?? currentPage;
     const rowsPerPg = rows ?? rowsPerPage;
     if (field !== undefined) {
@@ -88,7 +83,6 @@ const Documents: React.FC<DocumentsProps> = ({
     }
     getDocs(sortField, sortOrder, page, rowsPerPg, true)
       .then((data) => {
-        console.log(data);
         dispatch(setSourceDocs(data ? data.docs : []));
         setFetchedDocuments(data ? data.docs : []);
         setTotalPages(data ? data.totalPages : 0);
@@ -114,9 +108,11 @@ const Documents: React.FC<DocumentsProps> = ({
         setLoading(false);
       });
   };
+
   useEffect(() => {
     refreshDocs(sortField, currentPage, rowsPerPage);
   }, []);
+
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
@@ -267,7 +263,7 @@ const Documents: React.FC<DocumentsProps> = ({
 };
 
 Documents.propTypes = {
-  documents: PropTypes.array.isRequired,
+  //documents: PropTypes.array.isRequired,
   handleDeleteDocument: PropTypes.func.isRequired,
 };
 

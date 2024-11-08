@@ -28,7 +28,6 @@ export type PromptProps = {
 };
 
 export type DocumentsProps = {
-  documents: Doc[] | null;
   handleDeleteDocument: (index: number, document: Doc) => void;
 };
 

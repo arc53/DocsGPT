@@ -70,12 +70,7 @@ export default function Settings() {
       case t('settings.general.label'):
         return <General />;
       case t('settings.documents.label'):
-        return (
-          <Documents
-            documents={documents}
-            handleDeleteDocument={handleDeleteClick}
-          />
-        );
+        return <Documents handleDeleteDocument={handleDeleteClick} />;
       case 'Widgets':
         return (
           <Widgets
