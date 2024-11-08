@@ -3,10 +3,10 @@ import endpoints from '../endpoints';
 
 const userService = {
   getDocs: (
-    sort = 'date',
-    order = 'desc',
-    pageNumber = 1,
-    rowsPerPage = 10,
+    sort: string,
+    order: string,
+    pageNumber: number,
+    rowsPerPage: number,
   ): Promise<any> =>
     apiClient.get(
       `${endpoints.USER.DOCS}?sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}`,
