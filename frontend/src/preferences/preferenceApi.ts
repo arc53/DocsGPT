@@ -1,14 +1,23 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
-import { Doc } from '../models/misc';
+import { Doc, GetDocsResponse } from '../models/misc';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
+export async function getDocs(
+  sort?: string,
+  order?: string,
+  pageNumber?: number,
+  rowsPerPage?: number,
+  withPagination?: true,
+): Promise<GetDocsResponse | null>;
+
 export async function getDocs(
   sort = 'date',
   order = 'desc',
   pageNumber = 1,
   rowsPerPage = 5,
-): Promise<Doc[] | null> {
+  withPagination = false,
+): Promise<Doc[] | GetDocsResponse | null> {
   try {
     const response = await userService.getDocs(
       sort,
@@ -17,14 +26,27 @@ export async function getDocs(
       rowsPerPage,
     );
     const data = await response.json();
+    console.log(data);
+    if (withPagination) {
+      const docs: Doc[] = [];
+      Array.isArray(data.paginated_docs) &&
+        data.paginated_docs.forEach((doc: object) => {
+          docs.push(doc as Doc);
+        });
 
-    const docs: Doc[] = [];
-
-    data.forEach((doc: object) => {
-      docs.push(doc as Doc);
-    });
-
-    return docs;
+      const totalDocuments = data.totalDocuments || 0;
+      const totalPages = data.totalPages || 0;
+      console.log(`totalDocuments: ${totalDocuments}`);
+      console.log(`totalPages: ${totalPages}`);
+      return { docs, totalDocuments, totalPages };
+    } else {
+      const docs: Doc[] = [];
+      Array.isArray(data.documents) &&
+        data.documents.forEach((doc: object) => {
+          docs.push(doc as Doc);
+        });
+      return docs;
+    }
   } catch (error) {
     console.log(error);
     return null;

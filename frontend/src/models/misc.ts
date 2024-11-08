@@ -14,6 +14,12 @@ export type Doc = {
   syncFrequency?: string;
 };
 
+export type GetDocsResponse = {
+  docs: Doc[];
+  totalDocuments: number;
+  totalPages: number;
+};
+
 export type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };
