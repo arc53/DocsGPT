@@ -69,7 +69,7 @@ const Documents: React.FC<DocumentsProps> = ({
   ];
 
   const refreshDocs = (
-    field: 'date' | 'tokens',
+    field: 'date' | 'tokens' | undefined,
     pageNumber?: number,
     rows?: number,
   ) => {
