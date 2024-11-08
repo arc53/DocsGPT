@@ -10,7 +10,7 @@ import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
 import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
 import SkeletonLoader from '../components/SkeletonLoader';
-import { getDocs } from '../preferences/preferenceApi';
+import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import Input from '../components/Input';
 import Upload from '../upload/Upload'; // Import the Upload component
@@ -33,13 +33,9 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
-const Documents: React.FC<DocumentsProps> = ({
-  documents,
-  handleDeleteDocument,
-}) => {
+const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-
   // State for search input
   const [searchTerm, setSearchTerm] = useState('');
   // State for modal: active/inactive
@@ -60,7 +56,6 @@ const Documents: React.FC<DocumentsProps> = ({
   );
   // State for documents
   const currentDocuments = filteredDocuments ?? [];
-
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
@@ -73,9 +68,9 @@ const Documents: React.FC<DocumentsProps> = ({
     pageNumber?: number,
     rows?: number,
   ) => {
-    console.log(`field: ${field}, pageNumber: ${pageNumber}, rows: ${rows}`);
     const page = pageNumber ?? currentPage;
     const rowsPerPg = rows ?? rowsPerPage;
+
     if (field !== undefined) {
       if (field === sortField) {
         // Toggle sort order
@@ -86,9 +81,9 @@ const Documents: React.FC<DocumentsProps> = ({
         setSortOrder('desc');
       }
     }
-    getDocs(sortField, sortOrder, page, rowsPerPg, true)
+    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
       .then((data) => {
-        console.log(data);
+        console.log('Data received from getDocsWithPagination:', data);
         dispatch(setSourceDocs(data ? data.docs : []));
         setFetchedDocuments(data ? data.docs : []);
         setTotalPages(data ? data.totalPages : 0);
@@ -99,6 +94,7 @@ const Documents: React.FC<DocumentsProps> = ({
         setLoading(false);
       });
   };
+
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
     userService
@@ -114,9 +110,13 @@ const Documents: React.FC<DocumentsProps> = ({
         setLoading(false);
       });
   };
+
   useEffect(() => {
-    refreshDocs(sortField, currentPage, rowsPerPage);
-  }, []);
+    if (modalState === 'INACTIVE') {
+      refreshDocs(sortField, currentPage, rowsPerPage);
+    }
+  }, [modalState, sortField, currentPage, rowsPerPage]);
+
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
@@ -190,7 +190,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 )}
                 {Array.isArray(currentDocuments) &&
                   currentDocuments.map((document, index) => (
-                    <tr key={index}>
+                    <tr key={index} className="text-nowrap font-normal">
                       <td>{document.name}</td>
                       <td>{document.date}</td>
                       <td>
@@ -248,18 +248,24 @@ const Documents: React.FC<DocumentsProps> = ({
           </div>
         )}
       </div>
+      {/* Pagination component with props:
+      # Note: Every time the page changes, 
+      the refreshDocs function is called with the updated page number and rows per page.
+      and reset cursor paginated query parameter to undefined.
+      */}
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}
         rowsPerPage={rowsPerPage}
         onPageChange={(page) => {
           setCurrentPage(page);
-          refreshDocs(undefined, page, rowsPerPage);
+          refreshDocs(sortField, page, rowsPerPage); // Pass `true` to reset lastID if not using cursor
         }}
         onRowsPerPageChange={(rows) => {
+          console.log('Pagination - Rows per Page Change:', rows);
           setRowsPerPage(rows);
-          setCurrentPage(1);
-          refreshDocs(undefined, 1, rows);
+          setCurrentPage(1); // Reset to page 1 on rows per page change
+          refreshDocs(sortField, 1, rows); // Reset lastID for fresh pagination
         }}
       />
     </div>
@@ -267,7 +273,7 @@ const Documents: React.FC<DocumentsProps> = ({
 };
 
 Documents.propTypes = {
-  documents: PropTypes.array.isRequired,
+  //documents: PropTypes.array.isRequired,
   handleDeleteDocument: PropTypes.func.isRequired,
 };
 

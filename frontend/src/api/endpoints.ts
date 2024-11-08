@@ -1,7 +1,8 @@
 const endpoints = {
   USER: {
-    DOCS: '/api/combine',
+    DOCS: '/api/sources',
     DOCS_CHECK: '/api/docs_check',
+    DOCS_PAGINATED: '/api/sources/paginated',
     API_KEYS: '/api/get_api_keys',
     CREATE_API_KEY: '/api/create_api_key',
     DELETE_API_KEY: '/api/delete_api_key',

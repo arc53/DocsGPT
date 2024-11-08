@@ -18,6 +18,7 @@ export type GetDocsResponse = {
   docs: Doc[];
   totalDocuments: number;
   totalPages: number;
+  nextCursor: string;
 };
 
 export type PromptProps = {
@@ -28,7 +29,6 @@ export type PromptProps = {
 };
 
 export type DocumentsProps = {
-  documents: Doc[] | null;
   handleDeleteDocument: (index: number, document: Doc) => void;
 };
 

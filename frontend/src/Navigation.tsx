@@ -145,7 +145,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         dispatch(setSourceDocs(updatedDocs));
         dispatch(
           setSelectedDocs(
-            updatedDocs?.find((doc) => doc.name.toLowerCase() === 'default'),
+            Array.isArray(updatedDocs) &&
+              updatedDocs?.find(
+                (doc: Doc) => doc.name.toLowerCase() === 'default',
+              ),
           ),
         );
       })

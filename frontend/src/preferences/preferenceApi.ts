@@ -4,49 +4,53 @@ import { Doc, GetDocsResponse } from '../models/misc';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(
-  sort?: string,
-  order?: string,
-  pageNumber?: number,
-  rowsPerPage?: number,
-  withPagination?: true,
-): Promise<GetDocsResponse | null>;
+  sort = 'date',
+  order = 'desc',
+): Promise<Doc[] | null> {
+  try {
+    const response = await userService.getDocs(sort, order);
+    const data = await response.json();
 
-export async function getDocs(
+    const docs: Doc[] = [];
+    console.log(data);
+    data.forEach((doc: object) => {
+      docs.push(doc as Doc);
+    });
+
+    return docs;
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+}
+
+export async function getDocsWithPagination(
   sort = 'date',
   order = 'desc',
   pageNumber = 1,
-  rowsPerPage = 5,
-  withPagination = false,
-): Promise<Doc[] | GetDocsResponse | null> {
+  rowsPerPage = 10,
+): Promise<GetDocsResponse | null> {
   try {
-    const response = await userService.getDocs(
-      sort,
-      order,
-      pageNumber,
-      rowsPerPage,
-    );
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}`;
+    const response = await userService.getDocsWithPagination(query);
     const data = await response.json();
-    console.log(data);
-    if (withPagination) {
-      const docs: Doc[] = [];
-      Array.isArray(data.paginated_docs) &&
-        data.paginated_docs.forEach((doc: object) => {
-          docs.push(doc as Doc);
-        });
 
-      const totalDocuments = data.totalDocuments || 0;
-      const totalPages = data.totalPages || 0;
-      console.log(`totalDocuments: ${totalDocuments}`);
-      console.log(`totalPages: ${totalPages}`);
-      return { docs, totalDocuments, totalPages };
-    } else {
-      const docs: Doc[] = [];
-      Array.isArray(data.documents) &&
-        data.documents.forEach((doc: object) => {
-          docs.push(doc as Doc);
-        });
-      return docs;
-    }
+    const docs: Doc[] = [];
+    console.log(`data: ${data}`);
+    Array.isArray(data.paginated) &&
+      data.paginated.forEach((doc: Doc) => {
+        docs.push(doc as Doc);
+      });
+    console.log(`total: ${data.total}`);
+    console.log(`totalPages: ${data.totalPages}`);
+    console.log(`cursor: ${data.nextCursor}`);
+    console.log(`currentPage: ${data.currentPage}`);
+    return {
+      docs: docs,
+      totalDocuments: data.total,
+      totalPages: data.totalPages,
+      nextCursor: data.nextCursor,
+    };
   } catch (error) {
     console.log(error);
     return null;

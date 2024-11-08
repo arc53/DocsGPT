@@ -7,7 +7,7 @@ import math
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, jsonify, make_response, request, redirect
 from flask_restx import inputs, fields, Namespace, Resource
 from werkzeug.utils import secure_filename
 
@@ -430,14 +430,63 @@ class TaskStatus(Resource):
 
 
 @user_ns.route("/api/combine")
+class RedirectToSources(Resource):
+    @api.doc(
+        description="Redirects /api/combine to /api/sources for backward compatibility"
+    )
+    def get(self):
+        return redirect("/api/sources", code=301)
+
+
+@user_ns.route("/api/sources/paginated")
+class PaginatedSources(Resource):
+    @api.doc(description="Get document with pagination, sorting and filtering")
+    def get(self):
+        user = "local"
+        sort_field = request.args.get("sort", "date")  # Default to 'date'
+        sort_order = request.args.get("order", "desc")  # Default to 'desc'
+        page = int(request.args.get("page", 1))  # Default to 1
+        rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+
+        # Prepare
+        query = {"user": user}
+        total_documents = sources_collection.count_documents(query)
+        total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        sort_order = 1 if sort_order == "asc" else -1
+        skip = (page - 1) * rows_per_page
+
+        try:
+            documents = (
+                sources_collection.find(query)
+                .sort(sort_field, sort_order)
+                .skip(skip)
+                .limit(rows_per_page)
+            )
+
+            paginated_docs = []
+            for doc in documents:
+                doc["_id"] = str(doc["_id"])
+                paginated_docs.append(doc)
+
+            response = {
+                "total": total_documents,
+                "totalPages": total_pages,
+                "currentPage": page,
+                "paginated": paginated_docs,
+            }
+            return make_response(jsonify(response), 200)
+
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
+@user_ns.route("/api/sources")
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
     def get(self):
         user = "local"
-        sort_field = request.args.get('sort', 'date')  # Default to 'date'
-        sort_order = request.args.get('order', "desc")  # Default to 'desc'
-        page = int(request.args.get('page', 1)) # Default to 1
-        rows_per_page = int(request.args.get('rows', 10)) # Default to 10
+        sort_field = request.args.get("sort", "date")  # Default to 'date'
+        sort_order = request.args.get("order", "desc")  # Default to 'desc'
         data = [
             {
                 "name": "default",
@@ -450,7 +499,9 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort(sort_field, 1 if sort_order=="asc" else -1):
+            for index in sources_collection.find({"user": user}).sort(
+                sort_field, 1 if sort_order == "asc" else -1
+            ):
                 data.append(
                     {
                         "id": str(index["_id"]),
@@ -488,23 +539,11 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
-            total_documents = len(data)
-            total_pages = max(1, math.ceil(total_documents / rows_per_page))
-
-            first_index = (page - 1) * rows_per_page
-            last_index = first_index + rows_per_page
-            paginated_docs = data[first_index:last_index]
 
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-            
-        response = {
-            "paginated_docs": paginated_docs,
-            "totalDocuments": total_documents,
-            "totalPages": total_pages,
-            "documents":data
-        }
-        return make_response(jsonify(response), 200)
+
+        return make_response(jsonify(data), 200)
 
 
 @user_ns.route("/api/docs_check")
@@ -1690,7 +1729,9 @@ class TextToSpeech(Resource):
     tts_model = api.model(
         "TextToSpeechModel",
         {
-            "text": fields.String(required=True, description="Text to be synthesized as audio"),
+            "text": fields.String(
+                required=True, description="Text to be synthesized as audio"
+            ),
         },
     )
 
@@ -1702,8 +1743,15 @@ class TextToSpeech(Resource):
         try:
             tts_instance = GoogleTTS()
             audio_base64, detected_language = tts_instance.text_to_speech(text)
-            return make_response(jsonify({"success": True,'audio_base64': audio_base64,'lang':detected_language}), 200)
+            return make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "audio_base64": audio_base64,
+                        "lang": detected_language,
+                    }
+                ),
+                200,
+            )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
-

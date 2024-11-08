@@ -166,7 +166,10 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.type?.toLowerCase() === 'local'),
+                        Array.isArray(data) &&
+                          data?.find(
+                            (d: Doc) => d.type?.toLowerCase() === 'local',
+                          ),
                       ),
                     );
                   });
@@ -182,15 +185,21 @@ function Upload({
                   getDocs().then((data) => {
                     dispatch(setSourceDocs(data));
                     const docIds = new Set(
-                      sourceDocs?.map((doc: Doc) => (doc.id ? doc.id : null)),
+                      (Array.isArray(sourceDocs) &&
+                        sourceDocs?.map((doc: Doc) =>
+                          doc.id ? doc.id : null,
+                        )) ||
+                        [],
                     );
-                    data?.map((updatedDoc: Doc) => {
-                      if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
-                        //select the doc not present in the intersection of current Docs and fetched data
-                        dispatch(setSelectedDocs(updatedDoc));
-                        return;
-                      }
-                    });
+                    if (data && Array.isArray(data.docs)) {
+                      data.docs.map((updatedDoc: Doc) => {
+                        if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
+                          // Select the doc not present in the intersection of current Docs and fetched data
+                          dispatch(setSelectedDocs(updatedDoc));
+                          return;
+                        }
+                      });
+                    }
                   });
                   setProgress(
                     (progress) =>
