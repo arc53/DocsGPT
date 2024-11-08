@@ -2,6 +2,7 @@ import datetime
 import os
 import shutil
 import uuid
+import math
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -435,8 +436,8 @@ class CombinedJson(Resource):
         user = "local"
         sort_field = request.args.get('sort', 'date')  # Default to 'date'
         sort_order = request.args.get('order', "desc")  # Default to 'desc'
-        page = request.args.get('page', 1) # Default to 1
-        rows_per_page = request.args.get('rows', 10) # Default to 10
+        page = int(request.args.get('page', 1)) # Default to 1
+        rows_per_page = int(request.args.get('rows', 10)) # Default to 10
         data = [
             {
                 "name": "default",
@@ -487,15 +488,23 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
+            total_documents = len(data)
+            total_pages = max(1, math.ceil(total_documents / rows_per_page))
 
-            first_index = (int(page) - 1) * int(rows_per_page)
-            last_index = first_index + int(rows_per_page)
+            first_index = (page - 1) * rows_per_page
+            last_index = first_index + rows_per_page
             paginated_docs = data[first_index:last_index]
 
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
-        return make_response(jsonify(paginated_docs), 200)
+            
+        response = {
+            "paginated_docs": paginated_docs,
+            "totalDocuments": total_documents,
+            "totalPages": total_pages,
+            "documents":data
+        }
+        return make_response(jsonify(response), 200)
 
 
 @user_ns.route("/api/docs_check")
