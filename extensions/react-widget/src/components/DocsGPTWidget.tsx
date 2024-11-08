@@ -60,18 +60,53 @@ const Overlay = styled.div`
   z-index: 999;
   transition: opacity 0.5s;
 `
-const WidgetContainer = styled.div<{ modal?: boolean }>`
+const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     all: initial;
     position: fixed;
     right: ${props => props.modal ? '50%' : '10px'};
     bottom: ${props => props.modal ? '50%' : '10px'};
     z-index: 1000;
-    display: block;
+    display: none;
+    transform-origin:100% 100%;
+    &.open {
+        animation: createBox 500ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;;
+    }
+    &.close {
+        animation: closeBox 500ms cubic-bezier(0.6, 0.05, 0.15, 1) forwards;
+    }
     ${props => props.modal &&
     "transform : translate(50%,50%);"
   }
     align-items: center;
     text-align: left;
+    @keyframes createBox {
+  0% {
+    transform: scale(0.5);
+  }
+  60% {
+    transform: scale(1.05) translate(-2%,-2%);
+
+  }
+  100% {
+    transform: scale(1);
+   
+  }
+}
+
+@keyframes closeBox {
+  0% {
+    transform: scale(1) translate(0, 0);
+    
+  }
+  40% {
+    transform: scale(1.05) translate(-2%, -2%);
+    
+  }
+  100% {
+    transform: scale(0);
+   
+  }
+}
 `;
 const StyledContainer = styled.div`
     all: initial;
@@ -97,16 +132,19 @@ const StyledContainer = styled.div`
     overflow: auto;
     }
 `;
-const FloatingButton = styled.div<{ bgcolor: string }>`
+const FloatingButton = styled.div<{ bgcolor: string,hidden:boolean }>`
     position: fixed;
-    display: flex;
+    display: ${props => props.hidden ? "none" : "flex"};
     z-index: 500;
     justify-content: center;
+    gap: 8px;
+    padding: 14px;
     align-items: center;
     bottom: 16px;
+    color: white;
+    font-family: sans-serif;
     right: 16px;
-    width: 80px;
-    height: 80px;
+    font-weight: 500;
     border-radius: 9999px;
     background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -388,7 +426,7 @@ export const DocsGPTWidget = ({
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
   size = 'small',
   theme = 'dark',
-  buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/message.svg',
+  buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
   collectFeedback = true,
   deafultOpen = false
@@ -400,6 +438,7 @@ export const DocsGPTWidget = ({
   const [open, setOpen] = React.useState<boolean>(deafultOpen)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
   const isBubbleHovered = useRef<boolean>(false)
+  const widgetRef = useRef<HTMLDivElement>(null)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
 
@@ -511,11 +550,23 @@ export const DocsGPTWidget = ({
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
-
+  const handleClose = () => {
+    setOpen(false);
+    setTimeout(() => {
+      if(widgetRef.current)
+        widgetRef.current.style.display = "none"
+    }, 500);
+  };
+  const handleOpen = () => {
+    setOpen(true)
+    if(widgetRef.current)
+    widgetRef.current.style.display = 'block'
+  }
   const dimensions =
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
+
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
       {open && size === 'large' &&
@@ -523,13 +574,14 @@ export const DocsGPTWidget = ({
           setOpen(false)
         }} />
       }
-      <FloatingButton bgcolor={buttonBg} onClick={() => setOpen(!open)} hidden={open}>
-        <img style={{ maxHeight: '64px', maxWidth: '64px' }} src={buttonIcon} />
+      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={open}>
+        <img width={24} src={buttonIcon} />
+        <span>Ask a question</span>
       </FloatingButton>
-      <WidgetContainer modal={size == 'large'}>
-        {open && <StyledContainer>
+      <WidgetContainer ref={widgetRef} className={open ? 'open' : 'close'} modal={size == 'large'}>
+        {<StyledContainer>
           <div>
-            <CancelButton onClick={() => setOpen(false)}>
+            <CancelButton onClick={handleClose}>
               <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
             </CancelButton>
             <Header>
