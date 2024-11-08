@@ -243,26 +243,59 @@ function Upload({
   const doNothing = () => undefined;
 
   const uploadFile = () => {
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append('file', file);
-    });
-    formData.append('name', docName);
-    formData.append('user', 'local');
+    if (files.length === 0) {
+      console.error('No files to upload.');
+      return;
+    }
+
     const apiHost = import.meta.env.VITE_API_HOST;
-    const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', (event) => {
-      const progress = +((event.loaded / event.total) * 100).toFixed(2);
-      setProgress({ type: 'UPLOAD', percentage: progress });
-    });
-    xhr.onload = () => {
-      const { task_id } = JSON.parse(xhr.responseText);
-      setTimeoutRef.current = setTimeout(() => {
-        setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
-      }, 3000);
+
+    const uploadNextFile = (index: number) => {
+      if (index >= files.length) {
+        console.log('All files have been uploaded.');
+        return;
+      }
+
+      const file = files[index];
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', docName);
+      formData.append('user', 'local');
+
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener('progress', (event) => {
+        const progress = +((event.loaded / event.total) * 100).toFixed(2);
+        console.log(`File ${index + 1}/${files.length} progress: ${progress}%`);
+        setProgress({ type: 'UPLOAD', percentage: progress });
+      });
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const { task_id } = JSON.parse(xhr.responseText);
+          console.log(`
+            File ${index + 1}/${files.length} uploaded successfully. Task ID: ${task_id}`);
+          setTimeoutRef.current = setTimeout(() => {
+            setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
+          }, 3000);
+          uploadNextFile(index + 1);
+        } else {
+          console.error(
+            `
+            File ${index + 1}/${files.length} upload failed with status ${xhr.status}. Response:`,
+            xhr.responseText,
+          );
+        }
+      };
+
+      xhr.onerror = () => {
+        console.error(`
+          File ${index + 1}/${files.length} upload encountered an error.`);
+      };
+
+      xhr.open('POST', `${apiHost + '/api/upload'}`);
+      xhr.send(formData);
     };
-    xhr.open('POST', `${apiHost + '/api/upload'}`);
-    xhr.send(formData);
+    uploadNextFile(0);
   };
 
   const uploadRemote = () => {
