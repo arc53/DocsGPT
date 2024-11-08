@@ -132,7 +132,7 @@ const StyledContainer = styled.div`
     overflow: auto;
     }
 `;
-const FloatingButton = styled.div<{ bgcolor: string,hidden:boolean }>`
+const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean }>`
     position: fixed;
     display: ${props => props.hidden ? "none" : "flex"};
     z-index: 500;
@@ -552,15 +552,17 @@ export const DocsGPTWidget = ({
   };
   const handleClose = () => {
     setOpen(false);
-    setTimeout(() => {
-      if(widgetRef.current)
+    size !== "large" ? setTimeout(() => {
+      if (widgetRef.current)
         widgetRef.current.style.display = "none"
-    }, 500);
+    }, 500)
+      :
+      widgetRef.current && (widgetRef.current.style.display = "none")
   };
   const handleOpen = () => {
-    setOpen(true)
-    if(widgetRef.current)
-    widgetRef.current.style.display = 'block'
+    setOpen(true);
+    if (widgetRef.current)
+      widgetRef.current.style.display = 'block'
   }
   const dimensions =
     typeof size === 'object' && 'custom' in size
@@ -570,15 +572,13 @@ export const DocsGPTWidget = ({
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
       {open && size === 'large' &&
-        <Overlay onClick={() => {
-          setOpen(false)
-        }} />
+        <Overlay onClick={handleClose} />
       }
       <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={open}>
         <img width={24} src={buttonIcon} />
         <span>Ask a question</span>
       </FloatingButton>
-      <WidgetContainer ref={widgetRef} className={open ? 'open' : 'close'} modal={size == 'large'}>
+      <WidgetContainer ref={widgetRef} className={`${size != "large" && (open ? "open" : "close")}`} modal={size == 'large'}>
         {<StyledContainer>
           <div>
             <CancelButton onClick={handleClose}>
