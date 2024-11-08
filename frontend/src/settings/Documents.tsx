@@ -51,18 +51,15 @@ const Documents: React.FC<DocumentsProps> = ({
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
-  const [totalPages, setTotalPages] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [totalDocuments, setTotalDocuments] = useState<number>(0);
   const [fetchedDocuments, setFetchedDocuments] = useState<Doc[]>([]);
   // Filter documents based on the search term
-  const filteredDocuments = documents?.filter((document) =>
+  const filteredDocuments = fetchedDocuments?.filter((document) =>
     document.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
   // State for documents
-  const startIndex = (currentPage - 1) * rowsPerPage;
-  const endIndex = startIndex + rowsPerPage;
-  const currentDocuments = filteredDocuments
-    ? filteredDocuments.slice(startIndex, endIndex)
-    : [];
+  const currentDocuments = filteredDocuments ?? [];
 
   const syncOptions = [
     { label: 'Never', value: 'never' },
@@ -71,32 +68,31 @@ const Documents: React.FC<DocumentsProps> = ({
     { label: 'Monthly', value: 'monthly' },
   ];
 
-  useEffect(() => {
-    if (fetchedDocuments && rowsPerPage > 0) {
-      setTotalPages(
-        Math.max(1, Math.ceil(fetchedDocuments.length / rowsPerPage)),
-      );
-    } else {
-      setTotalPages(0);
-    }
-  }, [fetchedDocuments, rowsPerPage]);
-
   const refreshDocs = (
     field: 'date' | 'tokens',
-    pageNumber = currentPage,
-    rows = rowsPerPage,
+    pageNumber?: number,
+    rows?: number,
   ) => {
-    if (field === sortField) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortOrder('desc');
-      setSortField(field);
+    console.log(`field: ${field}, pageNumber: ${pageNumber}, rows: ${rows}`);
+    const page = pageNumber ?? currentPage;
+    const rowsPerPg = rows ?? rowsPerPage;
+    if (field !== undefined) {
+      if (field === sortField) {
+        // Toggle sort order
+        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      } else {
+        // Change sort field and reset order to 'desc'
+        setSortField(field);
+        setSortOrder('desc');
+      }
     }
-    console.log('refreshDocs', field, sortOrder, pageNumber, rows);
-    getDocs(sortField, sortOrder, pageNumber, rows)
+    getDocs(sortField, sortOrder, page, rowsPerPg, true)
       .then((data) => {
-        dispatch(setSourceDocs(data));
-        setFetchedDocuments(data ? data : []);
+        console.log(data);
+        dispatch(setSourceDocs(data ? data.docs : []));
+        setFetchedDocuments(data ? data.docs : []);
+        setTotalPages(data ? data.totalPages : 0);
+        setTotalDocuments(data ? data.totalDocuments : 0);
       })
       .catch((error) => console.error(error))
       .finally(() => {
@@ -118,7 +114,9 @@ const Documents: React.FC<DocumentsProps> = ({
         setLoading(false);
       });
   };
-
+  useEffect(() => {
+    refreshDocs(sortField, currentPage, rowsPerPage);
+  }, []);
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
@@ -256,12 +254,12 @@ const Documents: React.FC<DocumentsProps> = ({
         rowsPerPage={rowsPerPage}
         onPageChange={(page) => {
           setCurrentPage(page);
-          refreshDocs(sortField, page, rowsPerPage);
+          refreshDocs(undefined, page, rowsPerPage);
         }}
         onRowsPerPageChange={(rows) => {
           setRowsPerPage(rows);
           setCurrentPage(1);
-          refreshDocs(sortField, 1, rows);
+          refreshDocs(undefined, 1, rows);
         }}
       />
     </div>
