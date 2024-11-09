@@ -69,10 +69,10 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     display: none;
     transform-origin:100% 100%;
     &.open {
-        animation: createBox 500ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;;
+        animation: createBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
     }
     &.close {
-        animation: closeBox 500ms cubic-bezier(0.6, 0.05, 0.15, 1) forwards;
+      animation: closeBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
     }
     ${props => props.modal &&
     "transform : translate(50%,50%);"
@@ -80,33 +80,28 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     align-items: center;
     text-align: left;
     @keyframes createBox {
-  0% {
-    transform: scale(0.5);
-  }
-  60% {
-    transform: scale(1.05) translate(-2%,-2%);
+      0% {
+        transform: scale(0.5);
+      }
+      90% {
+        transform: scale(1.02);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
 
-  }
-  100% {
-    transform: scale(1);
-   
-  }
-}
-
-@keyframes closeBox {
-  0% {
-    transform: scale(1) translate(0, 0);
-    
-  }
-  40% {
-    transform: scale(1.05) translate(-2%, -2%);
-    
-  }
-  100% {
-    transform: scale(0);
-   
-  }
-}
+    @keyframes closeBox {
+      0% {
+        transform: scale(1); 
+      }
+      10% {
+        transform: scale(1.02); 
+      }
+      100% {
+        transform: scale(0);
+      }
+    }
 `;
 const StyledContainer = styled.div`
     all: initial;
@@ -427,6 +422,7 @@ export const DocsGPTWidget = ({
   size = 'small',
   theme = 'dark',
   buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg',
+  buttonText = 'Ask a question',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
   collectFeedback = true,
   deafultOpen = false
@@ -555,7 +551,7 @@ export const DocsGPTWidget = ({
     size !== "large" ? setTimeout(() => {
       if (widgetRef.current)
         widgetRef.current.style.display = "none"
-    }, 500)
+    }, 250)
       :
       widgetRef.current && (widgetRef.current.style.display = "none")
   };
@@ -576,7 +572,7 @@ export const DocsGPTWidget = ({
       }
       <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={open}>
         <img width={24} src={buttonIcon} />
-        <span>Ask a question</span>
+        <span>{buttonText}</span>
       </FloatingButton>
       <WidgetContainer ref={widgetRef} className={`${size != "large" && (open ? "open" : "close")}`} modal={size == 'large'}>
         {<StyledContainer>
