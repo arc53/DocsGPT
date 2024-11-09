@@ -99,7 +99,7 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
         transform: scale(1.02); 
       }
       100% {
-        transform: scale(0);
+        transform: scale(0.45);
       }
     }
 `;
@@ -127,7 +127,7 @@ const StyledContainer = styled.div`
     overflow: auto;
     }
 `;
-const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean }>`
+const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatingButton: boolean }>`
     position: fixed;
     display: ${props => props.hidden ? "none" : "flex"};
     z-index: 500;
@@ -144,9 +144,22 @@ const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean }>`
     background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
+    animation: ${props => props.isAnimatingButton ? 'scaleAnimation 200ms forwards' : 'none'};
     &:hover {
-        transform: scale(1.1);
-        transition: transform 0.2s ease-in-out;
+      transform: scale(1.1);
+      transition: transform 0.2s ease-in-out;
+    }
+    &:not(:hover) {
+      transition: transform 0.2s ease-in-out;
+    }
+
+    @keyframes scaleAnimation {
+      from {
+      transform: scale(1.2);
+      }
+      to {
+      transform: scale(1);
+      }
     }
 `;
 const CancelButton = styled.button`
@@ -433,6 +446,8 @@ export const DocsGPTWidget = ({
   const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState<boolean>(deafultOpen)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
+  const [isFloatingButtonVisible, setIsFloatingButtonVisible] = React.useState(true);
   const isBubbleHovered = useRef<boolean>(false)
   const widgetRef = useRef<HTMLDivElement>(null)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
@@ -549,14 +564,17 @@ export const DocsGPTWidget = ({
   const handleClose = () => {
     setOpen(false);
     size !== "large" ? setTimeout(() => {
-      if (widgetRef.current)
-        widgetRef.current.style.display = "none"
+      if (widgetRef.current) widgetRef.current.style.display = "none";
+      setIsFloatingButtonVisible(true);
+      setIsAnimatingButton(true);
+      setTimeout(() => setIsAnimatingButton(false), 200);
     }, 250)
       :
       widgetRef.current && (widgetRef.current.style.display = "none")
   };
   const handleOpen = () => {
     setOpen(true);
+    setIsFloatingButtonVisible(false);
     if (widgetRef.current)
       widgetRef.current.style.display = 'block'
   }
@@ -570,7 +588,7 @@ export const DocsGPTWidget = ({
       {open && size === 'large' &&
         <Overlay onClick={handleClose} />
       }
-      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={open}>
+      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={!isFloatingButtonVisible} isAnimatingButton={isAnimatingButton}>
         <img width={24} src={buttonIcon} />
         <span>{buttonText}</span>
       </FloatingButton>
