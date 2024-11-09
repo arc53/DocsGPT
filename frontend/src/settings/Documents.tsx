@@ -199,7 +199,7 @@ const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
                         {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
                       </td>
                       <td>
-                        <div className="flex flex-row items-center">
+                        <div className="min-w-[70px] flex flex-row items-end justify-end ml-auto">
                           {document.type !== 'remote' && (
                             <img
                               src={Trash}

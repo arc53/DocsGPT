@@ -50,7 +50,7 @@ body.dark {
 
 @layer components {
   .table-default {
-    @apply block w-full mx-auto table-fixed content-start justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray overflow-auto;
+    @apply block w-full mx-auto table-auto content-start justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray overflow-auto;
   }
 
   .table-default th {
