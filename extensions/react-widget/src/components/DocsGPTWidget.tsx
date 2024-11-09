@@ -351,7 +351,7 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
 
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
-  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
+  apiKey = '0d7407f7-a843-42fb-ad83-dd4a213a935d',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -536,7 +536,7 @@ export const DocsGPTWidget = ({
                       query.response ? (
                         <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
                           {showSources && query.sources && (
-                            <QuerySources sources={query.sources} theme={theme}/>
+                            <QuerySources sources={query.sources}/>
                           )}
                           <Message
                             type='ANSWER'

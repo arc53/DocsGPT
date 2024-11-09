@@ -1,6 +1,6 @@
-import {Query, THEME} from "../types/index"
+import {Query} from "../types/index"
 import styled from 'styled-components';
-import { ExternalLinkIcon, FileTextIcon } from '@radix-ui/react-icons'
+import { ExternalLinkIcon } from '@radix-ui/react-icons'
 
 
 const SourcesWrapper = styled.div`
@@ -10,19 +10,6 @@ margin-bottom: 0.75rem;
 display: flex;
 flex-direction: column;
 overflow: hidden;
-`
-
-const SourcesHeader = styled.div`
-  margin: 0.3rem 0;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-`
-
-const SourcesTitle = styled.p`
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: ${props => props.theme.text};
 `
 
 const SourcesGrid = styled.div`
@@ -57,12 +44,12 @@ transform: background-color .2s, color .2s;
 }
 `
 
-const SourceLink = styled.div`
+const SourceLink = styled.div<{$hasExternalSource: boolean}>`
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.375rem;
-  text-decoration: underline;
+  text-decoration: ${({$hasExternalSource}) => ($hasExternalSource? "underline": "none")};
   text-underline-offset: 2px;
 `
 
@@ -76,16 +63,11 @@ const SourceLinkText = styled.p`
 
 type TQuerySources = {
   sources:  Pick<Query, "sources">["sources"],
-  theme?: THEME
 }
 
-const QuerySources = ({sources, theme}:TQuerySources) => {
+const QuerySources = ({sources}:TQuerySources) => {
   return (
     <SourcesWrapper>
-      <SourcesHeader>
-      <FileTextIcon width={15} height={15} color={`${theme === 'light' ? "#000" : "#fff"}`}/>
-        <SourcesTitle>Sources</SourcesTitle>
-      </SourcesHeader>
 
       <SourcesGrid>
         {sources?.slice(0, 3)?.map((source, index) => (
@@ -93,6 +75,7 @@ const QuerySources = ({sources, theme}:TQuerySources) => {
             key={index}
           >
             <SourceLink
+            $hasExternalSource={!!source.source && source.source !== "local"}
               onClick={() =>
                 source.source && source.source !== 'local'
                   ? window.open(source.source, '_blank', 'noopener,noreferrer')
