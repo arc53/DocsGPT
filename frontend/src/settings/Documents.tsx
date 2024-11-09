@@ -83,8 +83,7 @@ const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
     }
     getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
       .then((data) => {
-        console.log('Data received from getDocsWithPagination:', data);
-        dispatch(setSourceDocs(data ? data.docs : []));
+        //dispatch(setSourceDocs(data ? data.docs : []));
         setFetchedDocuments(data ? data.docs : []);
         setTotalPages(data ? data.totalPages : 0);
         setTotalDocuments(data ? data.totalDocuments : 0);

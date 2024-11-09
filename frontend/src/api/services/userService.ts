@@ -2,8 +2,7 @@ import apiClient from '../client';
 import endpoints from '../endpoints';
 
 const userService = {
-  getDocs: (sort: string, order: string): Promise<any> =>
-    apiClient.get(`${endpoints.USER.DOCS}?sort=${sort}&order=${order}`),
+  getDocs: (): Promise<any> => apiClient.get(`${endpoints.USER.DOCS}`),
   getDocsWithPagination: (query: string): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`),
   checkDocs: (data: any): Promise<any> =>

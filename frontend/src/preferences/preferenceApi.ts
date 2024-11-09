@@ -3,12 +3,9 @@ import userService from '../api/services/userService';
 import { Doc, GetDocsResponse } from '../models/misc';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
-export async function getDocs(
-  sort = 'date',
-  order = 'desc',
-): Promise<Doc[] | null> {
+export async function getDocs(): Promise<Doc[] | null> {
   try {
-    const response = await userService.getDocs(sort, order);
+    const response = await userService.getDocs();
     const data = await response.json();
 
     const docs: Doc[] = [];
