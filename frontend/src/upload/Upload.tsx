@@ -191,8 +191,8 @@ function Upload({
                         )) ||
                         [],
                     );
-                    if (data && Array.isArray(data.docs)) {
-                      data.docs.map((updatedDoc: Doc) => {
+                    if (data && Array.isArray(data)) {
+                      data.map((updatedDoc: Doc) => {
                         if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
                           // Select the doc not present in the intersection of current Docs and fetched data
                           dispatch(setSelectedDocs(updatedDoc));

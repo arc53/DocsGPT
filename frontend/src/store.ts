@@ -38,6 +38,7 @@ const preloadedState: { preference: Preference } = {
       },
     ],
     modalState: 'INACTIVE',
+    paginatedDocuments: null,
   },
 };
 const store = configureStore({
