@@ -4,9 +4,7 @@ import { ExternalLinkIcon } from '@radix-ui/react-icons'
 
 
 const SourcesWrapper = styled.div`
-padding: 8px;
-margin-left: 4px;
-margin-bottom: 0.75rem;
+margin: 4px;
 display: flex;
 flex-direction: column;
 overflow: hidden;
@@ -16,8 +14,6 @@ const SourcesGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap:  0.5rem;
-  margin-left: 0.75rem;
-  margin-right: 1.25rem;
   max-width: 90vw;
   overflow-x: scroll;
 
@@ -31,10 +27,10 @@ cursor: pointer;
 display: flex;
 flex-direction: column;
 justify-content: space-between;
-border-radius: 1.25rem;
+border-radius: 6px;
 background-color: ${props =>props.theme.secondary.bg};
-padding-left: 0.75rem;
-padding-right: 0.75rem;
+ padding-left: 12px;
+padding-right: 12px; 
 color:${props => props.theme.text};
 transform: background-color .2s, color .2s;
 
