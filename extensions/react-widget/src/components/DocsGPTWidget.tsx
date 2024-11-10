@@ -577,7 +577,7 @@ export const DocsGPTWidget = ({
       setTimeout(() => setIsAnimatingButton(false), 200);
     }, 250)
       :
-      widgetRef.current && (widgetRef.current.style.display = "none")
+      widgetRef.current && (widgetRef.current.style.display = "none") && setIsFloatingButtonVisible(true);
   };
   const handleOpen = () => {
     setOpen(true);
