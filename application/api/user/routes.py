@@ -465,10 +465,17 @@ class PaginatedSources(Resource):
 
             paginated_docs = []
             for doc in documents:
-                print(doc)
-                doc["id"] = str(doc["_id"])
-                del doc["_id"]
-                paginated_docs.append(doc)
+                doc_data = {
+                    "id": str(doc["_id"]),
+                    "name": doc.get("name", ""),
+                    "date": doc.get("date", ""),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "location": "local",
+                    "tokens": doc.get("tokens", ""),
+                    "retriever": doc.get("retriever", "classic"),
+                    "syncFrequency": doc.get("sync_frequency", ""),
+                }
+                paginated_docs.append(doc_data)
 
             response = {
                 "total": total_documents,
@@ -499,9 +506,7 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort(
-                "date", -1
-            ):
+            for index in sources_collection.find({"user": user}).sort("date", -1):
                 data.append(
                     {
                         "id": str(index["_id"]),
