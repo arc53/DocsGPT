@@ -218,7 +218,7 @@ export default function Conversation() {
       {conversationId && queries.length > 0 && (
         <div className="absolute top-4 right-20 z-20 ">
           {' '}
-          <div className="flex items-center gap-4 ">
+          <div className="flex mt-2 items-center gap-4 ">
             {isMobile && queries.length > 0 && (
               <button
                 title="Open New Chat"
