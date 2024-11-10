@@ -99,16 +99,23 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
         transform: scale(1.02); 
       }
       100% {
-        transform: scale(0.45);
+        transform: scale(0.6);
       }
     }
 `;
-const StyledContainer = styled.div`
+const StyledContainer = styled.div<{ isOpen: boolean }>`
     all: initial;
     max-height: ${(props) => props.theme.dimensions.maxHeight};
     max-width: ${(props) => props.theme.dimensions.maxWidth};
-    height: ${(props) => props.theme.dimensions.height} ;
-    width: ${(props) => props.theme.dimensions.width} ;
+    height: ${(props) => props.theme.dimensions.height};
+    width: ${(props) => props.theme.dimensions.width};
+    ${({ isOpen }) =>
+      !isOpen &&
+      `
+        width: 200px;
+        height: 100px;
+        border-radius: 50%;        
+      `}
     display: flex;
     position: relative;
     flex-direction: column;
@@ -119,7 +126,7 @@ const StyledContainer = styled.div`
     background-color: ${props => props.theme.primary.bg};
     font-family: sans-serif;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
-    transition: visibility 0.3s, opacity 0.3s;
+    transition: all 0.3s ease-in-out;
     padding: 26px 26px 0px 26px ;
     @media only screen and (max-width: 768px) {
     max-height: 100vh ;
@@ -593,7 +600,7 @@ export const DocsGPTWidget = ({
         <span>{buttonText}</span>
       </FloatingButton>
       <WidgetContainer ref={widgetRef} className={`${size != "large" && (open ? "open" : "close")}`} modal={size == 'large'}>
-        {<StyledContainer>
+        {<StyledContainer isOpen={open}>
           <div>
             <CancelButton onClick={handleClose}>
               <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
