@@ -48,10 +48,14 @@ const Pagination: React.FC<PaginationProps> = ({
         <select
           value={rowsPerPage}
           onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
-          className="border border-gray-300 rounded px-2 py-1 dark:bg-transparent dark:text-gray-50"
+          className="border border-gray-300 rounded px-2 py-1 dark:bg-dark-charcoal dark:text-gray-50"
         >
           {rowsPerPageOptions.map((option) => (
-            <option key={option} value={option}>
+            <option
+              className="bg-white dark:bg-dark-charcoal dark:text-gray-50"
+              key={option}
+              value={option}
+            >
               {option}
             </option>
           ))}

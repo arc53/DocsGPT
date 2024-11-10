@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
-
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/trash.svg';
 import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
-import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
 import SkeletonLoader from '../components/SkeletonLoader';
-import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
-import { setSourceDocs } from '../preferences/preferenceSlice';
 import Input from '../components/Input';
 import Upload from '../upload/Upload'; // Import the Upload component
 import Pagination from '../components/DocumentPagination';
+import { useTranslation } from 'react-i18next';
+import { useDispatch } from 'react-redux';
+import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
+import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import { setSourceDocs } from '../preferences/preferenceSlice';
+import { setPaginatedDocuments } from '../preferences/preferenceSlice';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -33,7 +33,10 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
-const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
+const Documents: React.FC<DocumentsProps> = ({
+  paginatedDocuments,
+  handleDeleteDocument,
+}) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   // State for search input
@@ -48,10 +51,9 @@ const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
-  const [totalDocuments, setTotalDocuments] = useState<number>(0);
-  const [fetchedDocuments, setFetchedDocuments] = useState<Doc[]>([]);
+  // const [totalDocuments, setTotalDocuments] = useState<number>(0);
   // Filter documents based on the search term
-  const filteredDocuments = fetchedDocuments?.filter((document) =>
+  const filteredDocuments = paginatedDocuments?.filter((document) =>
     document.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
   // State for documents
@@ -84,9 +86,9 @@ const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
     getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
       .then((data) => {
         //dispatch(setSourceDocs(data ? data.docs : []));
-        setFetchedDocuments(data ? data.docs : []);
+        dispatch(setPaginatedDocuments(data ? data.docs : []));
         setTotalPages(data ? data.totalPages : 0);
-        setTotalDocuments(data ? data.totalDocuments : 0);
+        //setTotalDocuments(data ? data.totalDocuments : 0);
       })
       .catch((error) => console.error(error))
       .finally(() => {
@@ -258,13 +260,12 @@ const Documents: React.FC<DocumentsProps> = ({ handleDeleteDocument }) => {
         rowsPerPage={rowsPerPage}
         onPageChange={(page) => {
           setCurrentPage(page);
-          refreshDocs(sortField, page, rowsPerPage); // Pass `true` to reset lastID if not using cursor
+          refreshDocs(sortField, page, rowsPerPage);
         }}
         onRowsPerPageChange={(rows) => {
-          console.log('Pagination - Rows per Page Change:', rows);
           setRowsPerPage(rows);
-          setCurrentPage(1); // Reset to page 1 on rows per page change
-          refreshDocs(sortField, 1, rows); // Reset lastID for fresh pagination
+          setCurrentPage(1);
+          refreshDocs(sortField, 1, rows);
         }}
       />
     </div>
