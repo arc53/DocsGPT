@@ -465,7 +465,9 @@ class PaginatedSources(Resource):
 
             paginated_docs = []
             for doc in documents:
-                doc["_id"] = str(doc["_id"])
+                print(doc)
+                doc["id"] = str(doc["_id"])
+                del doc["_id"]
                 paginated_docs.append(doc)
 
             response = {
