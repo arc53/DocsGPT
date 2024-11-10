@@ -54,7 +54,7 @@ body.dark {
   }
 
   .table-default th {
-    @apply p-4 w-1/3 font-normal text-gray-400 text-nowrap; /* Remove border-r */
+    @apply p-4 w-full font-normal text-gray-400 text-nowrap; /* Remove border-r */
   }
 
   .table-default th:last-child {

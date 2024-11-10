@@ -58,6 +58,7 @@ const Documents: React.FC<DocumentsProps> = ({
   );
   // State for documents
   const currentDocuments = filteredDocuments ?? [];
+  console.log('currentDocuments', currentDocuments);
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
@@ -101,12 +102,25 @@ const Documents: React.FC<DocumentsProps> = ({
     userService
       .manageSync({ source_id: doc.id, sync_frequency })
       .then(() => {
+        // First, fetch the updated source docs
         return getDocs();
       })
       .then((data) => {
         dispatch(setSourceDocs(data));
+        return getDocsWithPagination(
+          sortField,
+          sortOrder,
+          currentPage,
+          rowsPerPage,
+        );
       })
-      .catch((error) => console.error(error))
+      .then((paginatedData) => {
+        dispatch(
+          setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
+        );
+        setTotalPages(paginatedData ? paginatedData.totalPages : 0);
+      })
+      .catch((error) => console.error('Error in handleManageSync:', error))
       .finally(() => {
         setLoading(false);
       });
