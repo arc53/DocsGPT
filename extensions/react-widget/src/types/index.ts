@@ -29,6 +29,7 @@ export interface WidgetProps {
   };
   theme?:THEME,
   buttonIcon?:string;
+  buttonText?:string;
   buttonBg?:string;
   collectFeedback?:boolean;
   deafultOpen?: boolean;
