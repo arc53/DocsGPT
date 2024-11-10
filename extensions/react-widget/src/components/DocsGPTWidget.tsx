@@ -739,7 +739,7 @@ export const DocsGPTWidget = ({
             </PromptContainer>
             <Tagline>
               Powered by&nbsp;
-              <Hyperlink target='_blank' href='https://github.com/arc53/DocsGPT'>DocsGPT</Hyperlink>
+              <Hyperlink target='_blank' href='https://www.docsgpt.cloud/'>DocsGPT</Hyperlink>
             </Tagline>
           </div>
         </StyledContainer>}
