@@ -9,7 +9,6 @@ export async function getDocs(): Promise<Doc[] | null> {
     const data = await response.json();
 
     const docs: Doc[] = [];
-    console.log(data);
     data.forEach((doc: object) => {
       docs.push(doc as Doc);
     });
@@ -31,17 +30,11 @@ export async function getDocsWithPagination(
     const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}`;
     const response = await userService.getDocsWithPagination(query);
     const data = await response.json();
-
     const docs: Doc[] = [];
-    console.log(`data: ${data}`);
     Array.isArray(data.paginated) &&
       data.paginated.forEach((doc: Doc) => {
         docs.push(doc as Doc);
       });
-    console.log(`total: ${data.total}`);
-    console.log(`totalPages: ${data.totalPages}`);
-    console.log(`cursor: ${data.nextCursor}`);
-    console.log(`currentPage: ${data.currentPage}`);
     return {
       docs: docs,
       totalDocuments: data.total,
