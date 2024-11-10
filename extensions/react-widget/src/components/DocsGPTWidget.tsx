@@ -81,7 +81,7 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     text-align: left;
     @keyframes createBox {
       0% {
-        transform: scale(0.5);
+        transform: scale(0.6);
       }
       90% {
         transform: scale(1.02);
@@ -107,31 +107,47 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     all: initial;
     max-height: ${(props) => props.theme.dimensions.maxHeight};
     max-width: ${(props) => props.theme.dimensions.maxWidth};
-    height: ${(props) => props.theme.dimensions.height};
-    width: ${(props) => props.theme.dimensions.width};
-    ${({ isOpen }) =>
-      !isOpen &&
-      `
-        width: 200px;
-        height: 100px;
-        border-radius: 50%;        
-      `}
-    display: flex;
     position: relative;
     flex-direction: column;
     justify-content: space-between;
     bottom: 0;
     left: 0;
-    border-radius: 12px;
     background-color: ${props => props.theme.primary.bg};
     font-family: sans-serif;
+    display: flex;
+    border-radius: 12px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease-in-out;
-    padding: 26px 26px 0px 26px ;
+    padding: 26px 26px 0px 26px;
+    animation: ${({ isOpen }) =>
+      isOpen
+      ? 'openContainer 150ms ease-in forwards'
+      : 'closeContainer 250ms ease-in forwards'};
+    @keyframes openContainer {
+      0% {
+        width: 200px;
+        height: 100px;
+      }
+      100% {
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        border-radius: 12px;
+      }
+    }
+    @keyframes closeContainer {
+      0% {
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        border-radius: 12px;
+      }
+      100% {
+        width: 200px;
+        height: 100px;
+      }
+    }
     @media only screen and (max-width: 768px) {
-    max-height: 100vh ;
-    max-width: 80vw;
-    overflow: auto;
+      max-height: 100vh;
+      max-width: 80vw;
+      overflow: auto;
     }
 `;
 const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatingButton: boolean }>`
