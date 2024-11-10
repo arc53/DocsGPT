@@ -10,7 +10,33 @@ import Like from "../assets/like.svg"
 import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
 
+const themes = {
+  dark: {
+    bg: '#222327',
+    text: '#fff',
+    primary: {
+      text: "#FAFAFA",
+      bg: '#222327'
+    },
+    secondary: {
+      text: "#A1A1AA",
+      bg: "#38383b"
+    }
+  },
 
+  light: {
+    bg: '#fff',
+    text: '#000',
+    primary: {
+      text: "#222327",
+      bg: "#fff"
+    },
+    secondary: {
+      text: "#A1A1AA",
+      bg: "#F6F6F6"
+    }
+  }
+}
 
 const sizesConfig = {
   small: { size: 'small', width: '320px', height: '400px' },
@@ -631,7 +657,7 @@ export const DocsGPTWidget = ({
                               onClick={() => handleFeedback("DISLIKE", index)} />
                           </Feedback>}
                       </MessageBubble>
-                        : <div>
+                        : (<div>
                           {
                             query.error ? <ErrorAlert>
 
