@@ -112,16 +112,20 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     justify-content: space-between;
     bottom: 0;
     left: 0;
-    background-color: ${props => props.theme.primary.bg};
+    background-color: ${(props) => props.theme.primary.bg};
     font-family: sans-serif;
     display: flex;
     border-radius: 12px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     padding: 26px 26px 0px 26px;
-    animation: ${({ isOpen }) =>
-      isOpen
-      ? 'openContainer 150ms ease-in forwards'
-      : 'closeContainer 250ms ease-in forwards'};
+    animation: ${({ isOpen, theme }) =>
+      theme.dimensions.size === 'large'
+        ? isOpen
+          ? 'fadeIn 150ms ease-in forwards'
+          : 'fadeOut 150ms ease-in forwards'
+        : isOpen
+        ? 'openContainer 150ms ease-in forwards'
+        : 'closeContainer 250ms ease-in forwards'};
     @keyframes openContainer {
       0% {
         width: 200px;
@@ -142,6 +146,28 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
       100% {
         width: 200px;
         height: 100px;
+      }
+    }
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        transform: scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+    }
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+      }
+      to {
+        opacity: 0;
       }
     }
     @media only screen and (max-width: 768px) {
