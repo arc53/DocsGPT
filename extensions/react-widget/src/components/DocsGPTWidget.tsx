@@ -165,9 +165,14 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     @keyframes fadeOut {
       from {
         opacity: 1;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
       }
       to {
         opacity: 0;
+        transform: scale(0.9);
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
       }
     }
     @media only screen and (max-width: 768px) {
@@ -612,14 +617,12 @@ export const DocsGPTWidget = ({
   };
   const handleClose = () => {
     setOpen(false);
-    size !== "large" ? setTimeout(() => {
+    setTimeout(() => {
       if (widgetRef.current) widgetRef.current.style.display = "none";
       setIsFloatingButtonVisible(true);
       setIsAnimatingButton(true);
       setTimeout(() => setIsAnimatingButton(false), 200);
     }, 250)
-      :
-      widgetRef.current && (widgetRef.current.style.display = "none") && setIsFloatingButtonVisible(true);
   };
   const handleOpen = () => {
     setOpen(true);
