@@ -77,7 +77,7 @@
   },
   "modals": {
     "uploadDoc": {
-      "label": "上传新文档资料",
+      "label": "上传新文档",
       "select": "选择如何将文档上传到 DocsGPT",
       "file": "从设备上传",
       "back": "后退",
