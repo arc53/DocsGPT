@@ -216,9 +216,9 @@ export default function Conversation() {
   return (
     <div className="flex flex-col gap-1 h-full justify-end ">
       {conversationId && queries.length > 0 && (
-        <div className="absolute top-4 right-20 z-20 ">
+        <div className="absolute top-4 right-20 z-10 ">
           {' '}
-          <div className="flex items-center gap-4 ">
+          <div className="flex mt-2 items-center gap-4 ">
             {isMobile && queries.length > 0 && (
               <button
                 title="Open New Chat"
