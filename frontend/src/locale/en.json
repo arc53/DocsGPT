@@ -77,12 +77,12 @@
   },
   "modals": {
     "uploadDoc": {
-      "label": "Upload New Documentation",
+      "label": "Upload new document",
       "select": "Choose how to upload your document to DocsGPT",
       "file": "Upload from device",
       "back": "Back",
       "wait": "Please wait ...",
-      "remote": "Collect from a website",
+      "remote": "Collect from website",
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
