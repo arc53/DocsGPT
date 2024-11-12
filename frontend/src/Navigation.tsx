@@ -34,10 +34,12 @@ import {
   selectSelectedDocs,
   selectSelectedDocsStatus,
   selectSourceDocs,
+  selectPaginatedDocuments,
   setConversations,
   setModalStateDeleteConv,
   setSelectedDocs,
   setSourceDocs,
+  setPaginatedDocuments,
 } from './preferences/preferenceSlice';
 import Spinner from './assets/spinner.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
@@ -72,6 +74,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
+  const paginatedDocuments = useSelector(selectPaginatedDocuments);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
@@ -143,9 +146,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       })
       .then((updatedDocs) => {
         dispatch(setSourceDocs(updatedDocs));
+        const updatedPaginatedDocs = paginatedDocuments?.filter(
+          (document) => document.id !== doc.id,
+        );
+        dispatch(
+          setPaginatedDocuments(updatedPaginatedDocs || paginatedDocuments),
+        );
         dispatch(
           setSelectedDocs(
-            updatedDocs?.find((doc) => doc.name.toLowerCase() === 'default'),
+            Array.isArray(updatedDocs) &&
+              updatedDocs?.find(
+                (doc: Doc) => doc.name.toLowerCase() === 'default',
+              ),
           ),
         );
       })
@@ -254,7 +266,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-40 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}

@@ -166,7 +166,10 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.type?.toLowerCase() === 'local'),
+                        Array.isArray(data) &&
+                          data?.find(
+                            (d: Doc) => d.type?.toLowerCase() === 'local',
+                          ),
                       ),
                     );
                   });
@@ -182,15 +185,21 @@ function Upload({
                   getDocs().then((data) => {
                     dispatch(setSourceDocs(data));
                     const docIds = new Set(
-                      sourceDocs?.map((doc: Doc) => (doc.id ? doc.id : null)),
+                      (Array.isArray(sourceDocs) &&
+                        sourceDocs?.map((doc: Doc) =>
+                          doc.id ? doc.id : null,
+                        )) ||
+                        [],
                     );
-                    data?.map((updatedDoc: Doc) => {
-                      if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
-                        //select the doc not present in the intersection of current Docs and fetched data
-                        dispatch(setSelectedDocs(updatedDoc));
-                        return;
-                      }
-                    });
+                    if (data && Array.isArray(data)) {
+                      data.map((updatedDoc: Doc) => {
+                        if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
+                          // Select the doc not present in the intersection of current Docs and fetched data
+                          dispatch(setSelectedDocs(updatedDoc));
+                          return;
+                        }
+                      });
+                    }
                   });
                   setProgress(
                     (progress) =>
@@ -351,32 +360,32 @@ function Upload({
   } else {
     view = (
       <div className="flex flex-col gap-4 w-full">
-        <p className="text-xl text-jet dark:text-bright-gray text-center font-semibold">
+        <p className="text-2xl text-jet dark:text-bright-gray text-center font-semibold">
           {t('modals.uploadDoc.label')}
         </p>
         {!activeTab && (
           <div>
-            <p className="text-gray-6000 dark:text-light-gray text-sm text-center">
+            <p className="text-gray-6000 dark:text-bright-gray text-sm text-center font-medium">
               {t('modals.uploadDoc.select')}
             </p>
             <div className="w-full gap-4 h-full p-4 flex flex-col md:flex-row md:gap-4 justify-center items-center">
               <button
                 onClick={() => setActiveTab('file')}
-                className="rounded-3xl text-md font-medium border flex flex-col items-center justify-center hover:shadow-lg dark:hover:shadow-lg p-8 dark:active:shadow-lg gap-4 bg-white dark:bg-outer-space dark:text-light-gray hover:bg-gray-100 dark:hover:bg-[#767183]/50 hover:text-purple-30 dark:hover:text-gray-30 border-purple-30 dark:border-gray-700 h-40 w-40 md:w-52 md:h-52"
+                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-white text-[#777777] dark:bg-outer-space dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
               >
                 <img
                   src={FileUpload}
-                  className="w-8 h-8 mr-2 dark:filter dark:invert"
+                  className="w-12 h-12 mr-2 dark:filter dark:invert dark:brightness-50"
                 />
                 {t('modals.uploadDoc.file')}
               </button>
               <button
                 onClick={() => setActiveTab('remote')}
-                className="rounded-3xl text-md font-medium border flex flex-col items-center justify-center hover:shadow-lg dark:hover:shadow-lg p-8 dark:active:shadow-lg gap-4 bg-white dark:bg-outer-space dark:text-light-gray hover:bg-gray-100 dark:hover:bg-[#767183]/50 hover:text-purple-30 dark:hover:text-gray-30 border-purple-30 dark:border-gray-700 h-40 w-40 md:w-52 md:h-52"
+                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-white text-[#777777] dark:bg-outer-space dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
               >
                 <img
                   src={WebsiteCollect}
-                  className="w-8 h-8 mr-2 dark:filter dark:invert"
+                  className="w-14 h-14 mr-2 dark:filter dark:invert dark:brightness-50"
                 />
                 {t('modals.uploadDoc.remote')}
               </button>

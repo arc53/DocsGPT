@@ -20,6 +20,7 @@ const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
 export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
   'fetchAnswer',
   async ({ question }, { dispatch, getState, signal }) => {
+    let isSourceUpdated = false;
     const state = getState() as RootState;
     if (state.preference) {
       if (API_STREAMING) {
@@ -36,9 +37,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
           (event) => {
             const data = JSON.parse(event.data);
 
-            // check if the 'end' event has been received
             if (data.type === 'end') {
-              // set status to 'idle'
               dispatch(conversationSlice.actions.setStatus('idle'));
               getConversations()
                 .then((fetchedConversations) => {
@@ -47,6 +46,14 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
                 });
+              if (!isSourceUpdated) {
+                dispatch(
+                  updateStreamingSource({
+                    index: state.conversation.queries.length - 1,
+                    query: { sources: [] },
+                  }),
+                );
+              }
             } else if (data.type === 'id') {
               dispatch(
                 updateConversationId({
@@ -54,6 +61,7 @@ export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
                 }),
               );
             } else if (data.type === 'source') {
+              isSourceUpdated = true;
               dispatch(
                 updateStreamingSource({
                   index: state.conversation.queries.length - 1,

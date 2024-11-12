@@ -474,7 +474,7 @@ function AllSources(sources: AllSourcesProps) {
                 ></img>
               ) : null}
             </span>
-            <p className="mt-3 max-h-24 overflow-y-auto break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
+            <p className="mt-3 max-h-16 overflow-y-auto break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
               {source.text}
             </p>
           </div>
