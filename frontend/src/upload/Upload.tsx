@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import ArrowLeft from '../assets/arrow-left.svg';
 import FileUpload from '../assets/file_upload.svg';
 import WebsiteCollect from '../assets/website_collect.svg';
@@ -17,15 +16,16 @@ import {
   setSourceDocs,
   selectSourceDocs,
 } from '../preferences/preferenceSlice';
+import WrapperModal from '../modals/WrapperModal';
 
 function Upload({
-  modalState,
   setModalState,
   isOnboarding,
+  close,
 }: {
-  modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   isOnboarding: boolean;
+  close: () => void;
 }) {
   const [docName, setDocName] = useState('');
   const [urlName, setUrlName] = useState('');
@@ -626,28 +626,17 @@ function Upload({
   }
 
   return (
-    <article
-      className={`${
-        modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } absolute z-30 bg-gray-alpha flex items-center justify-center h-[calc(100vh-4rem)] md:h-screen w-full`}
+    <WrapperModal
+      close={() => {
+        close();
+        setDocName('');
+        setfiles([]);
+        setModalState('INACTIVE');
+        setActiveTab(null);
+      }}
     >
-      <article className="relative mx-auto flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg dark:bg-outer-space h-fit-content">
-        {!isOnboarding && !progress && (
-          <button
-            className="absolute top-4 right-4 m-1 w-3"
-            onClick={() => {
-              setDocName('');
-              setfiles([]);
-              setModalState('INACTIVE');
-              setActiveTab(null);
-            }}
-          >
-            <img className="filter dark:invert" src={Exit} />
-          </button>
-        )}
-        {view}
-      </article>
-    </article>
+      {view}
+    </WrapperModal>
   );
 }
 
