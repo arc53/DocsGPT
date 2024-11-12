@@ -14,6 +14,13 @@ export type Doc = {
   syncFrequency?: string;
 };
 
+export type GetDocsResponse = {
+  docs: Doc[];
+  totalDocuments: number;
+  totalPages: number;
+  nextCursor: string;
+};
+
 export type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };
@@ -22,7 +29,7 @@ export type PromptProps = {
 };
 
 export type DocumentsProps = {
-  documents: Doc[] | null;
+  paginatedDocuments: Doc[] | null;
   handleDeleteDocument: (index: number, document: Doc) => void;
 };
 

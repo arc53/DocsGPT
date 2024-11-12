@@ -17,11 +17,12 @@ export default function useDefaultDocument() {
     getDocs().then((data) => {
       dispatch(setSourceDocs(data));
       if (!selectedDoc)
-        data?.forEach((doc: Doc) => {
-          if (doc.model && doc.name === 'default') {
-            dispatch(setSelectedDocs(doc));
-          }
-        });
+        Array.isArray(data) &&
+          data?.forEach((doc: Doc) => {
+            if (doc.model && doc.name === 'default') {
+              dispatch(setSelectedDocs(doc));
+            }
+          });
     });
   };
 

@@ -8,6 +8,8 @@ import i18n from '../locale/i18n';
 import { Doc } from '../models/misc';
 import {
   selectSourceDocs,
+  selectPaginatedDocuments,
+  setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Analytics from './Analytics';
@@ -26,20 +28,29 @@ export default function Settings() {
   );
 
   const documents = useSelector(selectSourceDocs);
+  const paginatedDocuments = useSelector(selectPaginatedDocuments);
   const updateWidgetScreenshot = (screenshot: File | null) => {
     setWidgetScreenshot(screenshot);
   };
+
+  const updateDocumentsList = (documents: Doc[], index: number) => [
+    ...documents.slice(0, index),
+    ...documents.slice(index + 1),
+  ];
 
   const handleDeleteClick = (index: number, doc: Doc) => {
     userService
       .deletePath(doc.id ?? '')
       .then((response) => {
         if (response.ok && documents) {
-          const updatedDocuments = [
-            ...documents.slice(0, index),
-            ...documents.slice(index + 1),
-          ];
-          dispatch(setSourceDocs(updatedDocuments));
+          if (paginatedDocuments) {
+            dispatch(
+              setPaginatedDocuments(
+                updateDocumentsList(paginatedDocuments, index),
+              ),
+            );
+          }
+          dispatch(setSourceDocs(updateDocumentsList(documents, index)));
         }
       })
       .catch((error) => console.error(error));
@@ -72,7 +83,7 @@ export default function Settings() {
       case t('settings.documents.label'):
         return (
           <Documents
-            documents={documents}
+            paginatedDocuments={paginatedDocuments}
             handleDeleteDocument={handleDeleteClick}
           />
         );
