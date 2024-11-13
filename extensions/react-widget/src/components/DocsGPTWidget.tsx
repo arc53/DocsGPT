@@ -1,9 +1,9 @@
 "use client";
 import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
-import styled, { keyframes, createGlobalStyle } from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
-import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
+import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetCoreProps, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import { ThemeProvider } from 'styled-components';
 import Like from "../assets/like.svg"
@@ -66,13 +66,14 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     right: ${props => props.modal ? '50%' : '10px'};
     bottom: ${props => props.modal ? '50%' : '10px'};
     z-index: 1000;
-    display: none;
     transform-origin:100% 100%;
     &.open {
         animation: createBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+        display: block;
     }
     &.close {
       animation: closeBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+      display: none;
     }
     ${props => props.modal &&
     "transform : translate(50%,50%);"
@@ -119,11 +120,11 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     padding: 26px 26px 0px 26px;
     animation: ${({ isOpen, theme }) =>
-      theme.dimensions.size === 'large'
-        ? isOpen
-          ? 'fadeIn 150ms ease-in forwards'
-          : 'fadeOut 150ms ease-in forwards'
-        : isOpen
+    theme.dimensions.size === 'large'
+      ? isOpen
+        ? 'fadeIn 150ms ease-in forwards'
+        : 'fadeOut 150ms ease-in forwards'
+      : isOpen
         ? 'openContainer 150ms ease-in forwards'
         : 'closeContainer 250ms ease-in forwards'};
     @keyframes openContainer {
@@ -478,7 +479,49 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
     </HeroContainer>
   );
 };
-export const DocsGPTWidget = ({
+export const DocsGPTWidget = (props: WidgetProps) => {
+
+  const {
+    buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg',
+    buttonText = 'Ask a question',
+    buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
+    defaultOpen = false,
+    ...coreProps
+  } = props
+
+  const [open, setOpen] = React.useState<boolean>(defaultOpen);
+  const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
+  const [isFloatingButtonVisible, setIsFloatingButtonVisible] = React.useState(true);
+  const widgetRef = useRef<HTMLDivElement>(null)
+
+
+  const handleClose = () => {
+    setOpen(false);
+    setTimeout(() => {
+      if (widgetRef.current)
+        widgetRef.current.style.display = "none";
+      setIsFloatingButtonVisible(true);
+      setIsAnimatingButton(true);
+      setTimeout(() => setIsAnimatingButton(false), 200);
+    }, 250)
+  };
+  const handleOpen = () => {
+    setOpen(true);
+    setIsFloatingButtonVisible(false);
+    if (widgetRef.current)
+      widgetRef.current.style.display = 'block'
+  }
+  return (
+    <>
+      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={!isFloatingButtonVisible} isAnimatingButton={isAnimatingButton}>
+        <img width={24} src={buttonIcon} />
+        <span>{buttonText}</span>
+      </FloatingButton>
+      <WidgetCore widgetRef={widgetRef} isOpen={open} handleClose={handleClose} {...coreProps} />
+    </>
+  )
+}
+export const WidgetCore = ({
   apiHost = 'https://gptcloud.arc53.com',
   apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
@@ -488,22 +531,19 @@ export const DocsGPTWidget = ({
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
   size = 'small',
   theme = 'dark',
-  buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg',
-  buttonText = 'Ask a question',
-  buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
   collectFeedback = true,
-  deafultOpen = false
-}: WidgetProps) => {
-  const [prompt, setPrompt] = React.useState('');
+  widgetRef = null,
+  isOpen = false,
+  prefilledQuery = "",
+  handleClose
+}: WidgetCoreProps) => {
+  const [prompt, setPrompt] = React.useState(prefilledQuery);
   const [status, setStatus] = React.useState<Status>('idle');
-  const [queries, setQueries] = React.useState<Query[]>([])
-  const [conversationId, setConversationId] = React.useState<string | null>(null)
-  const [open, setOpen] = React.useState<boolean>(deafultOpen)
+  const [queries, setQueries] = React.useState<Query[]>([]);
+  const [conversationId, setConversationId] = React.useState<string | null>(null);
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
-  const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
-  const [isFloatingButtonVisible, setIsFloatingButtonVisible] = React.useState(true);
-  const isBubbleHovered = useRef<boolean>(false)
-  const widgetRef = useRef<HTMLDivElement>(null)
+
+  const isBubbleHovered = useRef<boolean>(false);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
 
@@ -615,37 +655,17 @@ export const DocsGPTWidget = ({
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
-  const handleClose = () => {
-    setOpen(false);
-    setTimeout(() => {
-      if (widgetRef.current) widgetRef.current.style.display = "none";
-      setIsFloatingButtonVisible(true);
-      setIsAnimatingButton(true);
-      setTimeout(() => setIsAnimatingButton(false), 200);
-    }, 250)
-  };
-  const handleOpen = () => {
-    setOpen(true);
-    setIsFloatingButtonVisible(false);
-    if (widgetRef.current)
-      widgetRef.current.style.display = 'block'
-  }
   const dimensions =
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
-
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
-      {open && size === 'large' &&
+      {isOpen && size === 'large' &&
         <Overlay onClick={handleClose} />
       }
-      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={!isFloatingButtonVisible} isAnimatingButton={isAnimatingButton}>
-        <img width={24} src={buttonIcon} />
-        <span>{buttonText}</span>
-      </FloatingButton>
-      <WidgetContainer ref={widgetRef} className={`${size != "large" && (open ? "open" : "close")}`} modal={size == 'large'}>
-        {<StyledContainer isOpen={open}>
+      <WidgetContainer ref={widgetRef} className={`${(isOpen ? "open" : "close")}`} modal={size == 'large'}>
+        {<StyledContainer isOpen={isOpen}>
           <div>
             <CancelButton onClick={handleClose}>
               <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
