@@ -1,6 +1,7 @@
 import { ActiveState } from '../models/misc';
 import Exit from '../assets/exit.svg';
 import Input from '../components/Input';
+import React from 'react';
 
 function AddPrompt({
   setModalState,
@@ -9,6 +10,7 @@ function AddPrompt({
   setNewPromptName,
   newPromptContent,
   setNewPromptContent,
+  disableSave,
 }: {
   setModalState: (state: ActiveState) => void;
   handleAddPrompt?: () => void;
@@ -16,6 +18,7 @@ function AddPrompt({
   setNewPromptName: (name: string) => void;
   newPromptContent: string;
   setNewPromptContent: (content: string) => void;
+  disableSave: boolean;
 }) {
   return (
     <div className="relative">
@@ -23,6 +26,8 @@ function AddPrompt({
         className="absolute top-3 right-4 m-2 w-3"
         onClick={() => {
           setModalState('INACTIVE');
+          setNewPromptName('');
+          setNewPromptContent('');
         }}
       >
         <img className="filter dark:invert" src={Exit} />
@@ -41,7 +46,7 @@ function AddPrompt({
             className="h-10 rounded-lg"
             value={newPromptName}
             onChange={(e) => setNewPromptName(e.target.value)}
-          ></Input>
+          />
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
               Prompt Name
@@ -62,6 +67,8 @@ function AddPrompt({
           <button
             onClick={handleAddPrompt}
             className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:opacity-90"
+            disabled={disableSave}
+            title={disableSave && newPromptName ? 'Name already exists' : ''}
           >
             Save
           </button>
@@ -79,6 +86,7 @@ function EditPrompt({
   editPromptContent,
   setEditPromptContent,
   currentPromptEdit,
+  disableSave,
 }: {
   setModalState: (state: ActiveState) => void;
   handleEditPrompt?: (id: string, type: string) => void;
@@ -87,6 +95,7 @@ function EditPrompt({
   editPromptContent: string;
   setEditPromptContent: (content: string) => void;
   currentPromptEdit: { name: string; id: string; type: string };
+  disableSave: boolean;
 }) {
   return (
     <div className="relative">
@@ -140,7 +149,8 @@ function EditPrompt({
               handleEditPrompt &&
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
-            disabled={currentPromptEdit.type === 'public'}
+            disabled={currentPromptEdit.type === 'public' || disableSave}
+            title={disableSave && editPromptName ? 'Name already exists' : ''}
           >
             Save
           </button>
@@ -151,6 +161,7 @@ function EditPrompt({
 }
 
 export default function PromptsModal({
+  existingPrompts,
   modalState,
   setModalState,
   type,
@@ -166,6 +177,7 @@ export default function PromptsModal({
   handleAddPrompt,
   handleEditPrompt,
 }: {
+  existingPrompts: { name: string; id: string; type: string }[];
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   type: 'ADD' | 'EDIT';
@@ -181,6 +193,25 @@ export default function PromptsModal({
   handleAddPrompt?: () => void;
   handleEditPrompt?: (id: string, type: string) => void;
 }) {
+  const [disableSave, setDisableSave] = React.useState(true);
+  const handlePrompNameChange = (edit: boolean, newName: string) => {
+    const nameExists = existingPrompts.find(
+      (prompt) => newName === prompt.name,
+    );
+
+    if (newName && !nameExists) {
+      setDisableSave(false);
+    } else {
+      setDisableSave(true);
+    }
+
+    if (edit) {
+      setEditPromptName(newName);
+    } else {
+      setNewPromptName(newName);
+    }
+  };
+
   let view;
 
   if (type === 'ADD') {
@@ -189,9 +220,10 @@ export default function PromptsModal({
         setModalState={setModalState}
         handleAddPrompt={handleAddPrompt}
         newPromptName={newPromptName}
-        setNewPromptName={setNewPromptName}
+        setNewPromptName={handlePrompNameChange.bind(null, false)}
         newPromptContent={newPromptContent}
         setNewPromptContent={setNewPromptContent}
+        disableSave={disableSave}
       />
     );
   } else if (type === 'EDIT') {
@@ -200,10 +232,11 @@ export default function PromptsModal({
         setModalState={setModalState}
         handleEditPrompt={handleEditPrompt}
         editPromptName={editPromptName}
-        setEditPromptName={setEditPromptName}
+        setEditPromptName={handlePrompNameChange.bind(null, true)}
         editPromptContent={editPromptContent}
         setEditPromptContent={setEditPromptContent}
         currentPromptEdit={currentPromptEdit}
+        disableSave={disableSave}
       />
     );
   } else {

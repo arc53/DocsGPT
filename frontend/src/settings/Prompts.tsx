@@ -179,6 +179,7 @@ export default function Prompts({
         </div>
       </div>
       <PromptsModal
+        existingPrompts={prompts}
         type={modalType}
         modalState={modalState}
         setModalState={setModalState}
