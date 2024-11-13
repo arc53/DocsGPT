@@ -20,6 +20,7 @@ export interface Preference {
     loading: boolean;
   };
   modalState: ActiveState;
+  paginatedDocuments: Doc[] | null;
 }
 
 const initialState: Preference = {
@@ -42,6 +43,7 @@ const initialState: Preference = {
     loading: false,
   },
   modalState: 'INACTIVE',
+  paginatedDocuments: null,
 };
 
 export const prefSlice = createSlice({
@@ -56,6 +58,9 @@ export const prefSlice = createSlice({
     },
     setSourceDocs: (state, action) => {
       state.sourceDocs = action.payload;
+    },
+    setPaginatedDocuments: (state, action) => {
+      state.paginatedDocuments = action.payload;
     },
     setConversations: (state, action) => {
       state.conversations = action.payload;
@@ -84,6 +89,7 @@ export const {
   setChunks,
   setTokenLimit,
   setModalStateDeleteConv,
+  setPaginatedDocuments,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -155,3 +161,5 @@ export const selectPrompt = (state: RootState) => state.preference.prompt;
 export const selectChunks = (state: RootState) => state.preference.chunks;
 export const selectTokenLimit = (state: RootState) =>
   state.preference.token_limit;
+export const selectPaginatedDocuments = (state: RootState) =>
+  state.preference.paginatedDocuments;
