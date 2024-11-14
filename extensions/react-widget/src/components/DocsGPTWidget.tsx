@@ -81,7 +81,7 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     text-align: left;
     @keyframes createBox {
       0% {
-        transform: scale(0.5);
+        transform: scale(0.6);
       }
       90% {
         transform: scale(1.02);
@@ -99,35 +99,89 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
         transform: scale(1.02); 
       }
       100% {
-        transform: scale(0);
+        transform: scale(0.6);
       }
     }
 `;
-const StyledContainer = styled.div`
+const StyledContainer = styled.div<{ isOpen: boolean }>`
     all: initial;
     max-height: ${(props) => props.theme.dimensions.maxHeight};
     max-width: ${(props) => props.theme.dimensions.maxWidth};
-    height: ${(props) => props.theme.dimensions.height} ;
-    width: ${(props) => props.theme.dimensions.width} ;
-    display: flex;
     position: relative;
     flex-direction: column;
     justify-content: space-between;
     bottom: 0;
     left: 0;
-    border-radius: 12px;
-    background-color: ${props => props.theme.primary.bg};
+    background-color: ${(props) => props.theme.primary.bg};
     font-family: sans-serif;
+    display: flex;
+    border-radius: 12px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
-    transition: visibility 0.3s, opacity 0.3s;
-    padding: 26px 26px 0px 26px ;
+    padding: 26px 26px 0px 26px;
+    animation: ${({ isOpen, theme }) =>
+      theme.dimensions.size === 'large'
+        ? isOpen
+          ? 'fadeIn 150ms ease-in forwards'
+          : 'fadeOut 150ms ease-in forwards'
+        : isOpen
+        ? 'openContainer 150ms ease-in forwards'
+        : 'closeContainer 250ms ease-in forwards'};
+    @keyframes openContainer {
+      0% {
+        width: 200px;
+        height: 100px;
+      }
+      100% {
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        border-radius: 12px;
+      }
+    }
+    @keyframes closeContainer {
+      0% {
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        border-radius: 12px;
+      }
+      100% {
+        width: 200px;
+        height: 100px;
+      }
+    }
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        transform: scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+    }
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+      to {
+        opacity: 0;
+        transform: scale(0.9);
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+    }
     @media only screen and (max-width: 768px) {
-    max-height: 100vh ;
-    max-width: 80vw;
-    overflow: auto;
+      max-height: 100vh;
+      max-width: 80vw;
+      overflow: auto;
     }
 `;
-const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean }>`
+const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatingButton: boolean }>`
     position: fixed;
     display: ${props => props.hidden ? "none" : "flex"};
     z-index: 500;
@@ -144,9 +198,22 @@ const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean }>`
     background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
+    animation: ${props => props.isAnimatingButton ? 'scaleAnimation 200ms forwards' : 'none'};
     &:hover {
-        transform: scale(1.1);
-        transition: transform 0.2s ease-in-out;
+      transform: scale(1.1);
+      transition: transform 0.2s ease-in-out;
+    }
+    &:not(:hover) {
+      transition: transform 0.2s ease-in-out;
+    }
+
+    @keyframes scaleAnimation {
+      from {
+      transform: scale(1.2);
+      }
+      to {
+      transform: scale(1);
+      }
     }
 `;
 const CancelButton = styled.button`
@@ -433,6 +500,8 @@ export const DocsGPTWidget = ({
   const [conversationId, setConversationId] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState<boolean>(deafultOpen)
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
+  const [isFloatingButtonVisible, setIsFloatingButtonVisible] = React.useState(true);
   const isBubbleHovered = useRef<boolean>(false)
   const widgetRef = useRef<HTMLDivElement>(null)
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
@@ -548,15 +617,16 @@ export const DocsGPTWidget = ({
   };
   const handleClose = () => {
     setOpen(false);
-    size !== "large" ? setTimeout(() => {
-      if (widgetRef.current)
-        widgetRef.current.style.display = "none"
+    setTimeout(() => {
+      if (widgetRef.current) widgetRef.current.style.display = "none";
+      setIsFloatingButtonVisible(true);
+      setIsAnimatingButton(true);
+      setTimeout(() => setIsAnimatingButton(false), 200);
     }, 250)
-      :
-      widgetRef.current && (widgetRef.current.style.display = "none")
   };
   const handleOpen = () => {
     setOpen(true);
+    setIsFloatingButtonVisible(false);
     if (widgetRef.current)
       widgetRef.current.style.display = 'block'
   }
@@ -570,12 +640,12 @@ export const DocsGPTWidget = ({
       {open && size === 'large' &&
         <Overlay onClick={handleClose} />
       }
-      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={open}>
+      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={!isFloatingButtonVisible} isAnimatingButton={isAnimatingButton}>
         <img width={24} src={buttonIcon} />
         <span>{buttonText}</span>
       </FloatingButton>
       <WidgetContainer ref={widgetRef} className={`${size != "large" && (open ? "open" : "close")}`} modal={size == 'large'}>
-        {<StyledContainer>
+        {<StyledContainer isOpen={open}>
           <div>
             <CancelButton onClick={handleClose}>
               <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
@@ -669,7 +739,7 @@ export const DocsGPTWidget = ({
             </PromptContainer>
             <Tagline>
               Powered by&nbsp;
-              <Hyperlink target='_blank' href='https://github.com/arc53/DocsGPT'>DocsGPT</Hyperlink>
+              <Hyperlink target='_blank' href='https://www.docsgpt.cloud/'>DocsGPT</Hyperlink>
             </Tagline>
           </div>
         </StyledContainer>}

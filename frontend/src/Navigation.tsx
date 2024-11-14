@@ -34,10 +34,12 @@ import {
   selectSelectedDocs,
   selectSelectedDocsStatus,
   selectSourceDocs,
+  selectPaginatedDocuments,
   setConversations,
   setModalStateDeleteConv,
   setSelectedDocs,
   setSourceDocs,
+  setPaginatedDocuments,
 } from './preferences/preferenceSlice';
 import Spinner from './assets/spinner.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
@@ -72,6 +74,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
+  const paginatedDocuments = useSelector(selectPaginatedDocuments);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
@@ -143,9 +146,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       })
       .then((updatedDocs) => {
         dispatch(setSourceDocs(updatedDocs));
+        const updatedPaginatedDocs = paginatedDocuments?.filter(
+          (document) => document.id !== doc.id,
+        );
+        dispatch(
+          setPaginatedDocuments(updatedPaginatedDocs || paginatedDocuments),
+        );
         dispatch(
           setSelectedDocs(
-            updatedDocs?.find((doc) => doc.name.toLowerCase() === 'default'),
+            Array.isArray(updatedDocs) &&
+              updatedDocs?.find(
+                (doc: Doc) => doc.name.toLowerCase() === 'default',
+              ),
           ),
         );
       })

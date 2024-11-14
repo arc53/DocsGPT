@@ -2,11 +2,12 @@ import datetime
 import os
 import shutil
 import uuid
+import math
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, jsonify, make_response, request, redirect
 from flask_restx import inputs, fields, Namespace, Resource
 from werkzeug.utils import secure_filename
 
@@ -455,12 +456,70 @@ class TaskStatus(Resource):
 
 
 @user_ns.route("/api/combine")
-class CombinedJson(Resource):
-    @api.doc(description="Provide JSON file with combined available indexes")
+class RedirectToSources(Resource):
+    @api.doc(
+        description="Redirects /api/combine to /api/sources for backward compatibility"
+    )
+    def get(self):
+        return redirect("/api/sources", code=301)
+
+
+@user_ns.route("/api/sources/paginated")
+class PaginatedSources(Resource):
+    @api.doc(description="Get document with pagination, sorting and filtering")
     def get(self):
         user = "local"
         sort_field = request.args.get("sort", "date")  # Default to 'date'
         sort_order = request.args.get("order", "desc")  # Default to 'desc'
+        page = int(request.args.get("page", 1))  # Default to 1
+        rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+
+        # Prepare
+        query = {"user": user}
+        total_documents = sources_collection.count_documents(query)
+        total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        sort_order = 1 if sort_order == "asc" else -1
+        skip = (page - 1) * rows_per_page
+
+        try:
+            documents = (
+                sources_collection.find(query)
+                .sort(sort_field, sort_order)
+                .skip(skip)
+                .limit(rows_per_page)
+            )
+
+            paginated_docs = []
+            for doc in documents:
+                doc_data = {
+                    "id": str(doc["_id"]),
+                    "name": doc.get("name", ""),
+                    "date": doc.get("date", ""),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "location": "local",
+                    "tokens": doc.get("tokens", ""),
+                    "retriever": doc.get("retriever", "classic"),
+                    "syncFrequency": doc.get("sync_frequency", ""),
+                }
+                paginated_docs.append(doc_data)
+
+            response = {
+                "total": total_documents,
+                "totalPages": total_pages,
+                "currentPage": page,
+                "paginated": paginated_docs,
+            }
+            return make_response(jsonify(response), 200)
+
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
+@user_ns.route("/api/sources")
+class CombinedJson(Resource):
+    @api.doc(description="Provide JSON file with combined available indexes")
+    def get(self):
+        user = "local"
         data = [
             {
                 "name": "default",
@@ -473,9 +532,7 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort(
-                sort_field, 1 if sort_order == "asc" else -1
-            ):
+            for index in sources_collection.find({"user": user}).sort("date", -1):
                 data.append(
                     {
                         "id": str(index["_id"]),
@@ -513,6 +570,7 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
+
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 

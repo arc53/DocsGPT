@@ -50,11 +50,11 @@ body.dark {
 
 @layer components {
   .table-default {
-    @apply block w-max table-auto content-center justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray;
+    @apply block w-full mx-auto table-auto content-start justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray overflow-auto;
   }
 
   .table-default th {
-    @apply p-4 w-[244px] font-normal text-gray-400; /* Remove border-r */
+    @apply p-4 w-full font-normal text-gray-400 text-nowrap; /* Remove border-r */
   }
 
   .table-default th:last-child {
@@ -513,4 +513,30 @@ input:-webkit-autofill:focus {
 
 .logs-table {
   font-family: 'IBMPlexMono-Medium', system-ui;
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.fade-in-bubble {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 0.5s forwards;
+}
+
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
