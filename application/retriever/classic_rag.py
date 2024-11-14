@@ -45,7 +45,6 @@ class ClassicRAG(BaseRetriever):
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
             docs_temp = docsearch.search(self.question, k=self.chunks)
-            print(docs_temp)
             docs = [
                 {
                     "title": i.metadata.get(
@@ -60,8 +59,6 @@ class ClassicRAG(BaseRetriever):
                 }
                 for i in docs_temp
             ]
-        if settings.LLM_NAME == "llama.cpp":
-            docs = [docs[0]]
 
         return docs
 
