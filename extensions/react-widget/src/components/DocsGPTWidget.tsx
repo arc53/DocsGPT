@@ -105,10 +105,10 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
 `;
 const StyledContainer = styled.div<{ isOpen: boolean }>`
     all: initial;
-    max-height: ${(props) => props.theme.dimensions.maxHeight} !important;
-    max-width: ${(props) => props.theme.dimensions.maxWidth} !important;
-    width: ${(props) => props.theme.dimensions.width} !important;
-    height: ${(props) => props.theme.dimensions.height} !important;
+    max-height: ${(props) => props.theme.dimensions.maxHeight};
+    max-width: ${(props) => props.theme.dimensions.maxWidth};
+    width: ${(props) => props.theme.dimensions.width};
+    height: ${(props) => props.theme.dimensions.height} ;
     position: relative;
     flex-direction: column;
     justify-content: space-between;
@@ -134,15 +134,15 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
         height: 100px;
       }
       100% {
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions.width} !important;
+        height: ${(props) => props.theme.dimensions.height} !important;
         border-radius: 12px;
       }
     }
     @keyframes closeContainer {
       0% {
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions.width} !important;
+        height: ${(props) => props.theme.dimensions.height} !important;
         border-radius: 12px;
       }
       100% {
@@ -495,13 +495,15 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   const [isFloatingButtonVisible, setIsFloatingButtonVisible] = React.useState(true);
 
   React.useEffect(() => {
-    if(isFloatingButtonVisible)
-    setTimeout(() => setIsAnimatingButton(false), 400);
+    if (isFloatingButtonVisible)
+      setTimeout(() => setIsAnimatingButton(true), 250);
+    return () => {
+      setIsAnimatingButton(false)
+    }
   }, [isFloatingButtonVisible])
 
   const handleClose = () => {
     setIsFloatingButtonVisible(true);
-    setIsAnimatingButton(true);
     setOpen(false);
   };
   const handleOpen = () => {
@@ -534,7 +536,6 @@ export const WidgetCore = ({
   handleClose
 }: WidgetCoreProps) => {
   const [prompt, setPrompt] = React.useState<string>("");
-  console.log("propmpt", prompt);
   const [mounted, setMounted] = React.useState(false);
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([]);
@@ -553,7 +554,6 @@ export const WidgetCore = ({
       // Wait for animations before unmounting
       const timeout = setTimeout(() => {
         setMounted(false)
-        console.log("Unmounted syccess")
       }, 250);
       return () => clearTimeout(timeout);
     }
