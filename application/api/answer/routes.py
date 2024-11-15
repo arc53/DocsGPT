@@ -241,6 +241,7 @@ def complete_stream(
         yield f"data: {data}\n\n"
     except Exception as e:
         print("\033[91merr", str(e), file=sys.stderr)
+        traceback.print_exc()
         data = json.dumps(
             {
                 "type": "error",

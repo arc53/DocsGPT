@@ -2,11 +2,12 @@ import datetime
 import os
 import shutil
 import uuid
+import math
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, jsonify, make_response, request, redirect
 from flask_restx import inputs, fields, Namespace, Resource
 from werkzeug.utils import secure_filename
 
@@ -315,7 +316,7 @@ class UploadFile(Resource):
                 for file in files:
                     filename = secure_filename(file.filename)
                     file.save(os.path.join(temp_dir, filename))
-
+                    print(f"Saved file: {filename}")
                 zip_path = shutil.make_archive(
                     base_name=os.path.join(save_dir, job_name),
                     format="zip",
@@ -323,6 +324,26 @@ class UploadFile(Resource):
                 )
                 final_filename = os.path.basename(zip_path)
                 shutil.rmtree(temp_dir)
+                task = ingest.delay(
+                    settings.UPLOAD_FOLDER,
+                    [
+                        ".rst",
+                        ".md",
+                        ".pdf",
+                        ".txt",
+                        ".docx",
+                        ".csv",
+                        ".epub",
+                        ".html",
+                        ".mdx",
+                        ".json",
+                        ".xlsx",
+                        ".pptx",
+                    ],
+                    job_name,
+                    final_filename,
+                    user,
+                )
             else:
                 file = files[0]
                 final_filename = secure_filename(file.filename)
@@ -349,9 +370,10 @@ class UploadFile(Resource):
                     final_filename,
                     user,
                 )
-        except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
+        except Exception as err:
+            print(f"Error: {err}")
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -422,6 +444,11 @@ class TaskStatus(Resource):
 
             task = celery.AsyncResult(task_id)
             task_meta = task.info
+            print(f"Task status: {task.status}")
+            if not isinstance(
+                task_meta, (dict, list, str, int, float, bool, type(None))
+            ):
+                task_meta = str(task_meta)  # Convert to a string representation
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
@@ -429,12 +456,70 @@ class TaskStatus(Resource):
 
 
 @user_ns.route("/api/combine")
+class RedirectToSources(Resource):
+    @api.doc(
+        description="Redirects /api/combine to /api/sources for backward compatibility"
+    )
+    def get(self):
+        return redirect("/api/sources", code=301)
+
+
+@user_ns.route("/api/sources/paginated")
+class PaginatedSources(Resource):
+    @api.doc(description="Get document with pagination, sorting and filtering")
+    def get(self):
+        user = "local"
+        sort_field = request.args.get("sort", "date")  # Default to 'date'
+        sort_order = request.args.get("order", "desc")  # Default to 'desc'
+        page = int(request.args.get("page", 1))  # Default to 1
+        rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+
+        # Prepare
+        query = {"user": user}
+        total_documents = sources_collection.count_documents(query)
+        total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        sort_order = 1 if sort_order == "asc" else -1
+        skip = (page - 1) * rows_per_page
+
+        try:
+            documents = (
+                sources_collection.find(query)
+                .sort(sort_field, sort_order)
+                .skip(skip)
+                .limit(rows_per_page)
+            )
+
+            paginated_docs = []
+            for doc in documents:
+                doc_data = {
+                    "id": str(doc["_id"]),
+                    "name": doc.get("name", ""),
+                    "date": doc.get("date", ""),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "location": "local",
+                    "tokens": doc.get("tokens", ""),
+                    "retriever": doc.get("retriever", "classic"),
+                    "syncFrequency": doc.get("sync_frequency", ""),
+                }
+                paginated_docs.append(doc_data)
+
+            response = {
+                "total": total_documents,
+                "totalPages": total_pages,
+                "currentPage": page,
+                "paginated": paginated_docs,
+            }
+            return make_response(jsonify(response), 200)
+
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
+@user_ns.route("/api/sources")
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
     def get(self):
         user = "local"
-        sort_field = request.args.get('sort', 'date')  # Default to 'date'
-        sort_order = request.args.get('order', "desc")  # Default to 'desc'
         data = [
             {
                 "name": "default",
@@ -447,7 +532,7 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort(sort_field, 1 if sort_order=="asc" else -1):
+            for index in sources_collection.find({"user": user}).sort("date", -1):
                 data.append(
                     {
                         "id": str(index["_id"]),
@@ -485,6 +570,7 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
+
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
@@ -1674,7 +1760,9 @@ class TextToSpeech(Resource):
     tts_model = api.model(
         "TextToSpeechModel",
         {
-            "text": fields.String(required=True, description="Text to be synthesized as audio"),
+            "text": fields.String(
+                required=True, description="Text to be synthesized as audio"
+            ),
         },
     )
 
@@ -1686,8 +1774,15 @@ class TextToSpeech(Resource):
         try:
             tts_instance = GoogleTTS()
             audio_base64, detected_language = tts_instance.text_to_speech(text)
-            return make_response(jsonify({"success": True,'audio_base64': audio_base64,'lang':detected_language}), 200)
+            return make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "audio_base64": audio_base64,
+                        "lang": detected_language,
+                    }
+                ),
+                200,
+            )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
-

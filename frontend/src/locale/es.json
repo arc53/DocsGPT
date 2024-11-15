@@ -77,7 +77,7 @@
   },
   "modals": {
     "uploadDoc": {
-      "label": "Subir Nueva Documentación",
+      "label": "Subir nuevo documento",
       "select": "Elija cómo cargar su documento en DocsGPT",
       "file": "Subir desde el dispositivo",
       "back": "Atrás",

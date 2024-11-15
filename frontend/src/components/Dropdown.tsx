@@ -140,7 +140,7 @@ function Dropdown({
                             : option.description
                         }`}
               </span>
-              {showEdit && onEdit && (
+              {showEdit && onEdit && option.type !== 'public' && (
                 <img
                   src={Edit}
                   alt="Edit"

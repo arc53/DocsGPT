@@ -1,12 +1,13 @@
 import { forwardRef, useState, useEffect } from 'react';
+import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
+
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
@@ -17,9 +18,9 @@ import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
 import { selectChunks, selectSelectedDocs } from '../preferences/preferenceSlice';
+import SpeakButton from '../components/TextToSpeechButton';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
-import SpeakButton from '../components/TextToSpeechButton';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -38,6 +39,7 @@ const ConversationBubble = forwardRef<
   { message, type, className, feedback, handleFeedback, sources, retryBtn },
   ref,
 ) {
+  // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
@@ -120,6 +122,137 @@ const ConversationBubble = forwardRef<
             className="relative min-w-[150px] rounded-[28px] bg-gray-1000 p-4 text-gray-900 dark:bg-purple-20 dark:text-white"
           >
             <ReactMarkdown
+              className="fade-in whitespace-pre-wrap break-normal leading-normal"
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              components={{
+                code({ node, inline, className, children, ...props }) {
+                  const match = /language-(\w+)/.exec(className || '');
+                  return !inline && match ? (
+                    <SyntaxHighlighter
+                      style={vscDarkPlus}
+                      language={match[1]}
+                      PreTag="div"
+                      {...props}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  ) : (
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  );
+                },
+                ul({ children }) {
+                  return (
+                    <ul className={`list-inside list-disc whitespace-normal pl-4 ${classes.list}`}>
+                      {children}
+                    </ul>
+                  );
+                },
+                ol({ children }) {
+                  return (
+                    <ol className={`list-inside list-decimal whitespace-normal pl-4 ${classes.list}`}>
+                      {children}
+                    </ol>
+                  );
+                },
+                table({ children }) {
+                  return (
+                    <table className="min-w-full divide-y divide-gray-300">
+                      {children}
+                    </table>
+                  );
+                },
+                thead({ children }) {
+                  return (
+                    <thead className="bg-gray-50">
+                      {children}
+                    </thead>
+                  );
+                },
+                tr({ children }) {
+                  return (
+                    <tr className="table-row border-b odd:bg-white even:bg-gray-50">
+                      {children}
+                    </tr>
+                  );
+                },
+                td({ children }) {
+                  return <td className="px-6 py-3">{children}</td>;
+                },
+                th({ children }) {
+                  return <th className="px-6 py-3">{children}</th>;
+                },
+              }}
+            >
+              {preprocessLaTeX(message)}
+            </ReactMarkdown>
+          </div>
+        </div>
+        <div className="my-2 ml-2 flex justify-start">
+          <div
+            className={`relative mr-5 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
+          >
+            <div>
+              <CopyButton text={message} />
+            </div>
+          </div>
+          <div
+            className={`relative mr-5 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
+          >
+            <div>
+              <SpeakButton text={message} /> {/* Add SpeakButton here */}
+            </div>
+          </div>
+          {type === 'ERROR' && (
+            <div className="relative mr-5 block items-center justify-center">
+              <div>{retryBtn}</div>
+            </div>
+          )}
+          {handleFeedback && (
+            <>
+              <div
+                className={`relative mr-5 flex items-center justify-center ${!isLikeClicked ? 'lg:invisible' : ''} ${feedback === 'LIKE' || type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
+              >
+                <div>
+                  <div className={`flex items-center justify-center rounded-full p-2 ${isLikeHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}>
+                    <Like
+                      className={`cursor-pointer ${isLikeClicked || feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'fill-none  stroke-gray-4000'}`}
+                      onClick={handleLikeClick}
+                      onMouseEnter={() => setIsLikeHovered(true)}
+                      onMouseLeave={() => setIsLikeHovered(false)}
+                    ></Like>
+                  </div>
+                </div>
+              </div>
+              <div
+                className={`mr-13 relative flex items-center justify-center ${!isDislikeClicked ? 'lg:invisible' : ''} ${feedback === 'DISLIKE' || type !== 'ERROR' ? 'group-hover:lg:visible' : ''}`}
+              >
+                <div>
+                  <div className={`flex items-center justify-center rounded-full p-2 ${isDislikeHovered ? 'bg-[#EEEEEE] dark:bg-purple-taupe' : 'bg-[#ffffff] dark:bg-transparent'}`}>
+                    <Dislike
+                      className={`cursor-pointer ${isDislikeClicked || feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'fill-none  stroke-gray-4000'}`}
+                      onClick={handleDislikeClick}
+                      onMouseEnter={() => setIsDislikeHovered(true)}
+                      onMouseLeave={() => setIsDislikeHovered(false)}
+                    ></Dislike>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+        {sources && (
+          <Sidebar
+            isOpen={isSidebarOpen}
+            toggleState={(state) => setIsSidebarOpen(state)}
+          >
+            <AllSources sources={sources} />
+          </Sidebar>
+        )}
+      </div>
+    );
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
