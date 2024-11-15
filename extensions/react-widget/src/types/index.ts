@@ -44,7 +44,8 @@ export interface WidgetCoreProps extends WidgetProps {
 export interface SearchBarProps { 
   apiHost?: string;
   apiKey?: string;
-  theme?:THEME
+  theme?:THEME;
+  placeholder?:string;
 }
 
 export interface Result {

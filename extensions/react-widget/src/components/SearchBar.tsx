@@ -1,26 +1,56 @@
 import React from 'react'
-import styled, { keyframes, createGlobalStyle } from 'styled-components';
+import styled, { keyframes, createGlobalStyle, ThemeProvider } from 'styled-components';
 import { WidgetCore } from './DocsGPTWidget';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI'
 import { Result } from '@/types';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
+
+const themes = {
+    dark: {
+      bg: '#222327',
+      text: '#fff',
+      primary: {
+        text: "#FAFAFA",
+        bg: '#111111'
+      },
+      secondary: {
+        text: "#A1A1AA",
+        bg: "#38383b"
+      }
+    },
+    light: {
+      bg: '#fff',
+      text: '#000',
+      primary: {
+        text: "#222327",
+        bg: "#fff"
+      },
+      secondary: {
+        text: "#A1A1AA",
+        bg: "#F6F6F6"
+      }
+    }
+  }
+
 const Main = styled.div`
+    all:initial;
+
     font-family: sans-serif;
 `
 const TextField = styled.input`
-    padding: 8px;
+    padding:  6px 6px;
     border-radius: 8px;
     display: inline;
-    color: rgb(107 114 128);
+    color: ${props => props.theme.primary.text};
     outline: none;
     border: 2px solid transparent;
-    background-color: rgba(0, 0, 0, .05);;
+    background-color: ${props => props.theme.secondary.bg};
     &:focus {
-    outline: #467f95; /* remove default outline */
-    border:2px solid skyblue; /* change border color on focus */
-    box-shadow: 0px 0px 2px skyblue; /* add a red box shadow on focus */
+    border:2px solid #007ee6;
+    box-shadow: 0px 0px 2px skyblue;
+    background-color: ${props => props.theme.primary.bg};
   }
 `
 
@@ -30,29 +60,30 @@ const Container = styled.div`
 `
 const SearchResults = styled.div`
     position: absolute;
-    background-color: white;
+    background-color: ${props => props.theme.primary.bg};
     opacity: 90%;
     border: 1px solid rgba(0, 0, 0, .1);
     border-radius: 12px;
-    padding: 20px;
+    padding: 15px;
     width: 576px;
     z-index: 100;
     height: 25vh;
     overflow-y: auto;
     top: 45px;
-   scrollbar-color: lab(48.438 0 0 / 0.4) rgba(0, 0, 0, 0);
-   scrollbar-gutter: stable;
-   scrollbar-width: thin;
+    color: ${props => props.theme.primary.text};
+    scrollbar-color: lab(48.438 0 0 / 0.4) rgba(0, 0, 0, 0);
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     backdrop-filter: blur(16px);
 `
 const Title = styled.h3`
-    font-size: 12px;
+    font-size: 14px;
     color: rgb(107, 114, 128);
-    padding-bottom: 4px;
+    padding-bottom: 6px;
     font-weight: 600;
     text-transform: uppercase;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid ${(props) => props.theme.secondary.text};
 
 `
 
@@ -60,7 +91,7 @@ const Content = styled.div`
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 `
 const Markdown = styled.div`
-
+line-height:20px;
 font-size: 12px;
  pre {
       padding: 8px;
@@ -86,6 +117,7 @@ font-size: 12px;
     p {
       margin: 0px;
       line-height: 1.35rem;
+      font-size: 12px;
     }
 
     code:not(pre code) {
@@ -102,20 +134,20 @@ font-size: 12px;
       overflow-wrap: break-word;
       word-break: break-all;
     }
-
-    ul{
-      padding:0px;
-      list-style-position: inside;
+    a{
+        color: #007ee6;
     }
 `
 export const SearchBar = ({
     apiKey = "79bcbf0e-3dd1-4ac3-b893-e41b3d40ec8d",
     apiHost = "http://127.0.0.1:7091",
-    theme = "dark"
+    theme = "dark",
+    placeholder = "Search or Ask AI"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState("")
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
     const inputRef = React.useRef<HTMLInputElement>(null)
+    const widgetRef = React.useRef<HTMLInputElement>(null)
     const [results, setResults] = React.useState<Result[]>([])
     React.useEffect(() => {
         input.length > 0 ?
@@ -125,6 +157,9 @@ export const SearchBar = ({
             :
             setResults([])
     }, [input])
+    React.useEffect(()=>{
+        console.log(isWidgetOpen, input);
+    },[isWidgetOpen])
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
             setIsWidgetOpen(true);
@@ -135,43 +170,44 @@ export const SearchBar = ({
     }
     const md = new MarkdownIt();
     return (
-        <Main>
-            <Container>
-                <TextField
-                    ref={inputRef}
-                    onKeyDown={(e) => handleKeyDown(e)}
-                    placeholder='Search here or Ask DocsGPT'
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
+        <ThemeProvider theme={{ ...themes[theme] }}>
+            <Main>
+                <Container>
+                    <TextField
+                        ref={inputRef}
+                        onKeyDown={(e) => handleKeyDown(e)}
+                        placeholder={placeholder}
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                    />
+                    {
+                        input.length>0 && results.length > 0 && (
+                            <SearchResults>
+                                {results.map((res) => (
+                                    <div>
+                                        <Title>{res.title}</Title>
+                                        <Content>
+                                            <Markdown
+                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(res.text)) }}
+                                            />
+                                        </Content>
+                                    </div>
+                                ))
+                                }
+                            </SearchResults>
+                        )
+                    }
+                </Container>
+                <WidgetCore
+                    theme={theme}
+                    apiHost={apiHost}
+                    apiKey={apiKey}
+                    prefilledQuery={input}
+                    isOpen={isWidgetOpen}
+                    handleClose={handleClose} size={'large'}
                 />
-                {
-                    results.length > 0 && (
-                        <SearchResults>
-                            {results.map((res) => (
-                                <div>
-                                    <Title>{res.title}</Title>
-                                    <Content>
-                                        <Markdown
-                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(res.text)) }}
-                                        />
-                                    </Content>
-                                </div>
-                            ))
-                            }
-                        </SearchResults>
 
-                    )
-                }
-            </Container>
-            <WidgetCore
-                theme={theme}
-                apiHost={apiHost}
-                apiKey={apiKey}
-                prefilledQuery={input}
-                isOpen={isWidgetOpen}
-                handleClose={handleClose} size={'large'}
-            />
-
-        </Main>
+            </Main>
+        </ThemeProvider>
     )
 }

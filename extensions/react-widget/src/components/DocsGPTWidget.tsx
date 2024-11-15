@@ -106,8 +106,10 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
 `;
 const StyledContainer = styled.div<{ isOpen: boolean }>`
     all: initial;
-    max-height: ${(props) => props.theme.dimensions.maxHeight};
-    max-width: ${(props) => props.theme.dimensions.maxWidth};
+    max-height: ${(props) => props.theme.dimensions.maxHeight} !important;
+    max-width: ${(props) => props.theme.dimensions.maxWidth} !important;
+    width: ${(props) => props.theme.dimensions.width} !important;
+    height: ${(props) => props.theme.dimensions.height} !important;
     position: relative;
     flex-direction: column;
     justify-content: space-between;
