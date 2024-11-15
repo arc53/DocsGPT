@@ -45,11 +45,12 @@ const TextField = styled.input`
     display: inline;
     color: ${props => props.theme.primary.text};
     outline: none;
-    border: 2px solid transparent;
+    border: none;
     background-color: ${props => props.theme.secondary.bg};
+    width: 240px;
     &:focus {
-    border:2px solid #007ee6;
-    box-shadow: 0px 0px 2px skyblue;
+    outline: none;
+    box-shadow: 0px 0px 0px 2px rgba(0, 109, 199);
     background-color: ${props => props.theme.primary.bg};
   }
 `
@@ -84,9 +85,7 @@ const Title = styled.h3`
     font-weight: 600;
     text-transform: uppercase;
     border-bottom: 1px solid ${(props) => props.theme.secondary.text};
-
 `
-
 const Content = styled.div`
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 `
@@ -141,7 +140,7 @@ font-size: 12px;
 export const SearchBar = ({
     apiKey = "79bcbf0e-3dd1-4ac3-b893-e41b3d40ec8d",
     apiHost = "http://127.0.0.1:7091",
-    theme = "dark",
+    theme = "light",
     placeholder = "Search or Ask AI"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState("")
@@ -157,7 +156,7 @@ export const SearchBar = ({
             :
             setResults([])
     }, [input])
-    
+
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
             setIsWidgetOpen(true);
@@ -196,15 +195,14 @@ export const SearchBar = ({
                         )
                     }
                 </Container>
-                {isWidgetOpen && <WidgetCore
+                <WidgetCore
                     theme={theme}
                     apiHost={apiHost}
                     apiKey={apiKey}
                     prefilledQuery={input}
                     isOpen={isWidgetOpen}
                     handleClose={handleClose} size={'large'}
-                />}
-
+                />
             </Main>
         </ThemeProvider>
     )

@@ -67,16 +67,15 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     bottom: ${props => props.modal ? '50%' : '10px'};
     z-index: 1001;
     transform-origin:100% 100%;
+    display: block;
     &.modal{
       transform : translate(50%,50%);
     }
     &.open {
         animation: createBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
-        display: block;
     }
     &.close {
       animation: closeBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
-      display: none;
     }
     align-items: center;
     text-align: left;
@@ -494,24 +493,20 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   const [open, setOpen] = React.useState<boolean>(defaultOpen);
   const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
   const [isFloatingButtonVisible, setIsFloatingButtonVisible] = React.useState(true);
-  const widgetRef = useRef<HTMLDivElement>(null)
 
+  React.useEffect(() => {
+    if(isFloatingButtonVisible)
+    setTimeout(() => setIsAnimatingButton(false), 400);
+  }, [isFloatingButtonVisible])
 
   const handleClose = () => {
+    setIsFloatingButtonVisible(true);
+    setIsAnimatingButton(true);
     setOpen(false);
-    setTimeout(() => {
-      if (widgetRef.current)
-        widgetRef.current.style.display = "none";
-      setIsFloatingButtonVisible(true);
-      setIsAnimatingButton(true);
-      setTimeout(() => setIsAnimatingButton(false), 200);
-    }, 250)
   };
   const handleOpen = () => {
     setOpen(true);
     setIsFloatingButtonVisible(false);
-    if (widgetRef.current)
-      widgetRef.current.style.display = 'block'
   }
   return (
     <>
@@ -519,7 +514,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
         <img width={24} src={buttonIcon} />
         <span>{buttonText}</span>
       </FloatingButton>
-      <WidgetCore widgetRef={widgetRef} isOpen={open} handleClose={handleClose} {...coreProps} />
+      <WidgetCore isOpen={open} handleClose={handleClose} {...coreProps} />
     </>
   )
 }
@@ -534,14 +529,13 @@ export const WidgetCore = ({
   size = 'small',
   theme = 'dark',
   collectFeedback = true,
-  widgetRef = null,
   isOpen = false,
   prefilledQuery = "",
   handleClose
 }: WidgetCoreProps) => {
-  const [prompt, setPrompt] = React.useState<string>(prefilledQuery);
-  console.log("propmpt",prompt);
-  
+  const [prompt, setPrompt] = React.useState<string>("");
+  console.log("propmpt", prompt);
+  const [mounted, setMounted] = React.useState(false);
   const [status, setStatus] = React.useState<Status>('idle');
   const [queries, setQueries] = React.useState<Query[]>([]);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
@@ -550,6 +544,22 @@ export const WidgetCore = ({
   const isBubbleHovered = useRef<boolean>(false);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setMounted(true); // Mount the component
+      setPrompt(prefilledQuery)
+    } else {
+      // Wait for animations before unmounting
+      const timeout = setTimeout(() => {
+        setMounted(false)
+        console.log("Unmounted syccess")
+      }, 250);
+      return () => clearTimeout(timeout);
+    }
+  }, [isOpen]);
+
+
 
   const handleUserInterrupt = () => {
     (status === 'loading') && setEventInterrupt(true);
@@ -663,114 +673,114 @@ export const WidgetCore = ({
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
+  if (!mounted) return null;
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
       {isOpen && size === 'large' &&
         <Overlay onClick={handleClose} />
       }
-      {
-        isOpen && (
-          <WidgetContainer ref={widgetRef} className={`${size !== 'large' ? (isOpen ? "open" : "close") : "modal"}`} modal={size === 'large'}>
-            <StyledContainer isOpen={isOpen}>
-              <div>
-                <CancelButton onClick={handleClose}>
-                  <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
-                </CancelButton>
-                <Header>
-                  <img style={{ transform: 'translateY(-5px)', maxWidth: "42px", maxHeight: "42px" }} onError={handleImageError} src={avatar} alt='docs-gpt' />
-                  <ContentWrapper>
-                    <Title>{title}</Title>
-                    <Description>{description}</Description>
-                  </ContentWrapper>
-                </Header>
-              </div>
-              <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
-                {
-                  queries.length > 0 ? queries?.map((query, index) => {
-                    return (
-                      <React.Fragment key={index}>
-                        {
-                          query.prompt && <MessageBubble type='QUESTION'>
-                            <Message
-                              type='QUESTION'
-                              ref={(!(query.response || query.error) && index === queries.length - 1) ? endMessageRef : null}>
-                              {query.prompt}
-                            </Message>
-                          </MessageBubble>
-                        }
-                        {
-                          query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
-                            <Message
-                              type='ANSWER'
-                              ref={(index === queries.length - 1) ? endMessageRef : null}
-                            >
-                              <Markdown
-                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
-                              />
-                            </Message>
+      {(
+        <WidgetContainer className={`${size !== 'large' ? (isOpen ? "open" : "close") : "modal"}`} modal={size === 'large'}>
+          <StyledContainer isOpen={isOpen}>
+            <div>
+              <CancelButton onClick={handleClose}>
+                <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
+              </CancelButton>
+              <Header>
+                <img style={{ transform: 'translateY(-5px)', maxWidth: "42px", maxHeight: "42px" }} onError={handleImageError} src={avatar} alt='docs-gpt' />
+                <ContentWrapper>
+                  <Title>{title}</Title>
+                  <Description>{description}</Description>
+                </ContentWrapper>
+              </Header>
+            </div>
+            <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
+              {
+                queries.length > 0 ? queries?.map((query, index) => {
+                  return (
+                    <React.Fragment key={index}>
+                      {
+                        query.prompt && <MessageBubble type='QUESTION'>
+                          <Message
+                            type='QUESTION'
+                            ref={(!(query.response || query.error) && index === queries.length - 1) ? endMessageRef : null}>
+                            {query.prompt}
+                          </Message>
+                        </MessageBubble>
+                      }
+                      {
+                        query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
+                          <Message
+                            type='ANSWER'
+                            ref={(index === queries.length - 1) ? endMessageRef : null}
+                          >
+                            <Markdown
+                              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(query.response)) }}
+                            />
+                          </Message>
 
-                            {collectFeedback &&
-                              <Feedback>
-                                <Like
-                                  style={{
-                                    stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
-                                    visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
-                                  }}
-                                  fill='none'
-                                  onClick={() => handleFeedback("LIKE", index)} />
-                                <Dislike
-                                  style={{
-                                    stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
-                                    visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
-                                  }}
-                                  fill='none'
-                                  onClick={() => handleFeedback("DISLIKE", index)} />
-                              </Feedback>}
-                          </MessageBubble>
-                            : <div>
-                              {
-                                query.error ? <ErrorAlert>
+                          {collectFeedback &&
+                            <Feedback>
+                              <Like
+                                style={{
+                                  stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
+                                  visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
+                                }}
+                                fill='none'
+                                onClick={() => handleFeedback("LIKE", index)} />
+                              <Dislike
+                                style={{
+                                  stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
+                                  visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
+                                }}
+                                fill='none'
+                                onClick={() => handleFeedback("DISLIKE", index)} />
+                            </Feedback>}
+                        </MessageBubble>
+                          : <div>
+                            {
+                              query.error ? <ErrorAlert>
 
-                                  <ExclamationTriangleIcon width={22} height={22} color='#b91c1c' />
-                                  <div>
-                                    <h5 style={{ margin: 2 }}>Network Error</h5>
-                                    <span style={{ margin: 2, fontSize: '13px' }}>{query.error}</span>
-                                  </div>
-                                </ErrorAlert>
-                                  : <MessageBubble type='ANSWER'>
-                                    <Message type='ANSWER' style={{ fontWeight: 600 }}>
-                                      <DotAnimation>.</DotAnimation>
-                                      <Delay delay={200}>.</Delay>
-                                      <Delay delay={400}>.</Delay>
-                                    </Message>
-                                  </MessageBubble>
-                              }
-                            </div>
-                        }
-                      </React.Fragment>)
-                  })
-                    : <Hero title={heroTitle} description={heroDescription} theme={theme} />
-                }
-              </Conversation>
-              <div>
-                <PromptContainer
-                  onSubmit={handleSubmit}>
-                  <StyledInput
-                    value={prompt} onChange={(event) => setPrompt(event.target.value)}
-                    type='text' placeholder="Ask your question" />
-                  <StyledButton
-                    disabled={prompt.trim().length == 0 || status !== 'idle'}>
-                    <PaperPlaneIcon width={18} height={18} color='white' />
-                  </StyledButton>
-                </PromptContainer>
-                <Tagline>
-                  Powered by&nbsp;
-                  <Hyperlink target='_blank' href='https://www.docsgpt.cloud/'>DocsGPT</Hyperlink>
-                </Tagline>
-              </div>
-            </StyledContainer>
-          </WidgetContainer>
-        )
+                                <ExclamationTriangleIcon width={22} height={22} color='#b91c1c' />
+                                <div>
+                                  <h5 style={{ margin: 2 }}>Network Error</h5>
+                                  <span style={{ margin: 2, fontSize: '13px' }}>{query.error}</span>
+                                </div>
+                              </ErrorAlert>
+                                : <MessageBubble type='ANSWER'>
+                                  <Message type='ANSWER' style={{ fontWeight: 600 }}>
+                                    <DotAnimation>.</DotAnimation>
+                                    <Delay delay={200}>.</Delay>
+                                    <Delay delay={400}>.</Delay>
+                                  </Message>
+                                </MessageBubble>
+                            }
+                          </div>
+                      }
+                    </React.Fragment>)
+                })
+                  : <Hero title={heroTitle} description={heroDescription} theme={theme} />
+              }
+            </Conversation>
+            <div>
+              <PromptContainer
+                onSubmit={handleSubmit}>
+                <StyledInput
+                  value={prompt} onChange={(event) => setPrompt(event.target.value)}
+                  type='text' placeholder="Ask your question" />
+                <StyledButton
+                  disabled={prompt.trim().length == 0 || status !== 'idle'}>
+                  <PaperPlaneIcon width={18} height={18} color='white' />
+                </StyledButton>
+              </PromptContainer>
+              <Tagline>
+                Powered by&nbsp;
+                <Hyperlink target='_blank' href='https://www.docsgpt.cloud/'>DocsGPT</Hyperlink>
+              </Tagline>
+            </div>
+          </StyledContainer>
+        </WidgetContainer>
+      )
       }
     </ThemeProvider>
   )
