@@ -9,30 +9,30 @@ import DOMPurify from 'dompurify';
 
 const themes = {
     dark: {
-      bg: '#222327',
-      text: '#fff',
-      primary: {
-        text: "#FAFAFA",
-        bg: '#111111'
-      },
-      secondary: {
-        text: "#A1A1AA",
-        bg: "#38383b"
-      }
+        bg: '#222327',
+        text: '#fff',
+        primary: {
+            text: "#FAFAFA",
+            bg: '#111111'
+        },
+        secondary: {
+            text: "#A1A1AA",
+            bg: "#38383b"
+        }
     },
     light: {
-      bg: '#fff',
-      text: '#000',
-      primary: {
-        text: "#222327",
-        bg: "#fff"
-      },
-      secondary: {
-        text: "#A1A1AA",
-        bg: "#F6F6F6"
-      }
+        bg: '#fff',
+        text: '#000',
+        primary: {
+            text: "#222327",
+            bg: "#fff"
+        },
+        secondary: {
+            text: "#A1A1AA",
+            bg: "#F6F6F6"
+        }
     }
-  }
+}
 
 const Main = styled.div`
     all:initial;
@@ -157,9 +157,7 @@ export const SearchBar = ({
             :
             setResults([])
     }, [input])
-    React.useEffect(()=>{
-        console.log(isWidgetOpen, input);
-    },[isWidgetOpen])
+    
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
             setIsWidgetOpen(true);
@@ -181,7 +179,7 @@ export const SearchBar = ({
                         onChange={(e) => setInput(e.target.value)}
                     />
                     {
-                        input.length>0 && results.length > 0 && (
+                        input.length > 0 && results.length > 0 && (
                             <SearchResults>
                                 {results.map((res) => (
                                     <div>
@@ -198,14 +196,14 @@ export const SearchBar = ({
                         )
                     }
                 </Container>
-                <WidgetCore
+                {isWidgetOpen && <WidgetCore
                     theme={theme}
                     apiHost={apiHost}
                     apiKey={apiKey}
                     prefilledQuery={input}
                     isOpen={isWidgetOpen}
                     handleClose={handleClose} size={'large'}
-                />
+                />}
 
             </Main>
         </ThemeProvider>
