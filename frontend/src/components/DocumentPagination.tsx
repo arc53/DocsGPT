@@ -42,7 +42,7 @@ const Pagination: React.FC<PaginationProps> = ({
   };
 
   return (
-    <div className="flex items-center text-xs justify-end gap-4 mt-2 p-2 border-gray-200">
+    <div className="flex items-center text-xs justify-end  gap-4 mt-2 p-2 border-gray-200">
       <div className="flex items-center gap-2 ">
         <span className="text-gray-900 dark:text-gray-50">Rows per page:</span>
         <select

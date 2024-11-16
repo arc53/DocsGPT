@@ -86,10 +86,8 @@ const Documents: React.FC<DocumentsProps> = ({
     }
     getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
       .then((data) => {
-        //dispatch(setSourceDocs(data ? data.docs : []));
         dispatch(setPaginatedDocuments(data ? data.docs : []));
         setTotalPages(data ? data.totalPages : 0);
-        //setTotalDocuments(data ? data.totalDocuments : 0);
       })
       .catch((error) => console.error(error))
       .finally(() => {
@@ -161,92 +159,127 @@ const Documents: React.FC<DocumentsProps> = ({
           {loading ? (
             <SkeletonLoader count={1} />
           ) : (
-            <table className="table-default">
-              <thead>
-                <tr>
-                  <th>{t('settings.documents.name')}</th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.date')}
-                      <img
-                        className="cursor-pointer"
-                        onClick={() => refreshDocs('date')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.tokenUsage')}
-                      <img
-                        className="cursor-pointer"
-                        onClick={() => refreshDocs('tokens')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.type')}
-                    </div>
-                  </th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {!currentDocuments?.length && (
-                  <tr>
-                    <td colSpan={5} className="!p-4">
-                      {t('settings.documents.noData')}
-                    </td>
-                  </tr>
-                )}
-                {Array.isArray(currentDocuments) &&
-                  currentDocuments.map((document, index) => (
-                    <tr key={index} className="text-nowrap font-normal">
-                      <td>{document.name}</td>
-                      <td>{document.date}</td>
-                      <td>
-                        {document.tokens ? formatTokens(+document.tokens) : ''}
-                      </td>
-                      <td>
-                        {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
-                      </td>
-                      <td>
-                        <div className="min-w-[70px] flex flex-row items-end justify-end ml-auto">
-                          {document.type !== 'remote' && (
+            <div className="flex flex-col">
+              <div className="flex-grow">
+                <div className="dark:border-silver/40 border-silver rounded-xl border overflow-auto">
+                  <table className="min-w-full divide-y divide-gray-200 ">
+                    <thead>
+                      <tr>
+                        <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          {t('settings.documents.name')}
+                        </th>
+                        <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          <div className="flex justify-center items-center">
+                            {t('settings.documents.date')}
                             <img
-                              src={Trash}
-                              alt="Delete"
-                              className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
-                              id={`img-${index}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteDocument(index, document);
-                              }}
+                              className="cursor-pointer"
+                              onClick={() => refreshDocs('date')}
+                              src={caretSort}
+                              alt="sort"
                             />
-                          )}
-                          {document.syncFrequency && (
-                            <div className="ml-2">
-                              <DropdownMenu
-                                name="Sync"
-                                options={syncOptions}
-                                onSelect={(value: string) => {
-                                  handleManageSync(document, value);
-                                }}
-                                defaultValue={document.syncFrequency}
-                                icon={SyncIcon}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+                          </div>
+                        </th>
+                        <th className="px-5 py-2 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          <div className="flex justify-center items-center">
+                            {t('settings.documents.tokenUsage')}
+                            <img
+                              className="cursor-pointer"
+                              onClick={() => refreshDocs('tokens')}
+                              src={caretSort}
+                              alt="sort"
+                            />
+                          </div>
+                        </th>
+                        <th className="px-5 py-2 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          <div className="flex justify-center items-center">
+                            {t('settings.documents.type')}
+                          </div>
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-6 py-2 text-start text-xs font-medium text-gray-700 dark:text-gray-50 uppercase"
+                        ></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
+                      {!currentDocuments?.length && (
+                        <tr>
+                          <td colSpan={5} className="!p-4">
+                            {t('settings.documents.noData')}
+                          </td>
+                        </tr>
+                      )}
+                      {Array.isArray(currentDocuments) &&
+                        currentDocuments.map((document, index) => (
+                          <tr key={index} className="text-nowrap font-normal">
+                            <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.name}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.date}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.tokens
+                                ? formatTokens(+document.tokens)
+                                : ''}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.type === 'remote'
+                                ? 'Pre-loaded'
+                                : 'Private'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium flex">
+                              <div className="min-w-[150px] flex flex-row items-center ml-auto gap-10">
+                                {document.type !== 'remote' && (
+                                  <img
+                                    src={Trash}
+                                    alt="Delete"
+                                    className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
+                                    id={`img-${index}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleDeleteDocument(index, document);
+                                    }}
+                                  />
+                                )}
+                                {document.syncFrequency && (
+                                  <div className="ml-2">
+                                    <DropdownMenu
+                                      name="Sync"
+                                      options={syncOptions}
+                                      onSelect={(value: string) => {
+                                        handleManageSync(document, value);
+                                      }}
+                                      defaultValue={document.syncFrequency}
+                                      icon={SyncIcon}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    rowsPerPage={rowsPerPage}
+                    onPageChange={(page) => {
+                      setCurrentPage(page);
+                      refreshDocs(sortField, page, rowsPerPage);
+                    }}
+                    onRowsPerPageChange={(rows) => {
+                      setRowsPerPage(rows);
+                      setCurrentPage(1);
+                      refreshDocs(sortField, 1, rows);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
           )}
         </div>
         {/* Conditionally render the Upload modal based on modalState */}
@@ -263,25 +296,6 @@ const Documents: React.FC<DocumentsProps> = ({
           </div>
         )}
       </div>
-      {/* Pagination component with props:
-      # Note: Every time the page changes, 
-      the refreshDocs function is called with the updated page number and rows per page.
-      and reset cursor paginated query parameter to undefined.
-      */}
-      <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
-        rowsPerPage={rowsPerPage}
-        onPageChange={(page) => {
-          setCurrentPage(page);
-          refreshDocs(sortField, page, rowsPerPage);
-        }}
-        onRowsPerPageChange={(rows) => {
-          setRowsPerPage(rows);
-          setCurrentPage(1);
-          refreshDocs(sortField, 1, rows);
-        }}
-      />
     </div>
   );
 };
