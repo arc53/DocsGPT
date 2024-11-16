@@ -1,7 +1,7 @@
 "use client";
 import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes,css } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetCoreProps, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
@@ -49,7 +49,86 @@ const sizesConfig = {
     maxHeight: custom.maxHeight || '70vh',
   }),
 };
+const createBox = keyframes`
+   0% {
+        transform: scale(0.6);
+      }
+      90% {
+        transform: scale(1.02);
+      }
+      100% {
+        transform: scale(1);
+      }
+`
+const closeBox = keyframes`
+  0% {
+        transform: scale(1); 
+      }
+      10% {
+        transform: scale(1.02); 
+      }
+      100% {
+        transform: scale(0.6);
+      }
+`
 
+const openContainer = keyframes`
+      0% {
+        width: 200px;
+        height: 100px;
+      }
+      100% {
+        width: ${(props) => props.theme.dimensions.width} !important;
+        height: ${(props) => props.theme.dimensions.height} !important;
+        border-radius: 12px;
+      }`
+const closeContainer = keyframes`
+  0% {
+        width: ${(props) => props.theme.dimensions.width} !important;
+        height: ${(props) => props.theme.dimensions.height} !important;
+        border-radius: 12px;
+      }
+      100% {
+        width: 200px;
+        height: 100px;
+      }
+`
+const fadeIn = keyframes`
+  from {
+        opacity: 0;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+        transform: scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+`
+
+const fadeOut = keyframes`
+  from {
+        opacity: 1;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+      to {
+        opacity: 0;
+        transform: scale(0.9);
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
+      }
+`
+const scaleAnimation = keyframes`
+  from {
+      transform: scale(1.2);
+      }
+      to {
+      transform: scale(1);
+      }
+`
 const Overlay = styled.div`
   position: fixed;
   top: 0;
@@ -60,6 +139,8 @@ const Overlay = styled.div`
   z-index: 999;
   transition: opacity 0.5s;
 `
+
+
 const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     all: initial;
     position: fixed;
@@ -72,37 +153,15 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
       transform : translate(50%,50%);
     }
     &.open {
-        animation: createBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+        animation: css ${createBox} 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
     }
     &.close {
-      animation: closeBox 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+      animation: css ${closeBox} 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
     }
     align-items: center;
     text-align: left;
-    @keyframes createBox {
-      0% {
-        transform: scale(0.6);
-      }
-      90% {
-        transform: scale(1.02);
-      }
-      100% {
-        transform: scale(1);
-      }
-    }
-
-    @keyframes closeBox {
-      0% {
-        transform: scale(1); 
-      }
-      10% {
-        transform: scale(1.02); 
-      }
-      100% {
-        transform: scale(0.6);
-      }
-    }
 `;
+
 const StyledContainer = styled.div<{ isOpen: boolean }>`
     all: initial;
     max-height: ${(props) => props.theme.dimensions.maxHeight};
@@ -123,66 +182,18 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     animation: ${({ isOpen, theme }) =>
     theme.dimensions.size === 'large'
       ? isOpen
-        ? 'fadeIn 150ms ease-in forwards'
-        : 'fadeOut 150ms ease-in forwards'
+        ? css `${fadeIn} 150ms ease-in forwards`
+        : css ` ${fadeOut} 150ms ease-in forwards`
       : isOpen
-        ? 'openContainer 150ms ease-in forwards'
-        : 'closeContainer 250ms ease-in forwards'};
-    @keyframes openContainer {
-      0% {
-        width: 200px;
-        height: 100px;
-      }
-      100% {
-        width: ${(props) => props.theme.dimensions.width} !important;
-        height: ${(props) => props.theme.dimensions.height} !important;
-        border-radius: 12px;
-      }
-    }
-    @keyframes closeContainer {
-      0% {
-        width: ${(props) => props.theme.dimensions.width} !important;
-        height: ${(props) => props.theme.dimensions.height} !important;
-        border-radius: 12px;
-      }
-      100% {
-        width: 200px;
-        height: 100px;
-      }
-    }
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
-        transform: scale(0.9);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1);
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
-      }
-    }
-    @keyframes fadeOut {
-      from {
-        opacity: 1;
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
-      }
-      to {
-        opacity: 0;
-        transform: scale(0.9);
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
-      }
-    }
+        ? css `${openContainer} 150ms ease-in forwards`
+        : css `${closeContainer} 250ms ease-in forwards`};
     @media only screen and (max-width: 768px) {
       max-height: 100vh;
       max-width: 80vw;
       overflow: auto;
     }
 `;
+
 const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatingButton: boolean }>`
     position: fixed;
     display: ${props => props.hidden ? "none" : "flex"};
@@ -200,22 +211,13 @@ const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatin
     background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
-    animation: ${props => props.isAnimatingButton ? 'scaleAnimation 200ms forwards' : 'none'};
+    animation: ${props => props.isAnimatingButton ? css `${scaleAnimation} 200ms forwards` : 'none'};
     &:hover {
       transform: scale(1.1);
       transition: transform 0.2s ease-in-out;
     }
     &:not(:hover) {
       transition: transform 0.2s ease-in-out;
-    }
-
-    @keyframes scaleAnimation {
-      from {
-      transform: scale(1.2);
-      }
-      to {
-      transform: scale(1);
-      }
     }
 `;
 const CancelButton = styled.button`
