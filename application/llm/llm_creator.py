@@ -6,6 +6,7 @@ from application.llm.llama_cpp import LlamaCpp
 from application.llm.anthropic import AnthropicLLM
 from application.llm.docsgpt_provider import DocsGPTAPILLM
 from application.llm.premai import PremAILLM
+from application.llm.google_ai import GoogleLLM
 
 
 class LLMCreator:
@@ -18,7 +19,8 @@ class LLMCreator:
         "anthropic": AnthropicLLM,
         "docsgpt": DocsGPTAPILLM,
         "premai": PremAILLM,
-        "groq": GroqLLM
+        "groq": GroqLLM,
+        "google": GoogleLLM
     }
 
     @classmethod
