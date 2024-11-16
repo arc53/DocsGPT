@@ -2,10 +2,15 @@ import React, { useEffect, useRef } from 'react';
 import { WrapperModalProps } from './types';
 import Exit from '../assets/exit.svg';
 
-const WrapperModal: React.FC<WrapperModalProps> = ({ children, close }) => {
+const WrapperModal: React.FC<WrapperModalProps> = ({
+  children,
+  close,
+  isPerformingTask,
+}) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isPerformingTask) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (
         modalRef.current &&
@@ -36,9 +41,11 @@ const WrapperModal: React.FC<WrapperModalProps> = ({ children, close }) => {
         ref={modalRef}
         className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]"
       >
-        <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
-          <img className="filter dark:invert" src={Exit} />
-        </button>
+        {!isPerformingTask && (
+          <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
+            <img className="filter dark:invert" src={Exit} />
+          </button>
+        )}
         {children}
       </div>
     </div>

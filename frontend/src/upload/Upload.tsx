@@ -600,7 +600,30 @@ function Upload({
             ) : (
               <button
                 onClick={uploadRemote}
-                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1]`}
+                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1] ${
+                  urlName.trim().length === 0 ||
+                  url.trim().length === 0 ||
+                  (urlType.label === 'Reddit' &&
+                    (redditData.client_id.length === 0 ||
+                      redditData.client_secret.length === 0 ||
+                      redditData.user_agent.length === 0 ||
+                      redditData.search_queries.length === 0 ||
+                      redditData.number_posts === 0)) ||
+                  (urlType.label === 'GitHub' && repoUrl.trim().length === 0)
+                    ? 'bg-opacity-80 text-opacity-80'
+                    : ''
+                }`}
+                disabled={
+                  urlName.trim().length === 0 ||
+                  url.trim().length === 0 ||
+                  (urlType.label === 'Reddit' &&
+                    (redditData.client_id.length === 0 ||
+                      redditData.client_secret.length === 0 ||
+                      redditData.user_agent.length === 0 ||
+                      redditData.search_queries.length === 0 ||
+                      redditData.number_posts === 0)) ||
+                  (urlType.label === 'GitHub' && repoUrl.trim().length === 0)
+                }
               >
                 {t('modals.uploadDoc.train')}
               </button>
@@ -627,6 +650,7 @@ function Upload({
 
   return (
     <WrapperModal
+      isPerformingTask={progress !== undefined && progress.percentage < 100}
       close={() => {
         close();
         setDocName('');
