@@ -18,6 +18,7 @@ import SourceDropdown from './components/SourceDropdown';
 import {
   setConversation,
   updateConversationId,
+  handleAbort,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
@@ -180,6 +181,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const resetConversation = () => {
+    handleAbort();
     dispatch(setConversation([]));
     dispatch(
       updateConversationId({

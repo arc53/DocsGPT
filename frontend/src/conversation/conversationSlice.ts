@@ -17,9 +17,23 @@ const initialState: ConversationState = {
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
 
+let abortController: AbortController | null = null;
+export function handleAbort() {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+}
+
 export const fetchAnswer = createAsyncThunk<Answer, { question: string }>(
   'fetchAnswer',
-  async ({ question }, { dispatch, getState, signal }) => {
+  async ({ question }, { dispatch, getState }) => {
+    if (abortController) {
+      abortController.abort();
+    }
+    abortController = new AbortController();
+    const { signal } = abortController;
+
     let isSourceUpdated = false;
     const state = getState() as RootState;
     if (state.preference) {
