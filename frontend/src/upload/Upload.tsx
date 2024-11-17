@@ -76,7 +76,7 @@ function Upload({
         <div className="relative w-32 h-32 rounded-full">
           <div className="absolute inset-0 rounded-full shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset] dark:shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset]"></div>
           <div
-            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'shadow-xl shadow-lime-300/50 dark:shadow-lime-300/50 bg-gradient-to-r from-white to-gray-400 dark:bg-gradient-to-br dark:from-gray-500 dark:to-gray-300' : 'shadow-[0_2px_0_#FF3D00_inset] dark:shadow-[0_2px_0_#FF3D00_inset]'}`}
+            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'shadow-xl shadow-lime-300/50 dark:shadow-lime-300/50 bg-gradient-to-r from-white to-gray-400 dark:bg-gradient-to-br dark:from-gray-500 dark:to-gray-300' : 'shadow-[0_4px_0_#7D54D1] dark:shadow-[0_4px_0_#7D54D1]'}`}
             style={{
               animation: `${progressPercent === 100 ? 'none' : 'rotate 2s linear infinite'}`,
             }}
@@ -166,7 +166,10 @@ function Upload({
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
-                        data?.find((d) => d.type?.toLowerCase() === 'local'),
+                        Array.isArray(data) &&
+                          data?.find(
+                            (d: Doc) => d.type?.toLowerCase() === 'local',
+                          ),
                       ),
                     );
                   });
@@ -182,15 +185,21 @@ function Upload({
                   getDocs().then((data) => {
                     dispatch(setSourceDocs(data));
                     const docIds = new Set(
-                      sourceDocs?.map((doc: Doc) => (doc.id ? doc.id : null)),
+                      (Array.isArray(sourceDocs) &&
+                        sourceDocs?.map((doc: Doc) =>
+                          doc.id ? doc.id : null,
+                        )) ||
+                        [],
                     );
-                    data?.map((updatedDoc: Doc) => {
-                      if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
-                        //select the doc not present in the intersection of current Docs and fetched data
-                        dispatch(setSelectedDocs(updatedDoc));
-                        return;
-                      }
-                    });
+                    if (data && Array.isArray(data)) {
+                      data.map((updatedDoc: Doc) => {
+                        if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
+                          // Select the doc not present in the intersection of current Docs and fetched data
+                          dispatch(setSelectedDocs(updatedDoc));
+                          return;
+                        }
+                      });
+                    }
                   });
                   setProgress(
                     (progress) =>

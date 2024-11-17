@@ -1,19 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
-
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/trash.svg';
 import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
-import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
 import SkeletonLoader from '../components/SkeletonLoader';
-import { getDocs } from '../preferences/preferenceApi';
-import { setSourceDocs } from '../preferences/preferenceSlice';
 import Input from '../components/Input';
 import Upload from '../upload/Upload'; // Import the Upload component
+import Pagination from '../components/DocumentPagination';
+import { useTranslation } from 'react-i18next';
+import { useDispatch } from 'react-redux';
+import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
+import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import { setSourceDocs } from '../preferences/preferenceSlice';
+import { setPaginatedDocuments } from '../preferences/preferenceSlice';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -33,12 +34,11 @@ const formatTokens = (tokens: number): string => {
 };
 
 const Documents: React.FC<DocumentsProps> = ({
-  documents,
+  paginatedDocuments,
   handleDeleteDocument,
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-
   // State for search input
   const [searchTerm, setSearchTerm] = useState('');
   // State for modal: active/inactive
@@ -47,37 +47,49 @@ const Documents: React.FC<DocumentsProps> = ({
   const [loading, setLoading] = useState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // Pagination
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  // const [totalDocuments, setTotalDocuments] = useState<number>(0);
+  // Filter documents based on the search term
+  const filteredDocuments = paginatedDocuments?.filter((document) =>
+    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+  // State for documents
+  const currentDocuments = filteredDocuments ?? [];
+  console.log('currentDocuments', currentDocuments);
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
     { label: 'Weekly', value: 'weekly' },
     { label: 'Monthly', value: 'monthly' },
   ];
-  const refreshDocs = (field: 'date' | 'tokens') => {
-    if (field === sortField) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortOrder('desc');
-      setSortField(field);
+
+  const refreshDocs = (
+    field: 'date' | 'tokens' | undefined,
+    pageNumber?: number,
+    rows?: number,
+  ) => {
+    const page = pageNumber ?? currentPage;
+    const rowsPerPg = rows ?? rowsPerPage;
+
+    if (field !== undefined) {
+      if (field === sortField) {
+        // Toggle sort order
+        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      } else {
+        // Change sort field and reset order to 'desc'
+        setSortField(field);
+        setSortOrder('desc');
+      }
     }
-    getDocs(sortField, sortOrder)
+    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
       .then((data) => {
-        dispatch(setSourceDocs(data));
-      })
-      .catch((error) => console.error(error))
-      .finally(() => {
-        setLoading(false);
-      });
-  };
-  const handleManageSync = (doc: Doc, sync_frequency: string) => {
-    setLoading(true);
-    userService
-      .manageSync({ source_id: doc.id, sync_frequency })
-      .then(() => {
-        return getDocs();
-      })
-      .then((data) => {
-        dispatch(setSourceDocs(data));
+        //dispatch(setSourceDocs(data ? data.docs : []));
+        dispatch(setPaginatedDocuments(data ? data.docs : []));
+        setTotalPages(data ? data.totalPages : 0);
+        //setTotalDocuments(data ? data.totalDocuments : 0);
       })
       .catch((error) => console.error(error))
       .finally(() => {
@@ -85,10 +97,40 @@ const Documents: React.FC<DocumentsProps> = ({
       });
   };
 
-  // Filter documents based on the search term
-  const filteredDocuments = documents?.filter((document) =>
-    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const handleManageSync = (doc: Doc, sync_frequency: string) => {
+    setLoading(true);
+    userService
+      .manageSync({ source_id: doc.id, sync_frequency })
+      .then(() => {
+        // First, fetch the updated source docs
+        return getDocs();
+      })
+      .then((data) => {
+        dispatch(setSourceDocs(data));
+        return getDocsWithPagination(
+          sortField,
+          sortOrder,
+          currentPage,
+          rowsPerPage,
+        );
+      })
+      .then((paginatedData) => {
+        dispatch(
+          setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
+        );
+        setTotalPages(paginatedData ? paginatedData.totalPages : 0);
+      })
+      .catch((error) => console.error('Error in handleManageSync:', error))
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    if (modalState === 'INACTIVE') {
+      refreshDocs(sortField, currentPage, rowsPerPage);
+    }
+  }, [modalState, sortField, currentPage, rowsPerPage]);
 
   return (
     <div className="mt-8">
@@ -154,16 +196,16 @@ const Documents: React.FC<DocumentsProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {!filteredDocuments?.length && (
+                {!currentDocuments?.length && (
                   <tr>
                     <td colSpan={5} className="!p-4">
                       {t('settings.documents.noData')}
                     </td>
                   </tr>
                 )}
-                {filteredDocuments &&
-                  filteredDocuments.map((document, index) => (
-                    <tr key={index}>
+                {Array.isArray(currentDocuments) &&
+                  currentDocuments.map((document, index) => (
+                    <tr key={index} className="text-nowrap font-normal">
                       <td>{document.name}</td>
                       <td>{document.date}</td>
                       <td>
@@ -173,7 +215,7 @@ const Documents: React.FC<DocumentsProps> = ({
                         {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
                       </td>
                       <td>
-                        <div className="flex flex-row items-center">
+                        <div className="min-w-[70px] flex flex-row items-end justify-end ml-auto">
                           {document.type !== 'remote' && (
                             <img
                               src={Trash}
@@ -221,12 +263,31 @@ const Documents: React.FC<DocumentsProps> = ({
           </div>
         )}
       </div>
+      {/* Pagination component with props:
+      # Note: Every time the page changes, 
+      the refreshDocs function is called with the updated page number and rows per page.
+      and reset cursor paginated query parameter to undefined.
+      */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(page) => {
+          setCurrentPage(page);
+          refreshDocs(sortField, page, rowsPerPage);
+        }}
+        onRowsPerPageChange={(rows) => {
+          setRowsPerPage(rows);
+          setCurrentPage(1);
+          refreshDocs(sortField, 1, rows);
+        }}
+      />
     </div>
   );
 };
 
 Documents.propTypes = {
-  documents: PropTypes.array.isRequired,
+  //documents: PropTypes.array.isRequired,
   handleDeleteDocument: PropTypes.func.isRequired,
 };
 
