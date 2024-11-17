@@ -168,6 +168,48 @@ class UpdateConversationName(Resource):
 
         return make_response(jsonify({"success": True}), 200)
 
+@user_ns.route("/api/update_conversation_queries")
+class UpdateConversationQueries(Resource):
+    @api.expect(
+        api.model(
+            "UpdateConversationQueriesModel",
+            {
+                "id": fields.String(required=True, description="Conversation ID"),
+                "limit": fields.Integer(
+                    required=True, description="Number by which queries should be sliced."
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Updates the queries in a  conversation",
+    )
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "limit"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            conversations_collection.update_one(
+                        {"_id": ObjectId(data["id"])},[{
+                        "$set": {
+                        "queries": {
+                        "$slice": ["$queries", data["limit"]]
+                        }
+                       }
+                    }])
+            conversation = conversations_collection.find_one(
+                {"_id": ObjectId(data["id"])}
+            )
+            if not conversation:
+                return make_response(jsonify({"status": "not found"}), 404)
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify(conversation["queries"]), 200)
+
 
 @user_ns.route("/api/feedback")
 class SubmitFeedback(Resource):

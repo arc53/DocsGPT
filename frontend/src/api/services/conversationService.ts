@@ -27,6 +27,8 @@ const conversationService = {
     apiClient.get(endpoints.CONVERSATION.DELETE_ALL),
   update: (data: any): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.UPDATE, data),
+  update_conversation_queries: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_CONVERSATION_QUERIES, data),
 };
 
 export default conversationService;
