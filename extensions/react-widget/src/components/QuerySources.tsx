@@ -1,6 +1,7 @@
 import {Query} from "../types/index"
 import styled from 'styled-components';
 import { ExternalLinkIcon } from '@radix-ui/react-icons'
+import { useEffect, useMemo, useState } from "react";
 
 
 const SourcesWrapper = styled.div`
@@ -57,16 +58,41 @@ const SourceLinkText = styled.p`
   line-height: 1rem;
 `
 
+const OtherSources = styled.button`
+cursor: pointer;
+background: transparent;
+color: #8860DB;
+border: none;
+outline: none;
+margin-top: 0.5rem;
+align-self: flex-start;
+`
+
 type TQuerySources = {
   sources:  Pick<Query, "sources">["sources"],
 }
 
 const QuerySources = ({sources}:TQuerySources) => {
-  return (
-    <SourcesWrapper>
+const [showAllSources, setShowAllSources] = useState(false)
 
+const visibleSources = useMemo(() => {
+  if(!sources) return [];
+
+  return showAllSources? sources : sources.slice(0, 3)
+}, [sources, showAllSources])
+
+const handleToggleShowAll = () => {
+  setShowAllSources(prev => !prev)
+}
+
+if(!sources || sources.length === 0){
+  return null;
+}
+ 
+return (
+    <SourcesWrapper>
       <SourcesGrid>
-        {sources?.slice(0, 3)?.map((source, index) => (
+        {visibleSources?.map((source, index) => (
           <SourceItem
             key={index}
           >
@@ -86,6 +112,15 @@ const QuerySources = ({sources}:TQuerySources) => {
           </SourceItem>
         ))}
       </SourcesGrid>
+
+      {
+  sources.length > 3 && (
+    <OtherSources onClick={handleToggleShowAll}>{
+      showAllSources ? `Show less` : `+ ${sources.length - 3} more` 
+      }</OtherSources>
+
+  )
+}
     </SourcesWrapper>
   )
 }
