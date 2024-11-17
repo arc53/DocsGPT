@@ -78,14 +78,14 @@ const openContainer = keyframes`
         height: 100px;
       }
       100% {
-        width: ${(props) => props.theme.dimensions.width} !important;
-        height: ${(props) => props.theme.dimensions.height} !important;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
         border-radius: 12px;
       }`
 const closeContainer = keyframes`
   0% {
-        width: ${(props) => props.theme.dimensions.width} !important;
-        height: ${(props) => props.theme.dimensions.height} !important;
+        width: ${(props) => props.theme.dimensions.width};
+        height: ${(props) => props.theme.dimensions.height};
         border-radius: 12px;
       }
       100% {
@@ -671,6 +671,7 @@ export const WidgetCore = ({
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
+  
   const dimensions =
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)

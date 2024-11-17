@@ -39,15 +39,16 @@ const Main = styled.div`
 
     font-family: sans-serif;
 `
-const TextField = styled.input`
+const TextField = styled.input<{inputWidth:string}>`
     padding:  6px 6px;
+    width: ${({inputWidth}) => inputWidth};
     border-radius: 8px;
     display: inline;
     color: ${props => props.theme.primary.text};
     outline: none;
     border: none;
     background-color: ${props => props.theme.secondary.bg};
-    width: 240px;
+    
     &:focus {
     outline: none;
     box-shadow: 0px 0px 0px 2px rgba(0, 109, 199);
@@ -61,6 +62,7 @@ const Container = styled.div`
 `
 const SearchResults = styled.div`
     position: absolute;
+    display: block;
     background-color: ${props => props.theme.primary.bg};
     opacity: 90%;
     border: 1px solid rgba(0, 0, 0, .1);
@@ -77,6 +79,11 @@ const SearchResults = styled.div`
     scrollbar-width: thin;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     backdrop-filter: blur(16px);
+    @media only screen and (max-width: 768px) {
+      max-height: 100vh;
+      max-width: 80vw;
+      overflow: auto;
+    }
 `
 const Title = styled.h3`
     font-size: 14px;
@@ -137,17 +144,45 @@ font-size: 12px;
         color: #007ee6;
     }
 `
+const Toolkit = styled.kbd`
+    position: absolute;
+    right: 12px;
+    top: 4px;
+    background-color: ${(props) => props.theme.primary.bg};
+    color: ${(props) => props.theme.secondary.text};
+    font-size: 9px;
+    padding: 2px;
+    border: 1px solid ${(props) => props.theme.secondary.text};
+    border-radius: 4px;
+`
 export const SearchBar = ({
     apiKey = "79bcbf0e-3dd1-4ac3-b893-e41b3d40ec8d",
     apiHost = "http://127.0.0.1:7091",
-    theme = "light",
-    placeholder = "Search or Ask AI"
+    theme = "dark",
+    placeholder = "Search or Ask AI...",
+    width="240px"
 }: SearchBarProps) => {
-    const [input, setInput] = React.useState("")
+    const [input, setInput] = React.useState<string>("");
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
-    const inputRef = React.useRef<HTMLInputElement>(null)
-    const widgetRef = React.useRef<HTMLInputElement>(null)
-    const [results, setResults] = React.useState<Result[]>([])
+    const inputRef = React.useRef<HTMLInputElement>(null);
+    const resultsRef = React.useRef<HTMLInputElement>(null);
+    const [isResultVisible, setIsResultVisible] = React.useState<boolean>(true);
+    const [results, setResults] = React.useState<Result[]>([]);
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (
+                resultsRef.current &&
+                !resultsRef.current.contains(event.target as Node)
+            ) {
+                setIsResultVisible(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            resultsRef.current && (resultsRef.current.style.display = 'block')
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [])
     React.useEffect(() => {
         input.length > 0 ?
             getSearchResults(input, apiKey, apiHost)
@@ -171,6 +206,8 @@ export const SearchBar = ({
             <Main>
                 <Container>
                     <TextField
+                        inputWidth={width}
+                        onFocus={()=>setIsResultVisible(true)}
                         ref={inputRef}
                         onKeyDown={(e) => handleKeyDown(e)}
                         placeholder={placeholder}
@@ -178,8 +215,8 @@ export const SearchBar = ({
                         onChange={(e) => setInput(e.target.value)}
                     />
                     {
-                        input.length > 0 && results.length > 0 && (
-                            <SearchResults>
+                        input.length > 0 && results.length > 0 && isResultVisible && (
+                            <SearchResults ref={resultsRef}>
                                 {results.map((res) => (
                                     <div>
                                         <Title>{res.title}</Title>
@@ -194,6 +231,7 @@ export const SearchBar = ({
                             </SearchResults>
                         )
                     }
+                    <Toolkit title='Press Enter to Ask AI'>Enter</Toolkit>
                 </Container>
                 <WidgetCore
                     theme={theme}

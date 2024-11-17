@@ -46,6 +46,7 @@ export interface SearchBarProps {
   apiKey?: string;
   theme?:THEME;
   placeholder?:string;
+  width?:string;
 }
 
 export interface Result {
