@@ -358,7 +358,7 @@ class UploadFile(Resource):
                 for file in files:
                     filename = secure_filename(file.filename)
                     file.save(os.path.join(temp_dir, filename))
-
+                    print(f"Saved file: {filename}")
                 zip_path = shutil.make_archive(
                     base_name=os.path.join(save_dir, job_name),
                     format="zip",
@@ -366,6 +366,26 @@ class UploadFile(Resource):
                 )
                 final_filename = os.path.basename(zip_path)
                 shutil.rmtree(temp_dir)
+                task = ingest.delay(
+                    settings.UPLOAD_FOLDER,
+                    [
+                        ".rst",
+                        ".md",
+                        ".pdf",
+                        ".txt",
+                        ".docx",
+                        ".csv",
+                        ".epub",
+                        ".html",
+                        ".mdx",
+                        ".json",
+                        ".xlsx",
+                        ".pptx",
+                    ],
+                    job_name,
+                    final_filename,
+                    user,
+                )
             else:
                 file = files[0]
                 final_filename = secure_filename(file.filename)
@@ -392,9 +412,10 @@ class UploadFile(Resource):
                     final_filename,
                     user,
                 )
-        except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
+        except Exception as err:
+            print(f"Error: {err}")
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -465,6 +486,11 @@ class TaskStatus(Resource):
 
             task = celery.AsyncResult(task_id)
             task_meta = task.info
+            print(f"Task status: {task.status}")
+            if not isinstance(
+                task_meta, (dict, list, str, int, float, bool, type(None))
+            ):
+                task_meta = str(task_meta)  # Convert to a string representation
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 

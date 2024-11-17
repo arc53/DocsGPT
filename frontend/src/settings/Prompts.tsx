@@ -58,7 +58,8 @@ export default function Prompts({
       }
       setModalState('INACTIVE');
       onSelectPrompt(newPromptName, newPrompt.id, newPromptContent);
-      setNewPromptName(newPromptName);
+      setNewPromptName('');
+      setNewPromptContent('');
     } catch (error) {
       console.error(error);
     }
@@ -178,6 +179,7 @@ export default function Prompts({
         </div>
       </div>
       <PromptsModal
+        existingPrompts={prompts}
         type={modalType}
         modalState={modalState}
         setModalState={setModalState}
