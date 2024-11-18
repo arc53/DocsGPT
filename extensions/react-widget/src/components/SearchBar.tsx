@@ -48,11 +48,14 @@ const TextField = styled.input<{ inputWidth: string }>`
     outline: none;
     border: none;
     background-color: ${props => props.theme.secondary.bg};
-    
+    transition: background-color 128ms linear;
     &:focus {
-    outline: none;
-    box-shadow: 0px 0px 0px 2px rgba(0, 109, 199);
-    background-color: ${props => props.theme.primary.bg};
+     outline: none;
+     box-shadow: 
+    rgb(0, 109, 199) 0px 0px 3px, 
+    rgb(0, 90, 163) 0px 0px 6px, 
+    rgba(0, 0, 0, 0.25) 0px 2px 6px;
+     background-color: ${props => props.theme.primary.bg};
   }
 `
 
@@ -69,6 +72,7 @@ const SearchResults = styled.div`
     border-radius: 12px;
     padding: 8px;
     width: 576px;
+    min-width: 96%;
     z-index: 100;
     height: 25vh;
     overflow-y: auto;
@@ -169,6 +173,31 @@ const Toolkit = styled.kbd`
     border: 1px solid ${(props) => props.theme.secondary.text};
     border-radius: 4px;
 `
+const Loader = styled.div`
+  margin: 2rem auto;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid ${props => props.theme.primary.bg};
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  animation: spin 1s linear infinite;
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
+const NoResults = styled.div`
+  margin-top: 2rem;
+  text-align: center;
+  font-size: 1rem;
+  color: #888;
+`;
 export const SearchBar = ({
     apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
     apiHost = "https://gptcloud.arc53.com",
@@ -177,6 +206,7 @@ export const SearchBar = ({
     width = "240px"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState<string>("");
+    const [loading, setLoading] = React.useState<boolean>(false)
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const resultsRef = React.useRef<HTMLInputElement>(null);
@@ -199,9 +229,15 @@ export const SearchBar = ({
     }, [])
     React.useEffect(() => {
         input.length > 0 ?
-            getSearchResults(input, apiKey, apiHost)
-                .then((data) => setResults(data))
+            (() => {
+                setLoading(true)
+                getSearchResults(input, apiKey, apiHost)
+                .then((data) => {
+                    setResults(data)
+                    setLoading(false)
+                })
                 .catch((err) => console.log(err))
+            })()
             :
             setResults([])
     }, [input])
@@ -221,6 +257,7 @@ export const SearchBar = ({
             <Main>
                 <Container>
                     <TextField
+                        spellCheck={false}
                         inputWidth={width}
                         onFocus={() => setIsResultVisible(true)}
                         ref={inputRef}
@@ -230,26 +267,33 @@ export const SearchBar = ({
                         onChange={(e) => setInput(e.target.value)}
                     />
                     {
-                        input.length > 0 && results.length > 0 && isResultVisible && (
+                        input.length > 0 && isResultVisible && (
                             <SearchResults ref={resultsRef}>
-                                {results.map((res) => {
-                                    const containsSource = res.source !== 'local'
-                                    return (
-                                        <ResultWrapper
-                                            onClick={() => {
-                                                if (!containsSource) return;
-                                                window.open(res.source, '_blank', 'noopener, noreferrer')
-                                            }}
-                                            className={containsSource ? "contains-source" : ""}>
-                                            <Title>{res.title}</Title>
-                                            <Content>
-                                                <Markdown
-                                                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text + "...").substring(0, 256) + "...")) }}
-                                                />
-                                            </Content>
-                                        </ResultWrapper>
+                                {!loading ?
+                                    (results.length > 0 ?
+                                        results.map((res) => {
+                                            const containsSource = res.source !== 'local';
+                                            return (
+                                                <ResultWrapper
+                                                    onClick={() => {
+                                                        if (!containsSource) return;
+                                                        window.open(res.source, '_blank', 'noopener, noreferrer')
+                                                    }}
+                                                    className={containsSource ? "contains-source" : ""}>
+                                                    <Title>{res.title}</Title>
+                                                    <Content>
+                                                        <Markdown
+                                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text + "...").substring(0, 256) + "...")) }}
+                                                        />
+                                                    </Content>
+                                                </ResultWrapper>
+                                            )
+                                        })
+                                        :
+                                        <NoResults>No results</NoResults>
                                     )
-                                })
+                                    :
+                                    <Loader />
                                 }
                             </SearchResults>
                         )
@@ -262,7 +306,7 @@ export const SearchBar = ({
                     apiKey={apiKey}
                     prefilledQuery={input}
                     isOpen={isWidgetOpen}
-                    handleClose={handleClose} size={'large'}
+                    handleClose={handleClose} size={"large"}
                 />
             </Main>
         </ThemeProvider>
