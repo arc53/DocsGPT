@@ -39,9 +39,9 @@ const Main = styled.div`
 
     font-family: sans-serif;
 `
-const TextField = styled.input<{inputWidth:string}>`
+const TextField = styled.input<{ inputWidth: string }>`
     padding:  6px 6px;
-    width: ${({inputWidth}) => inputWidth};
+    width: ${({ inputWidth }) => inputWidth};
     border-radius: 8px;
     display: inline;
     color: ${props => props.theme.primary.text};
@@ -67,7 +67,7 @@ const SearchResults = styled.div`
     opacity: 90%;
     border: 1px solid rgba(0, 0, 0, .1);
     border-radius: 12px;
-    padding: 15px;
+    padding: 8px;
     width: 576px;
     z-index: 100;
     height: 25vh;
@@ -87,7 +87,8 @@ const SearchResults = styled.div`
 `
 const Title = styled.h3`
     font-size: 14px;
-    color: rgb(107, 114, 128);
+    color: ${props => props.theme.primary.text};
+    opacity: 0.8;
     padding-bottom: 6px;
     font-weight: 600;
     text-transform: uppercase;
@@ -95,6 +96,17 @@ const Title = styled.h3`
 `
 const Content = styled.div`
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+`
+const ResultWrapper = styled.div`
+    padding: 4px 8px 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    &.contains-source:hover{
+        background-color: rgba(0, 92, 197, 0.15);
+        ${Title} {
+        color: rgb(0, 126, 230);
+       }
+    }
 `
 const Markdown = styled.div`
 line-height:20px;
@@ -112,7 +124,8 @@ font-size: 12px;
     h1,h2 {
       font-size: 16px;
       font-weight: 600;
-      color: rgb(31, 41, 55);
+      color: ${(props) => props.theme.text};
+      opacity: 0.8;
     }
 
 
@@ -150,17 +163,18 @@ const Toolkit = styled.kbd`
     top: 4px;
     background-color: ${(props) => props.theme.primary.bg};
     color: ${(props) => props.theme.secondary.text};
+    font-weight: 600;
     font-size: 10px;
     padding: 3px;
     border: 1px solid ${(props) => props.theme.secondary.text};
     border-radius: 4px;
 `
 export const SearchBar = ({
-    apiKey = "79bcbf0e-3dd1-4ac3-b893-e41b3d40ec8d",
-    apiHost = "http://127.0.0.1:7091",
+    apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
+    apiHost = "https://gptcloud.arc53.com",
     theme = "dark",
     placeholder = "Search or Ask AI...",
-    width="240px"
+    width = "240px"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState<string>("");
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
@@ -193,8 +207,8 @@ export const SearchBar = ({
     }, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        event.preventDefault();
-        if (event.ctrlKey && event.key === 'k'){
+        if (event.ctrlKey && event.key === 'k') {
+            event.preventDefault();
             setIsWidgetOpen(true);
         }
     };
@@ -208,7 +222,7 @@ export const SearchBar = ({
                 <Container>
                     <TextField
                         inputWidth={width}
-                        onFocus={()=>setIsResultVisible(true)}
+                        onFocus={() => setIsResultVisible(true)}
                         ref={inputRef}
                         onKeyDown={(e) => handleKeyDown(e)}
                         placeholder={placeholder}
@@ -218,16 +232,24 @@ export const SearchBar = ({
                     {
                         input.length > 0 && results.length > 0 && isResultVisible && (
                             <SearchResults ref={resultsRef}>
-                                {results.map((res) => (
-                                    <div>
-                                        <Title>{res.title}</Title>
-                                        <Content>
-                                            <Markdown
-                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render(res.text)) }}
-                                            />
-                                        </Content>
-                                    </div>
-                                ))
+                                {results.map((res) => {
+                                    const containsSource = res.source !== 'local'
+                                    return (
+                                        <ResultWrapper
+                                            onClick={() => {
+                                                if (!containsSource) return;
+                                                window.open(res.source, '_blank', 'noopener, noreferrer')
+                                            }}
+                                            className={containsSource ? "contains-source" : ""}>
+                                            <Title>{res.title}</Title>
+                                            <Content>
+                                                <Markdown
+                                                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text + "...").substring(0, 256) + "...")) }}
+                                                />
+                                            </Content>
+                                        </ResultWrapper>
+                                    )
+                                })
                                 }
                             </SearchResults>
                         )

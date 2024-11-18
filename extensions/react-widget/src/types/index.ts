@@ -51,5 +51,6 @@ export interface SearchBarProps {
 
 export interface Result {
   text:string;
-  title:string
+  title:string;
+  source:string;
 }
