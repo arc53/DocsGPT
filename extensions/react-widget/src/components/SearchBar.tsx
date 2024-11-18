@@ -36,7 +36,6 @@ const themes = {
 
 const Main = styled.div`
     all:initial;
-
     font-family: sans-serif;
 `
 const TextField = styled.input<{ inputWidth: string }>`
@@ -206,12 +205,14 @@ export const SearchBar = ({
     width = "240px"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState<string>("");
-    const [loading, setLoading] = React.useState<boolean>(false)
+    const [loading, setLoading] = React.useState<boolean>(false);
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const resultsRef = React.useRef<HTMLInputElement>(null);
     const [isResultVisible, setIsResultVisible] = React.useState<boolean>(true);
     const [results, setResults] = React.useState<Result[]>([]);
+    const debounceTimeout = React.useRef<number | null>(null);
+    const abortControllerRef = React.useRef<AbortController | null>(null)
     React.useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (
@@ -228,18 +229,32 @@ export const SearchBar = ({
         };
     }, [])
     React.useEffect(() => {
-        input.length > 0 ?
-            (() => {
-                setLoading(true)
-                getSearchResults(input, apiKey, apiHost)
-                .then((data) => {
-                    setResults(data)
-                    setLoading(false)
-                })
+        if (!input) {
+            setResults([]);
+            return;
+        }
+        if (debounceTimeout.current) {
+            clearTimeout(debounceTimeout.current);
+        }
+
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
+
+        debounceTimeout.current = setTimeout(() => {
+            setLoading(true);
+            getSearchResults(input, apiKey, apiHost, abortController.signal)
+                .then((data) => setResults(data))
                 .catch((err) => console.log(err))
-            })()
-            :
-            setResults([])
+                .finally(() => setLoading(false));
+        }, 500);
+
+        return () => {
+            abortController.abort();
+            clearTimeout(debounceTimeout.current ?? undefined);
+        };
     }, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
