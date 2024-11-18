@@ -51,9 +51,9 @@ const TextField = styled.input<{ inputWidth: string }>`
     &:focus {
      outline: none;
      box-shadow: 
-    rgb(0, 109, 199) 0px 0px 3px, 
-    rgb(0, 90, 163) 0px 0px 6px, 
-    rgba(0, 0, 0, 0.25) 0px 2px 6px;
+     0px 0px 0px 2px rgba(0, 109, 199), 
+     0px 0px 6px rgb(0, 90, 163), 
+     0px 2px 6px rgba(0, 0, 0, 0.1) ;
      background-color: ${props => props.theme.primary.bg};
   }
 `
@@ -174,7 +174,7 @@ const Toolkit = styled.kbd`
 `
 const Loader = styled.div`
   margin: 2rem auto;
-  border: 4px solid #f3f3f3;
+  border: 4px solid ${props => props.theme.secondary.text};
   border-top: 4px solid ${props => props.theme.primary.bg};
   border-radius: 50%;
   width: 12px;
@@ -233,6 +233,7 @@ export const SearchBar = ({
             setResults([]);
             return;
         }
+        setLoading(true);
         if (debounceTimeout.current) {
             clearTimeout(debounceTimeout.current);
         }
@@ -244,7 +245,6 @@ export const SearchBar = ({
         abortControllerRef.current = abortController;
 
         debounceTimeout.current = setTimeout(() => {
-            setLoading(true);
             getSearchResults(input, apiKey, apiHost, abortController.signal)
                 .then((data) => setResults(data))
                 .catch((err) => console.log(err))
