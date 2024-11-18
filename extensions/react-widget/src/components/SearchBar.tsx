@@ -150,8 +150,8 @@ const Toolkit = styled.kbd`
     top: 4px;
     background-color: ${(props) => props.theme.primary.bg};
     color: ${(props) => props.theme.secondary.text};
-    font-size: 9px;
-    padding: 2px;
+    font-size: 10px;
+    padding: 3px;
     border: 1px solid ${(props) => props.theme.secondary.text};
     border-radius: 4px;
 `
@@ -193,7 +193,8 @@ export const SearchBar = ({
     }, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter') {
+        event.preventDefault();
+        if (event.ctrlKey && event.key === 'k'){
             setIsWidgetOpen(true);
         }
     };
@@ -231,7 +232,7 @@ export const SearchBar = ({
                             </SearchResults>
                         )
                     }
-                    <Toolkit title='Press Enter to Ask AI'>Enter</Toolkit>
+                    <Toolkit title='Press Ctrl + K to Ask AI'>Ctrl K</Toolkit>
                 </Container>
                 <WidgetCore
                     theme={theme}
