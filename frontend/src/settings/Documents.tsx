@@ -40,25 +40,18 @@ const Documents: React.FC<DocumentsProps> = ({
   const { t } = useTranslation();
   const dispatch = useDispatch();
   // State for search input
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
   // State for modal: active/inactive
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
-  const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
-  const [loading, setLoading] = useState(false);
+  const [isOnboarding, setIsOnboarding] = useState<boolean>(false); // State for onboarding flag
+  const [loading, setLoading] = useState<boolean>(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
-  // const [totalDocuments, setTotalDocuments] = useState<number>(0);
-  // Filter documents based on the search term
-  const filteredDocuments = paginatedDocuments?.filter((document) =>
-    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-  // State for documents
-  const currentDocuments = filteredDocuments ?? [];
-  console.log('currentDocuments', currentDocuments);
+  const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
@@ -84,7 +77,7 @@ const Documents: React.FC<DocumentsProps> = ({
         setSortOrder('desc');
       }
     }
-    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
+    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg, searchTerm)
       .then((data) => {
         dispatch(setPaginatedDocuments(data ? data.docs : []));
         setTotalPages(data ? data.totalPages : 0);
@@ -130,6 +123,10 @@ const Documents: React.FC<DocumentsProps> = ({
     }
   }, [modalState, sortField, currentPage, rowsPerPage]);
 
+  useEffect(() => {
+    refreshDocs(sortField, 1, rowsPerPage);
+  }, [searchTerm]);
+
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
@@ -143,7 +140,13 @@ const Documents: React.FC<DocumentsProps> = ({
                 type="text"
                 id="document-search-input"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} // Handle search input change
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                  // refreshDocs(sortField, 1, rowsPerPage);
+                  // do not call refreshDocs here the state is async
+                  // so it will not have the updated value
+                }} // Handle search input change
               />
             </div>
             <button
