@@ -12,7 +12,7 @@
   "cancel": "Cancel",
   "help": "Help",
   "emailUs": "Email us",
-  "documentation": "documentation",
+  "documentation": "Documentation",
   "demo": [
     {
       "header": "Learn about DocsGPT",
@@ -77,16 +77,16 @@
   },
   "modals": {
     "uploadDoc": {
-      "label": "Upload New Documentation",
+      "label": "Upload new document",
       "select": "Choose how to upload your document to DocsGPT",
       "file": "Upload from device",
       "back": "Back",
       "wait": "Please wait ...",
-      "remote": "Collect from a website",
+      "remote": "Collect from website",
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .zip limited to 25mb",
+      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",

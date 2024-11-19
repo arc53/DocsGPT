@@ -23,7 +23,10 @@ const preloadedState: { preference: Preference } = {
     chunks: JSON.parse(chunks ?? '2').toString(),
     token_limit: token_limit ? parseInt(token_limit) : 2000,
     selectedDocs: doc !== null ? JSON.parse(doc) : null,
-    conversations: null,
+    conversations: {
+      data: null,
+      loading: false,
+    },
     sourceDocs: [
       {
         name: 'default',
@@ -35,6 +38,7 @@ const preloadedState: { preference: Preference } = {
       },
     ],
     modalState: 'INACTIVE',
+    paginatedDocuments: null,
   },
 };
 const store = configureStore({

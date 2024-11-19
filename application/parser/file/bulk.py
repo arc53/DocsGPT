@@ -11,6 +11,8 @@ from application.parser.file.html_parser import HTMLParser
 from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.file.rst_parser import RstParser
 from application.parser.file.tabular_parser import PandasCSVParser,ExcelParser
+from application.parser.file.json_parser import JSONParser
+from application.parser.file.pptx_parser import PPTXParser
 from application.parser.schema.base import Document
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
@@ -23,6 +25,8 @@ DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".rst": RstParser(),
     ".html": HTMLParser(),
     ".mdx": MarkdownParser(),
+    ".json":JSONParser(),
+    ".pptx":PPTXParser(),
 }
 
 

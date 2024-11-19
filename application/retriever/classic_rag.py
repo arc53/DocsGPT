@@ -45,7 +45,6 @@ class ClassicRAG(BaseRetriever):
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
             docs_temp = docsearch.search(self.question, k=self.chunks)
-            print(docs_temp)
             docs = [
                 {
                     "title": i.metadata.get(
@@ -60,8 +59,6 @@ class ClassicRAG(BaseRetriever):
                 }
                 for i in docs_temp
             ]
-        if settings.LLM_NAME == "llama.cpp":
-            docs = [docs[0]]
 
         return docs
 
@@ -78,7 +75,6 @@ class ClassicRAG(BaseRetriever):
         if len(self.chat_history) > 1:
             tokens_current_history = 0
             # count tokens in history
-            self.chat_history.reverse()
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
                     tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
@@ -97,7 +93,6 @@ class ClassicRAG(BaseRetriever):
         llm = LLMCreator.create_llm(
             settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
         )
-
         completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
         for line in completion:
             yield {"answer": str(line)}

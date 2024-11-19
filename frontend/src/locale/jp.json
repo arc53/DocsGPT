@@ -77,7 +77,7 @@
   },
   "modals": {
     "uploadDoc": {
-      "label": "新規書類のアップロード",
+      "label": "新しい文書をアップロードする",
       "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
       "file": "デバイスからアップロード",
       "back": "戻る",
@@ -86,7 +86,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": ".pdf, .txt, .rst, .docx, .md, .zipファイルを25MBまでアップロードしてください",
+      "info": ".pdf, .txt, .rst, .docx, .md, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",

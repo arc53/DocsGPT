@@ -1,6 +1,6 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
-import { Doc } from '../models/misc';
+import { Doc, GetDocsResponse } from '../models/misc';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(): Promise<Doc[] | null> {
@@ -9,7 +9,6 @@ export async function getDocs(): Promise<Doc[] | null> {
     const data = await response.json();
 
     const docs: Doc[] = [];
-
     data.forEach((doc: object) => {
       docs.push(doc as Doc);
     });
@@ -21,9 +20,37 @@ export async function getDocs(): Promise<Doc[] | null> {
   }
 }
 
-export async function getConversations(): Promise<
-  { name: string; id: string }[] | null
-> {
+export async function getDocsWithPagination(
+  sort = 'date',
+  order = 'desc',
+  pageNumber = 1,
+  rowsPerPage = 10,
+): Promise<GetDocsResponse | null> {
+  try {
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}`;
+    const response = await userService.getDocsWithPagination(query);
+    const data = await response.json();
+    const docs: Doc[] = [];
+    Array.isArray(data.paginated) &&
+      data.paginated.forEach((doc: Doc) => {
+        docs.push(doc as Doc);
+      });
+    return {
+      docs: docs,
+      totalDocuments: data.total,
+      totalPages: data.totalPages,
+      nextCursor: data.nextCursor,
+    };
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+}
+
+export async function getConversations(): Promise<{
+  data: { name: string; id: string }[] | null;
+  loading: boolean;
+}> {
   try {
     const response = await conversationService.getConversations();
     const data = await response.json();
@@ -34,10 +61,10 @@ export async function getConversations(): Promise<
       conversations.push(conversation as { name: string; id: string });
     });
 
-    return conversations;
+    return { data: conversations, loading: false };
   } catch (error) {
     console.log(error);
-    return null;
+    return { data: null, loading: false };
   }
 }
 

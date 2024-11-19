@@ -4,6 +4,7 @@
 
 :root {
   --viewport-height: 100vh;
+  font-synthesis: none !important;
 }
 
 @supports (height: 100dvh) {
@@ -49,23 +50,23 @@ body.dark {
 
 @layer components {
   .table-default {
-    @apply block w-max table-auto content-center justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray;
+    @apply block w-full mx-auto table-auto content-start justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray overflow-auto;
   }
 
   .table-default th {
-    @apply border-r border-silver dark:border-silver/40 p-4 w-[244px];
+    @apply p-4 w-full font-normal text-gray-400 text-nowrap; /* Remove border-r */
   }
 
   .table-default th:last-child {
-    @apply w-[auto] border-r-0;
+    @apply w-[auto];
   }
 
   .table-default td {
-    @apply border-r border-t border-silver dark:border-silver/40 px-4 py-2;
+    @apply border-t border-silver dark:border-silver/40 px-4 py-2; /* Remove border-r */
   }
 
   .table-default td:last-child {
-    @apply border-r-0;
+    @apply border-r-0; /* Ensure no right border on the last column */
   }
 }
 
@@ -512,4 +513,30 @@ input:-webkit-autofill:focus {
 
 .logs-table {
   font-family: 'IBMPlexMono-Medium', system-ui;
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.fade-in-bubble {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeInUp 0.5s forwards;
+}
+
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

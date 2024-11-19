@@ -2,23 +2,25 @@ import datetime
 import os
 import shutil
 import uuid
+import math
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, request
-from flask_restx import fields, Namespace, Resource
-from pymongo import MongoClient
+from flask import Blueprint, jsonify, make_response, request, redirect
+from flask_restx import inputs, fields, Namespace, Resource
 from werkzeug.utils import secure_filename
 
 from application.api.user.tasks import ingest, ingest_remote
 
+from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
+from application.tts.google_tts import GoogleTTS
 
-mongo = MongoClient(settings.MONGO_URI)
+mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
@@ -314,7 +316,7 @@ class UploadFile(Resource):
                 for file in files:
                     filename = secure_filename(file.filename)
                     file.save(os.path.join(temp_dir, filename))
-
+                    print(f"Saved file: {filename}")
                 zip_path = shutil.make_archive(
                     base_name=os.path.join(save_dir, job_name),
                     format="zip",
@@ -322,6 +324,26 @@ class UploadFile(Resource):
                 )
                 final_filename = os.path.basename(zip_path)
                 shutil.rmtree(temp_dir)
+                task = ingest.delay(
+                    settings.UPLOAD_FOLDER,
+                    [
+                        ".rst",
+                        ".md",
+                        ".pdf",
+                        ".txt",
+                        ".docx",
+                        ".csv",
+                        ".epub",
+                        ".html",
+                        ".mdx",
+                        ".json",
+                        ".xlsx",
+                        ".pptx",
+                    ],
+                    job_name,
+                    final_filename,
+                    user,
+                )
             else:
                 file = files[0]
                 final_filename = secure_filename(file.filename)
@@ -340,14 +362,18 @@ class UploadFile(Resource):
                         ".epub",
                         ".html",
                         ".mdx",
+                        ".json",
+                        ".xlsx",
+                        ".pptx",
                     ],
                     job_name,
                     final_filename,
                     user,
                 )
-        except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
+        except Exception as err:
+            print(f"Error: {err}")
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -418,6 +444,11 @@ class TaskStatus(Resource):
 
             task = celery.AsyncResult(task_id)
             task_meta = task.info
+            print(f"Task status: {task.status}")
+            if not isinstance(
+                task_meta, (dict, list, str, int, float, bool, type(None))
+            ):
+                task_meta = str(task_meta)  # Convert to a string representation
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
@@ -425,6 +456,66 @@ class TaskStatus(Resource):
 
 
 @user_ns.route("/api/combine")
+class RedirectToSources(Resource):
+    @api.doc(
+        description="Redirects /api/combine to /api/sources for backward compatibility"
+    )
+    def get(self):
+        return redirect("/api/sources", code=301)
+
+
+@user_ns.route("/api/sources/paginated")
+class PaginatedSources(Resource):
+    @api.doc(description="Get document with pagination, sorting and filtering")
+    def get(self):
+        user = "local"
+        sort_field = request.args.get("sort", "date")  # Default to 'date'
+        sort_order = request.args.get("order", "desc")  # Default to 'desc'
+        page = int(request.args.get("page", 1))  # Default to 1
+        rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+
+        # Prepare
+        query = {"user": user}
+        total_documents = sources_collection.count_documents(query)
+        total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        sort_order = 1 if sort_order == "asc" else -1
+        skip = (page - 1) * rows_per_page
+
+        try:
+            documents = (
+                sources_collection.find(query)
+                .sort(sort_field, sort_order)
+                .skip(skip)
+                .limit(rows_per_page)
+            )
+
+            paginated_docs = []
+            for doc in documents:
+                doc_data = {
+                    "id": str(doc["_id"]),
+                    "name": doc.get("name", ""),
+                    "date": doc.get("date", ""),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "location": "local",
+                    "tokens": doc.get("tokens", ""),
+                    "retriever": doc.get("retriever", "classic"),
+                    "syncFrequency": doc.get("sync_frequency", ""),
+                }
+                paginated_docs.append(doc_data)
+
+            response = {
+                "total": total_documents,
+                "totalPages": total_pages,
+                "currentPage": page,
+                "paginated": paginated_docs,
+            }
+            return make_response(jsonify(response), 200)
+
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
+@user_ns.route("/api/sources")
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
     def get(self):
@@ -479,6 +570,7 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
+
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
@@ -802,7 +894,7 @@ class ShareConversation(Resource):
         if missing_fields:
             return missing_fields
 
-        is_promptable = request.args.get("isPromptable")
+        is_promptable = request.args.get("isPromptable", type=inputs.boolean)
         if is_promptable is None:
             return make_response(
                 jsonify({"success": False, "message": "isPromptable is required"}), 400
@@ -831,7 +923,7 @@ class ShareConversation(Resource):
                 uuid.uuid4(), UuidRepresentation.STANDARD
             )
 
-            if is_promptable.lower() == "true":
+            if is_promptable:
                 prompt_id = data.get("prompt_id", "default")
                 chunks = data.get("chunks", "2")
 
@@ -859,7 +951,7 @@ class ShareConversation(Resource):
                             "conversation_id": DBRef(
                                 "conversations", ObjectId(conversation_id)
                             ),
-                            "isPromptable": is_promptable.lower() == "true",
+                            "isPromptable": is_promptable,
                             "first_n_queries": current_n_queries,
                             "user": user,
                             "api_key": api_uuid,
@@ -883,7 +975,7 @@ class ShareConversation(Resource):
                                     "$ref": "conversations",
                                     "$id": ObjectId(conversation_id),
                                 },
-                                "isPromptable": is_promptable.lower() == "true",
+                                "isPromptable": is_promptable,
                                 "first_n_queries": current_n_queries,
                                 "user": user,
                                 "api_key": api_uuid,
@@ -918,7 +1010,7 @@ class ShareConversation(Resource):
                                 "$ref": "conversations",
                                 "$id": ObjectId(conversation_id),
                             },
-                            "isPromptable": is_promptable.lower() == "true",
+                            "isPromptable": is_promptable,
                             "first_n_queries": current_n_queries,
                             "user": user,
                             "api_key": api_uuid,
@@ -939,7 +1031,7 @@ class ShareConversation(Resource):
                     "conversation_id": DBRef(
                         "conversations", ObjectId(conversation_id)
                     ),
-                    "isPromptable": is_promptable.lower() == "false",
+                    "isPromptable": is_promptable,
                     "first_n_queries": current_n_queries,
                     "user": user,
                 }
@@ -962,7 +1054,7 @@ class ShareConversation(Resource):
                             "$ref": "conversations",
                             "$id": ObjectId(conversation_id),
                         },
-                        "isPromptable": is_promptable.lower() == "false",
+                        "isPromptable": is_promptable,
                         "first_n_queries": current_n_queries,
                         "user": user,
                     }
@@ -1661,3 +1753,36 @@ class ManageSync(Resource):
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
         return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/tts")
+class TextToSpeech(Resource):
+    tts_model = api.model(
+        "TextToSpeechModel",
+        {
+            "text": fields.String(
+                required=True, description="Text to be synthesized as audio"
+            ),
+        },
+    )
+
+    @api.expect(tts_model)
+    @api.doc(description="Synthesize audio speech from text")
+    def post(self):
+        data = request.get_json()
+        text = data["text"]
+        try:
+            tts_instance = GoogleTTS()
+            audio_base64, detected_language = tts_instance.text_to_speech(text)
+            return make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "audio_base64": audio_base64,
+                        "lang": detected_language,
+                    }
+                ),
+                200,
+            )
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)

@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
-
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Add from './assets/add.svg';
+import openNewChat from './assets/openNewChat.svg';
+import Hamburger from './assets/hamburger.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
-import Hamburger from './assets/hamburger.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
@@ -18,6 +18,7 @@ import SourceDropdown from './components/SourceDropdown';
 import {
   setConversation,
   updateConversationId,
+  handleAbort,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
@@ -34,11 +35,16 @@ import {
   selectSelectedDocs,
   selectSelectedDocsStatus,
   selectSourceDocs,
+  selectPaginatedDocuments,
   setConversations,
   setModalStateDeleteConv,
   setSelectedDocs,
   setSourceDocs,
+  setPaginatedDocuments,
 } from './preferences/preferenceSlice';
+import Spinner from './assets/spinner.svg';
+import SpinnerDark from './assets/spinner-dark.svg';
+import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
 import Help from './components/Help';
 
@@ -63,17 +69,19 @@ NavImage.propTypes = {
 }; */
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
+  const queries = useSelector(selectQueries);
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
+  const paginatedDocuments = useSelector(selectPaginatedDocuments);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
-
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
@@ -90,22 +98,28 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!conversations) {
+    if (!conversations?.data) {
       fetchConversations();
     }
-  }, [conversations, dispatch]);
+    if (queries.length === 0) {
+      resetConversation();
+    }
+  }, [conversations?.data, dispatch]);
 
   async function fetchConversations() {
+    dispatch(setConversations({ ...conversations, loading: true }));
     return await getConversations()
       .then((fetchedConversations) => {
         dispatch(setConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
+        dispatch(setConversations({ data: null, loading: false }));
       });
   }
 
   const handleDeleteAllConversations = () => {
+    setIsDeletingConversation(true);
     conversationService
       .deleteAll()
       .then(() => {
@@ -115,6 +129,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleDeleteConversation = (id: string) => {
+    setIsDeletingConversation(true);
     conversationService
       .delete(id, {})
       .then(() => {
@@ -132,9 +147,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       })
       .then((updatedDocs) => {
         dispatch(setSourceDocs(updatedDocs));
+        const updatedPaginatedDocs = paginatedDocuments?.filter(
+          (document) => document.id !== doc.id,
+        );
+        dispatch(
+          setPaginatedDocuments(updatedPaginatedDocs || paginatedDocuments),
+        );
         dispatch(
           setSelectedDocs(
-            updatedDocs?.find((doc) => doc.name.toLowerCase() === 'default'),
+            Array.isArray(updatedDocs) &&
+              updatedDocs?.find(
+                (doc: Doc) => doc.name.toLowerCase() === 'default',
+              ),
           ),
         );
       })
@@ -157,6 +181,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const resetConversation = () => {
+    handleAbort();
     dispatch(setConversation([]));
     dispatch(
       updateConversationId({
@@ -164,7 +189,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       }),
     );
   };
-
+  const newChat = () => {
+    if (queries && queries?.length > 0) {
+      resetConversation();
+    }
+  };
   async function updateConversationName(updatedConversation: {
     name: string;
     id: string;
@@ -197,23 +226,43 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!isMobile);
   }, [isMobile]);
   useDefaultDocument();
+
   return (
     <>
       {!navOpen && (
-        <button
-          className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block"
-          onClick={() => {
-            setNavOpen(!navOpen);
-          }}
-        >
-          <img
-            src={Expand}
-            alt="menu toggle"
-            className={`${
-              !navOpen ? 'rotate-180' : 'rotate-0'
-            } m-auto transition-all duration-200`}
-          />
-        </button>
+        <div className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block">
+          <div className="flex gap-3 items-center">
+            <button
+              onClick={() => {
+                setNavOpen(!navOpen);
+              }}
+            >
+              <img
+                src={Expand}
+                alt="menu toggle"
+                className={`${
+                  !navOpen ? 'rotate-180' : 'rotate-0'
+                } m-auto transition-all duration-200`}
+              />
+            </button>
+            {queries?.length > 0 && (
+              <button
+                onClick={() => {
+                  newChat();
+                }}
+              >
+                <img
+                  src={openNewChat}
+                  alt="open new chat icon"
+                  className="cursor-pointer"
+                />
+              </button>
+            )}
+            <div className="text-[#949494] font-medium text-[20px]">
+              DocsGPT
+            </div>
+          </div>
+        </div>
       )}
       <div
         ref={navRef}
@@ -279,13 +328,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           id="conversationsMainDiv"
           className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
         >
-          {conversations && conversations.length > 0 ? (
+          {conversations?.loading && !isDeletingConversation && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+              <img
+                src={isDarkTheme ? SpinnerDark : Spinner}
+                className="animate-spin cursor-pointer bg-transparent"
+                alt="Loading..."
+              />
+            </div>
+          )}
+          {conversations?.data && conversations.data.length > 0 ? (
             <div>
               <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
-                {conversations?.map((conversation) => (
+                {conversations.data?.map((conversation) => (
                   <ConversationTile
                     key={conversation.id}
                     conversation={conversation}
@@ -362,10 +420,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </NavLink>
           </div>
           <div className="flex flex-col justify-end text-eerie-black dark:text-white">
-            <div className="flex justify-between items-center px-1 py-1">
+            <div className="flex justify-between items-center py-1">
               <Help />
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 pr-4">
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/WHJdfbQDR4'}
@@ -411,16 +469,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
       </div>
       <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
-        <button
-          className="mt-5 ml-6 h-6 w-6 md:hidden"
-          onClick={() => setNavOpen(true)}
-        >
-          <img
-            src={Hamburger}
-            alt="menu toggle"
-            className="w-7 filter dark:invert"
-          />
-        </button>
+        <div className="flex gap-6 items-center h-full ml-6 ">
+          <button
+            className=" h-6 w-6 md:hidden"
+            onClick={() => setNavOpen(true)}
+          >
+            <img
+              src={Hamburger}
+              alt="menu toggle"
+              className="w-7 filter dark:invert"
+            />
+          </button>
+          <div className="text-[#949494] font-medium text-[20px]">DocsGPT</div>
+        </div>
       </div>
       <APIKeyModal
         modalState={apiKeyModalState}

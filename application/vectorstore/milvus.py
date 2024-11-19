@@ -7,7 +7,7 @@ from application.vectorstore.base import BaseVectorStore
 
 
 class MilvusStore(BaseVectorStore):
-    def __init__(self, path: str = "", embeddings_key: str = "embeddings"):
+    def __init__(self, source_id: str = "", embeddings_key: str = "embeddings"):
         super().__init__()
         from langchain_milvus import Milvus
 
@@ -20,10 +20,11 @@ class MilvusStore(BaseVectorStore):
             collection_name=settings.MILVUS_COLLECTION_NAME,
             connection_args=connection_args,
         )
-        self._path = path
+        self._source_id = source_id
 
     def search(self, question, k=2, *args, **kwargs):
-        return self._docsearch.similarity_search(query=question, k=k, filter={"path": self._path} *args, **kwargs)
+        expr = f"source_id == '{self._source_id}'"
+        return self._docsearch.similarity_search(query=question, k=k, expr=expr, *args, **kwargs)
 
     def add_texts(self, texts: List[str], metadatas: Optional[List[dict]], *args, **kwargs):
         ids = [str(uuid4()) for _ in range(len(texts))]

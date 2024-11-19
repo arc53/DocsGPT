@@ -23,15 +23,11 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
  
 </div>
 
-### 🎃 [Hacktoberfest Prizes, Rules & Q&A](https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md) 🎃
-
 ### Production Support / Help for Companies:
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
-<a href ="https://cal.com/arc53/docsgpt-demo-b2b">
-    <img alt="Let's chat" src="https://cal.com/book-with-cal-dark.svg" />
-</a>
+[Book a Meeting :wave:](https://cal.com/arc53/docsgpt-demo-b2b)⁠
 
 [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
@@ -130,7 +126,7 @@ docker compose -f docker-compose-dev.yaml up -d
 > Make sure you have Python 3.10 or 3.11 installed.
 
 1. Export required environment variables or prepare a `.env` file in the project folder:
-   - Copy [.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) and create `.env`.
+   - Copy [.env-template](https://github.com/arc53/DocsGPT/blob/main/application/.env-template) and create `.env`.
 
 (check out [`application/core/settings.py`](application/core/settings.py) if you want to see more config options.)
 
@@ -203,4 +199,9 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
-Built with [:bird: :link: LangChain](https://github.com/hwchase17/langchain)
+<p>This project is supported by:</p>
+<p>
+  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
+    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px">
+  </a>
+</p>
