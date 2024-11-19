@@ -6,7 +6,6 @@ Contains parser for .png, .jpg, .jpeg files.
 from pathlib import Path
 import requests
 from typing import Dict, Union
-import traceback
 
 from application.parser.file.base_parser import BaseParser
 
