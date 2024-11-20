@@ -6,10 +6,10 @@ import { getSearchResults } from '../requests/searchAPI'
 import { Result } from '@/types';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-
+import { getOS } from '../utils/helper'
 const themes = {
     dark: {
-        bg: '#222327',
+        bg: '#000',
         text: '#fff',
         primary: {
             text: "#FAFAFA",
@@ -47,6 +47,9 @@ const TextField = styled.input<{ inputWidth: string }>`
     outline: none;
     border: none;
     background-color: ${props => props.theme.secondary.bg};
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
     transition: background-color 128ms linear;
     &:focus {
      outline: none;
@@ -114,6 +117,7 @@ const ResultWrapper = styled.div`
 const Markdown = styled.div`
 line-height:20px;
 font-size: 12px;
+word-break: break-all;
  pre {
       padding: 8px;
       width: 90%;
@@ -197,12 +201,25 @@ const NoResults = styled.div`
   font-size: 1rem;
   color: #888;
 `;
+const InfoButton = styled.button`
+    padding: 10px 4px 10px 4px;
+    display: block;
+    width: 100%;
+    color: inherit;
+    border-radius: 6px;
+    background-color: ${(props) => props.theme.bg};
+    text-align: center;
+    font-size: 14px;
+    margin-bottom: 8px;
+    border:1px solid ${(props) => props.theme.secondary.text};
+    
+`
 export const SearchBar = ({
     apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
     apiHost = "https://gptcloud.arc53.com",
     theme = "dark",
     placeholder = "Search or Ask AI...",
-    width = "240px"
+    width = "256px"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState<string>("");
     const [loading, setLoading] = React.useState<boolean>(false);
@@ -213,6 +230,14 @@ export const SearchBar = ({
     const [results, setResults] = React.useState<Result[]>([]);
     const debounceTimeout = React.useRef<number | null>(null);
     const abortControllerRef = React.useRef<AbortController | null>(null)
+    const browserOS = getOS();
+    const getKeyboardInstruction = () => {
+        if (browserOS === 'linux' || browserOS === 'win')
+            return "Ctrl K"
+        else if (browserOS === 'mac')
+            return "⌘ K"
+        else return "Enter"
+    }
     React.useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (
@@ -258,7 +283,11 @@ export const SearchBar = ({
     }, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        if (event.ctrlKey && event.key === 'k') {
+        if (
+            ((browserOS === 'win' || browserOS === 'linux') && event.ctrlKey && event.key === 'k') ||
+            (browserOS === 'mac' && event.metaKey && event.key === 'k') ||
+            ((browserOS === 'android' || browserOS === 'ios' || browserOS === 'other') && event.key === 'Enter')
+        ) {
             event.preventDefault();
             setIsWidgetOpen(true);
         }
@@ -272,10 +301,12 @@ export const SearchBar = ({
             <Main>
                 <Container>
                     <TextField
+                        type='search'
                         spellCheck={false}
                         inputWidth={width}
                         onFocus={() => setIsResultVisible(true)}
                         ref={inputRef}
+                        onSubmit={() => setIsWidgetOpen(true)}
                         onKeyDown={(e) => handleKeyDown(e)}
                         placeholder={placeholder}
                         value={input}
@@ -284,6 +315,7 @@ export const SearchBar = ({
                     {
                         input.length > 0 && isResultVisible && (
                             <SearchResults ref={resultsRef}>
+                                <InfoButton>{`Press ${getKeyboardInstruction()} to Ask the AI`}</InfoButton>
                                 {!loading ?
                                     (results.length > 0 ?
                                         results.map((res) => {
@@ -298,7 +330,7 @@ export const SearchBar = ({
                                                     <Title>{res.title}</Title>
                                                     <Content>
                                                         <Markdown
-                                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text + "...").substring(0, 256) + "...")) }}
+                                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text).substring(0, 256) + "...")) }}
                                                         />
                                                     </Content>
                                                 </ResultWrapper>
@@ -313,7 +345,9 @@ export const SearchBar = ({
                             </SearchResults>
                         )
                     }
-                    <Toolkit title='Press Ctrl + K to Ask AI'>Ctrl K</Toolkit>
+                    <Toolkit title={`Press ${getKeyboardInstruction()} to Ask the AI`}>
+                        {getKeyboardInstruction()}
+                    </Toolkit>
                 </Container>
                 <WidgetCore
                     theme={theme}

@@ -32,6 +32,7 @@
   "scripts": {
     "build": "parcel build src/main.tsx --public-url ./",
     "build:react": "parcel build src/index.ts",
+   "serve": "parcel serve -p 3000",
     "dev": "parcel -p 3000",
     "test": "jest",
     "lint": "eslint",
