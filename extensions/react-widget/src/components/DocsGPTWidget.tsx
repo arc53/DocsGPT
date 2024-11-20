@@ -769,6 +769,7 @@ export const WidgetCore = ({
               <PromptContainer
                 onSubmit={handleSubmit}>
                 <StyledInput
+                  autoFocus
                   value={prompt} onChange={(event) => setPrompt(event.target.value)}
                   type='text' placeholder="Ask your question" />
                 <StyledButton
