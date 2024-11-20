@@ -141,17 +141,17 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm)
                 "role": "assistant",
                 "content": "Summarise following conversation in no more than 3 "
                 "words, respond ONLY with the summary, use the same "
-                "language as the system \n\nUser: "
-                + question
-                + "\n\n"
-                + "AI: "
-                + response,
+                "language as the system",
             },
             {
                 "role": "user",
                 "content": "Summarise following conversation in no more than 3 words, "
                 "respond ONLY with the summary, use the same language as the "
-                "system",
+                "system \n\nUser: "
+                + question
+                + "\n\n"
+                + "AI: "
+                + response,
             },
         ]
 

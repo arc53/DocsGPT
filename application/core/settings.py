@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     DEFAULT_MAX_HISTORY: int = 150
     MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
+    PARSE_PDF_AS_IMAGE: bool = False
     VECTOR_STORE: str = "faiss" #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
 

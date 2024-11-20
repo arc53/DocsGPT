@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Dict
 
 from application.parser.file.base_parser import BaseParser
-
+from application.core.settings import settings
+import requests
 
 class PDFParser(BaseParser):
     """PDF parser."""
@@ -18,6 +19,15 @@ class PDFParser(BaseParser):
 
     def parse_file(self, file: Path, errors: str = "ignore") -> str:
         """Parse file."""
+        if settings.PARSE_PDF_AS_IMAGE:
+            doc2md_service = "https://llm.arc53.com/doc2md"
+            # alternatively you can use local vision capable LLM
+            with open(file, "rb") as file_loaded:
+                files = {'file': file_loaded}
+                response = requests.post(doc2md_service, files=files)   
+                data = response.json()["markdown"] 
+            return data
+
         try:
             import PyPDF2
         except ImportError:
