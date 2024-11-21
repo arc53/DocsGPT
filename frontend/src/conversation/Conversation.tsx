@@ -22,6 +22,7 @@ import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
   fetchAnswer,
+  resendQuery,
   selectQueries,
   selectStatus,
   setConversation,
@@ -87,25 +88,17 @@ export default function Conversation() {
     question,
     isRetry = false,
     updated = null,
-    indx = null,
+    indx = undefined,
   }: {
     question: string;
     isRetry?: boolean;
     updated?: boolean | null;
-    indx?: number | null;
+    indx?: number;
   }) => {
     if (updated === true) {
-      conversationService
-        .update_conversation_queries({
-          id: conversationId,
-          limit: indx,
-        })
-        .then((response) => response.json())
-        .then((data) => {
-          dispatch(setConversation(data));
-          !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
-          fetchStream.current = dispatch(fetchAnswer({ question }));
-        });
+      !isRetry &&
+        dispatch(resendQuery({ index: indx as number, prompt: question })); //dispatch only new queries
+      fetchStream.current = dispatch(fetchAnswer({ question, indx }));
     } else {
       question = question.trim();
       if (question === '') return;

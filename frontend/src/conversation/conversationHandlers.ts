@@ -75,6 +75,7 @@ export function handleFetchAnswerSteaming(
   chunks: string,
   token_limit: number,
   onEvent: (event: MessageEvent) => void,
+  indx?: number,
 ): Promise<Answer> {
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
@@ -87,6 +88,7 @@ export function handleFetchAnswerSteaming(
     chunks: chunks,
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
+    index: indx,
   };
   if (selectedDocs && 'id' in selectedDocs) {
     payload.active_docs = selectedDocs.id as string;
