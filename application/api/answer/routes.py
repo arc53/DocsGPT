@@ -317,7 +317,7 @@ class Stream(Resource):
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             
-            index=data.get("index",None);
+            index=data.get("index",None)
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
