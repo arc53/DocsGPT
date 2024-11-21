@@ -123,7 +123,7 @@ docker compose -f docker-compose-dev.yaml up -d
 ### Run the Backend
 
 > [!Note]
-> Make sure you have Python 3.10 or 3.11 installed.
+> Make sure you have Python 3.12 installed.
 
 1. Export required environment variables or prepare a `.env` file in the project folder:
    - Copy [.env-template](https://github.com/arc53/DocsGPT/blob/main/application/.env-template) and create `.env`.
