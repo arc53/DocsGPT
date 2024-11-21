@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@babel/plugin-transform-flow-strip-types": "^7.23.3",
+    "@bpmn-io/snarkdown": "^2.2.0",
     "@parcel/resolver-glob": "^2.12.0",
     "@parcel/transformer-svg-react": "^2.12.0",
     "@parcel/transformer-typescript-tsc": "^2.12.0",

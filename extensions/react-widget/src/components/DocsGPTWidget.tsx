@@ -1,11 +1,11 @@
 "use client";
 import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
-import styled, { keyframes, createGlobalStyle } from 'styled-components';
-import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
+import styled, { keyframes, ThemeProvider, } from 'styled-components';
+import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon, } from '@radix-ui/react-icons';
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
-import { ThemeProvider } from 'styled-components';
+import QuerySources from "./QuerySources";
 import Like from "../assets/like.svg"
 import Dislike from "../assets/dislike.svg"
 import MarkdownIt from 'markdown-it';
@@ -23,6 +23,7 @@ const themes = {
       bg: "#38383b"
     }
   },
+
   light: {
     bg: '#fff',
     text: '#000',
@@ -49,6 +50,7 @@ const sizesConfig = {
     maxHeight: custom.maxHeight || '70vh',
   }),
 };
+
 
 const Overlay = styled.div`
   position: fixed;
@@ -216,6 +218,7 @@ const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatin
       }
     }
 `;
+
 const CancelButton = styled.button`
     cursor: pointer;
     position: absolute;
@@ -272,6 +275,7 @@ const Conversation = styled.div`
   scrollbar-width: thin;
   scrollbar-color: #4a4a4a transparent; /* thumb color track color */
 `;
+
 const Feedback = styled.div`
   background-color: transparent;
   font-weight: normal;
@@ -280,6 +284,7 @@ const Feedback = styled.div`
   padding: 6px;
   clear: both;
 `;
+
 const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     display: block;
     font-size: 16px;
@@ -291,6 +296,7 @@ const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     visibility: visible ;
   }
 `;
+
 const Message = styled.div<{ type: MESSAGE_TYPE }>`
     background: ${props => props.type === 'QUESTION' ?
     'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
@@ -365,6 +371,7 @@ const ErrorAlert = styled.div`
   border-radius: 6px;
   justify-content: space-evenly;
 `
+
 //dot loading animation
 const dotBounce = keyframes`
   0%, 80%, 100% {
@@ -379,6 +386,7 @@ const DotAnimation = styled.div`
   display: inline-block;
   animation: ${dotBounce} 1s infinite ease-in-out;
 `;
+
 // delay classes as styled components
 const Delay = styled(DotAnimation) <{ delay: number }>`
   animation-delay: ${props => props.delay + 'ms'};
@@ -389,6 +397,7 @@ const PromptContainer = styled.form`
   display: flex;
   justify-content: space-evenly;
 `;
+
 const StyledInput = styled.input`
   width: 100%;
   border: 1px solid #686877;
@@ -420,6 +429,7 @@ const StyledButton = styled.button`
   &:disabled {
     background-image: linear-gradient(to bottom right, #2d938f, #b31877);
   }`;
+
 const HeroContainer = styled.div`
   position: relative;
   width: 90%;
@@ -429,6 +439,7 @@ const HeroContainer = styled.div`
   margin: 16px auto;
   padding: 2px;
 `;
+
 const HeroWrapper = styled.div`
   display: flex;
   flex-direction: column;
@@ -446,6 +457,7 @@ const HeroTitle = styled.h3`
   margin:0px ;
   padding: 0px;
 `;
+
 const HeroDescription = styled.p`
   color: ${props => props.theme.text};
   font-size: 12px;
@@ -478,9 +490,12 @@ const Hero = ({ title, description, theme }: { title: string, description: strin
     </HeroContainer>
   );
 };
+
+
+
 export const DocsGPTWidget = ({
   apiHost = 'https://gptcloud.arc53.com',
-  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
+  apiKey = '0d7407f7-a843-42fb-ad83-dd4a213a935d',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -492,6 +507,7 @@ export const DocsGPTWidget = ({
   buttonText = 'Ask a question',
   buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
   collectFeedback = true,
+  showSources = true,
   deafultOpen = false
 }: WidgetProps) => {
   const [prompt, setPrompt] = React.useState('');
@@ -510,6 +526,7 @@ export const DocsGPTWidget = ({
   const handleUserInterrupt = () => {
     (status === 'loading') && setEventInterrupt(true);
   }
+  
   const scrollToBottom = (element: Element | null) => {
     //recursive function to scroll to the last child of the last child ...
     // to get to the bottom most element
@@ -523,6 +540,7 @@ export const DocsGPTWidget = ({
     const lastChild = element?.children?.[element.children.length - 1]
     lastChild && scrollToBottom(lastChild)
   };
+  
   React.useEffect(() => {
     !eventInterrupt && scrollToBottom(endMessageRef.current);
   }, [queries.length, queries[queries.length - 1]?.response]);
@@ -562,14 +580,14 @@ export const DocsGPTWidget = ({
     try {
       await fetchAnswerStreaming(
         {
-          question: question,
-          apiKey: apiKey,
-          apiHost: apiHost,
+          question,
+          apiKey,
+          apiHost,
           history: queries,
-          conversationId: conversationId,
+          conversationId,
           onEvent: (event: MessageEvent) => {
             const data = JSON.parse(event.data);
-            // check if the 'end' event has been received
+            
             if (data.type === 'end') {
               setStatus('idle');
             }
@@ -582,8 +600,13 @@ export const DocsGPTWidget = ({
               setQueries(updatedQueries);
               setStatus('idle')
             }
-            else if (data.type === 'source') {
-              // handle the case where data type === 'source'
+            else if (data.type === 'source') {           
+              const updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].sources = data.source;
+              setQueries(updatedQueries);    
+              console.log("SOURCE:", data);
+                   
+
             }
             else {
               const result = data.answer ? data.answer : ''; //Fallback to an empty string if data.answer is undefined
@@ -600,11 +623,9 @@ export const DocsGPTWidget = ({
       updatedQueries[updatedQueries.length - 1].error = 'Something went wrong !'
       setQueries(updatedQueries);
       setStatus('idle')
-      //setEventInterrupt(false)
     }
-
   }
-  // submit handler
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setEventInterrupt(false);
@@ -612,6 +633,7 @@ export const DocsGPTWidget = ({
     setPrompt('')
     await stream(prompt)
   }
+  
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
@@ -674,7 +696,10 @@ export const DocsGPTWidget = ({
                     }
                     {
                       query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
-                        <Message
+                          {showSources && query.sources && (
+                            <QuerySources sources={query.sources}/>
+                          )}
+                                                <Message
                           type='ANSWER'
                           ref={(index === queries.length - 1) ? endMessageRef : null}
                         >
@@ -701,7 +726,7 @@ export const DocsGPTWidget = ({
                               onClick={() => handleFeedback("DISLIKE", index)} />
                           </Feedback>}
                       </MessageBubble>
-                        : <div>
+                        : (<div>
                           {
                             query.error ? <ErrorAlert>
 
@@ -720,10 +745,12 @@ export const DocsGPTWidget = ({
                               </MessageBubble>
                           }
                         </div>
+                      )
                     }
-                  </React.Fragment>)
+                  </React.Fragment>
+                );
               })
-                : <Hero title={heroTitle} description={heroDescription} theme={theme} />
+              : <Hero title={heroTitle} description={heroDescription} theme={theme} />
             }
           </Conversation>
           <div>
