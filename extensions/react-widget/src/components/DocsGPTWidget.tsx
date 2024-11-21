@@ -1,7 +1,7 @@
 "use client";
 import React, { useRef } from 'react'
 import DOMPurify from 'dompurify';
-import styled, { keyframes,css } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetCoreProps, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
@@ -182,11 +182,11 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     animation: ${({ isOpen, theme }) =>
     theme.dimensions.size === 'large'
       ? isOpen
-        ? css `${fadeIn} 150ms ease-in forwards`
-        : css ` ${fadeOut} 150ms ease-in forwards`
+        ? css`${fadeIn} 150ms ease-in forwards`
+        : css` ${fadeOut} 150ms ease-in forwards`
       : isOpen
-        ? css `${openContainer} 150ms ease-in forwards`
-        : css `${closeContainer} 250ms ease-in forwards`};
+        ? css`${openContainer} 150ms ease-in forwards`
+        : css`${closeContainer} 250ms ease-in forwards`};
     @media only screen and (max-width: 768px) {
       max-height: 100vh;
       max-width: 80vw;
@@ -211,7 +211,7 @@ const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatin
     background: ${props => props.bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
-    animation: ${props => props.isAnimatingButton ? css `${scaleAnimation} 200ms forwards` : 'none'};
+    animation: ${props => props.isAnimatingButton ? css`${scaleAnimation} 200ms forwards` : 'none'};
     &:hover {
       transform: scale(1.1);
       transition: transform 0.2s ease-in-out;
@@ -551,7 +551,7 @@ export const WidgetCore = ({
   React.useEffect(() => {
     if (isOpen) {
       setMounted(true); // Mount the component
-      setPrompt(prefilledQuery)
+      appendQuery(prefilledQuery)
     } else {
       // Wait for animations before unmounting
       const timeout = setTimeout(() => {
@@ -662,16 +662,24 @@ export const WidgetCore = ({
   }
   // submit handler
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
+    e.preventDefault();
+    await appendQuery(prompt)
+  }
+
+  const appendQuery = async (userQuery:string) => {
+    console.log(userQuery)
+    if(!userQuery)
+      return;
+
     setEventInterrupt(false);
-    queries.push({ prompt })
-    setPrompt('')
-    await stream(prompt)
+    queries.push({ prompt:userQuery});
+    setPrompt('');
+    await stream(userQuery);
   }
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
-  
+
   const dimensions =
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
