@@ -166,7 +166,7 @@ word-break: break-all;
 `
 const Toolkit = styled.kbd`
     position: absolute;
-    right: 12px;
+    right: 4px;
     top: 4px;
     background-color: ${(props) => props.theme.primary.bg};
     color: ${(props) => props.theme.secondary.text};
@@ -202,6 +202,7 @@ const NoResults = styled.div`
   color: #888;
 `;
 const InfoButton = styled.button`
+    cursor: pointer;
     padding: 10px 4px 10px 4px;
     display: block;
     width: 100%;
@@ -228,17 +229,24 @@ export const SearchBar = ({
     const resultsRef = React.useRef<HTMLInputElement>(null);
     const [isResultVisible, setIsResultVisible] = React.useState<boolean>(true);
     const [results, setResults] = React.useState<Result[]>([]);
-    const debounceTimeout = React.useRef<number | null>(null);
+    const debounceTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortControllerRef = React.useRef<AbortController | null>(null)
     const browserOS = getOS();
-    const getKeyboardInstruction = () => {
-        if (browserOS === 'linux' || browserOS === 'win')
-            return "Ctrl K"
-        else if (browserOS === 'mac')
-            return "⌘ K"
-        else return "Enter"
+    function isTouchDevice() {
+        return 'ontouchstart' in window;
     }
+    const isTouch = isTouchDevice();
+
     React.useEffect(() => {
+        const handleFocusSearch = (event: KeyboardEvent) => {
+            if (
+                ((browserOS === 'win' || browserOS === 'linux') && event.ctrlKey && event.key === 'k') ||
+                (browserOS === 'mac' && event.metaKey && event.key === 'k')
+            ) {
+                event.preventDefault();
+                inputRef.current?.focus();
+            }
+        }
         const handleClickOutside = (event: MouseEvent) => {
             if (
                 resultsRef.current &&
@@ -248,6 +256,7 @@ export const SearchBar = ({
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleFocusSearch);
         return () => {
             resultsRef.current && (resultsRef.current.style.display = 'block')
             document.removeEventListener('mousedown', handleClickOutside);
@@ -283,15 +292,15 @@ export const SearchBar = ({
     }, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        if (
-            ((browserOS === 'win' || browserOS === 'linux') && event.ctrlKey && event.key === 'k') ||
-            (browserOS === 'mac' && event.metaKey && event.key === 'k') ||
-            ((browserOS === 'android' || browserOS === 'ios' || browserOS === 'other') && event.key === 'Enter')
-        ) {
+        if (event.key === 'Enter') {
             event.preventDefault();
-            setIsWidgetOpen(true);
+            openWidget();
         }
     };
+    const openWidget = () => {
+        setIsWidgetOpen(true);
+        setIsResultVisible(false)
+    }
     const handleClose = () => {
         setIsWidgetOpen(false);
     }
@@ -301,7 +310,6 @@ export const SearchBar = ({
             <Main>
                 <Container>
                     <TextField
-                        type='search'
                         spellCheck={false}
                         inputWidth={width}
                         onFocus={() => setIsResultVisible(true)}
@@ -315,7 +323,15 @@ export const SearchBar = ({
                     {
                         input.length > 0 && isResultVisible && (
                             <SearchResults ref={resultsRef}>
-                                <InfoButton>{`Press ${getKeyboardInstruction()} to Ask the AI`}</InfoButton>
+                                <InfoButton onClick={openWidget}>
+                                    {
+                                        isTouch ? 
+                                        "Ask the AI":
+                                        <>
+                                        Press <span style={{fontSize:"16px"}}>&crarr;</span> Enter to ask the AI
+                                        </>
+                                    }
+                                </InfoButton>
                                 {!loading ?
                                     (results.length > 0 ?
                                         results.map((res) => {
@@ -345,8 +361,10 @@ export const SearchBar = ({
                             </SearchResults>
                         )
                     }
-                    <Toolkit title={`Press ${getKeyboardInstruction()} to Ask the AI`}>
-                        {getKeyboardInstruction()}
+                    <Toolkit onClick={() => {
+                        setIsWidgetOpen(true)
+                    }} title={`${isTouch ? "Tap" : "Press Enter"} to Ask the AI`}>
+                        {isTouch ? "Tap" : "Enter"}
                     </Toolkit>
                 </Container>
                 <WidgetCore
