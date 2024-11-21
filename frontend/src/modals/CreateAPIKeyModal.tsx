@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import { CreateAPIKeyModalProps, Doc } from '../models/misc';
 import { selectSourceDocs } from '../preferences/preferenceSlice';
+import WrapperModal from './WrapperModal';
 
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
@@ -73,91 +73,82 @@ export default function CreateAPIKeyModal({
     handleFetchPrompts();
   }, []);
   return (
-    <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
-      <div className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]">
-        <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
-          <img className="filter dark:invert" src={Exit} />
-        </button>
-        <div className="mb-6">
-          <span className="text-xl text-jet dark:text-bright-gray">
-            {t('modals.createAPIKey.label')}
-          </span>
-        </div>
-        <div className="relative mt-5 mb-4">
-          <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-            {t('modals.createAPIKey.apiKeyName')}
-          </span>
-          <Input
-            type="text"
-            className="rounded-md"
-            value={APIKeyName}
-            onChange={(e) => setAPIKeyName(e.target.value)}
-          ></Input>
-        </div>
-        <div className="my-4">
-          <Dropdown
-            placeholder={t('modals.createAPIKey.sourceDoc')}
-            selectedValue={sourcePath ? sourcePath.name : null}
-            onSelect={(selection: {
-              name: string;
-              id: string;
-              type: string;
-            }) => {
-              setSourcePath(selection);
-            }}
-            options={extractDocPaths()}
-            size="w-full"
-            rounded="xl"
-            border="border"
-          />
-        </div>
-        <div className="my-4">
-          <Dropdown
-            options={activePrompts}
-            selectedValue={prompt ? prompt.name : null}
-            placeholder={t('modals.createAPIKey.prompt')}
-            onSelect={(value: { name: string; id: string; type: string }) =>
-              setPrompt(value)
-            }
-            size="w-full"
-            border="border"
-          />
-        </div>
-        <div className="my-4">
-          <p className="mb-2 ml-2 font-semibold text-jet dark:text-bright-gray">
-            {t('modals.createAPIKey.chunks')}
-          </p>
-          <Dropdown
-            options={chunkOptions}
-            selectedValue={chunk}
-            onSelect={(value: string) => setChunk(value)}
-            size="w-full"
-            border="border"
-          />
-        </div>
-        <button
-          disabled={!sourcePath || APIKeyName.length === 0 || !prompt}
-          onClick={() => {
-            if (sourcePath && prompt) {
-              const payload: any = {
-                name: APIKeyName,
-                prompt_id: prompt.id,
-                chunks: chunk,
-              };
-              if (sourcePath.type === 'default') {
-                payload.retriever = sourcePath.id;
-              }
-              if (sourcePath.type === 'local') {
-                payload.source = sourcePath.id;
-              }
-              createAPIKey(payload);
-            }
-          }}
-          className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
-        >
-          {t('modals.createAPIKey.create')}
-        </button>
+    <WrapperModal close={close}>
+      <div className="mb-6">
+        <span className="text-xl text-jet dark:text-bright-gray">
+          {t('modals.createAPIKey.label')}
+        </span>
       </div>
-    </div>
+      <div className="relative mt-5 mb-4">
+        <span className="absolute left-2 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+          {t('modals.createAPIKey.apiKeyName')}
+        </span>
+        <Input
+          type="text"
+          className="rounded-md"
+          value={APIKeyName}
+          onChange={(e) => setAPIKeyName(e.target.value)}
+        ></Input>
+      </div>
+      <div className="my-4">
+        <Dropdown
+          placeholder={t('modals.createAPIKey.sourceDoc')}
+          selectedValue={sourcePath ? sourcePath.name : null}
+          onSelect={(selection: { name: string; id: string; type: string }) => {
+            setSourcePath(selection);
+          }}
+          options={extractDocPaths()}
+          size="w-full"
+          rounded="xl"
+          border="border"
+        />
+      </div>
+      <div className="my-4">
+        <Dropdown
+          options={activePrompts}
+          selectedValue={prompt ? prompt.name : null}
+          placeholder={t('modals.createAPIKey.prompt')}
+          onSelect={(value: { name: string; id: string; type: string }) =>
+            setPrompt(value)
+          }
+          size="w-full"
+          border="border"
+        />
+      </div>
+      <div className="my-4">
+        <p className="mb-2 ml-2 font-semibold text-jet dark:text-bright-gray">
+          {t('modals.createAPIKey.chunks')}
+        </p>
+        <Dropdown
+          options={chunkOptions}
+          selectedValue={chunk}
+          onSelect={(value: string) => setChunk(value)}
+          size="w-full"
+          border="border"
+        />
+      </div>
+      <button
+        disabled={!sourcePath || APIKeyName.length === 0 || !prompt}
+        onClick={() => {
+          if (sourcePath && prompt) {
+            const payload: any = {
+              name: APIKeyName,
+              prompt_id: prompt.id,
+              chunks: chunk,
+            };
+            if (sourcePath.type === 'default') {
+              payload.retriever = sourcePath.id;
+            }
+            if (sourcePath.type === 'local') {
+              payload.source = sourcePath.id;
+            }
+            createAPIKey(payload);
+          }
+        }}
+        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
+      >
+        {t('modals.createAPIKey.create')}
+      </button>
+    </WrapperModal>
   );
 }
