@@ -33,7 +33,6 @@ import {
   selectConversations,
   selectModalStateDeleteConv,
   selectSelectedDocs,
-  selectSelectedDocsStatus,
   selectSourceDocs,
   selectPaginatedDocuments,
   setConversations,
@@ -85,10 +84,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
-
-  const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
-  const [selectedDocsModalState, setSelectedDocsModalState] =
-    useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -493,11 +488,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         setModalState={setModalStateDeleteConv}
         handleDeleteAllConv={handleDeleteAllConversations}
       />
-      <Upload
-        modalState={uploadModalState}
-        setModalState={setUploadModalState}
-        isOnboarding={false}
-      ></Upload>
+      {uploadModalState === 'ACTIVE' && (
+        <Upload
+          setModalState={setUploadModalState}
+          isOnboarding={false}
+          close={() => setUploadModalState('INACTIVE')}
+        ></Upload>
+      )}
     </>
   );
 }
