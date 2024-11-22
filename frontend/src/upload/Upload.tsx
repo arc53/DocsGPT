@@ -332,6 +332,9 @@ function Upload({
       ],
       'application/vnd.openxmlformats-officedocument.presentationml.presentation':
         ['.pptx'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpeg'],
+      'image/jpg': ['.jpg'],
     },
   });
 

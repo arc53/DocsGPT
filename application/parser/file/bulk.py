@@ -13,6 +13,7 @@ from application.parser.file.rst_parser import RstParser
 from application.parser.file.tabular_parser import PandasCSVParser,ExcelParser
 from application.parser.file.json_parser import JSONParser
 from application.parser.file.pptx_parser import PPTXParser
+from application.parser.file.image_parser import ImageParser
 from application.parser.schema.base import Document
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
@@ -27,6 +28,9 @@ DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".mdx": MarkdownParser(),
     ".json":JSONParser(),
     ".pptx":PPTXParser(),
+    ".png": ImageParser(),
+    ".jpg": ImageParser(),
+    ".jpeg": ImageParser(),
 }
 
 
