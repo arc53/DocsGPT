@@ -1,6 +1,6 @@
 {
-  "name": "docsgpt",
-  "version": "0.4.7",
+  "name": "docsgpt-react",
+  "version": "0.4.8",
   "private": false,
   "description": "DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖.",
   "source": "./src/index.html",
@@ -30,9 +30,9 @@
     "styled-components": "^5"
   },
   "scripts": {
-    "build": "parcel build src/main.tsx --public-url ./",
+    "build": "parcel build src/browser.tsx --public-url ./",
     "build:react": "parcel build src/index.ts",
-   "serve": "parcel serve -p 3000",
+    "serve": "parcel serve -p 3000",
     "dev": "parcel -p 3000",
     "test": "jest",
     "lint": "eslint",
