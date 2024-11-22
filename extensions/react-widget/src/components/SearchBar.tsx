@@ -69,7 +69,6 @@ const SearchResults = styled.div`
     position: absolute;
     display: block;
     background-color: ${props => props.theme.primary.bg};
-    opacity: 90%;
     border: 1px solid rgba(0, 0, 0, .1);
     border-radius: 12px;
     padding: 8px;
@@ -287,7 +286,7 @@ export const SearchBar = ({
         debounceTimeout.current = setTimeout(() => {
             getSearchResults(input, apiKey, apiHost, abortController.signal)
                 .then((data) => setResults(data))
-                .catch((err) => console.log(err))
+                .catch((err) => !abortController.signal.aborted && console.log(err))
                 .finally(() => setLoading(false));
         }, 500);
 
@@ -340,10 +339,11 @@ export const SearchBar = ({
                                 </InfoButton>
                                 {!loading ?
                                     (results.length > 0 ?
-                                        results.map((res) => {
+                                        results.map((res, key) => {
                                             const containsSource = res.source !== 'local';
                                             return (
                                                 <ResultWrapper
+                                                    key={key}
                                                     onClick={() => {
                                                         if (!containsSource) return;
                                                         window.open(res.source, '_blank', 'noopener, noreferrer')
