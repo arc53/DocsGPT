@@ -78,7 +78,7 @@ const SearchResults = styled.div`
     z-index: 100;
     height: 25vh;
     overflow-y: auto;
-    top: 45px;
+    top: 32px;
     color: ${props => props.theme.primary.text};
     scrollbar-color: lab(48.438 0 0 / 0.4) rgba(0, 0, 0, 0);
     scrollbar-gutter: stable;
@@ -226,7 +226,7 @@ export const SearchBar = ({
     const [loading, setLoading] = React.useState<boolean>(false);
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
-    const resultsRef = React.useRef<HTMLInputElement>(null);
+    const containerRef = React.useRef<HTMLInputElement>(null);
     const [isResultVisible, setIsResultVisible] = React.useState<boolean>(true);
     const [results, setResults] = React.useState<Result[]>([]);
     const debounceTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -249,8 +249,8 @@ export const SearchBar = ({
         }
         const handleClickOutside = (event: MouseEvent) => {
             if (
-                resultsRef.current &&
-                !resultsRef.current.contains(event.target as Node)
+                containerRef.current &&
+                !containerRef.current.contains(event.target as Node)
             ) {
                 setIsResultVisible(false);
             }
@@ -258,7 +258,7 @@ export const SearchBar = ({
         document.addEventListener('mousedown', handleClickOutside);
         document.addEventListener('keydown', handleFocusSearch);
         return () => {
-            resultsRef.current && (resultsRef.current.style.display = 'block')
+            setIsResultVisible(true);
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [])
@@ -308,7 +308,7 @@ export const SearchBar = ({
     return (
         <ThemeProvider theme={{ ...themes[theme] }}>
             <Main>
-                <Container>
+                <Container ref={containerRef}>
                     <TextField
                         spellCheck={false}
                         inputWidth={width}
@@ -322,14 +322,14 @@ export const SearchBar = ({
                     />
                     {
                         input.length > 0 && isResultVisible && (
-                            <SearchResults ref={resultsRef}>
+                            <SearchResults>
                                 <InfoButton onClick={openWidget}>
                                     {
-                                        isTouch ? 
-                                        "Ask the AI":
-                                        <>
-                                        Press <span style={{fontSize:"16px"}}>&crarr;</span> Enter to ask the AI
-                                        </>
+                                        isTouch ?
+                                            "Ask the AI" :
+                                            <>
+                                                Press <span style={{ fontSize: "16px" }}>&crarr;</span> Enter to ask the AI
+                                            </>
                                     }
                                 </InfoButton>
                                 {!loading ?
