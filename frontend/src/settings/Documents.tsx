@@ -193,11 +193,13 @@ const Documents: React.FC<DocumentsProps> = ({
                             />
                           </div>
                         </th>
+                        {/*}
                         <th className="px-5 py-2 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
                           <div className="flex justify-center items-center">
                             {t('settings.documents.type')}
                           </div>
                         </th>
+                        */}
                         <th
                           scope="col"
                           className="px-6 py-2 text-start text-xs font-medium text-gray-700 dark:text-gray-50 uppercase"
@@ -226,11 +228,13 @@ const Documents: React.FC<DocumentsProps> = ({
                                 ? formatTokens(+document.tokens)
                                 : ''}
                             </td>
+                            {/*}
                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
                               {document.type === 'remote'
                                 ? 'Pre-loaded'
                                 : 'Private'}
                             </td>
+                            */}
                             <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium flex">
                               <div className="min-w-[150px] flex flex-row items-center ml-auto gap-10">
                                 {document.type !== 'remote' && (
