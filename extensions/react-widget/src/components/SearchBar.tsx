@@ -236,7 +236,13 @@ export const SearchBar = ({
         return 'ontouchstart' in window;
     }
     const isTouch = isTouchDevice();
-
+    const getKeyboardInstruction = () => {
+        if (isResultVisible) return "Enter"
+        if (browserOS === 'mac')
+            return "⌘ K"
+        else
+            return "Ctrl K"
+    }
     React.useEffect(() => {
         const handleFocusSearch = (event: KeyboardEvent) => {
             if (
@@ -361,11 +367,22 @@ export const SearchBar = ({
                             </SearchResults>
                         )
                     }
-                    <Toolkit onClick={() => {
-                        setIsWidgetOpen(true)
-                    }} title={`${isTouch ? "Tap" : "Press Enter"} to Ask the AI`}>
-                        {isTouch ? "Tap" : "Enter"}
-                    </Toolkit>
+                    {
+                        isTouch ?
+
+                            <Toolkit
+                                onClick={() => {
+                                    setIsWidgetOpen(true)
+                                }}
+                                title={"Tap to Ask the AI"}>
+                                Tap
+                            </Toolkit>
+                            :
+                            <Toolkit
+                                title={getKeyboardInstruction() === "Enter" ? "Press Enter to Ask AI" : ""}>
+                                {getKeyboardInstruction()}
+                            </Toolkit>
+                    }
                 </Container>
                 <WidgetCore
                     theme={theme}
