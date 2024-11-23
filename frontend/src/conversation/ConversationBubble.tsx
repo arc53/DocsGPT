@@ -104,7 +104,7 @@ const ConversationBubble = forwardRef<
             <input
               onChange={(e) => setEditInputBox(e.target.value)}
               value={editInputBox}
-              className="ml-2 mr-2 rounded-[28px] py-[14px] px-[19px] border-[1.5px] border-black"
+              className="w-[85%] ml-2 mr-2 rounded-[28px] py-[12px] dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
             />
           )}
           <div
@@ -122,7 +122,7 @@ const ConversationBubble = forwardRef<
           </div>
         </div>
         {isEditClicked && (
-          <div className={`flex gap-3 self-end mt-3 sm:mt-0 `}>
+          <div className={`flex gap-3 self-end mt-3  `}>
             <button
               className="ml-2 mr-2 flex items-center rounded-[28px]  font-semibold hover:font-bold py-[14px] px-[19px] no-underline hover:underline  text-purple-500 max-w-full whitespace-pre-wrap leading-normal"
               onClick={() => setIsEditClicked(false)}
@@ -130,7 +130,7 @@ const ConversationBubble = forwardRef<
               Cancel
             </button>
             <button
-              className="ml-2 mr-2 flex items-center rounded-[28px] bg-purple-300 hover:bg-purple-100 font-bold py-[8px] px-[19px] text-purple-500 max-w-full whitespace-pre-wrap leading-normal"
+              className="ml-2 mr-2 flex items-center rounded-full bg-purple-300 hover:bg-purple-100 font-bold px-[19px] py-[2px] text-purple-500 max-w-full whitespace-pre-wrap leading-none"
               onClick={() => handleEditClick()}
             >
               Update
