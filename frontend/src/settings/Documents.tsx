@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
@@ -59,34 +59,50 @@ const Documents: React.FC<DocumentsProps> = ({
     { label: 'Monthly', value: 'monthly' },
   ];
 
-  const refreshDocs = (
-    field: 'date' | 'tokens' | undefined,
-    pageNumber?: number,
-    rows?: number,
-  ) => {
-    const page = pageNumber ?? currentPage;
-    const rowsPerPg = rows ?? rowsPerPage;
+  const refreshDocs = useCallback(
+    (
+      field: 'date' | 'tokens' | undefined,
+      pageNumber?: number,
+      rows?: number,
+    ) => {
+      const page = pageNumber ?? currentPage;
+      const rowsPerPg = rows ?? rowsPerPage;
 
-    if (field !== undefined) {
-      if (field === sortField) {
-        // Toggle sort order
-        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-      } else {
-        // Change sort field and reset order to 'desc'
-        setSortField(field);
-        setSortOrder('desc');
+      // If field is undefined, (Pagination or Search) use the current sortField
+      const newSortField = field ?? sortField;
+
+      // If field is undefined, (Pagination or Search) use the current sortOrder
+      const newSortOrder =
+        field === sortField
+          ? sortOrder === 'asc'
+            ? 'desc'
+            : 'asc'
+          : sortOrder;
+
+      // If field is defined, update the sortField and sortOrder
+      if (field) {
+        setSortField(newSortField);
+        setSortOrder(newSortOrder);
       }
-    }
-    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg, searchTerm)
-      .then((data) => {
-        dispatch(setPaginatedDocuments(data ? data.docs : []));
-        setTotalPages(data ? data.totalPages : 0);
-      })
-      .catch((error) => console.error(error))
-      .finally(() => {
-        setLoading(false);
-      });
-  };
+
+      getDocsWithPagination(
+        newSortField,
+        newSortOrder,
+        page,
+        rowsPerPg,
+        searchTerm,
+      )
+        .then((data) => {
+          dispatch(setPaginatedDocuments(data ? data.docs : []));
+          setTotalPages(data ? data.totalPages : 0);
+        })
+        .catch((error) => console.error(error))
+        .finally(() => {
+          setLoading(false);
+        });
+    },
+    [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
+  );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
@@ -118,13 +134,15 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   useEffect(() => {
+    console.log('modalState', modalState);
     if (modalState === 'INACTIVE') {
       refreshDocs(sortField, currentPage, rowsPerPage);
     }
-  }, [modalState, sortField, currentPage, rowsPerPage]);
+  }, [modalState]);
 
   useEffect(() => {
-    refreshDocs(sortField, 1, rowsPerPage);
+    // undefine to prevent reset the sort order
+    refreshDocs(undefined, 1, rowsPerPage);
   }, [searchTerm]);
 
   return (
@@ -151,6 +169,7 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <button
               className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+              title="Add New Document"
               onClick={() => {
                 setIsOnboarding(false); // Set onboarding flag if needed
                 setModalState('ACTIVE'); // Open the upload modal
@@ -165,7 +184,7 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="flex flex-col">
               <div className="flex-grow">
                 <div className="dark:border-silver/40 border-silver rounded-xl border overflow-auto">
-                  <table className="min-w-full divide-y divide-gray-200 ">
+                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
                     <thead>
                       <tr>
                         <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
@@ -269,26 +288,26 @@ const Documents: React.FC<DocumentsProps> = ({
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-4">
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    rowsPerPage={rowsPerPage}
-                    onPageChange={(page) => {
-                      setCurrentPage(page);
-                      refreshDocs(sortField, page, rowsPerPage);
-                    }}
-                    onRowsPerPageChange={(rows) => {
-                      setRowsPerPage(rows);
-                      setCurrentPage(1);
-                      refreshDocs(sortField, 1, rows);
-                    }}
-                  />
-                </div>
               </div>
             </div>
           )}
         </div>
+        {/* outside scrollable area */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          rowsPerPage={rowsPerPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            refreshDocs(undefined, page, rowsPerPage);
+          }}
+          onRowsPerPageChange={(rows) => {
+            setRowsPerPage(rows);
+            setCurrentPage(1);
+            refreshDocs(undefined, 1, rows);
+          }}
+        />
+
         {/* Conditionally render the Upload modal based on modalState */}
         {modalState === 'ACTIVE' && (
           <div className="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center bg-transparent">
