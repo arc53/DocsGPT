@@ -230,7 +230,7 @@ const Documents: React.FC<DocumentsProps> = ({
                         <tr>
                           <td
                             colSpan={5}
-                            className="!p-4 text-gray-800 dark:text-neutral-200"
+                            className="!p-4 text-gray-800 dark:text-neutral-200 text-center"
                           >
                             {t('settings.documents.noData')}
                           </td>
