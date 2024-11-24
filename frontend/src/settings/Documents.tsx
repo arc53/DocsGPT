@@ -186,7 +186,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
                   <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
                     <thead>
-                      <tr>
+                      <tr className="text-nowrap">
                         <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
                           {t('settings.documents.name')}
                         </th>
@@ -201,7 +201,7 @@ const Documents: React.FC<DocumentsProps> = ({
                             />
                           </div>
                         </th>
-                        <th className="px-5 py-2 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                        <th className="px-5 py-2 text-center text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
                           <div className="flex justify-center items-center">
                             {t('settings.documents.tokenUsage')}
                             <img
