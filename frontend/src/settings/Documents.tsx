@@ -183,7 +183,7 @@ const Documents: React.FC<DocumentsProps> = ({
           ) : (
             <div className="flex flex-col">
               <div className="flex-grow">
-                <div className="dark:border-silver/40 border-silver rounded-xl border overflow-auto">
+                <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
                   <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
                     <thead>
                       <tr>
@@ -228,7 +228,10 @@ const Documents: React.FC<DocumentsProps> = ({
                     <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
                       {!currentDocuments?.length && (
                         <tr>
-                          <td colSpan={5} className="!p-4">
+                          <td
+                            colSpan={5}
+                            className="!p-4 text-gray-800 dark:text-neutral-200"
+                          >
                             {t('settings.documents.noData')}
                           </td>
                         </tr>
