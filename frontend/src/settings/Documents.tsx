@@ -134,7 +134,7 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   useEffect(() => {
-    console.log('modalState', modalState);
+    // console.log('modalState', modalState);
     if (modalState === 'INACTIVE') {
       refreshDocs(sortField, currentPage, rowsPerPage);
     }
