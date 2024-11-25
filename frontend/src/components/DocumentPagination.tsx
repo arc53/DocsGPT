@@ -62,17 +62,17 @@ const Pagination: React.FC<PaginationProps> = ({
             {rowsPerPage}
           </button>
           <div
-            className={`absolute z-50 right-0 mt-1 w-28 transform  bg-white shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${
+            className={`absolute z-50 right-0 mt-1 w-28 transform  bg-white dark:bg-dark-charcoal shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${
               isDropdownOpen
-                ? 'scale-100 opacity-100 visible'
-                : 'scale-95 opacity-0 invisible'
+                ? 'scale-100 opacity-100 block'
+                : 'scale-95 opacity-0 hidden'
             }`}
           >
             {rowsPerPageOptions.map((option) => (
               <div
                 key={option}
                 onClick={() => handleSelectRowsPerPage(option)}
-                className={`cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 dark:hover:bg-neutral-700 ${
+                className={`cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 dark:hover:bg-neutral-700  ${
                   rowsPerPage === option
                     ? 'bg-gray-100 dark:bg-neutral-700 dark:text-light-gray'
                     : 'bg-white dark:bg-dark-charcoal dark:text-light-gray'
