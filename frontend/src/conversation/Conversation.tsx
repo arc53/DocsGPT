@@ -15,12 +15,14 @@ import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import conversationService from '../api/services/conversationService';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
   fetchAnswer,
+  resendQuery,
   selectQueries,
   selectStatus,
   setConversation,
@@ -85,15 +87,25 @@ export default function Conversation() {
   const handleQuestion = ({
     question,
     isRetry = false,
+    updated = null,
+    indx = undefined,
   }: {
     question: string;
     isRetry?: boolean;
+    updated?: boolean | null;
+    indx?: number;
   }) => {
-    question = question.trim();
-    if (question === '') return;
-    setEventInterrupt(false);
-    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
-    fetchStream.current = dispatch(fetchAnswer({ question }));
+    if (updated === true) {
+      !isRetry &&
+        dispatch(resendQuery({ index: indx as number, prompt: question })); //dispatch only new queries
+      fetchStream.current = dispatch(fetchAnswer({ question, indx }));
+    } else {
+      question = question.trim();
+      if (question === '') return;
+      setEventInterrupt(false);
+      !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
+      fetchStream.current = dispatch(fetchAnswer({ question }));
+    }
   };
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
@@ -104,8 +116,14 @@ export default function Conversation() {
     );
   };
 
-  const handleQuestionSubmission = () => {
-    if (inputRef.current?.value && status !== 'loading') {
+  const handleQuestionSubmission = (
+    updatedQuestion?: string,
+    updated?: boolean,
+    indx?: number,
+  ) => {
+    if (updated === true) {
+      handleQuestion({ question: updatedQuestion as string, updated, indx });
+    } else if (inputRef.current?.value && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
@@ -290,6 +308,8 @@ export default function Conversation() {
                     key={`${index}QUESTION`}
                     message={query.prompt}
                     type="QUESTION"
+                    handleUpdatedQuestionSubmission={handleQuestionSubmission}
+                    questionNumber={index}
                     sources={query.sources}
                   ></ConversationBubble>
 
@@ -328,7 +348,7 @@ export default function Conversation() {
             <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
               <img
                 className="ml-[4px] h-6 w-6 text-white "
-                onClick={handleQuestionSubmission}
+                onClick={() => handleQuestionSubmission()}
                 src={isDarkTheme ? SendDark : Send}
               ></img>
             </div>
