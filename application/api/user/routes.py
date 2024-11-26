@@ -198,10 +198,10 @@ class SubmitFeedback(Resource):
 
         try:
             conversations_collection.update_one(
-            {"_id": ObjectId(data["conversation_id"]), f"queries.{data["question_index"]}": {"$exists": True}},
+            {"_id": ObjectId(data["conversation_id"]), f"queries.{data['question_index']}": {"$exists": True}},
             {
                 "$set": {
-                    f"queries.{data["question_index"]}.feedback": data["feedback"]
+                    f"queries.{data['question_index']}.feedback": data["feedback"]
                 }
             }
         )
