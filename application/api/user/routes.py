@@ -196,10 +196,6 @@ class SubmitFeedback(Resource):
         if missing_fields:
             return missing_fields
 
-
-        if "api_key" in data:
-            new_doc["api_key"] = data["api_key"]
-
         try:
             conversations_collection.update_one(
             {"_id": ObjectId(data["conversation_id"]), f"queries.{data["question_index"]}": {"$exists": True}},
