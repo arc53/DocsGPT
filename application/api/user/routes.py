@@ -176,10 +176,12 @@ class SubmitFeedback(Resource):
             "FeedbackModel",
             {
                 "question": fields.String(
-                    required=True, description="The user question"
+                    required=False, description="The user question"
                 ),
-                "answer": fields.String(required=True, description="The AI answer"),
+                "answer": fields.String(required=False, description="The AI answer"),
                 "feedback": fields.String(required=True, description="User feedback"),
+                "question_index":fields.Integer(required=True, description="The question number in that particular conversation"),
+                "conversation_id":fields.String(required=True, description="id of the particular conversation"),
                 "api_key": fields.String(description="Optional API key"),
             },
         )
@@ -189,23 +191,25 @@ class SubmitFeedback(Resource):
     )
     def post(self):
         data = request.get_json()
-        required_fields = ["question", "answer", "feedback"]
+        required_fields = [ "feedback","conversation_id","question_index"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
-        new_doc = {
-            "question": data["question"],
-            "answer": data["answer"],
-            "feedback": data["feedback"],
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        }
 
         if "api_key" in data:
             new_doc["api_key"] = data["api_key"]
 
         try:
-            feedback_collection.insert_one(new_doc)
+            conversations_collection.update_one(
+            {"_id": ObjectId(data["conversation_id"]), f"queries.{data["question_index"]}": {"$exists": True}},
+            {
+                "$set": {
+                    f"queries.{data["question_index"]}.feedback": data["feedback"]
+                }
+            }
+        )
+           
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 

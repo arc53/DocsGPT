@@ -429,6 +429,11 @@ const ConversationBubble = forwardRef<
                   feedback === 'LIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
+                }
+                ${
+                  feedback === 'DISLIKE' && type !== 'ERROR'
+                    ? '  hidden'
+                    : ''
                 }`}
               >
                 <div>
@@ -445,11 +450,14 @@ const ConversationBubble = forwardRef<
                     isLikeClicked || feedback === 'LIKE'
                       ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
                       : 'fill-none  stroke-gray-4000'
-                  }`}
+                  } `}
                       onClick={() => {
+                        if(feedback===undefined){
+                          console.log("liked")
                         handleFeedback?.('LIKE');
                         setIsLikeClicked(true);
                         setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsLikeHovered(true)}
                       onMouseLeave={() => setIsLikeHovered(false)}
@@ -462,9 +470,13 @@ const ConversationBubble = forwardRef<
                   !isDislikeClicked ? 'lg:invisible' : ''
                 } ${
                   feedback === 'DISLIKE' || type !== 'ERROR'
-                    ? 'group-hover:lg:visible'
+                    ? '  group-hover:lg:visible'
                     : ''
-                }`}
+                } ${
+                  feedback === 'LIKE' && type !== 'ERROR'
+                    ? '  hidden'
+                    : ''
+                } `}
               >
                 <div>
                   <div
@@ -481,9 +493,11 @@ const ConversationBubble = forwardRef<
                           : 'fill-none  stroke-gray-4000'
                       }`}
                       onClick={() => {
+                        if(feedback===undefined){
                         handleFeedback?.('DISLIKE');
                         setIsDislikeClicked(true);
                         setIsLikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsDislikeHovered(true)}
                       onMouseLeave={() => setIsDislikeHovered(false)}
