@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
@@ -40,25 +40,18 @@ const Documents: React.FC<DocumentsProps> = ({
   const { t } = useTranslation();
   const dispatch = useDispatch();
   // State for search input
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
   // State for modal: active/inactive
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
-  const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
-  const [loading, setLoading] = useState(false);
+  const [isOnboarding, setIsOnboarding] = useState<boolean>(false); // State for onboarding flag
+  const [loading, setLoading] = useState<boolean>(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
-  // const [totalDocuments, setTotalDocuments] = useState<number>(0);
-  // Filter documents based on the search term
-  const filteredDocuments = paginatedDocuments?.filter((document) =>
-    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-  // State for documents
-  const currentDocuments = filteredDocuments ?? [];
-  console.log('currentDocuments', currentDocuments);
+  const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
     { label: 'Never', value: 'never' },
     { label: 'Daily', value: 'daily' },
@@ -66,36 +59,50 @@ const Documents: React.FC<DocumentsProps> = ({
     { label: 'Monthly', value: 'monthly' },
   ];
 
-  const refreshDocs = (
-    field: 'date' | 'tokens' | undefined,
-    pageNumber?: number,
-    rows?: number,
-  ) => {
-    const page = pageNumber ?? currentPage;
-    const rowsPerPg = rows ?? rowsPerPage;
+  const refreshDocs = useCallback(
+    (
+      field: 'date' | 'tokens' | undefined,
+      pageNumber?: number,
+      rows?: number,
+    ) => {
+      const page = pageNumber ?? currentPage;
+      const rowsPerPg = rows ?? rowsPerPage;
 
-    if (field !== undefined) {
-      if (field === sortField) {
-        // Toggle sort order
-        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-      } else {
-        // Change sort field and reset order to 'desc'
-        setSortField(field);
-        setSortOrder('desc');
+      // If field is undefined, (Pagination or Search) use the current sortField
+      const newSortField = field ?? sortField;
+
+      // If field is undefined, (Pagination or Search) use the current sortOrder
+      const newSortOrder =
+        field === sortField
+          ? sortOrder === 'asc'
+            ? 'desc'
+            : 'asc'
+          : sortOrder;
+
+      // If field is defined, update the sortField and sortOrder
+      if (field) {
+        setSortField(newSortField);
+        setSortOrder(newSortOrder);
       }
-    }
-    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
-      .then((data) => {
-        //dispatch(setSourceDocs(data ? data.docs : []));
-        dispatch(setPaginatedDocuments(data ? data.docs : []));
-        setTotalPages(data ? data.totalPages : 0);
-        //setTotalDocuments(data ? data.totalDocuments : 0);
-      })
-      .catch((error) => console.error(error))
-      .finally(() => {
-        setLoading(false);
-      });
-  };
+
+      getDocsWithPagination(
+        newSortField,
+        newSortOrder,
+        page,
+        rowsPerPg,
+        searchTerm,
+      )
+        .then((data) => {
+          dispatch(setPaginatedDocuments(data ? data.docs : []));
+          setTotalPages(data ? data.totalPages : 0);
+        })
+        .catch((error) => console.error(error))
+        .finally(() => {
+          setLoading(false);
+        });
+    },
+    [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
+  );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
@@ -127,10 +134,16 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   useEffect(() => {
+    // console.log('modalState', modalState);
     if (modalState === 'INACTIVE') {
       refreshDocs(sortField, currentPage, rowsPerPage);
     }
-  }, [modalState, sortField, currentPage, rowsPerPage]);
+  }, [modalState]);
+
+  useEffect(() => {
+    // undefine to prevent reset the sort order
+    refreshDocs(undefined, 1, rowsPerPage);
+  }, [searchTerm]);
 
   return (
     <div className="mt-8">
@@ -145,11 +158,18 @@ const Documents: React.FC<DocumentsProps> = ({
                 type="text"
                 id="document-search-input"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} // Handle search input change
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                  // refreshDocs(sortField, 1, rowsPerPage);
+                  // do not call refreshDocs here the state is async
+                  // so it will not have the updated value
+                }} // Handle search input change
               />
             </div>
             <button
               className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+              title="Add New Document"
               onClick={() => {
                 setIsOnboarding(false); // Set onboarding flag if needed
                 setModalState('ACTIVE'); // Open the upload modal
@@ -161,94 +181,136 @@ const Documents: React.FC<DocumentsProps> = ({
           {loading ? (
             <SkeletonLoader count={1} />
           ) : (
-            <table className="table-default">
-              <thead>
-                <tr>
-                  <th>{t('settings.documents.name')}</th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.date')}
-                      <img
-                        className="cursor-pointer"
-                        onClick={() => refreshDocs('date')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.tokenUsage')}
-                      <img
-                        className="cursor-pointer"
-                        onClick={() => refreshDocs('tokens')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.type')}
-                    </div>
-                  </th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {!currentDocuments?.length && (
-                  <tr>
-                    <td colSpan={5} className="!p-4">
-                      {t('settings.documents.noData')}
-                    </td>
-                  </tr>
-                )}
-                {Array.isArray(currentDocuments) &&
-                  currentDocuments.map((document, index) => (
-                    <tr key={index} className="text-nowrap font-normal">
-                      <td>{document.name}</td>
-                      <td>{document.date}</td>
-                      <td>
-                        {document.tokens ? formatTokens(+document.tokens) : ''}
-                      </td>
-                      <td>
-                        {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
-                      </td>
-                      <td>
-                        <div className="min-w-[70px] flex flex-row items-end justify-end ml-auto">
-                          {document.type !== 'remote' && (
+            <div className="flex flex-col">
+              <div className="flex-grow">
+                <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
+                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
+                    <thead>
+                      <tr className="text-nowrap">
+                        <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          {t('settings.documents.name')}
+                        </th>
+                        <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          <div className="flex justify-center items-center">
+                            {t('settings.documents.date')}
                             <img
-                              src={Trash}
-                              alt="Delete"
-                              className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
-                              id={`img-${index}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteDocument(index, document);
-                              }}
+                              className="cursor-pointer"
+                              onClick={() => refreshDocs('date')}
+                              src={caretSort}
+                              alt="sort"
                             />
-                          )}
-                          {document.syncFrequency && (
-                            <div className="ml-2">
-                              <DropdownMenu
-                                name="Sync"
-                                options={syncOptions}
-                                onSelect={(value: string) => {
-                                  handleManageSync(document, value);
-                                }}
-                                defaultValue={document.syncFrequency}
-                                icon={SyncIcon}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+                          </div>
+                        </th>
+                        <th className="px-5 py-2 text-center text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          <div className="flex justify-center items-center">
+                            {t('settings.documents.tokenUsage')}
+                            <img
+                              className="cursor-pointer"
+                              onClick={() => refreshDocs('tokens')}
+                              src={caretSort}
+                              alt="sort"
+                            />
+                          </div>
+                        </th>
+                        {/*}
+                        <th className="px-5 py-2 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                          <div className="flex justify-center items-center">
+                            {t('settings.documents.type')}
+                          </div>
+                        </th>
+                        */}
+                        <th
+                          scope="col"
+                          className="px-6 py-2 text-start text-xs font-medium text-gray-700 dark:text-gray-50 uppercase"
+                        ></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
+                      {!currentDocuments?.length && (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="!p-4 text-gray-800 dark:text-neutral-200 text-center"
+                          >
+                            {t('settings.documents.noData')}
+                          </td>
+                        </tr>
+                      )}
+                      {Array.isArray(currentDocuments) &&
+                        currentDocuments.map((document, index) => (
+                          <tr key={index} className="text-nowrap font-normal">
+                            <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.name}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.date}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.tokens
+                                ? formatTokens(+document.tokens)
+                                : ''}
+                            </td>
+                            {/*}
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                              {document.type === 'remote'
+                                ? 'Pre-loaded'
+                                : 'Private'}
+                            </td>
+                            */}
+                            <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium flex">
+                              <div className="min-w-[150px] flex flex-row items-center ml-auto gap-10">
+                                {document.type !== 'remote' && (
+                                  <img
+                                    src={Trash}
+                                    alt="Delete"
+                                    className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
+                                    id={`img-${index}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleDeleteDocument(index, document);
+                                    }}
+                                  />
+                                )}
+                                {document.syncFrequency && (
+                                  <div className="ml-2">
+                                    <DropdownMenu
+                                      name="Sync"
+                                      options={syncOptions}
+                                      onSelect={(value: string) => {
+                                        handleManageSync(document, value);
+                                      }}
+                                      defaultValue={document.syncFrequency}
+                                      icon={SyncIcon}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           )}
         </div>
+        {/* outside scrollable area */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          rowsPerPage={rowsPerPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            refreshDocs(undefined, page, rowsPerPage);
+          }}
+          onRowsPerPageChange={(rows) => {
+            setRowsPerPage(rows);
+            setCurrentPage(1);
+            refreshDocs(undefined, 1, rows);
+          }}
+        />
+
         {/* Conditionally render the Upload modal based on modalState */}
         {modalState === 'ACTIVE' && (
           <div className="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center bg-transparent">
@@ -263,25 +325,6 @@ const Documents: React.FC<DocumentsProps> = ({
           </div>
         )}
       </div>
-      {/* Pagination component with props:
-      # Note: Every time the page changes, 
-      the refreshDocs function is called with the updated page number and rows per page.
-      and reset cursor paginated query parameter to undefined.
-      */}
-      <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
-        rowsPerPage={rowsPerPage}
-        onPageChange={(page) => {
-          setCurrentPage(page);
-          refreshDocs(sortField, page, rowsPerPage);
-        }}
-        onRowsPerPageChange={(rows) => {
-          setRowsPerPage(rows);
-          setCurrentPage(1);
-          refreshDocs(sortField, 1, rows);
-        }}
-      />
     </div>
   );
 };

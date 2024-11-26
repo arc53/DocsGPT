@@ -48,7 +48,7 @@ export default function DropdownMenu({
     <div className="static inline-block text-left" ref={dropdownRef}>
       <button
         onClick={handleToggle}
-        className="flex w-20 cursor-pointer flex-row items-center gap-px rounded-3xl border-purple-30/25 bg-purple-30 p-2 text-xs text-white hover:bg-[#6F3FD1] focus:outline-none"
+        className="flex w-20 cursor-pointer flex-row  gap-1 rounded-3xl border-purple-30/25 bg-purple-30 p-2 text-xs text-white hover:bg-[#6F3FD1] focus:outline-none"
       >
         {icon && <img src={icon} alt="OptionIcon" className="h-4 w-4" />}
         {selectedOption.value !== 'never' ? selectedOption.label : name}
