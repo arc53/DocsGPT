@@ -32,5 +32,25 @@ export interface WidgetProps {
   buttonText?:string;
   buttonBg?:string;
   collectFeedback?:boolean;
-  deafultOpen?: boolean;
+  defaultOpen?: boolean;
+}
+export interface WidgetCoreProps extends WidgetProps { 
+  widgetRef?:React.RefObject<HTMLDivElement> | null;
+  handleClose?:React.MouseEventHandler | undefined;
+  isOpen:boolean;
+  prefilledQuery?: string;
+}
+
+export interface SearchBarProps { 
+  apiHost?: string;
+  apiKey?: string;
+  theme?:THEME;
+  placeholder?:string;
+  width?:string;
+}
+
+export interface Result {
+  text:string;
+  title:string;
+  source:string;
 }

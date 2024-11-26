@@ -41,4 +41,5 @@ export interface RetrievalPayload {
   chunks: string;
   token_limit: number;
   isNoneDoc: boolean;
+  index?: number;
 }

@@ -14,6 +14,7 @@ import Document from '../assets/document.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
+import Edit from '../assets/edit.svg';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
@@ -34,16 +35,36 @@ const ConversationBubble = forwardRef<
     handleFeedback?: (feedback: FEEDBACK) => void;
     sources?: { title: string; text: string; source: string }[];
     retryBtn?: React.ReactElement;
+    questionNumber?: number;
+    handleUpdatedQuestionSubmission?: (
+      updatedquestion?: string,
+      updated?: boolean,
+      index?: number,
+    ) => void;
   }
 >(function ConversationBubble(
-  { message, type, className, feedback, handleFeedback, sources, retryBtn },
+  {
+    message,
+    type,
+    className,
+    feedback,
+    handleFeedback,
+    sources,
+    retryBtn,
+    questionNumber,
+    handleUpdatedQuestionSubmission,
+  },
   ref,
 ) {
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
+  const [isEditClicked, setIsEditClicked] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
+  const [isQuestionHovered, setIsQuestionHovered] = useState(false);
+  const [editInputBox, setEditInputBox] = useState<string>('');
+
   const [isLikeClicked, setIsLikeClicked] = useState(false);
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
@@ -80,38 +101,89 @@ const ConversationBubble = forwardRef<
     }
   };
 
+  const handleEditClick = () => {
+    setIsEditClicked(false);
+    handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
+  };
+
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
       <div
-        ref={ref}
-        className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+        onMouseEnter={() => setIsQuestionHovered(true)}
+        onMouseLeave={() => setIsQuestionHovered(false)}
       >
-        <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div
           style={{ wordBreak: 'break-word' }}
-          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+          ref={ref}
+          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal flex flex-row-reverse self-end flex-wrap ${className}"
         >
-          {message}
+          <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
+          {!isEditClicked && (
+            <div
+              style={{
+                wordBreak: 'break-word',
+              }}
+              className="ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+            >
+              {message}
+            </div>
+          )}
+          {isEditClicked && (
+            <input
+              onChange={(e) => setEditInputBox(e.target.value)}
+              value={editInputBox}
+              className="w-[85%] ml-2 mr-2 rounded-[28px] py-[12px] dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
+            />
+          )}
+          <div
+            className={`  flex items-center ${isQuestionHovered ? 'visible' : 'invisible'}`}
+          >
+            <img
+              src={Edit}
+              alt="Edit"
+              className="cursor-pointer"
+              onClick={() => {
+                setIsEditClicked(true);
+                setEditInputBox(message);
+              }}
+            />
+          </div>
         </div>
+        {isEditClicked && (
+          <div className={`flex gap-3 self-end mt-3  `}>
+            <button
+              className="ml-2 mr-2 flex items-center rounded-[28px]  font-semibold hover:font-bold py-[14px] px-[19px] no-underline hover:underline  text-purple-500 max-w-full whitespace-pre-wrap leading-normal"
+              onClick={() => setIsEditClicked(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="ml-2 mr-2 flex items-center rounded-full bg-purple-300 hover:bg-purple-100 font-bold px-[19px] py-[2px] text-purple-500 max-w-full whitespace-pre-wrap leading-none"
+              onClick={() => handleEditClick()}
+            >
+              Update
+            </button>
+          </div>
+        )}
       </div>
     );
   } else {
     const preprocessLaTeX = (content: string) => {
-      const blockProcessedContent = content.replace(
-        /\\
+  // Process block LaTeX
+  const blockProcessedContent = content.replace(
+    /\\\[(.*?)\\\]/gs,  // Corrected regex for block LaTeX
+    (_, equation) => `$$${equation}$$`
+  );
 
-\[(.*?)\\\]
+  // Process inline LaTeX
+  const inlineProcessedContent = blockProcessedContent.replace(
+    /\\\((.*?)\\\)/gs,  // Corrected regex for inline LaTeX
+    (_, equation) => `$${equation}$`
+  );
 
-/gs,
-        (_, equation) => `$$${equation}$$`
-      );
-      const inlineProcessedContent = blockProcessedContent.replace(
-        /\\\((.*?)\\\)/gs,
-        (_, equation) => `$${equation}$`
-      );
-      return inlineProcessedContent;
-    };
+  return inlineProcessedContent;
+};
 
     bubble = (
       <div ref={ref} className={`group flex self-start flex-wrap ${className}`}>
