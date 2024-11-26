@@ -25,9 +25,10 @@ export async function getDocsWithPagination(
   order = 'desc',
   pageNumber = 1,
   rowsPerPage = 10,
+  searchTerm = '',
 ): Promise<GetDocsResponse | null> {
   try {
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}`;
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
     const response = await userService.getDocsWithPagination(query);
     const data = await response.json();
     const docs: Doc[] = [];
