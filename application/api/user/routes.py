@@ -248,13 +248,12 @@ class DeleteOldIndexes(Resource):
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
-        try:
-            doc = sources_collection.find_one(
+        doc = sources_collection.find_one(
                 {"_id": ObjectId(source_id), "user": "local"}
-            )
-            if not doc:
+        )
+        if not doc:
                 return make_response(jsonify({"status": "not found"}), 404)
-
+        try:
             if settings.VECTOR_STORE == "faiss":
                 shutil.rmtree(os.path.join(current_dir, "indexes", str(doc["_id"])))
             else:
@@ -263,12 +262,12 @@ class DeleteOldIndexes(Resource):
                 )
                 vectorstore.delete_index()
 
-            sources_collection.delete_one({"_id": ObjectId(source_id)})
         except FileNotFoundError:
             pass
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
+        
+        sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
 
