@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import Hero from '../Hero';
+import { useDropzone } from 'react-dropzone';
 import ArrowDown from '../assets/arrow-down.svg';
 import newChatIcon from '../assets/openNewChat.svg';
 import Send from '../assets/send.svg';
@@ -45,6 +46,37 @@ export default function Conversation() {
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    console.log(acceptedFiles);
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    multiple: true,
+    onDragEnter: () => undefined,
+    onDragOver: () => undefined,
+    onDragLeave: () => undefined,
+    maxSize: 25000000,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'text/x-rst': ['.rst'],
+      'text/x-markdown': ['.md'],
+      'application/zip': ['.zip'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        ['.docx'],
+      'application/json': ['.json'],
+      'text/csv': ['.csv'],
+      'text/html': ['.html'],
+      'application/epub+zip': ['.epub'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        ['.pptx'],
+    },
+  });
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
@@ -323,7 +355,11 @@ export default function Conversation() {
       </div>
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[62%] h-auto py-1">
-        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black">
+        <div
+          {...getRootProps()}
+          className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black"
+        >
+          <input {...getInputProps()}></input>
           <textarea
             id="inputbox"
             ref={inputRef}
