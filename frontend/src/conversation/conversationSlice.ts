@@ -173,7 +173,10 @@ export const conversationSlice = createSlice({
       state,
       action: PayloadAction<{ index: number; prompt: string; query?: Query }>,
     ) {
-      state.queries[action.payload.index] = action.payload;
+      state.queries = [
+        ...state.queries.splice(0, action.payload.index),
+        action.payload,
+      ];
     },
     updateStreamingQuery(
       state,

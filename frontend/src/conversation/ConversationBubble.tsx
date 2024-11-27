@@ -337,9 +337,7 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code className="whitespace-pre-line" {...props}>
-                      {children}
-                    </code>
+                    <code className="whitespace-pre-line">{children}</code>
                   );
                 },
                 ul({ children }) {

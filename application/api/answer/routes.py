@@ -130,6 +130,18 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm,
                 }
             }
         )
+        ##remove following queries from the array
+        conversations_collection.update_one(
+            {"_id": ObjectId(conversation_id), f"queries.{index}": {"$exists": True}},
+            {
+                "$push":{
+                    "queries":{
+                        "$each":[],
+                        "$slice":index+1
+                    }
+                }
+            }
+        )
     elif conversation_id is not None and conversation_id != "None":
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id)},
