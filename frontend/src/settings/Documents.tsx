@@ -15,6 +15,7 @@ import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure Act
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import { setPaginatedDocuments } from '../preferences/preferenceSlice';
+import { truncate } from '../utils/stringUtils';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -134,7 +135,6 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   useEffect(() => {
-    // console.log('modalState', modalState);
     if (modalState === 'INACTIVE') {
       refreshDocs(sortField, currentPage, rowsPerPage);
     }
@@ -184,13 +184,13 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="flex flex-col">
               <div className="flex-grow">
                 <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
-                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
+                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40 text-xs sm:text-sm ">
                     <thead>
                       <tr className="text-nowrap">
-                        <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                        <th className="px-5 py-3 text-start font-medium text-gray-700 dark:text-gray-50 uppercase w-96">
                           {t('settings.documents.name')}
                         </th>
-                        <th className="px-5 py-3 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                        <th className="px-5 py-3 text-start font-medium text-gray-700 dark:text-gray-50 uppercase">
                           <div className="flex justify-center items-center">
                             {t('settings.documents.date')}
                             <img
@@ -201,7 +201,10 @@ const Documents: React.FC<DocumentsProps> = ({
                             />
                           </div>
                         </th>
-                        <th className="px-5 py-2 text-center text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                        <th
+                          scope="col"
+                          className="px-5 py-2 text-center font-medium text-gray-700 dark:text-gray-50 uppercase"
+                        >
                           <div className="flex justify-center items-center">
                             {t('settings.documents.tokenUsage')}
                             <img
@@ -221,16 +224,18 @@ const Documents: React.FC<DocumentsProps> = ({
                         */}
                         <th
                           scope="col"
-                          className="px-6 py-2 text-start text-xs font-medium text-gray-700 dark:text-gray-50 uppercase"
-                        ></th>
+                          className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase"
+                        >
+                          {' '}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
                       {!currentDocuments?.length && (
                         <tr>
                           <td
-                            colSpan={5}
-                            className="!p-4 text-gray-800 dark:text-neutral-200 text-center"
+                            colSpan={4}
+                            className="!py-4 text-gray-800 dark:text-neutral-200 text-center"
                           >
                             {t('settings.documents.noData')}
                           </td>
@@ -239,13 +244,16 @@ const Documents: React.FC<DocumentsProps> = ({
                       {Array.isArray(currentDocuments) &&
                         currentDocuments.map((document, index) => (
                           <tr key={index} className="text-nowrap font-normal">
-                            <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium text-gray-800 dark:text-neutral-200">
-                              {document.name}
+                            <td
+                              title={document.name}
+                              className="px-6 py-4 whitespace-nowrap text-left font-medium text-gray-800 dark:text-neutral-200"
+                            >
+                              {truncate(document.name, 50)}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                            <td className="px-6 py-4 whitespace-nowrap text-center font-medium text-gray-800 dark:text-neutral-200">
                               {document.date}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
+                            <td className="px-6 py-4 whitespace-nowrap text-center font-medium text-gray-800 dark:text-neutral-200">
                               {document.tokens
                                 ? formatTokens(+document.tokens)
                                 : ''}

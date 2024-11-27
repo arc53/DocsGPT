@@ -95,7 +95,7 @@ const ConversationBubble = forwardRef<
               style={{
                 wordBreak: 'break-word',
               }}
-              className="ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+              className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
             >
               {message}
             </div>
@@ -337,10 +337,7 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code
-                      className={className ? className : 'whitespace-pre-line'}
-                      {...props}
-                    >
+                    <code className="whitespace-pre-line" {...props}>
                       {children}
                     </code>
                   );
