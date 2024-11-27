@@ -63,7 +63,11 @@ export default function APIKeyModal({
               key for llm. Currently, we support only OpenAI but soon many more.
               You can find it here.
             </p>
+            <label htmlFor="api-key" className="sr-only">
+              API Key
+            </label>
             <Input
+              id="api-key"
               type="text"
               colorVariant="jet"
               className="h-10 border-b-2 focus:outline-none"
