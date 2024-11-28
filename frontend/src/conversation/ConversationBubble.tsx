@@ -310,7 +310,7 @@ const ConversationBubble = forwardRef<
             }`}
           >
             <ReactMarkdown
-              className="fade-in whitespace-pre-wrap break-normal leading-normal"
+              className="fade-in whitespace-pre-wrap break-words leading-normal"
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
