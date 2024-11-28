@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, useState } from 'react';
+import { forwardRef, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -26,6 +26,7 @@ import {
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+import { useOutsideAlerter } from '../hooks';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -73,7 +74,9 @@ const ConversationBubble = forwardRef<
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const editableQueryRef = useRef<HTMLDivElement | null>(null);
 
+  useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
   const handleEditClick = () => {
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
@@ -87,7 +90,7 @@ const ConversationBubble = forwardRef<
       >
         <div
           ref={ref}
-          className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+          className={`flex flex-row-reverse self-end flex-wrap items-baseline ${className}`}
         >
           <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
           {!isEditClicked && (
@@ -101,42 +104,40 @@ const ConversationBubble = forwardRef<
             </div>
           )}
           {isEditClicked && (
-            <input
-              onChange={(e) => setEditInputBox(e.target.value)}
-              value={editInputBox}
-              className="w-[85%] ml-2 mr-2 rounded-[28px] py-[12px] dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
-            />
+            <div ref={editableQueryRef} className="w-[75%] flex flex-col">
+              <input
+                onChange={(e) => setEditInputBox(e.target.value)}
+                value={editInputBox}
+                className="ml-2 mr-2 rounded-[28px] py-[12px] dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
+              />
+              <div
+                className={`flex flex-row-reverse justify-end gap-1 mt-3 text-sm font-medium`}
+              >
+                <button
+                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] py-[10px] px-[15px] text-purple-30 max-w-full whitespace-pre-wrap leading-none"
+                  onClick={() => handleEditClick()}
+                >
+                  Update
+                </button>
+                <button
+                  className="py-[10px] px-[15px]  no-underline hover:underline  text-purple-30 max-w-full whitespace-pre-wrap leading-normal"
+                  onClick={() => setIsEditClicked(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           )}
-          <div
-            className={`  flex items-center ${isQuestionHovered ? 'visible' : 'invisible'}`}
+          <button
+            onClick={() => {
+              setIsEditClicked(true);
+              setEditInputBox(message);
+            }}
+            className={`p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
           >
-            <img
-              src={Edit}
-              alt="Edit"
-              className="cursor-pointer"
-              onClick={() => {
-                setIsEditClicked(true);
-                setEditInputBox(message);
-              }}
-            />
-          </div>
+            <img src={Edit} alt="Edit" className="cursor-pointer" />
+          </button>
         </div>
-        {isEditClicked && (
-          <div className={`flex gap-3 self-end mt-3  `}>
-            <button
-              className="ml-2 mr-2 flex items-center rounded-[28px]  font-semibold hover:font-bold py-[14px] px-[19px] no-underline hover:underline  text-purple-500 max-w-full whitespace-pre-wrap leading-normal"
-              onClick={() => setIsEditClicked(false)}
-            >
-              Cancel
-            </button>
-            <button
-              className="ml-2 mr-2 flex items-center rounded-full bg-purple-300 hover:bg-purple-100 font-bold px-[19px] py-[2px] text-purple-500 max-w-full whitespace-pre-wrap leading-none"
-              onClick={() => handleEditClick()}
-            >
-              Update
-            </button>
-          </div>
-        )}
       </div>
     );
   } else {
