@@ -157,8 +157,7 @@ export const fetchAnswer = createAsyncThunk<
     result: '',
     sources: [],
   };
-},
-);
+});
 
 export const conversationSlice = createSlice({
   name: 'conversation',

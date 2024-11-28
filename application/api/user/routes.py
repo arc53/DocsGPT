@@ -248,13 +248,12 @@ class DeleteOldIndexes(Resource):
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
-        try:
-            doc = sources_collection.find_one(
+        doc = sources_collection.find_one(
                 {"_id": ObjectId(source_id), "user": "local"}
-            )
-            if not doc:
+        )
+        if not doc:
                 return make_response(jsonify({"status": "not found"}), 404)
-
+        try:
             if settings.VECTOR_STORE == "faiss":
                 shutil.rmtree(os.path.join(current_dir, "indexes", str(doc["_id"])))
             else:
@@ -263,12 +262,12 @@ class DeleteOldIndexes(Resource):
                 )
                 vectorstore.delete_index()
 
-            sources_collection.delete_one({"_id": ObjectId(source_id)})
         except FileNotFoundError:
             pass
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
+        
+        sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -479,11 +478,22 @@ class PaginatedSources(Resource):
         sort_order = request.args.get("order", "desc")  # Default to 'desc'
         page = int(request.args.get("page", 1))  # Default to 1
         rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+        # add .strip() to remove leading and trailing whitespaces
+        search_term = request.args.get(
+            "search", ""
+        ).strip()  # add search for filter documents
 
-        # Prepare
+        # Prepare query for filtering
         query = {"user": user}
+        if search_term:
+            query["name"] = {
+                "$regex": search_term,
+                "$options": "i",  # using case-insensitive search
+            }
+
         total_documents = sources_collection.count_documents(query)
         total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        page = min(max(1, page), total_pages) # add this to make sure page inbound is within the range
         sort_order = 1 if sort_order == "asc" else -1
         skip = (page - 1) * rows_per_page
 
