@@ -15,7 +15,6 @@ import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import conversationService from '../api/services/conversationService';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
