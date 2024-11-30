@@ -85,7 +85,7 @@ const Documents: React.FC<DocumentsProps> = ({
         setSortField(newSortField);
         setSortOrder(newSortOrder);
       }
-
+      setLoading(true);
       getDocsWithPagination(
         newSortField,
         newSortOrder,

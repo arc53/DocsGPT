@@ -51,21 +51,7 @@ interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
-/* const NavImage: React.FC<{
-  Light: string | undefined;
-  Dark: string | undefined;
-}> = ({ Light, Dark }) => {
-  return (
-    <>
-      <img src={Dark} alt="icon" className="ml-2 hidden w-5 dark:block " />
-      <img src={Light} alt="icon" className="ml-2 w-5 dark:hidden filter dark:invert" />
-    </>
-  );
-};
-NavImage.propTypes = {
-  Light: PropTypes.string,
-  Dark: PropTypes.string,
-}; */
+
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const queries = useSelector(selectQueries);
