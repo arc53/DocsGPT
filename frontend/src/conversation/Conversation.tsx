@@ -324,6 +324,9 @@ export default function Conversation() {
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[62%] h-auto py-1">
         <div className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black">
+          <label htmlFor="inputbox" className="sr-only">
+            Enter your message
+          </label>
           <textarea
             id="inputbox"
             ref={inputRef}
@@ -342,6 +345,7 @@ export default function Conversation() {
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
               className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+              alt="Loading spinner"
             ></img>
           ) : (
             <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
@@ -349,6 +353,7 @@ export default function Conversation() {
                 className="ml-[4px] h-6 w-6 text-white "
                 onClick={() => handleQuestionSubmission()}
                 src={isDarkTheme ? SendDark : Send}
+                alt="Send message icon"
               ></img>
             </div>
           )}

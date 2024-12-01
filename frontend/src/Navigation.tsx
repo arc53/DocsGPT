@@ -137,9 +137,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         dispatch(
           setSelectedDocs(
             Array.isArray(updatedDocs) &&
-              updatedDocs?.find(
-                (doc: Doc) => doc.name.toLowerCase() === 'default',
-              ),
+            updatedDocs?.find(
+              (doc: Doc) => doc.name.toLowerCase() === 'default',
+            ),
           ),
         );
       })
@@ -221,9 +221,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 src={Expand}
                 alt="menu toggle"
-                className={`${
-                  !navOpen ? 'rotate-180' : 'rotate-0'
-                } m-auto transition-all duration-200`}
+                className={`${!navOpen ? 'rotate-180' : 'rotate-0'
+                  } m-auto transition-all duration-200`}
               />
             </button>
             {queries?.length > 0 && (
@@ -247,9 +246,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       )}
       <div
         ref={navRef}
-        className={`${
-          !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+        className={`${!navOpen && '-ml-96 md:-ml-[18rem]'
+          } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -276,9 +274,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img
               src={Expand}
               alt="menu toggle"
-              className={`${
-                !navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto transition-all duration-200`}
+              className={`${!navOpen ? 'rotate-180' : 'rotate-0'
+                } m-auto transition-all duration-200`}
             />
           </button>
         </div>
@@ -291,8 +288,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             resetConversation();
           }}
           className={({ isActive }) =>
-            `${
-              isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+            `${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
             } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000 dark:border-purple-taupe dark:text-white dark:hover:bg-transparent`
           }
         >
@@ -365,6 +361,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 className="mt-2 h-9 w-9 hover:cursor-pointer"
                 src={UploadIcon}
+                alt="Upload icon"
                 onClick={() => {
                   setUploadModalState('ACTIVE');
                   if (isMobile) {
@@ -385,8 +382,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-                  isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+                `my-auto mx-4 flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
             >
