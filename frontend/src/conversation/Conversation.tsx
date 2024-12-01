@@ -59,6 +59,7 @@ export default function Conversation() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    noClick: true,
     multiple: true,
     onDragEnter: () => undefined,
     onDragOver: () => undefined,
