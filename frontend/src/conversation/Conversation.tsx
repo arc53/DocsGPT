@@ -29,6 +29,8 @@ import {
   updateConversationId,
   updateQuery,
 } from './conversationSlice';
+import Upload from '../upload/Upload';
+import { ActiveState } from '../models/misc';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -46,9 +48,13 @@ export default function Conversation() {
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
+  const [uploadModalState, setUploadModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [files, setFiles] = useState<File[]>([]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    console.log(acceptedFiles);
+    setUploadModalState('ACTIVE');
+    setFiles(acceptedFiles);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -394,6 +400,15 @@ export default function Conversation() {
           {t('tagline')}
         </p>
       </div>
+      {uploadModalState === 'ACTIVE' && (
+        <Upload
+          recievedFile={files}
+          setModalState={setUploadModalState}
+          isOnboarding={false}
+          renderTab={'file'}
+          close={() => setUploadModalState('INACTIVE')}
+        ></Upload>
+      )}
     </div>
   );
 }
