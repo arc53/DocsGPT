@@ -19,15 +19,19 @@ import {
 import WrapperModal from '../modals/WrapperModal';
 
 function Upload({
+  receivedFile,
   setModalState,
   isOnboarding,
+  renderTab,
   close,
 }: {
+  receivedFile: File[];
   setModalState: (state: ActiveState) => void;
   isOnboarding: boolean;
+  renderTab: string | null;
   close: () => void;
 }) {
-  const [docName, setDocName] = useState('');
+  const [docName, setDocName] = useState(receivedFile[0]?.name);
   const [urlName, setUrlName] = useState('');
   const [url, setUrl] = useState('');
   const [repoUrl, setRepoUrl] = useState(''); // P3f93
@@ -38,8 +42,8 @@ function Upload({
     search_queries: [''],
     number_posts: 10,
   });
-  const [activeTab, setActiveTab] = useState<string | null>(null);
-  const [files, setfiles] = useState<File[]>([]);
+  const [activeTab, setActiveTab] = useState<string | null>(renderTab);
+  const [files, setfiles] = useState<File[]>(receivedFile);
   const [progress, setProgress] = useState<{
     type: 'UPLOAD' | 'TRAINING';
     percentage: number;
