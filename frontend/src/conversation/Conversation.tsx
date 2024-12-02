@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import Hero from '../Hero';
 import { useDropzone } from 'react-dropzone';
+import DragFileUpload from '../assets/DragFileUpload.svg';
 import ArrowDown from '../assets/arrow-down.svg';
 import newChatIcon from '../assets/openNewChat.svg';
 import Send from '../assets/send.svg';
@@ -51,19 +52,24 @@ export default function Conversation() {
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [files, setFiles] = useState<File[]>([]);
+  const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setUploadModalState('ACTIVE');
     setFiles(acceptedFiles);
+    setHandleDragActive(false);
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     noClick: true,
     multiple: true,
-    onDragEnter: () => undefined,
-    onDragOver: () => undefined,
-    onDragLeave: () => undefined,
+    onDragEnter: () => {
+      setHandleDragActive(true);
+    },
+    onDragLeave: () => {
+      setHandleDragActive(false);
+    },
     maxSize: 25000000,
     accept: {
       'application/pdf': ['.pdf'],
@@ -401,6 +407,17 @@ export default function Conversation() {
           {t('tagline')}
         </p>
       </div>
+      {handleDragActive && (
+        <div className="pointer-events-none fixed top-0 left-0 z-30 flex flex-col size-full items-center justify-center bg-opacity-50 bg-white dark:bg-gray-alpha">
+          <img className="filter dark:invert" src={DragFileUpload} />
+          <span className="px-2 text-2xl font-bold text-outer-space dark:text-silver">
+            {t('modals.uploadDoc.drag.title')}
+          </span>
+          <span className="p-2 text-s w-48 text-center text-outer-space dark:text-silver">
+            {t('modals.uploadDoc.drag.description')}
+          </span>
+        </div>
+      )}
       {uploadModalState === 'ACTIVE' && (
         <Upload
           receivedFile={files}
