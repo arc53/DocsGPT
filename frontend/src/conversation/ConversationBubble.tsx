@@ -429,7 +429,8 @@ const ConversationBubble = forwardRef<
                   feedback === 'LIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                }
+                ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
               >
                 <div>
                   <div
@@ -447,9 +448,11 @@ const ConversationBubble = forwardRef<
                       : 'fill-none  stroke-gray-4000'
                   }`}
                       onClick={() => {
-                        handleFeedback?.('LIKE');
-                        setIsLikeClicked(true);
-                        setIsDislikeClicked(false);
+                        if (feedback === undefined) {
+                          handleFeedback?.('LIKE');
+                          setIsLikeClicked(true);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsLikeHovered(true)}
                       onMouseLeave={() => setIsLikeHovered(false)}
@@ -464,7 +467,7 @@ const ConversationBubble = forwardRef<
                   feedback === 'DISLIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                } ${feedback === 'LIKE' && type !== 'ERROR' ? ' hidden' : ''} `}
               >
                 <div>
                   <div
@@ -481,9 +484,11 @@ const ConversationBubble = forwardRef<
                           : 'fill-none  stroke-gray-4000'
                       }`}
                       onClick={() => {
-                        handleFeedback?.('DISLIKE');
-                        setIsDislikeClicked(true);
-                        setIsLikeClicked(false);
+                        if (feedback === undefined) {
+                          handleFeedback?.('DISLIKE');
+                          setIsDislikeClicked(true);
+                          setIsLikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsDislikeHovered(true)}
                       onMouseLeave={() => setIsDislikeHovered(false)}
