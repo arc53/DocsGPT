@@ -99,6 +99,10 @@
         "agent": "Agente de Usuario",
         "searchQueries": "Consultas de Búsqueda",
         "numberOfPosts": "Número de publicaciones"
+      },
+      "drag": {
+        "title": "Cargar un archivo fuente",
+        "description": "Suelta tu archivo aquí para agregarlo como fuente."
       }
     },
     "createAPIKey": {
