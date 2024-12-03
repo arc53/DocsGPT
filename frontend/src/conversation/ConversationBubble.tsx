@@ -16,6 +16,7 @@ import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
 import Edit from '../assets/edit.svg';
+import UserIcon from '../assets/user.png';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
@@ -90,9 +91,15 @@ const ConversationBubble = forwardRef<
       >
         <div
           ref={ref}
-          className={`flex flex-row-reverse self-end flex-wrap items-baseline ${className}`}
+          className={`flex flex-row-reverse self-end flex-wrap ${className}`}
         >
-          <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
+          <Avatar
+            size="SMALL"
+            className="mt-2 text-2xl"
+            avatar={
+              <img className="rounded-full mr-1" width={30} src={UserIcon} />
+            }
+          />
           {!isEditClicked && (
             <div
               style={{
@@ -137,7 +144,7 @@ const ConversationBubble = forwardRef<
               setIsEditClicked(true);
               setEditInputBox(message);
             }}
-            className={`p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+            className={`h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
           >
             <img src={Edit} alt="Edit" className="cursor-pointer" />
           </button>
