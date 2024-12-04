@@ -29,6 +29,7 @@
     "react-copy-to-clipboard": "^5.1.0",
     "react-dom": "^18.3.1",
     "react-dropzone": "^14.2.3",
+    "react-helmet": "^6.1.0",
     "react-i18next": "^15.0.2",
     "react-markdown": "^9.0.1",
     "react-redux": "^8.0.5",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@types/react": "^18.0.27",
     "@types/react-dom": "^18.3.0",
+    "@types/react-helmet": "^6.1.11",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@typescript-eslint/eslint-plugin": "^5.51.0",
     "@typescript-eslint/parser": "^5.62.0",
