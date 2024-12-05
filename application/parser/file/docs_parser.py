@@ -5,15 +5,18 @@ Contains parsers for docx, pdf files.
 """
 
 from pathlib import Path
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, Optional
 from base64 import b64encode
 from application.parser.file.base_parser import BaseParser
 from application.core.settings import settings
-from docx import Document
 from docx.enum.shape import WD_INLINE_SHAPE_TYPE
 import requests
 import logging
 import sys
+from docx import Document
+import base64
+from PIL import Image
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -59,158 +62,85 @@ class PDFParser(BaseParser):
 
 
 class DocxParser(BaseParser):
-    """Docx parser."""
+    """Docx parser to extract text, tables, and images."""
 
     def _init_parser(self) -> Dict:
         """Init parser."""
         return {}
 
-    def parse_file(self, file: Path, errors: str = "ignore") -> str:
-        """Parse file."""
-        try:
-            import docx2txt
-        except ImportError:
-            raise ValueError("docx2txt is required to read Microsoft Word files.")
+    def parse_file(self, file: Path, errors: str = "ignore") -> Dict[str, Any]:
+        """Parse file and extract text, tables, and images."""
         document = Document(file)
-        docx_content = []
-        text = docx2txt.process(file)
-        for block in self.iter_blocks(document):
-            if isinstance(block, str):  # It's plain text
-                docx_content.append(block)
-            elif isinstance(block, list):  # It's a table
-                table_text = "\n".join([" | ".join(row) for row in block])
-                print(f"Appending table: {block}", file=sys.stderr)
-                docx_content.append(table_text)
-            elif isinstance(block, dict):  # It's an image
-                #print(f"Appending image: {block}", file=sys.stderr)
-                docx_content.extend([block["content"]["filename"], block["content"]["image_base64"]])
+        text_content = []
+        tables = []
+        images = []
 
-        final_content = "\n\n".join(docx_content)
-        print("Completed parsing file. Final consolidated content:", file=sys.stderr)
-        print(final_content, file=sys.stderr)
-        return final_content
+        # Extract text from paragraphs
+        for para in document.paragraphs:
+            if para.text.strip():
+                text_content.append(para.text.strip())
 
-    def iter_blocks(self, document: Document):
-        print("Iterating over document blocks...", file=sys.stderr)
-        if hasattr(document, "paragraphs"):
-            print(
-                f"Document has paragraphs: {len(document.paragraphs)}", file=sys.stderr
-            )
-            for para in document.paragraphs:
-                if para.text.strip():
-                    print(f"Found paragraph: {para.text.strip()}", file=sys.stderr)
-                    yield para.text.strip()
+        # Extract tables
+        for table in document.tables:
+            table_data = []
+            for row in table.rows:
+                row_data = [cell.text.strip() for cell in row.cells]
+                table_data.append(row_data)
 
-        # check images
-        if hasattr(document, "inline_shapes"):
-            print(
-                f"Document has inline shapes: {len(document.inline_shapes)}",
-                file=sys.stderr,
-            )
-            for shape in document.inline_shapes:
-                """
-                Found inline shape: <docx.shape.InlineShape object at 0x319554a10>
-                Shape type: WD_INLINE_SHAPE_TYPE.PICTURE
-                """
-                for attr in dir(shape):
-                    print(f"Shape attribute: {attr}", file=sys.stderr)
-                    print(
-                        f"Shape attribute value: {getattr(shape, attr)}",
-                        file=sys.stderr,
-                    )
-                if shape.type == WD_INLINE_SHAPE_TYPE.PICTURE:
-                    print("Extracting image from inline shape...", file=sys.stderr)
-                    image_data = self.extract_image_from_shape(shape, document=document)
-                    if image_data:
-                        print(f"Extracted image filename: {image_data['content']['filename']}", file=sys.stderr)
-                        print(f"Base64 snippet: {image_data['content']['image_base64'][:20]}...", file=sys.stderr)
-                        yield image_data
-                    else:
-                        print("No image data extracted.", file=sys.stderr)
+            # Flatten table into a string
+            flat_table = "\n".join([" | ".join(row) for row in table_data])
+            tables.append(flat_table)
 
-        if hasattr(document, "tables"):
-            print(f"Document has tables: {len(document.tables)}", file=sys.stderr)
-            for table in document.tables:
-                table_data = self.extract_table(table)
-                print(f"Found table: {table_data}", file=sys.stderr)
-                yield table_data
-
-        if hasattr(document, "sections"):
-            print(f"Document has sections: {len(document.sections)}", file=sys.stderr)
-            for section in document.sections:
-                if section.header:
-                    print("Found header.", file=sys.stderr)
-                    for paragraph in section.header.paragraphs:
-                        if paragraph.text.strip():
-                            print(
-                                f"Header paragraph: {paragraph.text.strip()}",
-                                file=sys.stderr,
-                            )
-                            yield paragraph.text.strip()
-                if section.footer:
-                    print("Found footer.", file=sys.stderr)
-                    for paragraph in section.footer.paragraphs:
-                        if paragraph.text.strip():
-                            print(
-                                f"Footer paragraph: {paragraph.text.strip()}",
-                                file=sys.stderr,
-                            )
-                            yield paragraph.text.strip()
-
-    def extract_table(self, table) -> str:
-        """
-        This function will return the table data in HTML format.
-        for easy to read format. to LLM
-        """
-        print("Extracting table data with HTML semantics...", file=sys.stderr)
-        table_html = ["<table>"]
-
-        # Add table rows
-        for row in table.rows:
-            row_html = ["<tr>"]
-            for cell in row.cells:
-                tag = "th" if self.is_header_row(row) else "td"
-                cell_text = cell.text.strip()
-                print(f"Extracted cell: {cell_text}", file=sys.stderr)
-                row_html.append(f"<{tag}>{cell_text}</{tag}>")
-            row_html.append("</tr>")
-            table_html.extend(row_html)
-
-        table_html.append("</table>")
-        return "\n".join(table_html)
-
-    def is_header_row(self, row) -> bool:
-        """Determine if the row is a header row (you can customize this logic)."""
-        return all(cell.text.isupper() for cell in row.cells)
-    
-    def extract_image_from_shape(self, shape, document: Document) -> Dict:
-        """Extract image from an inline shape."""
-        try:
+        # Extract images
+        for shape in document.inline_shapes:
             if shape.type == WD_INLINE_SHAPE_TYPE.PICTURE:
-                print(f"Processing shape: {shape}", file=sys.stderr)
+                image_data = self.extract_image_from_shape(shape, document=document)
+                if image_data:
+                    images.append(image_data)
 
-                # Get the relationship ID for the image
-                rId = shape._inline.graphic.graphicData.pic.blipFill.blip.embed
-                print(f"Found relationship ID: {rId}", file=sys.stderr)
+        return {
+            "text": "\n".join(text_content),
+            "tables": tables,
+            "images": images
+        }
 
-                # Fetch the image data from the part relationships
-                image_part = document.part.related_parts[rId]
-                image_data = image_part.blob
-                image_filename = image_part.filename or f"image_{rId}.png"
+    def extract_image_from_shape(self, shape, document) -> Optional[Dict[str, str]]:
+        """Extract image from an inline shape and encode it in Base64."""
+        try:
+            # Get the relationship ID for the image
+            rId = shape._inline.graphic.graphicData.pic.blipFill.blip.embed
+            image_part = document.part.related_parts[rId]
+            image_data = image_part.blob
+            image_filename = image_part.filename or f"image_{rId}.png"
 
-                # Convert the image to Base64
-                import base64
-                image_base64 = base64.b64encode(image_data).decode("utf-8")
-                print(f"Successfully extracted image: {image_filename}", file=sys.stderr)
+            # Validate the image
+            if not self.is_valid_image(image_data):
+                print(f"Invalid image: {image_filename}")
+                return None
 
-                return {
-                    "type": "image",
-                    "content": {
-                        "filename": image_filename,
-                        "image_base64": image_base64,
-                    },
-                }
+            # Resize the image (optional)
+            resized_image = self.resize_image(image_data)
+
+            # Convert the image to Base64
+            image_base64 = base64.b64encode(resized_image).decode("utf-8")
+            return {"filename": image_filename, "image_base64": image_base64}
         except Exception as e:
-            print(f"Error extracting image: {e}", file=sys.stderr)
+            print(f"Error extracting image: {e}")
+            return None
 
-        return None
+    def is_valid_image(self, image_data: bytes) -> bool:
+        """Validate image data."""
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            image.verify()
+            return True
+        except Exception:
+            return False
+
+    def resize_image(self, image_data: bytes, max_size=(128, 128)) -> bytes:
+        """Resize image to a specified maximum size."""
+        image = Image.open(io.BytesIO(image_data))
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
