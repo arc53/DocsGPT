@@ -325,8 +325,10 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="w-full h-full bg-transparent flex flex-col items-center justify-center p-8">
               {/* Your Upload component */}
               <Upload
+                receivedFile={[]}
                 setModalState={setModalState}
                 isOnboarding={isOnboarding}
+                renderTab={null}
                 close={() => setModalState('INACTIVE')}
               />
             </div>

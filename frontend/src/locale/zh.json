@@ -99,6 +99,10 @@
         "agent": "用户代理",
         "searchQueries": "搜索查询",
         "numberOfPosts": "帖子数量"
+      },
+      "drag": {
+        "title": "上传源文件",
+        "description": "将您的文件拖放到此处以将其添加为源"
       }
     },
     "createAPIKey": {
