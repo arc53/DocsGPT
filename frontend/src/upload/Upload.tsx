@@ -19,10 +19,10 @@ import {
 import WrapperModal from '../modals/WrapperModal';
 
 function Upload({
-  receivedFile,
+  receivedFile = [],
   setModalState,
   isOnboarding,
-  renderTab,
+  renderTab = null,
   close,
 }: {
   receivedFile: File[];
