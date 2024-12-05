@@ -1,8 +1,10 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import Hero from '../Hero';
+import { useDropzone } from 'react-dropzone';
+import DragFileUpload from '../assets/DragFileUpload.svg';
 import ArrowDown from '../assets/arrow-down.svg';
 import newChatIcon from '../assets/openNewChat.svg';
 import Send from '../assets/send.svg';
@@ -28,6 +30,8 @@ import {
   updateConversationId,
   updateQuery,
 } from './conversationSlice';
+import Upload from '../upload/Upload';
+import { ActiveState } from '../models/misc';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -45,6 +49,47 @@ export default function Conversation() {
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
+  const [uploadModalState, setUploadModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [files, setFiles] = useState<File[]>([]);
+  const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    setUploadModalState('ACTIVE');
+    setFiles(acceptedFiles);
+    setHandleDragActive(false);
+  }, []);
+
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop,
+    noClick: true,
+    multiple: true,
+    onDragEnter: () => {
+      setHandleDragActive(true);
+    },
+    onDragLeave: () => {
+      setHandleDragActive(false);
+    },
+    maxSize: 25000000,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'text/x-rst': ['.rst'],
+      'text/x-markdown': ['.md'],
+      'application/zip': ['.zip'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        ['.docx'],
+      'application/json': ['.json'],
+      'text/csv': ['.csv'],
+      'text/html': ['.html'],
+      'application/epub+zip': ['.epub'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        ['.pptx'],
+    },
+  });
 
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
@@ -323,7 +368,11 @@ export default function Conversation() {
       </div>
 
       <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[62%] h-auto py-1">
-        <div className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black">
+        <div
+          {...getRootProps()}
+          className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black"
+        >
+          <input {...getInputProps()}></input>
           <textarea
             id="inputbox"
             ref={inputRef}
@@ -358,6 +407,26 @@ export default function Conversation() {
           {t('tagline')}
         </p>
       </div>
+      {handleDragActive && (
+        <div className="pointer-events-none fixed top-0 left-0 z-30 flex flex-col size-full items-center justify-center bg-opacity-50 bg-white dark:bg-gray-alpha">
+          <img className="filter dark:invert" src={DragFileUpload} />
+          <span className="px-2 text-2xl font-bold text-outer-space dark:text-silver">
+            {t('modals.uploadDoc.drag.title')}
+          </span>
+          <span className="p-2 text-s w-48 text-center text-outer-space dark:text-silver">
+            {t('modals.uploadDoc.drag.description')}
+          </span>
+        </div>
+      )}
+      {uploadModalState === 'ACTIVE' && (
+        <Upload
+          receivedFile={files}
+          setModalState={setUploadModalState}
+          isOnboarding={false}
+          renderTab={'file'}
+          close={() => setUploadModalState('INACTIVE')}
+        ></Upload>
+      )}
     </div>
   );
 }

@@ -92,6 +92,10 @@
         "agent": "使用者代理(User-Agent)",
         "searchQueries": "搜尋查詢",
         "numberOfPosts": "貼文數量"
+      },
+      "drag": {
+        "title": "上傳原始檔",
+        "description": "將您的文件拖放到此處以將其添加為來源"
       }
     },
     "createAPIKey": {
