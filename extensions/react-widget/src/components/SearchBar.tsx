@@ -6,7 +6,7 @@ import { getSearchResults } from '../requests/searchAPI'
 import { Result } from '@/types';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import { getOS } from '../utils/helper'
+import { getOS, preprocessSearchResultsToHTML } from '../utils/helper'
 const themes = {
     dark: {
         bg: '#000',
@@ -291,6 +291,8 @@ export const SearchBar = ({
         }, 500);
 
         return () => {
+            console.log(results);
+            
             abortController.abort();
             clearTimeout(debounceTimeout.current ?? undefined);
         };
@@ -352,7 +354,7 @@ export const SearchBar = ({
                                                     <Title>{res.title}</Title>
                                                     <Content>
                                                         <Markdown
-                                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text).substring(0, 256) + "...")) }}
+                                                            dangerouslySetInnerHTML={{ __html: preprocessSearchResultsToHTML(res.text,input) }}
                                                         />
                                                     </Content>
                                                 </ResultWrapper>
