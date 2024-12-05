@@ -544,3 +544,22 @@ input:-webkit-autofill:focus {
     transform: translateY(0);
   }
 }
+
+.irregular-circle {
+  clip-path: ellipse(50% 48% at 50% 50%);
+}
+
+
+@keyframes fadeInSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fadeInSlideUp {
+  animation: fadeInSlideUp 1s forwards;
+}
