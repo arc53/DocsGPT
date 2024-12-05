@@ -99,6 +99,10 @@
         "agent": "User agent",
         "searchQueries": "Search queries",
         "numberOfPosts": "Number of posts"
+      },
+      "drag": {
+        "title": "Upload a source file",
+        "description": "Drop your file here to add it as a source"
       }
     },
     "createAPIKey": {

@@ -476,8 +476,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       />
       {uploadModalState === 'ACTIVE' && (
         <Upload
+          receivedFile={[]}
           setModalState={setUploadModalState}
           isOnboarding={false}
+          renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
         ></Upload>
       )}
