@@ -5,6 +5,7 @@ import logging
 from threading import Lock
 from application.core.settings import settings
 from application.utils import get_hash
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +24,19 @@ def get_redis_instance():
                     _redis_instance = None
     return _redis_instance
 
-def gen_cache_key(*messages, model="docgpt"):
+def gen_cache_key(messages, model="docgpt", tools=None):
     if not all(isinstance(msg, dict) for msg in messages):
         raise ValueError("All messages must be dictionaries.")
-    messages_str = json.dumps(list(messages), sort_keys=True)
-    combined = f"{model}_{messages_str}"
+    messages_str = json.dumps(messages)
+    tools_str = json.dumps(tools) if tools else ""
+    combined = f"{model}_{messages_str}_{tools_str}"
     cache_key = get_hash(combined)
     return cache_key
 
 def gen_cache(func):
-    def wrapper(self, model, messages, *args, **kwargs):
+    def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
         try:
-            cache_key = gen_cache_key(*messages)
+            cache_key = gen_cache_key(messages, model, tools)
             redis_client = get_redis_instance()
             if redis_client:
                 try:
@@ -44,8 +46,8 @@ def gen_cache(func):
                 except redis.ConnectionError as e:
                     logger.error(f"Redis connection error: {e}")
 
-            result = func(self, model, messages, *args, **kwargs)
-            if redis_client:
+            result = func(self, model, messages, stream, tools, *args, **kwargs)
+            if redis_client and isinstance(result, str):
                 try:
                     redis_client.set(cache_key, result, ex=1800)
                 except redis.ConnectionError as e:
@@ -59,7 +61,7 @@ def gen_cache(func):
 
 def stream_cache(func):
     def wrapper(self, model, messages, stream, *args, **kwargs):
-        cache_key = gen_cache_key(*messages)
+        cache_key = gen_cache_key(messages)
         logger.info(f"Stream cache key: {cache_key}")
         
         redis_client = get_redis_instance()

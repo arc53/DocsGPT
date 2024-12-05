@@ -2,6 +2,7 @@ from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.vectorstore.vector_creator import VectorCreator
 from application.llm.llm_creator import LLMCreator
+from application.tools.agent import Agent
 
 from application.utils import num_tokens_from_string
 
@@ -90,10 +91,12 @@ class ClassicRAG(BaseRetriever):
                         )
         messages_combine.append({"role": "user", "content": self.question})
 
-        llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
-        )
-        completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
+        # llm = LLMCreator.create_llm(
+        #     settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
+        # )
+        # completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
+        agent = Agent(llm_name=settings.LLM_NAME,gpt_model=self.gpt_model, api_key=settings.API_KEY, user_api_key=self.user_api_key)
+        completion = agent.gen(messages_combine)
         for line in completion:
             yield {"answer": str(line)}
 
