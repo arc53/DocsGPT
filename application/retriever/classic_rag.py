@@ -4,7 +4,7 @@ from application.vectorstore.vector_creator import VectorCreator
 from application.llm.llm_creator import LLMCreator
 
 from application.utils import num_tokens_from_string
-
+import sys
 
 class ClassicRAG(BaseRetriever):
 
@@ -41,10 +41,13 @@ class ClassicRAG(BaseRetriever):
         if self.chunks == 0:
             docs = []
         else:
+            print(f"Vector store: {self.vectorstore}", file=sys.stderr)
             docsearch = VectorCreator.create_vectorstore(
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
+            print("Vector store created successfully.", file=sys.stderr)
             docs_temp = docsearch.search(self.question, k=self.chunks)
+            print(f"Search results: {docs_temp}", file=sys.stderr)
             docs = [
                 {
                     "title": i.metadata.get(
