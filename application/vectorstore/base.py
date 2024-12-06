@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-import os, sys
+import os, sys, base64, io
 import torch
 from sentence_transformers import SentenceTransformer
+from PIL import Image
 from transformers import CLIPProcessor, CLIPModel
 from langchain_openai import OpenAIEmbeddings
 from application.core.settings import settings
@@ -9,20 +10,14 @@ from application.core.settings import settings
 
 class EmbeddingsWrapper:
     def __init__(self, model_name, *args, **kwargs):
-        # self.model = SentenceTransformer(
-        # model_name,
-        # config_kwargs={"allow_dangerous_deserialization": True},
-        # *args,
-        # **kwargs
-        # )
+        print(f"Initializing EmbeddingsWrapper with model_name={model_name}", file=sys.stderr)
+        print("EmbeddingsWrapper initialized successfully", file=sys.stderr)
         self.processor = CLIPProcessor.from_pretrained(model_name)
         self.model = CLIPModel.from_pretrained(model_name)
-        # self.dimension = self.model.get_sentence_embedding_dimension()
         if hasattr(self.model.config, "text_config"):
             self.dimension = self.model.config.text_config.hidden_size
         else:
             raise AttributeError("'text_config.hidden_size' not found in model configuration")
-
 
     def embed_query(self, query: str):
         if not self.model or not self.processor:
@@ -32,21 +27,34 @@ class EmbeddingsWrapper:
         input = self.processor(text=[query], return_tensors="pt", padding=True)
         with torch.no_grad():
             query_embedding = self.model.get_text_features(**input)
-        return query_embedding.squeeze().tolist()
+        return query_embedding.squeeze().detach().cpu().numpy()
 
     def embed_documents(self, documents: list):
-        if not self.model or not self.processor:
-            raise ValueError("Model or processor not initialized properly for document embedding")
-        inputs = self.processor(text=documents, return_tensors="pt", padding=True, truncation=True)
-        with torch.no_grad():
-            document_embeddings = self.model.get_text_features(**inputs)
-        return document_embeddings.cpu().numpy()
+        try:
+            if not self.model or not self.processor:
+                raise ValueError("Model or processor not initialized properly for document embedding")
+            inputs = self.processor(text=documents, return_tensors="pt", padding=True, truncation=True)
+            with torch.no_grad():
+                document_embeddings = self.model.get_text_features(**inputs)
+            return document_embeddings.detach().cpu().numpy()
+        except Exception as e:
+            print(f"Error in embed_documents: {e}", file=sys.stderr)
+            print(f"error line number: {sys.exc_info()[-1].tb_lineno}", file=sys.stderr)
+            raise e
 
-    def embed_image(self, image_path: str):
-        from PIL import Image
+    def embed_image(self, image_path: str = None, image_base64: str = None):
+        print(f"Image path: {image_path}", file=sys.stderr)
+        print(f"Image base64: {image_base64[:50]}....", file=sys.stderr)
         if not self.model or not self.processor:
             raise ValueError("Model or processor not initialized properly for image embedding")
-        image = Image.open(image_path).convert("RGB")
+        if image_base64:
+            img_data = base64.b64decode(image_base64)
+            image = Image.open(io.BytesIO(img_data)).convert("RGB")
+        elif image_path:
+            image = Image.open(image_path).convert("RGB")
+        else:
+            raise ValueError("Image path or base64 data must be provided")
+
         inputs = self.processor(images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             image_embedding = self.model.get_image_features(**inputs)
@@ -54,7 +62,10 @@ class EmbeddingsWrapper:
 
     def __call__(self, text):
         if isinstance(text, str):
-            return self.embed_query(text)
+            if text.endswith((".jpg", ".jpeg", ".png")):
+                return self.embed_image(text)
+            else:
+                return self.embed_query(text)
         elif isinstance(text, list):
             return self.embed_documents(text)
         else:
