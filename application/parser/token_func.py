@@ -21,6 +21,8 @@ def separate_header_and_body(text):
     )
     return header, body
 
+def is_text_document(doc: Document) -> bool:
+    return doc.text is not None and doc.text.strip() != ""
 
 def group_documents(
     documents: List[Document], min_tokens: int, max_tokens: int
@@ -32,17 +34,17 @@ def group_documents(
         f"Starting to group documents. Total documents: {len(documents)}",
         file=sys.stderr,
     )
+    encoding = tiktoken.get_encoding("cl100k_base")
+
     for idx, doc in enumerate(documents):
         print(f"Processing document {idx + 1}/{len(documents)}", file=sys.stderr)
-        if doc.extra_info and doc.extra_info.get("type") in ["image", "table"]:
-            print(
-                f"Skipping grouping for {doc.extra_info.get('type')} document",
-                file=sys.stderr,
-            )
+        if not is_text_document(doc):
+            print(f"Skipping document {idx + 1} as it has no text", file=sys.stderr)
             docs.append(doc)
             continue
-
-        doc_len = len(tiktoken.get_encoding("cl100k_base").encode(doc.text))
+        
+        doc_tokens = encoding.encode(doc.text)
+        doc_len = len(doc_tokens)
         print(f"Document length: {doc_len} tokens", file=sys.stderr)
 
         # Check if current group is empty or if the document can be added based on token count and matching metadata
@@ -81,17 +83,16 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
         f"Starting to split documents. Total documents: {len(documents)}",
         file=sys.stderr,
     )
+    encoding = tiktoken.get_encoding("cl100k_base")
+
     for idx, doc in enumerate(documents):
         print(f"Processing document {idx + 1}/{len(documents)}", file=sys.stderr)
-        if doc.extra_info and doc.extra_info.get("type") in ["image", "table"]:
-            print(
-                f"Skipping splitting for {doc.extra_info.get('type')} document",
-                file=sys.stderr,
-            )
+        if not is_text_document(doc):
+            print("Skipping splitting for non-text document", file=sys.stderr)
             docs.append(doc)
             continue
 
-        token_length = len(tiktoken.get_encoding("cl100k_base").encode(doc.text))
+        token_length = len(encoding.encode(doc.text))
         print(f"Document length: {token_length} tokens", file=sys.stderr)
         if token_length <= max_tokens:
             print(
@@ -101,7 +102,7 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
             docs.append(doc)
         else:
             header, body = separate_header_and_body(doc.text)
-            if len(tiktoken.get_encoding("cl100k_base").encode(header)) > max_tokens:
+            if len(encoding.encode(header)) > max_tokens:
                 print(
                     f"Header exceeds max tokens. Treating entire document as body.",
                     file=sys.stderr,
@@ -120,10 +121,12 @@ def split_documents(documents: List[Document], max_tokens: int) -> List[Document
             ]
             for i, body_part in enumerate(body_parts):
                 new_doc = Document(
-                    text=header + body_part.strip(),
+                    text=(header + body_part.strip()).strip(),
                     doc_id=f"{doc.doc_id}-{i}" if doc.doc_id else None,
                     embedding=doc.embedding,
                     extra_info=doc.extra_info,
+                    tables=doc.tables,
+                    images=doc.images,
                 )
                 print(
                     f"Created new document part {i + 1} for document {idx + 1}",

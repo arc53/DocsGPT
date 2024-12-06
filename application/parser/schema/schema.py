@@ -24,8 +24,8 @@ class BaseDocument(DataClassJsonMixin):
     extra_info: Optional[Dict[str, Any]] = None
 
     # Correct type annotations
-    image: Optional[Union[str, Dict[str, Any]]] = None  # Accepts both str and dict for images
-    table: Optional[Union[str, Dict[str, Any]]] = None
+    images: Optional[Union[str, Dict[str, Any]]] = None  # Accepts both str and dict for images
+    tables: Optional[Union[str, Dict[str, Any]]] = None
 
     @classmethod
     @abstractmethod
@@ -59,17 +59,12 @@ class BaseDocument(DataClassJsonMixin):
             raise ValueError("embedding not set.")
         return self.embedding
 
-    def get_image(self) -> str:
-        """Get image."""
-        if self.image is None:
-            raise ValueError("image not set.")
-        return self.image
+    def get_tables(self) -> List[Union[str, Dict[str, Any]]]:
+        return self.tables or []
 
-    def get_table(self) -> str:
-        """Get table."""
-        if self.table is None:
-            raise ValueError("table not set.")
-        return self.table
+    def get_images(self) -> List[Union[str, Dict[str, Any]]]:
+        return self.images or []
+
 
     @property
     def extra_info_str(self) -> Optional[str]:

@@ -98,16 +98,11 @@ class DocxParser(BaseParser):
                 if image_data:
                     images.append(image_data)
 
-        return {
-            "text": "\n".join(text_content),
-            "tables": tables,
-            "images": images
-        }
+        return {"text": "\n".join(text_content), "tables": tables, "images": images}
 
     def extract_image_from_shape(self, shape, document) -> Optional[Dict[str, str]]:
         """Extract image from an inline shape and encode it in Base64."""
         try:
-            # Get the relationship ID for the image
             rId = shape._inline.graphic.graphicData.pic.blipFill.blip.embed
             image_part = document.part.related_parts[rId]
             image_data = image_part.blob
@@ -117,11 +112,7 @@ class DocxParser(BaseParser):
             if not self.is_valid_image(image_data):
                 print(f"Invalid image: {image_filename}")
                 return None
-
-            # Resize the image (optional)
             resized_image = self.resize_image(image_data)
-
-            # Convert the image to Base64
             image_base64 = base64.b64encode(resized_image).decode("utf-8")
             return {"filename": image_filename, "image_base64": image_base64}
         except Exception as e:
@@ -137,10 +128,16 @@ class DocxParser(BaseParser):
         except Exception:
             return False
 
-    def resize_image(self, image_data: bytes, max_size=(128, 128)) -> bytes:
-        """Resize image to a specified maximum size."""
+    def resize_image(self, image_data: bytes, width=200) -> bytes:
+        """Resize image to a specified maximum width, maintaining aspect ratio."""
         image = Image.open(io.BytesIO(image_data))
-        image.thumbnail(max_size, Image.Resampling.LANCZOS)
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return buffer.getvalue()
+        ratio = width / float(image.width)
+        height = int(image.height * ratio)
+        img = image.resize((width, height), Image.Resampling.LANCZOS)
+
+        # Save the resized image back to bytes
+        output = io.BytesIO()
+        # Use original format if possible, else default to PNG
+        img_format = image.format if image.format else "PNG"
+        img.save(output, format=img_format)
+        return output.getvalue()

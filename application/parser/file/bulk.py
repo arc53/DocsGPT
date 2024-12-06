@@ -148,9 +148,7 @@ class SimpleDirectoryReader(BaseReader):
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
-        text_list = []
-        table_list = []
-        image_list = []
+        documents: List[Document] = []
         for input_file in self.input_files:
             if input_file.suffix in self.file_extractor:
                 parser = self.file_extractor[input_file.suffix]
@@ -166,26 +164,18 @@ class SimpleDirectoryReader(BaseReader):
                 file_metadata = self.file_metadata(str(input_file))
             else:
                 # Provide a default empty metadata
-                file_metadata = {'title': '', 'store': ''}
-                # TODO: Find a case with no metadata and check if breaks anything 
-
-            if "text" in data and data["text"]:
-                text_list.append(data["text"])
-                metadata_list.append(file_metadata)
-
-            if "tables" in data and data["tables"]:
-                table_list.extend(data["tables"])
-                metadata_list.extend([file_metadata] * len(data["tables"]))
-
-            if "images" in data and data["images"]:
-                image_list.extend(data["images"])
-                metadata_list.extend([file_metadata] * len(data["images"]))
+                file_metadata = {"title": "", "store": ""}
+                # TODO: Find a case with no metadata and check if breaks anything
 
         if concatenate:
             return [Document("\n".join(data_list))]
         else:
             # Create separate documents for text, tables, and images
-            documents = [Document(t, extra_info={**m, "type": "text"}) for t, m in zip(text_list, metadata_list)]
-            documents += [Document(table, extra_info={**m, "type": "table"}) for table, m in zip(table_list, metadata_list)]
-            documents += [Document(img, extra_info={**m, "type": "image"}) for img, m in zip(image_list, metadata_list)]
+            doc = Document(
+                text=data.get("text", None),
+                tables=data.get("tables", None),
+                images=data.get("images", None),
+                extra_info=file_metadata,
+            )
+            documents.append(doc)
             return documents
