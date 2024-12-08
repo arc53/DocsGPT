@@ -30,29 +30,58 @@ export const getOS = () => {
 export const preprocessSearchResultsToHTML = (text: string, keyword: string) => {
   const md = new MarkdownIt();
   const htmlString = md.render(text);
-  const filteredResults = document.createElement("div")
-  filteredResults.innerHTML = htmlString;
-  console.log(filteredResults);
-  
-  //iterator for nodes not including the keyword
-  const nodeIterator = document.createNodeIterator(
-    filteredResults,
-    NodeFilter.SHOW_ELEMENT,
-    {
-      acceptNode(node) {
-        return !node.textContent?.toLowerCase().includes(keyword.toLowerCase())
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT;
-      },
-    },
-  );
 
-  //remove each node from the DOM not containg the 
-  let currentNode;
-  while ((currentNode = nodeIterator.nextNode())) {
-    currentNode.parentElement?.removeChild(currentNode);
+  // Container for processed HTML
+  const filteredResults = document.createElement("div");
+  filteredResults.innerHTML = htmlString;
+
+  if (!processNode(filteredResults, keyword)) return null;
+
+  return filteredResults.innerHTML.trim() ? filteredResults.outerHTML : null;
+};
+
+
+
+// Recursive function to process nodes
+const processNode = (node: Node, keyword: string): boolean => {
+
+  const keywordRegex = new RegExp(`(${keyword})`, "gi");
+  if (node.nodeType === Node.TEXT_NODE) {
+    const textContent = node.textContent || "";
+
+    if (textContent.toLowerCase().includes(keyword.toLowerCase())) {
+      const highlightedHTML = textContent.replace(
+        keywordRegex,
+        `<mark>$1</mark>`
+      );
+      const tempContainer = document.createElement("div");
+      tempContainer.innerHTML = highlightedHTML;
+
+      // Replace the text node with highlighted content
+      while (tempContainer.firstChild) {
+        node.parentNode?.insertBefore(tempContainer.firstChild, node);
+      }
+      node.parentNode?.removeChild(node);
+
+      return true;
+    }
+
+    return false;
+  } else if (node.nodeType === Node.ELEMENT_NODE) {
+
+    const children = Array.from(node.childNodes);
+    let hasKeyword = false;
+
+    children.forEach((child) => {
+      if (!processNode(child, keyword)) {
+        node.removeChild(child);
+      } else {
+        hasKeyword = true;
+      }
+    });
+
+    return hasKeyword;
   }
-  if (!filteredResults.innerHTML.trim())
-    return null;
-  return filteredResults.outerHTML
-}
+
+  return false;
+};
