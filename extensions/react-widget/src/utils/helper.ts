@@ -30,47 +30,29 @@ export const getOS = () => {
 export const preprocessSearchResultsToHTML = (text: string, keyword: string) => {
   const md = new MarkdownIt();
   const htmlString = md.render(text);
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(htmlString, "text/html");
-
   const filteredResults = document.createElement("div")
-  recursiveFilter(doc.body, keyword, filteredResults)
-  console.log(filteredResults)
+  filteredResults.innerHTML = htmlString;
+  console.log(filteredResults);
+  
+  //iterator for nodes not including the keyword
+  const nodeIterator = document.createNodeIterator(
+    filteredResults,
+    NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode(node) {
+        return !node.textContent?.toLowerCase().includes(keyword.toLowerCase())
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      },
+    },
+  );
 
-  return DOMPurify.sanitize(filteredResults)
-
-}
-
-const recursiveFilter = (element: Node, keyword: string, parent: Node | null) => {
-  const content = element.textContent?.toLowerCase() ?? null;
-  const childNodes = element.childNodes
-  childNodes.forEach((child) => {
-    if (recursiveFilter(child, keyword, element))
-      parent?.appendChild(highlightFilteredContent(child, keyword))
-  })
-  if (content && content.includes(keyword.toLowerCase())) {
-    return true
+  //remove each node from the DOM not containg the 
+  let currentNode;
+  while ((currentNode = nodeIterator.nextNode())) {
+    currentNode.parentElement?.removeChild(currentNode);
   }
-  return false
+  if (!filteredResults.innerHTML.trim())
+    return null;
+  return filteredResults.outerHTML
 }
-
-const highlightFilteredContent = (element: Node, keyword: string) => {
-  if (!element.textContent || !keyword.trim()) return element;
-
-  const regex = new RegExp(`(${keyword})`, 'gi');
-  const splitted = element.textContent.split(regex);
-  console.log(splitted);
-
-  // Create a new HTML string with the keyword wrapped in a <span>
-  const highlightedHTML = splitted
-    .map((part) =>
-      regex.test(part)
-        ? `<span style="color: yellow;">${part}</span>`
-        : part
-    )
-    .join("");
-  if (element instanceof HTMLElement) {
-    element.innerHTML = highlightedHTML;
-  }
-  return element
-};
