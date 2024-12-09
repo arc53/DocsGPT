@@ -35,7 +35,7 @@ export const preprocessSearchResultsToHTML = (text: string, keyword: string) => 
   const filteredResults = document.createElement("div");
   filteredResults.innerHTML = htmlString;
 
-  if (!processNode(filteredResults, keyword)) return null;
+  if (!processNode(filteredResults, keyword.trim())) return null;
 
   return filteredResults.innerHTML.trim() ? filteredResults.outerHTML : null;
 };
