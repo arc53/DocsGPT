@@ -30,6 +30,7 @@ api_key_collection = db["api_keys"]
 token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
 user_logs_collection = db["user_logs"]
+user_tools_collection = db["user_tools"]
 
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
@@ -1802,3 +1803,154 @@ class TextToSpeech(Resource):
             )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
+@user_ns.route("/api/create_tool")
+class CreateTool(Resource):
+    create_tool_model = api.model(
+        "CreateToolModel",
+        {
+            "name": fields.String(required=True, description="Name of the tool"),
+            "config": fields.Raw(required=True, description="Configuration of the tool"),
+            "actions": fields.List(required=True, description="Actions the tool can perform"),
+            "status": fields.Boolean(required=True, description="Status of the tool")
+
+        },
+    )
+
+    @api.expect(create_tool_model)
+    @api.doc(description="Create a new tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["name", "config", "actions", "status"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        user = "local"
+        try:
+            new_tool = {
+                "name": data["name"],
+                "config": data["config"],
+                "actions": data["actions"],
+                "user": user,
+                "status": data["status"],
+            }
+            resp = user_tools_collection.insert_one(new_tool)
+            new_id = str(resp.inserted_id)
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"id": new_id}), 200)
+    
+@user_ns.route("/api/update_tool_config")
+class UpdateToolConfig(Resource):
+    update_tool_config_model = api.model(
+        "UpdateToolConfigModel",
+        {
+            "id": fields.String(required=True, description="Tool ID"),
+            "config": fields.Raw(required=True, description="Configuration of the tool"),
+        },
+    )
+
+    @api.expect(update_tool_config_model)
+    @api.doc(description="Update the configuration of a tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "config"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"])},
+                {"$set": {"config": data["config"]}},
+            )
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+    
+@user_ns.route("/api/update_tool_actions")
+class UpdateToolActions(Resource):
+    update_tool_actions_model = api.model(
+        "UpdateToolActionsModel",
+        {
+            "id": fields.String(required=True, description="Tool ID"),
+            "actions": fields.List(required=True, description="Actions the tool can perform"),
+        },
+    )
+
+    @api.expect(update_tool_actions_model)
+    @api.doc(description="Update the actions of a tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "actions"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"])},
+                {"$set": {"actions": data["actions"]}},
+            )
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+@user_ns.route("/api/update_tool_status")
+class UpdateToolStatus(Resource):
+    update_tool_status_model = api.model(
+        "UpdateToolStatusModel",
+        {
+            "id": fields.String(required=True, description="Tool ID"),
+            "status": fields.Boolean(required=True, description="Status of the tool"),
+        },
+    )
+
+    @api.expect(update_tool_status_model)
+    @api.doc(description="Update the status of a tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "status"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"])},
+                {"$set": {"status": data["status"]}},
+            )
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+    
+@user_ns.route("/api/delete_tool")
+class DeleteTool(Resource):
+    delete_tool_model = api.model(
+        "DeleteToolModel",
+        {"id": fields.String(required=True, description="Tool ID")},
+    )
+
+    @api.expect(delete_tool_model)
+    @api.doc(description="Delete a tool by ID")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            result = user_tools_collection.delete_one({"_id": ObjectId(data["id"])})
+            if result.deleted_count == 0:
+                return {"success": False, "message": "Tool not found"}, 404
+        except Exception as err:
+            return {"success": False, "error": str(err)}, 400
+
+        return {"success": True}, 200
