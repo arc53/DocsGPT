@@ -1,6 +1,7 @@
 from application.llm.llm_creator import LLMCreator
 from application.core.settings import settings
 from application.tools.tool_manager import ToolManager
+from application.core.mongo_db import MongoDB
 import json
 
 tool_tg = {
@@ -53,9 +54,31 @@ class Agent:
         ]
         self.tool_config = {
         }
+    
+    def _get_user_tools(self, user="local"):
+        mongo = MongoDB.get_client()
+        db = mongo["docsgpt"]
+        user_tools_collection = db["user_tools"]
+        user_tools = user_tools_collection.find({"user": user, "status": True})
+        user_tools = list(user_tools)
+        for tool in user_tools:
+            tool.pop("_id")
+        user_tools = {tool["name"]: tool for tool in user_tools}
+        return user_tools
+    
+    def _simple_tool_agent(self, messages):
+        tools_dict = self._get_user_tools()
+        # combine all tool_actions into one list
+        self.tools.extend([
+            {
+                "type": "function",
+                "function": tool_action
+            }
+            for tool in tools_dict.values()
+            for tool_action in tool["actions"]
+        ])
 
-    def gen(self, messages):
-        # Generate initial response from the LLM
+
         resp = self.llm.gen(model=self.gpt_model, messages=messages, tools=self.tools)
 
         if isinstance(resp, str):
@@ -75,7 +98,7 @@ class Agent:
                 call_id = call.id
                 # Determine the tool name and load it
                 tool_name = call_name.split("_")[0]
-                tool = tm.load_tool(tool_name, tool_config=self.tool_config)
+                tool = tm.load_tool(tool_name, tool_config=tools_dict[tool_name]['config'])
                 # Execute the tool's action
                 resp_tool = tool.execute_action(call_name, **call_args)
                 # Append the tool's response to the conversation
@@ -95,4 +118,13 @@ class Agent:
         else:
             completion = self.llm.gen_stream(model=self.gpt_model, messages=messages, tools=self.tools)
             for line in completion:
+                yield line
+
+    def gen(self, messages):
+        # Generate initial response from the LLM
+        if self.llm.supports_tools():
+            self._simple_tool_agent(messages)
+        else:
+            resp = self.llm.gen_stream(model=self.gpt_model, messages=messages)
+            for line in resp:
                 yield line
