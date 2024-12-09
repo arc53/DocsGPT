@@ -27,8 +27,7 @@ function SourceDropdown({
   const { t } = useTranslation();
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const embeddingsName =
-    import.meta.env.VITE_EMBEDDINGS_NAME ||
-    'huggingface_sentence-transformers/all-mpnet-base-v2';
+    import.meta.env.VITE_EMBEDDINGS_NAME || 'openai/clip-vit-base-patch16';
 
   const handleEmptyDocumentSelect = () => {
     dispatch(setSelectedDocs(null));
