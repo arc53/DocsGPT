@@ -19,4 +19,4 @@ Sphinx==7.2.6
 tiktoken==0.5.2
 tqdm==4.66.3
 typer==0.9.0
-unstructured==0.12.2
+unstructured==0.14.3
