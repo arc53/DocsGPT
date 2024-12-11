@@ -1,12 +1,11 @@
 import React from 'react'
-import styled, { keyframes, createGlobalStyle, ThemeProvider } from 'styled-components';
+import styled, { ThemeProvider } from 'styled-components';
 import { WidgetCore } from './DocsGPTWidget';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI'
 import { Result } from '@/types';
 import MarkdownIt from 'markdown-it';
-import DOMPurify from 'dompurify';
-import { getOS } from '../utils/helper'
+import { getOS, preprocessSearchResultsToHTML } from '../utils/helper'
 const themes = {
     dark: {
         bg: '#000',
@@ -116,7 +115,7 @@ const ResultWrapper = styled.div`
 const Markdown = styled.div`
 line-height:20px;
 font-size: 12px;
-word-break: break-all;
+white-space: pre-wrap;
  pre {
       padding: 8px;
       width: 90%;
@@ -147,17 +146,18 @@ word-break: break-all;
 
     code:not(pre code) {
       border-radius: 6px;
-      padding: 4px 4px;
-      font-size: 12px;
-      display: inline-block;
+      padding: 2px 2px;
+      margin: 2px;
+      font-size: 10px;
+      display: inline;
       background-color: #646464;
       color: #fff ;
     }
-
+    img{
+        max-width: 50%;
+    }
     code {
-      white-space: pre-wrap ;
-      overflow-wrap: break-word;
-      word-break: break-all;
+      overflow-x: auto;
     }
     a{
         color: #007ee6;
@@ -291,6 +291,8 @@ export const SearchBar = ({
         }, 500);
 
         return () => {
+            console.log(results);
+
             abortController.abort();
             clearTimeout(debounceTimeout.current ?? undefined);
         };
@@ -341,22 +343,27 @@ export const SearchBar = ({
                                     (results.length > 0 ?
                                         results.map((res, key) => {
                                             const containsSource = res.source !== 'local';
-                                            return (
-                                                <ResultWrapper
-                                                    key={key}
-                                                    onClick={() => {
-                                                        if (!containsSource) return;
-                                                        window.open(res.source, '_blank', 'noopener, noreferrer')
-                                                    }}
-                                                    className={containsSource ? "contains-source" : ""}>
-                                                    <Title>{res.title}</Title>
-                                                    <Content>
-                                                        <Markdown
-                                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(md.render((res.text).substring(0, 256) + "...")) }}
-                                                        />
-                                                    </Content>
-                                                </ResultWrapper>
-                                            )
+                                            const filteredResults = preprocessSearchResultsToHTML(res.text,input)
+                                            if (filteredResults)
+                                                return (
+                                                    <ResultWrapper
+                                                        key={key}
+                                                        onClick={() => {
+                                                            if (!containsSource) return;
+                                                            window.open(res.source, '_blank', 'noopener, noreferrer')
+                                                        }}
+                                                        className={containsSource ? "contains-source" : ""}>
+                                                        <Title>{res.title}</Title>
+                                                        <Content>
+                                                            <Markdown
+                                                                dangerouslySetInnerHTML={{ __html: filteredResults }}
+                                                            />
+                                                        </Content>
+                                                    </ResultWrapper>
+                                                )
+                                            else {
+                                                setResults((prevItems) => prevItems.filter((_, index) => index !== key));
+                                            }
                                         })
                                         :
                                         <NoResults>No results</NoResults>

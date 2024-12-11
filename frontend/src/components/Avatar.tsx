@@ -5,7 +5,7 @@ export default function Avatar({
   size,
   className,
 }: {
-  avatar: string | ReactNode;
+  avatar: ReactNode;
   size?: 'SMALL' | 'MEDIUM' | 'LARGE';
   className: string;
 }) {
