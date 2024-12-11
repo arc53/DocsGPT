@@ -67,6 +67,7 @@ pypdf2==3.0.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-pptx==1.0.2
+python-docx==1.1.2
 qdrant-client==1.11.0
 redis==5.0.1
 referencing==0.30.2

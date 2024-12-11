@@ -1,7 +1,7 @@
 """Base schema for data structures."""
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from dataclasses_json import DataClassJsonMixin
 
@@ -22,6 +22,10 @@ class BaseDocument(DataClassJsonMixin):
 
     # extra fields
     extra_info: Optional[Dict[str, Any]] = None
+
+    # Correct type annotations
+    images: Optional[Union[str, Dict[str, Any]]] = None  # Accepts both str and dict for images
+    tables: Optional[Union[str, Dict[str, Any]]] = None
 
     @classmethod
     @abstractmethod
@@ -54,6 +58,13 @@ class BaseDocument(DataClassJsonMixin):
         if self.embedding is None:
             raise ValueError("embedding not set.")
         return self.embedding
+
+    def get_tables(self) -> List[Union[str, Dict[str, Any]]]:
+        return self.tables or []
+
+    def get_images(self) -> List[Union[str, Dict[str, Any]]]:
+        return self.images or []
+
 
     @property
     def extra_info_str(self) -> Optional[str]:

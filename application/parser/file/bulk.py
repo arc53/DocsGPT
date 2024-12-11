@@ -1,5 +1,7 @@
 """Simple reader that reads files of different formats from a directory."""
+
 import logging
+import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
@@ -10,7 +12,7 @@ from application.parser.file.epub_parser import EpubParser
 from application.parser.file.html_parser import HTMLParser
 from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.file.rst_parser import RstParser
-from application.parser.file.tabular_parser import PandasCSVParser,ExcelParser
+from application.parser.file.tabular_parser import PandasCSVParser, ExcelParser
 from application.parser.file.json_parser import JSONParser
 from application.parser.file.pptx_parser import PPTXParser
 from application.parser.file.image_parser import ImageParser
@@ -20,14 +22,14 @@ DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".pdf": PDFParser(),
     ".docx": DocxParser(),
     ".csv": PandasCSVParser(),
-    ".xlsx":ExcelParser(),
+    ".xlsx": ExcelParser(),
     ".epub": EpubParser(),
     ".md": MarkdownParser(),
     ".rst": RstParser(),
     ".html": HTMLParser(),
     ".mdx": MarkdownParser(),
-    ".json":JSONParser(),
-    ".pptx":PPTXParser(),
+    ".json": JSONParser(),
+    ".pptx": PPTXParser(),
     ".png": ImageParser(),
     ".jpg": ImageParser(),
     ".jpeg": ImageParser(),
@@ -61,16 +63,16 @@ class SimpleDirectoryReader(BaseReader):
     """
 
     def __init__(
-            self,
-            input_dir: Optional[str] = None,
-            input_files: Optional[List] = None,
-            exclude_hidden: bool = True,
-            errors: str = "ignore",
-            recursive: bool = True,
-            required_exts: Optional[List[str]] = None,
-            file_extractor: Optional[Dict[str, BaseParser]] = None,
-            num_files_limit: Optional[int] = None,
-            file_metadata: Optional[Callable[[str], Dict]] = None,
+        self,
+        input_dir: Optional[str] = None,
+        input_files: Optional[List] = None,
+        exclude_hidden: bool = True,
+        errors: str = "ignore",
+        recursive: bool = True,
+        required_exts: Optional[List[str]] = None,
+        file_extractor: Optional[Dict[str, BaseParser]] = None,
+        num_files_limit: Optional[int] = None,
+        file_metadata: Optional[Callable[[str], Dict]] = None,
     ) -> None:
         """Initialize with parameters."""
         super().__init__()
@@ -110,8 +112,8 @@ class SimpleDirectoryReader(BaseReader):
             elif self.exclude_hidden and input_file.name.startswith("."):
                 continue
             elif (
-                    self.required_exts is not None
-                    and input_file.suffix not in self.required_exts
+                self.required_exts is not None
+                and input_file.suffix not in self.required_exts
             ):
                 continue
             else:
@@ -122,7 +124,7 @@ class SimpleDirectoryReader(BaseReader):
             new_input_files.extend(sub_input_files)
 
         if self.num_files_limit is not None and self.num_files_limit > 0:
-            new_input_files = new_input_files[0: self.num_files_limit]
+            new_input_files = new_input_files[0 : self.num_files_limit]
 
         # print total number of files added
         logging.debug(
@@ -146,6 +148,7 @@ class SimpleDirectoryReader(BaseReader):
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
+        documents: List[Document] = []
         for input_file in self.input_files:
             if input_file.suffix in self.file_extractor:
                 parser = self.file_extractor[input_file.suffix]
@@ -155,29 +158,24 @@ class SimpleDirectoryReader(BaseReader):
             else:
                 # do standard read
                 with open(input_file, "r", errors=self.errors) as f:
-                    data = f.read()
+                    data = {"text": f.read(), "tables": [], "images": []}
             # Prepare metadata for this file
             if self.file_metadata is not None:
                 file_metadata = self.file_metadata(str(input_file))
             else:
                 # Provide a default empty metadata
-                file_metadata = {'title': '', 'store': ''}
-                # TODO: Find a case with no metadata and check if breaks anything 
-
-            if isinstance(data, List):
-                # Extend data_list with each item in the data list
-                data_list.extend([str(d) for d in data])
-                # For each item in the data list, add the file's metadata to metadata_list
-                metadata_list.extend([file_metadata for _ in data])
-            else:
-                # Add the single piece of data to data_list
-                data_list.append(str(data))
-                # Add the file's metadata to metadata_list
-                metadata_list.append(file_metadata)
+                file_metadata = {"title": "", "store": ""}
+                # TODO: Find a case with no metadata and check if breaks anything
 
         if concatenate:
             return [Document("\n".join(data_list))]
-        elif self.file_metadata is not None:
-            return [Document(d, extra_info=m) for d, m in zip(data_list, metadata_list)]
         else:
-            return [Document(d) for d in data_list]
+            # Create separate documents for text, tables, and images
+            doc = Document(
+                text=data.get("text", None),
+                tables=data.get("tables", None),
+                images=data.get("images", None),
+                extra_info=file_metadata,
+            )
+            documents.append(doc)
+            return documents
