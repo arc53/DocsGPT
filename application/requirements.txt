@@ -1,4 +1,4 @@
-anthropic==0.34.2
+anthropic==0.40.0
 boto3==1.34.153
 beautifulsoup4==4.12.3
 celery==5.3.6
@@ -43,7 +43,7 @@ multidict==6.1.0
 mypy-extensions==1.0.0
 networkx==3.3
 numpy==1.26.4
-openai==1.46.1
+openai==1.55.3 
 openapi-schema-validator==0.6.2
 openapi-spec-validator==0.6.0
 openapi3-parser==1.1.18
