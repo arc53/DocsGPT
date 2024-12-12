@@ -74,7 +74,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
 
-  const navRef = useRef(null);
+  const navRef = useRef<HTMLDivElement>(null);
 
   const navigate = useNavigate();
 

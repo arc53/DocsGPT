@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
+import { JSX } from 'react/jsx-runtime';
 interface ModalProps {
   handleSubmit: () => void;
   isCancellable: boolean;

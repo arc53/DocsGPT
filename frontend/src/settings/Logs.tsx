@@ -120,7 +120,7 @@ type LogsTableProps = {
 };
 
 function LogsTable({ logs, setPage }: LogsTableProps) {
-  const observerRef = useRef<any>();
+  const observerRef = useRef<any>(null);
   const firstObserver = useCallback((node: HTMLDivElement) => {
     if (observerRef.current) {
       observerRef.current = new IntersectionObserver((entries) => {

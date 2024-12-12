@@ -1,14 +1,14 @@
 import { useEffect, RefObject, useState } from 'react';
 
 export function useOutsideAlerter<T extends HTMLElement>(
-  ref: RefObject<T>,
+  ref: RefObject<T | null>,
   handler: () => void,
   additionalDeps: unknown[],
   handleEscapeKey?: boolean,
 ) {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
+      if (ref?.current && !ref.current.contains(event.target as Node)) {
         handler();
       }
     }
