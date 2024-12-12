@@ -1796,7 +1796,7 @@ class CreateTool(Resource):
         {
             "name": fields.String(required=True, description="Name of the tool"),
             "config": fields.Raw(required=True, description="Configuration of the tool"),
-            "actions": fields.List(required=True, description="Actions the tool can perform"),
+            "actions": fields.List(fields.String, required=True, description="Actions the tool can perform"),
             "status": fields.Boolean(required=True, description="Status of the tool")
 
         },
@@ -1862,7 +1862,7 @@ class UpdateToolActions(Resource):
         "UpdateToolActionsModel",
         {
             "id": fields.String(required=True, description="Tool ID"),
-            "actions": fields.List(required=True, description="Actions the tool can perform"),
+            "actions": fields.List(fields.String, required=True, description="Actions the tool can perform"),
         },
     )
 
