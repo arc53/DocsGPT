@@ -14,6 +14,11 @@ type Props = {
   handlePostDocumentSelect: any;
 };
 
+const capitalizeFirstLetter = (value: any) =>
+  typeof value === 'string' && value.length > 0
+    ? value.charAt(0).toUpperCase() + value.slice(1)
+    : value;
+
 function SourceDropdown({
   options,
   setSelectedDocs,
@@ -63,7 +68,7 @@ function SourceDropdown({
         <span className="ml-1 mr-2 flex-1 overflow-hidden text-ellipsis text-left dark:text-bright-gray">
           <div className="flex flex-row gap-2">
             <p className="max-w-3/4 truncate whitespace-nowrap">
-              {selectedDocs?.name || 'None'}
+              {capitalizeFirstLetter(selectedDocs?.name) || 'None'}
             </p>
           </div>
         </span>
@@ -87,7 +92,7 @@ function SourceDropdown({
                     onClick={() => {
                       dispatch(setSelectedDocs(option));
                       setIsDocsListOpen(false);
-                      handlePostDocumentSelect(option);
+                      handlePostDocumentSelect(capitalizeFirstLetter(option));
                     }}
                   >
                     <span
@@ -96,7 +101,7 @@ function SourceDropdown({
                       }}
                       className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
                     >
-                      {option.name}
+                      {capitalizeFirstLetter(option.name)}
                     </span>
                     {option.location === 'local' && (
                       <img
@@ -117,6 +122,7 @@ function SourceDropdown({
           ) : (
             <></>
           )}
+
           <div
             className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
             onClick={handleEmptyDocumentSelect}
