@@ -18,7 +18,7 @@ from application.error import bad_request
 from application.extensions import api
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
-from application.utils import check_required_fields
+from application.utils import check_required_fields, limit_chat_history
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +324,7 @@ class Stream(Resource):
 
         try:
             question = data["question"]
-            history = str(data.get("history", []))
-            history = str(json.loads(history))
+            history = str(limit_chat_history(json.loads(data.get("history", []))))
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             

@@ -46,3 +46,17 @@ def check_required_fields(data, required_fields):
 def get_hash(data):
     return hashlib.md5(data.encode()).hexdigest()
 
+def limit_chat_history(history,max_token_limit = 500):
+   
+    cumulative_token_count = 0
+    trimmed_history = []
+    
+    for i in reversed(history):
+        
+        if("prompt" in i and "response" in i):
+            cumulative_token_count += num_tokens_from_string(i["prompt"] + i["response"])
+            if(cumulative_token_count > max_token_limit):
+                    break
+            trimmed_history.insert(0,i)
+            
+    return trimmed_history
