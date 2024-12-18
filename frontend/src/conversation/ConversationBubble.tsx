@@ -436,7 +436,8 @@ const ConversationBubble = forwardRef<
                   feedback === 'LIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                }
+                ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
               >
                 <div>
                   <div
@@ -454,9 +455,15 @@ const ConversationBubble = forwardRef<
                       : 'fill-none  stroke-gray-4000'
                   }`}
                       onClick={() => {
-                        handleFeedback?.('LIKE');
-                        setIsLikeClicked(true);
-                        setIsDislikeClicked(false);
+                        if (feedback === undefined || feedback === null) {
+                          handleFeedback?.('LIKE');
+                          setIsLikeClicked(true);
+                          setIsDislikeClicked(false);
+                        } else if (feedback === 'LIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsLikeHovered(true)}
                       onMouseLeave={() => setIsLikeHovered(false)}
@@ -471,7 +478,7 @@ const ConversationBubble = forwardRef<
                   feedback === 'DISLIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                } ${feedback === 'LIKE' && type !== 'ERROR' ? ' hidden' : ''} `}
               >
                 <div>
                   <div
@@ -488,9 +495,15 @@ const ConversationBubble = forwardRef<
                           : 'fill-none  stroke-gray-4000'
                       }`}
                       onClick={() => {
-                        handleFeedback?.('DISLIKE');
-                        setIsDislikeClicked(true);
-                        setIsLikeClicked(false);
+                        if (feedback === undefined || feedback === null) {
+                          handleFeedback?.('DISLIKE');
+                          setIsDislikeClicked(true);
+                          setIsLikeClicked(false);
+                        } else if (feedback === 'DISLIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsDislikeHovered(true)}
                       onMouseLeave={() => setIsDislikeHovered(false)}

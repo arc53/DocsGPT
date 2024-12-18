@@ -202,12 +202,16 @@ export function handleSendFeedback(
   prompt: string,
   response: string,
   feedback: FEEDBACK,
+  conversation_id: string,
+  prompt_index: number,
 ) {
   return conversationService
     .feedback({
       question: prompt,
       answer: response,
       feedback: feedback,
+      conversation_id: conversation_id,
+      question_index: prompt_index,
     })
     .then((response) => {
       if (response.ok) {

@@ -155,8 +155,22 @@ export default function Conversation() {
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
-    handleSendFeedback(query.prompt, query.response!, feedback).catch(() =>
-      dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
+    handleSendFeedback(
+      query.prompt,
+      query.response!,
+      feedback,
+      conversationId as string,
+      index,
+    ).catch(() =>
+      handleSendFeedback(
+        query.prompt,
+        query.response!,
+        feedback,
+        conversationId as string,
+        index,
+      ).catch(() =>
+        dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
+      ),
     );
   };
 
