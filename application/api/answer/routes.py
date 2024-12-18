@@ -455,7 +455,7 @@ class Answer(Resource):
 
         try:
             question = data["question"]
-            history = data.get("history", [])
+            history = str(limit_chat_history(json.loads(data.get("history", []))))
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             chunks = int(data.get("chunks", 2))
