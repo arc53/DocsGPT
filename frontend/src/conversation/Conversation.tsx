@@ -15,7 +15,6 @@ import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import conversationService from '../api/services/conversationService';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
@@ -111,8 +110,22 @@ export default function Conversation() {
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
     dispatch(updateQuery({ index, query: { feedback } }));
-    handleSendFeedback(query.prompt, query.response!, feedback,conversationId as string,index).catch(() =>
-      dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
+    handleSendFeedback(
+      query.prompt,
+      query.response!,
+      feedback,
+      conversationId as string,
+      index,
+    ).catch(() =>
+      handleSendFeedback(
+        query.prompt,
+        query.response!,
+        feedback,
+        conversationId as string,
+        index,
+      ).catch(() =>
+        dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
+      ),
     );
   };
 

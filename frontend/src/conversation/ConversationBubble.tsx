@@ -448,9 +448,13 @@ const ConversationBubble = forwardRef<
                       : 'fill-none  stroke-gray-4000'
                   }`}
                       onClick={() => {
-                        if (feedback === undefined) {
+                        if (feedback === undefined || feedback === null) {
                           handleFeedback?.('LIKE');
                           setIsLikeClicked(true);
+                          setIsDislikeClicked(false);
+                        } else if (feedback === 'LIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
                           setIsDislikeClicked(false);
                         }
                       }}
@@ -484,10 +488,14 @@ const ConversationBubble = forwardRef<
                           : 'fill-none  stroke-gray-4000'
                       }`}
                       onClick={() => {
-                        if (feedback === undefined) {
+                        if (feedback === undefined || feedback === null) {
                           handleFeedback?.('DISLIKE');
                           setIsDislikeClicked(true);
                           setIsLikeClicked(false);
+                        } else if (feedback === 'DISLIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
                         }
                       }}
                       onMouseEnter={() => setIsDislikeHovered(true)}
