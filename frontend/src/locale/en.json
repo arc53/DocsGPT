@@ -73,6 +73,9 @@
     },
     "logs": {
       "label": "Logs"
+    },
+    "tools": {
+      "label": "Tools"
     }
   },
   "modals": {

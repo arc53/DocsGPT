@@ -1,21 +1,25 @@
-from application.tools.base import Tool
 import requests
+from application.tools.base import Tool
+
 
 class CryptoPriceTool(Tool):
+    """
+    CryptoPrice
+    A tool for retrieving cryptocurrency prices using the CryptoCompare public API
+    """
+
     def __init__(self, config):
         self.config = config
 
     def execute_action(self, action_name, **kwargs):
-        actions = {
-            "cryptoprice_get": self.get_price
-        }
+        actions = {"cryptoprice_get": self._get_price}
 
         if action_name in actions:
             return actions[action_name](**kwargs)
         else:
             raise ValueError(f"Unknown action: {action_name}")
 
-    def get_price(self, symbol, currency):
+    def _get_price(self, symbol, currency):
         """
         Fetches the current price of a given cryptocurrency symbol in the specified currency.
         Example:
@@ -32,17 +36,17 @@ class CryptoPriceTool(Tool):
                 return {
                     "status_code": response.status_code,
                     "price": data[currency.upper()],
-                    "message": f"Price of {symbol.upper()} in {currency.upper()} retrieved successfully."
+                    "message": f"Price of {symbol.upper()} in {currency.upper()} retrieved successfully.",
                 }
             else:
                 return {
                     "status_code": response.status_code,
-                    "message": f"Couldn't find price for {symbol.upper()} in {currency.upper()}."
+                    "message": f"Couldn't find price for {symbol.upper()} in {currency.upper()}.",
                 }
         else:
             return {
                 "status_code": response.status_code,
-                "message": "Failed to retrieve price."
+                "message": "Failed to retrieve price.",
             }
 
     def get_actions_metadata(self):
@@ -55,16 +59,16 @@ class CryptoPriceTool(Tool):
                     "properties": {
                         "symbol": {
                             "type": "string",
-                            "description": "The cryptocurrency symbol (e.g. BTC)"
+                            "description": "The cryptocurrency symbol (e.g. BTC)",
                         },
                         "currency": {
                             "type": "string",
-                            "description": "The currency in which you want the price (e.g. USD)"
-                        }
+                            "description": "The currency in which you want the price (e.g. USD)",
+                        },
                     },
                     "required": ["symbol", "currency"],
-                    "additionalProperties": False
-                }
+                    "additionalProperties": False,
+                },
             }
         ]
 

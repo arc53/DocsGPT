@@ -215,18 +215,22 @@ const Documents: React.FC<DocumentsProps> = ({
                         {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
                       </td>
                       <td>
-                        <div className="min-w-[70px] flex flex-row items-end justify-end ml-auto">
+                        <div className="w-full flex flex-row-reverse items-center justify-items-end ml-auto gap-2">
                           {document.type !== 'remote' && (
-                            <img
-                              src={Trash}
-                              alt="Delete"
-                              className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
-                              id={`img-${index}`}
+                            <button
+                              className="h-8 w-8 border border-[#747474] rounded-full p-2 opacity-60 hover:opacity-100"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 handleDeleteDocument(index, document);
                               }}
-                            />
+                            >
+                              <img
+                                id={`img-${index}`}
+                                src={Trash}
+                                alt="Delete"
+                                className="h-full w-full cursor-pointer"
+                              />
+                            </button>
                           )}
                           {document.syncFrequency && (
                             <div className="ml-2">

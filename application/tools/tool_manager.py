@@ -1,9 +1,10 @@
 import importlib
 import inspect
-import pkgutil
 import os
+import pkgutil
 
 from application.tools.base import Tool
+
 
 class ToolManager:
     def __init__(self, config):
@@ -12,11 +13,13 @@ class ToolManager:
         self.load_tools()
 
     def load_tools(self):
-        tools_dir = os.path.dirname(__file__)
+        tools_dir = os.path.join(os.path.dirname(__file__), "implementations")
         for finder, name, ispkg in pkgutil.iter_modules([tools_dir]):
-            if name == 'base' or name.startswith('__'):
+            if name == "base" or name.startswith("__"):
                 continue
-            module = importlib.import_module(f'application.tools.{name}')
+            module = importlib.import_module(
+                f"application.tools.implementations.{name}"
+            )
             for member_name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Tool) and obj is not Tool:
                     tool_config = self.config.get(name, {})
@@ -24,12 +27,13 @@ class ToolManager:
 
     def load_tool(self, tool_name, tool_config):
         self.config[tool_name] = tool_config
-        tools_dir = os.path.dirname(__file__)
-        module = importlib.import_module(f'application.tools.{tool_name}')
+        tools_dir = os.path.join(os.path.dirname(__file__), "implementations")
+        module = importlib.import_module(
+            f"application.tools.implementations.{tool_name}"
+        )
         for member_name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Tool) and obj is not Tool:
                 return obj(tool_config)
-
 
     def execute_action(self, tool_name, action_name, **kwargs):
         if tool_name not in self.tools:
