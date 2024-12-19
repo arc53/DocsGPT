@@ -1,16 +1,23 @@
-from application.tools.base import Tool
 import requests
+from application.tools.base import Tool
+
 
 class TelegramTool(Tool):
+    """
+    Telegram Bot
+    A flexible Telegram tool for performing various actions (e.g., sending messages, images).
+    Requires a bot token and chat ID for configuration
+    """
+
     def __init__(self, config):
         self.config = config
-        self.chat_id = config.get("chat_id", "142189016")
-        self.token = config.get("token", "YOUR_TG_TOKEN")
+        self.token = config.get("token", "")
+        self.chat_id = config.get("chat_id", "")
 
     def execute_action(self, action_name, **kwargs):
         actions = {
-            "telegram_send_message": self.send_message,
-            "telegram_send_image": self.send_image
+            "telegram_send_message": self._send_message,
+            "telegram_send_image": self._send_image,
         }
 
         if action_name in actions:
@@ -18,14 +25,14 @@ class TelegramTool(Tool):
         else:
             raise ValueError(f"Unknown action: {action_name}")
 
-    def send_message(self, text):
+    def _send_message(self, text):
         print(f"Sending message: {text}")
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": text}
         response = requests.post(url, data=payload)
         return {"status_code": response.status_code, "message": "Message sent"}
 
-    def send_image(self, image_url):
+    def _send_image(self, image_url):
         print(f"Sending image: {image_url}")
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": self.chat_id, "photo": image_url}
@@ -42,12 +49,12 @@ class TelegramTool(Tool):
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "Text to send in the notification"
+                            "description": "Text to send in the notification",
                         }
                     },
                     "required": ["text"],
-                    "additionalProperties": False
-                }
+                    "additionalProperties": False,
+                },
             },
             {
                 "name": "telegram_send_image",
@@ -57,23 +64,20 @@ class TelegramTool(Tool):
                     "properties": {
                         "image_url": {
                             "type": "string",
-                            "description": "URL of the image to send"
+                            "description": "URL of the image to send",
                         }
                     },
                     "required": ["image_url"],
-                    "additionalProperties": False
-                }
-            }
+                    "additionalProperties": False,
+                },
+            },
         ]
 
     def get_config_requirements(self):
         return {
             "chat_id": {
                 "type": "string",
-                "description": "Telegram chat ID to send messages to"
+                "description": "Telegram chat ID to send messages to",
             },
-            "token": {
-                "type": "string",
-                "description": "Bot token for authentication"
-            }
+            "token": {"type": "string", "description": "Bot token for authentication"},
         }

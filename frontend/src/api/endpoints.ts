@@ -18,6 +18,11 @@ const endpoints = {
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     LOGS: `/api/get_user_logs`,
     MANAGE_SYNC: '/api/manage_sync',
+    GET_AVAILABLE_TOOLS: '/api/available_tools',
+    GET_USER_TOOLS: '/api/get_tools',
+    CREATE_TOOL: '/api/create_tool',
+    UPDATE_TOOL_STATUS: '/api/update_tool_status',
+    UPDATE_TOOL: '/api/update_tool',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',
