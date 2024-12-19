@@ -37,7 +37,7 @@ api.add_namespace(answer_ns)
 gpt_model = ""
 # to have some kind of default behaviour
 if settings.LLM_NAME == "openai":
-    gpt_model = "gpt-3.5-turbo"
+    gpt_model = "gpt-4o-mini"
 elif settings.LLM_NAME == "anthropic":
     gpt_model = "claude-2"
 elif settings.LLM_NAME == "groq":
