@@ -54,13 +54,16 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
     from application.core.settings import settings
 
     max_token_limit = (
-        max_token_limit
-        if max_token_limit
-        and max_token_limit < settings.MODEL_TOKEN_LIMITS.get(
-            gpt_model, settings.DEFAULT_MAX_HISTORY
+            max_token_limit
+            if max_token_limit and 
+            max_token_limit < settings.MODEL_TOKEN_LIMITS.get(
+                gpt_model, settings.DEFAULT_MAX_HISTORY
+            )
+            else settings.MODEL_TOKEN_LIMITS.get(
+                gpt_model, settings.DEFAULT_MAX_HISTORY
+            )
         )
-        else settings.MODEL_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
-    )
+    
 
     if not history:
         return []
@@ -78,5 +81,5 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
                 trimmed_history.insert(0, message)
             else:
                 break
-                
+
     return trimmed_history

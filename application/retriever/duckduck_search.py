@@ -90,6 +90,7 @@ class DuckDuckSearch(BaseRetriever):
 
         if len(self.chat_history) > 1:      
             for i in self.chat_history:
+                    if "prompt" in i and "response" in i:
                         messages_combine.append(
                             {"role": "user", "content": i["prompt"]}
                         )

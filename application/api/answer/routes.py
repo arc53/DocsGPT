@@ -324,7 +324,7 @@ class Stream(Resource):
 
         try:
             question = data["question"]
-            history = str(limit_chat_history(json.loads(data.get("history", []))))
+            history = limit_chat_history(json.loads(data.get("history", [])), gpt_model=gpt_model)
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             
@@ -455,7 +455,7 @@ class Answer(Resource):
 
         try:
             question = data["question"]
-            history = str(limit_chat_history(json.loads(data.get("history", []))))
+            history = limit_chat_history(json.loads(data.get("history", [])), gpt_model=gpt_model)
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             chunks = int(data.get("chunks", 2))

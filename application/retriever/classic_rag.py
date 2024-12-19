@@ -73,6 +73,7 @@ class ClassicRAG(BaseRetriever):
 
         if len(self.chat_history) > 1:
             for i in self.chat_history:
+                    if "prompt" in i and "response" in i:
                         messages_combine.append(
                             {"role": "user", "content": i["prompt"]}
                         )
@@ -80,7 +81,7 @@ class ClassicRAG(BaseRetriever):
                             {"role": "system", "content": i["response"]}
                         )
         messages_combine.append({"role": "user", "content": self.question})
-
+      
         llm = LLMCreator.create_llm(
             settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
         )
