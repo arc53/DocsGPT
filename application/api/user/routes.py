@@ -1,14 +1,14 @@
 import datetime
+import math
 import os
 import shutil
 import uuid
-import math
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, request, redirect
-from flask_restx import inputs, fields, Namespace, Resource
+from flask import Blueprint, jsonify, make_response, redirect, request
+from flask_restx import fields, inputs, Namespace, Resource
 from werkzeug.utils import secure_filename
 
 from application.api.user.tasks import ingest, ingest_remote
@@ -16,9 +16,10 @@ from application.api.user.tasks import ingest, ingest_remote
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
+from application.tools.tool_manager import ToolManager
+from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
-from application.tts.google_tts import GoogleTTS
 
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
@@ -39,6 +40,9 @@ api.add_namespace(user_ns)
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
+
+tool_config = {}
+tool_manager = ToolManager(config=tool_config)
 
 
 def generate_minute_range(start_date, end_date):
@@ -1789,35 +1793,112 @@ class TextToSpeech(Resource):
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
 
+@user_ns.route("/api/available_tools")
+class AvailableTools(Resource):
+    @api.doc(description="Get available tools for a user")
+    def get(self):
+        try:
+            tools_metadata = []
+            for tool_name, tool_instance in tool_manager.tools.items():
+                doc = tool_instance.__doc__.strip()
+                lines = doc.split("\n", 1)
+                name = lines[0].strip()
+                description = lines[1].strip() if len(lines) > 1 else ""
+                tools_metadata.append(
+                    {
+                        "name": tool_name,
+                        "displayName": name,
+                        "description": description,
+                        "configRequirements": tool_instance.get_config_requirements(),
+                        "actions": tool_instance.get_actions_metadata(),
+                    }
+                )
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
+
+
+@user_ns.route("/api/get_tools")
+class GetTools(Resource):
+    @api.doc(description="Get tools created by a user")
+    def get(self):
+        try:
+            user = "local"
+            tools = user_tools_collection.find({"user": user})
+            user_tools = []
+            for tool in tools:
+                tool["id"] = str(tool["_id"])
+                tool.pop("_id")
+                user_tools.append(tool)
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"success": True, "tools": user_tools}), 200)
+
+
 @user_ns.route("/api/create_tool")
 class CreateTool(Resource):
-    create_tool_model = api.model(
-        "CreateToolModel",
-        {
-            "name": fields.String(required=True, description="Name of the tool"),
-            "config": fields.Raw(required=True, description="Configuration of the tool"),
-            "actions": fields.List(fields.String, required=True, description="Actions the tool can perform"),
-            "status": fields.Boolean(required=True, description="Status of the tool")
-
-        },
+    @api.expect(
+        api.model(
+            "CreateToolModel",
+            {
+                "name": fields.String(required=True, description="Name of the tool"),
+                "displayName": fields.String(
+                    required=True, description="Display name for the tool"
+                ),
+                "description": fields.String(
+                    required=True, description="Tool description"
+                ),
+                "config": fields.Raw(
+                    required=True, description="Configuration of the tool"
+                ),
+                "actions": fields.List(
+                    fields.Raw,
+                    required=True,
+                    description="Actions the tool can perform",
+                ),
+                "status": fields.Boolean(
+                    required=True, description="Status of the tool"
+                ),
+            },
+        )
     )
-
-    @api.expect(create_tool_model)
     @api.doc(description="Create a new tool")
     def post(self):
         data = request.get_json()
-        required_fields = ["name", "config", "actions", "status"]
+        required_fields = [
+            "name",
+            "displayName",
+            "description",
+            "actions",
+            "config",
+            "status",
+        ]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
         user = "local"
+        transformed_actions = []
+        for action in data["actions"]:
+            action["active"] = True
+            if "parameters" in action:
+                if "properties" in action["parameters"]:
+                    for param_name, param_details in action["parameters"][
+                        "properties"
+                    ].items():
+                        param_details["filled_by_llm"] = True
+                        param_details["value"] = ""
+            transformed_actions.append(action)
         try:
             new_tool = {
-                "name": data["name"],
-                "config": data["config"],
-                "actions": data["actions"],
                 "user": user,
+                "name": data["name"],
+                "displayName": data["displayName"],
+                "description": data["description"],
+                "actions": transformed_actions,
+                "config": data["config"],
                 "status": data["status"],
             }
             resp = user_tools_collection.insert_one(new_tool)
@@ -1826,18 +1907,72 @@ class CreateTool(Resource):
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
         return make_response(jsonify({"id": new_id}), 200)
-    
+
+
+@user_ns.route("/api/update_tool")
+class UpdateTool(Resource):
+    @api.expect(
+        api.model(
+            "UpdateToolModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "name": fields.String(description="Name of the tool"),
+                "displayName": fields.String(description="Display name for the tool"),
+                "description": fields.String(description="Tool description"),
+                "config": fields.Raw(description="Configuration of the tool"),
+                "actions": fields.List(
+                    fields.Raw, description="Actions the tool can perform"
+                ),
+                "status": fields.Boolean(description="Status of the tool"),
+            },
+        )
+    )
+    @api.doc(description="Update a tool by ID")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            update_data = {}
+            if "name" in data:
+                update_data["name"] = data["name"]
+            if "displayName" in data:
+                update_data["displayName"] = data["displayName"]
+            if "description" in data:
+                update_data["description"] = data["description"]
+            if "actions" in data:
+                update_data["actions"] = data["actions"]
+            if "config" in data:
+                update_data["config"] = data["config"]
+            if "status" in data:
+                update_data["status"] = data["status"]
+
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"]), "user": "local"},
+                {"$set": update_data},
+            )
+        except Exception as err:
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
 @user_ns.route("/api/update_tool_config")
 class UpdateToolConfig(Resource):
-    update_tool_config_model = api.model(
-        "UpdateToolConfigModel",
-        {
-            "id": fields.String(required=True, description="Tool ID"),
-            "config": fields.Raw(required=True, description="Configuration of the tool"),
-        },
+    @api.expect(
+        api.model(
+            "UpdateToolConfigModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "config": fields.Raw(
+                    required=True, description="Configuration of the tool"
+                ),
+            },
+        )
     )
-
-    @api.expect(update_tool_config_model)
     @api.doc(description="Update the configuration of a tool")
     def post(self):
         data = request.get_json()
@@ -1855,18 +1990,23 @@ class UpdateToolConfig(Resource):
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
         return make_response(jsonify({"success": True}), 200)
-    
+
+
 @user_ns.route("/api/update_tool_actions")
 class UpdateToolActions(Resource):
-    update_tool_actions_model = api.model(
-        "UpdateToolActionsModel",
-        {
-            "id": fields.String(required=True, description="Tool ID"),
-            "actions": fields.List(fields.String, required=True, description="Actions the tool can perform"),
-        },
+    @api.expect(
+        api.model(
+            "UpdateToolActionsModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "actions": fields.List(
+                    fields.Raw,
+                    required=True,
+                    description="Actions the tool can perform",
+                ),
+            },
+        )
     )
-
-    @api.expect(update_tool_actions_model)
     @api.doc(description="Update the actions of a tool")
     def post(self):
         data = request.get_json()
@@ -1885,17 +2025,20 @@ class UpdateToolActions(Resource):
 
         return make_response(jsonify({"success": True}), 200)
 
+
 @user_ns.route("/api/update_tool_status")
 class UpdateToolStatus(Resource):
-    update_tool_status_model = api.model(
-        "UpdateToolStatusModel",
-        {
-            "id": fields.String(required=True, description="Tool ID"),
-            "status": fields.Boolean(required=True, description="Status of the tool"),
-        },
+    @api.expect(
+        api.model(
+            "UpdateToolStatusModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "status": fields.Boolean(
+                    required=True, description="Status of the tool"
+                ),
+            },
+        )
     )
-
-    @api.expect(update_tool_status_model)
     @api.doc(description="Update the status of a tool")
     def post(self):
         data = request.get_json()
@@ -1913,15 +2056,16 @@ class UpdateToolStatus(Resource):
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
         return make_response(jsonify({"success": True}), 200)
-    
+
+
 @user_ns.route("/api/delete_tool")
 class DeleteTool(Resource):
-    delete_tool_model = api.model(
-        "DeleteToolModel",
-        {"id": fields.String(required=True, description="Tool ID")},
+    @api.expect(
+        api.model(
+            "DeleteToolModel",
+            {"id": fields.String(required=True, description="Tool ID")},
+        )
     )
-
-    @api.expect(delete_tool_model)
     @api.doc(description="Delete a tool by ID")
     def post(self):
         data = request.get_json()

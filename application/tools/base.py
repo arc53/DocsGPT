@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class Tool(ABC):
     @abstractmethod
     def execute_action(self, action_name: str, **kwargs):
