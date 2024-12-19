@@ -1880,13 +1880,24 @@ class CreateTool(Resource):
             return missing_fields
 
         user = "local"
+        transformed_actions = []
+        for action in data["actions"]:
+            action["active"] = True
+            if "parameters" in action:
+                if "properties" in action["parameters"]:
+                    for param_name, param_details in action["parameters"][
+                        "properties"
+                    ].items():
+                        param_details["filled_by_llm"] = True
+                        param_details["value"] = ""
+            transformed_actions.append(action)
         try:
             new_tool = {
                 "user": user,
                 "name": data["name"],
                 "displayName": data["displayName"],
                 "description": data["description"],
-                "actions": data["actions"],
+                "actions": transformed_actions,
                 "config": data["config"],
                 "status": data["status"],
             }
