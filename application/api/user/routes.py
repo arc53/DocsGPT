@@ -1863,6 +1863,7 @@ class CreateTool(Resource):
                 ),
             },
         )
+    )
     @api.doc(description="Create a new tool")
     def post(self):
         data = request.get_json()
@@ -2005,6 +2006,7 @@ class UpdateToolActions(Resource):
                 ),
             },
         )
+    )
     @api.doc(description="Update the actions of a tool")
     def post(self):
         data = request.get_json()
