@@ -120,7 +120,9 @@ class Agent:
     def gen(self, messages):
         # Generate initial response from the LLM
         if self.llm.supports_tools():
-            self._simple_tool_agent(messages)
+            resp = self._simple_tool_agent(messages)
+            for line in resp:
+                yield line
         else:
             resp = self.llm.gen_stream(model=self.gpt_model, messages=messages)
             for line in resp:
