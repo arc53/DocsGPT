@@ -10,6 +10,7 @@ import './locale/i18n';
 import { Outlet } from 'react-router-dom';
 import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme } from './hooks';
+import Onboarding from './components/Onboarding';
 
 function MainLayout() {
   const { isMobile } = useMediaQuery();
@@ -33,20 +34,26 @@ function MainLayout() {
 
 export default function App() {
   const [, , componentMounted] = useDarkTheme();
+  const [isOnboarding] = useState(false);
+  
   if (!componentMounted) {
     return <div />;
   }
   return (
     <div className="h-full relative overflow-auto">
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route index element={<Conversation />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/settings" element={<Setting />} />
-        </Route>
-        <Route path="/share/:identifier" element={<SharedConversation />} />
-        <Route path="/*" element={<PageNotFound />} />
-      </Routes>
+      {isOnboarding ? (
+          <Onboarding />
+      ) : (
+        <Routes>
+          <Route element={<MainLayout />}>
+            <Route index element={<Conversation />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/settings" element={<Setting />} />
+          </Route>
+          <Route path="/share/:identifier" element={<SharedConversation />} />
+          <Route path="/*" element={<PageNotFound />} />
+        </Routes>
+      )}
     </div>
   );
 }
