@@ -27,7 +27,6 @@ class ToolManager:
 
     def load_tool(self, tool_name, tool_config):
         self.config[tool_name] = tool_config
-        tools_dir = os.path.join(os.path.dirname(__file__), "implementations")
         module = importlib.import_module(
             f"application.tools.implementations.{tool_name}"
         )

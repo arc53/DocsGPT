@@ -1,7 +1,6 @@
 import json
 
 from application.core.mongo_db import MongoDB
-from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.tools.tool_manager import ToolManager
 
