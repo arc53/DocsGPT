@@ -19,7 +19,7 @@ class GroqLLM(BaseLLM):
             response = self.client.chat.completions.create(
                 model=model, messages=messages, stream=stream, **kwargs
             )
-        return response.choices[0].message.content
+            return response.choices[0].message.content
 
     def _raw_gen_stream(
         self, baseself, model, messages, stream=True, tools=None, **kwargs
