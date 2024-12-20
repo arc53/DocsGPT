@@ -12,10 +12,10 @@ from bson.objectid import ObjectId
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.file.bulk import SimpleDirectoryReader
-from application.parser.open_ai_func import call_openai_api
+from application.parser.embedding_pipeline import embed_and_store_documents
 from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
-from application.parser.token_func import group_split
+from application.parser.chunking import Chunker
 from application.utils import count_tokens_docs
 
 mongo = MongoDB.get_client()
@@ -153,17 +153,19 @@ def ingest_worker(
         exclude_hidden=exclude,
         file_metadata=metadata_from_filename,
     ).load_data()
-    raw_docs = group_split(
-        documents=raw_docs,
-        min_tokens=MIN_TOKENS,
+
+    chunker = Chunker(
+        chunking_strategy="classic_chunk",
         max_tokens=MAX_TOKENS,
-        token_check=token_check,
+        min_tokens=MIN_TOKENS,
+        duplicate_headers=False
     )
+    raw_docs = chunker.chunk(documents=raw_docs)
 
     docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
     id = ObjectId()
 
-    call_openai_api(docs, full_path, id, self)
+    embed_and_store_documents(docs, full_path, id, self)
     tokens = count_tokens_docs(docs)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -217,21 +219,23 @@ def remote_worker(
     remote_loader = RemoteCreator.create_loader(loader)
     raw_docs = remote_loader.load_data(source_data)
 
-    docs = group_split(
-        documents=raw_docs,
-        min_tokens=MIN_TOKENS,
+    chunker = Chunker(
+        chunking_strategy="classic_chunk",
         max_tokens=MAX_TOKENS,
-        token_check=token_check,
+        min_tokens=MIN_TOKENS,
+        duplicate_headers=False
     )
+    docs = chunker.chunk(documents=raw_docs)
+
     tokens = count_tokens_docs(docs)
     if operation_mode == "upload":
         id = ObjectId()
-        call_openai_api(docs, full_path, id, self)
+        embed_and_store_documents(docs, full_path, id, self)
     elif operation_mode == "sync":
         if not doc_id or not ObjectId.is_valid(doc_id):
             raise ValueError("doc_id must be provided for sync operation.")
         id = ObjectId(doc_id)
-        call_openai_api(docs, full_path, id, self)
+        embed_and_store_documents(docs, full_path, id, self)
     self.update_state(state="PROGRESS", meta={"current": 100})
 
     file_data = {
