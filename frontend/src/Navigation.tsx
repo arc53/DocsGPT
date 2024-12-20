@@ -18,6 +18,7 @@ import SourceDropdown from './components/SourceDropdown';
 import {
   setConversation,
   updateConversationId,
+  handleAbort,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
@@ -32,7 +33,6 @@ import {
   selectConversations,
   selectModalStateDeleteConv,
   selectSelectedDocs,
-  selectSelectedDocsStatus,
   selectSourceDocs,
   selectPaginatedDocuments,
   setConversations,
@@ -51,21 +51,7 @@ interface NavigationProps {
   navOpen: boolean;
   setNavOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
-/* const NavImage: React.FC<{
-  Light: string | undefined;
-  Dark: string | undefined;
-}> = ({ Light, Dark }) => {
-  return (
-    <>
-      <img src={Dark} alt="icon" className="ml-2 hidden w-5 dark:block " />
-      <img src={Light} alt="icon" className="ml-2 w-5 dark:hidden filter dark:invert" />
-    </>
-  );
-};
-NavImage.propTypes = {
-  Light: PropTypes.string,
-  Dark: PropTypes.string,
-}; */
+
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const queries = useSelector(selectQueries);
@@ -84,10 +70,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const isApiKeySet = useSelector(selectApiKeyStatus);
   const [apiKeyModalState, setApiKeyModalState] =
     useState<ActiveState>('INACTIVE');
-
-  const isSelectedDocsSet = useSelector(selectSelectedDocsStatus);
-  const [selectedDocsModalState, setSelectedDocsModalState] =
-    useState<ActiveState>(isSelectedDocsSet ? 'INACTIVE' : 'ACTIVE');
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -180,6 +162,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const resetConversation = () => {
+    handleAbort();
     dispatch(setConversation([]));
     dispatch(
       updateConversationId({
@@ -491,11 +474,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         setModalState={setModalStateDeleteConv}
         handleDeleteAllConv={handleDeleteAllConversations}
       />
-      <Upload
-        modalState={uploadModalState}
-        setModalState={setUploadModalState}
-        isOnboarding={false}
-      ></Upload>
+      {uploadModalState === 'ACTIVE' && (
+        <Upload
+          receivedFile={[]}
+          setModalState={setUploadModalState}
+          isOnboarding={false}
+          renderTab={null}
+          close={() => setUploadModalState('INACTIVE')}
+        ></Upload>
+      )}
     </>
   );
 }

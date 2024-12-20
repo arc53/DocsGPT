@@ -27,9 +27,7 @@ Say goodbye to time-consuming manual searches, and let <strong><a href="https://
 
 We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
 
-<a href ="https://cal.com/arc53/docsgpt-demo-b2b">
-    <img alt="Let's chat" src="https://cal.com/book-with-cal-dark.svg" />
-</a>
+[Book a Meeting :wave:](https://cal.com/arc53/docsgpt-demo-b2b)⁠
 
 [Send Email :email:](mailto:contact@arc53.com?subject=DocsGPT%20support%2Fsolutions)
 
@@ -125,7 +123,7 @@ docker compose -f docker-compose-dev.yaml up -d
 ### Run the Backend
 
 > [!Note]
-> Make sure you have Python 3.10 or 3.11 installed.
+> Make sure you have Python 3.12 installed.
 
 1. Export required environment variables or prepare a `.env` file in the project folder:
    - Copy [.env-template](https://github.com/arc53/DocsGPT/blob/main/application/.env-template) and create `.env`.

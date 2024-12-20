@@ -99,6 +99,10 @@
         "agent": "ユーザーエージェント",
         "searchQueries": "検索クエリ",
         "numberOfPosts": "投稿数"
+      },
+      "drag": {
+        "title": "ソースファイルをアップロードする",
+        "description": "ファイルをここにドロップしてソースとして追加します"
       }
     },
     "createAPIKey": {

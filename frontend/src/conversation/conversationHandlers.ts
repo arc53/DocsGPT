@@ -75,6 +75,7 @@ export function handleFetchAnswerSteaming(
   chunks: string,
   token_limit: number,
   onEvent: (event: MessageEvent) => void,
+  indx?: number,
 ): Promise<Answer> {
   history = history.map((item) => {
     return { prompt: item.prompt, response: item.response };
@@ -87,6 +88,7 @@ export function handleFetchAnswerSteaming(
     chunks: chunks,
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
+    index: indx,
   };
   if (selectedDocs && 'id' in selectedDocs) {
     payload.active_docs = selectedDocs.id as string;
@@ -200,12 +202,16 @@ export function handleSendFeedback(
   prompt: string,
   response: string,
   feedback: FEEDBACK,
+  conversation_id: string,
+  prompt_index: number,
 ) {
   return conversationService
     .feedback({
       question: prompt,
       answer: response,
       feedback: feedback,
+      conversation_id: conversation_id,
+      question_index: prompt_index,
     })
     .then((response) => {
       if (response.ok) {

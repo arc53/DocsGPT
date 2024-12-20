@@ -8,4 +8,9 @@ export type AvailableTool = {
     description: string;
     parameters: object;
   }[];
+
+export type WrapperModalProps = {
+  children?: React.ReactNode;
+  isPerformingTask?: boolean;
+  close: () => void;
 };

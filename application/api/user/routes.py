@@ -181,10 +181,12 @@ class SubmitFeedback(Resource):
             "FeedbackModel",
             {
                 "question": fields.String(
-                    required=True, description="The user question"
+                    required=False, description="The user question"
                 ),
-                "answer": fields.String(required=True, description="The AI answer"),
+                "answer": fields.String(required=False, description="The AI answer"),
                 "feedback": fields.String(required=True, description="User feedback"),
+                "question_index":fields.Integer(required=True, description="The question number in that particular conversation"),
+                "conversation_id":fields.String(required=True, description="id of the particular conversation"),
                 "api_key": fields.String(description="Optional API key"),
             },
         )
@@ -194,23 +196,21 @@ class SubmitFeedback(Resource):
     )
     def post(self):
         data = request.get_json()
-        required_fields = ["question", "answer", "feedback"]
+        required_fields = [ "feedback","conversation_id","question_index"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
-        new_doc = {
-            "question": data["question"],
-            "answer": data["answer"],
-            "feedback": data["feedback"],
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        }
-
-        if "api_key" in data:
-            new_doc["api_key"] = data["api_key"]
-
         try:
-            feedback_collection.insert_one(new_doc)
+            conversations_collection.update_one(
+            {"_id": ObjectId(data["conversation_id"]), f"queries.{data['question_index']}": {"$exists": True}},
+            {
+                "$set": {
+                    f"queries.{data['question_index']}.feedback": data["feedback"]
+                }
+            }
+        )
+           
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
 
@@ -253,13 +253,12 @@ class DeleteOldIndexes(Resource):
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
-        try:
-            doc = sources_collection.find_one(
+        doc = sources_collection.find_one(
                 {"_id": ObjectId(source_id), "user": "local"}
-            )
-            if not doc:
+        )
+        if not doc:
                 return make_response(jsonify({"status": "not found"}), 404)
-
+        try:
             if settings.VECTOR_STORE == "faiss":
                 shutil.rmtree(os.path.join(current_dir, "indexes", str(doc["_id"])))
             else:
@@ -268,12 +267,12 @@ class DeleteOldIndexes(Resource):
                 )
                 vectorstore.delete_index()
 
-            sources_collection.delete_one({"_id": ObjectId(source_id)})
         except FileNotFoundError:
             pass
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
+        
+        sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -344,6 +343,9 @@ class UploadFile(Resource):
                         ".json",
                         ".xlsx",
                         ".pptx",
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
                     ],
                     job_name,
                     final_filename,
@@ -370,6 +372,9 @@ class UploadFile(Resource):
                         ".json",
                         ".xlsx",
                         ".pptx",
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
                     ],
                     job_name,
                     final_filename,
@@ -478,11 +483,22 @@ class PaginatedSources(Resource):
         sort_order = request.args.get("order", "desc")  # Default to 'desc'
         page = int(request.args.get("page", 1))  # Default to 1
         rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+        # add .strip() to remove leading and trailing whitespaces
+        search_term = request.args.get(
+            "search", ""
+        ).strip()  # add search for filter documents
 
-        # Prepare
+        # Prepare query for filtering
         query = {"user": user}
+        if search_term:
+            query["name"] = {
+                "$regex": search_term,
+                "$options": "i",  # using case-insensitive search
+            }
+
         total_documents = sources_collection.count_documents(query)
         total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        page = min(max(1, page), total_pages) # add this to make sure page inbound is within the range
         sort_order = 1 if sort_order == "asc" else -1
         skip = (page - 1) * rows_per_page
 
@@ -2082,3 +2098,4 @@ class DeleteTool(Resource):
             return {"success": False, "error": str(err)}, 400
 
         return {"success": True}, 200
+      

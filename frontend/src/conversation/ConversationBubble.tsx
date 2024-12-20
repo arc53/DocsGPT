@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, useState } from 'react';
+import { forwardRef, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -15,6 +15,8 @@ import Document from '../assets/document.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
+import Edit from '../assets/edit.svg';
+import UserIcon from '../assets/user.png';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
@@ -25,6 +27,7 @@ import {
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+import { useOutsideAlerter } from '../hooks';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -38,36 +41,113 @@ const ConversationBubble = forwardRef<
     handleFeedback?: (feedback: FEEDBACK) => void;
     sources?: { title: string; text: string; source: string }[];
     retryBtn?: React.ReactElement;
+    questionNumber?: number;
+    handleUpdatedQuestionSubmission?: (
+      updatedquestion?: string,
+      updated?: boolean,
+      index?: number,
+    ) => void;
   }
 >(function ConversationBubble(
-  { message, type, className, feedback, handleFeedback, sources, retryBtn },
+  {
+    message,
+    type,
+    className,
+    feedback,
+    handleFeedback,
+    sources,
+    retryBtn,
+    questionNumber,
+    handleUpdatedQuestionSubmission,
+  },
   ref,
 ) {
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
+  const [isEditClicked, setIsEditClicked] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
+  const [isQuestionHovered, setIsQuestionHovered] = useState(false);
+  const [editInputBox, setEditInputBox] = useState<string>('');
+
   const [isLikeClicked, setIsLikeClicked] = useState(false);
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const editableQueryRef = useRef<HTMLDivElement | null>(null);
 
+  useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
+  const handleEditClick = () => {
+    setIsEditClicked(false);
+    handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
+  };
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
       <div
-        ref={ref}
-        className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+        onMouseEnter={() => setIsQuestionHovered(true)}
+        onMouseLeave={() => setIsQuestionHovered(false)}
       >
-        <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div
-          style={{
-            wordBreak: 'break-word',
-          }}
-          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+          ref={ref}
+          className={`flex flex-row-reverse self-end flex-wrap ${className}`}
         >
-          {message}
+          <Avatar
+            size="SMALL"
+            className="mt-2 text-2xl"
+            avatar={
+              <img className="rounded-full mr-1" width={30} src={UserIcon} />
+            }
+          />
+          {!isEditClicked && (
+            <div
+              style={{
+                wordBreak: 'break-word',
+              }}
+              className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+            >
+              {message}
+            </div>
+          )}
+          {isEditClicked && (
+            <div ref={editableQueryRef} className="w-[75%] flex flex-col">
+              <textarea
+                placeholder="Type the updated query..."
+                onChange={(e) => {
+                  setEditInputBox(e.target.value);
+                }}
+                rows={1}
+                value={editInputBox}
+                className="ml-2 mr-12 text-[15px] resize-y h-12 min-h-max rounded-3xl p-3  no-scrollbar leading-relaxed dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
+              />
+              <div
+                className={`flex flex-row-reverse justify-end gap-1 mt-3 text-sm font-medium`}
+              >
+                <button
+                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] py-[10px] px-[15px] text-purple-30 max-w-full whitespace-pre-wrap leading-none"
+                  onClick={() => handleEditClick()}
+                >
+                  Update
+                </button>
+                <button
+                  className="py-[10px] px-[15px]  no-underline hover:underline  text-purple-30 max-w-full whitespace-pre-wrap leading-normal"
+                  onClick={() => setIsEditClicked(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setIsEditClicked(true);
+              setEditInputBox(message);
+            }}
+            className={`h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+          >
+            <img src={Edit} alt="Edit" className="cursor-pointer" />
+          </button>
         </div>
       </div>
     );
@@ -241,7 +321,7 @@ const ConversationBubble = forwardRef<
             }`}
           >
             <ReactMarkdown
-              className="fade-in whitespace-pre-wrap break-normal leading-normal"
+              className="fade-in whitespace-pre-wrap break-words leading-normal"
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
@@ -269,12 +349,7 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code
-                      className={className ? className : 'whitespace-pre-line'}
-                      {...props}
-                    >
-                      {children}
-                    </code>
+                    <code className="whitespace-pre-line">{children}</code>
                   );
                 },
                 ul({ children }) {
@@ -361,7 +436,8 @@ const ConversationBubble = forwardRef<
                   feedback === 'LIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                }
+                ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
               >
                 <div>
                   <div
@@ -379,9 +455,15 @@ const ConversationBubble = forwardRef<
                       : 'fill-none  stroke-gray-4000'
                   }`}
                       onClick={() => {
-                        handleFeedback?.('LIKE');
-                        setIsLikeClicked(true);
-                        setIsDislikeClicked(false);
+                        if (feedback === undefined || feedback === null) {
+                          handleFeedback?.('LIKE');
+                          setIsLikeClicked(true);
+                          setIsDislikeClicked(false);
+                        } else if (feedback === 'LIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsLikeHovered(true)}
                       onMouseLeave={() => setIsLikeHovered(false)}
@@ -396,7 +478,7 @@ const ConversationBubble = forwardRef<
                   feedback === 'DISLIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                } ${feedback === 'LIKE' && type !== 'ERROR' ? ' hidden' : ''} `}
               >
                 <div>
                   <div
@@ -413,9 +495,15 @@ const ConversationBubble = forwardRef<
                           : 'fill-none  stroke-gray-4000'
                       }`}
                       onClick={() => {
-                        handleFeedback?.('DISLIKE');
-                        setIsDislikeClicked(true);
-                        setIsLikeClicked(false);
+                        if (feedback === undefined || feedback === null) {
+                          handleFeedback?.('DISLIKE');
+                          setIsDislikeClicked(true);
+                          setIsLikeClicked(false);
+                        } else if (feedback === 'DISLIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsDislikeHovered(true)}
                       onMouseLeave={() => setIsDislikeHovered(false)}

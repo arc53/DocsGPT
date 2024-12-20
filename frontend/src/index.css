@@ -50,19 +50,23 @@ body.dark {
 
 @layer components {
   .table-default {
-    @apply block w-full mx-auto table-auto content-start justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray overflow-auto;
+    @apply block w-full table-auto content-start justify-center rounded-xl border border-silver dark:border-silver/40 text-center dark:text-bright-gray overflow-auto;
   }
 
   .table-default th {
-    @apply p-4 w-full font-normal text-gray-400 text-nowrap; /* Remove border-r */
+    @apply p-4  font-normal text-gray-400 text-nowrap; /* Remove border-r */
+  }
+
+  .table-default th {
+    flex: 1;
   }
 
   .table-default th:last-child {
-    @apply w-[auto];
+    flex: 0; /* Ensure the last column does not stretch unnecessarily */
   }
 
   .table-default td {
-    @apply border-t border-silver dark:border-silver/40 px-4 py-2; /* Remove border-r */
+    @apply border-t w-full border-silver dark:border-silver/40 px-4 py-2; /* Remove border-r */
   }
 
   .table-default td:last-child {
