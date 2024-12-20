@@ -2,7 +2,6 @@ from application.core.settings import settings
 from application.retriever.base import BaseRetriever
 from application.tools.agent import Agent
 
-from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
 
