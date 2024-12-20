@@ -35,6 +35,16 @@ const userService = {
     apiClient.post(endpoints.USER.LOGS, data),
   manageSync: (data: any): Promise<any> =>
     apiClient.post(endpoints.USER.MANAGE_SYNC, data),
+  getAvailableTools: (): Promise<any> =>
+    apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS),
+  getUserTools: (): Promise<any> =>
+    apiClient.get(endpoints.USER.GET_USER_TOOLS),
+  createTool: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.CREATE_TOOL, data),
+  updateToolStatus: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_TOOL_STATUS, data),
+  updateTool: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_TOOL, data),
 };
 
 export default userService;
