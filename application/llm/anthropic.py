@@ -17,7 +17,7 @@ class AnthropicLLM(BaseLLM):
         self.AI_PROMPT = AI_PROMPT
 
     def _raw_gen(
-        self, baseself, model, messages, stream=False, max_tokens=300, **kwargs
+        self, baseself, model, messages, stream=False, tools=None, max_tokens=300, **kwargs
     ):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
@@ -34,7 +34,7 @@ class AnthropicLLM(BaseLLM):
         return completion.completion
 
     def _raw_gen_stream(
-        self, baseself, model, messages, stream=True, max_tokens=300, **kwargs
+        self, baseself, model, messages, stream=True, tools=None, max_tokens=300, **kwargs
     ):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]

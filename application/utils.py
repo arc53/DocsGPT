@@ -15,9 +15,21 @@ def get_encoding():
 
 def num_tokens_from_string(string: str) -> int:
     encoding = get_encoding()
-    num_tokens = len(encoding.encode(string))
-    return num_tokens
+    if isinstance(string, str):
+        num_tokens = len(encoding.encode(string))
+        return num_tokens
+    else:
+        return 0
 
+def num_tokens_from_object_or_list(thing):
+    if isinstance(thing, list):
+        return sum([num_tokens_from_object_or_list(x) for x in thing])
+    elif isinstance(thing, dict):
+        return sum([num_tokens_from_object_or_list(x) for x in thing.values()])
+    elif isinstance(thing, str):
+        return num_tokens_from_string(thing)
+    else:
+        return 0
 
 def count_tokens_docs(docs):
     docs_content = ""

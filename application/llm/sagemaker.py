@@ -76,7 +76,7 @@ class SagemakerAPILLM(BaseLLM):
         self.endpoint = settings.SAGEMAKER_ENDPOINT
         self.runtime = runtime
 
-    def _raw_gen(self, baseself, model, messages, stream=False, **kwargs):
+    def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
@@ -105,7 +105,7 @@ class SagemakerAPILLM(BaseLLM):
         print(result[0]["generated_text"], file=sys.stderr)
         return result[0]["generated_text"][len(prompt) :]
 
-    def _raw_gen_stream(self, baseself, model, messages, stream=True, **kwargs):
+    def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"

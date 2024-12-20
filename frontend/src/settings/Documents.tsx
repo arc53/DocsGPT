@@ -181,7 +181,7 @@ const Documents: React.FC<DocumentsProps> = ({
           {loading ? (
             <SkeletonLoader count={1} />
           ) : (
-            <div className="flex flex-col">
+           <div className="flex flex-col">
               <div className="flex-grow">
                 <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
                   <table className="min-w-full divide-y divide-silver dark:divide-silver/40 text-xs sm:text-sm ">
