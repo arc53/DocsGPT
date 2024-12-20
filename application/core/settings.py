@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
-    MODEL_TOKEN_LIMITS: dict = {"gpt-3.5-turbo": 4096, "claude-2": 1e5}
+    MODEL_TOKEN_LIMITS: dict = {"gpt-4o-mini": 128000, "gpt-3.5-turbo": 4096, "claude-2": 1e5}
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False
     VECTOR_STORE: str = "faiss" #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
