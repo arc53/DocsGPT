@@ -43,7 +43,7 @@ multidict==6.1.0
 mypy-extensions==1.0.0
 networkx==3.3
 numpy==1.26.4
-openai==1.55.3 
+openai==1.57.0
 openapi-schema-validator==0.6.2
 openapi-spec-validator==0.6.0
 openapi3-parser==1.1.18
