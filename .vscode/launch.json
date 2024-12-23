@@ -13,7 +13,7 @@
       ]
     },
     {
-        "name": "Python Debugger: Flask",
+        "name": "Flask Debugger",
         "type": "debugpy",
         "request": "launch",
         "module": "flask",
@@ -32,5 +32,23 @@
         ],
         "cwd": "${workspaceFolder}",
     },
+    {
+      "name": "Celery Debugger",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+      },
+      "args": [
+        "-A",
+        "application.app.celery",
+        "worker",
+        "-l",
+        "INFO",
+        "--pool=solo"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
   ]
 }
