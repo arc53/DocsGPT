@@ -28,11 +28,11 @@ jsonschema==4.23.0
 jsonschema-spec==0.2.4
 jsonschema-specifications==2023.7.1
 kombu==5.4.2
-langchain==0.3.11
-langchain-community==0.3.11
-langchain-core==0.3.25
-langchain-openai==0.2.0
-langchain-text-splitters==0.3.0
+langchain==0.3.13
+langchain-community==0.3.13
+langchain-core==0.3.28
+langchain-openai==0.2.14
+langchain-text-splitters==0.3.4
 langsmith==0.2.3
 lazy-object-proxy==1.10.0
 lxml==5.3.0
@@ -43,7 +43,7 @@ multidict==6.1.0
 mypy-extensions==1.0.0
 networkx==3.3
 numpy==2.2.1
-openai==1.57.0
+openai==1.58.1
 openapi-schema-validator==0.6.2
 openapi-spec-validator==0.6.0
 openapi3-parser==1.1.18
