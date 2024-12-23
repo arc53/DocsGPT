@@ -1,5 +1,5 @@
 import re
-from typing import List, Tuple, Union
+from typing import List, Tuple
 import logging
 from application.parser.schema.base import Document
 from application.utils import get_encoding

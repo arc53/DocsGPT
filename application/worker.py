@@ -126,7 +126,6 @@ def ingest_worker(
     limit = None
     exclude = True
     sample = False
-    token_check = True
     full_path = os.path.join(directory, user, name_job)
 
     logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": name_job})
@@ -205,7 +204,6 @@ def remote_worker(
     operation_mode="upload",
     doc_id=None,
 ):
-    token_check = True
     full_path = os.path.join(directory, user, name_job)
 
     if not os.path.exists(full_path):

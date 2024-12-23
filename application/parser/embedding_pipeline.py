@@ -61,7 +61,7 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
 
     # Process and embed documents
     for idx, doc in tqdm(
-        docs,
+        enumerate(docs),
         desc="Embedding 🦖",
         unit="docs",
         total=total_docs,
@@ -69,7 +69,7 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
     ):
         try:
             # Update task status for progress tracking
-            progress = int((idx / total_docs) * 100)
+            progress = int(((idx + 1) / total_docs) * 100)
             task_status.update_state(state="PROGRESS", meta={"current": progress})
 
             # Add document to vector store
