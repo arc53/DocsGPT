@@ -31,7 +31,7 @@ kombu==5.4.2
 langchain==0.3.11
 langchain-community==0.3.11
 langchain-core==0.3.25
-langchain-openai==0.2.0
+langchain-openai==0.2.14
 langchain-text-splitters==0.3.0
 langsmith==0.2.3
 lazy-object-proxy==1.10.0
