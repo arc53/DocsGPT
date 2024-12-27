@@ -113,27 +113,26 @@ const ConversationBubble = forwardRef<
             </div>
           )}
           {isEditClicked && (
-            <div ref={editableQueryRef} className="w-[75%] flex flex-col">
+            <div
+              ref={editableQueryRef}
+              className="w-full mx-auto bg-transparent p-4 rounded-lg flex flex-col gap-4"
+            >
               <textarea
                 placeholder={t('conversation.edit.placeholder')}
-                onChange={(e) => {
-                  setEditInputBox(e.target.value);
-                }}
-                rows={1}
+                onChange={(e) => setEditInputBox(e.target.value)}
+                rows={5}
                 value={editInputBox}
-                className="ml-2 mr-12 text-[15px] resize-y h-12 min-h-max rounded-3xl p-3 no-scrollbar leading-relaxed dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
+                className="w-full resize-none border-2 border-black dark:border-white rounded-3xl px-4 py-3 text-base leading-relaxed text-black dark:bg-raisin-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#CDB5FF]"
               />
-              <div
-                className={`flex flex-row-reverse justify-end gap-1 mt-3 text-sm font-medium`}
-              >
+              <div className="flex items-center justify-end gap-2">
                 <button
-                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] py-[10px] px-[15px] text-purple-30 max-w-full whitespace-pre-wrap leading-none"
-                  onClick={() => handleEditClick()}
+                  className="rounded-lg bg-[#CDB5FF] hover:bg-[#E1D3FF] px-4 py-2 text-purple-30 text-sm font-medium"
+                  onClick={handleEditClick}
                 >
                   {t('conversation.edit.update')}
                 </button>
                 <button
-                  className="py-[10px] px-[15px]  no-underline hover:underline  text-purple-30 max-w-full whitespace-pre-wrap leading-normal"
+                  className="px-4 py-2 text-purple-30 text-sm hover:underline"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
