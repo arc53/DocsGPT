@@ -1,5 +1,3 @@
-import MarkdownIt from "markdown-it";
-import DOMPurify from "dompurify";
 export const getOS = () => {
   const platform = window.navigator.platform;
   const userAgent = window.navigator.userAgent || window.navigator.vendor;
@@ -27,210 +25,129 @@ export const getOS = () => {
   return 'other';
 };
 
-interface MarkdownElement {
-  type: 'heading' | 'paragraph' | 'code' | 'list' | 'other';
-  content: string;
-  level?: number;
-}
 
 interface ParsedElement {
   content: string;
   tag: string;
 }
 
-export const processMarkdownString = (markdown: string): ParsedElement[] => {
-  const result: ParsedElement[] = [];
+export const processMarkdownString = (markdown: string, keyword?: string): ParsedElement[] => {
   const lines = markdown.trim().split('\n');
-  
+  const keywordLower = keyword?.toLowerCase();
+
+  const escapeRegExp = (str: string) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const escapedKeyword = keyword ? escapeRegExp(keyword) : '';
+  const keywordRegex = keyword ? new RegExp(`(${escapedKeyword})`, 'gi') : null;
+
   let isInCodeBlock = false;
-  let currentCodeBlock = '';
+  let codeBlockContent: string[] = [];
+  let matchingLines: ParsedElement[] = [];
+  let firstLine: ParsedElement | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const trimmedLine = lines[i].trim();
     if (!trimmedLine) continue;
 
+    // Handle code block start/end
     if (trimmedLine.startsWith('```')) {
-      if (isInCodeBlock) {
-        if (currentCodeBlock.trim()) {
-          result.push({
-            content: currentCodeBlock.trim(),
-            tag: 'code'
-          });
-        }
-        currentCodeBlock = '';
-        isInCodeBlock = false;
-      } else {
+      if (!isInCodeBlock) {
+        // Start of code block
         isInCodeBlock = true;
+        codeBlockContent = [];
+      } else {
+        // End of code block - process the collected content
+        isInCodeBlock = false;
+        const codeContent = codeBlockContent.join('\n');
+        const parsedElement: ParsedElement = {
+          content: codeContent,
+          tag: 'code'
+        };
+
+        if (!firstLine) {
+          firstLine = parsedElement;
+        }
+
+        if (keywordLower && codeContent.toLowerCase().includes(keywordLower)) {
+          parsedElement.content = parsedElement.content.replace(keywordRegex!, '<span class="highlight">$1</span>');
+          matchingLines.push(parsedElement);
+        }
       }
       continue;
     }
 
+    // Collect code block content
     if (isInCodeBlock) {
-      currentCodeBlock += trimmedLine + '\n';
+      codeBlockContent.push(trimmedLine);
       continue;
     }
+
+    let parsedElement: ParsedElement | null = null;
 
     const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
-    if (headingMatch) {
-      result.push({
-        content: headingMatch[2],
-        tag: 'heading'
-      });
-      continue;
-    }
-
     const bulletMatch = trimmedLine.match(/^[-*]\s+(.+)$/);
-    if (bulletMatch) {
-      result.push({
-        content: bulletMatch[1],
-        tag: 'bulletList'
-      });
-      continue;
-    }
-
     const numberedMatch = trimmedLine.match(/^\d+\.\s+(.+)$/);
-    if (numberedMatch) {
-      result.push({
-        content: numberedMatch[1],
+
+    let content = trimmedLine;
+
+    if (headingMatch) {
+      content = headingMatch[2];
+      parsedElement = {
+        content: content,
+        tag: 'heading'
+      };
+    } else if (bulletMatch) {
+      content = bulletMatch[1];
+      parsedElement = {
+        content: content,
+        tag: 'bulletList'
+      };
+    } else if (numberedMatch) {
+      content = numberedMatch[1];
+      parsedElement = {
+        content: content,
         tag: 'numberedList'
-      });
-      continue;
+      };
+    } else {
+      parsedElement = {
+        content: content,
+        tag: 'text'
+      };
     }
 
-    result.push({
-      content: trimmedLine,
-      tag: 'text'
-    });
+    if (!firstLine) {
+      firstLine = parsedElement;
+    }
+
+    if (keywordLower && parsedElement.content.toLowerCase().includes(keywordLower)) {
+      parsedElement.content = parsedElement.content.replace(keywordRegex!, '<span class="highlight">$1</span>');
+      matchingLines.push(parsedElement);
+    }
   }
 
-  if (isInCodeBlock && currentCodeBlock.trim()) {
-    result.push({
-      content: currentCodeBlock.trim(),
+  if (isInCodeBlock && codeBlockContent.length > 0) {
+    const codeContent = codeBlockContent.join('\n');
+    const parsedElement: ParsedElement = {
+      content: codeContent,
       tag: 'code'
-    });
-  }
+    };
 
-  return result;
-};
+    if (!firstLine) {
+      firstLine = parsedElement;
+    }
 
-export const preprocessSearchResultsToHTML = (text: string, keyword: string): MarkdownElement[] | null => {
-  const md = new MarkdownIt();
-  const tokens = md.parse(text, {});
-  const results: MarkdownElement[] = [];
-  
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    
-    if (token.type.endsWith('_close') || !token.content) continue;
-
-    const content = token.content.toLowerCase();
-    const keywordLower = keyword.trim().toLowerCase();
-    
-    if (!content.includes(keywordLower)) continue;
-
-    switch (token.type) {
-      case 'heading_open':
-        const level = parseInt(token.tag.charAt(1));
-        const headingContent = tokens[i + 1].content;
-        results.push({
-          type: 'heading',
-          content: headingContent,
-          level
-        });
-        break;
-
-      case 'paragraph_open':
-        const paragraphContent = tokens[i + 1].content;
-        results.push({
-          type: 'paragraph',
-          content: paragraphContent
-        });
-        break;
-
-      case 'fence':
-      case 'code_block':
-        results.push({
-          type: 'code',
-          content: token.content
-        });
-        break;
-
-      case 'bullet_list_open':
-      case 'ordered_list_open':
-        let listItems = [];
-        i++;
-        while (i < tokens.length && !tokens[i].type.includes('list_close')) {
-          if (tokens[i].type === 'list_item_open') {
-            i++;
-            if (tokens[i].content) {
-              listItems.push(tokens[i].content);
-            }
-          }
-          i++;
-        }
-        if (listItems.length > 0) {
-          results.push({
-            type: 'list',
-            content: listItems.join('\n')
-          });
-        }
-        break;
-
-      default:
-        if (token.content) {
-          results.push({
-            type: 'other',
-            content: token.content
-          });
-        }
-        break;
+    if (keywordLower && codeContent.toLowerCase().includes(keywordLower)) {
+      parsedElement.content = parsedElement.content.replace(keywordRegex!, '<span class="highlight">$1</span>');
+      matchingLines.push(parsedElement);
     }
   }
 
-  return results.length > 0 ? results : null;
-};
-
-const processNode = (node: Node, keyword: string): boolean => {
-
-  const keywordRegex = new RegExp(`(${keyword})`, "gi");
-  if (node.nodeType === Node.TEXT_NODE) {
-    const textContent = node.textContent || "";
-
-    if (textContent.toLowerCase().includes(keyword.toLowerCase())) {
-      const highlightedHTML = textContent.replace(
-        keywordRegex,
-        `<mark>$1</mark>`
-      );
-      const tempContainer = document.createElement("div");
-      tempContainer.innerHTML = highlightedHTML;
-
-      while (tempContainer.firstChild) {
-        node.parentNode?.insertBefore(tempContainer.firstChild, node);
-      }
-      node.parentNode?.removeChild(node);
-
-      return true;
-    }
-
-    return false;
-  } else if (node.nodeType === Node.ELEMENT_NODE) {
-
-    const children = Array.from(node.childNodes);
-    let hasKeyword = false;
-
-    children.forEach((child) => {
-      if (!processNode(child, keyword)) {
-        node.removeChild(child);
-      } else {
-        hasKeyword = true;
-      }
-    });
-
-    return hasKeyword;
+  if (keywordLower && matchingLines.length > 0) {
+    return matchingLines;
   }
 
-  return false;
+  return firstLine ? [firstLine] : [];
 };
+
 
 const markdownString = `
 # Title
@@ -252,5 +169,5 @@ console.log(hello);
 Regular text after code block
 `;
 
-const parsed = processMarkdownString(markdownString);
+const parsed = processMarkdownString(markdownString, 'world');
 console.log(parsed);
