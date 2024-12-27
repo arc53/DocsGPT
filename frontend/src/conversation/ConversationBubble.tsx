@@ -417,7 +417,7 @@ const ConversationBubble = forwardRef<
         </div>
         <div className="my-2 ml-2 flex justify-start">
           <div
-            className={`relative mr-5  block items-center justify-center lg:invisible 
+            className={`relative mr-2  block items-center justify-center lg:invisible 
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
@@ -425,7 +425,7 @@ const ConversationBubble = forwardRef<
             </div>
           </div>
           <div
-            className={`relative mr-5 block items-center justify-center lg:invisible 
+            className={`relative mr-2 block items-center justify-center lg:invisible 
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
@@ -433,14 +433,14 @@ const ConversationBubble = forwardRef<
             </div>
           </div>
           {type === 'ERROR' && (
-            <div className="relative mr-5 block items-center justify-center">
+            <div className="relative mr-2 block items-center justify-center">
               <div>{retryBtn}</div>
             </div>
           )}
           {handleFeedback && (
             <>
               <div
-                className={`relative mr-5 flex items-center justify-center ${
+                className={`relative mr-2 flex items-center justify-center ${
                   !isLikeClicked ? 'lg:invisible' : ''
                 } ${
                   feedback === 'LIKE' || type !== 'ERROR'
