@@ -86,6 +86,7 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
     const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     const bulletMatch = trimmedLine.match(/^[-*]\s+(.+)$/);
     const numberedMatch = trimmedLine.match(/^\d+\.\s+(.+)$/);
+    const blockquoteMatch = trimmedLine.match(/^>+\s*(.+)$/); // Updated regex to handle multiple '>' symbols
 
     let content = trimmedLine;
 
@@ -106,6 +107,12 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
       parsedElement = {
         content: content,
         tag: 'numberedList'
+      };
+    } else if (blockquoteMatch) {
+      content = blockquoteMatch[1];
+      parsedElement = {
+        content: content,
+        tag: 'blockquote'
       };
     } else {
       parsedElement = {
