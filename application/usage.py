@@ -1,7 +1,7 @@
 import sys
 from datetime import datetime
 from application.core.mongo_db import MongoDB
-from application.utils import num_tokens_from_string
+from application.utils import num_tokens_from_string, num_tokens_from_object_or_list
 
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
@@ -21,11 +21,16 @@ def update_token_usage(user_api_key, token_usage):
 
 
 def gen_token_usage(func):
-    def wrapper(self, model, messages, stream, **kwargs):
+    def wrapper(self, model, messages, stream, tools, **kwargs):
         for message in messages:
-            self.token_usage["prompt_tokens"] += num_tokens_from_string(message["content"])
-        result = func(self, model, messages, stream, **kwargs)
-        self.token_usage["generated_tokens"] += num_tokens_from_string(result)
+            if message["content"]:
+                self.token_usage["prompt_tokens"] += num_tokens_from_string(message["content"])
+        result = func(self, model, messages, stream, tools, **kwargs)
+        # check if result is a string
+        if isinstance(result, str):
+            self.token_usage["generated_tokens"] += num_tokens_from_string(result)
+        else:
+            self.token_usage["generated_tokens"] += num_tokens_from_object_or_list(result)
         update_token_usage(self.user_api_key, self.token_usage)
         return result
 
@@ -33,11 +38,11 @@ def gen_token_usage(func):
 
 
 def stream_token_usage(func):
-    def wrapper(self, model, messages, stream, **kwargs):
+    def wrapper(self, model, messages, stream, tools, **kwargs):
         for message in messages:
             self.token_usage["prompt_tokens"] += num_tokens_from_string(message["content"])
         batch = []
-        result = func(self, model, messages, stream, **kwargs)
+        result = func(self, model, messages, stream, tools, **kwargs)
         for r in result:
             batch.append(r)
             yield r
