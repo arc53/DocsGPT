@@ -33,7 +33,7 @@ langchain-community==0.3.13
 langchain-core==0.3.28
 langchain-openai==0.2.14
 langchain-text-splitters==0.3.4
-langsmith==0.2.3
+langsmith==0.2.6
 lazy-object-proxy==1.10.0
 lxml==5.3.0
 markupsafe==2.1.5
