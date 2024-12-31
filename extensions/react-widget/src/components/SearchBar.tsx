@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import styled, { ThemeProvider, createGlobalStyle } from 'styled-components';
 import { WidgetCore } from './DocsGPTWidget';
 import { SearchBarProps } from '@/types';
@@ -48,11 +48,16 @@ const GlobalStyle = createGlobalStyle`
   }
 `;
 
+const loadGeistFont = () => {
+  const link = document.createElement('link');
+  link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap'; // Replace with the actual CDN URL
+  link.rel = 'stylesheet';
+  document.head.appendChild(link);
+};
+
 const Main = styled.div`
     all: initial;
-    * {
-        font-family: 'Geist', sans-serif;
-    }
+    font-family: 'Geist', sans-serif;
 `
 const SearchButton = styled.button<{ inputWidth: string }>`
     padding: 6px 6px;
@@ -118,29 +123,6 @@ const SearchResultsScroll = styled.div`
     padding: 0 16px;
 `;
 
-const ResultHeader = styled.div`
-  display: flex;
-  align-items: center;
-`;
-
-const IconContainer = styled.div`
-    display: flex;
-    gap: 20px;
-    align-items: center;
-    margin-right: 20px;
-    position: relative;
-
-    &::after {
-        content: '';
-        position: absolute;
-        top: 24px;
-        bottom: 0;
-        left: 50%;
-        width: 1px;
-        background-color: ${props => props.theme.secondary.text};
-    }
-`;
-
 const IconTitleWrapper = styled.div`
     display: flex;
     align-items: center;
@@ -156,7 +138,7 @@ const Title = styled.h3`
 const ContentWrapper = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 8px;   // Reduced from 1
+    gap: 8px; 
 `;
 const Content = styled.div`
     display: flex;
@@ -192,6 +174,7 @@ const ResultWrapper = styled.div`
     cursor: pointer;
     margin-bottom: 8px;
     background-color: ${props => props.theme.primary.bg};
+    font-family: 'Geist',sans-serif;
     transition: background-color 0.2s;
 
     &.contains-source:hover {
@@ -381,6 +364,7 @@ export const SearchBar = ({
     };
 
     React.useEffect(() => {
+        loadGeistFont()
         const handleClickOutside = (event: MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
                 setIsResultVisible(false);
