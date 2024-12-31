@@ -25,7 +25,6 @@ export const getOS = () => {
   return 'other';
 };
 
-
 interface ParsedElement {
   content: string;
   tag: string;
@@ -48,14 +47,11 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
     const trimmedLine = lines[i].trim();
     if (!trimmedLine) continue;
 
-    // Handle code block start/end
     if (trimmedLine.startsWith('```')) {
       if (!isInCodeBlock) {
-        // Start of code block
         isInCodeBlock = true;
         codeBlockContent = [];
       } else {
-        // End of code block - process the collected content
         isInCodeBlock = false;
         const codeContent = codeBlockContent.join('\n');
         const parsedElement: ParsedElement = {
@@ -75,7 +71,6 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
       continue;
     }
 
-    // Collect code block content
     if (isInCodeBlock) {
       codeBlockContent.push(trimmedLine);
       continue;
@@ -86,7 +81,7 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
     const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     const bulletMatch = trimmedLine.match(/^[-*]\s+(.+)$/);
     const numberedMatch = trimmedLine.match(/^\d+\.\s+(.+)$/);
-    const blockquoteMatch = trimmedLine.match(/^>+\s*(.+)$/); // Updated regex to handle multiple '>' symbols
+    const blockquoteMatch = trimmedLine.match(/^>+\s*(.+)$/);
 
     let content = trimmedLine;
 
@@ -154,27 +149,3 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
 
   return firstLine ? [firstLine] : [];
 };
-
-
-const markdownString = `
-# Title
-This is a paragraph.
-
-## Subtitle
-- Bullet item 1
-* Bullet item 2
-1. Numbered item 1
-2. Numbered item 2
-
-\`\`\`javascript
-const hello = "world";
-console.log(hello);
-// This is a multi-line
-// code block
-\`\`\`
-
-Regular text after code block
-`;
-
-const parsed = processMarkdownString(markdownString, 'world');
-console.log(parsed);
