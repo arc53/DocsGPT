@@ -74,7 +74,7 @@ regex==2024.9.11
 requests==2.32.3
 retry==0.9.2
 sentence-transformers==3.3.1
-tiktoken==0.7.0
+tiktoken==0.8.0
 tokenizers==0.21.0
 torch==2.4.1
 tqdm==4.66.5
