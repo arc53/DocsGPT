@@ -50,7 +50,7 @@ const GlobalStyle = createGlobalStyle`
 
 const loadGeistFont = () => {
   const link = document.createElement('link');
-  link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap'; // Replace with the actual CDN URL
+  link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap'; 
   link.rel = 'stylesheet';
   document.head.appendChild(link);
 };
@@ -61,6 +61,7 @@ const Main = styled.div`
 `
 const SearchButton = styled.button<{ inputWidth: string }>`
     padding: 6px 6px;
+    font-family: inherit;
     width: ${({ inputWidth }) => inputWidth};
     border-radius: 8px;
     display: inline;
@@ -93,11 +94,11 @@ const SearchResults = styled.div`
     flex-direction: column;
     background-color: ${props => props.theme.primary.bg};
     border: 1px solid ${props => props.theme.secondary.text};
-    border-radius: 12px;
-    padding: 8px;
+    border-radius: 15px;
+    padding: 8px 0px 8px 0px;
     width: 792px;
     max-width: 90vw;
-    height: 70vh;
+    height: 415px;
     z-index: 100;
     left: 50%;
     top: 50%;
@@ -277,7 +278,8 @@ const AskAIButton = styled.button`
     align-items: center;
     justify-content: flex-start;
     gap: 12px;
-    width: 100%;
+    width: calc(100% - 32px);
+    margin: 0 16px 16px 16px;
     box-sizing: border-box;
     height: 50px;
     padding: 8px 24px;
@@ -289,7 +291,6 @@ const AskAIButton = styled.button`
     transition: background-color 0.2s, box-shadow 0.2s;
     font-size: 18px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    margin-bottom: 16px;
 
     &:hover {
         opacity: 0.8;
@@ -331,6 +332,7 @@ const EscapeInstruction = styled.kbd`
     border: 1px solid ${props => props.theme.secondary.text};
     color: ${props => props.theme.secondary.text};
     font-size: 14px;
+    font-family: 'Geist', sans-serif;
     white-space: nowrap;
     cursor: pointer;
     width: fit-content;
@@ -356,8 +358,7 @@ export const SearchBar = ({
     const abortControllerRef = React.useRef<AbortController | null>(null);
     const browserOS = getOS();
     const isTouch = 'ontouchstart' in window;
-    const md = new MarkdownIt();
-
+    
     const getKeyboardInstruction = () => {
         if (isResultVisible) return "Enter";
         return browserOS === 'mac' ? '⌘ + K' : 'Ctrl + K';
@@ -436,6 +437,7 @@ export const SearchBar = ({
 
     const handleClose = () => {
         setIsWidgetOpen(false);
+        setIsResultVisible(true);
     };
 
     return (
