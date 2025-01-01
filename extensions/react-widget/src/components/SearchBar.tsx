@@ -93,7 +93,7 @@ const SearchResults = styled.div`
     display: flex;
     flex-direction: column;
     background-color: ${props => props.theme.primary.bg};
-    border: 1px solid ${props => props.theme.secondary.text};
+    border: 1px solid ${props => props.theme.secondary.bg};
     border-radius: 15px;
     padding: 8px 0px 8px 0px;
     width: 792px;
@@ -128,6 +128,10 @@ const IconTitleWrapper = styled.div`
     display: flex;
     align-items: center;
     gap: 8px;
+
+    .element-icon{
+        margin: 4px;
+    }
 `;
 
 const Title = styled.h3`
@@ -143,10 +147,10 @@ const ContentWrapper = styled.div`
 `;
 const Content = styled.div`
     display: flex;
-    margin-left: 10px;
+    margin-left: 8px;
     flex-direction: column;
     gap: 8px;
-    padding: 4px 0 0px 20px;
+    padding: 4px 0px 0px 12px;
     font-size: 17.32px;
     color: ${props => props.theme.primary.text};
     line-height: 1.6;
@@ -158,13 +162,6 @@ const ContentSegment = styled.div`
     gap: 8px;
     padding-right: 16px;
 `
-const TextContent = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    flex: 1;
-    padding-top: 3px;
-`;
 
 const ResultWrapper = styled.div`
     display: flex;
@@ -173,7 +170,6 @@ const ResultWrapper = styled.div`
     box-sizing: border-box;
     padding: 12px 16px 0 16px;
     cursor: pointer;
-    margin-bottom: 8px;
     background-color: ${props => props.theme.primary.bg};
     font-family: 'Geist',sans-serif;
     transition: background-color 0.2s;
@@ -302,7 +298,7 @@ const SearchHeader = styled.div`
     gap: 8px;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid ${props => props.theme.secondary.text};
+    border-bottom: 1px solid ${props => props.theme.secondary.bg};
 `
 
 const TextField = styled.input`
