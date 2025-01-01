@@ -21,7 +21,7 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.2.7",
     "chart.js": "^4.4.4",
-    "i18next": "^23.15.1",
+    "i18next": "^24.2.0",
     "i18next-browser-languagedetector": "^8.0.0",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
@@ -33,7 +33,7 @@
     "react-i18next": "^15.0.2",
     "react-markdown": "^9.0.1",
     "react-redux": "^8.0.5",
-    "react-router-dom": "^6.8.1",
+    "react-router-dom": "^7.1.1",
     "react-syntax-highlighter": "^15.5.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.0",
@@ -58,12 +58,12 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-unused-imports": "^4.1.4",
     "husky": "^8.0.0",
-    "lint-staged": "^15.2.10",
-    "postcss": "^8.4.41",
+    "lint-staged": "^15.2.11",
+    "postcss": "^8.4.49",
     "prettier": "^3.3.3",
     "prettier-plugin-tailwindcss": "^0.6.8",
     "tailwindcss": "^3.4.15",
-    "typescript": "^5.6.2",
+    "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vite-plugin-svgr": "^4.2.0"
   }
