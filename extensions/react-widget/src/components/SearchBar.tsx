@@ -74,6 +74,7 @@ const SearchButton = styled.button<{ inputWidth: string }>`
     appearance: none;
     transition: background-color 128ms linear;
     text-align: left;
+    cursor: pointer;
 `
 
 const Container = styled.div`
@@ -131,6 +132,10 @@ const Title = styled.h3`
     font-weight: 400;
     color: ${props => props.theme.primary.text};
     margin: 0;
+    overflow-wrap: break-word;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
 `;
 const ContentWrapper = styled.div`
     display: flex;
@@ -147,12 +152,17 @@ const Content = styled.div`
     color: ${props => props.theme.primary.text};
     line-height: 1.6;
     border-left: 2px solid #585858;
+    overflow: hidden;
 `
 const ContentSegment = styled.div`
     display: flex;
     align-items: flex-start;
     gap: 8px;
     padding-right: 16px;
+    overflow-wrap: break-word;
+    white-space: normal;
+    overflow: hidden; 
+    text-overflow: ellipsis;
 `
 
 const ResultWrapper = styled.div`
@@ -165,6 +175,13 @@ const ResultWrapper = styled.div`
     background-color: ${props => props.theme.primary.bg};
     font-family: 'Geist',sans-serif;
     transition: background-color 0.2s;
+
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
 
     &.contains-source:hover {
         background-color: rgba(0, 92, 197, 0.15);
@@ -303,7 +320,7 @@ const TextField = styled.input`
     font-size: 20px;
     font-weight: 400; 
     outline: none;
-
+    
     &:focus {
         border-color: none;
     }
