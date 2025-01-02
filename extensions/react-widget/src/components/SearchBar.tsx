@@ -18,7 +18,7 @@ import {
 const themes = {
     dark: {
         bg: '#000',
-        text: '#fff',
+        text: '#EDEDED',
         primary: {
             text: "#FAFAFA",
             bg: '#111111'
@@ -30,7 +30,7 @@ const themes = {
     },
     light: {
         bg: '#fff',
-        text: '#000',
+        text: '#171717',
         primary: {
             text: "#222327",
             bg: "#fff"
@@ -65,7 +65,7 @@ const SearchButton = styled.button<{ inputWidth: string }>`
     width: ${({ inputWidth }) => inputWidth};
     border-radius: 8px;
     display: inline;
-    color: ${props => props.theme.primary.text};
+    color: ${props => props.theme.secondary.text};
     outline: none;
     border: none;
     background-color: ${props => props.theme.secondary.bg};
@@ -74,14 +74,6 @@ const SearchButton = styled.button<{ inputWidth: string }>`
     appearance: none;
     transition: background-color 128ms linear;
     text-align: left;
-    &:focus {
-        outline: none;
-        box-shadow: 
-        0px 0px 0px 2px rgba(0, 109, 199), 
-        0px 0px 6px rgb(0, 90, 163), 
-        0px 2px 6px rgba(0, 0, 0, 0.1);
-        background-color: ${props => props.theme.primary.bg};
-    }
 `
 
 const Container = styled.div`
@@ -98,7 +90,7 @@ const SearchResults = styled.div`
     padding: 8px 0px 8px 0px;
     width: 792px;
     max-width: 90vw;
-    height: 415px;
+    height: 396px;
     z-index: 100;
     left: 50%;
     top: 50%;
@@ -118,9 +110,9 @@ const SearchResultsScroll = styled.div`
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    scrollbar-color: lab(48.438 0 0 / 0.4) rgba(0, 0, 0, 0);
     scrollbar-gutter: stable;
     scrollbar-width: thin;
+    scrollbar-color: #383838 transparent;
     padding: 0 16px;
 `;
 
@@ -135,7 +127,7 @@ const IconTitleWrapper = styled.div`
 `;
 
 const Title = styled.h3`
-    font-size: 17.32px;
+    font-size: 15px;
     font-weight: 400;
     color: ${props => props.theme.primary.text};
     margin: 0;
@@ -151,7 +143,7 @@ const Content = styled.div`
     flex-direction: column;
     gap: 8px;
     padding: 4px 0px 0px 12px;
-    font-size: 17.32px;
+    font-size: 15px;
     color: ${props => props.theme.primary.text};
     line-height: 1.6;
     border-left: 2px solid #585858;
@@ -182,13 +174,13 @@ const ResultWrapper = styled.div`
     }
 `
 const Markdown = styled.div`
-line-height:20px;
-font-size: 12px;
+line-height:18px;
+font-size: 11px;
 white-space: pre-wrap;
  pre {
       padding: 8px;
       width: 90%;
-      font-size: 12px;
+      font-size: 11px;
       border-radius: 6px;
       overflow-x: auto;
       background-color: #1B1C1F;
@@ -196,7 +188,7 @@ white-space: pre-wrap;
     }
 
     h1,h2 {
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
       color: ${(props) => props.theme.text};
       opacity: 0.8;
@@ -204,20 +196,20 @@ white-space: pre-wrap;
 
 
     h3 {
-      font-size: 14px;
+      font-size: 12px;
     }
 
     p {
       margin: 0px;
       line-height: 1.35rem;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     code:not(pre code) {
       border-radius: 6px;
       padding: 2px 2px;
       margin: 2px;
-      font-size: 10px;
+      font-size: 9px;
       display: inline;
       background-color: #646464;
       color: #fff ;
@@ -266,7 +258,7 @@ const Loader = styled.div`
 const NoResults = styled.div`
   margin-top: 2rem;
   text-align: center;
-  font-size: 1rem;
+  font-size: 14px;
   color: #888;
 `;
 const AskAIButton = styled.button`
@@ -282,10 +274,10 @@ const AskAIButton = styled.button`
     border: none;
     border-radius: 6px;
     background-color: ${props => props.theme.secondary.bg};
-    color: ${props => props.theme.bg === '#000' ? '#EDEDED' : props.theme.secondary.text};
+    color: ${props => props.theme.text}; 
     cursor: pointer;
     transition: background-color 0.2s, box-shadow 0.2s;
-    font-size: 18px;
+    font-size: 16px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
     &:hover {
@@ -307,8 +299,8 @@ const TextField = styled.input`
     padding: 12px 16px;
     border: none;
     background-color: transparent;
-    color: #EDEDED;
-    font-size: 22px;
+    color: ${props => props.theme.text}; 
+    font-size: 20px;
     font-weight: 400; 
     outline: none;
 
@@ -326,8 +318,8 @@ const EscapeInstruction = styled.kbd`
     border-radius: 4px;
     background-color: transparent;
     border: 1px solid ${props => props.theme.secondary.text};
-    color: ${props => props.theme.secondary.text};
-    font-size: 14px;
+    color: ${props => props.theme.text};
+    font-size: 12px;
     font-family: 'Geist', sans-serif;
     white-space: nowrap;
     cursor: pointer;
@@ -341,7 +333,8 @@ export const SearchBar = ({
     apiHost = "https://gptcloud.arc53.com",
     theme = "dark",
     placeholder = "Search or Ask AI...",
-    width = "256px"
+    width = "256px",
+    buttonText = "Search here"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState<string>("");
     const [loading, setLoading] = React.useState<boolean>(false);
@@ -445,7 +438,7 @@ export const SearchBar = ({
                         onClick={() => setIsResultVisible(true)}
                         inputWidth={width}
                     >
-                        Search here   
+                        {buttonText}
                     </SearchButton>
                     {
                         isResultVisible && (
