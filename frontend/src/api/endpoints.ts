@@ -23,6 +23,7 @@ const endpoints = {
     CREATE_TOOL: '/api/create_tool',
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
+    DELETE_TOOL: '/api/delete_tool',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

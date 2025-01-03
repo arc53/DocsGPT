@@ -58,6 +58,12 @@ export default function ToolConfig({
         handleGoBack();
       });
   };
+
+  const handleDelete = () => {
+    userService.deleteTool({ id: tool.id }).then(() => {
+      handleGoBack();
+    });
+  };
   return (
     <div className="mt-8 flex flex-col gap-4">
       <div className="mb-4 flex items-center gap-3 text-eerie-black dark:text-bright-gray text-sm">
@@ -83,7 +89,7 @@ export default function ToolConfig({
             Authentication
           </p>
         )}
-        <div className="mt-4 flex items-center gap-2">
+        <div className="flex mt-4 flex-col sm:flex-row items-start sm:items-center gap-2">
           {Object.keys(tool?.config).length !== 0 && (
             <div className="relative w-96">
               <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
@@ -98,12 +104,20 @@ export default function ToolConfig({
               ></Input>
             </div>
           )}
-          <button
-            className="rounded-full h-10 w-36 bg-purple-30 text-white hover:bg-[#6F3FD1] text-nowrap text-sm"
-            onClick={handleSaveChanges}
-          >
-            Save changes
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full px-5 py-[10px] bg-purple-30 text-white hover:bg-[#6F3FD1] text-nowrap text-sm"
+              onClick={handleSaveChanges}
+            >
+              Save changes
+            </button>
+            <button
+              className="rounded-full px-5 py-[10px] border border-solid border-red-500 text-red-500 hover:bg-red-500 hover:text-white text-nowrap text-sm"
+              onClick={handleDelete}
+            >
+              Delete
+            </button>
+          </div>
         </div>
       </div>
       <div className="flex flex-col gap-4">
@@ -118,7 +132,7 @@ export default function ToolConfig({
                 key={actionIndex}
                 className="w-full border border-silver dark:border-silver/40 rounded-xl"
               >
-                <div className="h-10 bg-[#F9F9F9] dark:bg-[#28292D] rounded-t-xl border-b border-silver dark:border-silver/40 flex items-center justify-between px-5">
+                <div className="h-10 bg-[#F9F9F9] dark:bg-[#28292D] rounded-t-xl border-b border-silver dark:border-silver/40 flex items-center justify-between px-5 flex-wrap">
                   <p className="font-semibold text-eerie-black dark:text-bright-gray">
                     {action.name}
                   </p>
@@ -146,7 +160,7 @@ export default function ToolConfig({
                     <span className="absolute inset-y-0 start-0 m-[3px] size-[18px] rounded-full bg-white transition-all peer-checked:start-4"></span>
                   </label>
                 </div>
-                <div className="mt-5 relative px-5 w-96">
+                <div className="mt-5 relative px-5 w-full sm:w-96">
                   <Input
                     type="text"
                     placeholder="Enter description"
