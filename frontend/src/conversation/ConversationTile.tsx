@@ -115,6 +115,19 @@ export default function ConversationTile({
     setConversationsName(conversation.name);
     setIsEdit(false);
   }
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      handleSaveConversation({
+        id: conversation.id,
+        name: conversationName,
+      });
+    } else if (e.key === 'Escape') {
+      onClear();
+    }
+  };
+
   return (
     <>
       <div
@@ -144,6 +157,7 @@ export default function ConversationTile({
               className="h-6 w-full bg-transparent px-1 text-sm font-normal leading-6 focus:outline-[#0075FF]"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
+              onKeyDown={handleRenameKeyDown}
             />
           ) : (
             <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black dark:text-white">
@@ -239,7 +253,7 @@ export default function ConversationTile({
                 >
                   <img
                     src={Trash}
-                    alt="Edit"
+                    alt="Delete"
                     width={24}
                     height={24}
                     className="cursor-pointer hover:opacity-50"
