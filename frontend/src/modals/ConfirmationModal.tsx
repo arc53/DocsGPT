@@ -1,7 +1,9 @@
-import { ActiveState } from '../models/misc';
 import { useTranslation } from 'react-i18next';
+
+import { ActiveState } from '../models/misc';
 import WrapperModal from './WrapperModal';
-function ConfirmationModal({
+
+export default function ConfirmationModal({
   message,
   modalState,
   setModalState,
@@ -59,5 +61,3 @@ function ConfirmationModal({
     </>
   );
 }
-
-export default ConfirmationModal;
