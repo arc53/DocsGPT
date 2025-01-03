@@ -1,15 +1,24 @@
-import React from 'react'
-import styled, { ThemeProvider } from 'styled-components';
+import React from 'react';
+import styled, { ThemeProvider, createGlobalStyle } from 'styled-components';
 import { WidgetCore } from './DocsGPTWidget';
 import { SearchBarProps } from '@/types';
-import { getSearchResults } from '../requests/searchAPI'
+import { getSearchResults } from '../requests/searchAPI';
 import { Result } from '@/types';
 import MarkdownIt from 'markdown-it';
-import { getOS, preprocessSearchResultsToHTML } from '../utils/helper'
+import { getOS, processMarkdownString } from '../utils/helper';
+import DOMPurify from 'dompurify';
+import { 
+    CodeIcon, 
+    TextAlignLeftIcon,
+    HeadingIcon,
+    ReaderIcon, 
+    ListBulletIcon, 
+    QuoteIcon 
+} from '@radix-ui/react-icons';
 const themes = {
     dark: {
         bg: '#000',
-        text: '#fff',
+        text: '#EDEDED',
         primary: {
             text: "#FAFAFA",
             bg: '#111111'
@@ -21,7 +30,7 @@ const themes = {
     },
     light: {
         bg: '#fff',
-        text: '#000',
+        text: '#171717',
         primary: {
             text: "#222327",
             bg: "#fff"
@@ -33,16 +42,30 @@ const themes = {
     }
 }
 
+const GlobalStyle = createGlobalStyle`
+  .highlight {
+    color:#007EE6;
+  }
+`;
+
+const loadGeistFont = () => {
+  const link = document.createElement('link');
+  link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap'; 
+  link.rel = 'stylesheet';
+  document.head.appendChild(link);
+};
+
 const Main = styled.div`
-    all:initial;
-    font-family: sans-serif;
+    all: initial;
+    font-family: 'Geist', sans-serif;
 `
-const TextField = styled.input<{ inputWidth: string }>`
-    padding:  6px 6px;
+const SearchButton = styled.button<{ inputWidth: string }>`
+    padding: 6px 6px;
+    font-family: inherit;
     width: ${({ inputWidth }) => inputWidth};
     border-radius: 8px;
     display: inline;
-    color: ${props => props.theme.primary.text};
+    color: ${props => props.theme.secondary.text};
     outline: none;
     border: none;
     background-color: ${props => props.theme.secondary.bg};
@@ -50,14 +73,8 @@ const TextField = styled.input<{ inputWidth: string }>`
     -moz-appearance: none;
     appearance: none;
     transition: background-color 128ms linear;
-    &:focus {
-     outline: none;
-     box-shadow: 
-     0px 0px 0px 2px rgba(0, 109, 199), 
-     0px 0px 6px rgb(0, 90, 163), 
-     0px 2px 6px rgba(0, 0, 0, 0.1) ;
-     background-color: ${props => props.theme.primary.bg};
-  }
+    text-align: left;
+    cursor: pointer;
 `
 
 const Container = styled.div`
@@ -65,61 +82,122 @@ const Container = styled.div`
     display: inline-block;
 `
 const SearchResults = styled.div`
-    position: absolute;
-    display: block;
+    position: fixed;
+    display: flex;
+    flex-direction: column;
     background-color: ${props => props.theme.primary.bg};
-    border: 1px solid rgba(0, 0, 0, .1);
-    border-radius: 12px;
-    padding: 8px;
-    width: 576px;
-    min-width: 96%;
+    border: 1px solid ${props => props.theme.secondary.bg};
+    border-radius: 15px;
+    padding: 8px 0px 8px 0px;
+    width: 792px;
+    max-width: 90vw;
+    height: 396px;
     z-index: 100;
-    height: 25vh;
-    overflow-y: auto;
-    top: 32px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     color: ${props => props.theme.primary.text};
-    scrollbar-color: lab(48.438 0 0 / 0.4) rgba(0, 0, 0, 0);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(16px);
+    box-sizing: border-box;
+
+    @media only screen and (max-width: 768px) {
+        height: 80vh;
+        width: 90vw;
+    }
+`;
+
+const SearchResultsScroll = styled.div`
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(16px);
-    @media only screen and (max-width: 768px) {
-      max-height: 100vh;
-      max-width: 80vw;
-      overflow: auto;
+    scrollbar-color: #383838 transparent;
+    padding: 0 16px;
+`;
+
+const IconTitleWrapper = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .element-icon{
+        margin: 4px;
     }
-`
+`;
+
 const Title = styled.h3`
-    font-size: 14px;
+    font-size: 15px;
+    font-weight: 400;
     color: ${props => props.theme.primary.text};
-    opacity: 0.8;
-    padding-bottom: 6px;
-    font-weight: 600;
-    text-transform: uppercase;
-    border-bottom: 1px solid ${(props) => props.theme.secondary.text};
-`
+    margin: 0;
+    overflow-wrap: break-word;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+`;
+const ContentWrapper = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 8px; 
+`;
 const Content = styled.div`
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    display: flex;
+    margin-left: 8px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0px 0px 12px;
+    font-size: 15px;
+    color: ${props => props.theme.primary.text};
+    line-height: 1.6;
+    border-left: 2px solid #585858;
+    overflow: hidden;
 `
+const ContentSegment = styled.div`
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding-right: 16px;
+    overflow-wrap: break-word;
+    white-space: normal;
+    overflow: hidden; 
+    text-overflow: ellipsis;
+`
+
 const ResultWrapper = styled.div`
-    padding: 4px 8px 4px 8px;
-    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 16px 0 16px;
     cursor: pointer;
-    &.contains-source:hover{
+    background-color: ${props => props.theme.primary.bg};
+    font-family: 'Geist',sans-serif;
+    transition: background-color 0.2s;
+
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &.contains-source:hover {
         background-color: rgba(0, 92, 197, 0.15);
         ${Title} {
-        color: rgb(0, 126, 230);
-       }
+            color: rgb(0, 126, 230);
+        }
     }
 `
 const Markdown = styled.div`
-line-height:20px;
-font-size: 12px;
+line-height:18px;
+font-size: 11px;
 white-space: pre-wrap;
  pre {
       padding: 8px;
       width: 90%;
-      font-size: 12px;
+      font-size: 11px;
       border-radius: 6px;
       overflow-x: auto;
       background-color: #1B1C1F;
@@ -127,7 +205,7 @@ white-space: pre-wrap;
     }
 
     h1,h2 {
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
       color: ${(props) => props.theme.text};
       opacity: 0.8;
@@ -135,20 +213,20 @@ white-space: pre-wrap;
 
 
     h3 {
-      font-size: 14px;
+      font-size: 12px;
     }
 
     p {
       margin: 0px;
       line-height: 1.35rem;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     code:not(pre code) {
       border-radius: 6px;
       padding: 2px 2px;
       margin: 2px;
-      font-size: 10px;
+      font-size: 9px;
       display: inline;
       background-color: #646464;
       color: #fff ;
@@ -197,76 +275,131 @@ const Loader = styled.div`
 const NoResults = styled.div`
   margin-top: 2rem;
   text-align: center;
-  font-size: 1rem;
+  font-size: 14px;
   color: #888;
 `;
-const InfoButton = styled.button`
-    cursor: pointer;
-    padding: 10px 4px 10px 4px;
-    display: block;
-    width: 100%;
-    color: inherit;
+const AskAIButton = styled.button`
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    width: calc(100% - 32px);
+    margin: 0 16px 16px 16px;
+    box-sizing: border-box;
+    height: 50px;
+    padding: 8px 24px;
+    border: none;
     border-radius: 6px;
-    background-color: ${(props) => props.theme.bg};
-    text-align: center;
-    font-size: 14px;
-    margin-bottom: 8px;
-    border:1px solid ${(props) => props.theme.secondary.text};
+    background-color: ${props => props.theme.secondary.bg};
+    color: ${props => props.theme.text}; 
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+    font-size: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+        opacity: 0.8;
+    }
+`
+const SearchHeader = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid ${props => props.theme.secondary.bg};
+`
+
+const TextField = styled.input`
+    width: calc(100% - 32px);
+    margin: 0 16px;
+    padding: 12px 16px;
+    border: none;
+    background-color: transparent;
+    color: ${props => props.theme.text}; 
+    font-size: 20px;
+    font-weight: 400; 
+    outline: none;
     
+    &:focus {
+        border-color: none;
+    }
+`
+
+const EscapeInstruction = styled.kbd`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 12px 16px 0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: transparent;
+    border: 1px solid ${props => props.theme.secondary.text};
+    color: ${props => props.theme.text};
+    font-size: 12px;
+    font-family: 'Geist', sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
+    width: fit-content;
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
 `
 export const SearchBar = ({
     apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
     apiHost = "https://gptcloud.arc53.com",
     theme = "dark",
     placeholder = "Search or Ask AI...",
-    width = "256px"
+    width = "256px",
+    buttonText = "Search here"
 }: SearchBarProps) => {
     const [input, setInput] = React.useState<string>("");
     const [loading, setLoading] = React.useState<boolean>(false);
     const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const containerRef = React.useRef<HTMLInputElement>(null);
-    const [isResultVisible, setIsResultVisible] = React.useState<boolean>(true);
+    const [isResultVisible, setIsResultVisible] = React.useState<boolean>(false);
     const [results, setResults] = React.useState<Result[]>([]);
     const debounceTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-    const abortControllerRef = React.useRef<AbortController | null>(null)
+    const abortControllerRef = React.useRef<AbortController | null>(null);
     const browserOS = getOS();
-    function isTouchDevice() {
-        return 'ontouchstart' in window;
-    }
-    const isTouch = isTouchDevice();
+    const isTouch = 'ontouchstart' in window;
+    
     const getKeyboardInstruction = () => {
-        if (isResultVisible) return "Enter"
-        if (browserOS === 'mac')
-            return "⌘ K"
-        else
-            return "Ctrl K"
-    }
+        if (isResultVisible) return "Enter";
+        return browserOS === 'mac' ? '⌘ + K' : 'Ctrl + K';
+    };
+
     React.useEffect(() => {
-        const handleFocusSearch = (event: KeyboardEvent) => {
+        loadGeistFont()
+        const handleClickOutside = (event: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsResultVisible(false);
+            }
+        };
+
+        const handleKeyDown = (event: KeyboardEvent) => {
             if (
                 ((browserOS === 'win' || browserOS === 'linux') && event.ctrlKey && event.key === 'k') ||
                 (browserOS === 'mac' && event.metaKey && event.key === 'k')
             ) {
                 event.preventDefault();
                 inputRef.current?.focus();
-            }
-        }
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                containerRef.current &&
-                !containerRef.current.contains(event.target as Node)
-            ) {
+                setIsResultVisible(true);
+            } else if (event.key === 'Escape') {
                 setIsResultVisible(false);
             }
         };
+
+     
         document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleFocusSearch);
+        document.addEventListener('keydown', handleKeyDown);
         return () => {
-            setIsResultVisible(true);
             document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [])
+    }, []);
+
     React.useEffect(() => {
         if (!input) {
             setResults([]);
@@ -291,8 +424,6 @@ export const SearchBar = ({
         }, 500);
 
         return () => {
-            console.log(results);
-
             abortController.abort();
             clearTimeout(debounceTimeout.current ?? undefined);
         };
@@ -304,73 +435,106 @@ export const SearchBar = ({
             openWidget();
         }
     };
+
     const openWidget = () => {
         setIsWidgetOpen(true);
-        setIsResultVisible(false)
-    }
+        setIsResultVisible(false);
+    };
+
     const handleClose = () => {
         setIsWidgetOpen(false);
-    }
-    const md = new MarkdownIt();
+        setIsResultVisible(true);
+    };
+
     return (
         <ThemeProvider theme={{ ...themes[theme] }}>
             <Main>
+                <GlobalStyle />
                 <Container ref={containerRef}>
-                    <TextField
-                        spellCheck={false}
+                    <SearchButton
+                        onClick={() => setIsResultVisible(true)}
                         inputWidth={width}
-                        onFocus={() => setIsResultVisible(true)}
-                        ref={inputRef}
-                        onSubmit={() => setIsWidgetOpen(true)}
-                        onKeyDown={(e) => handleKeyDown(e)}
-                        placeholder={placeholder}
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                    />
+                    >
+                        {buttonText}
+                    </SearchButton>
                     {
-                        input.length > 0 && isResultVisible && (
+                        isResultVisible && (
                             <SearchResults>
-                                <InfoButton onClick={openWidget}>
-                                    {
-                                        isTouch ?
-                                            "Ask the AI" :
-                                            <>
-                                                Press <span style={{ fontSize: "16px" }}>&crarr;</span> Enter to ask the AI
-                                            </>
-                                    }
-                                </InfoButton>
-                                {!loading ?
-                                    (results.length > 0 ?
-                                        results.map((res, key) => {
-                                            const containsSource = res.source !== 'local';
-                                            const filteredResults = preprocessSearchResultsToHTML(res.text,input)
-                                            if (filteredResults)
-                                                return (
-                                                    <ResultWrapper
-                                                        key={key}
-                                                        onClick={() => {
-                                                            if (!containsSource) return;
-                                                            window.open(res.source, '_blank', 'noopener, noreferrer')
-                                                        }}
-                                                        className={containsSource ? "contains-source" : ""}>
-                                                        <Title>{res.title}</Title>
-                                                        <Content>
-                                                            <Markdown
-                                                                dangerouslySetInnerHTML={{ __html: filteredResults }}
-                                                            />
-                                                        </Content>
-                                                    </ResultWrapper>
-                                                )
-                                            else {
-                                                setResults((prevItems) => prevItems.filter((_, index) => index !== key));
-                                            }
-                                        })
-                                        :
-                                        <NoResults>No results</NoResults>
-                                    )
-                                    :
-                                    <Loader />
-                                }
+                                <SearchHeader>
+                                    <TextField
+                                        ref={inputRef}
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyDown={(e) => handleKeyDown(e)}
+                                        placeholder={placeholder}
+                                        autoFocus
+                                    />
+                                    <EscapeInstruction onClick={() => setIsResultVisible(false)}>
+                                        Esc
+                                    </EscapeInstruction>
+                                </SearchHeader>
+                                <AskAIButton onClick={openWidget}>
+                                    <img 
+                                        src="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png" 
+                                        alt="DocsGPT"
+                                        width={24}
+                                        height={24}
+                                    />
+                                    <span>Ask the AI</span>
+                                </AskAIButton>
+                                <SearchResultsScroll>
+                                    {!loading ? (
+                                        results.length > 0 ? (
+                                            results.map((res, key) => {
+                                                const containsSource = res.source !== 'local';
+                                                const processedResults = processMarkdownString(res.text, input);
+                                                if (processedResults)
+                                                    return (
+                                                        <ResultWrapper
+                                                            key={key}
+                                                            onClick={() => {
+                                                                if (!containsSource) return;
+                                                                window.open(res.source, '_blank', 'noopener, noreferrer');
+                                                            }}
+                                                        >
+                                                            <div style={{ flex: 1 }}>
+                                                                <ContentWrapper>
+                                                                    <IconTitleWrapper>
+                                                                        <ReaderIcon className="title-icon" />
+                                                                        <Title>{res.title}</Title>
+                                                                    </IconTitleWrapper>
+                                                                    <Content>
+                                                                        {processedResults.map((element, index) => (
+                                                                            <ContentSegment key={index}>
+                                                                                <IconTitleWrapper>
+                                                                                    {element.tag === 'code' && <CodeIcon className="element-icon" />}
+                                                                                    {(element.tag === 'bulletList' || element.tag === 'numberedList') && <ListBulletIcon className="element-icon" />}
+                                                                                    {element.tag === 'text' && <TextAlignLeftIcon className="element-icon" />}
+                                                                                    {element.tag === 'heading' && <HeadingIcon className="element-icon" />}
+                                                                                    {element.tag === 'blockquote' && <QuoteIcon className="element-icon" />}
+                                                                                </IconTitleWrapper>
+                                                                                <div
+                                                                                    style={{ flex: 1 }}
+                                                                                    dangerouslySetInnerHTML={{
+                                                                                        __html: DOMPurify.sanitize(element.content),
+                                                                                    }}
+                                                                                />
+                                                                            </ContentSegment>
+                                                                        ))}
+                                                                    </Content>
+                                                                </ContentWrapper>
+                                                            </div>
+                                                        </ResultWrapper>
+                                                    );
+                                                return null;
+                                            })
+                                        ) : (
+                                            <NoResults>No results found</NoResults>
+                                        )
+                                    ) : (
+                                        <Loader />
+                                    )}
+                                </SearchResultsScroll>
                             </SearchResults>
                         )
                     }
