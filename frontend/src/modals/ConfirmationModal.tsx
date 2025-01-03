@@ -31,7 +31,7 @@ export default function ConfirmationModal({
           }}
         >
           <div className="relative">
-            <div className="p-8">
+            <div>
               <p className="font-base mb-1 w-[90%] text-lg text-jet dark:text-bright-gray">
                 {message}
               </p>
