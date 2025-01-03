@@ -25,14 +25,20 @@ class OpenAILLM(BaseLLM):
         model,
         messages,
         stream=False,
+        tools=None,
         engine=settings.AZURE_DEPLOYMENT_NAME,
         **kwargs
-    ):  
-        response = self.client.chat.completions.create(
-            model=model, messages=messages, stream=stream, **kwargs
-        )
-
-        return response.choices[0].message.content
+    ):          
+        if tools:
+            response = self.client.chat.completions.create(
+                model=model, messages=messages, stream=stream, tools=tools, **kwargs
+            )
+            return response.choices[0]
+        else:
+            response = self.client.chat.completions.create(
+                model=model, messages=messages, stream=stream, **kwargs
+            )
+            return response.choices[0].message.content
 
     def _raw_gen_stream(
         self,
@@ -40,6 +46,7 @@ class OpenAILLM(BaseLLM):
         model,
         messages,
         stream=True,
+        tools=None,
         engine=settings.AZURE_DEPLOYMENT_NAME,
         **kwargs
     ):  
@@ -52,6 +59,9 @@ class OpenAILLM(BaseLLM):
             # print(line.choices[0].delta.content, file=sys.stderr)
             if line.choices[0].delta.content is not None:
                 yield line.choices[0].delta.content
+    
+    def _supports_tools(self):
+        return True
 
 
 class AzureOpenAILLM(OpenAILLM):

@@ -1,9 +1,9 @@
-from application.retriever.base import BaseRetriever
 from application.core.settings import settings
-from application.vectorstore.vector_creator import VectorCreator
-from application.llm.llm_creator import LLMCreator
+from application.retriever.base import BaseRetriever
+from application.tools.agent import Agent
 
-from application.utils import num_tokens_from_string
+from application.vectorstore.vector_creator import VectorCreator
+
 
 
 class ClassicRAG(BaseRetriever):
@@ -20,7 +20,7 @@ class ClassicRAG(BaseRetriever):
         user_api_key=None,
     ):
         self.question = question
-        self.vectorstore = source['active_docs'] if 'active_docs' in source else None
+        self.vectorstore = source["active_docs"] if "active_docs" in source else None
         self.chat_history = chat_history
         self.prompt = prompt
         self.chunks = chunks
@@ -73,15 +73,8 @@ class ClassicRAG(BaseRetriever):
             yield {"source": doc}
 
         if len(self.chat_history) > 1:
-            tokens_current_history = 0
-            # count tokens in history
             for i in self.chat_history:
-                if "prompt" in i and "response" in i:
-                    tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
-                        i["response"]
-                    )
-                    if tokens_current_history + tokens_batch < self.token_limit:
-                        tokens_current_history += tokens_batch
+                    if "prompt" in i and "response" in i:
                         messages_combine.append(
                             {"role": "user", "content": i["prompt"]}
                         )
@@ -89,17 +82,23 @@ class ClassicRAG(BaseRetriever):
                             {"role": "system", "content": i["response"]}
                         )
         messages_combine.append({"role": "user", "content": self.question})
-
-        llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
+        # llm = LLMCreator.create_llm(
+        #     settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
+        # )
+        # completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
+        agent = Agent(
+            llm_name=settings.LLM_NAME,
+            gpt_model=self.gpt_model,
+            api_key=settings.API_KEY,
+            user_api_key=self.user_api_key,
         )
-        completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
+        completion = agent.gen(messages_combine)
         for line in completion:
             yield {"answer": str(line)}
 
     def search(self):
         return self._get_data()
-    
+
     def get_params(self):
         return {
             "question": self.question,
@@ -109,5 +108,5 @@ class ClassicRAG(BaseRetriever):
             "chunks": self.chunks,
             "token_limit": self.token_limit,
             "gpt_model": self.gpt_model,
-            "user_api_key": self.user_api_key
+            "user_api_key": self.user_api_key,
         }
