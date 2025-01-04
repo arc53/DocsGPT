@@ -73,6 +73,9 @@
     },
     "logs": {
       "label": "ログ"
+    },
+    "tools": {
+      "label": "ツール"
     }
   },
   "modals": {
@@ -86,7 +89,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": ".pdf, .txt, .rst, .docx, .md, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
+      "info": ".pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",
