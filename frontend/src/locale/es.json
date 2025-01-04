@@ -8,7 +8,7 @@
   "inputPlaceholder": "Escribe tu mensaje aquí...",
   "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
   "sourceDocs": "Fuente",
-  "none": "Nada",
+  "none": "Ninguno",
   "cancel": "Cancelar",
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
@@ -36,21 +36,21 @@
     "general": {
       "label": "General",
       "selectTheme": "Seleccionar Tema",
-      "light": "de luz",
-      "dark": "oscura",
+      "light": "Claro",
+      "dark": "Oscuro",
       "selectLanguage": "Seleccionar Idioma",
       "chunks": "Trozos procesados por consulta",
       "prompt": "Prompt Activo",
       "deleteAllLabel": "Eliminar toda la Conversación",
       "deleteAllBtn": "Eliminar todo",
       "addNew": "Agregar Nuevo",
-      "convHistory": "Historia conversacional",
-      "none": "ninguno",
+      "convHistory": "Historial de conversaciones",
+      "none": "Ninguno",
       "low": "Bajo",
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "predeterminada"
+      "default": "predeterminado"
     },
     "documents": {
       "label": "Documentos",
@@ -73,6 +73,9 @@
     },
     "logs": {
       "label": "Registros"
+    },
+    "tools": {
+      "label": "Herramientas"
     }
   },
   "modals": {
@@ -81,12 +84,12 @@
       "select": "Elija cómo cargar su documento en DocsGPT",
       "file": "Subir desde el dispositivo",
       "back": "Atrás",
-      "wait": "Espere por favor ...",
+      "wait": "Por favor espera ...",
       "remote": "Recoger desde un sitio web",
       "start": "Empezar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25 MB",
+      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",
@@ -108,7 +111,7 @@
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
       "apiKeyName": "Nombre de la Clave de API",
-      "chunks": "Fragmentos procesados por consulta",
+      "chunks": "Trozos procesados por consulta",
       "prompt": "Seleccione el prompt activo",
       "sourceDoc": "Documento Fuente",
       "create": "Crear"
@@ -126,7 +129,7 @@
     },
     "shareConv": {
       "label": "Crear una página pública para compartir",
-      "note": "El documento original, la información personal y las conversaciones posteriores permanecerán privadas",
+      "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
       "create": "Crear",
       "option": "Permitir a los usuarios realizar más consultas."
     }
