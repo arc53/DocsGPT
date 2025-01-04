@@ -1,5 +1,5 @@
 {
-  "language": "Spanish",
+  "language": "Español",
   "chat": "Chat",
   "chats": "Chats",
   "newChat": "Nuevo Chat",
@@ -41,7 +41,7 @@
       "selectLanguage": "Seleccionar Idioma",
       "chunks": "Trozos procesados por consulta",
       "prompt": "Prompt Activo",
-      "deleteAllLabel": "Eliminar toda la Conversación",
+      "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllBtn": "Eliminar todo",
       "addNew": "Agregar Nuevo",
       "convHistory": "Historial de conversaciones",
@@ -50,7 +50,7 @@
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "predeterminado"
+      "default": "Predeterminado"
     },
     "documents": {
       "label": "Documentos",
@@ -58,7 +58,19 @@
       "date": "Fecha Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
-      "noData": "No hay documentos existentes"
+      "noData": "No hay documentos existentes",
+      "searchPlaceholder": "Buscar...",
+      "addNew": "Agregar Nuevo",
+      "addNewTitle": "Agregar Nuevo Documento",
+      "preLoaded": "Precargado",
+      "private": "Privado",
+      "sync": "Sincronizar",
+      "syncFrequency": {
+        "never": "Nunca",
+        "daily": "Diario",
+        "weekly": "Semanal",
+        "monthly": "Mensual"
+      }
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -72,7 +84,11 @@
       "label": "Analítica"
     },
     "logs": {
-      "label": "Registros"
+      "label": "Registros",
+      "filterByChatbot": "Filtrar por chatbot",
+      "none": "Ninguno",
+      "selectChatbotPlaceholder": "Seleccionar chatbot",
+      "apiGeneratedConversations": "Conversaciones generadas por API / chatbot"
     },
     "tools": {
       "label": "Herramientas"

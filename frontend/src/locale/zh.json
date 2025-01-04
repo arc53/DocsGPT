@@ -72,7 +72,11 @@
       "label": "分析"
     },
     "logs": {
-      "label": "日志"
+      "label": "日志",
+      "filterByChatbot": "按聊天机器人筛选",
+      "none": "无",
+      "selectChatbotPlaceholder": "选择聊天机器人",
+      "apiGeneratedConversations": "API生成/聊天机器人对话"
     },
     "tools": {
       "label": "工具"

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
@@ -8,6 +9,7 @@ import { APIKeyData, LogData } from './types';
 import CoppyButton from '../components/CopyButton';
 
 export default function Logs() {
+  const { t } = useTranslation();
   const [chatbots, setChatbots] = useState<APIKeyData[]>([]);
   const [selectedChatbot, setSelectedChatbot] = useState<APIKeyData | null>();
   const [logs, setLogs] = useState<LogData[]>([]);
@@ -66,7 +68,7 @@ export default function Logs() {
       <div className="flex flex-col items-start">
         <div className="flex flex-col gap-3">
           <p className="font-bold text-jet dark:text-bright-gray">
-            Filter by chatbot
+            {t('settings.logs.filterByChatbot')}
           </p>
           {loadingChatbots ? (
             <SkeletonLoader />
@@ -78,9 +80,9 @@ export default function Logs() {
                   label: chatbot.name,
                   value: chatbot.id,
                 })),
-                { label: 'None', value: '' },
+                { label: t('settings.logs.none'), value: '' },
               ]}
-              placeholder="Select chatbot"
+              placeholder={t('settings.logs.selectChatbotPlaceholder')}
               onSelect={(chatbot: { label: string; value: string }) => {
                 setSelectedChatbot(
                   chatbots.find((item) => item.id === chatbot.value),
@@ -120,6 +122,7 @@ type LogsTableProps = {
 };
 
 function LogsTable({ logs, setPage }: LogsTableProps) {
+  const { t } = useTranslation();
   const observerRef = useRef<any>();
   const firstObserver = useCallback((node: HTMLDivElement) => {
     if (observerRef.current) {
@@ -134,7 +137,7 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
     <div className="logs-table border rounded-2xl h-[55vh] w-full overflow-hidden border-silver dark:border-silver/40">
       <div className="h-8 bg-black/10 dark:bg-chinese-black flex flex-col items-start justify-center">
         <p className="px-3 text-xs dark:text-gray-6000">
-          API generated / chatbot conversations
+          {t('settings.logs.apiGeneratedConversations')}
         </p>
       </div>
       <div
@@ -156,6 +159,7 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
 }
 
 function Log({ log }: { log: LogData }) {
+  const { t } = useTranslation();
   const logLevelColor = {
     info: 'text-green-500',
     error: 'text-red-500',

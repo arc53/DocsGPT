@@ -41,16 +41,16 @@
       "selectLanguage": "Select Language",
       "chunks": "Chunks processed per query",
       "prompt": "Active Prompt",
-      "deleteAllLabel": "Delete all Conversation",
-      "deleteAllBtn": "Delete all",
+      "deleteAllLabel": "Delete All Conversations",
+      "deleteAllBtn": "Delete All",
       "addNew": "Add New",
-      "convHistory": "Conversational history",
+      "convHistory": "Conversation History",
       "none": "None",
       "low": "Low",
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "default"
+      "default": "Default"
     },
     "documents": {
       "label": "Documents",
@@ -58,7 +58,19 @@
       "date": "Vector Date",
       "type": "Type",
       "tokenUsage": "Token Usage",
-      "noData": "No existing Documents"
+      "noData": "No existing Documents",
+      "searchPlaceholder": "Search...",
+      "addNew": "Add New",
+      "addNewTitle": "Add New Document",
+      "preLoaded": "Pre-loaded",
+      "private": "Private",
+      "sync": "Sync",
+      "syncFrequency": {
+        "never": "Never",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly"
+      }
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -72,7 +84,11 @@
       "label": "Analytics"
     },
     "logs": {
-      "label": "Logs"
+      "label": "Logs",
+      "filterByChatbot": "Filter by chatbot",
+      "none": "None",
+      "selectChatbotPlaceholder": "Select chatbot",
+      "apiGeneratedConversations": "API generated / chatbot conversations"
     },
     "tools": {
       "label": "Tools"

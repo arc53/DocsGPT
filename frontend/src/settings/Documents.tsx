@@ -54,10 +54,10 @@ const Documents: React.FC<DocumentsProps> = ({
   const [totalPages, setTotalPages] = useState<number>(1);
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
-    { label: 'Never', value: 'never' },
-    { label: 'Daily', value: 'daily' },
-    { label: 'Weekly', value: 'weekly' },
-    { label: 'Monthly', value: 'monthly' },
+    { label: t('settings.documents.syncFrequency.never'), value: 'never' },
+    { label: t('settings.documents.syncFrequency.daily'), value: 'daily' },
+    { label: t('settings.documents.syncFrequency.weekly'), value: 'weekly' },
+    { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
 
   const refreshDocs = useCallback(
@@ -153,7 +153,7 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="p-1">
               <Input
                 maxLength={256}
-                placeholder="Search..."
+                placeholder={t('settings.documents.searchPlaceholder')}
                 name="Document-search-input"
                 type="text"
                 id="document-search-input"
@@ -169,19 +169,19 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <button
               className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
-              title="Add New Document"
+              title={t('settings.documents.addNewTitle')}
               onClick={() => {
                 setIsOnboarding(false); // Set onboarding flag if needed
                 setModalState('ACTIVE'); // Open the upload modal
               }}
             >
-              Add New
+              {t('settings.documents.addNew')}
             </button>
           </div>
           {loading ? (
             <SkeletonLoader count={1} />
           ) : (
-           <div className="flex flex-col">
+            <div className="flex flex-col">
               <div className="flex-grow">
                 <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
                   <table className="min-w-full divide-y divide-silver dark:divide-silver/40 text-xs sm:text-sm ">
@@ -270,7 +270,7 @@ const Documents: React.FC<DocumentsProps> = ({
                                 {document.type !== 'remote' && (
                                   <img
                                     src={Trash}
-                                    alt="Delete"
+                                    alt={t('convTile.delete')}
                                     className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
                                     id={`img-${index}`}
                                     onClick={(event) => {
@@ -282,7 +282,7 @@ const Documents: React.FC<DocumentsProps> = ({
                                 {document.syncFrequency && (
                                   <div className="ml-2">
                                     <DropdownMenu
-                                      name="Sync"
+                                      name={t('settings.documents.sync')}
                                       options={syncOptions}
                                       onSelect={(value: string) => {
                                         handleManageSync(document, value);

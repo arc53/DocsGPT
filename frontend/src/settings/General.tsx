@@ -21,33 +21,15 @@ export default function General() {
     t,
     i18n: { changeLanguage, language },
   } = useTranslation();
-  const themes = ['Light', 'Dark'];
+  const themes = [t('settings.general.light'), t('settings.general.dark')];
 
   const languageOptions = [
-    {
-      label: 'English',
-      value: 'en',
-    },
-    {
-      label: 'Spanish',
-      value: 'es',
-    },
-    {
-      label: 'Japanese',
-      value: 'jp',
-    },
-    {
-      label: 'Mandarin',
-      value: 'zh',
-    },
-    {
-      label: 'Traditional Chinese',
-      value: 'zhTW',
-    },
-    {
-      label: 'Russian',
-      value: 'ru',
-    },
+    { label: 'English', value: 'en' },
+    { label: 'Español', value: 'es' },
+    { label: '日本語', value: 'jp' },
+    { label: '普通话', value: 'zh' },
+    { label: '繁體中文（臺灣）', value: 'zhTW' },
+    { label: 'Русский', value: 'ru' },
   ];
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([

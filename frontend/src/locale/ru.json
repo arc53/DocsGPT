@@ -72,7 +72,11 @@
       "label": "Аналитика"
     },
     "logs": {
-      "label": "Журналы"
+      "label": "Регистры",
+      "filterByChatbot": "Фильтр по чат-боту",
+      "none": "Нет",
+      "selectChatbotPlaceholder": "Выберите чат-бота",
+      "apiGeneratedConversations": "Разговоры, сгенерированные API / чат-ботом"
     },
     "tools": {
       "label": "Инструменты"

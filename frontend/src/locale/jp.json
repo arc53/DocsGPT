@@ -72,7 +72,11 @@
       "label": "分析"
     },
     "logs": {
-      "label": "ログ"
+      "label": "ログ",
+      "filterByChatbot": "チャットボットでフィルタ",
+      "none": "なし",
+      "selectChatbotPlaceholder": "チャットボットを選択",
+      "apiGeneratedConversations": "API生成/チャットボット会話"
     },
     "tools": {
       "label": "ツール"
