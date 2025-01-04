@@ -84,7 +84,7 @@ export default function AddToolModal({
               <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
                 Select a tool to set up
               </h2>
-              <div className="mt-5 grid grid-cols-3 gap-4 h-[73vh] overflow-auto px-3 py-px">
+              <div className="mt-5 flex flex-col sm:grid sm:grid-cols-3 gap-4 h-[73vh] overflow-auto px-3 py-px">
                 {availableTools.map((tool, index) => (
                   <div
                     role="button"
