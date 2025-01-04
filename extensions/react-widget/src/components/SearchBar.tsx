@@ -17,7 +17,7 @@ import {
 } from '@radix-ui/react-icons';
 const themes = {
     dark: {
-        bg: '#000',
+        bg: '#202124',
         text: '#EDEDED',
         primary: {
             text: "#FAFAFA",
@@ -29,7 +29,7 @@ const themes = {
         }
     },
     light: {
-        bg: '#fff',
+        bg: '#EAEAEA',
         text: '#171717',
         primary: {
             text: "#222327",
@@ -86,7 +86,7 @@ const SearchResults = styled.div`
     display: flex;
     flex-direction: column;
     background-color: ${props => props.theme.primary.bg};
-    border: 1px solid ${props => props.theme.secondary.bg};
+    border: 1px solid ${props => props.theme.bg};
     border-radius: 15px;
     padding: 8px 0px 8px 0px;
     width: 792px;
@@ -140,7 +140,7 @@ const Title = styled.h3`
 const ContentWrapper = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 8px; 
+    gap: 12px; 
 `;
 const Content = styled.div`
     display: flex;
@@ -170,11 +170,12 @@ const ResultWrapper = styled.div`
     align-items: flex-start;
     width: 100%;
     box-sizing: border-box;
-    padding: 12px 16px 0 16px;
+    padding: 8px 16px;
     cursor: pointer;
     background-color: ${props => props.theme.primary.bg};
-    font-family: 'Geist',sans-serif;
+    font-family: 'Geist', sans-serif;
     transition: background-color 0.2s;
+    border-radius: 8px;
 
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -183,11 +184,8 @@ const ResultWrapper = styled.div`
     overflow: hidden;
     text-overflow: ellipsis;
 
-    &.contains-source:hover {
-        background-color: rgba(0, 92, 197, 0.15);
-        ${Title} {
-            color: rgb(0, 126, 230);
-        }
+    &:hover {
+        background-color: ${props => props.theme.bg};
     }
 `
 const Markdown = styled.div`
@@ -290,12 +288,11 @@ const AskAIButton = styled.button`
     padding: 8px 24px;
     border: none;
     border-radius: 6px;
-    background-color: ${props => props.theme.secondary.bg};
+    background-color: ${props => props.theme.bg};
     color: ${props => props.theme.text}; 
     cursor: pointer;
     transition: background-color 0.2s, box-shadow 0.2s;
     font-size: 16px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
     &:hover {
         opacity: 0.8;
@@ -307,7 +304,7 @@ const SearchHeader = styled.div`
     gap: 8px;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid ${props => props.theme.secondary.bg};
+    border-bottom: 1px solid ${props => props.theme.bg};
 `
 
 const TextField = styled.input`
