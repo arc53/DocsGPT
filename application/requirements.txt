@@ -70,7 +70,7 @@ python-pptx==1.0.2
 qdrant-client==1.11.0
 redis==5.2.1
 referencing==0.30.2
-regex==2024.9.11
+regex==2024.11.6
 requests==2.32.3
 retry==0.9.2
 sentence-transformers==3.3.1
