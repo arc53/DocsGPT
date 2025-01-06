@@ -28,7 +28,7 @@ jsonschema==4.23.0
 jsonschema-spec==0.2.4
 jsonschema-specifications==2023.7.1
 kombu==5.4.2
-langchain==0.3.13
+langchain==0.3.14
 langchain-community==0.3.14
 langchain-core==0.3.29
 langchain-openai==0.2.14
