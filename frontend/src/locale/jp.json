@@ -58,7 +58,19 @@
       "date": "ベクトル日付",
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
-      "noData": "既存のドキュメントはありません"
+      "noData": "既存のドキュメントはありません",
+      "searchPlaceholder": "検索...",
+      "addNew": "新規追加",
+      "addNewTitle": "新規ドキュメントを追加",
+      "preLoaded": "プリロード済み",
+      "private": "プライベート",
+      "sync": "同期",
+      "syncFrequency": {
+        "never": "なし",
+        "daily": "毎日",
+        "weekly": "毎週",
+        "monthly": "��月"
+      }
     },
     "apiKeys": {
       "label": "チャットボット",
@@ -148,5 +160,25 @@
     "delete": "削除",
     "rename": "名前変更",
     "deleteWarning": "この会話を削除してもよろしいですか？"
+  },
+  "conversation": {
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "speak": "スピーク",
+    "feedback": {
+      "like": "いいね",
+      "dislike": "よくない"
+    },
+    "answer": "回答",
+    "edit": {
+      "placeholder": "更新されたクエリを入力してください..."
+    },
+    "sources": {
+      "title": "ソース",
+      "text": "ソーステキスト",
+      "link": "ソースリンク",
+      "view_more": "さらに{{count}}個のソース"
+    },
+    "retry": "再試行"
   }
 }

@@ -8,6 +8,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import { useTranslation } from 'react-i18next';
 
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
@@ -62,6 +63,7 @@ const ConversationBubble = forwardRef<
   },
   ref,
 ) {
+  const { t } = useTranslation();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -113,13 +115,13 @@ const ConversationBubble = forwardRef<
           {isEditClicked && (
             <div ref={editableQueryRef} className="w-[75%] flex flex-col">
               <textarea
-                placeholder="Type the updated query..."
+                placeholder={t('conversation.edit.placeholder')}
                 onChange={(e) => {
                   setEditInputBox(e.target.value);
                 }}
                 rows={1}
                 value={editInputBox}
-                className="ml-2 mr-12 text-[15px] resize-y h-12 min-h-max rounded-3xl p-3  no-scrollbar leading-relaxed dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
+                className="ml-2 mr-12 text-[15px] resize-y h-12 min-h-max rounded-3xl p-3 no-scrollbar leading-relaxed dark:border-[0.5px] dark:border-white dark:bg-raisin-black dark:text-white px-[18px] border-[1.5px] border-black"
               />
               <div
                 className={`flex flex-row-reverse justify-end gap-1 mt-3 text-sm font-medium`}
@@ -185,12 +187,14 @@ const ConversationBubble = forwardRef<
                 avatar={
                   <img
                     src={Sources}
-                    alt="Sources"
+                    alt={t('conversation.sources.title')}
                     className="h-full w-full object-fill"
                   />
                 }
               />
-              <p className="text-base font-semibold">Sources</p>
+              <p className="text-base font-semibold">
+                {t('conversation.sources.title')}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
               {Array.from({ length: 4 }).map((_, index) => (
@@ -217,12 +221,14 @@ const ConversationBubble = forwardRef<
                   avatar={
                     <img
                       src={Sources}
-                      alt="Sources"
+                      alt={t('conversation.sources.title')}
                       className="h-full w-full object-fill"
                     />
                   }
                 />
-                <p className="text-base font-semibold">Sources</p>
+                <p className="text-base font-semibold">
+                  {t('conversation.sources.title')}
+                </p>
               </div>
               <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -289,9 +295,11 @@ const ConversationBubble = forwardRef<
                       className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                       onClick={() => setIsSidebarOpen(true)}
                     >
-                      <p className="ellipsis-text h-22 text-xs">{`View ${
-                        sources?.length ? sources.length - 3 : 0
-                      } more`}</p>
+                      <p className="ellipsis-text h-22 text-xs">
+                        {t('conversation.sources.view_more', {
+                          count: sources?.length ? sources.length - 3 : 0,
+                        })}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -306,12 +314,14 @@ const ConversationBubble = forwardRef<
               avatar={
                 <img
                   src={DocsGPT3}
-                  alt="DocsGPT"
+                  alt={t('conversation.answer')}
                   className="h-full w-full object-cover"
                 />
               }
             />
-            <p className="text-base font-semibold">Answer</p>
+            <p className="text-base font-semibold">
+              {t('conversation.answer')}
+            </p>
           </div>
           <div
             className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
@@ -419,7 +429,7 @@ const ConversationBubble = forwardRef<
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
-              <SpeakButton text={message} /> {/* Add SpeakButton here */}
+              <SpeakButton text={message} />
             </div>
           </div>
           {type === 'ERROR' && (
@@ -557,7 +567,7 @@ function AllSources(sources: AllSourcesProps) {
               {source.source && source.source !== 'local' ? (
                 <img
                   src={Link}
-                  alt="Link"
+                  alt={'Link'}
                   className="h-3 w-3 cursor-pointer object-fill"
                   onClick={() =>
                     window.open(source.source, '_blank', 'noopener, noreferrer')

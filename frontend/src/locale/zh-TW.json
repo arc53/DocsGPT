@@ -76,7 +76,7 @@
       "filterByChatbot": "按聊天機器人篩選",
       "none": "無",
       "selectChatbotPlaceholder": "選擇聊天機器人",
-      "apiGeneratedConversations": "API生成/聊天機器人對話"      
+      "apiGeneratedConversations": "API生成/聊天機器人對話"
     },
     "tools": {
       "label": "工具"

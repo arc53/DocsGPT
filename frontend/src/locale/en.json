@@ -160,5 +160,21 @@
     "delete": "Delete",
     "rename": "Rename",
     "deleteWarning": "Are you sure you want to delete this conversation?"
+  },
+  "conversation": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "speak": "Speak",
+    "answer": "Answer",
+    "edit": {
+      "placeholder": "Type the updated query..."
+    },
+    "sources": {
+      "title": "Sources",
+      "text": "Source Text",
+      "link": "Source Link",
+      "view_more": "{{count}} more sources"
+    },
+    "retry": "Retry"
   }
 }
