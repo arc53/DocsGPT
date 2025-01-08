@@ -58,7 +58,18 @@
       "date": "向量日期",
       "type": "类型",
       "tokenUsage": "令牌使用",
-      "noData": "没有现有的文档"
+      "noData": "没有现有的文档",
+      "searchPlaceholder": "搜索...",
+      "addNewTitle": "添加新文档",
+      "preLoaded": "预加载",
+      "private": "私有",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "从不",
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月"
+      }
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -148,5 +159,21 @@
     "delete": "删除",
     "rename": "重命名",
     "deleteWarning": "您确定要删除此对话吗？"
+  },
+  "conversation": {
+    "copy": "复制",
+    "copied": "已复制",
+    "speak": "朗读",
+    "answer": "回答",
+    "edit": {
+      "placeholder": "输入更新的查询..."
+    },
+    "sources": {
+      "title": "来源",
+      "text": "来源文本",
+      "link": "来源链接",
+      "view_more": "更多{{count}}个来源"
+    },
+    "retry": "重试"
   }
 }

@@ -39,7 +39,7 @@
       "light": "Claro",
       "dark": "Oscuro",
       "selectLanguage": "Seleccionar Idioma",
-      "chunks": "Trozos procesados por consulta",
+      "chunks": "Fragmentos procesados por consulta",
       "prompt": "Prompt Activo",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllBtn": "Eliminar todo",
@@ -55,7 +55,7 @@
     "documents": {
       "label": "Documentos",
       "name": "Nombre del Documento",
-      "date": "Fecha Vector",
+      "date": "Fecha de Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
       "noData": "No hay documentos existentes",
@@ -97,15 +97,15 @@
   "modals": {
     "uploadDoc": {
       "label": "Subir nuevo documento",
-      "select": "Elija cómo cargar su documento en DocsGPT",
+      "select": "Elige cómo cargar tu documento en DocsGPT",
       "file": "Subir desde el dispositivo",
       "back": "Atrás",
       "wait": "Por favor espera ...",
       "remote": "Recoger desde un sitio web",
-      "start": "Empezar a chatear",
+      "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
+      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",
@@ -120,45 +120,61 @@
         "numberOfPosts": "Número de publicaciones"
       },
       "drag": {
-        "title": "Cargar un archivo fuente",
-        "description": "Suelta tu archivo aquí para agregarlo como fuente."
+        "title": "Carga un archivo fuente",
+        "description": "Suelta tu archivo aquí para añadirlo como fuente"
       }
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
       "apiKeyName": "Nombre de la Clave de API",
-      "chunks": "Trozos procesados por consulta",
-      "prompt": "Seleccione el prompt activo",
+      "chunks": "Fragmentos procesados por consulta",
+      "prompt": "Selecciona el prompt activo",
       "sourceDoc": "Documento Fuente",
       "create": "Crear"
     },
     "saveKey": {
-      "note": "Por favor, guarde su Clave",
-      "disclaimer": "Esta es la única vez que se mostrará su clave.",
+      "note": "Por favor, guarda tu Clave",
+      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
       "copy": "Copiar",
       "copied": "Copiado",
       "confirm": "He guardado la Clave"
     },
     "deleteConv": {
-      "confirm": "¿Está seguro de que desea eliminar todas las conversaciones?",
+      "confirm": "¿Estás seguro de que deseas eliminar todas las conversaciones?",
       "delete": "Eliminar"
     },
     "shareConv": {
       "label": "Crear una página pública para compartir",
       "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
       "create": "Crear",
-      "option": "Permitir a los usuarios realizar más consultas."
+      "option": "Permitir a los usuarios realizar más consultas"
     }
   },
   "sharedConv": {
     "subtitle": "Creado con",
     "button": "Comienza con DocsGPT",
-    "meta": "DocsGPT utiliza GenAI, por favor revise la información crítica utilizando fuentes."
+    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes."
   },
   "convTile": {
     "share": "Compartir",
     "delete": "Eliminar",
     "rename": "Renombrar",
-    "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+    "deleteWarning": "¿Estás seguro de que deseas eliminar esta conversación?"
+  },
+  "conversation": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "speak": "Hablar",
+    "answer": "Respuesta",
+    "edit": {
+      "placeholder": "Escribe la consulta actualizada..."
+    },
+    "sources": {
+      "title": "Fuentes",
+      "text": "Texto de la Fuente",
+      "link": "Enlace de la Fuente",
+      "view_more": "{{count}} más fuentes"
+    },
+    "retry": "Reintentar"
   }
 }

@@ -1,7 +1,7 @@
 {
   "language": "日本語",
   "chat": "チャット",
-  "chats": "チャット",
+  "chats": "チャット一覧",
   "newChat": "新しいチャット",
   "myPlan": "私のプラン",
   "about": "について",
@@ -24,7 +24,7 @@
     },
     {
       "header": "コードを書く",
-      "query": "APIリクエストのコードを/api/answerに書いてください。"
+      "query": "APIリクエストのコードを/api/answerに書いてください"
     },
     {
       "header": "学習支援",
@@ -165,10 +165,6 @@
     "copy": "コピー",
     "copied": "コピーしました",
     "speak": "スピーク",
-    "feedback": {
-      "like": "いいね",
-      "dislike": "よくない"
-    },
     "answer": "回答",
     "edit": {
       "placeholder": "更新されたクエリを入力してください..."

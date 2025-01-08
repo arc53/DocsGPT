@@ -58,7 +58,18 @@
       "date": "向量日期",
       "type": "類型",
       "tokenUsage": "Token 使用量",
-      "noData": "沒有現有的文件"
+      "noData": "沒有現有的文件",
+      "searchPlaceholder": "搜尋...",
+      "addNewTitle": "新增文件",
+      "preLoaded": "預載入",
+      "private": "私人",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "永不",
+        "daily": "每日",
+        "weekly": "每週",
+        "monthly": "每月"
+      }
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -148,5 +159,21 @@
     "delete": "刪除",
     "rename": "重新命名",
     "deleteWarning": "您確定要刪除這個對話嗎？"
+  },
+  "conversation": {
+    "copy": "複製",
+    "copied": "已複製",
+    "speak": "朗讀",
+    "answer": "回答",
+    "edit": {
+      "placeholder": "輸入更新的查詢..."
+    },
+    "sources": {
+      "title": "來源",
+      "text": "來源文字",
+      "link": "來源連結",
+      "view_more": "更多{{count}}個來源"
+    },
+    "retry": "重試"
   }
 }
