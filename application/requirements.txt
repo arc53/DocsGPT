@@ -59,9 +59,9 @@ primp==0.9.3
 prompt-toolkit==3.0.47
 protobuf==5.28.2
 py==1.11.0
-pydantic==2.9.2
+pydantic==2.10.4
 pydantic-core==2.27.2
-pydantic-settings==2.4.0
+pydantic-settings==2.7.1
 pymongo==4.10.1
 pypdf2==3.0.1
 python-dateutil==2.9.0.post0
