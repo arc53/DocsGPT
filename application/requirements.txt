@@ -37,7 +37,7 @@ langsmith==0.2.6
 lazy-object-proxy==1.10.0
 lxml==5.3.0
 markupsafe==3.0.2
-marshmallow==3.23.2
+marshmallow==3.24.1
 mpmath==1.3.0
 multidict==6.1.0
 mypy-extensions==1.0.0
@@ -59,9 +59,9 @@ primp==0.9.3
 prompt-toolkit==3.0.47
 protobuf==5.28.2
 py==1.11.0
-pydantic==2.9.2
-pydantic-core==2.23.4
-pydantic-settings==2.4.0
+pydantic==2.10.4
+pydantic-core==2.27.2
+pydantic-settings==2.7.1
 pymongo==4.10.1
 pypdf2==3.0.1
 python-dateutil==2.9.0.post0
@@ -82,7 +82,7 @@ transformers==4.47.1
 typing-extensions==4.12.2
 typing-inspect==0.9.0
 tzdata==2024.2
-urllib3==2.2.3
+urllib3==2.3.0
 vine==5.1.0
 wcwidth==0.2.13
 werkzeug==3.1.3
