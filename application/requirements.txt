@@ -57,7 +57,7 @@ portalocker==2.10.1
 prance==23.6.21.0
 primp==0.9.3
 prompt-toolkit==3.0.48
-protobuf==5.28.2
+protobuf==5.29.3
 py==1.11.0
 pydantic==2.10.4
 pydantic-core==2.27.2
