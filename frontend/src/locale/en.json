@@ -166,6 +166,8 @@
     "copied": "Copied",
     "speak": "Speak",
     "answer": "Answer",
+    "send": "Send message",
+    "loading": "Loading response",
     "edit": {
       "placeholder": "Type the updated query..."
     },

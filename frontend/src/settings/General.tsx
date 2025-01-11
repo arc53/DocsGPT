@@ -81,9 +81,9 @@ export default function General() {
   return (
     <div className="mt-12">
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <label className="block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}
-        </p>
+        </label>
         <Dropdown
           options={themes}
           selectedValue={selectedTheme}
@@ -97,9 +97,9 @@ export default function General() {
         />
       </div>
       <div className="mb-5">
-        <p className="mb-2 font-bold text-jet dark:text-bright-gray">
+        <label className="block mb-2 font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectLanguage')}
-        </p>
+        </label>
         <Dropdown
           options={languageOptions.filter(
             (languageOption) =>
@@ -115,9 +115,9 @@ export default function General() {
         />
       </div>
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <label className="block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.chunks')}
-        </p>
+        </label>
         <Dropdown
           options={chunks}
           selectedValue={selectedChunks}
@@ -128,9 +128,9 @@ export default function General() {
         />
       </div>
       <div className="mb-5">
-        <p className="mb-2 font-bold text-jet dark:text-bright-gray">
+        <label className="mb-2 block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.convHistory')}
-        </p>
+        </label>
         <Dropdown
           options={Array.from(token_limits, ([value, desc]) => ({
             value: value,
@@ -163,16 +163,14 @@ export default function General() {
         />
       </div>
       <div className="w-56">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <label className="block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.deleteAllLabel')}
-        </p>
+        </label>
         <button
-          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border border-solid border-red-500 px-5 py-3 text-red-500 hover:bg-red-500 hover:text-white"
+          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl border border-solid border-red-700 px-5 py-3 text-red-700 transition-colors hover:bg-red-700 hover:text-white dark:border-red-600 dark:text-red-600 dark:hover:bg-red-600 dark:hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
-          <span className="overflow-hidden text-ellipsis ">
-            {t('settings.general.deleteAllBtn')}
-          </span>
+          {t('settings.general.deleteAllBtn')}
         </button>
       </div>
     </div>

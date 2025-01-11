@@ -386,9 +386,15 @@ export default function Conversation() {
           {...getRootProps()}
           className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black"
         >
-          <input {...getInputProps()}></input>
+          <label htmlFor="file-upload" className="sr-only">
+            {t('modals.uploadDoc.upload')}
+          </label>
+          <input {...getInputProps()} id="file-upload" />
+          <label htmlFor="message-input" className="sr-only">
+            {t('inputPlaceholder')}
+          </label>
           <textarea
-            id="inputbox"
+            id="message-input"
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
@@ -400,19 +406,27 @@ export default function Conversation() {
                 handleQuestionSubmission();
               }
             }}
+            aria-label={t('inputPlaceholder')}
           ></textarea>
           {status === 'loading' ? (
             <img
               src={isDarkTheme ? SpinnerDark : Spinner}
               className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
-            ></img>
+              alt={t('loading')}
+            />
           ) : (
             <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
-              <img
-                className="ml-[4px] h-6 w-6 text-white "
+              <button
                 onClick={() => handleQuestionSubmission()}
-                src={isDarkTheme ? SendDark : Send}
-              ></img>
+                aria-label={t('send')}
+                className="flex items-center justify-center"
+              >
+                <img
+                  className="ml-[4px] h-6 w-6 text-white"
+                  src={isDarkTheme ? SendDark : Send}
+                  alt={t('send')}
+                />
+              </button>
             </div>
           )}
         </div>

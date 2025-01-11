@@ -29,8 +29,9 @@ function AddPrompt({
           setNewPromptName('');
           setNewPromptContent('');
         }}
+        aria-label="Close add prompt modal"
       >
-        <img className="filter dark:invert" src={Exit} />
+        <img className="filter dark:invert" src={Exit} alt="Close modal" />
       </button>
       <div className="p-8">
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
@@ -40,7 +41,11 @@ function AddPrompt({
           Add your custom prompt and save it to DocsGPT
         </p>
         <div>
+          <label htmlFor="new-prompt-name" className="sr-only">
+            Prompt Name
+          </label>
           <Input
+            id="new-prompt-name"
             placeholder="Prompt Name"
             type="text"
             className="h-10 rounded-lg"
@@ -57,10 +62,15 @@ function AddPrompt({
               Prompt Text
             </span>
           </div>
+          <label htmlFor="new-prompt-content" className="sr-only">
+            Prompt Text
+          </label>
           <textarea
+            id="new-prompt-content"
             className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
+            aria-label="Prompt Text"
           ></textarea>
         </div>
         <div className="mt-6 flex flex-row-reverse">
@@ -104,8 +114,9 @@ function EditPrompt({
         onClick={() => {
           setModalState('INACTIVE');
         }}
+        aria-label="Close edit prompt modal"
       >
-        <img className="filter dark:invert" src={Exit} />
+        <img className="filter dark:invert" src={Exit} alt="Close modal" />
       </button>
       <div className="p-8">
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
@@ -115,13 +126,17 @@ function EditPrompt({
           Edit your custom prompt and save it to DocsGPT
         </p>
         <div>
+          <label htmlFor="edit-prompt-name" className="sr-only">
+            Prompt Name
+          </label>
           <Input
+            id="edit-prompt-name"
             placeholder="Prompt Name"
             type="text"
             className="h-10 rounded-lg"
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
-          ></Input>
+          />
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
               Prompt Name
@@ -132,10 +147,15 @@ function EditPrompt({
               Prompt Text
             </span>
           </div>
+          <label htmlFor="edit-prompt-content" className="sr-only">
+            Prompt Text
+          </label>
           <textarea
+            id="edit-prompt-content"
             className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
+            aria-label="Prompt Text"
           ></textarea>
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">
