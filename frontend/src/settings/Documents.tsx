@@ -151,6 +151,9 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="z-10 w-full overflow-x-auto">
           <div className="my-3 flex justify-between items-center">
             <div className="p-1">
+              <label htmlFor="document-search-input" className="sr-only">
+                {t('settings.documents.searchPlaceholder')}
+              </label>
               <Input
                 maxLength={256}
                 placeholder={t('settings.documents.searchPlaceholder')}
@@ -161,10 +164,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
-                  // refreshDocs(sortField, 1, rowsPerPage);
-                  // do not call refreshDocs here the state is async
-                  // so it will not have the updated value
-                }} // Handle search input change
+                }}
               />
             </div>
             <button
@@ -225,8 +225,9 @@ const Documents: React.FC<DocumentsProps> = ({
                         <th
                           scope="col"
                           className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase"
+                          aria-label={t('settings.documents.actions')}
                         >
-                          {' '}
+                          {t('settings.documents.actions')}
                         </th>
                       </tr>
                     </thead>

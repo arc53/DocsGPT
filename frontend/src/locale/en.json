@@ -70,7 +70,8 @@
         "daily": "Daily",
         "weekly": "Weekly",
         "monthly": "Monthly"
-      }
+      },
+      "actions": "Actions"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -91,7 +92,14 @@
       "apiGeneratedConversations": "API generated / chatbot conversations"
     },
     "tools": {
-      "label": "Tools"
+      "label": "Tools",
+      "searchPlaceholder": "Search tools...",
+      "addTool": "Add Tool",
+      "noToolsFound": "No tools found",
+      "settingsIconAlt": "Settings icon",
+      "configureToolAria": "Configure {toolName}",
+      "toggleToolAria": "Toggle {toolName}",
+      "selectToolSetup": "Select a tool to set up"
     }
   },
   "modals": {

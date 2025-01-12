@@ -387,7 +387,7 @@ export default function Conversation() {
           className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black"
         >
           <label htmlFor="file-upload" className="sr-only">
-            {t('modals.uploadDoc.upload')}
+            {t('modals.uploadDoc.label')}
           </label>
           <input {...getInputProps()} id="file-upload" />
           <label htmlFor="message-input" className="sr-only">
@@ -398,7 +398,7 @@ export default function Conversation() {
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className={`inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-transparent py-5 text-base leading-tight opacity-100 focus:outline-none dark:bg-transparent dark:text-bright-gray`}
+            className={`inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-transparent py-5 text-base leading-tight opacity-100 focus:outline-none dark:bg-transparent dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50`}
             onInput={handleInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
