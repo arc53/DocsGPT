@@ -93,24 +93,35 @@ const ConversationBubble = forwardRef<
       >
         <div
           ref={ref}
-          className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+          className={`flex flex-row-reverse justify-items-start  ${className}`}
         >
           <Avatar
             size="SMALL"
-            className="mt-2 text-2xl"
+            className="mt-2 text-2xl flex-shrink-0"
             avatar={
               <img className="rounded-full mr-1" width={30} src={UserIcon} />
             }
           />
           {!isEditClicked && (
-            <div
-              style={{
-                wordBreak: 'break-word',
-              }}
-              className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
-            >
-              {message}
-            </div>
+            <>
+              <div
+                style={{
+                  wordBreak: 'break-word',
+                }}
+                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+              >
+                {message}
+              </div>
+              <button
+                onClick={() => {
+                  setIsEditClicked(true);
+                  setEditInputBox(message);
+                }}
+                className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+              >
+                <img src={Edit} alt="Edit" className="cursor-pointer" />
+              </button>
+            </>
           )}
           {isEditClicked && (
             <div
@@ -126,7 +137,7 @@ const ConversationBubble = forwardRef<
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="rounded-lg bg-[#CDB5FF] hover:bg-[#E1D3FF] px-4 py-2 text-purple-30 text-sm font-medium"
+                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] px-4 py-2 text-purple-30 text-sm font-medium"
                   onClick={handleEditClick}
                 >
                   {t('conversation.edit.update')}
@@ -140,15 +151,6 @@ const ConversationBubble = forwardRef<
               </div>
             </div>
           )}
-          <button
-            onClick={() => {
-              setIsEditClicked(true);
-              setEditInputBox(message);
-            }}
-            className={`h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
-          >
-            <img src={Edit} alt="Edit" className="cursor-pointer" />
-          </button>
         </div>
       </div>
     );
