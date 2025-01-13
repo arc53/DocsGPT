@@ -3,12 +3,12 @@ import websockets
 import json
 import base64
 from io import BytesIO
-from application.tts.base import BaseTTS
+from base import BaseTTS
 
 
 class ElevenlabsTTS(BaseTTS):
     def __init__(self):        
-        self.api_key = "ELEVENLABS_API_KEY"
+        self.api_key = 'sk_19b72c883e8bdfcec2705be2d048f3830a40d2faa4b76b26'
         self.model = "eleven_multilingual_v2"
         self.voice = "Brian"
 
@@ -19,21 +19,20 @@ class ElevenlabsTTS(BaseTTS):
         return audio_base64, lang
 
     async def _text_to_speech_websocket(self, text):
-        uri = "wss://api.elevenlabs.io/v1/tts-stream"
-        headers = {
-            "xi-api-key": self.api_key,
-            "Accept": "audio/mpeg"
-        }
+        uri = f"wss://api.elevenlabs.io/v1/text-to-speech/{self.voice}/stream-input?model_id={self.model}"
+
         payload = {
             "text": text,
             "model_id": self.model,
             "voice_settings": {
                 "voice_id": self.voice
             },
+            "xi-api-key": self.api_key,
+            "Accept": "audio/mpeg"
         }
         audio_data = BytesIO()
 
-        async with websockets.connect(uri, extra_headers=headers) as websocket:
+        async with websockets.connect(uri) as websocket:
             
             await websocket.send(json.dumps(payload))
             
