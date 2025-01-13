@@ -242,14 +242,20 @@ white-space: pre-wrap;
 const Toolkit = styled.kbd`
     position: absolute;
     right: 4px;
-    top: 4px;
+    top: 50%;
+    transform: translateY(-50%);
     background-color: ${(props) => props.theme.primary.bg};
     color: ${(props) => props.theme.secondary.text};
     font-weight: 600;
     font-size: 10px;
-    padding: 3px;
+    padding: 3px 6px;
     border: 1px solid ${(props) => props.theme.secondary.text};
     border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    pointer-events: none;
 `
 const Loader = styled.div`
   margin: 2rem auto;
