@@ -72,29 +72,38 @@ class GoogleLLM(BaseLLM):
         messages,
         stream=False,
         tools=None,
+        formatting="openai",
         **kwargs
     ):  
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=self.api_key)
+
 
         config = {
         }
         model = 'gemini-2.0-flash-exp'
-        
-        model = genai.GenerativeModel(
-            model_name=model,
-            generation_config=config,
-            system_instruction=messages[0]["content"],
-            tools=self._clean_tools_format(tools)
+        if formatting=="raw":
+            response = client.models.generate_content(
+                model=model,
+                contents=messages
             )
-        chat_session = model.start_chat(
-            history=self._clean_messages_google(messages)[:-1]
-        )
-        response = chat_session.send_message(
-            self._clean_messages_google(messages)[-1]
-        )
-        logging.info(response)
-        return response.text
+        
+        else:
+            model = genai.GenerativeModel(
+                model_name=model,
+                generation_config=config,
+                system_instruction=messages[0]["content"],
+                tools=self._clean_tools_format(tools)
+                )
+            chat_session = model.start_chat(
+                history=self._clean_messages_google(messages)[:-1]
+            )
+            response = chat_session.send_message(
+                self._clean_messages_google(messages)[-1]
+            )
+            logging.info(response)
+            return response.text
 
     def _raw_gen_stream(
         self,
