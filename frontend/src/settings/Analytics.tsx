@@ -164,7 +164,7 @@ export default function Analytics() {
     <div className="mt-12">
       <div className="flex flex-col items-start">
         <div className="flex flex-col gap-3">
-          <p className="font-bold text-jet dark:text-bright-gray">
+          <p className="font-bold text-gray-800 dark:text-bright-gray">
             Filter by chatbot
           </p>
           <Dropdown
@@ -191,6 +191,7 @@ export default function Analytics() {
             }
             rounded="3xl"
             border="border"
+            borderColor="gray-700"
           />
         </div>
 

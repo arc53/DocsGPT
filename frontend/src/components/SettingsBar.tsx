@@ -59,7 +59,8 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       <div className="md:hidden z-10">
         <button
           onClick={() => scrollTabs(-1)}
-          className="flex h-6 w-6 items-center rounded-full justify-center transition-all hover:bg-gray-100"
+          className="flex h-6 w-6 items-center rounded-full justify-center transition-all hover:bg-gray-200 dark:hover:bg-gray-700"
+          aria-label="Scroll tabs left"
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3" />
         </button>
@@ -67,16 +68,22 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       <div
         ref={containerRef}
         className="flex flex-nowrap overflow-x-auto no-scrollbar md:space-x-4 scroll-smooth snap-x"
+        role="tablist"
+        aria-label="Settings tabs"
       >
         {tabs.map((tab, index) => (
           <button
             key={index}
             onClick={() => setActiveTab(tab)}
-            className={`snap-start h-9 rounded-3xl px-4 font-bold hover:text-neutral-600 dark:hover:text-white/60 ${
+            className={`snap-start h-9 rounded-3xl px-4 font-bold transition-colors ${
               activeTab === tab
-                ? 'bg-neutral-100 text-neutral-600  dark:bg-dark-charcoal dark:text-white/60'
-                : 'text-gray-6000'
+                ? 'bg-neutral-200 text-neutral-900 dark:bg-dark-charcoal dark:text-white'
+                : 'text-neutral-700 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
             }`}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`${tab.toLowerCase()}-panel`}
+            id={`${tab.toLowerCase()}-tab`}
           >
             {tab}
           </button>
@@ -85,7 +92,8 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       <div className="md:hidden z-10">
         <button
           onClick={() => scrollTabs(1)}
-          className="flex h-6 w-6 rounded-full items-center justify-center hover:bg-gray-100"
+          className="flex h-6 w-6 rounded-full items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700"
+          aria-label="Scroll tabs right"
         >
           <img src={ArrowRight} alt="right-arrow" className="h-3" />
         </button>

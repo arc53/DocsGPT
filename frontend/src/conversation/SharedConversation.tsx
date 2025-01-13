@@ -236,7 +236,7 @@ export const SharedConversation = () => {
           </div>
         </div>
 
-        <div className=" flex w-11/12 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-6/12">
+        <div className="flex w-11/12 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-6/12">
           {apiKey ? (
             <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
               <div
@@ -272,7 +272,7 @@ export const SharedConversation = () => {
           ) : (
             <button
               onClick={() => navigate('/')}
-              className="w-fit rounded-full bg-purple-30 p-4 text-white shadow-xl transition-colors duration-200 hover:bg-purple-taupe"
+              className="w-fit rounded-full bg-purple-30 p-4 text-white shadow-xl transition-colors duration-200 hover:bg-purple-taupe mb-14 sm:mb-0"
             >
               {t('sharedConv.button')}
             </button>

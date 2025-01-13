@@ -1,5 +1,5 @@
 {
-  "language": "Spanish",
+  "language": "Español",
   "chat": "Chat",
   "chats": "Chats",
   "newChat": "Nuevo Chat",
@@ -8,7 +8,7 @@
   "inputPlaceholder": "Escribe tu mensaje aquí...",
   "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
   "sourceDocs": "Fuente",
-  "none": "Nada",
+  "none": "Ninguno",
   "cancel": "Cancelar",
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
@@ -36,29 +36,41 @@
     "general": {
       "label": "General",
       "selectTheme": "Seleccionar Tema",
-      "light": "de luz",
-      "dark": "oscura",
+      "light": "Claro",
+      "dark": "Oscuro",
       "selectLanguage": "Seleccionar Idioma",
-      "chunks": "Trozos procesados por consulta",
+      "chunks": "Fragmentos procesados por consulta",
       "prompt": "Prompt Activo",
-      "deleteAllLabel": "Eliminar toda la Conversación",
+      "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllBtn": "Eliminar todo",
       "addNew": "Agregar Nuevo",
-      "convHistory": "Historia conversacional",
-      "none": "ninguno",
+      "convHistory": "Historial de conversaciones",
+      "none": "Ninguno",
       "low": "Bajo",
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "predeterminada"
+      "default": "Predeterminado"
     },
     "documents": {
       "label": "Documentos",
       "name": "Nombre del Documento",
-      "date": "Fecha Vector",
+      "date": "Fecha de Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
-      "noData": "No hay documentos existentes"
+      "noData": "No hay documentos existentes",
+      "searchPlaceholder": "Buscar...",
+      "addNew": "Agregar Nuevo",
+      "addNewTitle": "Agregar Nuevo Documento",
+      "preLoaded": "Precargado",
+      "private": "Privado",
+      "sync": "Sincronizar",
+      "syncFrequency": {
+        "never": "Nunca",
+        "daily": "Diario",
+        "weekly": "Semanal",
+        "monthly": "Mensual"
+      }
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -72,21 +84,28 @@
       "label": "Analítica"
     },
     "logs": {
-      "label": "Registros"
+      "label": "Registros",
+      "filterByChatbot": "Filtrar por chatbot",
+      "none": "Ninguno",
+      "selectChatbotPlaceholder": "Seleccionar chatbot",
+      "apiGeneratedConversations": "Conversaciones generadas por API / chatbot"
+    },
+    "tools": {
+      "label": "Herramientas"
     }
   },
   "modals": {
     "uploadDoc": {
       "label": "Subir nuevo documento",
-      "select": "Elija cómo cargar su documento en DocsGPT",
+      "select": "Elige cómo cargar tu documento en DocsGPT",
       "file": "Subir desde el dispositivo",
       "back": "Atrás",
-      "wait": "Espere por favor ...",
+      "wait": "Por favor espera ...",
       "remote": "Recoger desde un sitio web",
-      "start": "Empezar a chatear",
+      "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25 MB",
+      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",
@@ -101,45 +120,61 @@
         "numberOfPosts": "Número de publicaciones"
       },
       "drag": {
-        "title": "Cargar un archivo fuente",
-        "description": "Suelta tu archivo aquí para agregarlo como fuente."
+        "title": "Carga un archivo fuente",
+        "description": "Suelta tu archivo aquí para añadirlo como fuente"
       }
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
       "apiKeyName": "Nombre de la Clave de API",
       "chunks": "Fragmentos procesados por consulta",
-      "prompt": "Seleccione el prompt activo",
+      "prompt": "Selecciona el prompt activo",
       "sourceDoc": "Documento Fuente",
       "create": "Crear"
     },
     "saveKey": {
-      "note": "Por favor, guarde su Clave",
-      "disclaimer": "Esta es la única vez que se mostrará su clave.",
+      "note": "Por favor, guarda tu Clave",
+      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
       "copy": "Copiar",
       "copied": "Copiado",
       "confirm": "He guardado la Clave"
     },
     "deleteConv": {
-      "confirm": "¿Está seguro de que desea eliminar todas las conversaciones?",
+      "confirm": "¿Estás seguro de que deseas eliminar todas las conversaciones?",
       "delete": "Eliminar"
     },
     "shareConv": {
       "label": "Crear una página pública para compartir",
-      "note": "El documento original, la información personal y las conversaciones posteriores permanecerán privadas",
+      "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
       "create": "Crear",
-      "option": "Permitir a los usuarios realizar más consultas."
+      "option": "Permitir a los usuarios realizar más consultas"
     }
   },
   "sharedConv": {
     "subtitle": "Creado con",
     "button": "Comienza con DocsGPT",
-    "meta": "DocsGPT utiliza GenAI, por favor revise la información crítica utilizando fuentes."
+    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes."
   },
   "convTile": {
     "share": "Compartir",
     "delete": "Eliminar",
     "rename": "Renombrar",
-    "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+    "deleteWarning": "¿Estás seguro de que deseas eliminar esta conversación?"
+  },
+  "conversation": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "speak": "Hablar",
+    "answer": "Respuesta",
+    "edit": {
+      "placeholder": "Escribe la consulta actualizada..."
+    },
+    "sources": {
+      "title": "Fuentes",
+      "text": "Texto de la Fuente",
+      "link": "Enlace de la Fuente",
+      "view_more": "{{count}} más fuentes"
+    },
+    "retry": "Reintentar"
   }
 }
