@@ -78,7 +78,7 @@ tiktoken==0.8.0
 tokenizers==0.21.0
 torch==2.5.1
 tqdm==4.67.1
-transformers==4.47.1
+transformers==4.48.0
 typing-extensions==4.12.2
 typing-inspect==0.9.0
 tzdata==2024.2
