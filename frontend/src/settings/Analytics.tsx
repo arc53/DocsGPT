@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   BarElement,
   CategoryScale,
@@ -28,15 +29,29 @@ ChartJS.register(
   Legend,
 );
 
-const filterOptions = [
-  { label: 'Hour', value: 'last_hour' },
-  { label: '24 Hours', value: 'last_24_hour' },
-  { label: '7 Days', value: 'last_7_days' },
-  { label: '15 Days', value: 'last_15_days' },
-  { label: '30 Days', value: 'last_30_days' },
-];
-
 export default function Analytics() {
+  const { t } = useTranslation();
+
+  const filterOptions = [
+    { label: t('settings.analytics.filterOptions.hour'), value: 'last_hour' },
+    {
+      label: t('settings.analytics.filterOptions.last24Hours'),
+      value: 'last_24_hour',
+    },
+    {
+      label: t('settings.analytics.filterOptions.last7Days'),
+      value: 'last_7_days',
+    },
+    {
+      label: t('settings.analytics.filterOptions.last15Days'),
+      value: 'last_15_days',
+    },
+    {
+      label: t('settings.analytics.filterOptions.last30Days'),
+      value: 'last_30_days',
+    },
+  ];
+
   const [messagesData, setMessagesData] = useState<Record<
     string,
     number
@@ -165,7 +180,7 @@ export default function Analytics() {
       <div className="flex flex-col items-start">
         <div className="flex flex-col gap-3">
           <p className="font-bold text-jet dark:text-bright-gray">
-            Filter by chatbot
+            {t('settings.analytics.filterByChatbot')}
           </p>
           <Dropdown
             size="w-[55vw] sm:w-[360px]"
@@ -174,9 +189,9 @@ export default function Analytics() {
                 label: chatbot.name,
                 value: chatbot.id,
               })),
-              { label: 'None', value: '' },
+              { label: t('settings.analytics.none'), value: '' },
             ]}
-            placeholder="Select chatbot"
+            placeholder={t('settings.analytics.selectChatbot')}
             onSelect={(chatbot: { label: string; value: string }) => {
               setSelectedChatbot(
                 chatbots.find((item) => item.id === chatbot.value),
@@ -199,12 +214,12 @@ export default function Analytics() {
           <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
-                Messages
+                {t('settings.analytics.messages')}
               </p>
               <Dropdown
                 size="w-[125px]"
                 options={filterOptions}
-                placeholder="Filter"
+                placeholder={t('settings.analytics.filterPlaceholder')}
                 onSelect={(selectedOption: {
                   label: string;
                   value: string;
@@ -232,7 +247,7 @@ export default function Analytics() {
                     ),
                     datasets: [
                       {
-                        label: 'Messages',
+                        label: t('settings.analytics.messages'),
                         data: Object.values(messagesData || {}),
                         backgroundColor: '#7D54D1',
                       },
@@ -250,12 +265,12 @@ export default function Analytics() {
           <div className="h-[345px] [@media(min-width:1080px)]:w-1/2 w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
-                Token Usage
+                {t('settings.analytics.tokenUsage')}
               </p>
               <Dropdown
                 size="w-[125px]"
                 options={filterOptions}
-                placeholder="Filter"
+                placeholder={t('settings.analytics.filterPlaceholder')}
                 onSelect={(selectedOption: {
                   label: string;
                   value: string;
@@ -283,7 +298,7 @@ export default function Analytics() {
                     ),
                     datasets: [
                       {
-                        label: 'Tokens',
+                        label: t('settings.analytics.tokenUsage'),
                         data: Object.values(tokenUsageData || {}),
                         backgroundColor: '#7D54D1',
                       },
@@ -303,12 +318,12 @@ export default function Analytics() {
           <div className="h-[345px] w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
-                Feedback
+                {t('settings.analytics.feedback')}
               </p>
               <Dropdown
                 size="w-[125px]"
                 options={filterOptions}
-                placeholder="Filter"
+                placeholder={t('settings.analytics.filterPlaceholder')}
                 onSelect={(selectedOption: {
                   label: string;
                   value: string;
@@ -336,14 +351,14 @@ export default function Analytics() {
                     ),
                     datasets: [
                       {
-                        label: 'Positive Feedback',
+                        label: t('settings.analytics.positiveFeedback'),
                         data: Object.values(feedbackData || {}).map(
                           (item) => item.positive,
                         ),
                         backgroundColor: '#7D54D1',
                       },
                       {
-                        label: 'Negative Feedback',
+                        label: t('settings.analytics.negativeFeedback'),
                         data: Object.values(feedbackData || {}).map(
                           (item) => item.negative,
                         ),

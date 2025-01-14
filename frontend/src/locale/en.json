@@ -69,10 +69,28 @@
       "noData": "No existing Chatbots"
     },
     "analytics": {
-      "label": "Analytics"
+      "label": "Analytics",
+      "filterByChatbot": "Filter by chatbot",
+      "selectChatbot": "Select chatbot",
+      "filterOptions": {
+        "hour": "Hour",
+        "last24Hours": "24 Hours",
+        "last7Days": "7 Days",
+        "last15Days": "15 Days",
+        "last30Days": "30 Days"
+      },
+      "messages": "Messages",
+      "tokenUsage": "Token Usage",
+      "feedback": "Feedback",
+      "filterPlaceholder": "Filter",
+      "none": "None"
     },
     "logs": {
-      "label": "Logs"
+      "label": "Logs",
+      "filterByChatbot": "Filter by chatbot",
+      "selectChatbot": "Select chatbot",
+      "none": "None",
+      "tableHeader": "API generated / chatbot conversations"
     },
     "tools": {
       "label": "Tools"
