@@ -10,8 +10,8 @@
   "sourceDocs": "原始文件",
   "none": "無",
   "cancel": "取消",
-  "help": "聯繫支援",
-  "emailUs": "寄送電子郵件給我們",
+  "help": "幫助",
+  "emailUs": "給我們發電郵",
   "documentation": "文件",
   "demo": [
     {
@@ -67,10 +67,31 @@
       "createNew": "新增"
     },
     "analytics": {
-      "label": "分析"
+      "label": "分析",
+      "filterByChatbot": "按聊天機器人篩選",
+      "selectChatbot": "選擇聊天機器人",
+      "filterOptions": {
+        "hour": "小時",
+        "last24Hours": "24 小時",
+        "last7Days": "7 天",
+        "last15Days": "15 天",
+        "last30Days": "30 天"
+      },
+      "messages": "訊息",
+      "tokenUsage": "Token 使用量",
+      "feedback": "回饋",
+      "filterPlaceholder": "篩選",
+      "none": "無"
     },
     "logs": {
-      "label": "日誌"
+      "label": "日誌",
+      "filterByChatbot": "按聊天機器人篩選",
+      "selectChatbot": "選擇聊天機器人",
+      "none": "無",
+      "tableHeader": "API 生成 / 聊天機器人會話"
+    },
+    "tools": {
+      "label": "工具"
     }
   },
   "modals": {

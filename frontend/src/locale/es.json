@@ -69,10 +69,31 @@
       "noData": "No hay chatbots existentes"
     },
     "analytics": {
-      "label": "Analítica"
+      "label": "Analítica",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "filterOptions": {
+        "hour": "Hora",
+        "last24Hours": "24 Horas",
+        "last7Days": "7 Días",
+        "last15Days": "15 Días",
+        "last30Days": "30 Días"
+      },
+      "messages": "Mensajes",
+      "tokenUsage": "Uso de Tokens",
+      "feedback": "Retroalimentación",
+      "filterPlaceholder": "Filtrar",
+      "none": "Ninguno"
     },
     "logs": {
-      "label": "Registros"
+      "label": "Registros",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "none": "Ninguno",
+      "tableHeader": "Conversaciones generadas por API / chatbot"
+    },
+    "tools": {
+      "label": "Herramientas"
     }
   },
   "modals": {
@@ -128,7 +149,7 @@
       "label": "Crear una página pública para compartir",
       "note": "El documento original, la información personal y las conversaciones posteriores permanecerán privadas",
       "create": "Crear",
-      "option": "Permitir a los usuarios realizar más consultas."
+      "option": "Permitir a los usuarios realizar más consultas"
     }
   },
   "sharedConv": {

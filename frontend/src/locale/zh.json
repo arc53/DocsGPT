@@ -10,7 +10,7 @@
   "sourceDocs": "源",
   "none": "无",
   "cancel": "取消",
-  "help": "联系支持",
+  "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
   "demo": [
@@ -69,10 +69,31 @@
       "noData": "没有现有的聊天机器人"
     },
     "analytics": {
-      "label": "分析"
+      "label": "分析",
+      "filterByChatbot": "按聊天机器人筛选",
+      "selectChatbot": "选择聊天机器人",
+      "filterOptions": {
+        "hour": "小时",
+        "last24Hours": "24 小时",
+        "last7Days": "7 天",
+        "last15Days": "15 天",
+        "last30Days": "30 天"
+      },
+      "messages": "消息",
+      "tokenUsage": "令牌使用",
+      "feedback": "反馈",
+      "filterPlaceholder": "筛选",
+      "none": "无"
     },
     "logs": {
-      "label": "日志"
+      "label": "日志",
+      "filterByChatbot": "按聊天机器人筛选",
+      "selectChatbot": "选择聊天机器人",
+      "none": "无",
+      "tableHeader": "API 生成 / 聊天机器人会话"
+    },
+    "tools": {
+      "label": "工具"
     }
   },
   "modals": {

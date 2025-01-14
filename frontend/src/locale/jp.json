@@ -69,10 +69,31 @@
       "noData": "既存のチャットボットはありません"
     },
     "analytics": {
-      "label": "分析"
+      "label": "分析",
+      "filterByChatbot": "チャットボットでフィルター",
+      "selectChatbot": "チャットボットを選択",
+      "filterOptions": {
+        "hour": "時間",
+        "last24Hours": "24時間",
+        "last7Days": "7日間",
+        "last15Days": "15日間",
+        "last30Days": "30日間"
+      },
+      "messages": "メッセージ",
+      "tokenUsage": "トークン使用量",
+      "feedback": "フィードバック",
+      "filterPlaceholder": "フィルター",
+      "none": "なし"
     },
     "logs": {
-      "label": "ログ"
+      "label": "ログ",
+      "filterByChatbot": "チャットボットでフィルター",
+      "selectChatbot": "チャットボットを選択",
+      "none": "なし",
+      "tableHeader": "API生成/チャットボットの会話"
+    },
+    "tools": {
+      "label": "ツール"
     }
   },
   "modals": {
@@ -86,7 +107,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": ".pdf, .txt, .rst, .docx, .md, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
+      "info": "25MBまでの.pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zipファイルをアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",
