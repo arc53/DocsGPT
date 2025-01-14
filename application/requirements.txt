@@ -59,7 +59,7 @@ primp==0.9.3
 prompt-toolkit==3.0.48
 protobuf==5.29.3
 py==1.11.0
-pydantic==2.10.4
+pydantic==2.10.5
 pydantic-core==2.27.2
 pydantic-settings==2.7.1
 pymongo==4.10.1
