@@ -55,7 +55,7 @@ pathable==0.4.4
 pillow==11.1.0
 portalocker==2.10.1
 prance==23.6.21.0
-primp==0.9.3
+primp==0.10.0
 prompt-toolkit==3.0.48
 protobuf==5.29.3
 py==1.11.0
