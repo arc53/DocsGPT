@@ -58,15 +58,15 @@
       "date": "ベクトル日付",
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
-      "noData": "既存のドキュメントはありません"
+      "noData": "既存のドキュメントがありません"
     },
     "apiKeys": {
-      "label": "チャットボット",
+      "label": "APIキー",
       "name": "名前",
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
       "createNew": "新規作成",
-      "noData": "既存のチャットボットはありません"
+      "noData": "既存のAPIキーがありません"
     },
     "analytics": {
       "label": "分析",
@@ -74,26 +74,33 @@
       "selectChatbot": "チャットボットを選択",
       "filterOptions": {
         "hour": "時間",
-        "last24Hours": "24時間",
-        "last7Days": "7日間",
-        "last15Days": "15日間",
-        "last30Days": "30日間"
+        "last24Hours": "過去24時間",
+        "last7Days": "過去7日間",
+        "last15Days": "過去15日間",
+        "last30Days": "過去30日間"
       },
       "messages": "メッセージ",
       "tokenUsage": "トークン使用量",
       "feedback": "フィードバック",
       "filterPlaceholder": "フィルター",
-      "none": "なし"
+      "none": "なし",
+      "positiveFeedback": "肯定的なフィードバック",
+      "negativeFeedback": "否定的なフィードバック"
     },
     "logs": {
       "label": "ログ",
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "none": "なし",
-      "tableHeader": "API生成/チャットボットの会話"
+      "tableHeader": "API生成 / チャットボットの会話"
     },
     "tools": {
-      "label": "ツール"
+      "label": "ツール",
+      "searchPlaceholder": "検索...",
+      "addTool": "ツールを追加",
+      "noToolsAlt": "ツールが見つかりません",
+      "noToolsFound": "ツールが見つかりません",
+      "selectToolSetup": "設定するツールを選択してください"
     }
   },
   "modals": {
@@ -150,6 +157,24 @@
       "note": "ソースドキュメント、個人情報、および以降の会話は非公開のままになります",
       "create": "作成",
       "option": "ユーザーがより多くのクエリを実行できるようにします。"
+    },
+    "configTool": {
+      "title": "ツール設定",
+      "type": "タイプ",
+      "apiKeyLabel": "APIキー / OAuth",
+      "apiKeyPlaceholder": "APIキー / OAuthを入力してください",
+      "addButton": "ツールを追加",
+      "closeButton": "閉じる"
+    },
+    "prompts": {
+      "addPrompt": "プロンプトを追加",
+      "addDescription": "カスタムプロンプトを追加してDocsGPTに保存",
+      "editPrompt": "プロンプトを編集",
+      "editDescription": "カスタムプロンプトを編集してDocsGPTに保存",
+      "promptName": "プロンプト名",
+      "promptText": "プロンプトテキスト",
+      "save": "保存",
+      "nameExists": "名前が既に存在します"
     }
   },
   "sharedConv": {
@@ -162,5 +187,13 @@
     "delete": "削除",
     "rename": "名前変更",
     "deleteWarning": "この会話を削除してもよろしいですか？"
+  },
+  "pagination": {
+    "rowsPerPage": "1ページあたりの行数",
+    "pageOf": "ページ {{currentPage}} / {{totalPages}}",
+    "firstPage": "最初のページ",
+    "previousPage": "前のページ",
+    "nextPage": "次のページ",
+    "lastPage": "最後のページ"
   }
 }

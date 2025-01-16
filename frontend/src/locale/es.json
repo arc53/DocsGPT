@@ -83,7 +83,9 @@
       "tokenUsage": "Uso de Tokens",
       "feedback": "Retroalimentación",
       "filterPlaceholder": "Filtrar",
-      "none": "Ninguno"
+      "none": "Ninguno",
+      "positiveFeedback": "Retroalimentación Positiva",
+      "negativeFeedback": "Retroalimentación Negativa"
     },
     "logs": {
       "label": "Registros",
@@ -150,6 +152,14 @@
       "note": "El documento original, la información personal y las conversaciones posteriores permanecerán privadas",
       "create": "Crear",
       "option": "Permitir a los usuarios realizar más consultas"
+    },
+    "configTool": {
+      "title": "Configuración de la Herramienta",
+      "type": "Tipo",
+      "apiKeyLabel": "Clave API / OAuth",
+      "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
+      "addButton": "Agregar Herramienta",
+      "closeButton": "Cerrar"
     }
   },
   "sharedConv": {
@@ -162,5 +172,13 @@
     "delete": "Eliminar",
     "rename": "Renombrar",
     "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+  },
+  "pagination": {
+    "rowsPerPage": "Filas por página",
+    "pageOf": "Página {{currentPage}} de {{totalPages}}",
+    "firstPage": "Primera página",
+    "previousPage": "Página anterior",
+    "nextPage": "Página siguiente",
+    "lastPage": "Última página"
   }
 }

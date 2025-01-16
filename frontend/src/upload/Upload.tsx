@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import FileUpload from '../assets/file_upload.svg';
 import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
@@ -510,7 +509,7 @@ function Upload({
               <div className="flex flex-col gap-1 mt-2">
                 <div>
                   <Input
-                    placeholder="Enter client ID"
+                    placeholder={t('modals.uploadDoc.reddit.id')}
                     type="text"
                     name="client_id"
                     value={redditData.client_id}
@@ -525,7 +524,7 @@ function Upload({
                 </div>
                 <div>
                   <Input
-                    placeholder="Enter client secret"
+                    placeholder={t('modals.uploadDoc.reddit.secret')}
                     type="text"
                     name="client_secret"
                     value={redditData.client_secret}
@@ -540,7 +539,7 @@ function Upload({
                 </div>
                 <div>
                   <Input
-                    placeholder="Enter user agent"
+                    placeholder={t('modals.uploadDoc.reddit.agent')}
                     type="text"
                     name="user_agent"
                     value={redditData.user_agent}
@@ -555,7 +554,7 @@ function Upload({
                 </div>
                 <div>
                   <Input
-                    placeholder="Enter search queries"
+                    placeholder={t('modals.uploadDoc.reddit.searchQueries')}
                     type="text"
                     name="search_queries"
                     value={redditData.search_queries}
@@ -570,7 +569,7 @@ function Upload({
                 </div>
                 <div>
                   <Input
-                    placeholder="Enter number of posts"
+                    placeholder={t('modals.uploadDoc.reddit.numberOfPosts')}
                     type="number"
                     name="number_posts"
                     value={redditData.number_posts}
@@ -587,70 +586,57 @@ function Upload({
             )}
           </>
         )}
-        {activeTab && (
-          <div className="flex w-full justify-between flex-row-reverse">
-            {activeTab === 'file' ? (
-              <button
-                onClick={uploadFile}
-                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 text-sm text-white ${
-                  files.length > 0 && docName.trim().length > 0
-                    ? 'hover:bg-[#6F3FD1]'
-                    : 'bg-opacity-75 text-opacity-80'
-                } py-2 px-6`}
-                disabled={
-                  (files.length === 0 || docName.trim().length === 0) &&
-                  activeTab === 'file'
-                }
-              >
-                {t('modals.uploadDoc.train')}
-              </button>
-            ) : (
-              <button
-                onClick={uploadRemote}
-                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1] ${
-                  urlName.trim().length === 0 ||
-                  url.trim().length === 0 ||
-                  (urlType.label === 'Reddit' &&
-                    (redditData.client_id.length === 0 ||
-                      redditData.client_secret.length === 0 ||
-                      redditData.user_agent.length === 0 ||
-                      redditData.search_queries.length === 0 ||
-                      redditData.number_posts === 0)) ||
-                  (urlType.label === 'GitHub' && repoUrl.trim().length === 0)
-                    ? 'bg-opacity-80 text-opacity-80'
-                    : ''
-                }`}
-                disabled={
-                  urlName.trim().length === 0 ||
-                  url.trim().length === 0 ||
-                  (urlType.label === 'Reddit' &&
-                    (redditData.client_id.length === 0 ||
-                      redditData.client_secret.length === 0 ||
-                      redditData.user_agent.length === 0 ||
-                      redditData.search_queries.length === 0 ||
-                      redditData.number_posts === 0)) ||
-                  (urlType.label === 'GitHub' && repoUrl.trim().length === 0)
-                }
-              >
-                {t('modals.uploadDoc.train')}
-              </button>
-            )}
+        <div className="flex justify-between">
+          {activeTab && (
             <button
-              onClick={() => {
-                setDocName('');
-                setfiles([]);
-                setActiveTab(null);
-              }}
-              className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50 flex items-center gap-1"
+              onClick={() => setActiveTab(null)}
+              className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:bg-purple-taupe dark:text-silver"
             >
-              <img
-                src={ArrowLeft}
-                className="w-[10px] h-[10px] dark:filter dark:invert"
-              />
               {t('modals.uploadDoc.back')}
             </button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={() => {
+              if (activeTab === 'file') {
+                uploadFile();
+              } else {
+                uploadRemote();
+              }
+            }}
+            disabled={
+              (activeTab === 'file' && (!files.length || !docName)) ||
+              (activeTab === 'remote' &&
+                ((urlType.label !== 'Reddit' &&
+                  urlType.label !== 'GitHub' &&
+                  (!url || !urlName)) ||
+                  (urlType.label === 'GitHub' && !repoUrl) ||
+                  (urlType.label === 'Reddit' &&
+                    (!redditData.client_id ||
+                      !redditData.client_secret ||
+                      !redditData.user_agent ||
+                      !redditData.search_queries ||
+                      !redditData.number_posts))))
+            }
+            className={`rounded-3xl px-4 py-2 font-medium ${
+              (activeTab === 'file' && (!files.length || !docName)) ||
+              (activeTab === 'remote' &&
+                ((urlType.label !== 'Reddit' &&
+                  urlType.label !== 'GitHub' &&
+                  (!url || !urlName)) ||
+                  (urlType.label === 'GitHub' && !repoUrl) ||
+                  (urlType.label === 'Reddit' &&
+                    (!redditData.client_id ||
+                      !redditData.client_secret ||
+                      !redditData.user_agent ||
+                      !redditData.search_queries ||
+                      !redditData.number_posts))))
+                ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
+            }`}
+          >
+            {t('modals.uploadDoc.train')}
+          </button>
+        </div>
       </div>
     );
   }

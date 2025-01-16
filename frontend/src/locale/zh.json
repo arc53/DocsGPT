@@ -83,7 +83,9 @@
       "tokenUsage": "令牌使用",
       "feedback": "反馈",
       "filterPlaceholder": "筛选",
-      "none": "无"
+      "none": "无",
+      "positiveFeedback": "正向反馈",
+      "negativeFeedback": "负向反馈"
     },
     "logs": {
       "label": "日志",
@@ -93,7 +95,12 @@
       "tableHeader": "API 生成 / 聊天机器人会话"
     },
     "tools": {
-      "label": "工具"
+      "label": "工具",
+      "searchPlaceholder": "搜索...",
+      "addTool": "添加工具",
+      "noToolsAlt": "未找到工具",
+      "noToolsFound": "未找到工具",
+      "selectToolSetup": "选择要设置的工具"
     }
   },
   "modals": {
@@ -150,6 +157,24 @@
       "note": "源文档、个人信息和后续对话将保持私密",
       "create": "创建",
       "option": "允许用户进行更多查询。"
+    },
+    "configTool": {
+      "title": "工具配置",
+      "type": "类型",
+      "apiKeyLabel": "API 密钥 / OAuth",
+      "apiKeyPlaceholder": "输入 API 密钥 / OAuth",
+      "addButton": "添加工具",
+      "closeButton": "关闭"
+    },
+    "prompts": {
+      "addPrompt": "添加提示",
+      "addDescription": "添加自定义提示并保存到 DocsGPT",
+      "editPrompt": "编辑提示",
+      "editDescription": "编辑自定义提示并保存到 DocsGPT",
+      "promptName": "提示名称",
+      "promptText": "提示文本",
+      "save": "保存",
+      "nameExists": "名称已存在"
     }
   },
   "sharedConv": {
@@ -162,5 +187,13 @@
     "delete": "删除",
     "rename": "重命名",
     "deleteWarning": "您确定要删除此对话吗？"
+  },
+  "pagination": {
+    "rowsPerPage": "每页行数",
+    "pageOf": "第 {{currentPage}} 页，共 {{totalPages}} 页",
+    "firstPage": "第一页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "lastPage": "最后一页"
   }
 }

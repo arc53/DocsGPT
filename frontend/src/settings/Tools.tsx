@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import CogwheelIcon from '../assets/cogwheel.svg';
@@ -12,6 +13,7 @@ import ToolConfig from './ToolConfig';
 import { UserTool } from './types';
 
 export default function Tools() {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
@@ -72,7 +74,7 @@ export default function Tools() {
               <div className="p-1">
                 <Input
                   maxLength={256}
-                  placeholder="Search..."
+                  placeholder={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
                   type="text"
                   id="document-search-input"
@@ -86,7 +88,7 @@ export default function Tools() {
                   setAddToolModalState('ACTIVE');
                 }}
               >
-                Add Tool
+                {t('settings.tools.addTool')}
               </button>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
@@ -98,10 +100,10 @@ export default function Tools() {
                 <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
                   <img
                     src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                    alt="No tools found"
+                    alt={t('settings.tools.noToolsAlt')}
                     className="h-24 w-24 mx-auto mb-2"
                   />
-                  No tools found
+                  {t('settings.tools.noToolsFound')}
                 </div>
               ) : (
                 userTools
@@ -164,7 +166,7 @@ export default function Tools() {
             </div>
           </div>
           <AddToolModal
-            message="Select a tool to set up"
+            message={t('settings.tools.selectToolSetup')}
             modalState={addToolModalState}
             setModalState={setAddToolModalState}
             getUserTools={getUserTools}

@@ -69,15 +69,24 @@ export default function Analytics() {
   const [messagesFilter, setMessagesFilter] = useState<{
     label: string;
     value: string;
-  }>({ label: '30 Days', value: 'last_30_days' });
+  }>({
+    label: t('settings.analytics.filterOptions.last30Days'),
+    value: 'last_30_days',
+  });
   const [tokenUsageFilter, setTokenUsageFilter] = useState<{
     label: string;
     value: string;
-  }>({ label: '30 Days', value: 'last_30_days' });
+  }>({
+    label: t('settings.analytics.filterOptions.last30Days'),
+    value: 'last_30_days',
+  });
   const [feedbackFilter, setFeedbackFilter] = useState<{
     label: string;
     value: string;
-  }>({ label: '30 Days', value: 'last_30_days' });
+  }>({
+    label: t('settings.analytics.filterOptions.last30Days'),
+    value: 'last_30_days',
+  });
 
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [loadingTokens, setLoadingTokens] = useState(true);
