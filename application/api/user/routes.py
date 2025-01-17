@@ -551,7 +551,7 @@ class CombinedJson(Resource):
         user = "local"
         data = [
             {
-                "name": "default",
+                "name": "Default",
                 "date": "default",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "remote",

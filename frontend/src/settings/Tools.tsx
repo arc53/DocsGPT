@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import CogwheelIcon from '../assets/cogwheel.svg';
@@ -18,6 +19,7 @@ export default function Tools() {
     React.useState<ActiveState>('INACTIVE');
   const [userTools, setUserTools] = React.useState<UserTool[]>([]);
   const [selectedTool, setSelectedTool] = React.useState<UserTool | null>(null);
+  const { t } = useTranslation();
 
   const getUserTools = () => {
     userService
@@ -70,12 +72,15 @@ export default function Tools() {
           <div className="flex flex-col relative">
             <div className="my-3 flex justify-between items-center gap-1">
               <div className="p-1">
+                <label htmlFor="tool-search-input" className="sr-only">
+                  {t('settings.tools.searchPlaceholder')}
+                </label>
                 <Input
                   maxLength={256}
-                  placeholder="Search..."
-                  name="Document-search-input"
+                  placeholder={t('settings.tools.searchPlaceholder')}
+                  name="tool-search-input"
                   type="text"
-                  id="document-search-input"
+                  id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -86,7 +91,7 @@ export default function Tools() {
                   setAddToolModalState('ACTIVE');
                 }}
               >
-                Add Tool
+                {t('settings.tools.addTool')}
               </button>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
@@ -98,10 +103,10 @@ export default function Tools() {
                 <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
                   <img
                     src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                    alt="No tools found"
+                    alt={t('settings.tools.noToolsFound')}
                     className="h-24 w-24 mx-auto mb-2"
                   />
-                  No tools found
+                  {t('settings.tools.noToolsFound')}
                 </div>
               ) : (
                 userTools
@@ -119,15 +124,19 @@ export default function Tools() {
                         <div className="w-full flex items-center justify-between">
                           <img
                             src={`/toolIcons/tool_${tool.name}.svg`}
+                            alt={`${tool.displayName} icon`}
                             className="h-8 w-8"
                           />
                           <button
                             className="absolute top-3 right-3 cursor-pointer"
                             onClick={() => handleSettingsClick(tool)}
+                            aria-label={t('settings.tools.configureToolAria', {
+                              toolName: tool.displayName,
+                            })}
                           >
                             <img
                               src={CogwheelIcon}
-                              alt="settings"
+                              alt={t('settings.tools.settingsIconAlt')}
                               className="h-[19px] w-[19px]"
                             />
                           </button>
@@ -146,6 +155,11 @@ export default function Tools() {
                           htmlFor={`toolToggle-${index}`}
                           className="relative inline-block h-6 w-10 cursor-pointer rounded-full bg-gray-300 dark:bg-[#D2D5DA33]/20 transition [-webkit-tap-highlight-color:_transparent] has-[:checked]:bg-[#0C9D35CC] has-[:checked]:dark:bg-[#0C9D35CC]"
                         >
+                          <span className="sr-only">
+                            {t('settings.tools.toggleToolAria', {
+                              toolName: tool.displayName,
+                            })}
+                          </span>
                           <input
                             type="checkbox"
                             id={`toolToggle-${index}`}
@@ -164,7 +178,7 @@ export default function Tools() {
             </div>
           </div>
           <AddToolModal
-            message="Select a tool to set up"
+            message={t('settings.tools.selectToolSetup')}
             modalState={addToolModalState}
             setModalState={setAddToolModalState}
             getUserTools={getUserTools}

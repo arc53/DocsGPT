@@ -57,39 +57,64 @@
       "name": "文件名稱",
       "date": "向量日期",
       "type": "類型",
-      "tokenUsage": "Token 使用量"
+      "tokenUsage": "Token 使用量",
+      "noData": "沒有現有的文件",
+      "searchPlaceholder": "搜尋...",
+      "addNewTitle": "新增文件",
+      "preLoaded": "預載入",
+      "private": "私人",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "永不",
+        "daily": "每日",
+        "weekly": "每週",
+        "monthly": "每月"
+      }
     },
     "apiKeys": {
-      "label": "API 金鑰",
+      "label": "聊天機器人",
       "name": "名稱",
       "key": "API 金鑰",
       "sourceDoc": "來源文件",
-      "createNew": "新增"
+      "createNew": "新增",
+      "noData": "沒有現有的聊天機器人"
     },
     "analytics": {
       "label": "分析"
     },
     "logs": {
-      "label": "日誌"
+      "label": "日誌",
+      "filterByChatbot": "按聊天機器人篩選",
+      "none": "無",
+      "selectChatbotPlaceholder": "選擇聊天機器人",
+      "apiGeneratedConversations": "API生成/聊天機器人對話"
+    },
+    "tools": {
+      "label": "工具"
     }
   },
   "modals": {
     "uploadDoc": {
       "label": "上傳新文件",
+      "select": "選擇如何將文件上傳到 DocsGPT",
       "file": "從檔案",
-      "remote": "遠端",
+      "back": "返回",
+      "wait": "請稍候...",
+      "remote": "從網站收集",
+      "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳 .pdf, .txt, .rst, .docx, .md, .json, .pptx, .zip 檔案，大小限制為 25MB",
+      "info": "請上傳 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip 檔案，大小限制為 25MB",
       "uploadedFiles": "已上傳的檔案",
       "cancel": "取消",
       "train": "訓練",
       "link": "連結",
       "urlLink": "URL 連結",
+      "repoUrl": "儲存庫 URL",
       "reddit": {
         "id": "用戶端 ID",
         "secret": "用戶端金鑰",
-        "agent": "使用者代理(User-Agent)",
+        "agent": "使用者代理",
         "searchQueries": "搜尋查詢",
         "numberOfPosts": "貼文數量"
       },
@@ -120,7 +145,8 @@
     "shareConv": {
       "label": "建立公開頁面以分享",
       "note": "來源文件、個人資訊和後續對話將保持私密",
-      "create": "建立"
+      "create": "建立",
+      "option": "允許用戶進行更多查詢"
     }
   },
   "sharedConv": {
@@ -133,5 +159,21 @@
     "delete": "刪除",
     "rename": "重新命名",
     "deleteWarning": "您確定要刪除這個對話嗎？"
+  },
+  "conversation": {
+    "copy": "複製",
+    "copied": "已複製",
+    "speak": "朗讀",
+    "answer": "回答",
+    "edit": {
+      "placeholder": "輸入更新的查詢..."
+    },
+    "sources": {
+      "title": "來源",
+      "text": "來源文字",
+      "link": "來源連結",
+      "view_more": "更多{{count}}個來源"
+    },
+    "retry": "重試"
   }
 }

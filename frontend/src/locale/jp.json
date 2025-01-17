@@ -1,7 +1,7 @@
 {
   "language": "日本語",
   "chat": "チャット",
-  "chats": "チャット",
+  "chats": "チャット一覧",
   "newChat": "新しいチャット",
   "myPlan": "私のプラン",
   "about": "について",
@@ -24,7 +24,7 @@
     },
     {
       "header": "コードを書く",
-      "query": "APIリクエストのコードを/api/answerに書いてください。"
+      "query": "APIリクエストのコードを/api/answerに書いてください"
     },
     {
       "header": "学習支援",
@@ -58,7 +58,19 @@
       "date": "ベクトル日付",
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
-      "noData": "既存のドキュメントはありません"
+      "noData": "既存のドキュメントはありません",
+      "searchPlaceholder": "検索...",
+      "addNew": "新規追加",
+      "addNewTitle": "新規ドキュメントを追加",
+      "preLoaded": "プリロード済み",
+      "private": "プライベート",
+      "sync": "同期",
+      "syncFrequency": {
+        "never": "なし",
+        "daily": "毎日",
+        "weekly": "毎週",
+        "monthly": "��月"
+      }
     },
     "apiKeys": {
       "label": "チャットボット",
@@ -72,7 +84,14 @@
       "label": "分析"
     },
     "logs": {
-      "label": "ログ"
+      "label": "ログ",
+      "filterByChatbot": "チャットボットでフィルタ",
+      "none": "なし",
+      "selectChatbotPlaceholder": "チャットボットを選択",
+      "apiGeneratedConversations": "API生成/チャットボット会話"
+    },
+    "tools": {
+      "label": "ツール"
     }
   },
   "modals": {
@@ -86,7 +105,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": ".pdf, .txt, .rst, .docx, .md, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
+      "info": ".pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",
@@ -141,5 +160,21 @@
     "delete": "削除",
     "rename": "名前変更",
     "deleteWarning": "この会話を削除してもよろしいですか？"
+  },
+  "conversation": {
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "speak": "スピーク",
+    "answer": "回答",
+    "edit": {
+      "placeholder": "更新されたクエリを入力してください..."
+    },
+    "sources": {
+      "title": "ソース",
+      "text": "ソーステキスト",
+      "link": "ソースリンク",
+      "view_more": "さらに{{count}}個のソース"
+    },
+    "retry": "再試行"
   }
 }
