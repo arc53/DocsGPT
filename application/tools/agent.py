@@ -89,7 +89,7 @@ class Agent:
         if isinstance(resp, str):
             yield resp
             return
-        if resp.message.content:
+        if hasattr(resp, "message") and hasattr(resp.message, "content"):
             yield resp.message.content
             return
 
@@ -98,7 +98,7 @@ class Agent:
         # If no tool calls are needed, generate the final response
         if isinstance(resp, str):
             yield resp
-        elif resp.message.content:
+        elif hasattr(resp, "message") and hasattr(resp.message, "content"):
             yield resp.message.content
         else:
             completion = self.llm.gen_stream(

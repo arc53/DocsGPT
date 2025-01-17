@@ -1,5 +1,7 @@
 import json
 
+from google.protobuf.json_format import MessageToDict
+
 
 class ToolActionParser:
     def __init__(self, llm_type):
@@ -20,7 +22,8 @@ class ToolActionParser:
         return tool_id, action_name, call_args
 
     def _parse_google_llm(self, call):
-        call_args = json.loads(call.args)
-        tool_id = call.name.split("_")[-1]
-        action_name = call.name.rsplit("_", 1)[0]
+        call = MessageToDict(call._pb)
+        call_args = call["args"]
+        tool_id = call["name"].split("_")[-1]
+        action_name = call["name"].rsplit("_", 1)[0]
         return tool_id, action_name, call_args
