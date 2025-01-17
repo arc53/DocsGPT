@@ -215,6 +215,7 @@ export default function Analytics() {
             }
             rounded="3xl"
             border="border"
+            borderColor="gray-700"
           />
         </div>
 

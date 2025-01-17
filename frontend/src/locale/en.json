@@ -41,16 +41,16 @@
       "selectLanguage": "Select Language",
       "chunks": "Chunks processed per query",
       "prompt": "Active Prompt",
-      "deleteAllLabel": "Delete all Conversation",
-      "deleteAllBtn": "Delete all",
+      "deleteAllLabel": "Delete All Conversations",
+      "deleteAllBtn": "Delete All",
       "addNew": "Add New",
-      "convHistory": "Conversational history",
+      "convHistory": "Conversation History",
       "none": "None",
       "low": "Low",
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "default"
+      "default": "Default"
     },
     "documents": {
       "label": "Documents",
@@ -58,7 +58,19 @@
       "date": "Vector Date",
       "type": "Type",
       "tokenUsage": "Token Usage",
-      "noData": "No existing Documents"
+      "noData": "No existing Documents",
+      "searchPlaceholder": "Search...",
+      "addNew": "Add New",
+      "preLoaded": "Pre-loaded",
+      "private": "Private",
+      "sync": "Sync",
+      "syncFrequency": {
+        "never": "Never",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly"
+      },
+      "actions": "Actions"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -126,11 +138,19 @@
         "secret": "Client Secret",
         "agent": "User agent",
         "searchQueries": "Search queries",
-        "numberOfPosts": "Number of posts"
+        "numberOfPosts": "Number of posts",
+        "addQuery": "Add Query"
       },
       "drag": {
         "title": "Upload a source file",
         "description": "Drop your file here to add it as a source"
+      },
+      "progress": {
+        "upload": "Upload is in progress",
+        "training": "Training is in progress",
+        "completed": "Training completed",
+        "wait": "This may take several minutes",
+        "tokenLimit": "Over the token limit, please consider uploading smaller document"
       }
     },
     "createAPIKey": {
@@ -195,5 +215,12 @@
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "lastPage": "Last page"
+  },
+  "conversation": {
+    "edit": {
+      "update": "Update",
+      "cancel": "Cancel",
+      "placeholder": "Enter updated query..."
+    }
   }
 }

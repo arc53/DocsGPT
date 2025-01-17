@@ -72,18 +72,21 @@ export default function Tools() {
           <div className="flex flex-col relative">
             <div className="my-3 flex justify-between items-center gap-1">
               <div className="p-1">
+                <label htmlFor="tool-search-input" className="sr-only">
+                  {t('settings.tools.searchPlaceholder')}
+                </label>
                 <Input
                   maxLength={256}
                   placeholder={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
                   type="text"
-                  id="document-search-input"
+                  id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
               <button
-                className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1] text-nowrap"
+                className="rounded-full min-w-[160px] bg-purple-30 px-6 py-3 text-white hover:bg-[#6F3FD1] text-nowrap"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
@@ -100,7 +103,7 @@ export default function Tools() {
                 <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
                   <img
                     src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                    alt={t('settings.tools.noToolsAlt')}
+                    alt="No tools found"
                     className="h-24 w-24 mx-auto mb-2"
                   />
                   {t('settings.tools.noToolsFound')}
@@ -121,15 +124,19 @@ export default function Tools() {
                         <div className="w-full flex items-center justify-between">
                           <img
                             src={`/toolIcons/tool_${tool.name}.svg`}
+                            alt={`${tool.displayName} icon`}
                             className="h-8 w-8"
                           />
                           <button
                             className="absolute top-3 right-3 cursor-pointer"
                             onClick={() => handleSettingsClick(tool)}
+                            aria-label={t('settings.tools.configureToolAria', {
+                              toolName: tool.displayName,
+                            })}
                           >
                             <img
                               src={CogwheelIcon}
-                              alt="settings"
+                              alt={t('settings.tools.settingsIconAlt')}
                               className="h-[19px] w-[19px]"
                             />
                           </button>
@@ -148,6 +155,11 @@ export default function Tools() {
                           htmlFor={`toolToggle-${index}`}
                           className="relative inline-block h-6 w-10 cursor-pointer rounded-full bg-gray-300 dark:bg-[#D2D5DA33]/20 transition [-webkit-tap-highlight-color:_transparent] has-[:checked]:bg-[#0C9D35CC] has-[:checked]:dark:bg-[#0C9D35CC]"
                         >
+                          <span className="sr-only">
+                            {t('settings.tools.toggleToolAria', {
+                              toolName: tool.displayName,
+                            })}
+                          </span>
                           <input
                             type="checkbox"
                             id={`toolToggle-${index}`}

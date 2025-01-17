@@ -21,11 +21,10 @@ import {
   handleAbort,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
-import { useDarkTheme, useMediaQuery, useOutsideAlerter } from './hooks';
+import { useDarkTheme, useMediaQuery } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
 import DeleteConvModal from './modals/DeleteConvModal';
 import { ActiveState, Doc } from './models/misc';
-import APIKeyModal from './preferences/APIKeyModal';
 import { getConversations, getDocs } from './preferences/preferenceApi';
 import {
   selectApiKeyStatus,
@@ -68,8 +67,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
   const isApiKeySet = useSelector(selectApiKeyStatus);
-  const [apiKeyModalState, setApiKeyModalState] =
-    useState<ActiveState>('INACTIVE');
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -192,12 +189,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         console.error(err);
       });
   }
-  useOutsideAlerter(navRef, () => {
-    if (isMobile && navOpen && apiKeyModalState === 'INACTIVE') {
-      setNavOpen(false);
-      setIsDocsListOpen(false);
-    }
-  }, [navOpen, isDocsListOpen, apiKeyModalState]);
 
   /*
     Needed to fix bug where if mobile nav was closed and then window was resized to desktop, nav would still be closed but the button to open would be gone, as per #1 on issue #146
@@ -220,7 +211,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             >
               <img
                 src={Expand}
-                alt="menu toggle"
+                alt="Toggle navigation menu"
                 className={`${
                   !navOpen ? 'rotate-180' : 'rotate-0'
                 } m-auto transition-all duration-200`}
@@ -234,7 +225,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               >
                 <img
                   src={openNewChat}
-                  alt="open new chat icon"
+                  alt="Start new chat"
                   className="cursor-pointer"
                 />
               </button>
@@ -263,7 +254,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             }}
           >
             <a href="/" className="flex gap-1.5">
-              <img className="mb-2 h-10" src={DocsGPT3} alt="" />
+              <img className="mb-2 h-10" src={DocsGPT3} alt="DocsGPT Logo" />
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
             </a>
           </div>
@@ -275,7 +266,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <img
               src={Expand}
-              alt="menu toggle"
+              alt="Toggle navigation menu"
               className={`${
                 !navOpen ? 'rotate-180' : 'rotate-0'
               } m-auto transition-all duration-200`}
@@ -298,7 +289,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         >
           <img
             src={Add}
-            alt="new"
+            alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
           <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
@@ -314,7 +305,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 src={isDarkTheme ? SpinnerDark : Spinner}
                 className="animate-spin cursor-pointer bg-transparent"
-                alt="Loading..."
+                alt="Loading conversations"
               />
             </div>
           )}
@@ -365,6 +356,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 className="mt-2 h-9 w-9 hover:cursor-pointer"
                 src={UploadIcon}
+                alt="Upload document"
                 onClick={() => {
                   setUploadModalState('ACTIVE');
                   if (isMobile) {
@@ -392,7 +384,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             >
               <img
                 src={SettingGear}
-                alt="icon"
+                alt="Settings"
                 className="ml-2 w-5 filter dark:invert"
               />
               <p className="my-auto text-sm text-eerie-black  dark:text-white">
@@ -414,7 +406,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 >
                   <img
                     src={Discord}
-                    alt="discord"
+                    alt="Join Discord community"
                     className="m-2 w-6 self-center filter dark:invert"
                   />
                 </NavLink>
@@ -427,7 +419,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 >
                   <img
                     src={Twitter}
-                    alt="x"
+                    alt="Follow us on Twitter"
                     className="m-2 w-5 self-center filter dark:invert"
                   />
                 </NavLink>
@@ -440,7 +432,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 >
                   <img
                     src={Github}
-                    alt="github"
+                    alt="View on GitHub"
                     className="m-2 w-6 self-center filter dark:invert"
                   />
                 </NavLink>
@@ -457,18 +449,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <img
               src={Hamburger}
-              alt="menu toggle"
+              alt="Toggle mobile menu"
               className="w-7 filter dark:invert"
             />
           </button>
           <div className="text-[#949494] font-medium text-[20px]">DocsGPT</div>
         </div>
       </div>
-      <APIKeyModal
-        modalState={apiKeyModalState}
-        setModalState={setApiKeyModalState}
-        isCancellable={isApiKeySet}
-      />
       <DeleteConvModal
         modalState={modalStateDeleteConv}
         setModalState={setModalStateDeleteConv}

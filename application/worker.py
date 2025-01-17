@@ -203,53 +203,61 @@ def remote_worker(
     sync_frequency="never",
     operation_mode="upload",
     doc_id=None,
-):
+):  
     full_path = os.path.join(directory, user, name_job)
-
     if not os.path.exists(full_path):
         os.makedirs(full_path)
+
     self.update_state(state="PROGRESS", meta={"current": 1})
-    logging.info(
-        f"Remote job: {full_path}",
-        extra={"user": user, "job": name_job, "source_data": source_data},
-    )
+    try:
+        logging.info("Initializing remote loader with type: %s", loader)
+        remote_loader = RemoteCreator.create_loader(loader)
+        raw_docs = remote_loader.load_data(source_data)
 
-    remote_loader = RemoteCreator.create_loader(loader)
-    raw_docs = remote_loader.load_data(source_data)
+        chunker = Chunker(
+            chunking_strategy="classic_chunk",
+            max_tokens=MAX_TOKENS,
+            min_tokens=MIN_TOKENS,
+            duplicate_headers=False
+        )
+        docs = chunker.chunk(documents=raw_docs)
+        docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+        tokens = count_tokens_docs(docs)
+        logging.info("Total tokens calculated: %d", tokens)
 
-    chunker = Chunker(
-        chunking_strategy="classic_chunk",
-        max_tokens=MAX_TOKENS,
-        min_tokens=MIN_TOKENS,
-        duplicate_headers=False
-    )
-    docs = chunker.chunk(documents=raw_docs)
+        if operation_mode == "upload":
+            id = ObjectId()
+            embed_and_store_documents(docs, full_path, id, self)
+        elif operation_mode == "sync":
+            if not doc_id or not ObjectId.is_valid(doc_id):
+                logging.error("Invalid doc_id provided for sync operation: %s", doc_id)
+                raise ValueError("doc_id must be provided for sync operation.")
+            id = ObjectId(doc_id)
+            embed_and_store_documents(docs, full_path, id, self)
 
-    tokens = count_tokens_docs(docs)
-    if operation_mode == "upload":
-        id = ObjectId()
-        embed_and_store_documents(docs, full_path, id, self)
-    elif operation_mode == "sync":
-        if not doc_id or not ObjectId.is_valid(doc_id):
-            raise ValueError("doc_id must be provided for sync operation.")
-        id = ObjectId(doc_id)
-        embed_and_store_documents(docs, full_path, id, self)
-    self.update_state(state="PROGRESS", meta={"current": 100})
+        self.update_state(state="PROGRESS", meta={"current": 100})
 
-    file_data = {
-        "name": name_job,
-        "user": user,
-        "tokens": tokens,
-        "retriever": retriever,
-        "id": str(id),
-        "type": loader,
-        "remote_data": source_data,
-        "sync_frequency": sync_frequency,
-    }
-    upload_index(full_path, file_data)
+        file_data = {
+            "name": name_job,
+            "user": user,
+            "tokens": tokens,
+            "retriever": retriever,
+            "id": str(id),
+            "type": loader,
+            "remote_data": source_data,
+            "sync_frequency": sync_frequency,
+        }
+        upload_index(full_path, file_data)
 
-    shutil.rmtree(full_path)
+    except Exception as e:
+        logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
+        raise
 
+    finally:
+        if os.path.exists(full_path):
+            shutil.rmtree(full_path)
+
+    logging.info("remote_worker task completed successfully")
     return {"urls": source_data, "name_job": name_job, "user": user, "limited": False}
 
 def sync(

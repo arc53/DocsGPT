@@ -34,7 +34,7 @@
   "settings": {
     "label": "设置",
     "general": {
-      "label": "般",
+      "label": "一般",
       "selectTheme": "选择主题",
       "light": "浅色",
       "dark": "暗色",
@@ -58,7 +58,18 @@
       "date": "向量日期",
       "type": "类型",
       "tokenUsage": "令牌使用",
-      "noData": "没有现有的文档"
+      "noData": "没有现有的文档",
+      "searchPlaceholder": "搜索...",
+      "addNew": "添加新文档",
+      "preLoaded": "预加载",
+      "private": "私有",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "从不",
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月"
+      }
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -114,7 +125,7 @@
       "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
-      "info": "请上传 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip 文件，限 25MB",
+      "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip文件",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "训练",
@@ -122,15 +133,23 @@
       "urlLink": "URL 链接",
       "repoUrl": "存储库 URL",
       "reddit": {
-        "id": "客户端 ID",
+        "id": "客户端ID",
         "secret": "客户端密钥",
         "agent": "用户代理",
         "searchQueries": "搜索查询",
-        "numberOfPosts": "帖子数量"
+        "numberOfPosts": "帖子数量",
+        "addQuery": "添加查询"
       },
       "drag": {
         "title": "上传源文件",
-        "description": "将您的文件拖放到此处以将其添加为源"
+        "description": "将文件拖放到此处以添加为源"
+      },
+      "progress": {
+        "upload": "正在上传",
+        "training": "正在训练",
+        "completed": "训练完成",
+        "wait": "这可能需要几分钟",
+        "tokenLimit": "超出令牌限制，请考虑上传较小的文档"
       }
     },
     "createAPIKey": {
@@ -195,5 +214,23 @@
     "previousPage": "上一页",
     "nextPage": "下一页",
     "lastPage": "最后一页"
+  },
+  "conversation": {
+    "copy": "复制",
+    "copied": "已复制",
+    "speak": "朗读",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "取消",
+      "placeholder": "输入更新的查询..."
+    },
+    "sources": {
+      "title": "来源",
+      "text": "来源文本",
+      "link": "来源链接",
+      "view_more": "更多{{count}}个来源"
+    },
+    "retry": "重试"
   }
 }

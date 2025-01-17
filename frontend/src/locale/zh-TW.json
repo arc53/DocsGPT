@@ -58,7 +58,19 @@
       "date": "向量日期",
       "type": "類型",
       "tokenUsage": "Token 使用量",
-      "noData": "沒有現有的文件"
+      "noData": "沒有現有的文件",
+      "searchPlaceholder": "搜尋...",
+      "addNew": "新增文件",
+      "preLoaded": "預載入",
+      "private": "私人",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "從不",
+        "daily": "每天",
+        "weekly": "每週",
+        "monthly": "每月"
+      },
+      "actions": "操作"
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -114,23 +126,31 @@
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip 檔案，大小限制為 25MB",
-      "uploadedFiles": "已上傳的檔案",
+      "info": "請上傳限制為25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip檔案",
+      "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "訓練",
       "link": "連結",
       "urlLink": "URL 連結",
       "repoUrl": "儲存庫 URL",
       "reddit": {
-        "id": "用戶端 ID",
-        "secret": "用戶端金鑰",
-        "agent": "使用者代理(User-Agent)",
+        "id": "客戶端ID",
+        "secret": "客戶端密鑰",
+        "agent": "使用者代理",
         "searchQueries": "搜尋查詢",
-        "numberOfPosts": "貼文數量"
+        "numberOfPosts": "貼文數量",
+        "addQuery": "新增查詢"
       },
       "drag": {
-        "title": "上傳原始檔",
-        "description": "將您的文件拖放到此處以將其添加為來源"
+        "title": "上傳來源檔案",
+        "description": "將檔案拖放到此處以新增為來源"
+      },
+      "progress": {
+        "upload": "正在上傳",
+        "training": "正在訓練",
+        "completed": "訓練完成",
+        "wait": "這可能需要幾分鐘",
+        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔"
       }
     },
     "createAPIKey": {

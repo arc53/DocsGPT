@@ -54,10 +54,10 @@ const Documents: React.FC<DocumentsProps> = ({
   const [totalPages, setTotalPages] = useState<number>(1);
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
-    { label: 'Never', value: 'never' },
-    { label: 'Daily', value: 'daily' },
-    { label: 'Weekly', value: 'weekly' },
-    { label: 'Monthly', value: 'monthly' },
+    { label: t('settings.documents.syncFrequency.never'), value: 'never' },
+    { label: t('settings.documents.syncFrequency.daily'), value: 'daily' },
+    { label: t('settings.documents.syncFrequency.weekly'), value: 'weekly' },
+    { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
 
   const refreshDocs = useCallback(
@@ -151,9 +151,12 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="z-10 w-full overflow-x-auto">
           <div className="my-3 flex justify-between items-center">
             <div className="p-1">
+              <label htmlFor="document-search-input" className="sr-only">
+                {t('settings.documents.searchPlaceholder')}
+              </label>
               <Input
                 maxLength={256}
-                placeholder="Search..."
+                placeholder={t('settings.documents.searchPlaceholder')}
                 name="Document-search-input"
                 type="text"
                 id="document-search-input"
@@ -161,21 +164,18 @@ const Documents: React.FC<DocumentsProps> = ({
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
-                  // refreshDocs(sortField, 1, rowsPerPage);
-                  // do not call refreshDocs here the state is async
-                  // so it will not have the updated value
-                }} // Handle search input change
+                }}
               />
             </div>
             <button
               className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
-              title="Add New Document"
+              title={t('settings.documents.addNew')}
               onClick={() => {
-                setIsOnboarding(false); // Set onboarding flag if needed
-                setModalState('ACTIVE'); // Open the upload modal
+                setIsOnboarding(false);
+                setModalState('ACTIVE');
               }}
             >
-              Add New
+              {t('settings.documents.addNew')}
             </button>
           </div>
           {loading ? (
@@ -224,9 +224,10 @@ const Documents: React.FC<DocumentsProps> = ({
                         */}
                         <th
                           scope="col"
-                          className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase"
+                          className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase sr-only"
+                          aria-label={t('settings.documents.actions')}
                         >
-                          {' '}
+                          {t('settings.documents.actions')}
                         </th>
                       </tr>
                     </thead>
@@ -270,7 +271,7 @@ const Documents: React.FC<DocumentsProps> = ({
                                 {document.type !== 'remote' && (
                                   <img
                                     src={Trash}
-                                    alt="Delete"
+                                    alt={t('convTile.delete')}
                                     className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
                                     id={`img-${index}`}
                                     onClick={(event) => {
@@ -282,7 +283,7 @@ const Documents: React.FC<DocumentsProps> = ({
                                 {document.syncFrequency && (
                                   <div className="ml-2">
                                     <DropdownMenu
-                                      name="Sync"
+                                      name={t('settings.documents.sync')}
                                       options={syncOptions}
                                       onSelect={(value: string) => {
                                         handleManageSync(document, value);

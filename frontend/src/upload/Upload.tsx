@@ -54,11 +54,11 @@ function Upload({
   const setTimeoutRef = useRef<number | null>();
 
   const urlOptions: { label: string; value: string }[] = [
-    { label: 'Crawler', value: 'crawler' },
-    // { label: 'Sitemap', value: 'sitemap' },
-    { label: 'Link', value: 'url' },
-    { label: 'Reddit', value: 'reddit' },
-    { label: 'GitHub', value: 'github' }, // P3f93
+    { label: `Crawler`, value: 'crawler' },
+    // { label: t('modals.uploadDoc.sitemap'), value: 'sitemap' },
+    { label: `Link`, value: 'url' },
+    { label: `GitHub`, value: 'github' },
+    { label: `Reddit`, value: 'reddit' },
   ];
 
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
@@ -113,12 +113,14 @@ function Upload({
       <div className="mt-5 flex flex-col items-center gap-2 text-gray-2000 dark:text-bright-gray">
         <p className="text-gra text-xl tracking-[0.15px]">
           {isTraining &&
-            (progress?.percentage === 100 ? 'Training completed' : title)}
+            (progress?.percentage === 100
+              ? t('modals.uploadDoc.progress.completed')
+              : title)}
           {!isTraining && title}
         </p>
-        <p className="text-sm">This may take several minutes</p>
+        <p className="text-sm">{t('modals.uploadDoc.progress.wait')}</p>
         <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
-          Over the token limit, please consider uploading smaller document
+          {t('modals.uploadDoc.progress.tokenLimit')}
         </p>
         {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
         <ProgressBar progressPercent={progress?.percentage || 0} />
@@ -148,7 +150,7 @@ function Upload({
   }
 
   function UploadProgress() {
-    return <Progress title="Upload is in progress"></Progress>;
+    return <Progress title={t('modals.uploadDoc.progress.upload')}></Progress>;
   }
 
   function TrainingProgress() {
@@ -239,7 +241,7 @@ function Upload({
     }, [progress, dispatch]);
     return (
       <Progress
-        title="Training is in progress"
+        title={t('modals.uploadDoc.progress.training')}
         isCancellable={progress?.percentage === 100}
         isFailed={progress?.failed === true}
         isTraining={true}

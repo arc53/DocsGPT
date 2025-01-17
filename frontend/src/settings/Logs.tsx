@@ -67,9 +67,12 @@ export default function Logs() {
     <div className="mt-12">
       <div className="flex flex-col items-start">
         <div className="flex flex-col gap-3">
-          <p className="font-bold text-jet dark:text-bright-gray">
+          <label
+            id="chatbot-filter-label"
+            className="font-bold text-jet dark:text-bright-gray"
+          >
             {t('settings.logs.filterByChatbot')}
-          </p>
+          </label>
           {loadingChatbots ? (
             <SkeletonLoader />
           ) : (

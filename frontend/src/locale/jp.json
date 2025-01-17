@@ -28,7 +28,7 @@
     },
     {
       "header": "学習支援",
-      "query": "コンテキストに対する潜在的な質問を書いてください"
+      "query": "このコンテンツに対する可能な質問を書いてください"
     }
   ],
   "settings": {
@@ -58,7 +58,19 @@
       "date": "ベクトル日付",
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
-      "noData": "既存のドキュメントがありません"
+      "noData": "既存のドキュメントがありません",
+      "searchPlaceholder": "検索...",
+      "addNew": "新規追加",
+      "preLoaded": "プリロード済み",
+      "private": "プライベート",
+      "sync": "同期",
+      "syncFrequency": {
+        "never": "なし",
+        "daily": "毎日",
+        "weekly": "毎週",
+        "monthly": "毎月"
+      },
+      "actions": "アクション"
     },
     "apiKeys": {
       "label": "APIキー",
@@ -114,7 +126,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": "25MBまでの.pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zipファイルをアップロードしてください",
+      "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zipファイルをアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",
@@ -126,11 +138,19 @@
         "secret": "クライアントシークレット",
         "agent": "ユーザーエージェント",
         "searchQueries": "検索クエリ",
-        "numberOfPosts": "投稿数"
+        "numberOfPosts": "投稿数",
+        "addQuery": "クエリを追加"
       },
       "drag": {
-        "title": "ソースファイルをアップロードする",
-        "description": "ファイルをここにドロップしてソースとして追加します"
+        "title": "ソースファイルをアップロード",
+        "description": "ファイルをここにドロップしてソースとして追加してください"
+      },
+      "progress": {
+        "upload": "アップロード中",
+        "training": "トレーニング中",
+        "completed": "トレーニング完了",
+        "wait": "数分かかる場合があります",
+        "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください"
       }
     },
     "createAPIKey": {
@@ -195,5 +215,23 @@
     "previousPage": "前のページ",
     "nextPage": "次のページ",
     "lastPage": "最後のページ"
+  },
+  "conversation": {
+    "copy": "コピー",
+    "copied": "コピー済み",
+    "speak": "読み上げ",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "キャンセル",
+      "placeholder": "更新されたクエリを入力..."
+    },
+    "sources": {
+      "title": "ソース",
+      "text": "ソーステキスト",
+      "link": "ソースリンク",
+      "view_more": "さらに{{count}}個のソースを表示"
+    },
+    "retry": "再試行"
   }
 }

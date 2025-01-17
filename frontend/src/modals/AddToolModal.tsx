@@ -1,10 +1,11 @@
-import React from 'react';
-
+import React, { useRef } from 'react';
 import userService from '../api/services/userService';
 import Exit from '../assets/exit.svg';
 import { ActiveState } from '../models/misc';
 import { AvailableTool } from './types';
 import ConfigToolModal from './ConfigToolModal';
+import { useOutsideAlerter } from '../hooks';
+import { useTranslation } from 'react-i18next';
 
 export default function AddToolModal({
   message,
@@ -25,6 +26,14 @@ export default function AddToolModal({
   );
   const [configModalState, setConfigModalState] =
     React.useState<ActiveState>('INACTIVE');
+  const modalRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
+
+  useOutsideAlerter(modalRef, () => {
+    if (modalState === 'ACTIVE') {
+      setModalState('INACTIVE');
+    }
+  }, [modalState]);
 
   const getAvailableTools = () => {
     userService
@@ -63,14 +72,18 @@ export default function AddToolModal({
   React.useEffect(() => {
     if (modalState === 'ACTIVE') getAvailableTools();
   }, [modalState]);
+
   return (
     <>
       <div
         className={`${
           modalState === 'ACTIVE' ? 'visible' : 'hidden'
-        } fixed top-0 left-0 z-30  h-screen w-screen  bg-gray-alpha flex items-center justify-center`}
+        } fixed top-0 left-0 z-30 h-screen w-screen bg-gray-alpha flex items-center justify-center`}
       >
-        <article className="flex h-[85vh] w-[90vw] md:w-[75vw] flex-col gap-4 rounded-2xl bg-[#FBFBFB] shadow-lg dark:bg-[#26272E]">
+        <article
+          ref={modalRef}
+          className="flex h-[85vh] w-[90vw] md:w-[75vw] flex-col gap-4 rounded-2xl bg-[#FBFBFB] shadow-lg dark:bg-[#26272E]"
+        >
           <div className="relative">
             <button
               className="absolute top-3 right-4 m-2 w-3"
@@ -78,11 +91,15 @@ export default function AddToolModal({
                 setModalState('INACTIVE');
               }}
             >
-              <img className="filter dark:invert" src={Exit} />
+              <img
+                className="filter dark:invert"
+                src={Exit}
+                alt={t('cancel')}
+              />
             </button>
             <div className="p-6">
               <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
-                Select a tool to set up
+                {t('settings.tools.selectToolSetup')}
               </h2>
               <div className="mt-5 flex flex-col sm:grid sm:grid-cols-3 gap-4 h-[73vh] overflow-auto px-3 py-px">
                 {availableTools.map((tool, index) => (
