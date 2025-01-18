@@ -110,9 +110,11 @@
       "label": "ツール",
       "searchPlaceholder": "検索...",
       "addTool": "ツールを追加",
-      "noToolsAlt": "ツールが見つかりません",
       "noToolsFound": "ツールが見つかりません",
-      "selectToolSetup": "設定するツールを選択してください"
+      "selectToolSetup": "設定するツールを選択してください",
+      "settingsIconAlt": "設定アイコン",
+      "configureToolAria": "{toolName} を設定",
+      "toggleToolAria": "{toolName} を切り替え"
     }
   },
   "modals": {

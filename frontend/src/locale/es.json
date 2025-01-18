@@ -110,9 +110,11 @@
       "label": "Herramientas",
       "searchPlaceholder": "Buscar...",
       "addTool": "Agregar Herramienta",
-      "noToolsAlt": "No se encontraron herramientas",
       "noToolsFound": "No se encontraron herramientas",
-      "selectToolSetup": "Seleccione una herramienta para configurar"
+      "selectToolSetup": "Seleccione una herramienta para configurar",
+      "settingsIconAlt": "Icono de configuración",
+      "configureToolAria": "Configurar {toolName}",
+      "toggleToolAria": "Alternar {toolName}"
     }
   },
   "modals": {

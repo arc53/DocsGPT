@@ -110,9 +110,11 @@
       "label": "工具",
       "searchPlaceholder": "搜索...",
       "addTool": "添加工具",
-      "noToolsAlt": "未找到工具",
       "noToolsFound": "未找到工具",
-      "selectToolSetup": "选择要设置的工具"
+      "selectToolSetup": "选择要设置的工具" ,
+      "settingsIconAlt": "设置图标",
+      "configureToolAria": "配置 {toolName}",
+      "toggleToolAria": "切换 {toolName}"
     }
   },
   "modals": {

@@ -108,11 +108,13 @@
     },
     "tools": {
       "label": "Tools",
-      "searchPlaceholder": "Search...",
+      "searchPlaceholder": "Search tools...",
       "addTool": "Add Tool",
-      "noToolsAlt": "No tools found",
       "noToolsFound": "No tools found",
-      "selectToolSetup": "Select a tool to set up"
+      "selectToolSetup": "Select a tool to set up",
+      "settingsIconAlt": "Settings icon",
+      "configureToolAria": "Configure {toolName}",
+      "toggleToolAria": "Toggle {toolName}"
     }
   },
   "modals": {
@@ -224,13 +226,13 @@
     "edit": {
       "update": "Update",
       "cancel": "Cancel",
-      "placeholder": "Enter updated query..."
+      "placeholder": "Type the updated query..."
     },
     "sources": {
       "title": "Sources",
       "text": "Source text",
       "link": "Source link",
-      "view_more": "View {{count}} more sources"
+      "view_more": "{{count}} more sources"
     },
     "retry": "Retry"
   }

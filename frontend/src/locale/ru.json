@@ -110,9 +110,11 @@
       "label": "Инструменты",
       "searchPlaceholder": "Поиск...",
       "addTool": "Добавить инструмент",
-      "noToolsAlt": "Инструменты не найдены",
       "noToolsFound": "Инструменты не найдены",
-      "selectToolSetup": "Выберите инструмент для настройки"
+      "selectToolSetup": "Выберите инструмент для настройки",
+      "settingsIconAlt": "Иконка настроек",
+      "configureToolAria": "Настроить {toolName}",
+      "toggleToolAria": "Переключить {toolName}"
     }
   },
   "modals": {
