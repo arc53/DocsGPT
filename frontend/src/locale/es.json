@@ -185,6 +185,16 @@
       "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
       "addButton": "Agregar Herramienta",
       "closeButton": "Cerrar"
+    },
+    "prompts": {
+      "addPrompt": "Agregar Prompt",
+      "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
+      "editPrompt": "Editar Prompt",
+      "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
+      "promptName": "Nombre del Prompt",
+      "promptText": "Texto del Prompt",
+      "save": "Guardar",
+      "nameExists": "El nombre ya existe"
     }
   },
   "sharedConv": {

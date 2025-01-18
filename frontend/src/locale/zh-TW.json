@@ -215,5 +215,23 @@
     "previousPage": "上一頁",
     "nextPage": "下一頁",
     "lastPage": "最後一頁"
+  },
+  "conversation": {
+    "copy": "複製",
+    "copied": "已複製",
+    "speak": "朗讀",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "取消",
+      "placeholder": "輸入更新的查詢..."
+    },
+    "sources": {
+      "title": "來源",
+      "text": "來源文字",
+      "link": "來源連結",
+      "view_more": "查看更多 {{count}} 個來源"
+    },
+    "retry": "重試"
   }
 }

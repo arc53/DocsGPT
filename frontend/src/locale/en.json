@@ -217,10 +217,21 @@
     "lastPage": "Last page"
   },
   "conversation": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "speak": "Speak",
+    "answer": "Answer",
     "edit": {
       "update": "Update",
       "cancel": "Cancel",
       "placeholder": "Enter updated query..."
-    }
+    },
+    "sources": {
+      "title": "Sources",
+      "text": "Source text",
+      "link": "Source link",
+      "view_more": "View {{count}} more sources"
+    },
+    "retry": "Retry"
   }
 }
