@@ -95,7 +95,6 @@ class Agent:
 
         resp = self.llm_handler.handle_response(self, resp, tools_dict, messages)
 
-        # If no tool calls are needed, generate the final response
         if isinstance(resp, str):
             yield resp
         elif hasattr(resp, "message") and hasattr(resp.message, "content"):
@@ -110,7 +109,6 @@ class Agent:
         return
 
     def gen(self, messages):
-        # Generate initial response from the LLM
         if self.llm.supports_tools():
             resp = self._simple_tool_agent(messages)
             for line in resp:
