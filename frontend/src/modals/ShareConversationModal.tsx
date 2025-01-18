@@ -101,11 +101,17 @@ export const ShareConversationModal = ({
   return (
     <WrapperModal close={close}>
       <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-medium">{t('modals.shareConv.label')}</h2>
-        <p className="text-sm">{t('modals.shareConv.note')}</p>
+        <h2 className="text-xl font-medium text-eerie-black dark:text-white">
+          {t('modals.shareConv.label')}
+        </h2>
+        <p className="text-sm text-eerie-black dark:text-white">
+          {t('modals.shareConv.note')}
+        </p>
         <div className="flex items-center justify-between">
-          <span className="text-lg">{t('modals.shareConv.option')}</span>
-          <label className=" cursor-pointer select-none items-center">
+          <span className="text-lg text-eerie-black dark:text-white">
+            {t('modals.shareConv.option')}
+          </span>
+          <label className="cursor-pointer select-none items-center">
             <div className="relative">
               <input
                 type="checkbox"
@@ -143,7 +149,7 @@ export const ShareConversationModal = ({
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">
-          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 py-3 px-4">
+          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 py-3 px-4 text-eerie-black dark:text-white">
             {`${domain}/share/${identifier ?? '....'}`}
           </span>
           {status === 'fetched' ? (

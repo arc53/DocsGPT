@@ -85,7 +85,7 @@ export default function Logs() {
                 })),
                 { label: t('settings.logs.none'), value: '' },
               ]}
-              placeholder={t('settings.logs.selectChatbotPlaceholder')}
+              placeholder={t('settings.logs.selectChatbot')}
               onSelect={(chatbot: { label: string; value: string }) => {
                 setSelectedChatbot(
                   chatbots.find((item) => item.id === chatbot.value),
@@ -140,7 +140,7 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
     <div className="logs-table border rounded-2xl h-[55vh] w-full overflow-hidden border-silver dark:border-silver/40">
       <div className="h-8 bg-black/10 dark:bg-chinese-black flex flex-col items-start justify-center">
         <p className="px-3 text-xs dark:text-gray-6000">
-          {t('settings.logs.apiGeneratedConversations')}
+          {t('settings.logs.tableHeader')}
         </p>
       </div>
       <div
@@ -174,7 +174,7 @@ function Log({ log }: { log: LogData }) {
       <summary className="flex flex-row items-center gap-2 text-gray-900 cursor-pointer p-2 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
         <img
           src={ChevronRight}
-          alt="chevron-right"
+          alt="Expand log entry"
           className="w-3 h-3 transition duration-300 group-open:rotate-90"
         />
         <span className="flex flex-row gap-2">

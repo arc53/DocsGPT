@@ -13,13 +13,13 @@ import ToolConfig from './ToolConfig';
 import { UserTool } from './types';
 
 export default function Tools() {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [userTools, setUserTools] = React.useState<UserTool[]>([]);
   const [selectedTool, setSelectedTool] = React.useState<UserTool | null>(null);
-  const { t } = useTranslation();
 
   const getUserTools = () => {
     userService
@@ -78,7 +78,7 @@ export default function Tools() {
                 <Input
                   maxLength={256}
                   placeholder={t('settings.tools.searchPlaceholder')}
-                  name="tool-search-input"
+                  name="Document-search-input"
                   type="text"
                   id="tool-search-input"
                   value={searchTerm}
@@ -86,7 +86,7 @@ export default function Tools() {
                 />
               </div>
               <button
-                className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1] text-nowrap"
+                className="rounded-full min-w-[160px] bg-purple-30 px-6 py-3 text-white hover:bg-[#6F3FD1] text-nowrap"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
@@ -103,7 +103,7 @@ export default function Tools() {
                 <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
                   <img
                     src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                    alt={t('settings.tools.noToolsFound')}
+                    alt="No tools found"
                     className="h-24 w-24 mx-auto mb-2"
                   />
                   {t('settings.tools.noToolsFound')}

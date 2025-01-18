@@ -169,10 +169,10 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <button
               className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
-              title={t('settings.documents.addNewTitle')}
+              title={t('settings.documents.addNew')}
               onClick={() => {
-                setIsOnboarding(false); // Set onboarding flag if needed
-                setModalState('ACTIVE'); // Open the upload modal
+                setIsOnboarding(false);
+                setModalState('ACTIVE');
               }}
             >
               {t('settings.documents.addNew')}
@@ -224,7 +224,7 @@ const Documents: React.FC<DocumentsProps> = ({
                         */}
                         <th
                           scope="col"
-                          className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase"
+                          className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase sr-only"
                           aria-label={t('settings.documents.actions')}
                         >
                           {t('settings.documents.actions')}

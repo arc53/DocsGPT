@@ -61,7 +61,6 @@
       "noData": "No existing Documents",
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
-      "addNewTitle": "Add New Document",
       "preLoaded": "Pre-loaded",
       "private": "Private",
       "sync": "Sync",
@@ -82,24 +81,40 @@
       "noData": "No existing Chatbots"
     },
     "analytics": {
-      "label": "Analytics"
+      "label": "Analytics",
+      "filterByChatbot": "Filter by chatbot",
+      "selectChatbot": "Select chatbot",
+      "filterOptions": {
+        "hour": "Hour",
+        "last24Hours": "24 Hours",
+        "last7Days": "7 Days",
+        "last15Days": "15 Days",
+        "last30Days": "30 Days"
+      },
+      "messages": "Messages",
+      "tokenUsage": "Token Usage",
+      "feedback": "Feedback",
+      "filterPlaceholder": "Filter",
+      "none": "None",
+      "positiveFeedback": "Positive Feedback",
+      "negativeFeedback": "Negative Feedback"
     },
     "logs": {
       "label": "Logs",
       "filterByChatbot": "Filter by chatbot",
+      "selectChatbot": "Select chatbot",
       "none": "None",
-      "selectChatbotPlaceholder": "Select chatbot",
-      "apiGeneratedConversations": "API generated / chatbot conversations"
+      "tableHeader": "API generated / chatbot conversations"
     },
     "tools": {
       "label": "Tools",
       "searchPlaceholder": "Search tools...",
       "addTool": "Add Tool",
       "noToolsFound": "No tools found",
+      "selectToolSetup": "Select a tool to set up",
       "settingsIconAlt": "Settings icon",
       "configureToolAria": "Configure {toolName}",
-      "toggleToolAria": "Toggle {toolName}",
-      "selectToolSetup": "Select a tool to set up"
+      "toggleToolAria": "Toggle {toolName}"
     }
   },
   "modals": {
@@ -125,11 +140,19 @@
         "secret": "Client Secret",
         "agent": "User agent",
         "searchQueries": "Search queries",
-        "numberOfPosts": "Number of posts"
+        "numberOfPosts": "Number of posts",
+        "addQuery": "Add Query"
       },
       "drag": {
         "title": "Upload a source file",
         "description": "Drop your file here to add it as a source"
+      },
+      "progress": {
+        "upload": "Upload is in progress",
+        "training": "Training is in progress",
+        "completed": "Training completed",
+        "wait": "This may take several minutes",
+        "tokenLimit": "Over the token limit, please consider uploading smaller document"
       }
     },
     "createAPIKey": {
@@ -156,6 +179,24 @@
       "note": "Source document, personal information and further conversation will remain private",
       "create": "Create",
       "option": "Allow users to prompt further"
+    },
+    "configTool": {
+      "title": "Tool Config",
+      "type": "Type",
+      "apiKeyLabel": "API Key / OAuth",
+      "apiKeyPlaceholder": "Enter API Key / OAuth",
+      "addButton": "Add Tool",
+      "closeButton": "Close"
+    },
+    "prompts": {
+      "addPrompt": "Add Prompt",
+      "addDescription": "Add your custom prompt and save it to DocsGPT",
+      "editPrompt": "Edit Prompt",
+      "editDescription": "Edit your custom prompt and save it to DocsGPT",
+      "promptName": "Prompt Name",
+      "promptText": "Prompt Text",
+      "save": "Save",
+      "nameExists": "Name already exists"
     }
   },
   "sharedConv": {
@@ -169,20 +210,28 @@
     "rename": "Rename",
     "deleteWarning": "Are you sure you want to delete this conversation?"
   },
+  "pagination": {
+    "rowsPerPage": "Rows per page",
+    "pageOf": "Page {{currentPage}} of {{totalPages}}",
+    "firstPage": "First page",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "lastPage": "Last page"
+  },
   "conversation": {
     "copy": "Copy",
     "copied": "Copied",
     "speak": "Speak",
     "answer": "Answer",
-    "send": "Send message",
-    "loading": "Loading response",
     "edit": {
+      "update": "Update",
+      "cancel": "Cancel",
       "placeholder": "Type the updated query..."
     },
     "sources": {
       "title": "Sources",
-      "text": "Source Text",
-      "link": "Source Link",
+      "text": "Source text",
+      "link": "Source link",
       "view_more": "{{count}} more sources"
     },
     "retry": "Retry"

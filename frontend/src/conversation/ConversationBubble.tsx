@@ -130,13 +130,13 @@ const ConversationBubble = forwardRef<
                   className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] py-[10px] px-[15px] text-purple-30 max-w-full whitespace-pre-wrap leading-none"
                   onClick={() => handleEditClick()}
                 >
-                  Update
+                  {t('conversation.edit.update')}
                 </button>
                 <button
                   className="py-[10px] px-[15px]  no-underline hover:underline  text-purple-30 max-w-full whitespace-pre-wrap leading-normal"
                   onClick={() => setIsEditClicked(false)}
                 >
-                  Cancel
+                  {t('conversation.edit.cancel')}
                 </button>
               </div>
             </div>

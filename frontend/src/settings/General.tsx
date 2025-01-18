@@ -19,9 +19,12 @@ import Prompts from './Prompts';
 export default function General() {
   const {
     t,
-    i18n: { changeLanguage, language },
+    i18n: { changeLanguage },
   } = useTranslation();
-  const themes = [t('settings.general.light'), t('settings.general.dark')];
+  const themes = [
+    { value: 'Light', label: t('settings.general.light') },
+    { value: 'Dark', label: t('settings.general.dark') },
+  ];
 
   const languageOptions = [
     { label: 'English', value: 'en' },
@@ -86,10 +89,12 @@ export default function General() {
         </label>
         <Dropdown
           options={themes}
-          selectedValue={selectedTheme}
-          onSelect={(option: string) => {
-            setSelectedTheme(option);
-            option !== selectedTheme && toggleTheme();
+          selectedValue={
+            themes.find((theme) => theme.value === selectedTheme) || null
+          }
+          onSelect={(option: { value: string; label: string }) => {
+            setSelectedTheme(option.value);
+            option.value !== selectedTheme && toggleTheme();
           }}
           size="w-56"
           rounded="3xl"

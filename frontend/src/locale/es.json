@@ -61,7 +61,6 @@
       "noData": "No hay documentos existentes",
       "searchPlaceholder": "Buscar...",
       "addNew": "Agregar Nuevo",
-      "addNewTitle": "Agregar Nuevo Documento",
       "preLoaded": "Precargado",
       "private": "Privado",
       "sync": "Sincronizar",
@@ -70,7 +69,8 @@
         "daily": "Diario",
         "weekly": "Semanal",
         "monthly": "Mensual"
-      }
+      },
+      "actions": "Acciones"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -81,17 +81,40 @@
       "noData": "No hay chatbots existentes"
     },
     "analytics": {
-      "label": "Analítica"
+      "label": "Analítica",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "filterOptions": {
+        "hour": "Hora",
+        "last24Hours": "24 Horas",
+        "last7Days": "7 Días",
+        "last15Days": "15 Días",
+        "last30Days": "30 Días"
+      },
+      "messages": "Mensajes",
+      "tokenUsage": "Uso de Tokens",
+      "feedback": "Retroalimentación",
+      "filterPlaceholder": "Filtrar",
+      "none": "Ninguno",
+      "positiveFeedback": "Retroalimentación Positiva",
+      "negativeFeedback": "Retroalimentación Negativa"
     },
     "logs": {
       "label": "Registros",
       "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
       "none": "Ninguno",
-      "selectChatbotPlaceholder": "Seleccionar chatbot",
-      "apiGeneratedConversations": "Conversaciones generadas por API / chatbot"
+      "tableHeader": "Conversaciones generadas por API / chatbot"
     },
     "tools": {
-      "label": "Herramientas"
+      "label": "Herramientas",
+      "searchPlaceholder": "Buscar...",
+      "addTool": "Agregar Herramienta",
+      "noToolsFound": "No se encontraron herramientas",
+      "selectToolSetup": "Seleccione una herramienta para configurar",
+      "settingsIconAlt": "Icono de configuración",
+      "configureToolAria": "Configurar {toolName}",
+      "toggleToolAria": "Alternar {toolName}"
     }
   },
   "modals": {
@@ -113,15 +136,23 @@
       "urlLink": "Enlace URL",
       "repoUrl": "URL del Repositorio",
       "reddit": {
-        "id": "ID de Cliente",
-        "secret": "Secreto de Cliente",
-        "agent": "Agente de Usuario",
-        "searchQueries": "Consultas de Búsqueda",
-        "numberOfPosts": "Número de publicaciones"
+        "id": "ID del Cliente",
+        "secret": "Secreto del Cliente",
+        "agent": "Agente de usuario",
+        "searchQueries": "Consultas de búsqueda",
+        "numberOfPosts": "Número de publicaciones",
+        "addQuery": "Agregar Consulta"
       },
       "drag": {
-        "title": "Carga un archivo fuente",
-        "description": "Suelta tu archivo aquí para añadirlo como fuente"
+        "title": "Subir archivo fuente",
+        "description": "Arrastra tu archivo aquí para agregarlo como fuente"
+      },
+      "progress": {
+        "upload": "Subida en progreso",
+        "training": "Entrenamiento en progreso",
+        "completed": "Entrenamiento completado",
+        "wait": "Esto puede tardar varios minutos",
+        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño"
       }
     },
     "createAPIKey": {
@@ -148,6 +179,24 @@
       "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
       "create": "Crear",
       "option": "Permitir a los usuarios realizar más consultas"
+    },
+    "configTool": {
+      "title": "Configuración de la Herramienta",
+      "type": "Tipo",
+      "apiKeyLabel": "Clave API / OAuth",
+      "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
+      "addButton": "Agregar Herramienta",
+      "closeButton": "Cerrar"
+    },
+    "prompts": {
+      "addPrompt": "Agregar Prompt",
+      "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
+      "editPrompt": "Editar Prompt",
+      "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
+      "promptName": "Nombre del Prompt",
+      "promptText": "Texto del Prompt",
+      "save": "Guardar",
+      "nameExists": "El nombre ya existe"
     }
   },
   "sharedConv": {
@@ -159,7 +208,15 @@
     "share": "Compartir",
     "delete": "Eliminar",
     "rename": "Renombrar",
-    "deleteWarning": "¿Estás seguro de que deseas eliminar esta conversación?"
+    "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+  },
+  "pagination": {
+    "rowsPerPage": "Filas por página",
+    "pageOf": "Página {{currentPage}} de {{totalPages}}",
+    "firstPage": "Primera página",
+    "previousPage": "Página anterior",
+    "nextPage": "Página siguiente",
+    "lastPage": "Última página"
   },
   "conversation": {
     "copy": "Copiar",
@@ -167,13 +224,15 @@
     "speak": "Hablar",
     "answer": "Respuesta",
     "edit": {
-      "placeholder": "Escribe la consulta actualizada..."
+      "update": "Actualizar",
+      "cancel": "Cancelar",
+      "placeholder": "Ingrese la consulta actualizada..."
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Texto de la Fuente",
-      "link": "Enlace de la Fuente",
-      "view_more": "{{count}} más fuentes"
+      "text": "Texto fuente",
+      "link": "Enlace fuente",
+      "view_more": "Ver {{count}} más fuentes"
     },
     "retry": "Reintentar"
   }

@@ -10,8 +10,8 @@
   "sourceDocs": "原始文件",
   "none": "無",
   "cancel": "取消",
-  "help": "聯繫支援",
-  "emailUs": "寄送電子郵件給我們",
+  "help": "幫助",
+  "emailUs": "給我們發電郵",
   "documentation": "文件",
   "demo": [
     {
@@ -60,16 +60,17 @@
       "tokenUsage": "Token 使用量",
       "noData": "沒有現有的文件",
       "searchPlaceholder": "搜尋...",
-      "addNewTitle": "新增文件",
+      "addNew": "新增文件",
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
       "syncFrequency": {
-        "never": "永不",
-        "daily": "每日",
+        "never": "從不",
+        "daily": "每天",
         "weekly": "每週",
         "monthly": "每月"
-      }
+      },
+      "actions": "操作"
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -80,17 +81,40 @@
       "noData": "沒有現有的聊天機器人"
     },
     "analytics": {
-      "label": "分析"
+      "label": "分析",
+      "filterByChatbot": "按聊天機器人篩選",
+      "selectChatbot": "選擇聊天機器人",
+      "filterOptions": {
+        "hour": "小時",
+        "last24Hours": "24 小時",
+        "last7Days": "7 天",
+        "last15Days": "15 天",
+        "last30Days": "30 天"
+      },
+      "messages": "訊息",
+      "tokenUsage": "Token 使用量",
+      "feedback": "回饋",
+      "filterPlaceholder": "篩選",
+      "none": "無",
+      "positiveFeedback": "正向回饋",
+      "negativeFeedback": "負向回饋"
     },
     "logs": {
       "label": "日誌",
       "filterByChatbot": "按聊天機器人篩選",
+      "selectChatbot": "選擇聊天機器人",
       "none": "無",
-      "selectChatbotPlaceholder": "選擇聊天機器人",
-      "apiGeneratedConversations": "API生成/聊天機器人對話"
+      "tableHeader": "API 生成 / 聊天機器人會話"
     },
     "tools": {
-      "label": "工具"
+      "label": "工具",
+      "searchPlaceholder": "搜尋...",
+      "addTool": "新增工具",
+      "noToolsFound": "找不到工具",
+      "selectToolSetup": "選擇要設定的工具",
+      "settingsIconAlt": "設定圖標",
+      "configureToolAria": "配置 {toolName}",
+      "toggleToolAria": "切換 {toolName}"
     }
   },
   "modals": {
@@ -98,29 +122,37 @@
       "label": "上傳新文件",
       "select": "選擇如何將文件上傳到 DocsGPT",
       "file": "從檔案",
+      "remote": "遠端",
       "back": "返回",
       "wait": "請稍候...",
-      "remote": "從網站收集",
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip 檔案，大小限制為 25MB",
-      "uploadedFiles": "已上傳的檔案",
+      "info": "請上傳限制為25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip檔案",
+      "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "訓練",
       "link": "連結",
       "urlLink": "URL 連結",
       "repoUrl": "儲存庫 URL",
       "reddit": {
-        "id": "用戶端 ID",
-        "secret": "用戶端金鑰",
+        "id": "客戶端ID",
+        "secret": "客戶端密鑰",
         "agent": "使用者代理",
         "searchQueries": "搜尋查詢",
-        "numberOfPosts": "貼文數量"
+        "numberOfPosts": "貼文數量",
+        "addQuery": "新增查詢"
       },
       "drag": {
-        "title": "上傳原始檔",
-        "description": "將您的文件拖放到此處以將其添加為來源"
+        "title": "上傳來源檔案",
+        "description": "將檔案拖放到此處以新增為來源"
+      },
+      "progress": {
+        "upload": "正在上傳",
+        "training": "正在訓練",
+        "completed": "訓練完成",
+        "wait": "這可能需要幾分鐘",
+        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔"
       }
     },
     "createAPIKey": {
@@ -146,7 +178,25 @@
       "label": "建立公開頁面以分享",
       "note": "來源文件、個人資訊和後續對話將保持私密",
       "create": "建立",
-      "option": "允許用戶進行更多查詢"
+      "option": "允許使用者進行更多查詢"
+    },
+    "configTool": {
+      "title": "工具設定",
+      "type": "類型",
+      "apiKeyLabel": "API 金鑰 / OAuth",
+      "apiKeyPlaceholder": "輸入 API 金鑰 / OAuth",
+      "addButton": "新增工具",
+      "closeButton": "關閉"
+    },
+    "prompts": {
+      "addPrompt": "新增提示",
+      "addDescription": "新增自定義提示並儲存到 DocsGPT",
+      "editPrompt": "編輯提示",
+      "editDescription": "編輯自定義提示並儲存到 DocsGPT",
+      "promptName": "提示名稱",
+      "promptText": "提示文字",
+      "save": "儲存",
+      "nameExists": "名稱已存在"
     }
   },
   "sharedConv": {
@@ -160,19 +210,29 @@
     "rename": "重新命名",
     "deleteWarning": "您確定要刪除這個對話嗎？"
   },
+  "pagination": {
+    "rowsPerPage": "每頁行數",
+    "pageOf": "第 {{currentPage}} 頁，共 {{totalPages}} 頁",
+    "firstPage": "第一頁",
+    "previousPage": "上一頁",
+    "nextPage": "下一頁",
+    "lastPage": "最後一頁"
+  },
   "conversation": {
     "copy": "複製",
     "copied": "已複製",
     "speak": "朗讀",
     "answer": "回答",
     "edit": {
+      "update": "更新",
+      "cancel": "取消",
       "placeholder": "輸入更新的查詢..."
     },
     "sources": {
       "title": "來源",
       "text": "來源文字",
       "link": "來源連結",
-      "view_more": "更多{{count}}個來源"
+      "view_more": "查看更多 {{count}} 個來源"
     },
     "retry": "重試"
   }
