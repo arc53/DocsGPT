@@ -8,7 +8,7 @@ from application.llm.base import BaseLLM
 class GoogleLLM(BaseLLM):
     def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.client = genai.Client(api_key="AIzaSyDmbZX65qlQKXcvfMBkJV2KwH82_0yIMlE")
+        self.client = genai.Client(api_key=api_key)
 
     def _clean_messages_google(self, messages):
         cleaned_messages = []
