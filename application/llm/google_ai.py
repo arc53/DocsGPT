@@ -71,6 +71,9 @@ class GoogleLLM(BaseLLM):
         if formatting == "openai":
             messages = self._clean_messages_google(messages)
         config = types.GenerateContentConfig()
+        if messages[0].role == "system":
+            config.system_instruction = messages[0].parts[0].text
+            messages = messages[1:]
 
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
@@ -101,6 +104,9 @@ class GoogleLLM(BaseLLM):
         if formatting == "openai":
             cleaned_messages = self._clean_messages_google(messages)
         config = types.GenerateContentConfig()
+        if messages[0].role == "system":
+            config.system_instruction = messages[0].parts[0].text
+            messages = messages[1:]
 
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
