@@ -68,7 +68,7 @@ def gen_cache(func):
 
 
 def stream_cache(func):
-    def wrapper(self, model, messages, stream, *args, **kwargs):
+    def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
         cache_key = gen_cache_key(messages)
         logger.info(f"Stream cache key: {cache_key}")
 

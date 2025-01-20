@@ -61,14 +61,19 @@ class GoogleLLMHandler(LLMHandler):
                         tool_response, call_id = agent._execute_tool_action(
                             tools_dict, part.function_call
                         )
-
                         function_response_part = types.Part.from_function_response(
                             name=part.function_call.name,
                             response={"result": tool_response},
                         )
-                        messages.append({"role": "model", "content": [part]})
+
                         messages.append(
-                            {"role": "tool", "content": [function_response_part]}
+                            {"role": "model", "content": [part.to_json_dict()]}
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "content": [function_response_part.to_json_dict()],
+                            }
                         )
 
                 if (
