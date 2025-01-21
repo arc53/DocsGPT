@@ -33,7 +33,7 @@ def gen_cache_key(messages, model="docgpt", tools=None):
     if not all(isinstance(msg, dict) for msg in messages):
         raise ValueError("All messages must be dictionaries.")
     messages_str = json.dumps(messages)
-    tools_str = json.dumps(tools) if tools else ""
+    tools_str = json.dumps(str(tools)) if tools else ""
     combined = f"{model}_{messages_str}_{tools_str}"
     cache_key = get_hash(combined)
     return cache_key
