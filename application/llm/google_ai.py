@@ -17,6 +17,9 @@ class GoogleLLM(BaseLLM):
             role = message.get("role")
             content = message.get("content")
 
+            if role == "assistant":
+                role = "model"
+
             parts = []
             if role and content is not None:
                 if isinstance(content, str):
