@@ -1,7 +1,6 @@
 from google import genai
 from google.genai import types
 
-from application.core.settings import settings
 from application.llm.base import BaseLLM
 
 
