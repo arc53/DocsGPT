@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import Exit from '../assets/exit.svg';
 import Input from '../components/Input';
@@ -17,6 +18,7 @@ export default function ConfigToolModal({
   tool: AvailableTool | null;
   getUserTools: () => void;
 }) {
+  const { t } = useTranslation();
   const [authKey, setAuthKey] = React.useState<string>('');
 
   const handleAddTool = (tool: AvailableTool) => {
@@ -52,21 +54,22 @@ export default function ConfigToolModal({
           </button>
           <div className="p-6">
             <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
-              Tool Config
+              {t('modals.configTool.title')}
             </h2>
             <p className="mt-5 text-sm text-gray-600 dark:text-gray-400 px-3">
-              Type: <span className="font-semibold">{tool?.name} </span>
+              {t('modals.configTool.type')}:{' '}
+              <span className="font-semibold">{tool?.name} </span>
             </p>
             <div className="mt-6 relative px-3">
               <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
-                API Key / Oauth
+                {t('modals.configTool.apiKeyLabel')}
               </span>
               <Input
                 type="text"
                 value={authKey}
                 onChange={(e) => setAuthKey(e.target.value)}
                 borderVariant="thin"
-                placeholder="Enter API Key / Oauth"
+                placeholder={t('modals.configTool.apiKeyPlaceholder')}
               ></Input>
             </div>
             <div className="mt-8 flex flex-row-reverse gap-1 px-3">
@@ -76,7 +79,7 @@ export default function ConfigToolModal({
                 }}
                 className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
               >
-                Add Tool
+                {t('modals.configTool.addButton')}
               </button>
               <button
                 onClick={() => {
@@ -84,7 +87,7 @@ export default function ConfigToolModal({
                 }}
                 className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
               >
-                Close
+                {t('modals.configTool.closeButton')}
               </button>
             </div>
           </div>

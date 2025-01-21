@@ -19,35 +19,20 @@ import Prompts from './Prompts';
 export default function General() {
   const {
     t,
-    i18n: { changeLanguage, language },
+    i18n: { changeLanguage },
   } = useTranslation();
-  const themes = ['Light', 'Dark'];
+  const themes = [
+    { value: 'Light', label: t('settings.general.light') },
+    { value: 'Dark', label: t('settings.general.dark') },
+  ];
 
   const languageOptions = [
-    {
-      label: 'English',
-      value: 'en',
-    },
-    {
-      label: 'Spanish',
-      value: 'es',
-    },
-    {
-      label: 'Japanese',
-      value: 'jp',
-    },
-    {
-      label: 'Mandarin',
-      value: 'zh',
-    },
-    {
-      label: 'Traditional Chinese',
-      value: 'zhTW',
-    },
-    {
-      label: 'Russian',
-      value: 'ru',
-    },
+    { label: 'English', value: 'en' },
+    { label: 'Español', value: 'es' },
+    { label: '日本語', value: 'jp' },
+    { label: '普通话', value: 'zh' },
+    { label: '繁體中文（臺灣）', value: 'zhTW' },
+    { label: 'Русский', value: 'ru' },
   ];
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([
@@ -99,15 +84,17 @@ export default function General() {
   return (
     <div className="mt-12">
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <label className="block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}
-        </p>
+        </label>
         <Dropdown
           options={themes}
-          selectedValue={selectedTheme}
-          onSelect={(option: string) => {
-            setSelectedTheme(option);
-            option !== selectedTheme && toggleTheme();
+          selectedValue={
+            themes.find((theme) => theme.value === selectedTheme) || null
+          }
+          onSelect={(option: { value: string; label: string }) => {
+            setSelectedTheme(option.value);
+            option.value !== selectedTheme && toggleTheme();
           }}
           size="w-56"
           rounded="3xl"
@@ -115,9 +102,9 @@ export default function General() {
         />
       </div>
       <div className="mb-5">
-        <p className="mb-2 font-bold text-jet dark:text-bright-gray">
+        <label className="block mb-2 font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectLanguage')}
-        </p>
+        </label>
         <Dropdown
           options={languageOptions.filter(
             (languageOption) =>
@@ -133,9 +120,9 @@ export default function General() {
         />
       </div>
       <div className="mb-5">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <label className="block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.chunks')}
-        </p>
+        </label>
         <Dropdown
           options={chunks}
           selectedValue={selectedChunks}
@@ -146,9 +133,9 @@ export default function General() {
         />
       </div>
       <div className="mb-5">
-        <p className="mb-2 font-bold text-jet dark:text-bright-gray">
+        <label className="mb-2 block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.convHistory')}
-        </p>
+        </label>
         <Dropdown
           options={Array.from(token_limits, ([value, desc]) => ({
             value: value,
@@ -181,16 +168,14 @@ export default function General() {
         />
       </div>
       <div className="w-56">
-        <p className="font-bold text-jet dark:text-bright-gray">
+        <label className="block font-bold text-jet dark:text-bright-gray">
           {t('settings.general.deleteAllLabel')}
-        </p>
+        </label>
         <button
-          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl  border border-solid border-red-500 px-5 py-3 text-red-500 hover:bg-red-500 hover:text-white"
+          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl border border-solid border-red-700 px-5 py-3 text-red-700 transition-colors hover:bg-red-700 hover:text-white dark:border-red-600 dark:text-red-600 dark:hover:bg-red-600 dark:hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
-          <span className="overflow-hidden text-ellipsis ">
-            {t('settings.general.deleteAllBtn')}
-          </span>
+          {t('settings.general.deleteAllBtn')}
         </button>
       </div>
     </div>

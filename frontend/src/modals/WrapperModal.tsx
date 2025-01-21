@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { WrapperModalProps } from './types';
-import Exit from '../assets/exit.svg';
 
-const WrapperModal: React.FC<WrapperModalProps> = ({
+import Exit from '../assets/exit.svg';
+import { WrapperModalProps } from './types';
+
+export default function WrapperModal({
   children,
   close,
   isPerformingTask,
-}) => {
+}: WrapperModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,10 +40,13 @@ const WrapperModal: React.FC<WrapperModalProps> = ({
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
       <div
         ref={modalRef}
-        className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]"
+        className="relative w-11/12 rounded-2xl bg-white dark:bg-outer-space sm:w-[512px] p-8"
       >
         {!isPerformingTask && (
-          <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
+          <button
+            className="absolute top-3 right-4 m-2 w-3 z-50"
+            onClick={close}
+          >
             <img className="filter dark:invert" src={Exit} />
           </button>
         )}
@@ -50,6 +54,4 @@ const WrapperModal: React.FC<WrapperModalProps> = ({
       </div>
     </div>
   );
-};
-
-export default WrapperModal;
+}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import SingleArrowLeft from '../assets/single-left-arrow.svg';
 import SingleArrowRight from '../assets/single-right-arrow.svg';
 import DoubleArrowLeft from '../assets/double-arrow-left.svg';
@@ -19,6 +20,7 @@ const Pagination: React.FC<PaginationProps> = ({
   onPageChange,
   onRowsPerPageChange,
 }) => {
+  const { t } = useTranslation();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const rowsPerPageOptions = [5, 10, 20, 50];
 
@@ -53,7 +55,9 @@ const Pagination: React.FC<PaginationProps> = ({
     <div className="flex items-center text-xs justify-end gap-4 mt-2 p-2 border-gray-200">
       {/* Rows per page dropdown */}
       <div className="flex items-center gap-2 relative">
-        <span className="text-gray-900 dark:text-gray-50">Rows per page:</span>
+        <span className="text-gray-900 dark:text-gray-50">
+          {t('pagination.rowsPerPage')}:
+        </span>
         <div className="relative">
           <button
             onClick={toggleDropdown}
@@ -87,7 +91,7 @@ const Pagination: React.FC<PaginationProps> = ({
 
       {/* Pagination controls */}
       <div className="text-gray-900 dark:text-gray-50">
-        Page {currentPage} of {totalPages}
+        {t('pagination.pageOf', { currentPage, totalPages })}
       </div>
       <div className="flex items-center gap-2 text-gray-900 dark:text-gray-50">
         <button
@@ -97,7 +101,7 @@ const Pagination: React.FC<PaginationProps> = ({
         >
           <img
             src={DoubleArrowLeft}
-            alt="First page"
+            alt={t('pagination.firstPage')}
             className="dark:invert dark:sepia dark:brightness-200"
           />
         </button>
@@ -108,7 +112,7 @@ const Pagination: React.FC<PaginationProps> = ({
         >
           <img
             src={SingleArrowLeft}
-            alt="Previous page"
+            alt={t('pagination.previousPage')}
             className="dark:invert dark:sepia dark:brightness-200"
           />
         </button>
@@ -119,7 +123,7 @@ const Pagination: React.FC<PaginationProps> = ({
         >
           <img
             src={SingleArrowRight}
-            alt="Next page"
+            alt={t('pagination.nextPage')}
             className="dark:invert dark:sepia dark:brightness-200"
           />
         </button>
@@ -130,7 +134,7 @@ const Pagination: React.FC<PaginationProps> = ({
         >
           <img
             src={DoubleArrowRight}
-            alt="Last page"
+            alt={t('pagination.lastPage')}
             className="dark:invert dark:sepia dark:brightness-200"
           />
         </button>

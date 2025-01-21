@@ -2,6 +2,7 @@ import { ActiveState } from '../models/misc';
 import Exit from '../assets/exit.svg';
 import Input from '../components/Input';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 function AddPrompt({
   setModalState,
@@ -20,6 +21,8 @@ function AddPrompt({
   setNewPromptContent: (content: string) => void;
   disableSave: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="relative">
       <button
@@ -29,19 +32,23 @@ function AddPrompt({
           setNewPromptName('');
           setNewPromptContent('');
         }}
+        aria-label="Close add prompt modal"
       >
-        <img className="filter dark:invert" src={Exit} />
+        <img className="filter dark:invert" src={Exit} alt="Close modal" />
       </button>
       <div className="p-8">
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
-          Add Prompt
+          {t('modals.prompts.addPrompt')}
         </p>
         <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
-          Add your custom prompt and save it to DocsGPT
+          {t('modals.prompts.addDescription')}
         </p>
         <div>
+          <label htmlFor="new-prompt-name" className="sr-only">
+            Prompt Name
+          </label>
           <Input
-            placeholder="Prompt Name"
+            placeholder={t('modals.prompts.promptName')}
             type="text"
             className="h-10 rounded-lg"
             value={newPromptName}
@@ -49,18 +56,23 @@ function AddPrompt({
           />
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
-              Prompt Name
+              {t('modals.prompts.promptName')}
             </span>
           </div>
           <div className="relative top-[7px] left-3">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
-              Prompt Text
+              {t('modals.prompts.promptText')}
             </span>
           </div>
+          <label htmlFor="new-prompt-content" className="sr-only">
+            Prompt Text
+          </label>
           <textarea
+            id="new-prompt-content"
             className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
+            aria-label="Prompt Text"
           ></textarea>
         </div>
         <div className="mt-6 flex flex-row-reverse">
@@ -68,9 +80,11 @@ function AddPrompt({
             onClick={handleAddPrompt}
             className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:opacity-90"
             disabled={disableSave}
-            title={disableSave && newPromptName ? 'Name already exists' : ''}
+            title={
+              disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
+            }
           >
-            Save
+            {t('modals.prompts.save')}
           </button>
         </div>
       </div>
@@ -97,6 +111,8 @@ function EditPrompt({
   currentPromptEdit: { name: string; id: string; type: string };
   disableSave: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="relative">
       <button
@@ -104,38 +120,47 @@ function EditPrompt({
         onClick={() => {
           setModalState('INACTIVE');
         }}
+        aria-label="Close edit prompt modal"
       >
-        <img className="filter dark:invert" src={Exit} />
+        <img className="filter dark:invert" src={Exit} alt="Close modal" />
       </button>
       <div className="p-8">
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
-          Edit Prompt
+          {t('modals.prompts.editPrompt')}
         </p>
         <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
-          Edit your custom prompt and save it to DocsGPT
+          {t('modals.prompts.editDescription')}
         </p>
         <div>
+          <label htmlFor="edit-prompt-name" className="sr-only">
+            Prompt Name
+          </label>
           <Input
-            placeholder="Prompt Name"
+            placeholder={t('modals.prompts.promptName')}
             type="text"
             className="h-10 rounded-lg"
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
-          ></Input>
+          />
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
-              Prompt Name
+              {t('modals.prompts.promptName')}
             </span>
           </div>
           <div className="relative top-[7px] left-3">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
-              Prompt Text
+              {t('modals.prompts.promptText')}
             </span>
           </div>
+          <label htmlFor="edit-prompt-content" className="sr-only">
+            Prompt Text
+          </label>
           <textarea
+            id="edit-prompt-content"
             className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
+            aria-label="Prompt Text"
           ></textarea>
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">
@@ -150,9 +175,13 @@ function EditPrompt({
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
             disabled={currentPromptEdit.type === 'public' || disableSave}
-            title={disableSave && editPromptName ? 'Name already exists' : ''}
+            title={
+              disableSave && editPromptName
+                ? t('modals.prompts.nameExists')
+                : ''
+            }
           >
-            Save
+            {t('modals.prompts.save')}
           </button>
         </div>
       </div>

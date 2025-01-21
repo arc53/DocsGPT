@@ -45,6 +45,8 @@ const userService = {
     apiClient.post(endpoints.USER.UPDATE_TOOL_STATUS, data),
   updateTool: (data: any): Promise<any> =>
     apiClient.post(endpoints.USER.UPDATE_TOOL, data),
+  deleteTool: (data: any): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_TOOL, data),
 };
 
 export default userService;

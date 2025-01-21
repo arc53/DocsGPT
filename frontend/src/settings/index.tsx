@@ -91,8 +91,8 @@ export default function Settings() {
       case 'Widgets':
         return (
           <Widgets
-            widgetScreenshot={widgetScreenshot} // Add this line
-            onWidgetScreenshotChange={updateWidgetScreenshot} // Add this line
+            widgetScreenshot={widgetScreenshot}
+            onWidgetScreenshotChange={updateWidgetScreenshot}
           />
         );
       case t('settings.apiKeys.label'):

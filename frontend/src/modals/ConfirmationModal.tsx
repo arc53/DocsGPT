@@ -1,7 +1,9 @@
-import { ActiveState } from '../models/misc';
 import { useTranslation } from 'react-i18next';
+
+import { ActiveState } from '../models/misc';
 import WrapperModal from './WrapperModal';
-function ConfirmationModal({
+
+export default function ConfirmationModal({
   message,
   modalState,
   setModalState,
@@ -29,7 +31,7 @@ function ConfirmationModal({
           }}
         >
           <div className="relative">
-            <div className="p-8">
+            <div>
               <p className="font-base mb-1 w-[90%] text-lg text-jet dark:text-bright-gray">
                 {message}
               </p>
@@ -59,5 +61,3 @@ function ConfirmationModal({
     </>
   );
 }
-
-export default ConfirmationModal;

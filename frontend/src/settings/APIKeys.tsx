@@ -115,12 +115,20 @@ export default function APIKeys() {
                     <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
                       <thead>
                         <tr className="text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
-                          <th className="p-2">{t('settings.apiKeys.name')}</th>
-                          <th className="p-2">
+                          <th scope="col" className="p-2">
+                            {t('settings.apiKeys.name')}
+                          </th>
+                          <th scope="col" className="p-2">
                             {t('settings.apiKeys.sourceDoc')}
                           </th>
-                          <th className="p-2">{t('settings.apiKeys.key')}</th>
-                          <th></th>
+                          <th scope="col" className="p-2">
+                            {t('settings.apiKeys.key')}
+                          </th>
+                          <th
+                            scope="col"
+                            className="p-2"
+                            aria-label="Actions"
+                          ></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
@@ -146,7 +154,7 @@ export default function APIKeys() {
                               <td>
                                 <img
                                   src={Trash}
-                                  alt="Delete"
+                                  alt={`Delete ${element.name}`}
                                   className="h-4 w-4 cursor-pointer hover:opacity-50"
                                   id={`img-${index}`}
                                   onClick={() => handleDeleteKey(element.id)}
