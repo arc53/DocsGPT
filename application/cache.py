@@ -69,7 +69,7 @@ def gen_cache(func):
 
 def stream_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
-        cache_key = gen_cache_key(messages)
+        cache_key = gen_cache_key(messages, model, tools)
         logger.info(f"Stream cache key: {cache_key}")
 
         redis_client = get_redis_instance()
@@ -86,7 +86,7 @@ def stream_cache(func):
             except redis.ConnectionError as e:
                 logger.error(f"Redis connection error: {e}")
 
-        result = func(self, model, messages, stream, *args, **kwargs)
+        result = func(self, model, messages, stream, tools=tools, *args, **kwargs)
         stream_cache_data = []
 
         for chunk in result:
