@@ -33,7 +33,7 @@ def gen_cache_key(messages, model="docgpt", tools=None):
     if not all(isinstance(msg, dict) for msg in messages):
         raise ValueError("All messages must be dictionaries.")
     messages_str = json.dumps(messages)
-    tools_str = json.dumps(tools) if tools else ""
+    tools_str = json.dumps(str(tools)) if tools else ""
     combined = f"{model}_{messages_str}_{tools_str}"
     cache_key = get_hash(combined)
     return cache_key
@@ -68,8 +68,8 @@ def gen_cache(func):
 
 
 def stream_cache(func):
-    def wrapper(self, model, messages, stream, *args, **kwargs):
-        cache_key = gen_cache_key(messages)
+    def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
+        cache_key = gen_cache_key(messages, model, tools)
         logger.info(f"Stream cache key: {cache_key}")
 
         redis_client = get_redis_instance()
@@ -86,7 +86,7 @@ def stream_cache(func):
             except redis.ConnectionError as e:
                 logger.error(f"Redis connection error: {e}")
 
-        result = func(self, model, messages, stream, *args, **kwargs)
+        result = func(self, model, messages, stream, tools=tools, *args, **kwargs)
         stream_cache_data = []
 
         for chunk in result:

@@ -74,12 +74,10 @@ class BraveRetSearch(BaseRetriever):
         if len(self.chat_history) > 1:
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
-                        messages_combine.append(
-                            {"role": "user", "content": i["prompt"]}
-                        )
-                        messages_combine.append(
-                            {"role": "system", "content": i["response"]}
-                        )
+                    messages_combine.append({"role": "user", "content": i["prompt"]})
+                    messages_combine.append(
+                        {"role": "assistant", "content": i["response"]}
+                    )
         messages_combine.append({"role": "user", "content": self.question})
 
         llm = LLMCreator.create_llm(

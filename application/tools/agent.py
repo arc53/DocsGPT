@@ -1,8 +1,7 @@
-import json
-import logging
-
 from application.core.mongo_db import MongoDB
 from application.llm.llm_creator import LLMCreator
+from application.tools.llm_handler import get_llm_handler
+from application.tools.tool_action_parser import ToolActionParser
 from application.tools.tool_manager import ToolManager
 
 
@@ -12,6 +11,7 @@ class Agent:
         self.llm = LLMCreator.create_llm(
             llm_name, api_key=api_key, user_api_key=user_api_key
         )
+        self.llm_handler = get_llm_handler(llm_name)
         self.gpt_model = gpt_model
         # Static tool configuration (to be replaced later)
         self.tools = []
@@ -61,10 +61,8 @@ class Agent:
         ]
 
     def _execute_tool_action(self, tools_dict, call):
-        call_id = call.id
-        call_args = json.loads(call.function.arguments)
-        tool_id = call.function.name.split("_")[-1]
-        action_name = call.function.name.rsplit("_", 1)[0]
+        parser = ToolActionParser(self.llm.__class__.__name__)
+        tool_id, action_name, call_args = parser.parse_args(call)
 
         tool_data = tools_dict[tool_id]
         action_data = next(
@@ -78,26 +76,9 @@ class Agent:
         tm = ToolManager(config={})
         tool = tm.load_tool(tool_data["name"], tool_config=tool_data["config"])
         print(f"Executing tool: {action_name} with args: {call_args}")
-        return tool.execute_action(action_name, **call_args), call_id
-
-    def _execute_tool_action_google(self, tools_dict, call):
-        call_args = json.loads(call.args)
-        tool_id = call.name.split("_")[-1]
-        action_name = call.name.rsplit("_", 1)[0]
-
-        tool_data = tools_dict[tool_id]
-        action_data = next(
-            action for action in tool_data["actions"] if action["name"] == action_name
-        )
-
-        for param, details in action_data["parameters"]["properties"].items():
-            if param not in call_args and "value" in details:
-                call_args[param] = details["value"]
-
-        tm = ToolManager(config={})
-        tool = tm.load_tool(tool_data["name"], tool_config=tool_data["config"])
-        print(f"Executing tool: {action_name} with args: {call_args}")
-        return tool.execute_action(action_name, **call_args)
+        result = tool.execute_action(action_name, **call_args)
+        call_id = getattr(call, "id", None)
+        return result, call_id
 
     def _simple_tool_agent(self, messages):
         tools_dict = self._get_user_tools()
@@ -108,55 +89,15 @@ class Agent:
         if isinstance(resp, str):
             yield resp
             return
-        if resp.message.content:
+        if hasattr(resp, "message") and hasattr(resp.message, "content"):
             yield resp.message.content
             return
-        # check if self.llm class is GoogleLLM
-        while self.llm.__class__.__name__ == "GoogleLLM" and resp.content.parts[0].function_call:
-            from google.genai import types
 
-            function_call_part = resp.candidates[0].content.parts[0]
-            tool_response = self._execute_tool_action_google(tools_dict, function_call_part.function_call)
-            function_response_part = types.Part.from_function_response(
-                name=function_call_part.function_call.name,
-                response=tool_response
-            )
+        resp = self.llm_handler.handle_response(self, resp, tools_dict, messages)
 
-        while self.llm.__class__.__name__ == "OpenAILLM" and resp.finish_reason == "tool_calls":
-            message = json.loads(resp.model_dump_json())["message"]
-            keys_to_remove = {"audio", "function_call", "refusal"}
-            filtered_data = {
-                k: v for k, v in message.items() if k not in keys_to_remove
-            }
-            messages.append(filtered_data)
-            tool_calls = resp.message.tool_calls
-            for call in tool_calls:
-                try:
-                    tool_response, call_id = self._execute_tool_action(tools_dict, call)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "content": str(tool_response),
-                            "tool_call_id": call_id,
-                        }
-                    )
-                except Exception as e:
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "content": f"Error executing tool: {str(e)}",
-                            "tool_call_id": call.id,
-                        }
-                    )
-            # Generate a new response from the LLM after processing tools
-            resp = self.llm.gen(
-                model=self.gpt_model, messages=messages, tools=self.tools
-            )
-
-        # If no tool calls are needed, generate the final response
         if isinstance(resp, str):
             yield resp
-        elif resp.message.content:
+        elif hasattr(resp, "message") and hasattr(resp.message, "content"):
             yield resp.message.content
         else:
             completion = self.llm.gen_stream(
@@ -168,7 +109,6 @@ class Agent:
         return
 
     def gen(self, messages):
-        # Generate initial response from the LLM
         if self.llm.supports_tools():
             resp = self._simple_tool_agent(messages)
             for line in resp:
