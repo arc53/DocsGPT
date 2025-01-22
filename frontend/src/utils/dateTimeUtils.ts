@@ -1,20 +1,39 @@
 export function formatDate(dateString: string): string {
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateString)) {
-    const dateTime = new Date(dateString);
-    return dateTime.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } else if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(dateString)) {
-    const dateTime = new Date(dateString);
-    return dateTime.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+  try {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } else {
+
+    if (isNaN(date.getTime())) {
+      throw new Error('Invalid date');
+    }
+
+    const userLocale = navigator.language || 'en-US';
+    const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    const weekday = date.toLocaleDateString(userLocale, {
+      weekday: 'short',
+      timeZone: userTimezone,
+    });
+
+    const monthDay = date.toLocaleDateString(userLocale, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: userTimezone,
+    });
+
+    const time = date
+      .toLocaleTimeString(userLocale, {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: userTimezone,
+      })
+      .replace(/am|pm/i, (match) => match.toUpperCase());
+
+    return `${weekday}, ${monthDay} ${time}`;
+  } catch (error) {
+    console.error('Error formatting date:', error);
     return dateString;
   }
 }
