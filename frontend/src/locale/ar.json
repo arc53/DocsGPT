@@ -1,0 +1,191 @@
+{
+    "language": "العربية",
+    "chat": "دردشة",
+    "chats": "الدردشات",
+    "newChat": "دردشة جديدة",
+    "myPlan": "خطتي",
+    "about": "حول",
+    "inputPlaceholder": "اكتب رسالتك هنا...",
+    "tagline": "يستخدم DocsGPT الذكاء الاصطناعي التوليدي، يرجى مراجعة المعلومات الحساسة باستخدام المصادر.",
+    "sourceDocs": "المصدر",
+    "none": "لا شيء",
+    "cancel": "إلغاء",
+    "help": "مساعدة",
+    "emailUs": "راسلنا عبر البريد الإلكتروني",
+    "documentation": "التوثيق",
+    "demo": [
+      {
+        "header": "تعرّف على DocsGPT",
+        "query": "ما هو DocsGPT؟"
+      },
+      {
+        "header": "لخّص الوثائق",
+        "query": "لخّص السياق الحالي"
+      },
+      {
+        "header": "اكتب كود",
+        "query": "اكتب كود طلب واجهة برمجة التطبيقات إلى /api/answer"
+      },
+      {
+        "header": "مساعدة في التعلم",
+        "query": "اكتب أسئلة محتملة بناءً على السياق"
+      }
+    ],
+    "settings": {
+      "label": "الإعدادات",
+      "general": {
+        "label": "عام",
+        "selectTheme": "اختر السمة",
+        "light": "فاتح",
+        "dark": "داكن",
+        "selectLanguage": "اختر اللغة",
+        "chunks": "عدد الأجزاء المعالجة لكل استفسار",
+        "prompt": "النموذج النشط",
+        "deleteAllLabel": "حذف كل المحادثات",
+        "deleteAllBtn": "حذف الكل",
+        "addNew": "إضافة جديد",
+        "convHistory": "سجل المحادثات",
+        "none": "لا شيء",
+        "low": "منخفض",
+        "medium": "متوسط",
+        "high": "مرتفع",
+        "unlimited": "غير محدود",
+        "default": "افتراضي"
+      },
+      "documents": {
+        "label": "الوثائق",
+        "name": "اسم الوثيقة",
+        "date": "تاريخ الفهرسة",
+        "type": "النوع",
+        "tokenUsage": "استخدام الرموز",
+        "noData": "لا توجد وثائق مسجلة",
+        "searchPlaceholder": "بحث...",
+        "addNew": "إضافة جديد",
+        "addNewTitle": "إضافة وثيقة جديدة",
+        "preLoaded": "محملة مسبقًا",
+        "private": "خاص",
+        "sync": "مزامنة",
+        "syncFrequency": {
+          "never": "أبدًا",
+          "daily": "يوميًا",
+          "weekly": "أسبوعيًا",
+          "monthly": "شهريًا"
+        },
+        "actions": "الإجراءات"
+      },
+      "apiKeys": {
+        "label": "الدردشات الآلية",
+        "name": "الاسم",
+        "key": "مفتاح API",
+        "sourceDoc": "الوثيقة المصدر",
+        "createNew": "إنشاء جديد",
+        "noData": "لا توجد دردشات آلية"
+      },
+      "analytics": {
+        "label": "التحليلات"
+      },
+      "logs": {
+        "label": "السجلات",
+        "filterByChatbot": "تصفية حسب الدردشة الآلية",
+        "none": "لا شيء",
+        "selectChatbotPlaceholder": "اختر الدردشة الآلية",
+        "apiGeneratedConversations": "المحادثات الناتجة عن واجهة API / الدردشة الآلية"
+      },
+      "tools": {
+        "label": "الأدوات",
+        "searchPlaceholder": "ابحث عن الأدوات...",
+        "addTool": "إضافة أداة",
+        "noToolsFound": "لم يتم العثور على أدوات",
+        "settingsIconAlt": "أيقونة الإعدادات",
+        "configureToolAria": "تهيئة {toolName}",
+        "toggleToolAria": "تبديل {toolName}",
+        "selectToolSetup": "اختر أداة لإعدادها"
+      }
+    },
+    "modals": {
+      "uploadDoc": {
+        "label": "رفع وثيقة جديدة",
+        "select": "اختر طريقة رفع وثيقتك في DocsGPT",
+        "file": "رفع من الجهاز",
+        "back": "رجوع",
+        "wait": "يرجى الانتظار...",
+        "remote": "جمع من الموقع",
+        "start": "ابدأ الدردشة",
+        "name": "الاسم",
+        "choose": "اختر الملفات",
+        "info": "يرجى رفع ملفات بصيغة .pdf، .txt، .rst، .csv، .xlsx، .docx، .md، .html، .epub، .json، .pptx، .zip بحد أقصى 25 ميغابايت",
+        "uploadedFiles": "الملفات المرفوعة",
+        "cancel": "إلغاء",
+        "train": "تدريب",
+        "link": "الرابط",
+        "urlLink": "رابط URL",
+        "repoUrl": "رابط المستودع",
+        "reddit": {
+          "id": "معرف العميل (Client ID)",
+          "secret": "السر الخاص بالعميل (Client Secret)",
+          "agent": "اسم مستخدم العميل (User Agent)",
+          "searchQueries": "استعلامات البحث",
+          "numberOfPosts": "عدد المشاركات"
+        },
+        "drag": {
+          "title": "ارفع ملف مصدر",
+          "description": "اسحب ملفك هنا لإضافته كمصدر"
+        }
+      },
+      "createAPIKey": {
+        "label": "إنشاء مفتاح API جديد",
+        "apiKeyName": "اسم مفتاح API",
+        "chunks": "عدد الأجزاء المعالجة لكل استفسار",
+        "prompt": "اختر النموذج النشط",
+        "sourceDoc": "الوثيقة المصدر",
+        "create": "إنشاء"
+      },
+      "saveKey": {
+        "note": "يرجى حفظ مفتاحك",
+        "disclaimer": "هذه هي المرة الوحيدة التي سيُعرض فيها المفتاح.",
+        "copy": "نسخ",
+        "copied": "تم النسخ",
+        "confirm": "حفظتُ المفتاح"
+      },
+      "deleteConv": {
+        "confirm": "هل أنت متأكد أنك تريد حذف جميع المحادثات؟",
+        "delete": "حذف"
+      },
+      "shareConv": {
+        "label": "أنشئ صفحة عامة للمشاركة",
+        "note": "ستبقى الوثيقة المصدر والمعلومات الشخصية وأي محادثات لاحقة خاصة",
+        "create": "إنشاء",
+        "option": "السماح للمستخدمين بإضافة استفسارات أخرى"
+      }
+    },
+    "sharedConv": {
+      "subtitle": "تم الإنشاء بواسطة",
+      "button": "ابدأ باستخدام DocsGPT",
+      "meta": "يستخدم DocsGPT الذكاء الاصطناعي التوليدي، يرجى التحقق من المعلومات الحساسة بالاعتماد على المصادر."
+    },
+    "convTile": {
+      "share": "مشاركة",
+      "delete": "حذف",
+      "rename": "إعادة تسمية",
+      "deleteWarning": "هل أنت متأكد أنك تريد حذف هذه المحادثة؟"
+    },
+    "conversation": {
+      "copy": "نسخ",
+      "copied": "تم النسخ",
+      "speak": "تحدث",
+      "answer": "إجابة",
+      "send": "إرسال الرسالة",
+      "loading": "جاري تحميل الرد...",
+      "edit": {
+        "placeholder": "اكتب الاستفسار المعدل..."
+      },
+      "sources": {
+        "title": "المصادر",
+        "text": "النص الأصلي",
+        "link": "رابط المصدر",
+        "view_more": "{{count}} مصدر إضافي"
+      },
+      "retry": "إعادة المحاولة"
+    }
+  }
+  
