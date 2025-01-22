@@ -53,7 +53,8 @@
       "default": "默认"
     },
     "documents": {
-      "label": "文件",
+      "title": "此表格包含所有可供您使用的文档以及您上传的文档",
+      "label": "文档",
       "name": "文件名称",
       "date": "向量日期",
       "type": "类型",
@@ -111,7 +112,7 @@
       "searchPlaceholder": "搜索...",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
-      "selectToolSetup": "选择要设置的工具" ,
+      "selectToolSetup": "选择要设置的工具",
       "settingsIconAlt": "设置图标",
       "configureToolAria": "配置 {toolName}",
       "toggleToolAria": "切换 {toolName}"

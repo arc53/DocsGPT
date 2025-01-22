@@ -53,6 +53,7 @@
       "default": "Default"
     },
     "documents": {
+      "title": "This table contains all the documents that are available to you and those you have uploaded",
       "label": "Documents",
       "name": "Document Name",
       "date": "Vector Date",

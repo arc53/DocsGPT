@@ -16,6 +16,7 @@ import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import { setPaginatedDocuments } from '../preferences/preferenceSlice';
 import { truncate } from '../utils/stringUtils';
+import { formatDate } from '../utils/dateTimeUtils';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -85,6 +86,7 @@ const Documents: React.FC<DocumentsProps> = ({
         setSortField(newSortField);
         setSortOrder(newSortOrder);
       }
+
       setLoading(true);
       getDocsWithPagination(
         newSortField,
@@ -110,7 +112,6 @@ const Documents: React.FC<DocumentsProps> = ({
     userService
       .manageSync({ source_id: doc.id, sync_frequency })
       .then(() => {
-        // First, fetch the updated source docs
         return getDocs();
       })
       .then((data) => {
@@ -136,206 +137,186 @@ const Documents: React.FC<DocumentsProps> = ({
 
   useEffect(() => {
     if (modalState === 'INACTIVE') {
-      refreshDocs(sortField, currentPage, rowsPerPage);
+      refreshDocs(undefined, currentPage, rowsPerPage);
     }
   }, [modalState]);
 
   useEffect(() => {
-    // undefine to prevent reset the sort order
     refreshDocs(undefined, 1, rowsPerPage);
   }, [searchTerm]);
 
   return (
     <div className="mt-8">
       <div className="flex flex-col relative">
-        <div className="z-10 w-full overflow-x-auto">
-          <div className="my-3 flex justify-between items-center">
-            <div className="p-1">
-              <label htmlFor="document-search-input" className="sr-only">
-                {t('settings.documents.searchPlaceholder')}
-              </label>
-              <Input
-                maxLength={256}
-                placeholder={t('settings.documents.searchPlaceholder')}
-                name="Document-search-input"
-                type="text"
-                id="document-search-input"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-            </div>
-            <button
-              className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
-              title={t('settings.documents.addNew')}
-              onClick={() => {
-                setIsOnboarding(false);
-                setModalState('ACTIVE');
-              }}
-            >
-              {t('settings.documents.addNew')}
-            </button>
-          </div>
-          {loading ? (
-            <SkeletonLoader count={1} />
-          ) : (
-            <div className="flex flex-col">
-              <div className="flex-grow">
-                <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
-                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40 text-xs sm:text-sm ">
-                    <thead>
-                      <tr className="text-nowrap">
-                        <th className="px-5 py-3 text-start font-medium text-gray-700 dark:text-gray-50 uppercase w-96">
-                          {t('settings.documents.name')}
-                        </th>
-                        <th className="px-5 py-3 text-start font-medium text-gray-700 dark:text-gray-50 uppercase">
-                          <div className="flex justify-center items-center">
-                            {t('settings.documents.date')}
-                            <img
-                              className="cursor-pointer"
-                              onClick={() => refreshDocs('date')}
-                              src={caretSort}
-                              alt="sort"
-                            />
-                          </div>
-                        </th>
-                        <th
-                          scope="col"
-                          className="px-5 py-2 text-center font-medium text-gray-700 dark:text-gray-50 uppercase"
-                        >
-                          <div className="flex justify-center items-center">
-                            {t('settings.documents.tokenUsage')}
-                            <img
-                              className="cursor-pointer"
-                              onClick={() => refreshDocs('tokens')}
-                              src={caretSort}
-                              alt="sort"
-                            />
-                          </div>
-                        </th>
-                        {/*}
-                        <th className="px-5 py-2 text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
-                          <div className="flex justify-center items-center">
-                            {t('settings.documents.type')}
-                          </div>
-                        </th>
-                        */}
-                        <th
-                          scope="col"
-                          className="px-6 py-2 text-start font-medium text-gray-700 dark:text-gray-50 uppercase sr-only"
-                          aria-label={t('settings.documents.actions')}
-                        >
-                          {t('settings.documents.actions')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
-                      {!currentDocuments?.length && (
-                        <tr>
-                          <td
-                            colSpan={4}
-                            className="!py-4 text-gray-800 dark:text-neutral-200 text-center"
-                          >
-                            {t('settings.documents.noData')}
-                          </td>
-                        </tr>
-                      )}
-                      {Array.isArray(currentDocuments) &&
-                        currentDocuments.map((document, index) => (
-                          <tr key={index} className="text-nowrap font-normal">
-                            <td
-                              title={document.name}
-                              className="px-6 py-4 whitespace-nowrap text-left font-medium text-gray-800 dark:text-neutral-200"
-                            >
-                              {truncate(document.name, 50)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center font-medium text-gray-800 dark:text-neutral-200">
-                              {document.date}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center font-medium text-gray-800 dark:text-neutral-200">
-                              {document.tokens
-                                ? formatTokens(+document.tokens)
-                                : ''}
-                            </td>
-                            {/*}
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200">
-                              {document.type === 'remote'
-                                ? 'Pre-loaded'
-                                : 'Private'}
-                            </td>
-                            */}
-                            <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium flex">
-                              <div className="min-w-[150px] flex flex-row items-center ml-auto gap-10">
-                                {document.type !== 'remote' && (
-                                  <img
-                                    src={Trash}
-                                    alt={t('convTile.delete')}
-                                    className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
-                                    id={`img-${index}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      handleDeleteDocument(index, document);
-                                    }}
-                                  />
-                                )}
-                                {document.syncFrequency && (
-                                  <div className="ml-2">
-                                    <DropdownMenu
-                                      name={t('settings.documents.sync')}
-                                      options={syncOptions}
-                                      onSelect={(value: string) => {
-                                        handleManageSync(document, value);
-                                      }}
-                                      defaultValue={document.syncFrequency}
-                                      icon={SyncIcon}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="mb-6">
+          <h2 className="text-base font-medium text-sonic-silver">
+            {t('settings.documents.title')}
+          </h2>
         </div>
-        {/* outside scrollable area */}
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          rowsPerPage={rowsPerPage}
-          onPageChange={(page) => {
-            setCurrentPage(page);
-            refreshDocs(undefined, page, rowsPerPage);
-          }}
-          onRowsPerPageChange={(rows) => {
-            setRowsPerPage(rows);
-            setCurrentPage(1);
-            refreshDocs(undefined, 1, rows);
-          }}
-        />
+        <div className="my-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="w-full sm:w-auto">
+            <label htmlFor="document-search-input" className="sr-only">
+              {t('settings.documents.searchPlaceholder')}
+            </label>
+            <Input
+              maxLength={256}
+              placeholder={t('settings.documents.searchPlaceholder')}
+              name="Document-search-input"
+              type="text"
+              id="document-search-input"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+            />
+          </div>
+          <button
+            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            title={t('settings.documents.addNew')}
+            onClick={() => {
+              setIsOnboarding(false);
+              setModalState('ACTIVE');
+            }}
+          >
+            {t('settings.documents.addNew')}
+          </button>
+        </div>
 
-        {/* Conditionally render the Upload modal based on modalState */}
-        {modalState === 'ACTIVE' && (
-          <div className="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center bg-transparent">
-            <div className="w-full h-full bg-transparent flex flex-col items-center justify-center p-8">
-              {/* Your Upload component */}
-              <Upload
-                receivedFile={[]}
-                setModalState={setModalState}
-                isOnboarding={isOnboarding}
-                renderTab={null}
-                close={() => setModalState('INACTIVE')}
-              />
-            </div>
+        {loading ? (
+          <SkeletonLoader count={1} />
+        ) : (
+          <div className="w-full overflow-x-auto rounded-md border border-silver dark:border-silver/40">
+            <table className="w-full min-w-[640px] table-auto">
+              <thead>
+                <tr className="border-b border-silver dark:border-silver/40">
+                  <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
+                    {t('settings.documents.name')}
+                  </th>
+                  <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.date')}
+                      <img
+                        className="cursor-pointer ml-2"
+                        onClick={() => refreshDocs('date')}
+                        src={caretSort}
+                        alt="sort"
+                      />
+                    </div>
+                  </th>
+                  <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
+                    <div className="flex justify-center items-center">
+                      <span className="hidden sm:inline">
+                        {t('settings.documents.tokenUsage')}
+                      </span>
+                      <span className="sm:hidden">
+                        {t('settings.documents.tokenUsage')}
+                      </span>
+                      <img
+                        className="cursor-pointer ml-2"
+                        onClick={() => refreshDocs('tokens')}
+                        src={caretSort}
+                        alt="sort"
+                      />
+                    </div>
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
+                    <span className="sr-only">
+                      {t('settings.documents.actions')}
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-silver dark:divide-silver/40">
+                {!currentDocuments?.length && (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="py-4 text-center text-gray-700 dark:text-[#E0E0E0]"
+                    >
+                      {t('settings.documents.noData')}
+                    </td>
+                  </tr>
+                )}
+                {Array.isArray(currentDocuments) &&
+                  currentDocuments.map((document, index) => (
+                    <tr key={index}>
+                      <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%]">
+                        <div
+                          className="overflow-hidden text-ellipsis whitespace-nowrap"
+                          title={document.name}
+                        >
+                          {truncate(document.name, 50)}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%]">
+                        {document.date ? formatDate(document.date) : ''}
+                      </td>
+                      <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%]">
+                        {document.tokens ? formatTokens(+document.tokens) : ''}
+                      </td>
+                      <td className="py-4 px-4 text-right w-[10%]">
+                        <div className="flex items-center justify-end gap-3">
+                          {/* For non-remote documents, adding empty space holder */}
+                          {!document.syncFrequency && (
+                            <div className="w-8"></div>
+                          )}
+                          {document.syncFrequency && (
+                            <DropdownMenu
+                              name={t('settings.documents.sync')}
+                              options={syncOptions}
+                              onSelect={(value: string) => {
+                                handleManageSync(document, value);
+                              }}
+                              defaultValue={document.syncFrequency}
+                              icon={SyncIcon}
+                            />
+                          )}
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDeleteDocument(index, document);
+                            }}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                          >
+                            <img
+                              src={Trash}
+                              alt={t('convTile.delete')}
+                              className="h-4 w-4 opacity-60 hover:opacity-100"
+                            />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(page) => {
+          setCurrentPage(page);
+          refreshDocs(undefined, page, rowsPerPage);
+        }}
+        onRowsPerPageChange={(rows) => {
+          setRowsPerPage(rows);
+          setCurrentPage(1);
+          refreshDocs(undefined, 1, rows);
+        }}
+      />
+      {modalState === 'ACTIVE' && (
+        <Upload
+          receivedFile={[]}
+          setModalState={setModalState}
+          isOnboarding={isOnboarding}
+          renderTab={null}
+          close={() => setModalState('INACTIVE')}
+        />
+      )}
     </div>
   );
 };

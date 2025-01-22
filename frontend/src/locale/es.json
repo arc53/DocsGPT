@@ -53,6 +53,7 @@
       "default": "Predeterminado"
     },
     "documents": {
+      "title": "Esta tabla contiene todos los documentos que están disponibles para ti y los que has subido",
       "label": "Documentos",
       "name": "Nombre del Documento",
       "date": "Fecha de Vector",
