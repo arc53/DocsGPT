@@ -79,7 +79,8 @@
       "key": "API 密钥",
       "sourceDoc": "源文档",
       "createNew": "创建新的",
-      "noData": "没有现有的聊天机器人"
+      "noData": "没有现有的聊天机器人",
+      "deleteConfirmation": "您确定要删除 API 密钥 '{{name}}' 吗？"
     },
     "analytics": {
       "label": "分析",

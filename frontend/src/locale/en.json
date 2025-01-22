@@ -79,7 +79,8 @@
       "key": "API Key",
       "sourceDoc": "Source Document",
       "createNew": "Create New",
-      "noData": "No existing Chatbots"
+      "noData": "No existing Chatbots",
+      "deleteConfirmation": "Are you sure you want to delete the API key '{{name}}'?"
     },
     "analytics": {
       "label": "Analytics",

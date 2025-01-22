@@ -79,7 +79,8 @@
       "key": "Clave de API",
       "sourceDoc": "Documento Fuente",
       "createNew": "Crear Nuevo",
-      "noData": "No hay chatbots existentes"
+      "noData": "No hay chatbots existentes",
+      "deleteConfirmation": "¿Estás seguro de que quieres eliminar la clave API '{{name}}'?"
     },
     "analytics": {
       "label": "Analítica",

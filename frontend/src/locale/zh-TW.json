@@ -78,8 +78,9 @@
       "name": "名稱",
       "key": "API 金鑰",
       "sourceDoc": "來源文件",
-      "createNew": "新增",
-      "noData": "沒有現有的聊天機器人"
+      "createNew": "建立新的",
+      "noData": "沒有現有的聊天機器人",
+      "deleteConfirmation": "您確定要刪除 API 金鑰 '{{name}}' 嗎？"
     },
     "analytics": {
       "label": "分析",
