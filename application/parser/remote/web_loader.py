@@ -1,5 +1,7 @@
 from application.parser.remote.base import BaseRemote
+from application.parser.schema.base import Document
 from langchain_community.document_loaders import WebBaseLoader
+from urllib.parse import urlparse
 
 headers = {
     "User-Agent": "Mozilla/5.0",
@@ -23,9 +25,19 @@ class WebLoader(BaseRemote):
             urls = [urls]
         documents = []
         for url in urls:
+            # Check if the URL scheme is provided, if not, assume http
+            if not urlparse(url).scheme:
+                url = "http://" + url
             try:
                 loader = self.loader([url], header_template=headers)
-                documents.extend(loader.load())
+                loaded_docs = loader.load()
+                for doc in loaded_docs:
+                    documents.append(
+                        Document(
+                            doc.page_content,
+                            extra_info=doc.metadata,
+                        )
+                    )
             except Exception as e:
                 print(f"Error processing URL {url}: {e}")
                 continue
