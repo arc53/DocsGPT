@@ -1478,90 +1478,17 @@ class GetFeedbackAnalytics(Resource):
             )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
+        
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
             start_date = end_date - datetime.timedelta(hours=1)
             group_format = "%Y-%m-%d %H:%M:00"
-            group_stage_1 = {
-                "$group": {
-                    "_id": {
-                        "minute": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        },
-                        "feedback": "$feedback",
-                    },
-                    "count": {"$sum": 1},
-                }
-            }
-            group_stage_2 = {
-                "$group": {
-                    "_id": "$_id.minute",
-                    "likes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "LIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                    "dislikes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
-
+            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
-            group_stage_1 = {
-                "$group": {
-                    "_id": {
-                        "hour": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        },
-                        "feedback": "$feedback",
-                    },
-                    "count": {"$sum": 1},
-                }
-            }
-            group_stage_2 = {
-                "$group": {
-                    "_id": "$_id.hour",
-                    "likes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "LIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                    "dislikes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
-
+            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
@@ -1579,61 +1506,59 @@ class GetFeedbackAnalytics(Resource):
                 hour=23, minute=59, second=59, microsecond=999999
             )
             group_format = "%Y-%m-%d"
-            group_stage_1 = {
-                "$group": {
-                    "_id": {
-                        "day": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        },
-                        "feedback": "$feedback",
-                    },
-                    "count": {"$sum": 1},
-                }
-            }
-            group_stage_2 = {
-                "$group": {
-                    "_id": "$_id.day",
-                    "likes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "LIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                    "dislikes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
+            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
 
         try:
             match_stage = {
                 "$match": {
-                    "timestamp": {"$gte": start_date, "$lte": end_date},
+                    "date": {"$gte": start_date, "$lte": end_date},
+                    "queries": {"$exists": True, "$ne": []},
                 }
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
 
-            feedback_data = feedback_collection.aggregate(
-                [
-                    match_stage,
-                    group_stage_1,
-                    group_stage_2,
-                    {"$sort": {"_id": 1}},
-                ]
-            )
+            # Unwind the queries array to process each query separately
+            pipeline = [
+                match_stage,
+                {"$unwind": "$queries"},
+                {"$match": {"queries.feedback": {"$exists": True}}},
+                {
+                    "$group": {
+                        "_id": {
+                            "time": date_field,
+                            "feedback": "$queries.feedback"
+                        },
+                        "count": {"$sum": 1}
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$_id.time",
+                        "positive": {
+                            "$sum": {
+                                "$cond": [
+                                    {"$eq": ["$_id.feedback", "LIKE"]},
+                                    "$count",
+                                    0
+                                ]
+                            }
+                        },
+                        "negative": {
+                            "$sum": {
+                                "$cond": [
+                                    {"$eq": ["$_id.feedback", "DISLIKE"]},
+                                    "$count",
+                                    0
+                                ]
+                            }
+                        }
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+
+            feedback_data = conversations_collection.aggregate(pipeline)
 
             if filter_option == "last_hour":
                 intervals = generate_minute_range(start_date, end_date)
@@ -1648,8 +1573,8 @@ class GetFeedbackAnalytics(Resource):
 
             for entry in feedback_data:
                 daily_feedback[entry["_id"]] = {
-                    "positive": entry["likes"],
-                    "negative": entry["dislikes"],
+                    "positive": entry["positive"],
+                    "negative": entry["negative"]
                 }
 
         except Exception as err:
