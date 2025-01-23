@@ -7,6 +7,12 @@
   font-synthesis: none !important;
 }
 
+@layer base {
+  .dark\:border-3D3D40 {
+    border-color: #3D3D40;
+  }
+}
+
 @supports (height: 100dvh) {
   :root {
     --viewport-height: 100dvh; /* Use dvh where supported */
