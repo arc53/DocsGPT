@@ -60,6 +60,7 @@ prance==23.6.21.0
 primp==0.10.0
 prompt-toolkit==3.0.48
 protobuf==5.29.3
+psycopg2-binary==2.9.10
 py==1.11.0
 pydantic==2.10.4
 pydantic-core==2.27.2
