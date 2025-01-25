@@ -46,8 +46,8 @@
 - [x] Full GoogleAI compatibility (Jan 2025)
 - [x] Add tools (Jan 2025)
 - [ ] Anthropic Tool compatibility
-- [ ] Add triggerable actions / tools
-- [ ] Add oath2 authentication for tools and sources
+- [ ] Add triggerable actions / tools (webhook)
+- [ ] Add OAuth 2.0 authentication for tools and sources
 - [ ] Manually updating chunks in the app UI
 - [ ] Devcontainer for easy development
 - [ ] Chatbots menu re-design to handle tools, scheduling, and more
