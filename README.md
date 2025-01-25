@@ -17,7 +17,13 @@
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![link to license file](https://img.shields.io/github/license/arc53/docsgpt)</a>
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
   <a href="https://twitter.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
- 
+
+  <br>
+
+  [☁️ Cloud Version](https://app.docsgpt.cloud/) • [💬 Discord](https://discord.gg/n5BX8dh8rU) • [📖 Guides](https://docs.docsgpt.cloud/)
+  <br>
+  [👫 Contribute](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md) • [🏠 Self-host](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM) • [⚡️ Quickstart](https://github.com/arc53/DocsGPT#quickstart) 
+
 </div>
 <div align="center">
 <img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov4.gif" alt="video-example-of-docs-gpt" width="800" height="450">
@@ -37,7 +43,16 @@
 
 ## Roadmap
 
-You can find our roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
+- [x] Full GoogleAI compatibility (Jan 2025)
+- [x] Add tools (Jan 2025)
+- [ ] Anthropic Tool compatibility
+- [ ] Add triggerable actions / tools
+- [ ] Add oath2 authentication for tools and sources
+- [ ] Manually updating chunks in the app UI
+- [ ] Devcontainer for easy development
+- [ ] Chatbots menu re-design to handle tools, scheduling, and more
+
+You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
 ### Production Support / Help for Companies:
 
@@ -47,44 +62,6 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 
 [Send Email :email:](mailto:support@docsgpt.cloud?subject=DocsGPT%20support%2Fsolutions)
 
-
-## Our Open-Source Models Optimized for DocsGPT:
-
-| Name                                                                  | Base Model  | Requirements (or similar) |
-| --------------------------------------------------------------------- | ----------- | ------------------------- |
-| [Docsgpt-7b-mistral](https://huggingface.co/Arc53/docsgpt-7b-mistral)   | Mistral-7b   | 1xA10G gpu                |
-| [Docsgpt-14b](https://huggingface.co/Arc53/docsgpt-14b)               | llama-2-14b | 2xA10 gpu's               |
-| [Docsgpt-40b-falcon](https://huggingface.co/Arc53/docsgpt-40b-falcon) | falcon-40b  | 8xA10G gpu's              |
-
-If you don't have enough resources to run it, you can use bitsnbytes to quantize.
-
-## End to End AI Framework for Information Retrieval
-
-![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
-
-## Useful Links
-
-- :mag: :fire: [Cloud Version](https://app.docsgpt.cloud/)
-
-- :speech_balloon: :tada: [Join our Discord](https://discord.gg/n5BX8dh8rU)
-
-- :books: :sunglasses: [Guides](https://docs.docsgpt.cloud/)
-
-- :couple: [Interested in contributing?](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md)
-
-- :file_folder: :rocket: [How to use any other documentation](https://docs.docsgpt.cloud/Guides/How-to-train-on-other-documentation)
-
-- :house: :closed_lock_with_key: [How to host it locally (so all data will stay on-premises)](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM)
-
-## Project Structure
-
-- Application - Flask app (main application).
-
-- Extensions - Chrome extension.
-
-- Scripts - Script that creates similarity search index for other libraries.
-
-- Frontend - Frontend uses <a href="https://vitejs.dev/">Vite</a> and <a href="https://react.dev/">React</a>.
 
 ## QuickStart
 
@@ -191,13 +168,29 @@ npm install vite -g
 3. Install dependencies by running `npm install --include=dev`.
 4. Run the app using `npm run dev`.
 
+
 ## Contributing
 
 Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information about how to get involved. We welcome issues, questions, and pull requests.
 
+## Architecture
+
+![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
+
+## Project Structure
+
+- Application - Flask app (main application).
+
+- Extensions - Extensions, like react widget or discord bot.
+
+- Frontend - Frontend uses <a href="https://vitejs.dev/">Vite</a> and <a href="https://react.dev/">React</a>.
+
+- Scripts - Miscellaneous scripts.
+
 ## Code Of Conduct
 
 We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
+
 
 ## Many Thanks To Our Contributors⚡
 
