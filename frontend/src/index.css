@@ -20,7 +20,7 @@
 }
 
 body.dark {
-  background-color: #26272E; /* Updated color for raisin-black */
+  background-color: #0d0e10; /* Updated color for raisin-black */
   color: #E0E0E0; /* Updated color for white text in dark theme */
 }
 ::-webkit-scrollbar {
@@ -30,7 +30,7 @@ body.dark {
   background: #f1f1f1;
 }
 .dark ::-webkit-scrollbar-track {
-  background: #3D3D40; /* Updated color */
+  background: #2a2a2b; /* Updated color */
 }
 ::-webkit-scrollbar-thumb {
   background: #888;
