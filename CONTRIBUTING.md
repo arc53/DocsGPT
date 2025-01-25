@@ -27,6 +27,7 @@ Before creating issues, please check out how the latest version of our app looks
 
 ### 👨‍💻 If you're interested in contributing code, here are some important things to know:
 
+For instructions on setting up a development environment, please refer to our [Development Deployment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
 
 Tech Stack Overview:
 
