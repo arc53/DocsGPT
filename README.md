@@ -19,9 +19,9 @@
   <a href="https://twitter.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
  
 </div>
-
-<img src="https://github.com/user-attachments/assets/9a1f21de-7a15-4e42-9424-70d22ba5a913" alt="video-example-of-docs-gpt" width="1000" height="500">
-
+<div align="center">
+<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov4.gif" alt="video-example-of-docs-gpt" width="800" height="450">
+</div>
 <h3 align="left">
   <strong>Key Features:</strong>
 </h3>
