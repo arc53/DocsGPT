@@ -26,7 +26,7 @@
 
 </div>
 <div align="center">
-<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov4.gif" alt="video-example-of-docs-gpt" width="800" height="450">
+<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov5.gif" alt="video-example-of-docs-gpt" width="800" height="450">
 </div>
 <h3 align="left">
   <strong>Key Features:</strong>
