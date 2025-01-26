@@ -135,12 +135,6 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   useEffect(() => {
-    if (modalState === 'INACTIVE') {
-      refreshDocs(undefined, currentPage, rowsPerPage);
-    }
-  }, [modalState]);
-
-  useEffect(() => {
     refreshDocs(undefined, 1, rowsPerPage);
   }, [searchTerm]);
 
@@ -321,6 +315,9 @@ const Documents: React.FC<DocumentsProps> = ({
           isOnboarding={isOnboarding}
           renderTab={null}
           close={() => setModalState('INACTIVE')}
+          onSuccessfulUpload={() =>
+            refreshDocs(undefined, currentPage, rowsPerPage)
+          }
         />
       )}
     </div>
