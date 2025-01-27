@@ -71,7 +71,7 @@ class ClassicRAG(BaseRetriever):
         for doc in docs:
             yield {"source": doc}
 
-        if len(self.chat_history) > 1:
+        if len(self.chat_history) > 0:
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
                     messages_combine.append({"role": "user", "content": i["prompt"]})
