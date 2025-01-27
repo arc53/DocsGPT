@@ -70,7 +70,8 @@
         "weekly": "毎週",
         "monthly": "毎月"
       },
-      "actions": "アクション"
+      "actions": "アクション",
+      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？"
     },
     "apiKeys": {
       "label": "チャットボット",

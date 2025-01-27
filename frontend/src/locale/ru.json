@@ -71,7 +71,8 @@
         "weekly": "Еженедельно",
         "monthly": "Ежемесячно"
       },
-      "actions": "Действия"
+      "actions": "Действия",
+      "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?"
     },
     "apiKeys": {
       "label": "API ключи",

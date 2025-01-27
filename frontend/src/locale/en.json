@@ -71,7 +71,8 @@
         "weekly": "Weekly",
         "monthly": "Monthly"
       },
-      "actions": "Actions"
+      "actions": "Actions",
+      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?"
     },
     "apiKeys": {
       "label": "Chatbots",

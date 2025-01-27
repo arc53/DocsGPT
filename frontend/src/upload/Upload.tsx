@@ -23,14 +23,14 @@ function Upload({
   isOnboarding,
   renderTab = null,
   close,
-  onSuccessfulUpload,
+  onSuccessfulUpload = () => undefined,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
   isOnboarding: boolean;
   renderTab: string | null;
   close: () => void;
-  onSuccessfulUpload: () => void;
+  onSuccessfulUpload?: () => void;
 }) {
   const [docName, setDocName] = useState(receivedFile[0]?.name);
   const [urlName, setUrlName] = useState('');
@@ -220,7 +220,7 @@ function Upload({
                   setfiles([]);
                   setProgress(undefined);
                   setModalState('INACTIVE');
-                  onSuccessfulUpload();
+                  onSuccessfulUpload?.();
                 }
               } else if (data.status == 'PROGRESS') {
                 setProgress(

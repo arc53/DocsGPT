@@ -16,6 +16,7 @@ import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import { setPaginatedDocuments } from '../preferences/preferenceSlice';
 import { formatDate } from '../utils/dateTimeUtils';
+import ConfirmationModal from '../modals/ConfirmationModal';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -134,6 +135,26 @@ const Documents: React.FC<DocumentsProps> = ({
       });
   };
 
+  const [documentToDelete, setDocumentToDelete] = useState<{
+    index: number;
+    document: Doc;
+  } | null>(null);
+  const [deleteModalState, setDeleteModalState] =
+    useState<ActiveState>('INACTIVE');
+
+  const handleDeleteConfirmation = (index: number, document: Doc) => {
+    setDocumentToDelete({ index, document });
+    setDeleteModalState('ACTIVE');
+  };
+
+  const handleConfirmedDelete = () => {
+    if (documentToDelete) {
+      handleDeleteDocument(documentToDelete.index, documentToDelete.document);
+      setDeleteModalState('INACTIVE');
+      setDocumentToDelete(null);
+    }
+  };
+
   useEffect(() => {
     refreshDocs(undefined, 1, rowsPerPage);
   }, [searchTerm]);
@@ -182,10 +203,10 @@ const Documents: React.FC<DocumentsProps> = ({
           <div className="flex flex-col flex-grow">
             {' '}
             {/* Removed overflow-auto */}
-            <div className="border rounded-md border-silver dark:border-silver/40">
+            <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
               <table className="w-full min-w-[640px] table-auto">
                 <thead>
-                  <tr className="border-b border-silver dark:border-silver/40">
+                  <tr className="border-b border-gray-300 dark:border-silver/40">
                     <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
                       {t('settings.documents.name')}
                     </th>
@@ -223,34 +244,34 @@ const Documents: React.FC<DocumentsProps> = ({
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-silver dark:divide-silver/40">
+                <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
                   {!currentDocuments?.length ? (
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-4 text-center text-gray-700 dark:text-[#E0E0E0] bg-white dark:bg-transparent"
+                        className="py-4 text-center text-gray-700 dark:text-[#E0E0E] bg-transparent"
                       >
                         {t('settings.documents.noData')}
                       </td>
                     </tr>
                   ) : (
                     currentDocuments.map((document, index) => (
-                      <tr key={index} className="bg-white dark:bg-transparent">
+                      <tr key={index} className="group transition-colors">
                         <td
-                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate"
+                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                           title={document.name}
                         >
                           {document.name}
                         </td>
-                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%]">
+                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
                           {document.date ? formatDate(document.date) : ''}
                         </td>
-                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%]">
+                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
                           {document.tokens
                             ? formatTokens(+document.tokens)
                             : ''}
                         </td>
-                        <td className="py-4 px-4 text-right w-[10%]">
+                        <td className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
                           <div className="flex items-center justify-end gap-3">
                             {!document.syncFrequency && (
                               <div className="w-8"></div>
@@ -269,7 +290,7 @@ const Documents: React.FC<DocumentsProps> = ({
                             <button
                               onClick={(event) => {
                                 event.stopPropagation();
-                                handleDeleteDocument(index, document);
+                                handleDeleteConfirmation(index, document);
                               }}
                               className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
                             >
@@ -318,6 +339,22 @@ const Documents: React.FC<DocumentsProps> = ({
           onSuccessfulUpload={() =>
             refreshDocs(undefined, currentPage, rowsPerPage)
           }
+        />
+      )}
+
+      {deleteModalState === 'ACTIVE' && documentToDelete && (
+        <ConfirmationModal
+          message={t('settings.documents.deleteWarning', {
+            name: documentToDelete.document.name,
+          })}
+          modalState={deleteModalState}
+          setModalState={setDeleteModalState}
+          handleSubmit={handleConfirmedDelete}
+          handleCancel={() => {
+            setDeleteModalState('INACTIVE');
+            setDocumentToDelete(null);
+          }}
+          submitLabel={t('convTile.delete')}
         />
       )}
     </div>

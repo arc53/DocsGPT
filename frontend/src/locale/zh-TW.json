@@ -71,7 +71,8 @@
         "weekly": "每週",
         "monthly": "每月"
       },
-      "actions": "操作"
+      "actions": "操作",
+      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？"
     },
     "apiKeys": {
       "label": "聊天機器人",
