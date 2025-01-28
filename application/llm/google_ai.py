@@ -57,25 +57,35 @@ class GoogleLLM(BaseLLM):
         for tool_data in tools_list:
             if tool_data["type"] == "function":
                 function = tool_data["function"]
-                genai_function = dict(
-                    name=function["name"],
-                    description=function["description"],
-                    parameters={
-                        "type": "OBJECT",
-                        "properties": {
-                            k: {
-                                **v,
-                                "type": v["type"].upper() if v["type"] else None,
-                            }
-                            for k, v in function["parameters"]["properties"].items()
+                parameters = function["parameters"]
+                properties = parameters.get("properties", {})
+
+                if properties:
+                    genai_function = dict(
+                        name=function["name"],
+                        description=function["description"],
+                        parameters={
+                            "type": "OBJECT",
+                            "properties": {
+                                k: {
+                                    **v,
+                                    "type": v["type"].upper() if v["type"] else None,
+                                }
+                                for k, v in properties.items()
+                            },
+                            "required": (
+                                parameters["required"]
+                                if "required" in parameters
+                                else []
+                            ),
                         },
-                        "required": (
-                            function["parameters"]["required"]
-                            if "required" in function["parameters"]
-                            else []
-                        ),
-                    },
-                )
+                    )
+                else:
+                    genai_function = dict(
+                        name=function["name"],
+                        description=function["description"],
+                    )
+
                 genai_tool = types.Tool(function_declarations=[genai_function])
                 genai_tools.append(genai_tool)
 
