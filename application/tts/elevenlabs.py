@@ -3,7 +3,7 @@ import websockets
 import json
 import base64
 from io import BytesIO
-from base import BaseTTS
+from application.tts.base import BaseTTS
 
 
 class ElevenlabsTTS(BaseTTS):
