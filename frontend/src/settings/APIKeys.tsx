@@ -5,6 +5,7 @@ import userService from '../api/services/userService';
 import Trash from '../assets/trash.svg';
 import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
 import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { APIKeyData } from './types';
 import SkeletonLoader from '../components/SkeletonLoader';
 
@@ -15,6 +16,10 @@ export default function APIKeys() {
   const [newKey, setNewKey] = React.useState('');
   const [apiKeys, setApiKeys] = React.useState<APIKeyData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [keyToDelete, setKeyToDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const handleFetchKeys = async () => {
     setLoading(true);
@@ -44,6 +49,7 @@ export default function APIKeys() {
       .then((data) => {
         data.success === true &&
           setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
+        setKeyToDelete(null);
       })
       .catch((error) => {
         console.error(error);
@@ -104,6 +110,18 @@ export default function APIKeys() {
             close={() => setSaveKeyModal(false)}
           />
         )}
+        {keyToDelete && (
+          <ConfirmationModal
+            message={t('settings.apiKeys.deleteConfirmation', {
+              name: keyToDelete.name,
+            })}
+            modalState="ACTIVE"
+            setModalState={() => setKeyToDelete(null)}
+            submitLabel={t('modals.deleteConv.delete')}
+            handleSubmit={() => handleDeleteKey(keyToDelete.id)}
+            handleCancel={() => setKeyToDelete(null)}
+          />
+        )}
         <div className="mt-[27px] w-full">
           <div className="w-full overflow-x-auto">
             {loading ? (
@@ -157,7 +175,12 @@ export default function APIKeys() {
                                   alt={`Delete ${element.name}`}
                                   className="h-4 w-4 cursor-pointer hover:opacity-50"
                                   id={`img-${index}`}
-                                  onClick={() => handleDeleteKey(element.id)}
+                                  onClick={() =>
+                                    setKeyToDelete({
+                                      id: element.id,
+                                      name: element.name,
+                                    })
+                                  }
                                 />
                               </td>
                             </tr>

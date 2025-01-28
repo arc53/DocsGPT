@@ -70,15 +70,17 @@
         "weekly": "毎週",
         "monthly": "毎月"
       },
-      "actions": "アクション"
+      "actions": "アクション",
+      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？"
     },
     "apiKeys": {
-      "label": "APIキー",
+      "label": "チャットボット",
       "name": "名前",
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
       "createNew": "新規作成",
-      "noData": "既存のAPIキーがありません"
+      "noData": "既存のチャットボットはありません",
+      "deleteConfirmation": "APIキー '{{name}}' を削除してもよろしいですか？"
     },
     "analytics": {
       "label": "分析",

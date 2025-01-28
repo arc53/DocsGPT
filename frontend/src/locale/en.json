@@ -53,6 +53,7 @@
       "default": "Default"
     },
     "documents": {
+      "title": "This table contains all the documents that are available to you and those you have uploaded",
       "label": "Documents",
       "name": "Document Name",
       "date": "Vector Date",
@@ -70,7 +71,8 @@
         "weekly": "Weekly",
         "monthly": "Monthly"
       },
-      "actions": "Actions"
+      "actions": "Actions",
+      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -78,7 +80,8 @@
       "key": "API Key",
       "sourceDoc": "Source Document",
       "createNew": "Create New",
-      "noData": "No existing Chatbots"
+      "noData": "No existing Chatbots",
+      "deleteConfirmation": "Are you sure you want to delete the API key '{{name}}'?"
     },
     "analytics": {
       "label": "Analytics",
