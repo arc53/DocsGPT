@@ -53,7 +53,8 @@
       "default": "默认"
     },
     "documents": {
-      "label": "文件",
+      "title": "此表格包含所有可供您使用的文档以及您上传的文档",
+      "label": "文档",
       "name": "文件名称",
       "date": "向量日期",
       "type": "类型",
@@ -70,7 +71,8 @@
         "weekly": "每周",
         "monthly": "每月"
       },
-      "actions": "操作"
+      "actions": "操作",
+      "deleteWarning": "您确定要删除 \"{{name}}\" 吗？"
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -78,7 +80,8 @@
       "key": "API 密钥",
       "sourceDoc": "源文档",
       "createNew": "创建新的",
-      "noData": "没有现有的聊天机器人"
+      "noData": "没有现有的聊天机器人",
+      "deleteConfirmation": "您确定要删除 API 密钥 '{{name}}' 吗？"
     },
     "analytics": {
       "label": "分析",
@@ -111,7 +114,7 @@
       "searchPlaceholder": "搜索...",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
-      "selectToolSetup": "选择要设置的工具" ,
+      "selectToolSetup": "选择要设置的工具",
       "settingsIconAlt": "设置图标",
       "configureToolAria": "配置 {toolName}",
       "toggleToolAria": "切换 {toolName}"

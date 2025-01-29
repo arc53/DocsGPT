@@ -23,12 +23,14 @@ function Upload({
   isOnboarding,
   renderTab = null,
   close,
+  onSuccessfulUpload = () => undefined,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
   isOnboarding: boolean;
   renderTab: string | null;
   close: () => void;
+  onSuccessfulUpload?: () => void;
 }) {
   const [docName, setDocName] = useState(receivedFile[0]?.name);
   const [urlName, setUrlName] = useState('');
@@ -218,6 +220,7 @@ function Upload({
                   setfiles([]);
                   setProgress(undefined);
                   setModalState('INACTIVE');
+                  onSuccessfulUpload?.();
                 }
               } else if (data.status == 'PROGRESS') {
                 setProgress(
@@ -424,20 +427,26 @@ function Upload({
             <p className="mb-0 text-xs italic text-gray-4000">
               {t('modals.uploadDoc.info')}
             </p>
-            <div className="mt-0">
+            <div className="mt-0 max-w-full">
               <p className="mb-[14px] font-medium text-eerie-black dark:text-light-gray">
                 {t('modals.uploadDoc.uploadedFiles')}
               </p>
-              {files.map((file) => (
-                <p key={file.name} className="text-gray-6000">
-                  {file.name}
-                </p>
-              ))}
-              {files.length === 0 && (
-                <p className="text-gray-6000 dark:text-light-gray">
-                  {t('none')}
-                </p>
-              )}
+              <div className="max-w-full overflow-hidden">
+                {files.map((file) => (
+                  <p
+                    key={file.name}
+                    className="text-gray-6000 truncate overflow-hidden text-ellipsis"
+                    title={file.name}
+                  >
+                    {file.name}
+                  </p>
+                ))}
+                {files.length === 0 && (
+                  <p className="text-gray-6000 dark:text-light-gray">
+                    {t('none')}
+                  </p>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -597,47 +606,49 @@ function Upload({
               {t('modals.uploadDoc.back')}
             </button>
           )}
-          <button
-            onClick={() => {
-              if (activeTab === 'file') {
-                uploadFile();
-              } else {
-                uploadRemote();
+          {activeTab && (
+            <button
+              onClick={() => {
+                if (activeTab === 'file') {
+                  uploadFile();
+                } else {
+                  uploadRemote();
+                }
+              }}
+              disabled={
+                (activeTab === 'file' && (!files.length || !docName)) ||
+                (activeTab === 'remote' &&
+                  ((urlType.label !== 'Reddit' &&
+                    urlType.label !== 'GitHub' &&
+                    (!url || !urlName)) ||
+                    (urlType.label === 'GitHub' && !repoUrl) ||
+                    (urlType.label === 'Reddit' &&
+                      (!redditData.client_id ||
+                        !redditData.client_secret ||
+                        !redditData.user_agent ||
+                        !redditData.search_queries ||
+                        !redditData.number_posts))))
               }
-            }}
-            disabled={
-              (activeTab === 'file' && (!files.length || !docName)) ||
-              (activeTab === 'remote' &&
-                ((urlType.label !== 'Reddit' &&
-                  urlType.label !== 'GitHub' &&
-                  (!url || !urlName)) ||
-                  (urlType.label === 'GitHub' && !repoUrl) ||
-                  (urlType.label === 'Reddit' &&
-                    (!redditData.client_id ||
-                      !redditData.client_secret ||
-                      !redditData.user_agent ||
-                      !redditData.search_queries ||
-                      !redditData.number_posts))))
-            }
-            className={`rounded-3xl px-4 py-2 font-medium ${
-              (activeTab === 'file' && (!files.length || !docName)) ||
-              (activeTab === 'remote' &&
-                ((urlType.label !== 'Reddit' &&
-                  urlType.label !== 'GitHub' &&
-                  (!url || !urlName)) ||
-                  (urlType.label === 'GitHub' && !repoUrl) ||
-                  (urlType.label === 'Reddit' &&
-                    (!redditData.client_id ||
-                      !redditData.client_secret ||
-                      !redditData.user_agent ||
-                      !redditData.search_queries ||
-                      !redditData.number_posts))))
-                ? 'cursor-not-allowed bg-gray-300 text-gray-500'
-                : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
-            }`}
-          >
-            {t('modals.uploadDoc.train')}
-          </button>
+              className={`rounded-3xl px-4 py-2 font-medium ${
+                (activeTab === 'file' && (!files.length || !docName)) ||
+                (activeTab === 'remote' &&
+                  ((urlType.label !== 'Reddit' &&
+                    urlType.label !== 'GitHub' &&
+                    (!url || !urlName)) ||
+                    (urlType.label === 'GitHub' && !repoUrl) ||
+                    (urlType.label === 'Reddit' &&
+                      (!redditData.client_id ||
+                        !redditData.client_secret ||
+                        !redditData.user_agent ||
+                        !redditData.search_queries ||
+                        !redditData.number_posts))))
+                  ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                  : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
+              }`}
+            >
+              {t('modals.uploadDoc.train')}
+            </button>
+          )}
         </div>
       </div>
     );

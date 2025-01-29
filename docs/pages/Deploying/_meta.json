@@ -7,6 +7,10 @@
     "title": "⚡️Quickstart",
     "href": "/Deploying/Quickstart"
   },
+  "Development-Environment": {
+    "title": "🛠️Development Environment",
+    "href": "/Deploying/Development-Environment"
+  },
   "Railway-Deploying": {
     "title": "🚂Deploying on Railway",
     "href": "/Deploying/Railway-Deploying"
