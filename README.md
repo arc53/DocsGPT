@@ -102,7 +102,7 @@ On windows:
 3. Run the following command:
 
    ```bash
-   docker-compose up
+   docker compose up --build
    ```
 4. Navigate to http://localhost:5173/.
 
