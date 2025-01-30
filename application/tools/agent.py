@@ -42,22 +42,26 @@ class Agent:
                                 if key != "filled_by_llm" and key != "value"
                             }
                             for k, v in action["parameters"]["properties"].items()
-                            if v.get("filled_by_llm", False)
+                            if v.get("filled_by_llm", True)
                         },
                         "required": [
                             key
                             for key in action["parameters"]["required"]
                             if key in action["parameters"]["properties"]
                             and action["parameters"]["properties"][key].get(
-                                "filled_by_llm", False
+                                "filled_by_llm", True
                             )
                         ],
                     },
                 },
             }
             for tool_id, tool in tools_dict.items()
-            for action in tool["actions"]
-            if action["active"]
+            for action in (
+                tool["config"]["actions"].values()
+                if tool["name"] == "api_tool"
+                else tool["actions"]
+            )
+            if action.get("active", True)
         ]
 
     def _execute_tool_action(self, tools_dict, call):
@@ -65,8 +69,14 @@ class Agent:
         tool_id, action_name, call_args = parser.parse_args(call)
 
         tool_data = tools_dict[tool_id]
-        action_data = next(
-            action for action in tool_data["actions"] if action["name"] == action_name
+        action_data = (
+            tool_data["config"]["actions"][action_name]
+            if tool_data["name"] == "api_tool"
+            else next(
+                action
+                for action in tool_data["actions"]
+                if action["name"] == action_name
+            )
         )
 
         for param, details in action_data["parameters"]["properties"].items():
@@ -74,7 +84,14 @@ class Agent:
                 call_args[param] = details["value"]
 
         tm = ToolManager(config={})
-        tool = tm.load_tool(tool_data["name"], tool_config=tool_data["config"])
+        tool = tm.load_tool(
+            tool_data["name"],
+            tool_config=(
+                tool_data["config"]["actions"][action_name]
+                if tool_data["name"] == "api_tool"
+                else tool_data["config"]
+            ),
+        )
         print(f"Executing tool: {action_name} with args: {call_args}")
         result = tool.execute_action(action_name, **call_args)
         call_id = getattr(call, "id", None)
@@ -117,3 +134,16 @@ class Agent:
             resp = self.llm.gen_stream(model=self.gpt_model, messages=messages)
             for line in resp:
                 yield line
+
+    def add_tool(self, tool_name, tool_config):
+        tm = ToolManager(config={})
+        tool = tm.load_tool(tool_name, tool_config)
+        self.tool_config[tool_name] = tool_config
+        self.tools.append(tool)
+        return tool
+
+    def handle_tool_action(self, tool_name, action_name, **kwargs):
+        if tool_name not in self.tool_config:
+            raise ValueError(f"Tool '{tool_name}' not found")
+        tool = self.tool_config[tool_name]
+        return tool.execute_action(action_name, **kwargs)
