@@ -16,6 +16,23 @@ import {
   selectSourceDocs,
 } from '../preferences/preferenceSlice';
 import WrapperModal from '../modals/WrapperModal';
+import {
+  IngestorType,
+  IngestorConfig,
+  RedditIngestorConfig,
+  GithubIngestorConfig,
+  CrawlerIngestorConfig,
+  UrlIngestorConfig,
+} from './types/ingestor';
+
+type IngestorState = {
+  type: IngestorType;
+  config:
+    | RedditIngestorConfig
+    | GithubIngestorConfig
+    | CrawlerIngestorConfig
+    | UrlIngestorConfig;
+};
 
 function Upload({
   receivedFile = [],
@@ -33,18 +50,19 @@ function Upload({
   onSuccessfulUpload?: () => void;
 }) {
   const [docName, setDocName] = useState(receivedFile[0]?.name);
-  const [urlName, setUrlName] = useState('');
-  const [url, setUrl] = useState('');
-  const [repoUrl, setRepoUrl] = useState(''); // P3f93
-  const [redditData, setRedditData] = useState({
-    client_id: '',
-    client_secret: '',
-    user_agent: '',
-    search_queries: [''],
-    number_posts: 10,
-  });
-  const [activeTab, setActiveTab] = useState<string | null>(renderTab);
   const [files, setfiles] = useState<File[]>(receivedFile);
+  const [activeTab, setActiveTab] = useState<string | null>(renderTab);
+
+  // New unified ingestor state
+  const [ingestor, setIngestor] = useState<IngestorConfig>({
+    type: 'crawler',
+    name: '',
+    config: {
+      name: '',
+      url: '',
+    } as CrawlerIngestorConfig,
+  });
+
   const [progress, setProgress] = useState<{
     type: 'UPLOAD' | 'TRAINING';
     percentage: number;
@@ -55,12 +73,11 @@ function Upload({
   const { t } = useTranslation();
   const setTimeoutRef = useRef<number | null>();
 
-  const urlOptions: { label: string; value: string }[] = [
-    { label: `Crawler`, value: 'crawler' },
-    // { label: t('modals.uploadDoc.sitemap'), value: 'sitemap' },
-    { label: `Link`, value: 'url' },
-    { label: `GitHub`, value: 'github' },
-    { label: `Reddit`, value: 'reddit' },
+  const urlOptions: { label: string; value: IngestorType }[] = [
+    { label: 'Crawler', value: 'crawler' },
+    { label: 'Link', value: 'url' },
+    { label: 'GitHub', value: 'github' },
+    { label: 'Reddit', value: 'reddit' },
   ];
 
   const [urlType, setUrlType] = useState<{ label: string; value: string }>({
@@ -284,22 +301,23 @@ function Upload({
 
   const uploadRemote = () => {
     const formData = new FormData();
-    formData.append('name', urlName);
+    formData.append('name', ingestor.name);
     formData.append('user', 'local');
-    if (urlType !== null) {
-      formData.append('source', urlType?.value);
+    formData.append('source', ingestor.type);
+
+    if (ingestor.type === 'reddit') {
+      formData.set('data', JSON.stringify(ingestor.config));
+    } else if (ingestor.type === 'github') {
+      const githubConfig = ingestor.config as GithubIngestorConfig;
+      formData.append('repo_url', githubConfig.repo_url);
+      formData.append('data', githubConfig.repo_url);
+    } else {
+      const urlBasedConfig = ingestor.config as
+        | CrawlerIngestorConfig
+        | UrlIngestorConfig;
+      formData.append('data', urlBasedConfig.url);
     }
-    formData.append('data', url);
-    if (
-      redditData.client_id.length > 0 &&
-      redditData.client_secret.length > 0
-    ) {
-      formData.set('name', 'other');
-      formData.set('data', JSON.stringify(redditData));
-    }
-    if (urlType.value === 'github') {
-      formData.append('repo_url', repoUrl); // Pdeac
-    }
+
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (event) => {
@@ -346,20 +364,158 @@ function Upload({
     },
   });
 
+  const isUploadDisabled = () => {
+    if (activeTab !== 'remote') return false;
+
+    switch (ingestor.type) {
+      case 'reddit': {
+        const redditConfig = ingestor.config as RedditIngestorConfig;
+        return (
+          !redditConfig.client_id ||
+          !redditConfig.client_secret ||
+          !redditConfig.user_agent ||
+          !redditConfig.search_queries.length ||
+          !redditConfig.number_posts
+        );
+      }
+      case 'github':
+        return !(ingestor.config as GithubIngestorConfig).repo_url;
+      default: {
+        const urlConfig = ingestor.config as
+          | CrawlerIngestorConfig
+          | UrlIngestorConfig;
+        return !urlConfig.url || !ingestor.name;
+      }
+    }
+  };
+
+  const handleIngestorChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const { name, value } = e.target;
+
+    if (ingestor.type === 'reddit') {
+      const redditConfig = ingestor.config as RedditIngestorConfig;
+      setIngestor({
+        ...ingestor,
+        config: {
+          ...redditConfig,
+          [name]:
+            name === 'search_queries'
+              ? value.split(',').map((item) => item.trim())
+              : name === 'number_posts'
+                ? parseInt(value)
+                : value,
+        },
+      });
+    } else if (ingestor.type === 'github') {
+      const githubConfig = ingestor.config as GithubIngestorConfig;
+      setIngestor({
+        ...ingestor,
+        config: {
+          ...githubConfig,
+          [name]: value,
+        },
+      });
+    } else {
+      const urlConfig = ingestor.config as
+        | CrawlerIngestorConfig
+        | UrlIngestorConfig;
+      setIngestor({
+        ...ingestor,
+        config: {
+          ...urlConfig,
+          [name]: value,
+        },
+      });
+    }
+  };
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
-    if (name === 'search_queries' && value.length > 0) {
-      setRedditData({
-        ...redditData,
-        [name]: value.split(',').map((item) => item.trim()),
+
+    if (ingestor.type === 'reddit') {
+      const redditConfig = ingestor.config as RedditIngestorConfig;
+      setIngestor({
+        ...ingestor,
+        config: {
+          ...redditConfig,
+          [name]:
+            name === 'search_queries'
+              ? value.split(',').map((item) => item.trim())
+              : name === 'number_posts'
+                ? parseInt(value)
+                : value,
+        },
       });
-    } else
-      setRedditData({
-        ...redditData,
-        [name]: name === 'number_posts' ? parseInt(value) : value,
+    } else if (ingestor.type === 'github') {
+      const githubConfig = ingestor.config as GithubIngestorConfig;
+      setIngestor({
+        ...ingestor,
+        config: {
+          ...githubConfig,
+          [name]: value,
+        },
       });
+    } else {
+      const urlConfig = ingestor.config as
+        | CrawlerIngestorConfig
+        | UrlIngestorConfig;
+      setIngestor({
+        ...ingestor,
+        config: {
+          ...urlConfig,
+          [name]: value,
+        },
+      });
+    }
+  };
+
+  const handleIngestorTypeChange = (type: IngestorType) => {
+    let newConfig:
+      | RedditIngestorConfig
+      | GithubIngestorConfig
+      | CrawlerIngestorConfig
+      | UrlIngestorConfig;
+
+    switch (type) {
+      case 'reddit':
+        newConfig = {
+          name: ingestor.name,
+          client_id: '',
+          client_secret: '',
+          user_agent: '',
+          search_queries: [],
+          number_posts: 10,
+        };
+        break;
+      case 'github':
+        newConfig = {
+          name: ingestor.name,
+          repo_url: '',
+        };
+        break;
+      case 'crawler':
+      case 'url':
+        newConfig = {
+          name: ingestor.name,
+          url: '',
+        };
+        break;
+      default:
+        newConfig = {
+          name: ingestor.name,
+          url: '',
+        } as CrawlerIngestorConfig;
+    }
+
+    setIngestor({
+      type,
+      name: ingestor.name,
+      config: newConfig,
+    });
   };
 
   let view;
@@ -455,145 +611,96 @@ function Upload({
             <Dropdown
               border="border"
               options={urlOptions}
-              selectedValue={urlType}
-              onSelect={(value: { label: string; value: string }) =>
-                setUrlType(value)
+              selectedValue={ingestor.type}
+              onSelect={(selected: { label: string; value: string }) =>
+                handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
               rounded="3xl"
             />
-            {urlType.label !== 'Reddit' && urlType.label !== 'GitHub' ? (
+            {ingestor.type === 'reddit' ? (
               <>
                 <Input
-                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
+                  placeholder="Client ID"
                   type="text"
-                  value={urlName}
-                  onChange={(e) => setUrlName(e.target.value)}
+                  name="client_id"
+                  value={(ingestor.config as RedditIngestorConfig).client_id}
+                  onChange={handleIngestorChange}
                   borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.name')}
-                  </span>
-                </div>
+                />
                 <Input
-                  placeholder={t('modals.uploadDoc.urlLink')}
+                  placeholder="Client Secret"
                   type="text"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  name="client_secret"
+                  value={
+                    (ingestor.config as RedditIngestorConfig).client_secret
+                  }
+                  onChange={handleIngestorChange}
                   borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.link')}
-                  </span>
-                </div>
+                />
+                <Input
+                  placeholder="User Agent"
+                  type="text"
+                  name="user_agent"
+                  value={(ingestor.config as RedditIngestorConfig).user_agent}
+                  onChange={handleIngestorChange}
+                  borderVariant="thin"
+                />
+                <Input
+                  placeholder="Search Queries"
+                  type="text"
+                  name="search_queries"
+                  value={
+                    (ingestor.config as RedditIngestorConfig).search_queries
+                  }
+                  onChange={handleIngestorChange}
+                  borderVariant="thin"
+                />
+                <Input
+                  placeholder="Number of Posts"
+                  type="number"
+                  name="number_posts"
+                  value={(ingestor.config as RedditIngestorConfig).number_posts}
+                  onChange={handleIngestorChange}
+                  borderVariant="thin"
+                />
               </>
-            ) : urlType.label === 'GitHub' ? ( // P3f93
-              <>
-                <Input
-                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
-                  type="text"
-                  value={urlName}
-                  onChange={(e) => setUrlName(e.target.value)}
-                  borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.name')}
-                  </span>
-                </div>
-                <Input
-                  placeholder={t('modals.uploadDoc.repoUrl')}
-                  type="text"
-                  value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.repoUrl')}
-                  </span>
-                </div>
-              </>
+            ) : ingestor.type === 'github' ? (
+              <Input
+                placeholder="Repository URL"
+                type="text"
+                name="repo_url"
+                value={(ingestor.config as GithubIngestorConfig).repo_url}
+                onChange={handleIngestorChange}
+                borderVariant="thin"
+              />
             ) : (
-              <div className="flex flex-col gap-1 mt-2">
-                <div>
-                  <Input
-                    placeholder={t('modals.uploadDoc.reddit.id')}
-                    type="text"
-                    name="client_id"
-                    value={redditData.client_id}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.id')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder={t('modals.uploadDoc.reddit.secret')}
-                    type="text"
-                    name="client_secret"
-                    value={redditData.client_secret}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.secret')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder={t('modals.uploadDoc.reddit.agent')}
-                    type="text"
-                    name="user_agent"
-                    value={redditData.user_agent}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.agent')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder={t('modals.uploadDoc.reddit.searchQueries')}
-                    type="text"
-                    name="search_queries"
-                    value={redditData.search_queries}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.searchQueries')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder={t('modals.uploadDoc.reddit.numberOfPosts')}
-                    type="number"
-                    name="number_posts"
-                    value={redditData.number_posts}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.numberOfPosts')}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <>
+                <Input
+                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
+                  type="text"
+                  name="name"
+                  value={ingestor.name}
+                  onChange={(e) =>
+                    setIngestor({ ...ingestor, name: e.target.value })
+                  }
+                  borderVariant="thin"
+                />
+                <Input
+                  placeholder="Enter URL"
+                  type="text"
+                  name="url"
+                  value={
+                    (
+                      ingestor.config as
+                        | CrawlerIngestorConfig
+                        | UrlIngestorConfig
+                    ).url
+                  }
+                  onChange={handleIngestorChange}
+                  borderVariant="thin"
+                />
+              </>
             )}
           </>
         )}
@@ -615,33 +722,9 @@ function Upload({
                   uploadRemote();
                 }
               }}
-              disabled={
-                (activeTab === 'file' && (!files.length || !docName)) ||
-                (activeTab === 'remote' &&
-                  ((urlType.label !== 'Reddit' &&
-                    urlType.label !== 'GitHub' &&
-                    (!url || !urlName)) ||
-                    (urlType.label === 'GitHub' && !repoUrl) ||
-                    (urlType.label === 'Reddit' &&
-                      (!redditData.client_id ||
-                        !redditData.client_secret ||
-                        !redditData.user_agent ||
-                        !redditData.search_queries ||
-                        !redditData.number_posts))))
-              }
+              disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 font-medium ${
-                (activeTab === 'file' && (!files.length || !docName)) ||
-                (activeTab === 'remote' &&
-                  ((urlType.label !== 'Reddit' &&
-                    urlType.label !== 'GitHub' &&
-                    (!url || !urlName)) ||
-                    (urlType.label === 'GitHub' && !repoUrl) ||
-                    (urlType.label === 'Reddit' &&
-                      (!redditData.client_id ||
-                        !redditData.client_secret ||
-                        !redditData.user_agent ||
-                        !redditData.search_queries ||
-                        !redditData.number_posts))))
+                isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
                   : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
               }`}
