@@ -23,9 +23,12 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
 }) => {
   return (
     <label
-      className={`cursor-pointer select-none items-center ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+      className={`cursor-pointer select-none justify-between flex flex-row items-center ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
       htmlFor={id}
     >
+      {label && (
+        <span className="mr-2 text-eerie-black dark:text-white">{label}</span>
+      )}
       <div className="relative">
         <input
           type="checkbox"
@@ -48,9 +51,6 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
           }`}
         ></div>
       </div>
-      {label && (
-        <span className="ml-2 text-eerie-black dark:text-white">{label}</span>
-      )}
     </label>
   );
 };
