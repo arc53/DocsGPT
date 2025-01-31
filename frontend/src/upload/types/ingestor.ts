@@ -41,3 +41,121 @@ export type IngestorFormData = {
   source: IngestorType;
   data: string;
 };
+
+export type FieldType = 'string' | 'number' | 'enum' | 'boolean';
+
+export interface FormField {
+  name: keyof BaseIngestorConfig | string;
+  label: string;
+  type: FieldType;
+  options?: { label: string; value: string }[];
+}
+
+export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
+  crawler: [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'string',
+    },
+    {
+      name: 'url',
+      label: 'URL',
+      type: 'string',
+    },
+  ],
+  url: [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'string',
+    },
+    {
+      name: 'url',
+      label: 'URL',
+      type: 'string',
+    },
+  ],
+  reddit: [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'string',
+    },
+    {
+      name: 'client_id',
+      label: 'Client ID',
+      type: 'string',
+    },
+    {
+      name: 'client_secret',
+      label: 'Client Secret',
+      type: 'string',
+    },
+    {
+      name: 'user_agent',
+      label: 'User Agent',
+      type: 'string',
+    },
+    {
+      name: 'search_queries',
+      label: 'Search Queries',
+      type: 'string',
+    },
+    {
+      name: 'number_posts',
+      label: 'Number of Posts',
+      type: 'number',
+    },
+  ],
+  github: [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'string',
+    },
+    {
+      name: 'repo_url',
+      label: 'Repository URL',
+      type: 'string',
+    },
+  ],
+};
+
+export const IngestorDefaultConfigs: Record<
+  IngestorType,
+  Omit<IngestorConfig, 'type'>
+> = {
+  crawler: {
+    name: '',
+    config: {
+      name: '',
+      url: '',
+    } as CrawlerIngestorConfig,
+  },
+  url: {
+    name: '',
+    config: {
+      name: '',
+      url: '',
+    } as UrlIngestorConfig,
+  },
+  reddit: {
+    name: '',
+    config: {
+      name: '',
+      client_id: '',
+      client_secret: '',
+      user_agent: '',
+      search_queries: [],
+      number_posts: 10,
+    } as RedditIngestorConfig,
+  },
+  github: {
+    name: '',
+    config: {
+      name: '',
+      repo_url: '',
+    } as GithubIngestorConfig,
+  },
+};

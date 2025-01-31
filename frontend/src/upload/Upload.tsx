@@ -8,6 +8,7 @@ import FileUpload from '../assets/file_upload.svg';
 import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
+import ToggleSwitch from '../components/ToggleSwitch';
 import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import {
@@ -23,7 +24,9 @@ import {
   GithubIngestorConfig,
   CrawlerIngestorConfig,
   UrlIngestorConfig,
+  IngestorFormSchemas,
 } from './types/ingestor';
+import { IngestorDefaultConfigs } from '../upload/types/ingestor';
 
 type IngestorState = {
   type: IngestorType;
@@ -53,14 +56,111 @@ function Upload({
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<string | null>(renderTab);
 
+  const renderFormFields = () => {
+    const schema = IngestorFormSchemas[ingestor.type];
+
+    return schema.map((field) => {
+      switch (field.type) {
+        case 'string':
+          return (
+            <div key={field.name} className="mb-4">
+              <Input
+                key={field.name}
+                placeholder={field.label}
+                type="text"
+                name={field.name}
+                value={(ingestor.config as any)[field.name]}
+                onChange={handleIngestorChange}
+                borderVariant="thin"
+                label={field.label}
+                colorVariant="gray"
+              />
+            </div>
+          );
+        case 'number':
+          return (
+            <div key={field.name} className="mb-4">
+              <Input
+                key={field.name}
+                placeholder={field.label}
+                type="number"
+                name={field.name}
+                value={(ingestor.config as any)[field.name]}
+                onChange={handleIngestorChange}
+                borderVariant="thin"
+                label={field.label}
+                colorVariant="gray"
+              />
+            </div>
+          );
+        case 'enum':
+          return (
+            <div key={field.name} className="mb-4">
+              <Dropdown
+                key={field.name}
+                options={field.options || []}
+                selectedValue={(ingestor.config as any)[field.name]}
+                onSelect={(
+                  value:
+                    | string
+                    | { name: string; id: string; type: string }
+                    | { label: string; value: string }
+                    | { value: number; description: string },
+                ) => {
+                  const syntheticEvent = {
+                    target: {
+                      name: field.name,
+                      value:
+                        typeof value === 'string'
+                          ? value
+                          : JSON.stringify(value),
+                    },
+                  } as React.ChangeEvent<HTMLInputElement>;
+                  handleIngestorChange(syntheticEvent);
+                }}
+                size="w-full"
+                rounded="3xl"
+                placeholder={field.label}
+                border="border"
+                borderColor="gray-5000"
+              />
+            </div>
+          );
+        case 'boolean':
+          return (
+            <div key={field.name} className="mb-4">
+              <ToggleSwitch
+                key={field.name}
+                label={field.label}
+                checked={(ingestor.config as any)[field.name]}
+                onChange={(checked: boolean) => {
+                  const syntheticEvent = {
+                    target: {
+                      name: field.name,
+                      value: checked,
+                    },
+                  } as unknown as React.ChangeEvent<HTMLInputElement>;
+                  handleIngestorChange(syntheticEvent);
+                }}
+                className="mt-2"
+              />
+            </div>
+          );
+        default:
+          return null;
+      }
+    });
+  };
+
   // New unified ingestor state
-  const [ingestor, setIngestor] = useState<IngestorConfig>({
-    type: 'crawler',
-    name: '',
-    config: {
-      name: '',
-      url: '',
-    } as CrawlerIngestorConfig,
+  const [ingestor, setIngestor] = useState<IngestorConfig>(() => {
+    const defaultType: IngestorType = 'crawler';
+    const defaultConfig = IngestorDefaultConfigs[defaultType];
+    return {
+      type: defaultType,
+      name: defaultConfig.name,
+      config: defaultConfig.config,
+    };
   });
 
   const [progress, setProgress] = useState<{
@@ -474,47 +574,12 @@ function Upload({
   };
 
   const handleIngestorTypeChange = (type: IngestorType) => {
-    let newConfig:
-      | RedditIngestorConfig
-      | GithubIngestorConfig
-      | CrawlerIngestorConfig
-      | UrlIngestorConfig;
-
-    switch (type) {
-      case 'reddit':
-        newConfig = {
-          name: ingestor.name,
-          client_id: '',
-          client_secret: '',
-          user_agent: '',
-          search_queries: [],
-          number_posts: 10,
-        };
-        break;
-      case 'github':
-        newConfig = {
-          name: ingestor.name,
-          repo_url: '',
-        };
-        break;
-      case 'crawler':
-      case 'url':
-        newConfig = {
-          name: ingestor.name,
-          url: '',
-        };
-        break;
-      default:
-        newConfig = {
-          name: ingestor.name,
-          url: '',
-        } as CrawlerIngestorConfig;
-    }
+    const defaultConfig = IngestorDefaultConfigs[type];
 
     setIngestor({
       type,
-      name: ingestor.name,
-      config: newConfig,
+      name: defaultConfig.name,
+      config: defaultConfig.config,
     });
   };
 
@@ -611,97 +676,17 @@ function Upload({
             <Dropdown
               border="border"
               options={urlOptions}
-              selectedValue={ingestor.type}
+              selectedValue={
+                urlOptions.find((opt) => opt.value === ingestor.type) || null
+              }
               onSelect={(selected: { label: string; value: string }) =>
                 handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
               rounded="3xl"
             />
-            {ingestor.type === 'reddit' ? (
-              <>
-                <Input
-                  placeholder="Client ID"
-                  type="text"
-                  name="client_id"
-                  value={(ingestor.config as RedditIngestorConfig).client_id}
-                  onChange={handleIngestorChange}
-                  borderVariant="thin"
-                />
-                <Input
-                  placeholder="Client Secret"
-                  type="text"
-                  name="client_secret"
-                  value={
-                    (ingestor.config as RedditIngestorConfig).client_secret
-                  }
-                  onChange={handleIngestorChange}
-                  borderVariant="thin"
-                />
-                <Input
-                  placeholder="User Agent"
-                  type="text"
-                  name="user_agent"
-                  value={(ingestor.config as RedditIngestorConfig).user_agent}
-                  onChange={handleIngestorChange}
-                  borderVariant="thin"
-                />
-                <Input
-                  placeholder="Search Queries"
-                  type="text"
-                  name="search_queries"
-                  value={
-                    (ingestor.config as RedditIngestorConfig).search_queries
-                  }
-                  onChange={handleIngestorChange}
-                  borderVariant="thin"
-                />
-                <Input
-                  placeholder="Number of Posts"
-                  type="number"
-                  name="number_posts"
-                  value={(ingestor.config as RedditIngestorConfig).number_posts}
-                  onChange={handleIngestorChange}
-                  borderVariant="thin"
-                />
-              </>
-            ) : ingestor.type === 'github' ? (
-              <Input
-                placeholder="Repository URL"
-                type="text"
-                name="repo_url"
-                value={(ingestor.config as GithubIngestorConfig).repo_url}
-                onChange={handleIngestorChange}
-                borderVariant="thin"
-              />
-            ) : (
-              <>
-                <Input
-                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
-                  type="text"
-                  name="name"
-                  value={ingestor.name}
-                  onChange={(e) =>
-                    setIngestor({ ...ingestor, name: e.target.value })
-                  }
-                  borderVariant="thin"
-                />
-                <Input
-                  placeholder="Enter URL"
-                  type="text"
-                  name="url"
-                  value={
-                    (
-                      ingestor.config as
-                        | CrawlerIngestorConfig
-                        | UrlIngestorConfig
-                    ).url
-                  }
-                  onChange={handleIngestorChange}
-                  borderVariant="thin"
-                />
-              </>
-            )}
+            {/* Dynamically render form fields based on schema */}
+            {renderFormFields()}
           </>
         )}
         <div className="flex justify-between">
