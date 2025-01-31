@@ -495,49 +495,6 @@ function Upload({
         },
       };
     });
-    console.log(ingestor);
-  };
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const { name, value } = e.target;
-
-    if (ingestor.type === 'reddit') {
-      const redditConfig = ingestor.config as RedditIngestorConfig;
-      setIngestor({
-        ...ingestor,
-        config: {
-          ...redditConfig,
-          [name]:
-            name === 'search_queries'
-              ? value.split(',').map((item) => item.trim())
-              : name === 'number_posts'
-                ? parseInt(value)
-                : value,
-        },
-      });
-    } else if (ingestor.type === 'github') {
-      const githubConfig = ingestor.config as GithubIngestorConfig;
-      setIngestor({
-        ...ingestor,
-        config: {
-          ...githubConfig,
-          [name]: value,
-        },
-      });
-    } else {
-      const urlConfig = ingestor.config as
-        | CrawlerIngestorConfig
-        | UrlIngestorConfig;
-      setIngestor({
-        ...ingestor,
-        config: {
-          ...urlConfig,
-          [name]: value,
-        },
-      });
-    }
   };
 
   const handleIngestorTypeChange = (type: IngestorType) => {
