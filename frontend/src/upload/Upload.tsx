@@ -25,11 +25,13 @@ import {
   CrawlerIngestorConfig,
   UrlIngestorConfig,
   IngestorFormSchemas,
+  FormField,
 } from './types/ingestor';
 import { IngestorDefaultConfigs } from '../upload/types/ingestor';
 
 type IngestorState = {
   type: IngestorType;
+  name: string;
   config:
     | RedditIngestorConfig
     | GithubIngestorConfig
@@ -59,18 +61,19 @@ function Upload({
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
 
-    return schema.map((field) => {
+    return schema.map((field: FormField) => {
       switch (field.type) {
         case 'string':
           return (
             <div key={field.name} className="mb-4">
               <Input
-                key={field.name}
                 placeholder={field.label}
                 type="text"
                 name={field.name}
                 value={(ingestor.config as any)[field.name]}
-                onChange={handleIngestorChange}
+                onChange={(e) =>
+                  handleIngestorChange(field.name, e.target.value)
+                }
                 borderVariant="thin"
                 label={field.label}
                 colorVariant="gray"
@@ -81,12 +84,13 @@ function Upload({
           return (
             <div key={field.name} className="mb-4">
               <Input
-                key={field.name}
                 placeholder={field.label}
                 type="number"
                 name={field.name}
                 value={(ingestor.config as any)[field.name]}
-                onChange={handleIngestorChange}
+                onChange={(e) =>
+                  handleIngestorChange(field.name, parseInt(e.target.value))
+                }
                 borderVariant="thin"
                 label={field.label}
                 colorVariant="gray"
@@ -101,22 +105,11 @@ function Upload({
                 options={field.options || []}
                 selectedValue={(ingestor.config as any)[field.name]}
                 onSelect={(
-                  value:
-                    | string
-                    | { name: string; id: string; type: string }
-                    | { label: string; value: string }
-                    | { value: number; description: string },
+                  selected: { label: string; value: string } | string,
                 ) => {
-                  const syntheticEvent = {
-                    target: {
-                      name: field.name,
-                      value:
-                        typeof value === 'string'
-                          ? value
-                          : JSON.stringify(value),
-                    },
-                  } as React.ChangeEvent<HTMLInputElement>;
-                  handleIngestorChange(syntheticEvent);
+                  const value =
+                    typeof selected === 'string' ? selected : selected.value;
+                  handleIngestorChange(field.name, value);
                 }}
                 size="w-full"
                 rounded="3xl"
@@ -130,7 +123,6 @@ function Upload({
           return (
             <div key={field.name} className="mb-4">
               <ToggleSwitch
-                key={field.name}
                 label={field.label}
                 checked={(ingestor.config as any)[field.name]}
                 onChange={(checked: boolean) => {
@@ -140,7 +132,7 @@ function Upload({
                       value: checked,
                     },
                   } as unknown as React.ChangeEvent<HTMLInputElement>;
-                  handleIngestorChange(syntheticEvent);
+                  handleIngestorChange(field.name, syntheticEvent.target.value);
                 }}
                 className="mt-2"
               />
@@ -381,7 +373,8 @@ function Upload({
     files.forEach((file) => {
       formData.append('file', file);
     });
-    formData.append('name', docName);
+
+    formData.append('name', activeTab === 'file' ? docName : ingestor.name);
     formData.append('user', 'local');
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -406,15 +399,19 @@ function Upload({
     formData.append('source', ingestor.type);
 
     if (ingestor.type === 'reddit') {
-      formData.set('data', JSON.stringify(ingestor.config));
+      const redditConfig = ingestor.config as RedditIngestorConfig;
+      redditConfig.name = ingestor.name;
+      formData.set('data', JSON.stringify(redditConfig));
     } else if (ingestor.type === 'github') {
       const githubConfig = ingestor.config as GithubIngestorConfig;
+      githubConfig.name = ingestor.name;
       formData.append('repo_url', githubConfig.repo_url);
       formData.append('data', githubConfig.repo_url);
     } else {
       const urlBasedConfig = ingestor.config as
         | CrawlerIngestorConfig
         | UrlIngestorConfig;
+      urlBasedConfig.name = ingestor.name;
       formData.append('data', urlBasedConfig.url);
     }
 
@@ -465,70 +462,40 @@ function Upload({
   });
 
   const isUploadDisabled = () => {
+    if (activeTab === 'file') {
+      return !docName || files.length === 0;
+    }
+
     if (activeTab !== 'remote') return false;
 
-    switch (ingestor.type) {
-      case 'reddit': {
-        const redditConfig = ingestor.config as RedditIngestorConfig;
-        return (
-          !redditConfig.client_id ||
-          !redditConfig.client_secret ||
-          !redditConfig.user_agent ||
-          !redditConfig.search_queries.length ||
-          !redditConfig.number_posts
-        );
+    if (!ingestor.name) return true;
+
+    return Object.values(ingestor.config).some((value) => {
+      if (Array.isArray(value)) {
+        return value.length === 0;
       }
-      case 'github':
-        return !(ingestor.config as GithubIngestorConfig).repo_url;
-      default: {
-        const urlConfig = ingestor.config as
-          | CrawlerIngestorConfig
-          | UrlIngestorConfig;
-        return !urlConfig.url || !ingestor.name;
-      }
-    }
+      return !value;
+    });
   };
 
-  const handleIngestorChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const { name, value } = e.target;
+  const handleIngestorChange = (key: string, value: any) => {
+    setIngestor((prevState: IngestorConfig): IngestorConfig => {
+      if (key === 'name') {
+        return {
+          ...prevState,
+          name: value,
+        };
+      }
 
-    if (ingestor.type === 'reddit') {
-      const redditConfig = ingestor.config as RedditIngestorConfig;
-      setIngestor({
-        ...ingestor,
+      return {
+        ...prevState,
         config: {
-          ...redditConfig,
-          [name]:
-            name === 'search_queries'
-              ? value.split(',').map((item) => item.trim())
-              : name === 'number_posts'
-                ? parseInt(value)
-                : value,
+          ...(prevState.config as any),
+          [key]: value,
         },
-      });
-    } else if (ingestor.type === 'github') {
-      const githubConfig = ingestor.config as GithubIngestorConfig;
-      setIngestor({
-        ...ingestor,
-        config: {
-          ...githubConfig,
-          [name]: value,
-        },
-      });
-    } else {
-      const urlConfig = ingestor.config as
-        | CrawlerIngestorConfig
-        | UrlIngestorConfig;
-      setIngestor({
-        ...ingestor,
-        config: {
-          ...urlConfig,
-          [name]: value,
-        },
-      });
-    }
+      };
+    });
+    console.log(ingestor);
   };
 
   const handleChange = (
@@ -686,6 +653,18 @@ function Upload({
               rounded="3xl"
             />
             {/* Dynamically render form fields based on schema */}
+
+            <Input
+              type="text"
+              colorVariant="gray"
+              value={ingestor['name']}
+              onChange={(e) =>
+                setIngestor({ ...ingestor, name: e.target.value })
+              }
+              borderVariant="thin"
+              placeholder="Name"
+              label="Name"
+            />
             {renderFormFields()}
           </>
         )}
@@ -707,7 +686,6 @@ function Upload({
                   uploadRemote();
                 }
               }}
-              disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 font-medium ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'

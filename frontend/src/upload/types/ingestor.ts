@@ -6,7 +6,7 @@ export interface RedditIngestorConfig extends BaseIngestorConfig {
   client_id: string;
   client_secret: string;
   user_agent: string;
-  search_queries: string[];
+  search_queries: string;
   number_posts: number;
 }
 
@@ -31,8 +31,7 @@ export interface IngestorConfig {
     | RedditIngestorConfig
     | GithubIngestorConfig
     | CrawlerIngestorConfig
-    | UrlIngestorConfig
-    | string;
+    | UrlIngestorConfig;
 }
 
 export type IngestorFormData = {
@@ -54,11 +53,6 @@ export interface FormField {
 export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
   crawler: [
     {
-      name: 'name',
-      label: 'Name',
-      type: 'string',
-    },
-    {
       name: 'url',
       label: 'URL',
       type: 'string',
@@ -66,22 +60,12 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
   ],
   url: [
     {
-      name: 'name',
-      label: 'Name',
-      type: 'string',
-    },
-    {
       name: 'url',
       label: 'URL',
       type: 'string',
     },
   ],
   reddit: [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'string',
-    },
     {
       name: 'client_id',
       label: 'Client ID',
@@ -110,11 +94,6 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
   ],
   github: [
     {
-      name: 'name',
-      label: 'Name',
-      type: 'string',
-    },
-    {
       name: 'repo_url',
       label: 'Repository URL',
       type: 'string',
@@ -129,32 +108,28 @@ export const IngestorDefaultConfigs: Record<
   crawler: {
     name: '',
     config: {
-      name: '',
       url: '',
     } as CrawlerIngestorConfig,
   },
   url: {
     name: '',
     config: {
-      name: '',
       url: '',
     } as UrlIngestorConfig,
   },
   reddit: {
     name: '',
     config: {
-      name: '',
       client_id: '',
       client_secret: '',
       user_agent: '',
-      search_queries: [],
+      search_queries: '',
       number_posts: 10,
     } as RedditIngestorConfig,
   },
   github: {
     name: '',
     config: {
-      name: '',
       repo_url: '',
     } as GithubIngestorConfig,
   },
