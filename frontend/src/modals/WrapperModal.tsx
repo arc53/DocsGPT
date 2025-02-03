@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 
 import Exit from '../assets/exit.svg';
-import { WrapperModalProps } from './types';
+import { WrapperModalPropsType } from './types';
 
 export default function WrapperModal({
   children,
   close,
   isPerformingTask,
-}: WrapperModalProps) {
+}: WrapperModalPropsType) {
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

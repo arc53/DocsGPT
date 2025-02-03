@@ -19,7 +19,19 @@ export type LogData = {
   timestamp: string;
 };
 
-export type UserTool = {
+export type ParameterGroupType = {
+  type: 'object';
+  properties: {
+    [key: string]: {
+      type: 'string' | 'integer';
+      description: string;
+      value: string | number;
+      filled_by_llm: boolean;
+    };
+  };
+};
+
+export type UserToolType = {
   id: string;
   name: string;
   displayName: string;
@@ -46,4 +58,24 @@ export type UserTool = {
     };
     active: boolean;
   }[];
+};
+
+export type APIActionType = {
+  name: string;
+  url: string;
+  description: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  query_params: ParameterGroupType;
+  headers: ParameterGroupType;
+  body: ParameterGroupType;
+  active: boolean;
+};
+
+export type APIToolType = {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string;
+  status: boolean;
+  config: { actions: { [key: string]: APIActionType } };
 };

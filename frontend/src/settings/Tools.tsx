@@ -10,7 +10,7 @@ import { useDarkTheme } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import { ActiveState } from '../models/misc';
 import ToolConfig from './ToolConfig';
-import { UserTool } from './types';
+import { APIToolType, UserToolType } from './types';
 
 export default function Tools() {
   const { t } = useTranslation();
@@ -18,8 +18,10 @@ export default function Tools() {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
-  const [userTools, setUserTools] = React.useState<UserTool[]>([]);
-  const [selectedTool, setSelectedTool] = React.useState<UserTool | null>(null);
+  const [userTools, setUserTools] = React.useState<UserToolType[]>([]);
+  const [selectedTool, setSelectedTool] = React.useState<
+    UserToolType | APIToolType | null
+  >(null);
 
   const getUserTools = () => {
     userService
@@ -47,7 +49,7 @@ export default function Tools() {
       });
   };
 
-  const handleSettingsClick = (tool: UserTool) => {
+  const handleSettingsClick = (tool: UserToolType) => {
     setSelectedTool(tool);
   };
 
