@@ -26,6 +26,21 @@ class Agent:
         tools_by_id = {str(tool["_id"]): tool for tool in user_tools}
         return tools_by_id
 
+    def _build_tool_parameters(self, action):
+        params = {"type": "object", "properties": {}, "required": []}
+        for param_type in ["query_params", "headers", "body", "parameters"]:
+            if param_type in action and action[param_type].get("properties"):
+                for k, v in action[param_type]["properties"].items():
+                    if v.get("filled_by_llm", True):
+                        params["properties"][k] = {
+                            key: value
+                            for key, value in v.items()
+                            if key != "filled_by_llm" and key != "value"
+                        }
+
+                        params["required"].append(k)
+        return params
+
     def _prepare_tools(self, tools_dict):
         self.tools = [
             {
@@ -33,26 +48,7 @@ class Agent:
                 "function": {
                     "name": f"{action['name']}_{tool_id}",
                     "description": action["description"],
-                    "parameters": {
-                        **action["parameters"],
-                        "properties": {
-                            k: {
-                                key: value
-                                for key, value in v.items()
-                                if key != "filled_by_llm" and key != "value"
-                            }
-                            for k, v in action["parameters"]["properties"].items()
-                            if v.get("filled_by_llm", True)
-                        },
-                        "required": [
-                            key
-                            for key in action["parameters"]["required"]
-                            if key in action["parameters"]["properties"]
-                            and action["parameters"]["properties"][key].get(
-                                "filled_by_llm", True
-                            )
-                        ],
-                    },
+                    "parameters": self._build_tool_parameters(action),
                 },
             }
             for tool_id, tool in tools_dict.items()
@@ -79,21 +75,49 @@ class Agent:
             )
         )
 
-        for param, details in action_data["parameters"]["properties"].items():
-            if param not in call_args and "value" in details:
-                call_args[param] = details["value"]
+        query_params, headers, body, parameters = {}, {}, {}, {}
+        param_types = {
+            "query_params": query_params,
+            "headers": headers,
+            "body": body,
+            "parameters": parameters,
+        }
+
+        for param_type, target_dict in param_types.items():
+            if param_type in action_data and action_data[param_type].get("properties"):
+                for param, details in action_data[param_type]["properties"].items():
+                    if param not in call_args and "value" in details:
+                        target_dict[param] = details["value"]
+
+        for param, value in call_args.items():
+            for param_type, target_dict in param_types.items():
+                if param_type in action_data and param in action_data[param_type].get(
+                    "properties", {}
+                ):
+                    target_dict[param] = value
 
         tm = ToolManager(config={})
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=(
-                tool_data["config"]["actions"][action_name]
+                {
+                    "url": tool_data["config"]["actions"][action_name]["url"],
+                    "method": tool_data["config"]["actions"][action_name]["method"],
+                    "headers": headers,
+                    "query_params": query_params,
+                }
                 if tool_data["name"] == "api_tool"
                 else tool_data["config"]
             ),
         )
-        print(f"Executing tool: {action_name} with args: {call_args}")
-        result = tool.execute_action(action_name, **call_args)
+        if tool_data["name"] == "api_tool":
+            print(
+                f"Executing api: {action_name} with query_params: {query_params}, headers: {headers}, body: {body}"
+            )
+            result = tool.execute_action(action_name, **body)
+        else:
+            print(f"Executing tool: {action_name} with args: {call_args}")
+            result = tool.execute_action(action_name, **parameters)
         call_id = getattr(call, "id", None)
         return result, call_id
 

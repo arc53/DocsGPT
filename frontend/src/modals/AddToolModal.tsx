@@ -1,11 +1,12 @@
 import React, { useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import userService from '../api/services/userService';
 import Exit from '../assets/exit.svg';
-import { ActiveState } from '../models/misc';
-import { AvailableTool } from './types';
-import ConfigToolModal from './ConfigToolModal';
 import { useOutsideAlerter } from '../hooks';
-import { useTranslation } from 'react-i18next';
+import { ActiveState } from '../models/misc';
+import ConfigToolModal from './ConfigToolModal';
+import { AvailableToolType } from './types';
 
 export default function AddToolModal({
   message,
@@ -18,12 +19,11 @@ export default function AddToolModal({
   setModalState: (state: ActiveState) => void;
   getUserTools: () => void;
 }) {
-  const [availableTools, setAvailableTools] = React.useState<AvailableTool[]>(
-    [],
-  );
-  const [selectedTool, setSelectedTool] = React.useState<AvailableTool | null>(
-    null,
-  );
+  const [availableTools, setAvailableTools] = React.useState<
+    AvailableToolType[]
+  >([]);
+  const [selectedTool, setSelectedTool] =
+    React.useState<AvailableToolType | null>(null);
   const [configModalState, setConfigModalState] =
     React.useState<ActiveState>('INACTIVE');
   const modalRef = useRef<HTMLDivElement>(null);
@@ -46,7 +46,7 @@ export default function AddToolModal({
       });
   };
 
-  const handleAddTool = (tool: AvailableTool) => {
+  const handleAddTool = (tool: AvailableToolType) => {
     if (Object.keys(tool.configRequirements).length === 0) {
       userService
         .createTool({

@@ -1,4 +1,4 @@
-export type AvailableTool = {
+export type AvailableToolType = {
   name: string;
   displayName: string;
   description: string;
@@ -10,7 +10,7 @@ export type AvailableTool = {
   }[];
 };
 
-export type WrapperModalProps = {
+export type WrapperModalPropsType = {
   children?: React.ReactNode;
   isPerformingTask?: boolean;
   close: () => void;

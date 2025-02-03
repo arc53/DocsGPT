@@ -15,11 +15,16 @@ class APITool(Tool):
         self.url = config.get("url", "")
         self.method = config.get("method", "GET")
         self.headers = config.get("headers", {"Content-Type": "application/json"})
+        self.query_params = config.get("query_params", {})
 
     def execute_action(self, action_name, **kwargs):
-        return self._make_api_call(self.url, self.method, self.headers, kwargs)
+        return self._make_api_call(
+            self.url, self.method, self.headers, self.query_params, kwargs
+        )
 
-    def _make_api_call(self, url, method, headers, body):
+    def _make_api_call(self, url, method, headers, query_params, body):
+        if query_params:
+            url = f"{url}?{requests.compat.urlencode(query_params)}"
         if isinstance(body, dict):
             body = json.dumps(body)
         try:
