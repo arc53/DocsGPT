@@ -4,12 +4,19 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - arm-build
 
 jobs:
   deploy:
     if: github.repository == 'arc53/DocsGPT'
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-22.04-arm64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -17,6 +24,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up QEMU
+        if: matrix.platform == 'linux/arm64'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -39,7 +47,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           file: './application/Dockerfile'
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           context: ./application
           push: true
           tags: |
