@@ -49,7 +49,22 @@ const config = {
     light: 212,
   },
   footer: {
-    text: `MIT ${new Date().getFullYear()} © DocsGPT`,
+    text: (
+      <div>
+        <span>MIT {new Date().getFullYear()} © </span>
+        <a href="https://www.docsgpt.cloud/" target="_blank">
+          DocsGPT
+        </a>
+        {' | '}
+        <a href="https://github.com/arc53/DocsGPT" target="_blank">
+          GitHub
+        </a>
+        {' | '}
+        <a href="https://www.blog.docsgpt.cloud/" target="_blank">
+          Blog
+        </a>
+      </div>
+    ),
   },
   editLink: {
     content: 'Edit this page on GitHub',
