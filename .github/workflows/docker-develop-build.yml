@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - arm-build
+      - arm-builds
 
 jobs:
   deploy:
