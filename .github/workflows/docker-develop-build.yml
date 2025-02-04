@@ -70,7 +70,6 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop
-          targets: [
-            ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop-amd64,
+          targets: |
+            ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop-amd64
             ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop-arm64
-          ]
