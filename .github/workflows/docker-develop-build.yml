@@ -79,14 +79,14 @@ jobs:
         
       - name: Create and push manifest for DockerHub
         run: |
-          docker manifest create ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:develop \
-            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:develop-amd64 \
-            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:develop-arm64
-          docker manifest push ${{ secrets.DOCKER_USERNAME }}/docsgpt-fe:develop
+          docker manifest create ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop \
+            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop-amd64 \
+            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop-arm64
+          docker manifest push ${{ secrets.DOCKER_USERNAME }}/docsgpt:develop
 
       - name: Create and push manifest for ghcr.io
         run: |
-          docker manifest create ghcr.io/${{ github.repository_owner }}/docsgpt-fe:develop \
-            --amend ghcr.io/${{ github.repository_owner }}/docsgpt-fe:develop-amd64 \
-            --amend ghcr.io/${{ github.repository_owner }}/docsgpt-fe:develop-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/docsgpt-fe:develop
+          docker manifest create ghcr.io/${{ github.repository_owner }}/docsgpt:develop \
+            --amend ghcr.io/${{ github.repository_owner }}/docsgpt:develop-amd64 \
+            --amend ghcr.io/${{ github.repository_owner }}/docsgpt:develop-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/docsgpt:develop
