@@ -66,7 +66,7 @@ download_locally() {
     # Call the function to check and start Docker if needed
     check_and_start_docker
 
-    docker-compose -f docker-compose-local.yaml build && docker-compose -f docker-compose-local.yaml up -d
+    docker compose -f deployment/docker-compose-local.yaml build && docker compose -f deployment/docker-compose-local.yaml up -d
     #python -m venv venv
     #source venv/bin/activate
     pip install -r application/requirements.txt
@@ -82,7 +82,7 @@ download_locally() {
     echo "You can stop the application by running the following command:"
     echo "Ctrl + C and then"
     echo "Then pkill -f 'flask run' and then"
-    echo "docker-compose down"
+    echo "docker compose down"
     flask run --host=0.0.0.0 --port=7091 &
     celery -A application.app.celery worker -l INFO
 }
@@ -98,11 +98,11 @@ use_openai() {
     # Call the function to check and start Docker if needed
     check_and_start_docker
     
-    docker-compose build && docker-compose up -d
+    docker compose -f deployment/docker-compose.yaml build && docker compose -f deployment/docker-compose.yaml up -d
 
     echo "The application will run on http://localhost:5173"
     echo "You can stop the application by running the following command:"
-    echo "docker-compose down"
+    echo "docker compose down"
 }
 
 use_docsgpt() {
@@ -113,11 +113,11 @@ use_docsgpt() {
     # Call the function to check and start Docker if needed
     check_and_start_docker
 
-    docker-compose build && docker-compose up -d
+    docker compose -f deployment/docker-compose.yaml build && docker compose -f deployment/docker-compose.yaml up -d
 
     echo "The application will run on http://localhost:5173"
     echo "You can stop the application by running the following command:"
-    echo "docker-compose down"
+    echo "docker compose down"
 }
 
 # Prompt the user for their choice
