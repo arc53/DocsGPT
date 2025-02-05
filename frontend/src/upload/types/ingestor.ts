@@ -1,5 +1,5 @@
 export interface BaseIngestorConfig {
-  name: string;
+  [key: string]: string | number | boolean;
 }
 
 export interface RedditIngestorConfig extends BaseIngestorConfig {
@@ -44,7 +44,7 @@ export type IngestorFormData = {
 export type FieldType = 'string' | 'number' | 'enum' | 'boolean';
 
 export interface FormField {
-  name: keyof BaseIngestorConfig | string;
+  name: string;
   label: string;
   type: FieldType;
   options?: { label: string; value: string }[];

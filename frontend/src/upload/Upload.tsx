@@ -29,16 +29,6 @@ import {
 } from './types/ingestor';
 import { IngestorDefaultConfigs } from '../upload/types/ingestor';
 
-type IngestorState = {
-  type: IngestorType;
-  name: string;
-  config:
-    | RedditIngestorConfig
-    | GithubIngestorConfig
-    | CrawlerIngestorConfig
-    | UrlIngestorConfig;
-};
-
 function Upload({
   receivedFile = [],
   setModalState,
@@ -55,88 +45,102 @@ function Upload({
   onSuccessfulUpload?: () => void;
 }) {
   const [docName, setDocName] = useState(receivedFile[0]?.name);
+  const [remoteName, setRemoteName] = useState('');
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<string | null>(renderTab);
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
-
     return schema.map((field: FormField) => {
       switch (field.type) {
         case 'string':
           return (
-            <div key={field.name} className="mb-4">
-              <Input
-                placeholder={field.label}
-                type="text"
-                name={field.name}
-                value={(ingestor.config as any)[field.name]}
-                onChange={(e) =>
-                  handleIngestorChange(field.name, e.target.value)
-                }
-                borderVariant="thin"
-                label={field.label}
-                colorVariant="gray"
-              />
-            </div>
+            <Input
+              key={field.name}
+              placeholder={field.label}
+              type="text"
+              name={field.name}
+              value={String(
+                ingestor.config[field.name as keyof typeof ingestor.config],
+              )}
+              onChange={(
+                e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>,
+              ) =>
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  e.target.value,
+                )
+              }
+              borderVariant="thin"
+              label={field.label}
+              colorVariant="gray"
+            />
           );
         case 'number':
           return (
-            <div key={field.name} className="mb-4">
-              <Input
-                placeholder={field.label}
-                type="number"
-                name={field.name}
-                value={(ingestor.config as any)[field.name]}
-                onChange={(e) =>
-                  handleIngestorChange(field.name, parseInt(e.target.value))
-                }
-                borderVariant="thin"
-                label={field.label}
-                colorVariant="gray"
-              />
-            </div>
+            <Input
+              key={field.name}
+              placeholder={field.label}
+              type="number"
+              name={field.name}
+              value={String(
+                ingestor.config[field.name as keyof typeof ingestor.config],
+              )}
+              onChange={(
+                e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>,
+              ) =>
+                handleIngestorChange(
+                  field.name as typeof ingestor.config &
+                    keyof typeof ingestor.config,
+                  Number(e.target.value),
+                )
+              }
+              borderVariant="thin"
+              label={field.label}
+              colorVariant="gray"
+            />
           );
         case 'enum':
           return (
-            <div key={field.name} className="mb-4">
-              <Dropdown
-                key={field.name}
-                options={field.options || []}
-                selectedValue={(ingestor.config as any)[field.name]}
-                onSelect={(
-                  selected: { label: string; value: string } | string,
-                ) => {
-                  const value =
-                    typeof selected === 'string' ? selected : selected.value;
-                  handleIngestorChange(field.name, value);
-                }}
-                size="w-full"
-                rounded="3xl"
-                placeholder={field.label}
-                border="border"
-                borderColor="gray-5000"
-              />
-            </div>
+            <Dropdown
+              key={field.name}
+              options={field.options || []}
+              selectedValue={String(
+                ingestor.config[field.name as keyof typeof ingestor.config],
+              )}
+              onSelect={(
+                selected: { label: string; value: string } | string,
+              ) => {
+                const value =
+                  typeof selected === 'string' ? selected : selected.value;
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  value,
+                );
+              }}
+              size="w-full"
+              rounded="3xl"
+              placeholder={field.label}
+              border="border"
+              borderColor="gray-5000"
+            />
           );
         case 'boolean':
           return (
-            <div key={field.name} className="mb-4">
-              <ToggleSwitch
-                label={field.label}
-                checked={(ingestor.config as any)[field.name]}
-                onChange={(checked: boolean) => {
-                  const syntheticEvent = {
-                    target: {
-                      name: field.name,
-                      value: checked,
-                    },
-                  } as unknown as React.ChangeEvent<HTMLInputElement>;
-                  handleIngestorChange(field.name, syntheticEvent.target.value);
-                }}
-                className="mt-2"
-              />
-            </div>
+            <ToggleSwitch
+              key={field.name}
+              label={field.label}
+              checked={Boolean(
+                ingestor.config[field.name as keyof typeof ingestor.config],
+              )}
+              onChange={(checked: boolean) => {
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  checked,
+                );
+              }}
+              className="mt-2"
+            />
           );
         default:
           return null;
@@ -171,11 +175,6 @@ function Upload({
     { label: 'GitHub', value: 'github' },
     { label: 'Reddit', value: 'reddit' },
   ];
-
-  const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: 'Crawler',
-    value: 'crawler',
-  });
 
   const sourceDocs = useSelector(selectSourceDocs);
   useEffect(() => {
@@ -363,7 +362,7 @@ function Upload({
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setfiles(acceptedFiles);
-    setDocName(acceptedFiles[0]?.name);
+    setDocName(acceptedFiles[0]?.name || '');
   }, []);
 
   const doNothing = () => undefined;
@@ -374,7 +373,7 @@ function Upload({
       formData.append('file', file);
     });
 
-    formData.append('name', activeTab === 'file' ? docName : ingestor.name);
+    formData.append('name', docName);
     formData.append('user', 'local');
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -394,40 +393,47 @@ function Upload({
 
   const uploadRemote = () => {
     const formData = new FormData();
-    formData.append('name', ingestor.name);
+    formData.append('name', remoteName);
     formData.append('user', 'local');
     formData.append('source', ingestor.type);
 
     if (ingestor.type === 'reddit') {
       const redditConfig = ingestor.config as RedditIngestorConfig;
-      redditConfig.name = ingestor.name;
+
       formData.set('data', JSON.stringify(redditConfig));
     } else if (ingestor.type === 'github') {
       const githubConfig = ingestor.config as GithubIngestorConfig;
-      githubConfig.name = ingestor.name;
       formData.append('repo_url', githubConfig.repo_url);
       formData.append('data', githubConfig.repo_url);
     } else {
       const urlBasedConfig = ingestor.config as
         | CrawlerIngestorConfig
         | UrlIngestorConfig;
-      urlBasedConfig.name = ingestor.name;
       formData.append('data', urlBasedConfig.url);
     }
 
-    const apiHost = import.meta.env.VITE_API_HOST;
+    const apiHost: string = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', (event) => {
-      const progress = +((event.loaded / event.total) * 100).toFixed(2);
-      setProgress({ type: 'UPLOAD', percentage: progress });
+    xhr.upload.addEventListener('progress', (event: ProgressEvent) => {
+      if (event.lengthComputable) {
+        const progressPercentage = +(
+          (event.loaded / event.total) *
+          100
+        ).toFixed(2);
+        setProgress({ type: 'UPLOAD', percentage: progressPercentage });
+      }
     });
     xhr.onload = () => {
-      const { task_id } = JSON.parse(xhr.responseText);
-      setTimeoutRef.current = setTimeout(() => {
-        setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
+      const response = JSON.parse(xhr.responseText) as { task_id: string };
+      setTimeoutRef.current = window.setTimeout(() => {
+        setProgress({
+          type: 'TRAINING',
+          percentage: 0,
+          taskId: response.task_id,
+        });
       }, 3000);
     };
-    xhr.open('POST', `${apiHost + '/api/remote'}`);
+    xhr.open('POST', `${apiHost}/api/remote`);
     xhr.send(formData);
   };
 
@@ -461,43 +467,53 @@ function Upload({
     },
   });
 
-  const isUploadDisabled = () => {
+  const isUploadDisabled = (): boolean => {
     if (activeTab === 'file') {
-      return !docName || files.length === 0;
+      return !docName?.trim() || files.length === 0;
     }
-
-    if (activeTab !== 'remote') return false;
-
-    if (!ingestor.name) return true;
-
-    return Object.values(ingestor.config).some((value) => {
-      if (Array.isArray(value)) {
-        return value.length === 0;
+    if (activeTab === 'remote') {
+      if (!remoteName?.trim()) {
+        return true;
       }
-      return !value;
-    });
+      const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
+      for (const field of formFields) {
+        const value =
+          ingestor.config[field.name as keyof typeof ingestor.config];
+
+        if (typeof value === 'string' && !value.trim()) {
+          return true;
+        }
+
+        if (
+          typeof value === 'number' &&
+          (value === null || value === undefined || value <= 0)
+        ) {
+          return true;
+        }
+
+        if (typeof value === 'boolean' && value === undefined) {
+          return true;
+        }
+      }
+      return false;
+    }
+    return true;
   };
 
-  const handleIngestorChange = (key: string, value: any) => {
-    setIngestor((prevState: IngestorConfig): IngestorConfig => {
-      if (key === 'name') {
-        return {
-          ...prevState,
-          name: value,
-        };
-      }
-
-      return {
-        ...prevState,
-        config: {
-          ...(prevState.config as any),
-          [key]: value,
-        },
-      };
-    });
+  const handleIngestorChange = (
+    key: keyof IngestorConfig['config'],
+    value: string | number | boolean,
+  ) => {
+    setIngestor((prevState) => ({
+      ...prevState,
+      config: {
+        ...prevState.config,
+        [key]: value,
+      },
+    }));
   };
-
   const handleIngestorTypeChange = (type: IngestorType) => {
+    //Updates the ingestor seleced in dropdown and resets the config to the default config for that type
     const defaultConfig = IngestorDefaultConfigs[type];
 
     setIngestor({
@@ -614,10 +630,8 @@ function Upload({
             <Input
               type="text"
               colorVariant="gray"
-              value={ingestor['name']}
-              onChange={(e) =>
-                setIngestor({ ...ingestor, name: e.target.value })
-              }
+              value={remoteName}
+              onChange={(e) => setRemoteName(e.target.value)}
               borderVariant="thin"
               placeholder="Name"
               label="Name"
@@ -643,6 +657,7 @@ function Upload({
                   uploadRemote();
                 }
               }}
+              disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 font-medium ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
