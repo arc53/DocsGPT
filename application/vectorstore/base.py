@@ -88,5 +88,3 @@ class BaseVectorStore(ABC):
 
         return embedding_instance
     
-# Mike014 changed in the block below the word model to models if os.path.exists("./models/all-mpnet-base-v2"): and
-# embeddings_name = "./models/all-mpnet-base-v2",

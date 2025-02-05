@@ -19,17 +19,9 @@ RUN if [ -f /usr/bin/python3.12 ]; then \
     fi
 
 # Download and unzip the model
-# RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
-#     unzip mpnet-base-v2.zip -d model && \
-#     rm mpnet-base-v2.zip
-
-# Mike014, download and unzip the model
 RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
     unzip mpnet-base-v2.zip -d models && \
     rm mpnet-base-v2.zip
-# Mike014, copy the model to the app directory 
-# Mike014, changed the "unzip mpnet-base-v2.zip -d model && \" to "unzip mpnet-base-v2.zip -d models && \"
-# respectively "model" to "models"
 
 # Install Rust
 RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
@@ -71,7 +63,7 @@ RUN groupadd -r appuser && \
 
 # Copy the virtual environment and model from the builder stage
 COPY --from=builder /venv /venv
-# Mike014, copy the model to the app directory, just changed the "model" to "models"
+
 COPY --from=builder /models /app/models
 
 # Copy your application code

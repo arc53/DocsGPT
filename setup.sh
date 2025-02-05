@@ -50,10 +50,6 @@ download_locally() {
     echo "The .env file has been created with LLM_NAME set to llama.cpp."
 
     # Creating the directory if it does not exist
-    # mkdir -p models
-    
-    # Mike014 
-
     mkdir -p models
     
     # Downloading the model to the specific directory
