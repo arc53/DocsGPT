@@ -10,7 +10,6 @@ import {
 import Dropdown from '../components/Dropdown';
 import { Doc } from '../models/misc';
 import Spinner from '../assets/spinner.svg';
-import Exit from '../assets/exit.svg';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
@@ -19,6 +18,7 @@ const embeddingsName =
 type StatusType = 'loading' | 'idle' | 'fetched' | 'failed';
 
 import conversationService from '../api/services/conversationService';
+import WrapperModal from './WrapperModal';
 
 export const ShareConversationModal = ({
   close,
@@ -99,85 +99,84 @@ export const ShareConversationModal = ({
   };
 
   return (
-    <div className="fixed top-0 left-0 z-40 flex h-screen w-screen cursor-default items-center justify-center bg-gray-alpha bg-opacity-50 text-chinese-black dark:text-silver">
-      <div className="relative w-11/12 rounded-2xl bg-white p-10 dark:bg-outer-space sm:w-[512px]">
-        <button className="absolute top-3 right-4 m-2 w-3" onClick={close}>
-          <img className="filter dark:invert" src={Exit} />
-        </button>
-        <div className="flex flex-col gap-2">
-          <h2 className="text-xl font-medium">{t('modals.shareConv.label')}</h2>
-          <p className="text-sm">{t('modals.shareConv.note')}</p>
-          <div className="flex items-center justify-between">
-            <span className="text-lg">{t('modals.shareConv.option')}</span>
-            <label className=" cursor-pointer select-none items-center">
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  checked={allowPrompt}
-                  onChange={togglePromptPermission}
-                  className="sr-only"
-                />
-                <div
-                  className={`box block h-8 w-14 rounded-full border border-purple-30 ${
-                    allowPrompt
-                      ? 'bg-purple-30 dark:bg-purple-30'
-                      : 'dark:bg-transparent'
-                  }`}
-                ></div>
-                <div
-                  className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full  transition ${
-                    allowPrompt ? 'translate-x-full bg-silver' : 'bg-purple-30'
-                  }`}
-                ></div>
-              </div>
-            </label>
-          </div>
-          {allowPrompt && (
-            <div className="my-4">
-              <Dropdown
-                placeholder={t('modals.createAPIKey.sourceDoc')}
-                selectedValue={sourcePath}
-                onSelect={(selection: { label: string; value: string }) =>
-                  setSourcePath(selection)
-                }
-                options={extractDocPaths(sourceDocs ?? [])}
-                size="w-full"
-                rounded="xl"
+    <WrapperModal close={close}>
+      <div className="flex flex-col gap-2">
+        <h2 className="text-xl font-medium text-eerie-black dark:text-white">
+          {t('modals.shareConv.label')}
+        </h2>
+        <p className="text-sm text-eerie-black dark:text-white">
+          {t('modals.shareConv.note')}
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-lg text-eerie-black dark:text-white">
+            {t('modals.shareConv.option')}
+          </span>
+          <label className="cursor-pointer select-none items-center">
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={allowPrompt}
+                onChange={togglePromptPermission}
+                className="sr-only"
               />
+              <div
+                className={`box block h-8 w-14 rounded-full border border-purple-30 ${
+                  allowPrompt
+                    ? 'bg-purple-30 dark:bg-purple-30'
+                    : 'dark:bg-transparent'
+                }`}
+              ></div>
+              <div
+                className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full  transition ${
+                  allowPrompt ? 'translate-x-full bg-silver' : 'bg-purple-30'
+                }`}
+              ></div>
             </div>
-          )}
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 py-3 px-4">
-              {`${domain}/share/${identifier ?? '....'}`}
-            </span>
-            {status === 'fetched' ? (
-              <button
-                className="my-1 h-10 w-28 rounded-full border border-solid  bg-purple-30 p-2 text-sm text-white hover:bg-[#6F3FD1]"
-                onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
-              >
-                {isCopied
-                  ? t('modals.saveKey.copied')
-                  : t('modals.saveKey.copy')}
-              </button>
-            ) : (
-              <button
-                className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full  border border-solid bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-[#6F3FD1]"
-                onClick={() => {
-                  shareCoversationPublicly(allowPrompt);
-                }}
-              >
-                {t('modals.shareConv.create')}
-                {status === 'loading' && (
-                  <img
-                    src={Spinner}
-                    className="inline animate-spin cursor-pointer bg-transparent filter dark:invert"
-                  ></img>
-                )}
-              </button>
-            )}
+          </label>
+        </div>
+        {allowPrompt && (
+          <div className="my-4">
+            <Dropdown
+              placeholder={t('modals.createAPIKey.sourceDoc')}
+              selectedValue={sourcePath}
+              onSelect={(selection: { label: string; value: string }) =>
+                setSourcePath(selection)
+              }
+              options={extractDocPaths(sourceDocs ?? [])}
+              size="w-full"
+              rounded="xl"
+            />
           </div>
+        )}
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 py-3 px-4 text-eerie-black dark:text-white">
+            {`${domain}/share/${identifier ?? '....'}`}
+          </span>
+          {status === 'fetched' ? (
+            <button
+              className="my-1 h-10 w-28 rounded-full border border-solid  bg-purple-30 p-2 text-sm text-white hover:bg-[#6F3FD1]"
+              onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
+            >
+              {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
+            </button>
+          ) : (
+            <button
+              className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full  border border-solid bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-[#6F3FD1]"
+              onClick={() => {
+                shareCoversationPublicly(allowPrompt);
+              }}
+            >
+              {t('modals.shareConv.create')}
+              {status === 'loading' && (
+                <img
+                  src={Spinner}
+                  className="inline animate-spin cursor-pointer bg-transparent filter dark:invert"
+                ></img>
+              )}
+            </button>
+          )}
         </div>
       </div>
-    </div>
+    </WrapperModal>
   );
 };

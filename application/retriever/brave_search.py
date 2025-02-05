@@ -2,7 +2,6 @@ import json
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
-from application.utils import num_tokens_from_string
 from langchain_community.tools import BraveSearch
 
 
@@ -72,22 +71,13 @@ class BraveRetSearch(BaseRetriever):
         for doc in docs:
             yield {"source": doc}
 
-        if len(self.chat_history) > 1:
-            tokens_current_history = 0
-            # count tokens in history
+        if len(self.chat_history) > 0:
             for i in self.chat_history:
                 if "prompt" in i and "response" in i:
-                    tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
-                        i["response"]
+                    messages_combine.append({"role": "user", "content": i["prompt"]})
+                    messages_combine.append(
+                        {"role": "assistant", "content": i["response"]}
                     )
-                    if tokens_current_history + tokens_batch < self.token_limit:
-                        tokens_current_history += tokens_batch
-                        messages_combine.append(
-                            {"role": "user", "content": i["prompt"]}
-                        )
-                        messages_combine.append(
-                            {"role": "system", "content": i["response"]}
-                        )
         messages_combine.append({"role": "user", "content": self.question})
 
         llm = LLMCreator.create_llm(

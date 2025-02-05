@@ -7,8 +7,8 @@ import SettingsBar from '../components/SettingsBar';
 import i18n from '../locale/i18n';
 import { Doc } from '../models/misc';
 import {
-  selectSourceDocs,
   selectPaginatedDocuments,
+  selectSourceDocs,
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
@@ -17,6 +17,7 @@ import APIKeys from './APIKeys';
 import Documents from './Documents';
 import General from './General';
 import Logs from './Logs';
+import Tools from './Tools';
 import Widgets from './Widgets';
 
 export default function Settings() {
@@ -90,8 +91,8 @@ export default function Settings() {
       case 'Widgets':
         return (
           <Widgets
-            widgetScreenshot={widgetScreenshot} // Add this line
-            onWidgetScreenshotChange={updateWidgetScreenshot} // Add this line
+            widgetScreenshot={widgetScreenshot}
+            onWidgetScreenshotChange={updateWidgetScreenshot}
           />
         );
       case t('settings.apiKeys.label'):
@@ -100,6 +101,8 @@ export default function Settings() {
         return <Analytics />;
       case t('settings.logs.label'):
         return <Logs />;
+      case t('settings.tools.label'):
+        return <Tools />;
       default:
         return null;
     }

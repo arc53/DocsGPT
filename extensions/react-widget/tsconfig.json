@@ -21,7 +21,7 @@
       /* Linting */
       "strict": true,
       "noUnusedLocals": false,
-      "noUnusedParameters": true,
+      "noUnusedParameters": false,
       "noFallthroughCasesInSwitch": true,
       /* The "typeRoots" configuration specifies the locations where 
          TypeScript looks for type definitions (.d.ts files) to 

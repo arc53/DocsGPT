@@ -27,6 +27,7 @@ Before creating issues, please check out how the latest version of our app looks
 
 ### 👨‍💻 If you're interested in contributing code, here are some important things to know:
 
+For instructions on setting up a development environment, please refer to our [Development Deployment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
 
 Tech Stack Overview:
 
@@ -36,15 +37,14 @@ Tech Stack Overview:
 
 ### 🌐 If you are looking to contribute to frontend (⚛️React, Vite):
 
-- The current frontend is being migrated from [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) to [`/frontend`](https://github.com/arc53/DocsGPT/tree/main/frontend) with a new design, so please contribute to the new one.
-- Check out this [milestone](https://github.com/arc53/DocsGPT/milestone/1) and its issues.
+
 - The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).
 
 Please try to follow the guidelines.
 
 ### 🖥 If you are looking to contribute to Backend (🐍 Python):
 
-- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) or [`/scripts`](https://github.com/arc53/DocsGPT/tree/main/scripts) (please disregard old [`ingest_rst.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst.py) [`ingest_rst_sphinx.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst_sphinx.py) files; these will be deprecated soon).
+- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) 
 - All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
 - Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
   

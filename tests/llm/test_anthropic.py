@@ -46,6 +46,7 @@ class TestAnthropicLLM(unittest.TestCase):
             {"content": "question"}
         ]
         mock_responses = [Mock(completion="response_1"), Mock(completion="response_2")]
+        mock_tools = Mock()
 
         with patch("application.cache.get_redis_instance") as mock_make_redis:
             mock_redis_instance = mock_make_redis.return_value
@@ -53,7 +54,7 @@ class TestAnthropicLLM(unittest.TestCase):
             mock_redis_instance.set = Mock()
 
             with patch.object(self.llm.anthropic.completions, "create", return_value=iter(mock_responses)) as mock_create:
-                responses = list(self.llm.gen_stream("test_model", messages))
+                responses = list(self.llm.gen_stream("test_model", messages, tools=mock_tools))
                 self.assertListEqual(responses, ["response_1", "response_2"])
 
                 prompt_expected = "### Context \n context \n ### Question \n question"

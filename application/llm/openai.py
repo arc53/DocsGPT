@@ -1,6 +1,5 @@
-from application.llm.base import BaseLLM
 from application.core.settings import settings
-
+from application.llm.base import BaseLLM
 
 
 class OpenAILLM(BaseLLM):
@@ -10,10 +9,7 @@ class OpenAILLM(BaseLLM):
 
         super().__init__(*args, **kwargs)
         if settings.OPENAI_BASE_URL:
-            self.client = OpenAI(
-                api_key=api_key,
-                base_url=settings.OPENAI_BASE_URL
-            )
+            self.client = OpenAI(api_key=api_key, base_url=settings.OPENAI_BASE_URL)
         else:
             self.client = OpenAI(api_key=api_key)
         self.api_key = api_key
@@ -25,14 +21,20 @@ class OpenAILLM(BaseLLM):
         model,
         messages,
         stream=False,
+        tools=None,
         engine=settings.AZURE_DEPLOYMENT_NAME,
-        **kwargs
-    ):  
-        response = self.client.chat.completions.create(
-            model=model, messages=messages, stream=stream, **kwargs
-        )
-
-        return response.choices[0].message.content
+        **kwargs,
+    ):
+        if tools:
+            response = self.client.chat.completions.create(
+                model=model, messages=messages, stream=stream, tools=tools, **kwargs
+            )
+            return response.choices[0]
+        else:
+            response = self.client.chat.completions.create(
+                model=model, messages=messages, stream=stream, **kwargs
+            )
+            return response.choices[0].message.content
 
     def _raw_gen_stream(
         self,
@@ -40,18 +42,20 @@ class OpenAILLM(BaseLLM):
         model,
         messages,
         stream=True,
+        tools=None,
         engine=settings.AZURE_DEPLOYMENT_NAME,
-        **kwargs
-    ):  
+        **kwargs,
+    ):
         response = self.client.chat.completions.create(
             model=model, messages=messages, stream=stream, **kwargs
         )
 
         for line in response:
-            # import sys
-            # print(line.choices[0].delta.content, file=sys.stderr)
             if line.choices[0].delta.content is not None:
                 yield line.choices[0].delta.content
+
+    def _supports_tools(self):
+        return True
 
 
 class AzureOpenAILLM(OpenAILLM):

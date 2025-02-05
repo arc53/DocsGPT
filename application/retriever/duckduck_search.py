@@ -1,7 +1,6 @@
 from application.retriever.base import BaseRetriever
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
-from application.utils import num_tokens_from_string
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
@@ -89,21 +88,12 @@ class DuckDuckSearch(BaseRetriever):
         for doc in docs:
             yield {"source": doc}
 
-        if len(self.chat_history) > 1:
-            tokens_current_history = 0
-            # count tokens in history
+        if len(self.chat_history) > 0:      
             for i in self.chat_history:
-                if "prompt" in i and "response" in i:
-                    tokens_batch = num_tokens_from_string(i["prompt"]) + num_tokens_from_string(
-                        i["response"]
-                    )
-                    if tokens_current_history + tokens_batch < self.token_limit:
-                        tokens_current_history += tokens_batch
+                    if "prompt" in i and "response" in i:
+                        messages_combine.append({"role": "user", "content": i["prompt"]})
                         messages_combine.append(
-                            {"role": "user", "content": i["prompt"]}
-                        )
-                        messages_combine.append(
-                            {"role": "system", "content": i["response"]}
+                            {"role": "assistant", "content": i["response"]}
                         )
         messages_combine.append({"role": "user", "content": self.question})
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import userService from '../api/services/userService';
 import SyncIcon from '../assets/sync.svg';
@@ -15,6 +15,8 @@ import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure Act
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import { setPaginatedDocuments } from '../preferences/preferenceSlice';
+import { formatDate } from '../utils/dateTimeUtils';
+import ConfirmationModal from '../modals/ConfirmationModal';
 
 // Utility function to format numbers
 const formatTokens = (tokens: number): string => {
@@ -40,69 +42,76 @@ const Documents: React.FC<DocumentsProps> = ({
   const { t } = useTranslation();
   const dispatch = useDispatch();
   // State for search input
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
   // State for modal: active/inactive
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
-  const [isOnboarding, setIsOnboarding] = useState(false); // State for onboarding flag
-  const [loading, setLoading] = useState(false);
+  const [isOnboarding, setIsOnboarding] = useState<boolean>(false); // State for onboarding flag
+  const [loading, setLoading] = useState<boolean>(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   // Pagination
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
-  // const [totalDocuments, setTotalDocuments] = useState<number>(0);
-  // Filter documents based on the search term
-  const filteredDocuments = paginatedDocuments?.filter((document) =>
-    document.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-  // State for documents
-  const currentDocuments = filteredDocuments ?? [];
-  console.log('currentDocuments', currentDocuments);
+  const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
-    { label: 'Never', value: 'never' },
-    { label: 'Daily', value: 'daily' },
-    { label: 'Weekly', value: 'weekly' },
-    { label: 'Monthly', value: 'monthly' },
+    { label: t('settings.documents.syncFrequency.never'), value: 'never' },
+    { label: t('settings.documents.syncFrequency.daily'), value: 'daily' },
+    { label: t('settings.documents.syncFrequency.weekly'), value: 'weekly' },
+    { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
 
-  const refreshDocs = (
-    field: 'date' | 'tokens' | undefined,
-    pageNumber?: number,
-    rows?: number,
-  ) => {
-    const page = pageNumber ?? currentPage;
-    const rowsPerPg = rows ?? rowsPerPage;
+  const refreshDocs = useCallback(
+    (
+      field: 'date' | 'tokens' | undefined,
+      pageNumber?: number,
+      rows?: number,
+    ) => {
+      const page = pageNumber ?? currentPage;
+      const rowsPerPg = rows ?? rowsPerPage;
 
-    if (field !== undefined) {
-      if (field === sortField) {
-        // Toggle sort order
-        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-      } else {
-        // Change sort field and reset order to 'desc'
-        setSortField(field);
-        setSortOrder('desc');
+      // If field is undefined, (Pagination or Search) use the current sortField
+      const newSortField = field ?? sortField;
+
+      // If field is undefined, (Pagination or Search) use the current sortOrder
+      const newSortOrder =
+        field === sortField
+          ? sortOrder === 'asc'
+            ? 'desc'
+            : 'asc'
+          : sortOrder;
+
+      // If field is defined, update the sortField and sortOrder
+      if (field) {
+        setSortField(newSortField);
+        setSortOrder(newSortOrder);
       }
-    }
-    getDocsWithPagination(sortField, sortOrder, page, rowsPerPg)
-      .then((data) => {
-        //dispatch(setSourceDocs(data ? data.docs : []));
-        dispatch(setPaginatedDocuments(data ? data.docs : []));
-        setTotalPages(data ? data.totalPages : 0);
-        //setTotalDocuments(data ? data.totalDocuments : 0);
-      })
-      .catch((error) => console.error(error))
-      .finally(() => {
-        setLoading(false);
-      });
-  };
+
+      setLoading(true);
+      getDocsWithPagination(
+        newSortField,
+        newSortOrder,
+        page,
+        rowsPerPg,
+        searchTerm,
+      )
+        .then((data) => {
+          dispatch(setPaginatedDocuments(data ? data.docs : []));
+          setTotalPages(data ? data.totalPages : 0);
+        })
+        .catch((error) => console.error(error))
+        .finally(() => {
+          setLoading(false);
+        });
+    },
+    [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
+  );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
     userService
       .manageSync({ source_id: doc.id, sync_frequency })
       .then(() => {
-        // First, fetch the updated source docs
         return getDocs();
       })
       .then((data) => {
@@ -126,112 +135,150 @@ const Documents: React.FC<DocumentsProps> = ({
       });
   };
 
-  useEffect(() => {
-    if (modalState === 'INACTIVE') {
-      refreshDocs(sortField, currentPage, rowsPerPage);
+  const [documentToDelete, setDocumentToDelete] = useState<{
+    index: number;
+    document: Doc;
+  } | null>(null);
+  const [deleteModalState, setDeleteModalState] =
+    useState<ActiveState>('INACTIVE');
+
+  const handleDeleteConfirmation = (index: number, document: Doc) => {
+    setDocumentToDelete({ index, document });
+    setDeleteModalState('ACTIVE');
+  };
+
+  const handleConfirmedDelete = () => {
+    if (documentToDelete) {
+      handleDeleteDocument(documentToDelete.index, documentToDelete.document);
+      setDeleteModalState('INACTIVE');
+      setDocumentToDelete(null);
     }
-  }, [modalState, sortField, currentPage, rowsPerPage]);
+  };
+
+  useEffect(() => {
+    refreshDocs(undefined, 1, rowsPerPage);
+  }, [searchTerm]);
 
   return (
-    <div className="mt-8">
-      <div className="flex flex-col relative">
-        <div className="z-10 w-full overflow-x-auto">
-          <div className="my-3 flex justify-between items-center">
-            <div className="p-1">
-              <Input
-                maxLength={256}
-                placeholder="Search..."
-                name="Document-search-input"
-                type="text"
-                id="document-search-input"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} // Handle search input change
-              />
-            </div>
-            <button
-              className="rounded-full w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
-              onClick={() => {
-                setIsOnboarding(false); // Set onboarding flag if needed
-                setModalState('ACTIVE'); // Open the upload modal
+    <div className="flex flex-col mt-8">
+      <div className="flex flex-col relative flex-grow">
+        <div className="mb-6">
+          <h2 className="text-base font-medium text-sonic-silver">
+            {t('settings.documents.title')}
+          </h2>
+        </div>
+        <div className="my-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="w-full sm:w-auto">
+            <label htmlFor="document-search-input" className="sr-only">
+              {t('settings.documents.searchPlaceholder')}
+            </label>
+            <Input
+              maxLength={256}
+              placeholder={t('settings.documents.searchPlaceholder')}
+              name="Document-search-input"
+              type="text"
+              id="document-search-input"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
               }}
-            >
-              Add New
-            </button>
+            />
           </div>
-          {loading ? (
-            <SkeletonLoader count={1} />
-          ) : (
-            <table className="table-default">
-              <thead>
-                <tr>
-                  <th>{t('settings.documents.name')}</th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.date')}
-                      <img
-                        className="cursor-pointer"
-                        onClick={() => refreshDocs('date')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.tokenUsage')}
-                      <img
-                        className="cursor-pointer"
-                        onClick={() => refreshDocs('tokens')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th>
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.type')}
-                    </div>
-                  </th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {!currentDocuments?.length && (
-                  <tr>
-                    <td colSpan={5} className="!p-4">
-                      {t('settings.documents.noData')}
-                    </td>
+          <button
+            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            title={t('settings.documents.addNew')}
+            onClick={() => {
+              setIsOnboarding(false);
+              setModalState('ACTIVE');
+            }}
+          >
+            {t('settings.documents.addNew')}
+          </button>
+        </div>
+
+        {loading ? (
+          <SkeletonLoader count={1} />
+        ) : (
+          <div className="flex flex-col flex-grow">
+            {' '}
+            {/* Removed overflow-auto */}
+            <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
+              <table className="w-full min-w-[640px] table-auto">
+                <thead>
+                  <tr className="border-b border-gray-300 dark:border-silver/40">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
+                      {t('settings.documents.name')}
+                    </th>
+                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
+                      <div className="flex justify-center items-center">
+                        {t('settings.documents.date')}
+                        <img
+                          className="cursor-pointer ml-2"
+                          onClick={() => refreshDocs('date')}
+                          src={caretSort}
+                          alt="sort"
+                        />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
+                      <div className="flex justify-center items-center">
+                        <span className="hidden sm:inline">
+                          {t('settings.documents.tokenUsage')}
+                        </span>
+                        <span className="sm:hidden">
+                          {t('settings.documents.tokenUsage')}
+                        </span>
+                        <img
+                          className="cursor-pointer ml-2"
+                          onClick={() => refreshDocs('tokens')}
+                          src={caretSort}
+                          alt="sort"
+                        />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
+                      <span className="sr-only">
+                        {t('settings.documents.actions')}
+                      </span>
+                    </th>
                   </tr>
-                )}
-                {Array.isArray(currentDocuments) &&
-                  currentDocuments.map((document, index) => (
-                    <tr key={index} className="text-nowrap font-normal">
-                      <td>{document.name}</td>
-                      <td>{document.date}</td>
-                      <td>
-                        {document.tokens ? formatTokens(+document.tokens) : ''}
+                </thead>
+                <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
+                  {!currentDocuments?.length ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="py-4 text-center text-gray-700 dark:text-[#E0E0E] bg-transparent"
+                      >
+                        {t('settings.documents.noData')}
                       </td>
-                      <td>
-                        {document.type === 'remote' ? 'Pre-loaded' : 'Private'}
-                      </td>
-                      <td>
-                        <div className="min-w-[70px] flex flex-row items-end justify-end ml-auto">
-                          {document.type !== 'remote' && (
-                            <img
-                              src={Trash}
-                              alt="Delete"
-                              className="h-4 w-4 cursor-pointer opacity-60 hover:opacity-100"
-                              id={`img-${index}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteDocument(index, document);
-                              }}
-                            />
-                          )}
-                          {document.syncFrequency && (
-                            <div className="ml-2">
+                    </tr>
+                  ) : (
+                    currentDocuments.map((document, index) => (
+                      <tr key={index} className="group transition-colors">
+                        <td
+                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                          title={document.name}
+                        >
+                          {document.name}
+                        </td>
+                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          {document.date ? formatDate(document.date) : ''}
+                        </td>
+                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          {document.tokens
+                            ? formatTokens(+document.tokens)
+                            : ''}
+                        </td>
+                        <td className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          <div className="flex items-center justify-end gap-3">
+                            {!document.syncFrequency && (
+                              <div className="w-8"></div>
+                            )}
+                            {document.syncFrequency && (
                               <DropdownMenu
-                                name="Sync"
+                                name={t('settings.documents.sync')}
                                 options={syncOptions}
                                 onSelect={(value: string) => {
                                   handleManageSync(document, value);
@@ -239,49 +286,77 @@ const Documents: React.FC<DocumentsProps> = ({
                                 defaultValue={document.syncFrequency}
                                 icon={SyncIcon}
                               />
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-        {/* Conditionally render the Upload modal based on modalState */}
-        {modalState === 'ACTIVE' && (
-          <div className="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center bg-transparent">
-            <div className="w-full h-full bg-transparent flex flex-col items-center justify-center p-8">
-              {/* Your Upload component */}
-              <Upload
-                modalState={modalState}
-                setModalState={setModalState}
-                isOnboarding={isOnboarding}
-              />
+                            )}
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteConfirmation(index, document);
+                              }}
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                            >
+                              <img
+                                src={Trash}
+                                alt={t('convTile.delete')}
+                                className="h-4 w-4 opacity-60 hover:opacity-100"
+                              />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
       </div>
-      {/* Pagination component with props:
-      # Note: Every time the page changes, 
-      the refreshDocs function is called with the updated page number and rows per page.
-      and reset cursor paginated query parameter to undefined.
-      */}
-      <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
-        rowsPerPage={rowsPerPage}
-        onPageChange={(page) => {
-          setCurrentPage(page);
-          refreshDocs(sortField, page, rowsPerPage);
-        }}
-        onRowsPerPageChange={(rows) => {
-          setRowsPerPage(rows);
-          setCurrentPage(1);
-          refreshDocs(sortField, 1, rows);
-        }}
-      />
+
+      <div className="mt-auto pt-4">
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          rowsPerPage={rowsPerPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            refreshDocs(undefined, page, rowsPerPage);
+          }}
+          onRowsPerPageChange={(rows) => {
+            setRowsPerPage(rows);
+            setCurrentPage(1);
+            refreshDocs(undefined, 1, rows);
+          }}
+        />
+      </div>
+
+      {modalState === 'ACTIVE' && (
+        <Upload
+          receivedFile={[]}
+          setModalState={setModalState}
+          isOnboarding={isOnboarding}
+          renderTab={null}
+          close={() => setModalState('INACTIVE')}
+          onSuccessfulUpload={() =>
+            refreshDocs(undefined, currentPage, rowsPerPage)
+          }
+        />
+      )}
+
+      {deleteModalState === 'ACTIVE' && documentToDelete && (
+        <ConfirmationModal
+          message={t('settings.documents.deleteWarning', {
+            name: documentToDelete.document.name,
+          })}
+          modalState={deleteModalState}
+          setModalState={setDeleteModalState}
+          handleSubmit={handleConfirmedDelete}
+          handleCancel={() => {
+            setDeleteModalState('INACTIVE');
+            setDocumentToDelete(null);
+          }}
+          submitLabel={t('convTile.delete')}
+        />
+      )}
     </div>
   );
 };

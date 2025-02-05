@@ -1,6 +1,6 @@
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed';
-export type FEEDBACK = 'LIKE' | 'DISLIKE';
+export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
 
 export interface Message {
   text: string;
@@ -41,4 +41,5 @@ export interface RetrievalPayload {
   chunks: string;
   token_limit: number;
   isNoneDoc: boolean;
+  index?: number;
 }
