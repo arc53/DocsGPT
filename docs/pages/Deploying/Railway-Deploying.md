@@ -97,11 +97,11 @@ To save the file, press CTRL+X, then Y, and then ENTER.
 
   
 
-Next, set the correct IP for the Backend by opening the docker-compose.yml file:
+Next, set the correct IP for the Backend by opening the docker-compose.yaml file:
 
   
 
-`nano docker-compose.yml`
+`nano deployment/docker-compose.yaml`
 
   
 
@@ -123,7 +123,7 @@ You're almost there! Now that all the necessary bits and pieces have been instal
 
   
 
-`sudo docker-compose up -d`
+`sudo docker compose -f deployment/docker-compose.yaml up -d`
 
   
 
