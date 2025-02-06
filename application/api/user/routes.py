@@ -3,6 +3,7 @@ import math
 import os
 import shutil
 import uuid
+import json
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -420,18 +421,22 @@ class UploadRemote(Resource):
             return missing_fields
 
         try:
-            if "repo_url" in data:
-                source_data = data["repo_url"]
-                loader = "github"
-            else:
-                source_data = data["data"]
-                loader = data["source"]
+           config = json.loads(data["data"])
+           source_data = None
 
-            task = ingest_remote.delay(
+           if data["source"] == "github":
+                source_data = config.get("repo_url")
+           elif data["source"] in ["crawler", "url"]:
+                source_data = config.get("url")
+           elif data["source"] == "reddit":
+                source_data = config 
+
+
+           task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
                 user=data["user"],
-                loader=loader,
+                loader=data["source"]
             )
         except Exception as err:
             return make_response(jsonify({"success": False, "error": str(err)}), 400)

@@ -20,10 +20,6 @@ import WrapperModal from '../modals/WrapperModal';
 import {
   IngestorType,
   IngestorConfig,
-  RedditIngestorConfig,
-  GithubIngestorConfig,
-  CrawlerIngestorConfig,
-  UrlIngestorConfig,
   IngestorFormSchemas,
   FormField,
 } from './types/ingestor';
@@ -397,20 +393,7 @@ function Upload({
     formData.append('user', 'local');
     formData.append('source', ingestor.type);
 
-    if (ingestor.type === 'reddit') {
-      const redditConfig = ingestor.config as RedditIngestorConfig;
-
-      formData.set('data', JSON.stringify(redditConfig));
-    } else if (ingestor.type === 'github') {
-      const githubConfig = ingestor.config as GithubIngestorConfig;
-      formData.append('repo_url', githubConfig.repo_url);
-      formData.append('data', githubConfig.repo_url);
-    } else {
-      const urlBasedConfig = ingestor.config as
-        | CrawlerIngestorConfig
-        | UrlIngestorConfig;
-      formData.append('data', urlBasedConfig.url);
-    }
+    formData.append('data', JSON.stringify(ingestor.config));
 
     const apiHost: string = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
