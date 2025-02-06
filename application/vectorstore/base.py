@@ -75,9 +75,9 @@ class BaseVectorStore(ABC):
                     openai_api_key=embeddings_key
                 )
         elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
-            if os.path.exists("./model/all-mpnet-base-v2"):
+            if os.path.exists("./models/all-mpnet-base-v2"):
                 embedding_instance = EmbeddingsSingleton.get_instance(
-                    embeddings_name="./model/all-mpnet-base-v2",
+                    embeddings_name = "./models/all-mpnet-base-v2",
                 )
             else:
                 embedding_instance = EmbeddingsSingleton.get_instance(
@@ -87,3 +87,4 @@ class BaseVectorStore(ABC):
             embedding_instance = EmbeddingsSingleton.get_instance(embeddings_name)
 
         return embedding_instance
+    

@@ -2,14 +2,14 @@
 
 ### Spin up Mongo and Redis
 
-For development, only two containers are used from [docker-compose.yaml](https://github.com/arc53/DocsGPT/blob/main/docker-compose.yaml) (by deleting all services except for Redis and Mongo).
-See file [docker-compose-dev.yaml](https://github.com/arc53/DocsGPT/blob/main/docker-compose-dev.yaml).
+For development, only two containers are used from [docker-compose.yaml](https://github.com/arc53/DocsGPT/blob/main/deployment/docker-compose.yaml) (by deleting all services except for Redis and Mongo).
+See file [docker-compose-dev.yaml](https://github.com/arc53/DocsGPT/blob/main/deployment/docker-compose-dev.yaml).
 
 Run
 
 ```
-docker compose -f docker-compose-dev.yaml build
-docker compose -f docker-compose-dev.yaml up -d
+docker compose -f deployment/docker-compose-dev.yaml build
+docker compose -f deployment/docker-compose-dev.yaml up -d
 ```
 
 ### Run the Backend
