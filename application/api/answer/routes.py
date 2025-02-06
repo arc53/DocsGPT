@@ -3,7 +3,6 @@ import datetime
 import json
 import logging
 import os
-import sys
 import traceback
 
 from bson.dbref import DBRef
