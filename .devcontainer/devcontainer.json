@@ -1,6 +1,6 @@
 {
 	"name": "DocsGPT Dev Container",
-	"dockerComposeFile": ["../docker-compose-dev.yaml", "docker-compose.override.yaml"],
+	"dockerComposeFile": ["docker-compose-dev.yaml", "docker-compose.override.yaml"],
 	"service": "dev",
 	"workspaceFolder": "/workspace",
 	"postCreateCommand": ".devcontainer/post-create-command.sh",
