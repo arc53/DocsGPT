@@ -1,3 +1,9 @@
+export type ChunkType = {
+  doc_id: string;
+  text: string;
+  metadata: { [key: string]: string };
+};
+
 export type APIKeyData = {
   id: string;
   name: string;

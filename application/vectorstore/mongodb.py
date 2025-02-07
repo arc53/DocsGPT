@@ -124,3 +124,52 @@ class MongoDBVectorStore(BaseVectorStore):
 
     def delete_index(self, *args, **kwargs):
         self._collection.delete_many({"source_id": self._source_id})
+
+    def get_chunks(self):
+        try:
+            chunks = []
+            cursor = self._collection.find({"source_id": self._source_id})
+            for doc in cursor:
+                doc_id = str(doc.get("_id"))
+                text = doc.get(self._text_key)
+                metadata = {
+                    k: v
+                    for k, v in doc.items()
+                    if k
+                    not in ["_id", self._text_key, self._embedding_key, "source_id"]
+                }
+
+                if text:
+                    chunks.append(
+                        {"doc_id": doc_id, "text": text, "metadata": metadata}
+                    )
+
+            return chunks
+        except Exception as e:
+            return []
+
+    def add_chunk(self, text, metadata=None):
+        metadata = metadata or {}
+        embeddings = self._embedding.embed_documents([text])
+        if not embeddings:
+            raise ValueError("Could not generate embedding for chunk")
+
+        chunk_data = {
+            self._text_key: text,
+            self._embedding_key: embeddings[0],
+            "source_id": self._source_id,
+            **metadata,
+        }
+        result = self._collection.insert_one(chunk_data)
+        return str(result.inserted_id)
+
+    def delete_chunk(self, chunk_id):
+        try:
+            from bson.objectid import ObjectId
+
+            object_id = ObjectId(chunk_id)
+            result = self._collection.delete_one({"_id": object_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            print(f"Error deleting chunk: {e}")
+            return False

@@ -24,6 +24,9 @@ const endpoints = {
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
     DELETE_TOOL: '/api/delete_tool',
+    GET_CHUNKS: (docId: string, page: number, per_page: number) =>
+      `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}`,
+    ADD_CHUNK: '/api/add_chunk',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',
