@@ -1,6 +1,6 @@
 services:
   frontend:
-    build: ./frontend
+    build: ../frontend
     environment:
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
@@ -10,7 +10,7 @@ services:
       - backend
 
   backend:
-    build: ./application
+    build: ../application
     environment:
       - API_KEY=$OPENAI_API_KEY
       - EMBEDDINGS_KEY=$OPENAI_API_KEY
@@ -25,15 +25,15 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ./application/indexes:/app/application/indexes
-      - ./application/inputs:/app/application/inputs
-      - ./application/vectors:/app/application/vectors
+      - ../application/indexes:/app/application/indexes
+      - ../application/inputs:/app/application/inputs
+      - ../application/vectors:/app/application/vectors
     depends_on:
         - redis
         - mongo
 
   worker:
-    build: ./application
+    build: ../application
     command: celery -A application.app.celery worker -l INFO
     environment:
       - API_KEY=$OPENAI_API_KEY

@@ -8,7 +8,7 @@ import json
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, redirect, request
+from flask import Blueprint, current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, inputs, Namespace, Resource
 from werkzeug.utils import secure_filename
 
@@ -83,7 +83,8 @@ class DeleteConversation(Resource):
         try:
             conversations_collection.delete_one({"_id": ObjectId(conversation_id)})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -97,7 +98,8 @@ class DeleteAllConversations(Resource):
         try:
             conversations_collection.delete_many({"user": user_id})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting all conversations: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -114,7 +116,8 @@ class GetConversations(Resource):
                 for conversation in conversations
             ]
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving conversations: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_conversations), 200)
 
 
@@ -138,7 +141,8 @@ class GetSingleConversation(Resource):
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(conversation["queries"]), 200)
 
 
@@ -170,7 +174,8 @@ class UpdateConversationName(Resource):
                 {"_id": ObjectId(data["id"])}, {"$set": {"name": data["name"]}}
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating conversation name: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -221,7 +226,8 @@ class SubmitFeedback(Resource):
             )
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error submitting feedback: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -244,7 +250,8 @@ class DeleteByIds(Resource):
             if result:
                 return make_response(jsonify({"success": True}), 200)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting indexes: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": False}), 400)
 
@@ -277,7 +284,8 @@ class DeleteOldIndexes(Resource):
         except FileNotFoundError:
             pass
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting old indexes: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
@@ -389,8 +397,8 @@ class UploadFile(Resource):
                 )
 
         except Exception as err:
-            print(f"Error: {err}")
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error uploading file: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -439,7 +447,8 @@ class UploadRemote(Resource):
                 loader=data["source"]
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error uploading remote source: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
@@ -471,7 +480,8 @@ class TaskStatus(Resource):
             ):
                 task_meta = str(task_meta)  # Convert to a string representation
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting task status: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"status": task.status, "result": task_meta}), 200)
 
@@ -546,7 +556,8 @@ class PaginatedSources(Resource):
             return make_response(jsonify(response), 200)
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving paginated sources: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/sources")
@@ -606,7 +617,8 @@ class CombinedJson(Resource):
                 )
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving sources: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(data), 200)
 
@@ -632,7 +644,8 @@ class CheckDocs(Resource):
             if os.path.exists(vectorstore) or data["docs"] == "default":
                 return {"status": "exists"}, 200
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error checking document: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"status": "not found"}), 404)
 
@@ -670,7 +683,8 @@ class CreatePrompt(Resource):
             )
             new_id = str(resp.inserted_id)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error creating prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id}), 200)
 
@@ -697,7 +711,8 @@ class GetPrompts(Resource):
                     }
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving prompts: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(list_prompts), 200)
 
@@ -738,7 +753,8 @@ class GetSinglePrompt(Resource):
 
             prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"content": prompt["content"]}), 200)
 
@@ -762,7 +778,8 @@ class DeletePrompt(Resource):
         try:
             prompts_collection.delete_one({"_id": ObjectId(data["id"])})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -795,7 +812,8 @@ class UpdatePrompt(Resource):
                 {"$set": {"name": data["name"], "content": data["content"]}},
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -830,7 +848,8 @@ class GetApiKeys(Resource):
                     }
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving API keys: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_keys), 200)
 
 
@@ -874,7 +893,8 @@ class CreateApiKey(Resource):
             resp = api_key_collection.insert_one(new_api_key)
             new_id = str(resp.inserted_id)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error creating API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id, "key": key}), 201)
 
@@ -900,7 +920,8 @@ class DeleteApiKey(Resource):
             if result.deleted_count == 0:
                 return {"success": False, "message": "API Key not found"}, 404
         except Exception as err:
-            return {"success": False, "error": str(err)}, 400
+            current_app.logger.error(f"Error deleting API key: {err}")
+            return {"success": False}, 400
 
         return {"success": True}, 200
 
@@ -1100,7 +1121,8 @@ class ShareConversation(Resource):
                     201,
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error sharing conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/shared_conversation/<string:identifier>")
@@ -1155,7 +1177,8 @@ class GetPubliclySharedConversations(Resource):
                 res["api_key"] = shared["api_key"]
             return make_response(jsonify(res), 200)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting shared conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/get_message_analytics")
@@ -1196,7 +1219,8 @@ class GetMessageAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -1289,7 +1313,8 @@ class GetMessageAnalytics(Resource):
                     daily_messages[entry["_id"]["day"]] = entry["total_messages"]
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting message analytics: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(
             jsonify({"success": True, "messages": daily_messages}), 200
@@ -1331,7 +1356,8 @@ class GetTokenAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -1440,7 +1466,8 @@ class GetTokenAnalytics(Resource):
                     daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting token analytics: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(
             jsonify({"success": True, "token_usage": daily_token_usage}), 200
@@ -1482,7 +1509,8 @@ class GetFeedbackAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
         
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
@@ -1583,7 +1611,8 @@ class GetFeedbackAnalytics(Resource):
                 }
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting feedback analytics: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(
             jsonify({"success": True, "feedback": daily_feedback}), 200
@@ -1625,7 +1654,8 @@ class GetUserLogs(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         query = {}
         if api_key:
@@ -1709,7 +1739,8 @@ class ManageSync(Resource):
                 update_data,
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating sync frequency: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -1744,7 +1775,8 @@ class TextToSpeech(Resource):
                 200,
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error synthesizing audio: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/available_tools")
@@ -1768,7 +1800,8 @@ class AvailableTools(Resource):
                     }
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting available tools: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
 
@@ -1786,7 +1819,8 @@ class GetTools(Resource):
                 tool.pop("_id")
                 user_tools.append(tool)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting user tools: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "tools": user_tools}), 200)
 
@@ -1858,7 +1892,8 @@ class CreateTool(Resource):
             resp = user_tools_collection.insert_one(new_tool)
             new_id = str(resp.inserted_id)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error creating tool: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id}), 200)
 
@@ -1909,7 +1944,8 @@ class UpdateTool(Resource):
                 {"$set": update_data},
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating tool: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -1941,7 +1977,8 @@ class UpdateToolConfig(Resource):
                 {"$set": {"config": data["config"]}},
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating tool config: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -1975,7 +2012,8 @@ class UpdateToolActions(Resource):
                 {"$set": {"actions": data["actions"]}},
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating tool actions: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -2007,7 +2045,8 @@ class UpdateToolStatus(Resource):
                 {"$set": {"status": data["status"]}},
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating tool status: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -2033,6 +2072,7 @@ class DeleteTool(Resource):
             if result.deleted_count == 0:
                 return {"success": False, "message": "Tool not found"}, 404
         except Exception as err:
-            return {"success": False, "error": str(err)}, 400
+            current_app.logger.error(f"Error deleting tool: {err}")
+            return {"success": False}, 400
 
         return {"success": True}, 200
