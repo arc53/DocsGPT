@@ -48,6 +48,7 @@ function Upload({
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
     return schema.map((field: FormField) => {
+      const isRequired = field.required ?? false;
       switch (field.type) {
         case 'string':
           return (
@@ -69,6 +70,7 @@ function Upload({
               }
               borderVariant="thin"
               label={field.label}
+              required={field.required}
               colorVariant="gray"
             />
           );
@@ -86,13 +88,13 @@ function Upload({
                 e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>,
               ) =>
                 handleIngestorChange(
-                  field.name as typeof ingestor.config &
-                    keyof typeof ingestor.config,
+                  field.name as keyof IngestorConfig['config'],
                   Number(e.target.value),
                 )
               }
               borderVariant="thin"
               label={field.label}
+              required={field.required}
               colorVariant="gray"
             />
           );
@@ -393,7 +395,29 @@ function Upload({
     formData.append('user', 'local');
     formData.append('source', ingestor.type);
 
-    formData.append('data', JSON.stringify(ingestor.config));
+    const defaultConfig = IngestorDefaultConfigs[ingestor.type].config;
+
+    const mergedConfig = { ...defaultConfig, ...ingestor.config };
+    const filteredConfig = Object.entries(mergedConfig).reduce(
+      (acc, [key, value]) => {
+        const field = IngestorFormSchemas[ingestor.type].find(
+          (f) => f.name === key,
+        );
+        // Include the field if:
+        // 1. It's required, or
+        // 2. It's optional and has a non-empty value
+        if (
+          field?.required ||
+          (value !== undefined && value !== null && value !== '')
+        ) {
+          acc[key] = value;
+        }
+        return acc;
+      },
+      {} as Record<string, any>,
+    );
+
+    formData.append('data', JSON.stringify(filteredConfig));
 
     const apiHost: string = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -419,7 +443,6 @@ function Upload({
     xhr.open('POST', `${apiHost}/api/remote`);
     xhr.send(formData);
   };
-
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
@@ -460,29 +483,31 @@ function Upload({
       }
       const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
       for (const field of formFields) {
-        const value =
-          ingestor.config[field.name as keyof typeof ingestor.config];
+        if (field.required) {
+          // Validate only required fields
+          const value =
+            ingestor.config[field.name as keyof typeof ingestor.config];
 
-        if (typeof value === 'string' && !value.trim()) {
-          return true;
-        }
+          if (typeof value === 'string' && !value.trim()) {
+            return true;
+          }
 
-        if (
-          typeof value === 'number' &&
-          (value === null || value === undefined || value <= 0)
-        ) {
-          return true;
-        }
+          if (
+            typeof value === 'number' &&
+            (value === null || value === undefined || value <= 0)
+          ) {
+            return true;
+          }
 
-        if (typeof value === 'boolean' && value === undefined) {
-          return true;
+          if (typeof value === 'boolean' && value === undefined) {
+            return true;
+          }
         }
       }
       return false;
     }
     return true;
   };
-
   const handleIngestorChange = (
     key: keyof IngestorConfig['config'],
     value: string | number | boolean,
