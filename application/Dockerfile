@@ -6,7 +6,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
-# Install necessary packages and Python
     apt-get update && \
     apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.12 python3.12-venv && \
     rm -rf /var/lib/apt/lists/* 
@@ -49,7 +48,6 @@ FROM ubuntu:24.04 as final
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
-# Install Python
     apt-get update && apt-get install -y --no-install-recommends python3.12 && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
