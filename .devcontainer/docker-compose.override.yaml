@@ -4,7 +4,7 @@ services:
   dev:
     build:
       context: .
-      dockerfile: .devcontainer/Dockerfile
+      dockerfile: Dockerfile
     volumes:
       - .:/workspace:cached
     command: sleep infinity
