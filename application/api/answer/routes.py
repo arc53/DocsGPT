@@ -1,7 +1,6 @@
 import asyncio
 import datetime
 import json
-import logging
 import os
 import traceback
 
@@ -19,7 +18,6 @@ from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import check_required_fields, limit_chat_history
 
-logger = logging.getLogger(__name__)
 
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
@@ -262,8 +260,8 @@ def complete_stream(
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
-        logger.error(f"Error in stream: {str(e)}")
-        logger.error(traceback.format_exc())
+        current_app.logger.error(f"Error in stream: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
         data = json.dumps(
             {
                 "type": "error",
