@@ -1,5 +1,5 @@
 export interface BaseIngestorConfig {
-  [key: string]: string | number | boolean;
+  [key: string]: string | number | boolean | undefined;
 }
 
 export interface RedditIngestorConfig extends BaseIngestorConfig {
@@ -48,6 +48,7 @@ export interface FormField {
   label: string;
   type: FieldType;
   required?: boolean;
+  advanced?: boolean;
   options?: { label: string; value: string }[];
 }
 

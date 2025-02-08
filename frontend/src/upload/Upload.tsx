@@ -44,106 +44,121 @@ function Upload({
   const [remoteName, setRemoteName] = useState('');
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<string | null>(renderTab);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
-    return schema.map((field: FormField) => {
-      const isRequired = field.required ?? false;
-      switch (field.type) {
-        case 'string':
-          return (
-            <Input
-              key={field.name}
-              placeholder={field.label}
-              type="text"
-              name={field.name}
-              value={String(
-                ingestor.config[field.name as keyof typeof ingestor.config],
-              )}
-              onChange={(
-                e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>,
-              ) =>
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  e.target.value,
-                )
-              }
-              borderVariant="thin"
-              label={field.label}
-              required={field.required}
-              colorVariant="gray"
-            />
-          );
-        case 'number':
-          return (
-            <Input
-              key={field.name}
-              placeholder={field.label}
-              type="number"
-              name={field.name}
-              value={String(
-                ingestor.config[field.name as keyof typeof ingestor.config],
-              )}
-              onChange={(
-                e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>,
-              ) =>
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  Number(e.target.value),
-                )
-              }
-              borderVariant="thin"
-              label={field.label}
-              required={field.required}
-              colorVariant="gray"
-            />
-          );
-        case 'enum':
-          return (
-            <Dropdown
-              key={field.name}
-              options={field.options || []}
-              selectedValue={String(
-                ingestor.config[field.name as keyof typeof ingestor.config],
-              )}
-              onSelect={(
-                selected: { label: string; value: string } | string,
-              ) => {
-                const value =
-                  typeof selected === 'string' ? selected : selected.value;
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  value,
-                );
-              }}
-              size="w-full"
-              rounded="3xl"
-              placeholder={field.label}
-              border="border"
-              borderColor="gray-5000"
-            />
-          );
-        case 'boolean':
-          return (
-            <ToggleSwitch
-              key={field.name}
-              label={field.label}
-              checked={Boolean(
-                ingestor.config[field.name as keyof typeof ingestor.config],
-              )}
-              onChange={(checked: boolean) => {
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  checked,
-                );
-              }}
-              className="mt-2"
-            />
-          );
-        default:
-          return null;
-      }
-    });
+    if (!schema) return null;
+
+    const generalFields = schema.filter((field) => !field.advanced);
+    const advancedFields = schema.filter((field) => field.advanced);
+
+    return (
+      <>
+        {generalFields.map((field: FormField) => renderField(field))}
+
+        {advancedFields.length > 0 && showAdvancedOptions && (
+          <>
+            <hr className="my-4 border-[#C4C4C4]/40 border-[1px]" />
+            {advancedFields.map((field: FormField) => renderField(field))}
+          </>
+        )}
+      </>
+    );
+  };
+
+  const renderField = (field: FormField) => {
+    const isRequired = field.required ?? false;
+    switch (field.type) {
+      case 'string':
+        return (
+          <Input
+            key={field.name}
+            placeholder={field.label}
+            type="text"
+            name={field.name}
+            value={String(
+              ingestor.config[field.name as keyof typeof ingestor.config],
+            )}
+            onChange={(e) =>
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                e.target.value,
+              )
+            }
+            borderVariant="thin"
+            label={field.label}
+            required={isRequired}
+            colorVariant="gray"
+          />
+        );
+      case 'number':
+        return (
+          <Input
+            key={field.name}
+            placeholder={field.label}
+            type="number"
+            name={field.name}
+            value={String(
+              ingestor.config[field.name as keyof typeof ingestor.config],
+            )}
+            onChange={(e) =>
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                Number(e.target.value),
+              )
+            }
+            borderVariant="thin"
+            label={field.label}
+            required={isRequired}
+            colorVariant="gray"
+          />
+        );
+      case 'enum':
+        return (
+          <Dropdown
+            key={field.name}
+            options={field.options || []}
+            selectedValue={
+              field.options?.find(
+                (opt) =>
+                  opt.value ===
+                  ingestor.config[field.name as keyof typeof ingestor.config],
+              ) || null
+            }
+            onSelect={(selected: { label: string; value: string }) => {
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                selected.value,
+              );
+            }}
+            size="w-full"
+            rounded="3xl"
+            placeholder={field.label}
+            border="border"
+            borderColor="gray-5000"
+          />
+        );
+      case 'boolean':
+        return (
+          <ToggleSwitch
+            key={field.name}
+            label={field.label}
+            checked={Boolean(
+              ingestor.config[field.name as keyof typeof ingestor.config],
+            )}
+            onChange={(checked: boolean) => {
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                checked,
+              );
+            }}
+            className="mt-2"
+          />
+        );
+      default:
+        return null;
+    }
   };
 
   // New unified ingestor state
@@ -645,6 +660,18 @@ function Upload({
               label="Name"
             />
             {renderFormFields()}
+            {IngestorFormSchemas[ingestor.type].some(
+              (field) => field.advanced,
+            ) && (
+              <button
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                className="text-purple-30 text-lg font-normal px-4 py-2 bg-transparent hover:cursor-pointer text-left"
+              >
+                {showAdvancedOptions
+                  ? 'Hide Advanced Options'
+                  : 'Show Advanced Options'}
+              </button>
+            )}
           </>
         )}
         <div className="flex justify-between">
