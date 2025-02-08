@@ -146,6 +146,7 @@ class MongoDBVectorStore(BaseVectorStore):
 
             return chunks
         except Exception as e:
+            print(f"Error getting chunks: {e}")
             return []
 
     def add_chunk(self, text, metadata=None):
