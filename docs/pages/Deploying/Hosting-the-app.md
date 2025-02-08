@@ -73,7 +73,7 @@ To save the file, press CTRL+X, then Y, and then ENTER.
 
 Next, set the correct IP for the Backend by opening the docker-compose.yml file:
 
-`nano docker-compose.yml`
+`nano deployment/docker-compose.yaml`
 
 And Change line 7 to: `VITE_API_HOST=http://localhost:7091`
 to this `VITE_API_HOST=http://<your instance public IP>:7091`
@@ -84,7 +84,7 @@ This will allow the frontend to connect to the backend.
 
 You're almost there! Now that all the necessary bits and pieces have been installed, it is time to run the application. To do so, use the following command:
 
-`sudo docker-compose up -d`
+`sudo docker compose -f deployment/docker-compose.yaml up -d`
 
 Launching it for the first time will take a few minutes to download all the necessary dependencies and build.
 

@@ -11,7 +11,7 @@ Ensure you have the following installed before proceeding:
 
 ## Folder Structure
 
-The `k8s` folder contains the necessary deployment and service configuration files:
+The `deployment/k8s` folder contains the necessary deployment and service configuration files:
 
 - `deployments/`
 - `services/`
@@ -23,7 +23,7 @@ The `k8s` folder contains the necessary deployment and service configuration fil
 
    ```sh
    git clone https://github.com/arc53/DocsGPT.git
-   cd docsgpt/k8s
+   cd docsgpt/deployment/k8s
    ```
 
 2. **Configure Secrets (optional)**

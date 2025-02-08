@@ -101,9 +101,9 @@ On windows:
 
 3. Run the following command:
 
-   ```bash
-   docker compose up --build
-   ```
+  ```bash
+  docker compose -f deployment/docker-compose.yaml up --build
+  ```
 4. Navigate to http://localhost:5173/.
 
 To stop, just run `Ctrl + C`.
