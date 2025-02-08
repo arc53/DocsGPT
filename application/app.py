@@ -2,12 +2,13 @@ import platform
 
 import dotenv
 from flask import Flask, redirect, request
+from application.core.logging_config import setup_logging
+setup_logging()
 
 from application.api.answer.routes import answer
 from application.api.internal.routes import internal
 from application.api.user.routes import user
 from application.celery_init import celery
-from application.core.logging_config import setup_logging
 from application.core.settings import settings
 from application.extensions import api
 
@@ -17,7 +18,6 @@ if platform.system() == "Windows":
     pathlib.PosixPath = pathlib.WindowsPath
 
 dotenv.load_dotenv()
-setup_logging()
 
 app = Flask(__name__)
 app.register_blueprint(user)
