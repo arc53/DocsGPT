@@ -20,19 +20,19 @@ class FaissStore(BaseVectorStore):
         super().__init__()
         self.source_id = source_id
         self.path = get_vectorstore(source_id)
-        embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
+        self.embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
 
         try:
             if docs_init:
-                self.docsearch = FAISS.from_documents(docs_init, embeddings)
+                self.docsearch = FAISS.from_documents(docs_init, self.embeddings)
             else:
                 self.docsearch = FAISS.load_local(
-                    self.path, embeddings, allow_dangerous_deserialization=True
+                    self.path, self.embeddings, allow_dangerous_deserialization=True
                 )
         except Exception:
             raise
 
-        self.assert_embedding_dimensions(embeddings)
+        self.assert_embedding_dimensions(self.embeddings)
 
     def search(self, *args, **kwargs):
         return self.docsearch.similarity_search(*args, **kwargs)
@@ -84,17 +84,6 @@ class FaissStore(BaseVectorStore):
         return doc_id
 
     def delete_chunk(self, chunk_id):
-        docstore = self.docsearch.docstore._dict
-        if chunk_id not in docstore:
-            return False
-
-        del docstore[chunk_id]
-
-        documents = list(docstore.values())
-        if documents:
-            self.docsearch = FAISS.from_documents(documents, self.embeddings)
-        else:
-            self.docsearch = FAISS.from_texts([" "], self.embeddings)
-
-        self.save_local()
+        self.delete_index([chunk_id])
+        self.save_local(self.path)
         return True

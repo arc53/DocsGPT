@@ -27,6 +27,8 @@ const endpoints = {
     GET_CHUNKS: (docId: string, page: number, per_page: number) =>
       `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}`,
     ADD_CHUNK: '/api/add_chunk',
+    DELETE_CHUNK: (docId: string, chunkId: string) =>
+      `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

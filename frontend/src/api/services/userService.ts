@@ -55,6 +55,8 @@ const userService = {
     apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage)),
   addChunk: (data: any): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data),
+  deleteChunk: (docId: string, chunkId: string): Promise<any> =>
+    apiClient.delete(endpoints.USER.DELETE_CHUNK(docId, chunkId)),
 };
 
 export default userService;

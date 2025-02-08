@@ -13,6 +13,7 @@ import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import Input from '../components/Input';
 import SkeletonLoader from '../components/SkeletonLoader';
+import Spinner from '../components/Spinner';
 import { useDarkTheme } from '../hooks';
 import AddChunkModal from '../modals/AddChunkModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -393,9 +394,13 @@ function DocumentChunks({
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(5);
   const [totalChunks, setTotalChunks] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
+  const [deleteModalState, setDeleteModalState] = useState<{
+    state: ActiveState;
+    chunkId: string | null;
+  }>({ state: 'INACTIVE', chunkId: null });
+  const [addModalState, setAddModalState] = useState<ActiveState>('INACTIVE');
 
   const fetchChunks = () => {
     setLoading(true);
@@ -404,6 +409,8 @@ function DocumentChunks({
         .getDocumentChunks(document.id ?? '', page, perPage)
         .then((response) => {
           if (!response.ok) {
+            setLoading(false);
+            setPaginatedChunks([]);
             throw new Error('Failed to fetch chunks data');
           }
           return response.json();
@@ -413,11 +420,10 @@ function DocumentChunks({
           setPerPage(data.per_page);
           setTotalChunks(data.total);
           setPaginatedChunks(data.chunks);
+          setLoading(false);
         });
     } catch (e) {
       console.log(e);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -442,6 +448,20 @@ function DocumentChunks({
     }
   };
 
+  const handleDeleteChunk = (chunkId: string) => {
+    try {
+      userService.deleteChunk(document.id ?? '', chunkId).then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to delete chunk');
+        }
+        setDeleteModalState({ state: 'INACTIVE', chunkId: null });
+        fetchChunks();
+      });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   React.useEffect(() => {
     fetchChunks();
   }, [page, perPage]);
@@ -457,7 +477,8 @@ function DocumentChunks({
         <p className="mt-px">Back to all documents</p>
       </div>
       <div className="my-3 flex justify-between items-center gap-1">
-        <div className="w-full sm:w-auto">
+        <div className="w-full sm:w-auto flex items-center gap-2 text-eerie-black dark:text-bright-gray">
+          <p className="font-semibold text-2xl hidden sm:flex">{`${totalChunks} Chunks`}</p>
           <label htmlFor="chunk-search-input" className="sr-only">
             {t('settings.documents.searchPlaceholder')}
           </label>
@@ -477,68 +498,110 @@ function DocumentChunks({
         <button
           className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
           title={t('settings.documents.addNew')}
-          onClick={() => setModalState('ACTIVE')}
+          onClick={() => setAddModalState('ACTIVE')}
         >
           {t('settings.documents.addNew')}
         </button>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {paginatedChunks.filter((chunk) =>
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="h-32 flex items-center justify-center mt-24 col-span-2 lg:col-span-3">
+            <Spinner />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {paginatedChunks.filter((chunk) =>
+            chunk.metadata?.title
+              .toLowerCase()
+              .includes(searchTerm.toLowerCase()),
+          ).length === 0 ? (
+            <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
+              <img
+                src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                alt="No tools found"
+                className="h-24 w-24 mx-auto mb-2"
+              />
+              No chunks found
+            </div>
+          ) : (
+            paginatedChunks
+              .filter((chunk) =>
+                chunk.metadata?.title
+                  .toLowerCase()
+                  .includes(searchTerm.toLowerCase()),
+              )
+              .map((chunk, index) => (
+                <div
+                  key={index}
+                  className="relative h-56 w-full p-6 border rounded-2xl border-silver dark:border-silver/40 flex flex-col justify-between"
+                >
+                  <div className="w-full">
+                    <div className="w-full flex items-center justify-between">
+                      <button
+                        className="absolute top-3 right-3 h-[19px] w-[19px] cursor-pointer"
+                        onClick={() => {
+                          setDeleteModalState({
+                            state: 'ACTIVE',
+                            chunkId: chunk.doc_id,
+                          });
+                        }}
+                        aria-label={'delete'}
+                      >
+                        <img
+                          src={Trash}
+                          alt={'delete'}
+                          className="opacity-60 hover:opacity-100"
+                        />
+                      </button>
+                    </div>
+                    <div className="mt-[9px]">
+                      <p className="h-12 text-sm font-semibold text-eerie-black dark:text-[#EEEEEE] leading-relaxed break-words ellipsis-text">
+                        {chunk.metadata?.title}
+                      </p>
+                      <p className="mt-1 pr-1 h-[110px] overflow-y-auto text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed break-words">
+                        {chunk.text}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+          )}
+        </div>
+      )}
+      {!loading &&
+        paginatedChunks.filter((chunk) =>
           chunk.metadata?.title
             .toLowerCase()
             .includes(searchTerm.toLowerCase()),
-        ).length === 0 ? (
-          <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
-            <img
-              src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-              alt="No tools found"
-              className="h-24 w-24 mx-auto mb-2"
+        ).length !== 0 && (
+          <div className="mt-10 w-full flex items-center justify-center">
+            <Pagination
+              currentPage={page}
+              totalPages={Math.ceil(totalChunks / perPage)}
+              rowsPerPage={perPage}
+              onPageChange={(page) => {
+                setPage(page);
+              }}
+              onRowsPerPageChange={(rows) => {
+                setPerPage(rows);
+                setPage(1);
+              }}
             />
-            No chunks found
           </div>
-        ) : (
-          paginatedChunks
-            .filter((chunk) =>
-              chunk.metadata?.title
-                .toLowerCase()
-                .includes(searchTerm.toLowerCase()),
-            )
-            .map((chunk, index) => (
-              <div
-                key={index}
-                className="relative h-56 w-full p-6 border rounded-2xl border-silver dark:border-silver/40 flex flex-col justify-between"
-              >
-                <div className="w-full">
-                  <div className="mt-[9px]">
-                    <p className="h-12 text-sm font-semibold text-eerie-black dark:text-[#EEEEEE] leading-relaxed break-words ellipsis-text">
-                      {chunk.metadata?.title}
-                    </p>
-                    <p className="mt-1 pr-1 h-[110px] overflow-y-auto text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed break-words">
-                      {chunk.text}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))
         )}
-      </div>
-      <div className="mt-10 w-full flex items-center justify-center">
-        <Pagination
-          currentPage={page}
-          totalPages={Math.ceil(totalChunks / perPage)}
-          rowsPerPage={perPage}
-          onPageChange={(page) => {
-            setPage(page);
-          }}
-          onRowsPerPageChange={(rows) => {
-            setPerPage(rows);
-            setPage(1);
-          }}
-        />
-      </div>
+      <ConfirmationModal
+        message="Are you sure you want to delete this?"
+        modalState={deleteModalState.state}
+        setModalState={(state) =>
+          setDeleteModalState((prev) => ({ ...prev, state }))
+        }
+        handleSubmit={() => handleDeleteChunk(deleteModalState.chunkId ?? '')}
+        submitLabel="Delete"
+      />
       <AddChunkModal
-        modalState={modalState}
-        setModalState={setModalState}
+        modalState={addModalState}
+        setModalState={setAddModalState}
         handleSubmit={handleAddChunk}
       />
     </div>
