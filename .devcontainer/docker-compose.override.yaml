@@ -4,9 +4,9 @@ services:
   dev:
     build:
       context: .
-      dockerfile: .devcontainer/Dockerfile
+      dockerfile: Dockerfile
     volumes:
-      - .:/workspace:cached
+      - ../:/workspace:cached
     command: sleep infinity
     depends_on:
       redis:
