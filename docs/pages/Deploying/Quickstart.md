@@ -29,7 +29,7 @@ If you prefer to follow manual steps, refer to this guide:
    
 3. Run the following commands:
    ```bash
-   docker compose up
+   docker compose -f deployment/docker-compose.yaml up
    ```
 4. Navigate to http://localhost:5173/.
 
@@ -56,7 +56,7 @@ To stop, simply press **Ctrl + C**.
 3. Run the following command:
 
    ```bash
-   docker-compose up
+   docker compose -f deployment/docker-compose.yaml up
    ```
 4. Navigate to http://localhost:5173/.
 5. To stop the setup, just press **Ctrl + C** in the WSL terminal

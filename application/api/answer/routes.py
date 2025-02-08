@@ -3,7 +3,6 @@ import datetime
 import json
 import logging
 import os
-import sys
 import traceback
 
 from bson.dbref import DBRef
@@ -263,13 +262,12 @@ def complete_stream(
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
-        print("\033[91merr", str(e), file=sys.stderr)
-        traceback.print_exc()
+        logger.error(f"Error in stream: {str(e)}")
+        logger.error(traceback.format_exc())
         data = json.dumps(
             {
                 "type": "error",
                 "error": "Please try again later. We apologize for any inconvenience.",
-                "error_exception": str(e),
             }
         )
         yield f"data: {data}\n\n"
@@ -384,7 +382,7 @@ class Stream(Resource):
 
         except ValueError:
             message = "Malformed request body"
-            print("\033[91merr", str(message), file=sys.stderr)
+            current_app.logger.error(f"/stream - error: {message}")
             return Response(
                 error_stream_generate(message),
                 status=400,
@@ -395,13 +393,9 @@ class Stream(Resource):
                 f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
-            message = e.args[0]
             status_code = 400
-            # Custom exceptions with two arguments, index 1 as status code
-            if len(e.args) >= 2:
-                status_code = e.args[1]
             return Response(
-                error_stream_generate(message),
+                error_stream_generate('Unknown error occurred'),
                 status=status_code,
                 mimetype="text/event-stream",
             )
