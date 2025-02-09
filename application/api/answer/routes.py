@@ -3,10 +3,11 @@ import datetime
 import json
 import os
 import traceback
+import logging
 
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, current_app, make_response, request, Response
+from flask import Blueprint, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
 
@@ -18,6 +19,7 @@ from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import check_required_fields, limit_chat_history
 
+logger = logging.getLogger(__name__)
 
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
@@ -210,6 +212,15 @@ def complete_stream(
 ):
 
     try:
+        import sys
+        
+        try:
+            logger.info(f"Stream question, inside complete_stream: {question}")
+        except Exception as e:
+            print(f"Error in logging: {str(e)}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            
+            
         response_full = ""
         source_log_docs = []
         answer = retriever.gen()
@@ -260,8 +271,8 @@ def complete_stream(
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
-        current_app.logger.error(f"Error in stream: {str(e)}")
-        current_app.logger.error(traceback.format_exc())
+        logger.error(f"Error in stream: {str(e)}")
+        logger.error(traceback.format_exc())
         data = json.dumps(
             {
                 "type": "error",
@@ -346,7 +357,7 @@ class Stream(Resource):
                 source = {}
                 user_api_key = None
 
-            current_app.logger.info(
+            logger.info(
                 f"/stream - request_data: {data}, source: {source}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
@@ -380,14 +391,14 @@ class Stream(Resource):
 
         except ValueError:
             message = "Malformed request body"
-            current_app.logger.error(f"/stream - error: {message}")
+            logger.error(f"/stream - error: {message}")
             return Response(
                 error_stream_generate(message),
                 status=400,
                 mimetype="text/event-stream",
             )
         except Exception as e:
-            current_app.logger.error(
+            logger.error(
                 f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
@@ -471,7 +482,7 @@ class Answer(Resource):
 
             prompt = get_prompt(prompt_id)
 
-            current_app.logger.info(
+            logger.info(
                 f"/api/answer - request_data: {data}, source: {source}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
@@ -526,7 +537,7 @@ class Answer(Resource):
             )
 
         except Exception as e:
-            current_app.logger.error(
+            logger.error(
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
@@ -591,7 +602,7 @@ class Search(Resource):
                 source = {}
                 user_api_key = None
 
-            current_app.logger.info(
+            logger.info(
                 f"/api/answer - request_data: {data}, source: {source}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
@@ -629,7 +640,7 @@ class Search(Resource):
                     doc["source"] = "None"
 
         except Exception as e:
-            current_app.logger.error(
+            logger.error(
                 f"/api/search - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
