@@ -211,16 +211,7 @@ def complete_stream(
     question, retriever, conversation_id, user_api_key, isNoneDoc=False,index=None
 ):
 
-    try:
-        import sys
-        
-        try:
-            logger.info(f"Stream question, inside complete_stream: {question}")
-        except Exception as e:
-            print(f"Error in logging: {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
-            
-            
+    try:                
         response_full = ""
         source_log_docs = []
         answer = retriever.gen()
