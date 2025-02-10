@@ -1,21 +1,40 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import Exit from '../assets/exit.svg';
 import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
 
+const isValidFunctionName = (name: string): boolean => {
+  const pattern = /^[a-zA-Z0-9_-]+$/;
+  return pattern.test(name);
+};
+
+interface AddActionModalProps {
+  modalState: ActiveState;
+  setModalState: (state: ActiveState) => void;
+  handleSubmit: (actionName: string) => void;
+}
+
 export default function AddActionModal({
   modalState,
   setModalState,
   handleSubmit,
-}: {
-  modalState: ActiveState;
-  setModalState: (state: ActiveState) => void;
-  handleSubmit: (actionName: string) => void;
-}) {
+}: AddActionModalProps) {
   const { t } = useTranslation();
   const [actionName, setActionName] = React.useState('');
+  const [functionNameError, setFunctionNameError] = useState<boolean>(false); // New error state
+
+  const handleAddAction = () => {
+    if (!isValidFunctionName(actionName)) {
+      setFunctionNameError(true); // Set error state if invalid
+      return;
+    }
+    setFunctionNameError(false); // Clear error state if valid
+    handleSubmit(actionName);
+    setModalState('INACTIVE');
+  };
+
   return (
     <div
       className={`${
@@ -46,14 +65,21 @@ export default function AddActionModal({
                 onChange={(e) => setActionName(e.target.value)}
                 borderVariant="thin"
                 placeholder={'Enter name'}
-              ></Input>
+              />
+              <p className="mt-1 text-gray-500 text-xs">
+                Use only letters, numbers, underscores, and hyphens (e.g.,
+                `get_user_data`, `send-report`).
+              </p>
+              {functionNameError && (
+                <p className="mt-1 text-red-500 text-xs">
+                  Invalid function name format. Use only letters, numbers,
+                  underscores, and hyphens.
+                </p>
+              )}
             </div>
             <div className="mt-8 flex flex-row-reverse gap-1 px-3">
               <button
-                onClick={() => {
-                  handleSubmit(actionName);
-                  setModalState('INACTIVE');
-                }}
+                onClick={handleAddAction}
                 className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
               >
                 Add

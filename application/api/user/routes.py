@@ -19,7 +19,7 @@ from application.core.settings import settings
 from application.extensions import api
 from application.tools.tool_manager import ToolManager
 from application.tts.google_tts import GoogleTTS
-from application.utils import check_required_fields
+from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 
 mongo = MongoDB.get_client()
@@ -1932,6 +1932,16 @@ class UpdateTool(Resource):
             if "actions" in data:
                 update_data["actions"] = data["actions"]
             if "config" in data:
+                if "actions" in data["config"]:
+                    for action_name in list(data["config"]["actions"].keys()):
+                        if not validate_function_name(action_name):
+                            return make_response(
+                                jsonify({
+                                    "success": False,
+                                    "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
+                                    "param": "tools[].function.name"
+                                }), 400
+                            )
                 update_data["config"] = data["config"]
             if "status" in data:
                 update_data["status"] = data["status"]
