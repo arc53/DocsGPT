@@ -184,7 +184,13 @@ export default function ChunkModal({
           message="Are you sure you want to delete this chunk?"
           modalState={deleteModal}
           setModalState={setDeleteModal}
-          handleSubmit={handleDelete ? handleDelete : () => {}}
+          handleSubmit={
+            handleDelete
+              ? handleDelete
+              : () => {
+                  /* no-op */
+                }
+          }
           submitLabel="Delete"
         />
       </div>

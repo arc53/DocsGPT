@@ -1,6 +1,7 @@
 import tiktoken
 import hashlib
 from flask import jsonify, make_response
+import re
 
 
 _encoding = None
@@ -95,3 +96,9 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
                 break
 
     return trimmed_history
+
+def validate_function_name(function_name):
+    """Validates if a function name matches the allowed pattern."""
+    if not re.match(r"^[a-zA-Z0-9_-]+$", function_name):
+        return False
+    return True

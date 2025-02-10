@@ -13,11 +13,13 @@ export default function AddToolModal({
   modalState,
   setModalState,
   getUserTools,
+  onToolAdded,
 }: {
   message: string;
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   getUserTools: () => void;
+  onToolAdded: (toolId: string) => void;
 }) {
   const [availableTools, setAvailableTools] = React.useState<
     AvailableToolType[]
@@ -59,9 +61,20 @@ export default function AddToolModal({
         })
         .then((res) => {
           if (res.status === 200) {
-            getUserTools();
-            setModalState('INACTIVE');
+            return res.json();
+          } else {
+            throw new Error(
+              `Failed to create tool, status code: ${res.status}`,
+            );
           }
+        })
+        .then((data) => {
+          getUserTools();
+          setModalState('INACTIVE');
+          onToolAdded(data.id);
+        })
+        .catch((error) => {
+          console.error('Failed to create tool:', error);
         });
     } else {
       setModalState('INACTIVE');
