@@ -1,24 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import PropTypes from 'prop-types';
-import userService from '../api/services/userService';
-import SyncIcon from '../assets/sync.svg';
-import Trash from '../assets/trash.svg';
-import caretSort from '../assets/caret-sort.svg';
-import DropdownMenu from '../components/DropdownMenu';
-import SkeletonLoader from '../components/SkeletonLoader';
-import Input from '../components/Input';
-import Upload from '../upload/Upload'; // Import the Upload component
-import Pagination from '../components/DocumentPagination';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
-import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
-import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
-import { setSourceDocs } from '../preferences/preferenceSlice';
-import { setPaginatedDocuments } from '../preferences/preferenceSlice';
-import { formatDate } from '../utils/dateTimeUtils';
-import ConfirmationModal from '../modals/ConfirmationModal';
 
-// Utility function to format numbers
+import userService from '../api/services/userService';
+import ArrowLeft from '../assets/arrow-left.svg';
+import caretSort from '../assets/caret-sort.svg';
+import Edit from '../assets/edit.svg';
+import NoFilesDarkIcon from '../assets/no-files-dark.svg';
+import NoFilesIcon from '../assets/no-files.svg';
+import SyncIcon from '../assets/sync.svg';
+import Trash from '../assets/trash.svg';
+import Pagination from '../components/DocumentPagination';
+import DropdownMenu from '../components/DropdownMenu';
+import Input from '../components/Input';
+import SkeletonLoader from '../components/SkeletonLoader';
+import Spinner from '../components/Spinner';
+import { useDarkTheme } from '../hooks';
+import ChunkModal from '../modals/ChunkModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
+import { ActiveState, Doc, DocumentsProps } from '../models/misc';
+import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import {
+  setPaginatedDocuments,
+  setSourceDocs,
+} from '../preferences/preferenceSlice';
+import Upload from '../upload/Upload';
+import { formatDate } from '../utils/dateTimeUtils';
+import { ChunkType } from './types';
+
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
     return (Math.round((num + Number.EPSILON) * 100) / 100).toString();
@@ -35,17 +44,16 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
-const Documents: React.FC<DocumentsProps> = ({
+export default function Documents({
   paginatedDocuments,
   handleDeleteDocument,
-}) => {
+}: DocumentsProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  // State for search input
+
   const [searchTerm, setSearchTerm] = useState<string>('');
-  // State for modal: active/inactive
-  const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
-  const [isOnboarding, setIsOnboarding] = useState<boolean>(false); // State for onboarding flag
+  const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
+  const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -60,6 +68,7 @@ const Documents: React.FC<DocumentsProps> = ({
     { label: t('settings.documents.syncFrequency.weekly'), value: 'weekly' },
     { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
+  const [showDocumentChunks, setShowDocumentChunks] = useState<Doc>();
 
   const refreshDocs = useCallback(
     (
@@ -159,7 +168,14 @@ const Documents: React.FC<DocumentsProps> = ({
     refreshDocs(undefined, 1, rowsPerPage);
   }, [searchTerm]);
 
-  return (
+  return showDocumentChunks ? (
+    <DocumentChunks
+      document={showDocumentChunks}
+      handleGoBack={() => {
+        setShowDocumentChunks(undefined);
+      }}
+    />
+  ) : (
     <div className="flex flex-col mt-8">
       <div className="flex flex-col relative flex-grow">
         <div className="mb-6">
@@ -183,6 +199,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
+              borderVariant="thin"
             />
           </div>
           <button
@@ -256,7 +273,11 @@ const Documents: React.FC<DocumentsProps> = ({
                     </tr>
                   ) : (
                     currentDocuments.map((document, index) => (
-                      <tr key={index} className="group transition-colors">
+                      <tr
+                        key={index}
+                        className="group transition-colors"
+                        onClick={() => setShowDocumentChunks(document)}
+                      >
                         <td
                           className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                           title={document.name}
@@ -359,11 +380,260 @@ const Documents: React.FC<DocumentsProps> = ({
       )}
     </div>
   );
-};
+}
 
-Documents.propTypes = {
-  //documents: PropTypes.array.isRequired,
-  handleDeleteDocument: PropTypes.func.isRequired,
-};
+function DocumentChunks({
+  document,
+  handleGoBack,
+}: {
+  document: Doc;
+  handleGoBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
+  const [paginatedChunks, setPaginatedChunks] = useState<ChunkType[]>([]);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(5);
+  const [totalChunks, setTotalChunks] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [addModal, setAddModal] = useState<ActiveState>('INACTIVE');
+  const [editModal, setEditModal] = useState<{
+    state: ActiveState;
+    chunk: ChunkType | null;
+  }>({ state: 'INACTIVE', chunk: null });
 
-export default Documents;
+  const fetchChunks = () => {
+    setLoading(true);
+    try {
+      userService
+        .getDocumentChunks(document.id ?? '', page, perPage)
+        .then((response) => {
+          if (!response.ok) {
+            setLoading(false);
+            setPaginatedChunks([]);
+            throw new Error('Failed to fetch chunks data');
+          }
+          return response.json();
+        })
+        .then((data) => {
+          setPage(data.page);
+          setPerPage(data.per_page);
+          setTotalChunks(data.total);
+          setPaginatedChunks(data.chunks);
+          setLoading(false);
+        });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const handleAddChunk = (title: string, text: string) => {
+    try {
+      userService
+        .addChunk({
+          id: document.id ?? '',
+          text: text,
+          metadata: {
+            title: title,
+          },
+        })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to add chunk');
+          }
+          fetchChunks();
+        });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const handleUpdateChunk = (title: string, text: string, chunk: ChunkType) => {
+    try {
+      userService
+        .updateChunk({
+          id: document.id ?? '',
+          chunk_id: chunk.doc_id,
+          text: text,
+          metadata: {
+            title: title,
+          },
+        })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to update chunk');
+          }
+          fetchChunks();
+        });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const handleDeleteChunk = (chunk: ChunkType) => {
+    try {
+      userService
+        .deleteChunk(document.id ?? '', chunk.doc_id)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to delete chunk');
+          }
+          setEditModal({ state: 'INACTIVE', chunk: null });
+          fetchChunks();
+        });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchChunks();
+  }, [page, perPage]);
+  return (
+    <div className="flex flex-col mt-8">
+      <div className="mb-3 flex items-center gap-3 text-eerie-black dark:text-bright-gray text-sm">
+        <button
+          className="text-sm text-gray-400 dark:text-gray-500 border dark:border-0 dark:bg-[#28292D] dark:hover:bg-[#2E2F34] p-3 rounded-full"
+          onClick={handleGoBack}
+        >
+          <img src={ArrowLeft} alt="left-arrow" className="w-3 h-3" />
+        </button>
+        <p className="mt-px">Back to all documents</p>
+      </div>
+      <div className="my-3 flex justify-between items-center gap-1">
+        <div className="w-full sm:w-auto flex items-center gap-2 text-eerie-black dark:text-bright-gray">
+          <p className="font-semibold text-2xl hidden sm:flex">{`${totalChunks} Chunks`}</p>
+          <label htmlFor="chunk-search-input" className="sr-only">
+            {t('settings.documents.searchPlaceholder')}
+          </label>
+          <Input
+            maxLength={256}
+            placeholder={t('settings.documents.searchPlaceholder')}
+            name="chunk-search-input"
+            type="text"
+            id="chunk-search-input"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+            }}
+            borderVariant="thin"
+          />
+        </div>
+        <button
+          className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+          title={t('settings.documents.addNew')}
+          onClick={() => setAddModal('ACTIVE')}
+        >
+          {t('settings.documents.addNew')}
+        </button>
+      </div>
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="h-32 flex items-center justify-center mt-24 col-span-2 lg:col-span-3">
+            <Spinner />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {paginatedChunks.filter((chunk) =>
+            chunk.metadata?.title
+              .toLowerCase()
+              .includes(searchTerm.toLowerCase()),
+          ).length === 0 ? (
+            <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
+              <img
+                src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                alt="No tools found"
+                className="h-24 w-24 mx-auto mb-2"
+              />
+              No chunks found
+            </div>
+          ) : (
+            paginatedChunks
+              .filter((chunk) =>
+                chunk.metadata?.title
+                  .toLowerCase()
+                  .includes(searchTerm.toLowerCase()),
+              )
+              .map((chunk, index) => (
+                <div
+                  key={index}
+                  className="relative h-56 w-full p-6 border rounded-2xl border-silver dark:border-silver/40 flex flex-col justify-between"
+                >
+                  <div className="w-full">
+                    <div className="w-full flex items-center justify-between">
+                      <button
+                        aria-label={'edit'}
+                        onClick={() => {
+                          setEditModal({
+                            state: 'ACTIVE',
+                            chunk: chunk,
+                          });
+                        }}
+                        className="absolute top-3 right-3 h-4 w-4 cursor-pointer"
+                      >
+                        <img
+                          alt={'edit'}
+                          src={Edit}
+                          className="opacity-60 hover:opacity-100"
+                        />
+                      </button>
+                    </div>
+                    <div className="mt-[9px]">
+                      <p className="h-12 text-sm font-semibold text-eerie-black dark:text-[#EEEEEE] leading-relaxed break-words ellipsis-text">
+                        {chunk.metadata?.title}
+                      </p>
+                      <p className="mt-1 pr-1 h-[110px] overflow-y-auto text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed break-words">
+                        {chunk.text}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+          )}
+        </div>
+      )}
+      {!loading &&
+        paginatedChunks.filter((chunk) =>
+          chunk.metadata?.title
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()),
+        ).length !== 0 && (
+          <div className="mt-10 w-full flex items-center justify-center">
+            <Pagination
+              currentPage={page}
+              totalPages={Math.ceil(totalChunks / perPage)}
+              rowsPerPage={perPage}
+              onPageChange={(page) => {
+                setPage(page);
+              }}
+              onRowsPerPageChange={(rows) => {
+                setPerPage(rows);
+                setPage(1);
+              }}
+            />
+          </div>
+        )}
+      <ChunkModal
+        type="ADD"
+        modalState={addModal}
+        setModalState={setAddModal}
+        handleSubmit={handleAddChunk}
+      />
+      <ChunkModal
+        type="EDIT"
+        modalState={editModal.state}
+        setModalState={(state) => setEditModal((prev) => ({ ...prev, state }))}
+        handleSubmit={(title, text) => {
+          handleUpdateChunk(title, text, editModal.chunk as ChunkType);
+        }}
+        originalText={editModal.chunk?.text}
+        originalTitle={editModal.chunk?.metadata?.title}
+        handleDelete={() => {
+          handleDeleteChunk(editModal.chunk as ChunkType);
+        }}
+      />
+    </div>
+  );
+}

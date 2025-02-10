@@ -85,6 +85,7 @@ export default function Tools() {
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  borderVariant="thin"
                 />
               </div>
               <button

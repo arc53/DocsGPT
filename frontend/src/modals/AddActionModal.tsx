@@ -37,7 +37,7 @@ export default function AddActionModal({
               New Action
             </h2>
             <div className="mt-6 relative px-3">
-              <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
+              <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
                 Action Name
               </span>
               <Input
