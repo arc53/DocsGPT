@@ -1506,7 +1506,7 @@ class GetFeedbackAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}")
             return make_response(jsonify({"success": False}), 400)
-        
+
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -2191,5 +2191,76 @@ class DeleteChunk(Resource):
                     jsonify({"message": "Chunk not found or could not be deleted"}),
                     404,
                 )
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
+
+
+@user_ns.route("/api/update_chunk")
+class UpdateChunk(Resource):
+    @api.expect(
+        api.model(
+            "UpdateChunkModel",
+            {
+                "id": fields.String(required=True, description="Document ID"),
+                "chunk_id": fields.String(
+                    required=True, description="Chunk ID to update"
+                ),
+                "text": fields.String(
+                    required=False, description="New text of the chunk"
+                ),
+                "metadata": fields.Raw(
+                    required=False,
+                    description="Updated metadata associated with the chunk",
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Updates an existing chunk in the document.",
+    )
+    def put(self):
+        data = request.get_json()
+        required_fields = ["id", "chunk_id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        doc_id = data.get("id")
+        chunk_id = data.get("chunk_id")
+        text = data.get("text")
+        metadata = data.get("metadata")
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunks = store.get_chunks()
+            existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
+            if not existing_chunk:
+                return make_response(jsonify({"error": "Chunk not found"}), 404)
+
+            deleted = store.delete_chunk(chunk_id)
+            if not deleted:
+                return make_response(
+                    jsonify({"error": "Failed to delete existing chunk"}), 500
+                )
+
+            new_text = text if text is not None else existing_chunk["text"]
+            new_metadata = (
+                metadata if metadata is not None else existing_chunk["metadata"]
+            )
+
+            new_chunk_id = store.add_chunk(new_text, new_metadata)
+
+            return make_response(
+                jsonify(
+                    {
+                        "message": "Chunk updated successfully",
+                        "new_chunk_id": new_chunk_id,
+                    }
+                ),
+                200,
+            )
         except Exception as e:
             return make_response(jsonify({"error": str(e)}), 500)

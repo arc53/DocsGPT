@@ -5,6 +5,7 @@ import { useDispatch } from 'react-redux';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import caretSort from '../assets/caret-sort.svg';
+import Edit from '../assets/edit.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SyncIcon from '../assets/sync.svg';
@@ -15,7 +16,7 @@ import Input from '../components/Input';
 import SkeletonLoader from '../components/SkeletonLoader';
 import Spinner from '../components/Spinner';
 import { useDarkTheme } from '../hooks';
-import AddChunkModal from '../modals/AddChunkModal';
+import ChunkModal from '../modals/ChunkModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
@@ -396,11 +397,11 @@ function DocumentChunks({
   const [totalChunks, setTotalChunks] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [deleteModalState, setDeleteModalState] = useState<{
+  const [addModal, setAddModal] = useState<ActiveState>('INACTIVE');
+  const [editModal, setEditModal] = useState<{
     state: ActiveState;
-    chunkId: string | null;
-  }>({ state: 'INACTIVE', chunkId: null });
-  const [addModalState, setAddModalState] = useState<ActiveState>('INACTIVE');
+    chunk: ChunkType | null;
+  }>({ state: 'INACTIVE', chunk: null });
 
   const fetchChunks = () => {
     setLoading(true);
@@ -448,15 +449,39 @@ function DocumentChunks({
     }
   };
 
-  const handleDeleteChunk = (chunkId: string) => {
+  const handleUpdateChunk = (title: string, text: string, chunk: ChunkType) => {
     try {
-      userService.deleteChunk(document.id ?? '', chunkId).then((response) => {
-        if (!response.ok) {
-          throw new Error('Failed to delete chunk');
-        }
-        setDeleteModalState({ state: 'INACTIVE', chunkId: null });
-        fetchChunks();
-      });
+      userService
+        .updateChunk({
+          id: document.id ?? '',
+          chunk_id: chunk.doc_id,
+          text: text,
+          metadata: {
+            title: title,
+          },
+        })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to update chunk');
+          }
+          fetchChunks();
+        });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const handleDeleteChunk = (chunk: ChunkType) => {
+    try {
+      userService
+        .deleteChunk(document.id ?? '', chunk.doc_id)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to delete chunk');
+          }
+          setEditModal({ state: 'INACTIVE', chunk: null });
+          fetchChunks();
+        });
     } catch (e) {
       console.log(e);
     }
@@ -498,7 +523,7 @@ function DocumentChunks({
         <button
           className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
           title={t('settings.documents.addNew')}
-          onClick={() => setAddModalState('ACTIVE')}
+          onClick={() => setAddModal('ACTIVE')}
         >
           {t('settings.documents.addNew')}
         </button>
@@ -539,18 +564,18 @@ function DocumentChunks({
                   <div className="w-full">
                     <div className="w-full flex items-center justify-between">
                       <button
-                        className="absolute top-3 right-3 h-[19px] w-[19px] cursor-pointer"
+                        aria-label={'edit'}
                         onClick={() => {
-                          setDeleteModalState({
+                          setEditModal({
                             state: 'ACTIVE',
-                            chunkId: chunk.doc_id,
+                            chunk: chunk,
                           });
                         }}
-                        aria-label={'delete'}
+                        className="absolute top-3 right-3 h-4 w-4 cursor-pointer"
                       >
                         <img
-                          src={Trash}
-                          alt={'delete'}
+                          alt={'edit'}
+                          src={Edit}
                           className="opacity-60 hover:opacity-100"
                         />
                       </button>
@@ -590,19 +615,24 @@ function DocumentChunks({
             />
           </div>
         )}
-      <ConfirmationModal
-        message="Are you sure you want to delete this?"
-        modalState={deleteModalState.state}
-        setModalState={(state) =>
-          setDeleteModalState((prev) => ({ ...prev, state }))
-        }
-        handleSubmit={() => handleDeleteChunk(deleteModalState.chunkId ?? '')}
-        submitLabel="Delete"
-      />
-      <AddChunkModal
-        modalState={addModalState}
-        setModalState={setAddModalState}
+      <ChunkModal
+        type="ADD"
+        modalState={addModal}
+        setModalState={setAddModal}
         handleSubmit={handleAddChunk}
+      />
+      <ChunkModal
+        type="EDIT"
+        modalState={editModal.state}
+        setModalState={(state) => setEditModal((prev) => ({ ...prev, state }))}
+        handleSubmit={(title, text) => {
+          handleUpdateChunk(title, text, editModal.chunk as ChunkType);
+        }}
+        originalText={editModal.chunk?.text}
+        originalTitle={editModal.chunk?.metadata?.title}
+        handleDelete={() => {
+          handleDeleteChunk(editModal.chunk as ChunkType);
+        }}
       />
     </div>
   );
