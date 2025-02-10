@@ -156,7 +156,9 @@
         "completed": "訓練完成",
         "wait": "這可能需要幾分鐘",
         "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔"
-      }
+      },
+      "showAdvanced": "顯示進階選項",
+      "hideAdvanced": "隱藏進階選項"
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",

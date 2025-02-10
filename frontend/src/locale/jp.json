@@ -155,7 +155,9 @@
         "completed": "トレーニング完了",
         "wait": "数分かかる場合があります",
         "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください"
-      }
+      },
+      "showAdvanced": "詳細オプションを表示",
+      "hideAdvanced": "詳細オプションを非表示"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",

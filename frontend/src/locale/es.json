@@ -156,7 +156,9 @@
         "completed": "Entrenamiento completado",
         "wait": "Esto puede tardar varios minutos",
         "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño"
-      }
+      },
+      "showAdvanced": "Mostrar opciones avanzadas",
+      "hideAdvanced": "Ocultar opciones avanzadas"
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",

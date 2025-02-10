@@ -1,5 +1,5 @@
 export interface BaseIngestorConfig {
-  name: string;
+  [key: string]: string | number | boolean | undefined;
 }
 
 export interface RedditIngestorConfig extends BaseIngestorConfig {
@@ -44,9 +44,11 @@ export type IngestorFormData = {
 export type FieldType = 'string' | 'number' | 'enum' | 'boolean';
 
 export interface FormField {
-  name: keyof BaseIngestorConfig | string;
+  name: string;
   label: string;
   type: FieldType;
+  required?: boolean;
+  advanced?: boolean;
   options?: { label: string; value: string }[];
 }
 
@@ -56,6 +58,7 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       name: 'url',
       label: 'URL',
       type: 'string',
+      required: true,
     },
   ],
   url: [
@@ -63,6 +66,7 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       name: 'url',
       label: 'URL',
       type: 'string',
+      required: true,
     },
   ],
   reddit: [
@@ -70,26 +74,31 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       name: 'client_id',
       label: 'Client ID',
       type: 'string',
+      required: true,
     },
     {
       name: 'client_secret',
       label: 'Client Secret',
       type: 'string',
+      required: true,
     },
     {
       name: 'user_agent',
       label: 'User Agent',
       type: 'string',
+      required: true,
     },
     {
       name: 'search_queries',
       label: 'Search Queries',
       type: 'string',
+      required: true,
     },
     {
       name: 'number_posts',
       label: 'Number of Posts',
       type: 'number',
+      required: true,
     },
   ],
   github: [
@@ -97,6 +106,7 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       name: 'repo_url',
       label: 'Repository URL',
       type: 'string',
+      required: true,
     },
   ],
 };

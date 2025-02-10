@@ -156,7 +156,9 @@
         "completed": "Training completed",
         "wait": "This may take several minutes",
         "tokenLimit": "Over the token limit, please consider uploading smaller document"
-      }
+      },
+      "showAdvanced": "Show advanced options",
+      "hideAdvanced": "Hide advanced options"
     },
     "createAPIKey": {
       "label": "Create New API Key",

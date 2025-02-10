@@ -8,6 +8,7 @@ const Input = ({
   isAutoFocused = false,
   placeholder,
   label,
+  required = false,
   maxLength,
   className,
   colorVariant = 'silver',
@@ -40,13 +41,19 @@ const Input = ({
         onChange={onChange}
         onPaste={onPaste}
         onKeyDown={onKeyDown}
+        required={required}
       >
         {children}
       </input>
       {label && (
         <div className="absolute -top-2 left-2">
-          <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
+          <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver flex items-center">
             {label}
+            {required && (
+              <span className="text-[#D30000] dark:text-[#D42626] ml-0.5">
+                *
+              </span>
+            )}
           </span>
         </div>
       )}
