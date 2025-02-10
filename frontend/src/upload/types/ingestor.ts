@@ -99,7 +99,6 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       label: 'Number of Posts',
       type: 'number',
       required: true,
-      advanced: true,
     },
   ],
   github: [
