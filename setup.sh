@@ -31,7 +31,7 @@ check_and_start_docker() {
         # Wait for Docker to be fully operational with animated dots
         echo -n "Waiting for Docker to start"
         while ! docker system info > /dev/null 2>&1; do
-            for i in {1..3}; do
+            for _ in {1..3}; do
                 echo -n "."
                 sleep 1
             done
