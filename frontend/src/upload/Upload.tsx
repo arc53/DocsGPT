@@ -637,7 +637,7 @@ function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              border="border"
+              border="border-2"
               options={urlOptions}
               selectedValue={
                 urlOptions.find((opt) => opt.value === ingestor.type) || null
@@ -658,6 +658,7 @@ function Upload({
               borderVariant="thin"
               placeholder="Name"
               label="Name"
+              required={true}
             />
             {renderFormFields()}
             {IngestorFormSchemas[ingestor.type].some(
@@ -665,11 +666,11 @@ function Upload({
             ) && (
               <button
                 onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                className="text-purple-30 text-lg font-normal px-4 py-2 bg-transparent hover:cursor-pointer text-left"
+                className="text-purple-30 text-sm font-normal pl-0 py-2 bg-transparent hover:cursor-pointer text-left"
               >
                 {showAdvancedOptions
-                  ? 'Hide Advanced Options'
-                  : 'Show Advanced Options'}
+                  ? t('modals.uploadDoc.hideAdvanced')
+                  : t('modals.uploadDoc.showAdvanced')}
               </button>
             )}
           </>
