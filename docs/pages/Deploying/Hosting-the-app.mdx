@@ -1,3 +1,7 @@
+import { DeploymentCards } from '../../components/DeploymentCards';
+
+
+
 # Self-hosting DocsGPT on Amazon Lightsail
 
 Here's a step-by-step guide on how to set up an Amazon Lightsail instance to host DocsGPT.
@@ -105,6 +109,22 @@ Your instance is now available at your Public IP Address on port 5173. Enjoy usi
 
 ## Other Deployment Options
 
-- [Deploy DocsGPT on Civo Compute Cloud](https://dev.to/rutamhere/deploying-docsgpt-on-civo-compute-c)
-- [Deploy DocsGPT on DigitalOcean Droplet](https://dev.to/rutamhere/deploying-docsgpt-on-digitalocean-droplet-50ea)
-- [Deploy DocsGPT on Kamatera Performance Cloud](https://dev.to/rutamhere/deploying-docsgpt-on-kamatera-performance-cloud-1bj)
+<DeploymentCards
+  items={[
+    {
+      title: 'Deploy on Civo Compute Cloud',
+      link: 'https://dev.to/rutamhere/deploying-docsgpt-on-civo-compute-c',
+      description: 'Step-by-step guide for Civo deployment'
+    },
+    {
+      title: 'Deploy on DigitalOcean Droplet', 
+      link: 'https://dev.to/rutamhere/deploying-docsgpt-on-digitalocean-droplet-50ea',
+      description: 'Guide for DigitalOcean deployment'
+    },
+    {
+      title: 'Deploy on Kamatera Cloud',
+      link: 'https://dev.to/rutamhere/deploying-docsgpt-on-kamatera-performance-cloud-1bj',
+      description: 'Kamatera deployment tutorial'
+    }
+  ]}
+/>
