@@ -1,3 +1,6 @@
+---
+title: 'Changelog'
+---
 ## Launching Web App
 **Note**: Make sure you have Docker installed
 
