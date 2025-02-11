@@ -58,9 +58,27 @@ export default function Tools() {
     getUserTools();
   };
 
+  const handleToolAdded = (toolId: string) => {
+    userService
+      .getUserTools()
+      .then((res) => res.json())
+      .then((data) => {
+        const newTool = data.tools.find(
+          (tool: UserToolType) => tool.id === toolId,
+        );
+        if (newTool) {
+          setSelectedTool(newTool);
+        } else {
+          console.error('Newly added tool not found');
+        }
+      })
+      .catch((error) => console.error('Error fetching tools:', error));
+  };
+
   React.useEffect(() => {
     getUserTools();
   }, []);
+
   return (
     <div>
       {selectedTool ? (
@@ -85,6 +103,7 @@ export default function Tools() {
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  borderVariant="thin"
                 />
               </div>
               <button
@@ -184,6 +203,7 @@ export default function Tools() {
             modalState={addToolModalState}
             setModalState={setAddToolModalState}
             getUserTools={getUserTools}
+            onToolAdded={handleToolAdded}
           />
         </div>
       )}

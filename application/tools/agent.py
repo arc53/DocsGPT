@@ -52,6 +52,10 @@ class Agent:
                 },
             }
             for tool_id, tool in tools_dict.items()
+            if (
+                (tool["name"] == "api_tool" and "actions" in tool.get("config", {}))
+                or (tool["name"] != "api_tool" and "actions" in tool)
+            )
             for action in (
                 tool["config"]["actions"].values()
                 if tool["name"] == "api_tool"
