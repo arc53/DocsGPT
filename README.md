@@ -45,11 +45,11 @@
 
 - [x] Full GoogleAI compatibility (Jan 2025)
 - [x] Add tools (Jan 2025)
+- [x] Manually updating chunks in the app UI (Feb 2025)
+- [ ] Devcontainer for easy development (Feb 2025)
 - [ ] Anthropic Tool compatibility
 - [ ] Add triggerable actions / tools (webhook)
 - [ ] Add OAuth 2.0 authentication for tools and sources
-- [ ] Manually updating chunks in the app UI
-- [ ] Devcontainer for easy development
 - [ ] Chatbots menu re-design to handle tools, scheduling, and more
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
