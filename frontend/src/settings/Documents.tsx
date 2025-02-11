@@ -7,11 +7,11 @@ import caretSort from '../assets/caret-sort.svg';
 import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import Input from '../components/Input';
-import Upload from '../upload/Upload'; // Import the Upload component
+import Upload from '../upload/Upload';
 import Pagination from '../components/DocumentPagination';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
-import { Doc, DocumentsProps, ActiveState } from '../models/misc'; // Ensure ActiveState type is imported
+import { Doc, DocumentsProps, ActiveState } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import { setSourceDocs } from '../preferences/preferenceSlice';
 import { setPaginatedDocuments } from '../preferences/preferenceSlice';
@@ -41,15 +41,13 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  // State for search input
   const [searchTerm, setSearchTerm] = useState<string>('');
-  // State for modal: active/inactive
-  const [modalState, setModalState] = useState<ActiveState>('INACTIVE'); // Initialize with inactive state
-  const [isOnboarding, setIsOnboarding] = useState<boolean>(false); // State for onboarding flag
+  const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
+  const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  // Pagination
+
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -61,6 +59,16 @@ const Documents: React.FC<DocumentsProps> = ({
     { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
 
+  const setLoadingWithMinDuration = useCallback((isLoading: boolean) => {
+    if (isLoading) {
+      setLoading(true);
+    } else {
+      setTimeout(() => {
+        setLoading(false);
+      }, 2000);
+    }
+  }, []);
+
   const refreshDocs = useCallback(
     (
       field: 'date' | 'tokens' | undefined,
@@ -69,11 +77,7 @@ const Documents: React.FC<DocumentsProps> = ({
     ) => {
       const page = pageNumber ?? currentPage;
       const rowsPerPg = rows ?? rowsPerPage;
-
-      // If field is undefined, (Pagination or Search) use the current sortField
       const newSortField = field ?? sortField;
-
-      // If field is undefined, (Pagination or Search) use the current sortOrder
       const newSortOrder =
         field === sortField
           ? sortOrder === 'asc'
@@ -81,13 +85,12 @@ const Documents: React.FC<DocumentsProps> = ({
             : 'asc'
           : sortOrder;
 
-      // If field is defined, update the sortField and sortOrder
       if (field) {
         setSortField(newSortField);
         setSortOrder(newSortOrder);
       }
 
-      setLoading(true);
+      setLoadingWithMinDuration(true);
       getDocsWithPagination(
         newSortField,
         newSortOrder,
@@ -98,17 +101,26 @@ const Documents: React.FC<DocumentsProps> = ({
         .then((data) => {
           dispatch(setPaginatedDocuments(data ? data.docs : []));
           setTotalPages(data ? data.totalPages : 0);
+          setLoadingWithMinDuration(false);
         })
-        .catch((error) => console.error(error))
-        .finally(() => {
-          setLoading(false);
+        .catch((error) => {
+          console.error(error);
+          setLoadingWithMinDuration(false);
         });
     },
-    [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
+    [
+      currentPage,
+      rowsPerPage,
+      sortField,
+      sortOrder,
+      searchTerm,
+      dispatch,
+      setLoadingWithMinDuration,
+    ],
   );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
-    setLoading(true);
+    setLoadingWithMinDuration(true);
     userService
       .manageSync({ source_id: doc.id, sync_frequency })
       .then(() => {
@@ -128,10 +140,11 @@ const Documents: React.FC<DocumentsProps> = ({
           setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
         );
         setTotalPages(paginatedData ? paginatedData.totalPages : 0);
+        setLoadingWithMinDuration(false);
       })
-      .catch((error) => console.error('Error in handleManageSync:', error))
-      .finally(() => {
-        setLoading(false);
+      .catch((error) => {
+        console.error('Error in handleManageSync:', error);
+        setLoadingWithMinDuration(false);
       });
   };
 
@@ -202,7 +215,6 @@ const Documents: React.FC<DocumentsProps> = ({
         ) : (
           <div className="flex flex-col flex-grow">
             {' '}
-            {/* Removed overflow-auto */}
             <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
               <table className="w-full min-w-[640px] table-auto">
                 <thead>
@@ -249,7 +261,7 @@ const Documents: React.FC<DocumentsProps> = ({
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-4 text-center text-gray-700 dark:text-[#E0E0E] bg-transparent"
+                        className="py-4 text-center text-gray-700 dark:text-gray-300 bg-transparent"
                       >
                         {t('settings.documents.noData')}
                       </td>

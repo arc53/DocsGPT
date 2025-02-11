@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BarElement,
@@ -88,9 +88,25 @@ export default function Analytics() {
     value: 'last_30_days',
   });
 
-  const [loadingMessages, setLoadingMessages] = useState(true);
-  const [loadingTokens, setLoadingTokens] = useState(true);
-  const [loadingFeedback, setLoadingFeedback] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState<boolean>(false);
+  const [loadingTokens, setLoadingTokens] = useState<boolean>(false);
+  const [loadingFeedback, setLoadingFeedback] = useState<boolean>(false);
+
+  const setLoadingWithMinDuration = useCallback(
+    (
+      setter: React.Dispatch<React.SetStateAction<boolean>>,
+      isLoading: boolean,
+    ) => {
+      if (isLoading) {
+        setter(true);
+      } else {
+        setTimeout(() => {
+          setter(false);
+        }, 2000);
+      }
+    },
+    [],
+  );
 
   const fetchChatbots = async () => {
     try {
@@ -105,84 +121,75 @@ export default function Analytics() {
     }
   };
 
-  const fetchMessagesData = async (chatbot_id?: string, filter?: string) => {
-    setLoadingMessages(true);
+  const fetchMessagesData = useCallback(async () => {
+    setLoadingWithMinDuration(setLoadingMessages, true);
     try {
       const response = await userService.getMessageAnalytics({
-        api_key_id: chatbot_id,
-        filter_option: filter,
+        api_key_id: selectedChatbot?.id,
+        filter_option: messagesFilter.value,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
       }
       const data = await response.json();
       setMessagesData(data.messages);
+      setLoadingWithMinDuration(setLoadingMessages, false);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingMessages(false);
+      setLoadingWithMinDuration(setLoadingMessages, false);
     }
-  };
+  }, [selectedChatbot, messagesFilter, setLoadingWithMinDuration]);
 
-  const fetchTokenData = async (chatbot_id?: string, filter?: string) => {
-    setLoadingTokens(true);
+  const fetchTokenData = useCallback(async () => {
+    setLoadingWithMinDuration(setLoadingTokens, true);
     try {
       const response = await userService.getTokenAnalytics({
-        api_key_id: chatbot_id,
-        filter_option: filter,
+        api_key_id: selectedChatbot?.id,
+        filter_option: tokenUsageFilter.value,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
       }
       const data = await response.json();
       setTokenUsageData(data.token_usage);
+      setLoadingWithMinDuration(setLoadingTokens, false);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingTokens(false);
+      setLoadingWithMinDuration(setLoadingTokens, false);
     }
-  };
+  }, [selectedChatbot, tokenUsageFilter, setLoadingWithMinDuration]);
 
-  const fetchFeedbackData = async (chatbot_id?: string, filter?: string) => {
-    setLoadingFeedback(true);
+  const fetchFeedbackData = useCallback(async () => {
+    setLoadingWithMinDuration(setLoadingFeedback, true);
     try {
       const response = await userService.getFeedbackAnalytics({
-        api_key_id: chatbot_id,
-        filter_option: filter,
+        api_key_id: selectedChatbot?.id,
+        filter_option: feedbackFilter.value,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
       }
       const data = await response.json();
       setFeedbackData(data.feedback);
+      setLoadingWithMinDuration(setLoadingFeedback, false);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingFeedback(false);
+      setLoadingWithMinDuration(setLoadingFeedback, false);
     }
-  };
+  }, [selectedChatbot, feedbackFilter, setLoadingWithMinDuration]);
 
   useEffect(() => {
     fetchChatbots();
   }, []);
 
   useEffect(() => {
-    const id = selectedChatbot?.id;
-    const filter = messagesFilter;
-    fetchMessagesData(id, filter?.value);
-  }, [selectedChatbot, messagesFilter]);
-
-  useEffect(() => {
-    const id = selectedChatbot?.id;
-    const filter = tokenUsageFilter;
-    fetchTokenData(id, filter?.value);
-  }, [selectedChatbot, tokenUsageFilter]);
-
-  useEffect(() => {
-    const id = selectedChatbot?.id;
-    const filter = feedbackFilter;
-    fetchFeedbackData(id, filter?.value);
-  }, [selectedChatbot, feedbackFilter]);
+    fetchMessagesData();
+    fetchTokenData();
+    fetchFeedbackData();
+  }, [fetchMessagesData, fetchTokenData, fetchFeedbackData]);
 
   return (
     <div className="mt-12">

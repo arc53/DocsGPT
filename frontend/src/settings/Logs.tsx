@@ -18,6 +18,16 @@ export default function Logs() {
   const [loadingChatbots, setLoadingChatbots] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
 
+  const setLoadingLogsWithMinDuration = useCallback((isLoading: boolean) => {
+    if (isLoading) {
+      setLoadingLogs(true);
+    } else {
+      setTimeout(() => {
+        setLoadingLogs(false);
+      }, 2000);
+    }
+  }, []);
+
   const fetchChatbots = async () => {
     setLoadingChatbots(true);
     try {
@@ -35,7 +45,7 @@ export default function Logs() {
   };
 
   const fetchLogs = async () => {
-    setLoadingLogs(true);
+    setLoadingLogsWithMinDuration(true);
     try {
       const response = await userService.getLogs({
         page: page,
@@ -51,7 +61,7 @@ export default function Logs() {
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingLogs(false);
+      setLoadingLogsWithMinDuration(false);
     }
   };
 
