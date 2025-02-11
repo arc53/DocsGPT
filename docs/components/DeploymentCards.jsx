@@ -34,7 +34,7 @@ export function DeploymentCards({ items }) {
             </div>
 
             <style jsx>{`
-                .deployment-cards {
+               .deployment-cards {
                     margin-top: 24px;
                     display: grid;
                     grid-template-columns: 1fr;
@@ -56,6 +56,8 @@ export function DeploymentCards({ items }) {
                     display: flex;
                     flex-direction: column;
                     align-items: center; /* Center horizontally */
+                    justify-content: center; /* Center vertically */
+                    height: 100%; /* Fill the height of the grid cell */
                   
                 }
                 .card:hover {
@@ -82,14 +84,16 @@ export function DeploymentCards({ items }) {
                 display:flex;
                 justify-content:center;
                  width: 100%;
-                 margin-bottom: 8px;
+                 margin-bottom: 8px; /* Space between icon and title */
                }
                 .card-icon {
-                   
+                   display: block;
+                   margin: 0 auto;
+
                 }
                 .card-title {
                     font-weight: 600;
-                     margin-bottom: 4px;
+                    margin-bottom: 4px;
                     font-size: 16px;
                     text-align: center;
                     color: #f0f0f0; /* Lighter title color if needed */
