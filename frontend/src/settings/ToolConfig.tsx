@@ -134,7 +134,7 @@ export default function ToolConfig({
           {Object.keys(tool?.config).length !== 0 &&
             tool.name !== 'api_tool' && (
               <div className="relative w-96">
-                <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
+                <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
                   API Key / Oauth
                 </span>
                 <Input
@@ -447,7 +447,7 @@ function APIToolConfig({
                 </div>
                 <div className="mt-8 px-5">
                   <div className="relative w-full">
-                    <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
                       URL
                     </span>
                     <Input
@@ -516,7 +516,7 @@ function APIToolConfig({
                 </div>
                 <div className="mt-4 px-5 py-2">
                   <div className="relative w-full">
-                    <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
                       Description
                     </span>
                     <Input

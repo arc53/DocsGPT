@@ -19,7 +19,7 @@ from application.core.settings import settings
 from application.extensions import api
 from application.tools.tool_manager import ToolManager
 from application.tts.google_tts import GoogleTTS
-from application.utils import check_required_fields
+from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 
 mongo = MongoDB.get_client()
@@ -1511,7 +1511,7 @@ class GetFeedbackAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}")
             return make_response(jsonify({"success": False}), 400)
-        
+
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -1558,11 +1558,8 @@ class GetFeedbackAnalytics(Resource):
                 {"$match": {"queries.feedback": {"$exists": True}}},
                 {
                     "$group": {
-                        "_id": {
-                            "time": date_field,
-                            "feedback": "$queries.feedback"
-                        },
-                        "count": {"$sum": 1}
+                        "_id": {"time": date_field, "feedback": "$queries.feedback"},
+                        "count": {"$sum": 1},
                     }
                 },
                 {
@@ -1573,7 +1570,7 @@ class GetFeedbackAnalytics(Resource):
                                 "$cond": [
                                     {"$eq": ["$_id.feedback", "LIKE"]},
                                     "$count",
-                                    0
+                                    0,
                                 ]
                             }
                         },
@@ -1582,13 +1579,13 @@ class GetFeedbackAnalytics(Resource):
                                 "$cond": [
                                     {"$eq": ["$_id.feedback", "DISLIKE"]},
                                     "$count",
-                                    0
+                                    0,
                                 ]
                             }
-                        }
+                        },
                     }
                 },
-                {"$sort": {"_id": 1}}
+                {"$sort": {"_id": 1}},
             ]
 
             feedback_data = conversations_collection.aggregate(pipeline)
@@ -1607,7 +1604,7 @@ class GetFeedbackAnalytics(Resource):
             for entry in feedback_data:
                 daily_feedback[entry["_id"]] = {
                     "positive": entry["positive"],
-                    "negative": entry["negative"]
+                    "negative": entry["negative"],
                 }
 
         except Exception as err:
@@ -1935,6 +1932,16 @@ class UpdateTool(Resource):
             if "actions" in data:
                 update_data["actions"] = data["actions"]
             if "config" in data:
+                if "actions" in data["config"]:
+                    for action_name in list(data["config"]["actions"].keys()):
+                        if not validate_function_name(action_name):
+                            return make_response(
+                                jsonify({
+                                    "success": False,
+                                    "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
+                                    "param": "tools[].function.name"
+                                }), 400
+                            )
                 update_data["config"] = data["config"]
             if "status" in data:
                 update_data["status"] = data["status"]
@@ -2076,3 +2083,199 @@ class DeleteTool(Resource):
             return {"success": False}, 400
 
         return {"success": True}, 200
+
+
+def get_vector_store(source_id):
+    """
+    Get the Vector Store
+    Args:
+        source_id (str): source id of the document
+    """
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE,
+        source_id=source_id,
+        embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+    )
+    return store
+
+
+@user_ns.route("/api/get_chunks")
+class GetChunks(Resource):
+    @api.doc(
+        description="Retrieves all chunks associated with a document",
+        params={"id": "The document ID"},
+    )
+    def get(self):
+        doc_id = request.args.get("id")
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 10))
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunks = store.get_chunks()
+            total_chunks = len(chunks)
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_chunks = chunks[start:end]
+
+            return make_response(
+                jsonify(
+                    {
+                        "page": page,
+                        "per_page": per_page,
+                        "total": total_chunks,
+                        "chunks": paginated_chunks,
+                    }
+                ),
+                200,
+            )
+
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
+
+
+@user_ns.route("/api/add_chunk")
+class AddChunk(Resource):
+    @api.expect(
+        api.model(
+            "AddChunkModel",
+            {
+                "id": fields.String(required=True, description="Document ID"),
+                "text": fields.String(required=True, description="Text of the chunk"),
+                "metadata": fields.Raw(
+                    required=False,
+                    description="Metadata associated with the chunk",
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Adds a new chunk to the document",
+    )
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "text"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        doc_id = data.get("id")
+        text = data.get("text")
+        metadata = data.get("metadata", {})
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunk_id = store.add_chunk(text, metadata)
+            return make_response(
+                jsonify({"message": "Chunk added successfully", "chunk_id": chunk_id}),
+                201,
+            )
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
+
+
+@user_ns.route("/api/delete_chunk")
+class DeleteChunk(Resource):
+    @api.doc(
+        description="Deletes a specific chunk from the document.",
+        params={"id": "The document ID", "chunk_id": "The ID of the chunk to delete"},
+    )
+    def delete(self):
+        doc_id = request.args.get("id")
+        chunk_id = request.args.get("chunk_id")
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            deleted = store.delete_chunk(chunk_id)
+            if deleted:
+                return make_response(
+                    jsonify({"message": "Chunk deleted successfully"}), 200
+                )
+            else:
+                return make_response(
+                    jsonify({"message": "Chunk not found or could not be deleted"}),
+                    404,
+                )
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
+
+
+@user_ns.route("/api/update_chunk")
+class UpdateChunk(Resource):
+    @api.expect(
+        api.model(
+            "UpdateChunkModel",
+            {
+                "id": fields.String(required=True, description="Document ID"),
+                "chunk_id": fields.String(
+                    required=True, description="Chunk ID to update"
+                ),
+                "text": fields.String(
+                    required=False, description="New text of the chunk"
+                ),
+                "metadata": fields.Raw(
+                    required=False,
+                    description="Updated metadata associated with the chunk",
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Updates an existing chunk in the document.",
+    )
+    def put(self):
+        data = request.get_json()
+        required_fields = ["id", "chunk_id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        doc_id = data.get("id")
+        chunk_id = data.get("chunk_id")
+        text = data.get("text")
+        metadata = data.get("metadata")
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunks = store.get_chunks()
+            existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
+            if not existing_chunk:
+                return make_response(jsonify({"error": "Chunk not found"}), 404)
+
+            deleted = store.delete_chunk(chunk_id)
+            if not deleted:
+                return make_response(
+                    jsonify({"error": "Failed to delete existing chunk"}), 500
+                )
+
+            new_text = text if text is not None else existing_chunk["text"]
+            new_metadata = (
+                metadata if metadata is not None else existing_chunk["metadata"]
+            )
+
+            new_chunk_id = store.add_chunk(new_text, new_metadata)
+
+            return make_response(
+                jsonify(
+                    {
+                        "message": "Chunk updated successfully",
+                        "new_chunk_id": new_chunk_id,
+                    }
+                ),
+                200,
+            )
+        except Exception as e:
+            return make_response(jsonify({"error": str(e)}), 500)
