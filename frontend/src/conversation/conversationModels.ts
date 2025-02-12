@@ -1,3 +1,5 @@
+import { ToolCallsType } from './types';
+
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
@@ -17,9 +19,10 @@ export interface Answer {
   answer: string;
   query: string;
   result: string;
-  sources: { title: string; text: string; source: string }[];
   conversationId: string | null;
   title: string | null;
+  sources: { title: string; text: string; source: string }[];
+  tool_calls: ToolCallsType[];
 }
 
 export interface Query {
@@ -27,10 +30,12 @@ export interface Query {
   response?: string;
   feedback?: FEEDBACK;
   error?: string;
-  sources?: { title: string; text: string; source: string }[];
   conversationId?: string | null;
   title?: string | null;
+  sources?: { title: string; text: string; source: string }[];
+  tool_calls?: ToolCallsType[];
 }
+
 export interface RetrievalPayload {
   question: string;
   active_docs?: string;

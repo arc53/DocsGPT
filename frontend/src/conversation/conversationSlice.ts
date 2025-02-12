@@ -82,6 +82,13 @@ export const fetchAnswer = createAsyncThunk<
                 query: { sources: data.source ?? [] },
               }),
             );
+          } else if (data.type === 'tool_calls') {
+            dispatch(
+              updateToolCalls({
+                index: indx ?? state.conversation.queries.length - 1,
+                query: { tool_calls: data.tool_calls },
+              }),
+            );
           } else if (data.type === 'error') {
             // set status to 'failed'
             dispatch(conversationSlice.actions.setStatus('failed'));
@@ -130,7 +137,11 @@ export const fetchAnswer = createAsyncThunk<
         dispatch(
           updateQuery({
             index: indx ?? state.conversation.queries.length - 1,
-            query: { response: answer.answer, sources: sourcesPrepped },
+            query: {
+              response: answer.answer,
+              sources: sourcesPrepped,
+              tool_calls: answer.toolCalls,
+            },
           }),
         );
         dispatch(
@@ -156,6 +167,7 @@ export const fetchAnswer = createAsyncThunk<
     query: question,
     result: '',
     sources: [],
+    tool_calls: [],
   };
 });
 
@@ -212,6 +224,15 @@ export const conversationSlice = createSlice({
         state.queries[index].sources!.push(query.sources![0]);
       }
     },
+    updateToolCalls(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const { index, query } = action.payload;
+      if (!state.queries[index].tool_calls) {
+        state.queries[index].tool_calls = query?.tool_calls;
+      }
+    },
     updateQuery(
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
@@ -263,6 +284,7 @@ export const {
   updateStreamingQuery,
   updateConversationId,
   updateStreamingSource,
+  updateToolCalls,
   setConversation,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;

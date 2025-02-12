@@ -121,6 +121,7 @@ export const SharedConversation = () => {
           message={query.response}
           type={'ANSWER'}
           sources={query.sources ?? []}
+          toolCalls={query.tool_calls}
         ></ConversationBubble>
       );
     } else if (query.error) {

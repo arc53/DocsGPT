@@ -16,6 +16,7 @@ class Agent:
         # Static tool configuration (to be replaced later)
         self.tools = []
         self.tool_config = {}
+        self.tool_calls = []
 
     def _get_user_tools(self, user="local"):
         mongo = MongoDB.get_client()
@@ -123,6 +124,15 @@ class Agent:
             print(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
         call_id = getattr(call, "id", None)
+
+        tool_call_data = {
+            "tool_name": tool_data["name"],
+            "action_name": action_name,
+            "arguments": str(call_args),
+            "result": str(result),
+        }
+        self.tool_calls.append(tool_call_data)
+
         return result, call_id
 
     def _simple_tool_agent(self, messages):
@@ -154,6 +164,7 @@ class Agent:
         return
 
     def gen(self, messages):
+        self.tool_calls = []
         if self.llm.supports_tools():
             resp = self._simple_tool_agent(messages)
             for line in resp:

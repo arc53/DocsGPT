@@ -35,6 +35,12 @@ class ClassicRAG(BaseRetriever):
             )
         )
         self.user_api_key = user_api_key
+        self.agent = Agent(
+            llm_name=settings.LLM_NAME,
+            gpt_model=self.gpt_model,
+            api_key=settings.API_KEY,
+            user_api_key=self.user_api_key,
+        )
 
     def _get_data(self):
         if self.chunks == 0:
@@ -78,20 +84,24 @@ class ClassicRAG(BaseRetriever):
                     messages_combine.append(
                         {"role": "assistant", "content": i["response"]}
                     )
+                if "tool_calls" in i:
+                    for tool_call in i["tool_calls"]:
+                        messages_combine.append(
+                            {
+                                "role": "assistant",
+                                "content": f"Tool: {tool_call.get('tool_name')} | Action: {tool_call.get('action_name')} | Args: {tool_call.get('arguments')} | Response: {tool_call.get('result')}",
+                            }
+                        )
         messages_combine.append({"role": "user", "content": self.question})
         # llm = LLMCreator.create_llm(
         #     settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
         # )
         # completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
-        agent = Agent(
-            llm_name=settings.LLM_NAME,
-            gpt_model=self.gpt_model,
-            api_key=settings.API_KEY,
-            user_api_key=self.user_api_key,
-        )
-        completion = agent.gen(messages_combine)
+
+        completion = self.agent.gen(messages_combine)
         for line in completion:
             yield {"answer": str(line)}
+        yield {"tool_calls": self.agent.tool_calls.copy()}
 
     def search(self):
         return self._get_data()

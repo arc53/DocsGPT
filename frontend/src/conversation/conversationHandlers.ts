@@ -1,6 +1,7 @@
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
 import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
+import { ToolCallsType } from './types';
 
 export function handleFetchAnswer(
   question: string,
@@ -16,6 +17,7 @@ export function handleFetchAnswer(
       result: any;
       answer: any;
       sources: any;
+      toolCalls: ToolCallsType[];
       conversationId: any;
       query: string;
     }
@@ -23,13 +25,18 @@ export function handleFetchAnswer(
       result: any;
       answer: any;
       sources: any;
+      toolCalls: ToolCallsType[];
       query: string;
       conversationId: any;
       title: any;
     }
 > {
   history = history.map((item) => {
-    return { prompt: item.prompt, response: item.response };
+    return {
+      prompt: item.prompt,
+      response: item.response,
+      tool_calls: item.tool_calls,
+    };
   });
   const payload: RetrievalPayload = {
     question: question,
@@ -60,6 +67,7 @@ export function handleFetchAnswer(
         query: question,
         result,
         sources: data.sources,
+        toolCalls: data.tool_calls,
         conversationId: data.conversation_id,
       };
     });
@@ -78,7 +86,11 @@ export function handleFetchAnswerSteaming(
   indx?: number,
 ): Promise<Answer> {
   history = history.map((item) => {
-    return { prompt: item.prompt, response: item.response };
+    return {
+      prompt: item.prompt,
+      response: item.response,
+      tool_calls: item.tool_calls,
+    };
   });
   const payload: RetrievalPayload = {
     question: question,
@@ -155,7 +167,11 @@ export function handleSearch(
   token_limit: number,
 ) {
   history = history.map((item) => {
-    return { prompt: item.prompt, response: item.response };
+    return {
+      prompt: item.prompt,
+      response: item.response,
+      tool_calls: item.tool_calls,
+    };
   });
   const payload: RetrievalPayload = {
     question: question,
@@ -183,7 +199,11 @@ export function handleSearchViaApiKey(
   history: Array<any> = [],
 ) {
   history = history.map((item) => {
-    return { prompt: item.prompt, response: item.response };
+    return {
+      prompt: item.prompt,
+      response: item.response,
+      tool_calls: item.tool_calls,
+    };
   });
   return conversationService
     .search({
@@ -230,7 +250,11 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   history = history.map((item) => {
-    return { prompt: item.prompt, response: item.response };
+    return {
+      prompt: item.prompt,
+      response: item.response,
+      tool_calls: item.tool_calls,
+    };
   });
 
   return new Promise<Answer>((resolve, reject) => {
@@ -330,6 +354,7 @@ export function handleFetchSharedAnswer(
         query: question,
         result,
         sources: data.sources,
+        toolCalls: data.tool_calls,
       };
     });
 }
