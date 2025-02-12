@@ -144,7 +144,11 @@ class Agent:
         if isinstance(resp, str):
             yield resp
             return
-        if hasattr(resp, "message") and hasattr(resp.message, "content"):
+        if (
+            hasattr(resp, "message")
+            and hasattr(resp.message, "content")
+            and resp.message.content is not None
+        ):
             yield resp.message.content
             return
 
@@ -152,7 +156,11 @@ class Agent:
 
         if isinstance(resp, str):
             yield resp
-        elif hasattr(resp, "message") and hasattr(resp.message, "content"):
+        elif (
+            hasattr(resp, "message")
+            and hasattr(resp.message, "content")
+            and resp.message.content is not None
+        ):
             yield resp.message.content
         else:
             completion = self.llm.gen_stream(

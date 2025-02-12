@@ -630,25 +630,37 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                 key={`tool-call-${index}`}
                 title={`${toolCall.tool_name}  -  ${toolCall.action_name}`}
                 className="w-full rounded-[20px] bg-gray-1000 dark:bg-gun-metal hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
-                titleClassName="px-4 py-2 text-sm font-semibold"
+                titleClassName="px-6 py-2 text-sm font-semibold"
                 children={
                   <div className="flex flex-col gap-1">
                     <div className="flex flex-col border border-silver dark:border-silver/20 rounded-2xl">
-                      <p className="p-2 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
-                        Arguments
+                      <p className="flex flex-row items-center justify-between px-2 py-1 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Arguments
+                        </span>{' '}
+                        <CopyButton text={toolCall.arguments} />
                       </p>
                       <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
-                        <span className="text-black dark:text-gray-400">
+                        <span
+                          className="text-black dark:text-gray-400 leading-[23px]"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
                           {toolCall.arguments}
                         </span>
                       </p>
                     </div>
                     <div className="flex flex-col border border-silver dark:border-silver/20 rounded-2xl">
-                      <p className="p-2 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
-                        Response
+                      <p className="flex flex-row items-center justify-between px-2 py-1 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Response
+                        </span>{' '}
+                        <CopyButton text={toolCall.result} />
                       </p>
                       <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
-                        <span className="text-black dark:text-gray-400">
+                        <span
+                          className="text-black dark:text-gray-400 leading-[23px]"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
                           {toolCall.result}
                         </span>
                       </p>
