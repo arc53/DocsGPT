@@ -9,10 +9,12 @@
   },
   "How-to-use-different-LLM": {
     "title": "️🤖 How to use different LLM's",
-    "href": "/Guides/How-to-use-different-LLM"
+    "href": "/Guides/How-to-use-different-LLM",
+    "display": "hidden"
   },
   "My-AI-answers-questions-using-external-knowledge": {
     "title": "💭️ Avoiding hallucinations",
-    "href": "/Guides/My-AI-answers-questions-using-external-knowledge"
+    "href": "/Guides/My-AI-answers-questions-using-external-knowledge",
+    "display": "hidden"
   }
 }

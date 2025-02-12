@@ -1,12 +1,12 @@
-### Setting up the DocsGPT Widget in Your React Project
+# Setting up the DocsGPT Widget in Your React Project
 
-### Introduction:
+## Introduction:
 The DocsGPT Widget is a powerful tool that allows you to integrate AI-powered documentation assistance into your web applications. This guide will walk you through the installation and usage of the DocsGPT Widget in your React project. Whether you're building a web app or a knowledge base, this widget can enhance your user experience.
 
-### Installation
+## Installation
 First, make sure you have Node.js and npm installed in your project. Then go to your project and install a new dependency: `npm install docsgpt`.
 
-### Usage
+## Usage
 In the file where you want to use the widget, import it and include the CSS file:
 ```js
 import { DocsGPTWidget } from "docsgpt";
@@ -29,7 +29,7 @@ Now, you can use the widget in your component like this :
   buttonBg = "#222327"
 />
 ```
-### Props Table for DocsGPT Widget
+## Props Table for DocsGPT Widget
 
 | **Prop**          | **Type**         | **Default Value**                                           | **Description**                                                                                     |
 |--------------------|------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
@@ -47,7 +47,7 @@ Now, you can use the widget in your component like this :
 
 ---
 
-### Notes
+## Notes
 - **Customizing Props:** All properties can be overridden when embedding the widget. For example, you can provide a unique avatar, title, or color scheme to better align with your brand.
 - **Default Theme:** The widget defaults to the dark theme unless explicitly set to `"light"`. 
 - **API Key:** If the `apiKey` is not required for your application, leave it empty.
@@ -55,7 +55,7 @@ Now, you can use the widget in your component like this :
 This table provides a clear overview of the customization options available for tailoring the DocsGPT widget to fit your application.
 
 
-### How to use DocsGPTWidget with [Nextra](https://nextra.site/) (Next.js + MDX)
+## How to use DocsGPTWidget with [Nextra](https://nextra.site/) (Next.js + MDX)
 Install your widget as described above and then go to your `pages/` folder and create a new file `_app.js` with the following content:
 ```js
 import { DocsGPTWidget } from "docsgpt";
@@ -69,7 +69,7 @@ export default function MyApp({ Component, pageProps }) {
     )
 }
 ```  
-### How to use DocsGPTWidget with HTML
+## How to use DocsGPTWidget with HTML
 ```html
 <!DOCTYPE html>
 <html lang="en">

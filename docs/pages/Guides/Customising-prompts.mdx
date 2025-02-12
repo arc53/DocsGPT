@@ -1,3 +1,8 @@
+---
+title: Customizing Prompts 
+description: This guide will explain how to change prompts in DocsGPT and why it might be benefitial. Additionaly this article expains additional variables that can be used in prompts.
+---
+
 import Image from 'next/image'
 
 # Customizing the Main Prompt
@@ -33,6 +38,8 @@ When using code examples, use the following format:
 (code)
 {summaries}
 ```
+
+Note that `{summaries}` allows model to see and respond to your upploaded documents. If you don't want this functionality you can safely remove it from the customized prompt.
 
 Feel free to customize the prompt to align it with your specific use case or the kind of responses you want from the AI. For example, you can focus on specific document types, industries, or topics to get more targeted results.
 

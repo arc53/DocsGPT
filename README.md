@@ -18,11 +18,10 @@
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
   <a href="https://twitter.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
 
+  <a href="https://docs.docsgpt.cloud/quickstart">⚡️ Quickstart</a> • <a href="https://app.docsgpt.cloud/">☁️ Cloud Version</a> • <a href="https://discord.gg/n5BX8dh8rU">💬 Discord</a>
   <br>
-
-  [☁️ Cloud Version](https://app.docsgpt.cloud/) • [💬 Discord](https://discord.gg/n5BX8dh8rU) • [📖 Guides](https://docs.docsgpt.cloud/)
+  <a href="https://docs.docsgpt.cloud/">📖 Documentation</a> • <a href="https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md">👫 Contribute</a> • <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
   <br>
-  [👫 Contribute](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md) • [🏠 Self-host](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM) • [⚡️ Quickstart](https://github.com/arc53/DocsGPT#quickstart) 
 
 </div>
 <div align="center">
@@ -35,6 +34,7 @@
     <li><strong>🗂️ Wide Format Support:</strong> Reads PDF, DOCX, CSV, XLSX, EPUB, MD, RST, HTML, MDX, JSON, PPTX, and images.</li>
     <li><strong>🌐 Web & Data Integration:</strong> Ingests from URLs, sitemaps, Reddit, GitHub and web crawlers.</li>
     <li><strong>✅ Reliable Answers:</strong> Get accurate, hallucination-free responses with source citations viewable in a clean UI.</li>
+    <li><strong>🔑 Streamlined API Keys:</strong>  Generate keys linked to your settings, documents, and models, simplifying chatbot and integration setup.</li>
     <li><strong>🔗 Actionable Tooling:</strong> Connect to APIs, tools, and other services to enable LLM actions.</li>
     <li><strong>🧩 Pre-built Integrations:</strong> Use readily available HTML/React chat widgets, search tools, Discord/Telegram bots, and more.</li>
     <li><strong>🔌 Flexible Deployment:</strong> Works with major LLMs (OpenAI, Google, Anthropic) and local models (Ollama, llama_cpp).</li>
@@ -46,7 +46,7 @@
 - [x] Full GoogleAI compatibility (Jan 2025)
 - [x] Add tools (Jan 2025)
 - [x] Manually updating chunks in the app UI (Feb 2025)
-- [ ] Devcontainer for easy development (Feb 2025)
+- [x] Devcontainer for easy development (Feb 2025)
 - [ ] Anthropic Tool compatibility
 - [ ] Add triggerable actions / tools (webhook)
 - [ ] Add OAuth 2.0 authentication for tools and sources
@@ -68,45 +68,39 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 > [!Note]
 > Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
 
+A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available in our documentation
 
-1. Clone the repository and run the following command:
-  ```bash
-  git clone https://github.com/arc53/DocsGPT.git
-  cd DocsGPT
-  ```
+1. **Clone the repository:**
 
-On Mac OS or Linux, write:
-
-
-2. Run the following command:
-  ```bash
-  ./setup.sh
-  ```
-
-It will install all the dependencies and allow you to download the local model, use OpenAI or use our LLM API.
-
-Otherwise, refer to this Guide for Windows:
-
-On windows:
-
-2. Create a `.env` file in your root directory and set the env variables.
-   It should look like this inside:
-
-   ```
-   LLM_NAME=[docsgpt or openai or others] 
-   API_KEY=[if LLM_NAME is openai]
+   ```bash
+   git clone https://github.com/arc53/DocsGPT.git
+   cd DocsGPT
    ```
 
-   See optional environment variables in the [/application/.env_sample](https://github.com/arc53/DocsGPT/blob/main/application/.env_sample) file.
+**For macOS and Linux:**
 
-3. Run the following command:
+2. **Run the setup script:**
 
-  ```bash
-  docker compose -f deployment/docker-compose.yaml up --build
-  ```
-4. Navigate to http://localhost:5173/.
+   ```bash
+   ./setup.sh
+   ```
 
-To stop, just run `Ctrl + C`.
+This interactive script will guide you through setting up DocsGPT. It offers four options: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider.  The script will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
+
+**For Windows:**
+
+2. **Follow the Docker Deployment Guide:**
+
+   Please refer to the [Docker Deployment documentation](https://docs.docsgpt.cloud/Deploying/Docker-Deploying) for detailed step-by-step instructions on setting up DocsGPT using Docker. 
+
+**Navigate to http://localhost:5173/**
+
+To stop DocsGPT, open a terminal in the `DocsGPT` directory and run:
+
+```bash
+docker compose -f deployment/docker-compose.yaml down
+```
+(or use the specific `docker compose down` command shown after running `setup.sh`).
 
 > [!Note]
 > For development environment setup instructions, please refer to the [Development Environment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
