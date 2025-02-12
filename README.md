@@ -18,10 +18,9 @@
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
   <a href="https://twitter.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
 
+  <a href="https://docs.docsgpt.cloud/quickstart">⚡️ Quickstart</a> • <a href="https://app.docsgpt.cloud/">☁️ Cloud Version</a> • <a href="https://discord.gg/n5BX8dh8rU">💬 Discord</a>
   <br>
-  [⚡️ Quickstart](https://docs.docsgpt.cloud/quickstart) • [☁️ Cloud Version](https://app.docsgpt.cloud/) • [💬 Discord](https://discord.gg/n5BX8dh8rU)
-  <br>
-  [📖 Documentation](https://docs.docsgpt.cloud/) • [👫 Contribute](https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md) • [🗞 Blog](https://blog.docsgpt.cloud/)
+  <a href="https://docs.docsgpt.cloud/">📖 Documentation</a> • <a href="https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md">👫 Contribute</a> • <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
   <br>
 
 </div>
