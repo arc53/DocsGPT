@@ -46,7 +46,7 @@
 - [x] Full GoogleAI compatibility (Jan 2025)
 - [x] Add tools (Jan 2025)
 - [x] Manually updating chunks in the app UI (Feb 2025)
-- [ ] Devcontainer for easy development (Feb 2025)
+- [x] Devcontainer for easy development (Feb 2025)
 - [ ] Anthropic Tool compatibility
 - [ ] Add triggerable actions / tools (webhook)
 - [ ] Add OAuth 2.0 authentication for tools and sources
