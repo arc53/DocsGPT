@@ -1,9 +1,11 @@
 import Image from 'next/image';
 
 const iconMap = {
-    'Deploy on Civo Compute Cloud': '/civo.png',
-    'Deploy on DigitalOcean Droplet': '/digitalocean.png',
-    'Deploy on Kamatera Cloud': '/kamatera.png',
+    'Amazon Lightsail': '/lightsail.png',
+    'Railway': '/railway.png',
+    'Civo Compute Cloud': '/civo.png',
+    'DigitalOcean Droplet': '/digitalocean.png',
+    'Kamatera Cloud': '/kamatera.png',
 };
 
 

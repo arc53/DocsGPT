@@ -11,5 +11,8 @@
     "newWindow": true
   },
   "Guides": "Guides",
-  "changelog": "Changelog"
+  "changelog": {
+    "title": "Changelog",
+    "display": "hidden"
+  }
 }

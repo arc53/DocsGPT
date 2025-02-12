@@ -18,5 +18,15 @@
   "Hosting-the-app": {
     "title": "☁️ Hosting DocsGPT",
     "href": "/Deploying/Hosting-the-app"
+  },
+  "Amazon-Lightsail": {
+    "title": "Hosting DocsGPT on Amazon Lightsail",
+    "href": "/Deploying/Amazon-Lightsail",
+    "display": "hidden"
+  },
+  "Railway": {
+    "title": "Hosting DocsGPT on Railway",
+    "href": "/Deploying/Railway",
+    "display": "hidden"
   }
 }
