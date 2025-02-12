@@ -58,7 +58,7 @@ pillow==11.1.0
 portalocker==2.10.1
 prance==23.6.21.0
 primp==0.10.0
-prompt-toolkit==3.0.48
+prompt-toolkit==3.0.50
 protobuf==5.29.3
 psycopg2-binary==2.9.10
 py==1.11.0
