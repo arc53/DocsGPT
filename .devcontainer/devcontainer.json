@@ -13,6 +13,12 @@
 		  "esbenp.prettier-vscode",
 		  "dbaeumer.vscode-eslint"
 		]
-	  }
+	  },
+	  "codespaces": {
+			"openFiles": [
+			".devcontainer/devc-welcome.md",
+			"CONTRIBUTING.md"
+			]
+		}
 	}
   }
