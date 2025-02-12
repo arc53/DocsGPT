@@ -121,12 +121,12 @@ export default function Analytics() {
     }
   };
 
-  const fetchMessagesData = useCallback(async () => {
-    setLoadingWithMinDuration(setLoadingMessages, true);
+  const fetchMessagesData = async (chatbot_id?: string, filter?: string) => {
+    setLoadingMessages(true);
     try {
       const response = await userService.getMessageAnalytics({
-        api_key_id: selectedChatbot?.id,
-        filter_option: messagesFilter.value,
+        api_key_id: chatbot_id,
+        filter_option: filter,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
@@ -139,14 +139,14 @@ export default function Analytics() {
     } finally {
       setLoadingWithMinDuration(setLoadingMessages, false);
     }
-  }, [selectedChatbot, messagesFilter, setLoadingWithMinDuration]);
+  };
 
-  const fetchTokenData = useCallback(async () => {
-    setLoadingWithMinDuration(setLoadingTokens, true);
+  const fetchTokenData = async (chatbot_id?: string, filter?: string) => {
+    setLoadingTokens(true);
     try {
       const response = await userService.getTokenAnalytics({
-        api_key_id: selectedChatbot?.id,
-        filter_option: tokenUsageFilter.value,
+        api_key_id: chatbot_id,
+        filter_option: filter,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
@@ -159,14 +159,14 @@ export default function Analytics() {
     } finally {
       setLoadingWithMinDuration(setLoadingTokens, false);
     }
-  }, [selectedChatbot, tokenUsageFilter, setLoadingWithMinDuration]);
+  };
 
-  const fetchFeedbackData = useCallback(async () => {
-    setLoadingWithMinDuration(setLoadingFeedback, true);
+  const fetchFeedbackData = async (chatbot_id?: string, filter?: string) => {
+    setLoadingFeedback(true);
     try {
       const response = await userService.getFeedbackAnalytics({
-        api_key_id: selectedChatbot?.id,
-        filter_option: feedbackFilter.value,
+        api_key_id: chatbot_id,
+        filter_option: filter,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
@@ -179,17 +179,29 @@ export default function Analytics() {
     } finally {
       setLoadingWithMinDuration(setLoadingFeedback, false);
     }
-  }, [selectedChatbot, feedbackFilter, setLoadingWithMinDuration]);
+  };
 
   useEffect(() => {
     fetchChatbots();
   }, []);
 
   useEffect(() => {
-    fetchMessagesData();
-    fetchTokenData();
-    fetchFeedbackData();
-  }, [fetchMessagesData, fetchTokenData, fetchFeedbackData]);
+    const id = selectedChatbot?.id;
+    const filter = messagesFilter;
+    fetchMessagesData(id, filter?.value);
+  }, [selectedChatbot, messagesFilter]);
+
+  useEffect(() => {
+    const id = selectedChatbot?.id;
+    const filter = tokenUsageFilter;
+    fetchTokenData(id, filter?.value);
+  }, [selectedChatbot, tokenUsageFilter]);
+
+  useEffect(() => {
+    const id = selectedChatbot?.id;
+    const filter = feedbackFilter;
+    fetchFeedbackData(id, filter?.value);
+  }, [selectedChatbot, feedbackFilter]);
 
   return (
     <div className="mt-12">
