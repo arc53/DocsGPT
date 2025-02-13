@@ -24,13 +24,28 @@ class OpenAILLMHandler(LLMHandler):
                     tool_response, call_id = agent._execute_tool_action(
                         tools_dict, call
                     )
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "content": str(tool_response),
-                            "tool_call_id": call_id,
+                    function_call_dict = {
+                        "function_call": {
+                            "name": call.function.name,
+                            "args": call.function.arguments,
+                            "call_id": call_id,
                         }
+                    }
+                    function_response_dict = {
+                        "function_response": {
+                            "name": call.function.name,
+                            "response": {"result": tool_response},
+                            "call_id": call_id,
+                        }
+                    }
+
+                    messages.append(
+                        {"role": "assistant", "content": [function_call_dict]}
                     )
+                    messages.append(
+                        {"role": "tool", "content": [function_response_dict]}
+                    )
+
                 except Exception as e:
                     messages.append(
                         {

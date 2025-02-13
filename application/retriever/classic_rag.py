@@ -1,3 +1,5 @@
+import uuid
+
 from application.core.settings import settings
 from application.retriever.base import BaseRetriever
 from application.tools.agent import Agent
@@ -86,21 +88,38 @@ class ClassicRAG(BaseRetriever):
                     )
                 if "tool_calls" in i:
                     for tool_call in i["tool_calls"]:
-                        messages_combine.append(
-                            {
-                                "role": "assistant",
-                                "content": f"Tool: {tool_call.get('tool_name')} | Action: {tool_call.get('action_name')} | Args: {tool_call.get('arguments')} | Response: {tool_call.get('result')}",
-                            }
-                        )
-        messages_combine.append({"role": "user", "content": self.question})
-        # llm = LLMCreator.create_llm(
-        #     settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
-        # )
-        # completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
+                        call_id = tool_call.get("call_id")
+                        if call_id is None or call_id == "None":
+                            call_id = str(uuid.uuid4())
 
+                        function_call_dict = {
+                            "function_call": {
+                                "name": tool_call.get("action_name"),
+                                "args": tool_call.get("arguments"),
+                                "call_id": call_id,
+                            }
+                        }
+                        function_response_dict = {
+                            "function_response": {
+                                "name": tool_call.get("action_name"),
+                                "response": {"result": tool_call.get("result")},
+                                "call_id": call_id,
+                            }
+                        }
+
+                        messages_combine.append(
+                            {"role": "assistant", "content": [function_call_dict]}
+                        )
+                        messages_combine.append(
+                            {"role": "tool", "content": [function_response_dict]}
+                        )
+
+        messages_combine.append({"role": "user", "content": self.question})
         completion = self.agent.gen(messages_combine)
+
         for line in completion:
             yield {"answer": str(line)}
+
         yield {"tool_calls": self.agent.tool_calls.copy()}
 
     def search(self):

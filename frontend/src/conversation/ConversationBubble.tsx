@@ -628,7 +628,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
             {toolCalls.map((toolCall, index) => (
               <Accordion
                 key={`tool-call-${index}`}
-                title={`${toolCall.tool_name}  -  ${toolCall.action_name}`}
+                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
                 className="w-full rounded-[20px] bg-gray-1000 dark:bg-gun-metal hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
                 titleClassName="px-6 py-2 text-sm font-semibold"
                 children={
@@ -638,14 +638,16 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                           Arguments
                         </span>{' '}
-                        <CopyButton text={toolCall.arguments} />
+                        <CopyButton
+                          text={JSON.stringify(toolCall.arguments, null, 2)}
+                        />
                       </p>
                       <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
                         <span
                           className="text-black dark:text-gray-400 leading-[23px]"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
-                          {toolCall.arguments}
+                          {JSON.stringify(toolCall.arguments, null, 2)}
                         </span>
                       </p>
                     </div>
@@ -654,14 +656,16 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                           Response
                         </span>{' '}
-                        <CopyButton text={toolCall.result} />
+                        <CopyButton
+                          text={JSON.stringify(toolCall.result, null, 2)}
+                        />
                       </p>
                       <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
                         <span
                           className="text-black dark:text-gray-400 leading-[23px]"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
-                          {toolCall.result}
+                          {JSON.stringify(toolCall.result, null, 2)}
                         </span>
                       </p>
                     </div>

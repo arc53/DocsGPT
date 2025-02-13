@@ -127,9 +127,10 @@ class Agent:
 
         tool_call_data = {
             "tool_name": tool_data["name"],
-            "action_name": action_name,
-            "arguments": str(call_args),
-            "result": str(result),
+            "call_id": call_id if call_id is not None else "None",
+            "action_name": f"{action_name}_{tool_id}",
+            "arguments": call_args,
+            "result": result,
         }
         self.tool_calls.append(tool_call_data)
 
