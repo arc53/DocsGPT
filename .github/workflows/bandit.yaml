@@ -32,8 +32,8 @@ jobs:
       - name: Run Bandit scan
         uses: PyCQA/bandit-action@v1
         with:
-          severity: MEDIUM
-          confidence: MEDIUM
+          severity: medium
+          confidence: medium
           targets: application/
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
