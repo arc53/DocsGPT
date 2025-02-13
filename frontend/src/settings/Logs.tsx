@@ -7,6 +7,7 @@ import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { APIKeyData, LogData } from './types';
 import CoppyButton from '../components/CopyButton';
+import { useLoaderState } from '../hooks';
 
 export default function Logs() {
   const { t } = useTranslation();
@@ -15,18 +16,8 @@ export default function Logs() {
   const [logs, setLogs] = useState<LogData[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [loadingChatbots, setLoadingChatbots] = useState(true);
-  const [loadingLogs, setLoadingLogs] = useState(true);
-
-  const setLoadingLogsWithMinDuration = useCallback((isLoading: boolean) => {
-    if (isLoading) {
-      setLoadingLogs(true);
-    } else {
-      setTimeout(() => {
-        setLoadingLogs(false);
-      }, 2000);
-    }
-  }, []);
+  const [loadingChatbots, setLoadingChatbots] = useLoaderState(true);
+  const [loadingLogs, setLoadingLogs] = useLoaderState(true);
 
   const fetchChatbots = async () => {
     setLoadingChatbots(true);
@@ -45,7 +36,7 @@ export default function Logs() {
   };
 
   const fetchLogs = async () => {
-    setLoadingLogsWithMinDuration(true);
+    setLoadingLogs(true);
     try {
       const response = await userService.getLogs({
         page: page,
@@ -61,7 +52,7 @@ export default function Logs() {
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingLogsWithMinDuration(false);
+      setLoadingLogs(false);
     }
   };
 

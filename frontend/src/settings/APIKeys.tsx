@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
@@ -8,6 +8,7 @@ import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { APIKeyData } from './types';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { useLoaderState } from '../hooks';
 
 export default function APIKeys() {
   const { t } = useTranslation();
@@ -15,24 +16,14 @@ export default function APIKeys() {
   const [isSaveKeyModalOpen, setSaveKeyModal] = useState(false);
   const [newKey, setNewKey] = useState('');
   const [apiKeys, setApiKeys] = useState<APIKeyData[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useLoaderState(true);
   const [keyToDelete, setKeyToDelete] = useState<{
     id: string;
     name: string;
   } | null>(null);
 
-  const setLoadingWithMinDuration = useCallback((isLoading: boolean) => {
-    if (isLoading) {
-      setLoading(true);
-    } else {
-      setTimeout(() => {
-        setLoading(false);
-      }, 2000);
-    }
-  }, []);
-
-  const handleFetchKeys = useCallback(async () => {
-    setLoadingWithMinDuration(true);
+  const handleFetchKeys = async () => {
+    setLoading(true);
     try {
       const response = await userService.getAPIKeys();
       if (!response.ok) {
@@ -43,80 +34,67 @@ export default function APIKeys() {
     } catch (error) {
       console.log(error);
     } finally {
-      setLoadingWithMinDuration(false);
-    }
-  }, [setLoadingWithMinDuration]);
-
-  const handleDeleteKey = useCallback(
-    (id: string) => {
-      setLoadingWithMinDuration(true);
-      userService
-        .deleteAPIKey({ id })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to delete API Key');
-          }
-          return response.json();
-        })
-        .then((data) => {
-          if (data.success === true) {
-            setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
-          }
-          setKeyToDelete(null);
-        })
-        .catch((error) => {
-          console.error(error);
-        })
-        .finally(() => {
-          setLoadingWithMinDuration(false);
-        });
-    },
-    [setLoadingWithMinDuration],
-  );
-
-  const handleCreateKey = useCallback(
-    (payload: {
-      name: string;
-      source?: string;
-      retriever?: string;
-      prompt_id: string;
-      chunks: string;
-    }) => {
-      setLoadingWithMinDuration(true);
-      userService
-        .createAPIKey(payload)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to create API Key');
-          }
-          return response.json();
-        })
-        .then((data) => {
-          setApiKeys((prevKeys) => [...prevKeys, data]);
-          setCreateModal(false);
-          setNewKey(data.key);
-          setSaveKeyModal(true);
-          handleFetchKeys();
-        })
-        .catch((error) => {
-          console.error(error);
-        })
-        .finally(() => {
-          setLoadingWithMinDuration(false);
-        });
-    },
-    [handleFetchKeys, setLoadingWithMinDuration],
-  );
-
-  useEffect(() => {
-    handleFetchKeys();
-  }, [handleFetchKeys]);
-
-  const confirmDelete = () => {
-    if (keyToDelete) {
-      handleDeleteKey(keyToDelete.id);
+      setLoading(false);
     }
   };
+
+  const handleDeleteKey = (id: string) => {
+    setLoading(true);
+    userService
+      .deleteAPIKey({ id })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to delete API Key');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        data.success === true &&
+          setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
+        setKeyToDelete(null);
+      })
+      .catch((error) => {
+        console.error(error);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  const handleCreateKey = (payload: {
+    name: string;
+    source?: string;
+    retriever?: string;
+    prompt_id: string;
+    chunks: string;
+  }) => {
+    setLoading(true);
+    userService
+      .createAPIKey(payload)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to create API Key');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        setApiKeys([...apiKeys, data]);
+        setCreateModal(false);
+        setNewKey(data.key);
+        setSaveKeyModal(true);
+        handleFetchKeys();
+      })
+      .catch((error) => {
+        console.error(error);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  React.useEffect(() => {
+    handleFetchKeys();
+  }, []);
 
   return (
     <div className="mt-8">
@@ -149,7 +127,7 @@ export default function APIKeys() {
             modalState="ACTIVE"
             setModalState={() => setKeyToDelete(null)}
             submitLabel={t('modals.deleteConv.delete')}
-            handleSubmit={confirmDelete}
+            handleSubmit={() => handleDeleteKey(keyToDelete.id)}
             handleCancel={() => setKeyToDelete(null)}
           />
         )}
@@ -192,7 +170,7 @@ export default function APIKeys() {
                           </tr>
                         )}
                         {Array.isArray(apiKeys) &&
-                          apiKeys.map((element, index) => (
+                          apiKeys?.map((element, index) => (
                             <tr
                               key={index}
                               className="text-nowrap whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200 p-2"

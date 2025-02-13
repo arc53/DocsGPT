@@ -15,7 +15,7 @@ import DropdownMenu from '../components/DropdownMenu';
 import Input from '../components/Input';
 import SkeletonLoader from '../components/SkeletonLoader';
 import Spinner from '../components/Spinner';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useLoaderState } from '../hooks';
 import ChunkModal from '../modals/ChunkModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
@@ -54,7 +54,7 @@ export default function Documents({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useLoaderState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   // Pagination
@@ -69,16 +69,6 @@ export default function Documents({
     { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [showDocumentChunks, setShowDocumentChunks] = useState<Doc>();
-
-  const setLoadingWithMinDuration = useCallback((isLoading: boolean) => {
-    if (isLoading) {
-      setLoading(true);
-    } else {
-      setTimeout(() => {
-        setLoading(false);
-      }, 2000);
-    }
-  }, []);
 
   const refreshDocs = useCallback(
     (
@@ -106,7 +96,7 @@ export default function Documents({
         setSortOrder(newSortOrder);
       }
 
-      setLoadingWithMinDuration(true);
+      setLoading(true);
       getDocsWithPagination(
         newSortField,
         newSortOrder,
@@ -120,14 +110,14 @@ export default function Documents({
         })
         .catch((error) => console.error(error))
         .finally(() => {
-          setLoadingWithMinDuration(false);
+          setLoading(false);
         });
     },
     [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
   );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
-    setLoadingWithMinDuration(true);
+    setLoading(true);
     userService
       .manageSync({ source_id: doc.id, sync_frequency })
       .then(() => {
@@ -150,7 +140,7 @@ export default function Documents({
       })
       .catch((error) => console.error('Error in handleManageSync:', error))
       .finally(() => {
-        setLoadingWithMinDuration(false);
+        setLoading(false);
       });
   };
 
@@ -229,7 +219,6 @@ export default function Documents({
         ) : (
           <div className="flex flex-col flex-grow">
             {' '}
-            {/* Removed overflow-auto */}
             <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
               <table className="w-full min-w-[640px] table-auto">
                 <thead>
@@ -276,7 +265,7 @@ export default function Documents({
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-4 text-center text-gray-700 dark:text-[#E0E0E] bg-transparent"
+                        className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
                       >
                         {t('settings.documents.noData')}
                       </td>
@@ -405,7 +394,7 @@ function DocumentChunks({
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(5);
   const [totalChunks, setTotalChunks] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useLoaderState(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [addModal, setAddModal] = useState<ActiveState>('INACTIVE');
   const [editModal, setEditModal] = useState<{
@@ -435,6 +424,7 @@ function DocumentChunks({
         });
     } catch (e) {
       console.log(e);
+      setLoading(false);
     }
   };
 

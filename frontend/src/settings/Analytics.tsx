@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BarElement,
@@ -16,6 +16,7 @@ import Dropdown from '../components/Dropdown';
 import { htmlLegendPlugin } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import { APIKeyData } from './types';
+import { useLoaderState } from '../hooks';
 
 import type { ChartData } from 'chart.js';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -88,25 +89,9 @@ export default function Analytics() {
     value: 'last_30_days',
   });
 
-  const [loadingMessages, setLoadingMessages] = useState<boolean>(false);
-  const [loadingTokens, setLoadingTokens] = useState<boolean>(false);
-  const [loadingFeedback, setLoadingFeedback] = useState<boolean>(false);
-
-  const setLoadingWithMinDuration = useCallback(
-    (
-      setter: React.Dispatch<React.SetStateAction<boolean>>,
-      isLoading: boolean,
-    ) => {
-      if (isLoading) {
-        setter(true);
-      } else {
-        setTimeout(() => {
-          setter(false);
-        }, 2000);
-      }
-    },
-    [],
-  );
+  const [loadingMessages, setLoadingMessages] = useLoaderState(true);
+  const [loadingTokens, setLoadingTokens] = useLoaderState(true);
+  const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
 
   const fetchChatbots = async () => {
     try {
@@ -133,11 +118,10 @@ export default function Analytics() {
       }
       const data = await response.json();
       setMessagesData(data.messages);
-      setLoadingWithMinDuration(setLoadingMessages, false);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingWithMinDuration(setLoadingMessages, false);
+      setLoadingMessages(false);
     }
   };
 
@@ -153,11 +137,10 @@ export default function Analytics() {
       }
       const data = await response.json();
       setTokenUsageData(data.token_usage);
-      setLoadingWithMinDuration(setLoadingTokens, false);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingWithMinDuration(setLoadingTokens, false);
+      setLoadingTokens(false);
     }
   };
 
@@ -173,11 +156,10 @@ export default function Analytics() {
       }
       const data = await response.json();
       setFeedbackData(data.feedback);
-      setLoadingWithMinDuration(setLoadingFeedback, false);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingWithMinDuration(setLoadingFeedback, false);
+      setLoadingFeedback(false);
     }
   };
 
