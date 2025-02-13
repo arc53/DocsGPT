@@ -2135,7 +2135,8 @@ class GetChunks(Resource):
             )
 
         except Exception as e:
-            return make_response(jsonify({"error": str(e)}), 500)
+            current_app.logger.error(f"Error getting chunks: {e}")
+            return make_response(jsonify({"success": False}), 500)
 
 
 @user_ns.route("/api/add_chunk")
@@ -2178,7 +2179,8 @@ class AddChunk(Resource):
                 201,
             )
         except Exception as e:
-            return make_response(jsonify({"error": str(e)}), 500)
+            current_app.logger.error(f"Error adding chunk: {e}")
+            return make_response(jsonify({"success": False}), 500)
 
 
 @user_ns.route("/api/delete_chunk")
@@ -2207,7 +2209,8 @@ class DeleteChunk(Resource):
                     404,
                 )
         except Exception as e:
-            return make_response(jsonify({"error": str(e)}), 500)
+            current_app.logger.error(f"Error deleting chunk: {e}")
+            return make_response(jsonify({"success": False}), 500)
 
 
 @user_ns.route("/api/update_chunk")
@@ -2278,4 +2281,5 @@ class UpdateChunk(Resource):
                 200,
             )
         except Exception as e:
-            return make_response(jsonify({"error": str(e)}), 500)
+            current_app.logger.error(f"Error updating chunk: {e}")
+            return make_response(jsonify({"success": False}), 500)
