@@ -49,8 +49,9 @@ export default function APIKeys() {
         return response.json();
       })
       .then((data) => {
-        data.success === true &&
+        if (data.success === true) {
           setApiKeys((previous) => previous.filter((elem) => elem.id !== id));
+        }
         setKeyToDelete(null);
       })
       .catch((error) => {
@@ -133,73 +134,72 @@ export default function APIKeys() {
         )}
         <div className="mt-[27px] w-full">
           <div className="w-full overflow-x-auto">
-            {loading ? (
-              <SkeletonLoader count={1} component={'chatbot'} />
-            ) : (
-              <div className="flex flex-col">
-                <div className="flex-grow">
-                  <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
-                    <table className="min-w-full divide-y divide-silver dark:divide-silver/40 ">
-                      <thead>
-                        <tr className="text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
-                          <th scope="col" className="p-2">
-                            {t('settings.apiKeys.name')}
-                          </th>
-                          <th scope="col" className="p-2">
-                            {t('settings.apiKeys.sourceDoc')}
-                          </th>
-                          <th scope="col" className="p-2">
-                            {t('settings.apiKeys.key')}
-                          </th>
-                          <th
-                            scope="col"
-                            className="p-2"
-                            aria-label="Actions"
-                          ></th>
+            <div className="flex flex-col">
+              <div className="flex-grow">
+                <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
+                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40">
+                    <thead>
+                      <tr className="text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
+                        <th scope="col" className="p-2">
+                          {t('settings.apiKeys.name')}
+                        </th>
+                        <th scope="col" className="p-2">
+                          {t('settings.apiKeys.sourceDoc')}
+                        </th>
+                        <th scope="col" className="p-2">
+                          {t('settings.apiKeys.key')}
+                        </th>
+                        <th
+                          scope="col"
+                          className="p-2"
+                          aria-label="Actions"
+                        ></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
+                      {loading ? (
+                        <SkeletonLoader component="chatbot" />
+                      ) : !apiKeys?.length ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="!p-4 text-gray-800 dark:text-neutral-200 text-center"
+                          >
+                            {t('settings.apiKeys.noData')}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
-                        {!apiKeys?.length && (
-                          <tr>
-                            <td
-                              colSpan={4}
-                              className="!p-4 text-gray-800 dark:text-neutral-200 text-center"
-                            >
-                              {t('settings.apiKeys.noData')}
+                      ) : (
+                        Array.isArray(apiKeys) &&
+                        apiKeys.map((element, index) => (
+                          <tr
+                            key={element.id}
+                            className="text-nowrap whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200 p-2"
+                          >
+                            <td className="p-2">{element.name}</td>
+                            <td className="p-2">{element.source}</td>
+                            <td className="p-2">{element.key}</td>
+                            <td className="p-2">
+                              <img
+                                src={Trash}
+                                alt={`Delete ${element.name}`}
+                                className="h-4 w-4 cursor-pointer hover:opacity-50 mx-auto"
+                                id={`img-${index}`}
+                                onClick={() =>
+                                  setKeyToDelete({
+                                    id: element.id,
+                                    name: element.name,
+                                  })
+                                }
+                              />
                             </td>
                           </tr>
-                        )}
-                        {Array.isArray(apiKeys) &&
-                          apiKeys?.map((element, index) => (
-                            <tr
-                              key={index}
-                              className="text-nowrap whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200 p-2"
-                            >
-                              <td className="p-1">{element.name}</td>
-                              <td className="p-2">{element.source}</td>
-                              <td>{element.key}</td>
-                              <td>
-                                <img
-                                  src={Trash}
-                                  alt={`Delete ${element.name}`}
-                                  className="h-4 w-4 cursor-pointer hover:opacity-50"
-                                  id={`img-${index}`}
-                                  onClick={() =>
-                                    setKeyToDelete({
-                                      id: element.id,
-                                      name: element.name,
-                                    })
-                                  }
-                                />
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

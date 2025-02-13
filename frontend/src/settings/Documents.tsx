@@ -214,9 +214,7 @@ export default function Documents({
           </button>
         </div>
 
-        {loading ? (
-          <SkeletonLoader count={1} />
-        ) : (
+         
           <div className="flex flex-col flex-grow">
             {' '}
             <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
@@ -261,7 +259,9 @@ export default function Documents({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
-                  {!currentDocuments?.length ? (
+                  {loading ? (
+                    <SkeletonLoader component="table" />
+                  ) : !currentDocuments?.length ? (
                     <tr>
                       <td
                         colSpan={4}
@@ -329,7 +329,7 @@ export default function Documents({
               </table>
             </div>
           </div>
-        )}
+        
       </div>
 
       <div className="mt-auto pt-4">
