@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 interface SkeletonLoaderProps {
   count?: number;
-  component?: 'default' | 'analysis' | 'logs' | 'table' | 'chatbot';
+  component?: 'default' | 'analysis' | 'logs' | 'table' | 'chatbot' | 'logsTable' | 'dropdown';
 }
 
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
@@ -59,10 +59,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     return (
       <>
         {[...Array(4)].map((_, idx) => (
-          <tr
-            key={idx}
-            className="animate-pulse"
-          >
+          <tr key={idx} className="animate-pulse">
             <td className="p-2">
               <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-3/4 mx-auto"></div>
             </td>
@@ -81,6 +78,39 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     );
   }
 
+  if (component === 'dropdown') {
+    return (
+      <div className="animate-pulse">
+        <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24 mb-2"></div>
+        <div className="w-[360px] h-14 bg-gray-300 dark:bg-gray-600 rounded-3xl flex items-center justify-between px-4">
+          <div className="h-3 bg-gray-400 dark:bg-gray-700 rounded w-24"></div>
+          <div className="h-3 w-3 bg-gray-400 dark:bg-gray-700 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (component === 'logsTable') {
+    return (
+      <div className="animate-pulse space-y-px">
+        {[...Array(8)].map((_, idx) => (
+          <div 
+            key={idx} 
+            className="flex items-start p-2 hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-sm"></div>
+              <div className="flex flex-row items-center gap-2">
+                <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-20"></div>
+                <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-14 bg-opacity-80"></div>
+                <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-40"></div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col space-y-4">
@@ -152,7 +182,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
             </div>
           ))}
         </>
-      )  : component === 'logs' ? (
+      ) : component === 'logs' ? (
         <>
           {[...Array(skeletonCount)].map((_, idx) => (
             <div
@@ -175,3 +205,5 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
 };
 
 export default SkeletonLoader;
+
+
