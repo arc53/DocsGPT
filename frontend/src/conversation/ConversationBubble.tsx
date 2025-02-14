@@ -1,6 +1,7 @@
 import 'katex/dist/katex.min.css';
 
 import { forwardRef, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -8,27 +9,29 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import { useTranslation } from 'react-i18next';
 
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import ChevronDown from '../assets/chevron-down.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
+import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
-import Edit from '../assets/edit.svg';
 import UserIcon from '../assets/user.png';
+import Accordion from '../components/Accordion';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
 import SpeakButton from '../components/TextToSpeechButton';
+import { useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
-import { useOutsideAlerter } from '../hooks';
+import { ToolCallsType } from './types';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -41,6 +44,7 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     sources?: { title: string; text: string; source: string }[];
+    toolCalls?: ToolCallsType[];
     retryBtn?: React.ReactElement;
     questionNumber?: number;
     handleUpdatedQuestionSubmission?: (
@@ -57,6 +61,7 @@ const ConversationBubble = forwardRef<
     feedback,
     handleFeedback,
     sources,
+    toolCalls,
     retryBtn,
     questionNumber,
     handleUpdatedQuestionSubmission,
@@ -306,6 +311,9 @@ const ConversationBubble = forwardRef<
               </div>
             </div>
           )
+        )}
+        {toolCalls && toolCalls.length > 0 && (
+          <ToolCalls toolCalls={toolCalls} />
         )}
         <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
           <div className="my-2 flex flex-row items-center justify-center gap-3">
@@ -586,3 +594,88 @@ function AllSources(sources: AllSourcesProps) {
 }
 
 export default ConversationBubble;
+
+function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
+  const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
+  return (
+    <div className="mb-4 w-full flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <Avatar
+          className="h-[26px] w-[30px] text-xl"
+          avatar={
+            <img
+              src={Sources}
+              alt={'ToolCalls'}
+              className="h-full w-full object-fill"
+            />
+          }
+        />
+        <button
+          className="flex flex-row items-center gap-2"
+          onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
+        >
+          <p className="text-base font-semibold">Tool Calls</p>
+          <img
+            src={ChevronDown}
+            alt="ChevronDown"
+            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      {isToolCallsOpen && (
+        <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+          <div className="grid grid-cols-1 gap-2">
+            {toolCalls.map((toolCall, index) => (
+              <Accordion
+                key={`tool-call-${index}`}
+                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                className="w-full rounded-[20px] bg-gray-1000 dark:bg-gun-metal hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                titleClassName="px-6 py-2 text-sm font-semibold"
+                children={
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-col border border-silver dark:border-silver/20 rounded-2xl">
+                      <p className="flex flex-row items-center justify-between px-2 py-1 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Arguments
+                        </span>{' '}
+                        <CopyButton
+                          text={JSON.stringify(toolCall.arguments, null, 2)}
+                        />
+                      </p>
+                      <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
+                        <span
+                          className="text-black dark:text-gray-400 leading-[23px]"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {JSON.stringify(toolCall.arguments, null, 2)}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="flex flex-col border border-silver dark:border-silver/20 rounded-2xl">
+                      <p className="flex flex-row items-center justify-between px-2 py-1 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Response
+                        </span>{' '}
+                        <CopyButton
+                          text={JSON.stringify(toolCall.result, null, 2)}
+                        />
+                      </p>
+                      <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
+                        <span
+                          className="text-black dark:text-gray-400 leading-[23px]"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {JSON.stringify(toolCall.result, null, 2)}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -16,6 +16,7 @@ class Agent:
         # Static tool configuration (to be replaced later)
         self.tools = []
         self.tool_config = {}
+        self.tool_calls = []
 
     def _get_user_tools(self, user="local"):
         mongo = MongoDB.get_client()
@@ -123,6 +124,16 @@ class Agent:
             print(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
         call_id = getattr(call, "id", None)
+
+        tool_call_data = {
+            "tool_name": tool_data["name"],
+            "call_id": call_id if call_id is not None else "None",
+            "action_name": f"{action_name}_{tool_id}",
+            "arguments": call_args,
+            "result": result,
+        }
+        self.tool_calls.append(tool_call_data)
+
         return result, call_id
 
     def _simple_tool_agent(self, messages):
@@ -134,7 +145,11 @@ class Agent:
         if isinstance(resp, str):
             yield resp
             return
-        if hasattr(resp, "message") and hasattr(resp.message, "content"):
+        if (
+            hasattr(resp, "message")
+            and hasattr(resp.message, "content")
+            and resp.message.content is not None
+        ):
             yield resp.message.content
             return
 
@@ -142,7 +157,11 @@ class Agent:
 
         if isinstance(resp, str):
             yield resp
-        elif hasattr(resp, "message") and hasattr(resp.message, "content"):
+        elif (
+            hasattr(resp, "message")
+            and hasattr(resp.message, "content")
+            and resp.message.content is not None
+        ):
             yield resp.message.content
         else:
             completion = self.llm.gen_stream(
@@ -154,6 +173,7 @@ class Agent:
         return
 
     def gen(self, messages):
+        self.tool_calls = []
         if self.llm.supports_tools():
             resp = self._simple_tool_agent(messages)
             for line in resp:

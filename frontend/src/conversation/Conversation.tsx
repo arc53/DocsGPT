@@ -225,6 +225,7 @@ export default function Conversation() {
           message={query.response}
           type={'ANSWER'}
           sources={query.sources}
+          toolCalls={query.tool_calls}
           feedback={query.feedback}
           handleFeedback={(feedback: FEEDBACK) =>
             handleFeedback(query, feedback, index)

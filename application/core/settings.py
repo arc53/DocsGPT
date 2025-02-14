@@ -1,26 +1,37 @@
+import os
 from pathlib import Path
 from typing import Optional
-import os
 
 from pydantic_settings import BaseSettings
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
 class Settings(BaseSettings):
     LLM_NAME: str = "docsgpt"
-    MODEL_NAME: Optional[str] = None # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
+    MODEL_NAME: Optional[str] = (
+        None  # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
+    )
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
-    MODEL_TOKEN_LIMITS: dict = {"gpt-4o-mini": 128000, "gpt-3.5-turbo": 4096, "claude-2": 1e5}
+    MODEL_TOKEN_LIMITS: dict = {
+        "gpt-4o-mini": 128000,
+        "gpt-3.5-turbo": 4096,
+        "claude-2": 1e5,
+        "gemini-2.0-flash-exp": 1e6,
+    }
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False
-    VECTOR_STORE: str = "faiss" #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
-    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"] # also brave_search
+    VECTOR_STORE: str = (
+        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
+    )
+    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"]  # also brave_search
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
@@ -28,12 +39,18 @@ class Settings(BaseSettings):
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
     API_KEY: Optional[str] = None  # LLM api key
-    EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
+    EMBEDDINGS_KEY: Optional[str] = (
+        None  # api key for embeddings (if using openai, just copy API_KEY)
+    )
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for answering
-    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for embeddings
-    OPENAI_BASE_URL: Optional[str] = None # openai base url for open ai compatable models
+    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = (
+        None  # azure deployment name for embeddings
+    )
+    OPENAI_BASE_URL: Optional[str] = (
+        None  # openai base url for open ai compatable models
+    )
 
     # elasticsearch
     ELASTIC_CLOUD_ID: Optional[str] = None  # cloud id for elasticsearch
@@ -68,12 +85,14 @@ class Settings(BaseSettings):
 
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
-    MILVUS_URI: Optional[str] = "./milvus_local.db"   # milvus lite version as default
+    MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
     MILVUS_TOKEN: Optional[str] = ""
 
     # LanceDB vectorstore config
     LANCEDB_PATH: str = "/tmp/lancedb"  # Path where LanceDB stores its local data
-    LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
+    LANCEDB_TABLE_NAME: Optional[str] = (
+        "docsgpts"  # Name of the table to use for storing vectors
+    )
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
