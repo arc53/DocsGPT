@@ -146,7 +146,7 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
         className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-px"
       >
         {loading ? (
-          <SkeletonLoader component="logsTable" />
+          <SkeletonLoader component="logs" />
         ) : (
           logs.map((log, index) => {
             if (index === logs.length - 1) {
