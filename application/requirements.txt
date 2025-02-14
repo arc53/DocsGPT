@@ -62,7 +62,7 @@ prompt-toolkit==3.0.50
 protobuf==5.29.3
 psycopg2-binary==2.9.10
 py==1.11.0
-pydantic==2.10.4
+pydantic==2.10.6
 pydantic-core==2.27.2
 pydantic-settings==2.7.1
 pymongo==4.10.1
