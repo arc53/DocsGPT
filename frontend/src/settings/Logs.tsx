@@ -145,19 +145,16 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
         ref={observerRef}
         className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-px"
       >
-        {loading ? (
-          <SkeletonLoader component="logs" />
-        ) : (
-          logs.map((log, index) => {
-            if (index === logs.length - 1) {
-              return (
-                <div ref={firstObserver} key={index}>
-                  <Log log={log} />
-                </div>
-              );
-            } else return <Log key={index} log={log} />;
-          })
-        )}
+        {logs?.map((log, index) => {
+          if (index === logs.length - 1) {
+            return (
+              <div ref={firstObserver} key={index}>
+                <Log log={log} />
+              </div>
+            );
+          } else return <Log key={index} log={log} />;
+        })}
+        {loading && <SkeletonLoader component="logs" />}
       </div>
     </div>
   );
