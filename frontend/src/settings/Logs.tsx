@@ -7,6 +7,7 @@ import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { APIKeyData, LogData } from './types';
 import CoppyButton from '../components/CopyButton';
+import { useLoaderState } from '../hooks';
 
 export default function Logs() {
   const { t } = useTranslation();
@@ -15,8 +16,8 @@ export default function Logs() {
   const [logs, setLogs] = useState<LogData[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [loadingChatbots, setLoadingChatbots] = useState(true);
-  const [loadingLogs, setLoadingLogs] = useState(true);
+  const [loadingChatbots, setLoadingChatbots] = useLoaderState(true);
+  const [loadingLogs, setLoadingLogs] = useLoaderState(true);
 
   const fetchChatbots = async () => {
     setLoadingChatbots(true);
@@ -66,16 +67,16 @@ export default function Logs() {
   return (
     <div className="mt-12">
       <div className="flex flex-col items-start">
-        <div className="flex flex-col gap-3">
-          <label
-            id="chatbot-filter-label"
-            className="font-bold text-jet dark:text-bright-gray"
-          >
-            {t('settings.logs.filterByChatbot')}
-          </label>
-          {loadingChatbots ? (
-            <SkeletonLoader />
-          ) : (
+        {loadingChatbots ? (
+          <SkeletonLoader component="dropdown" />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <label
+              id="chatbot-filter-label"
+              className="font-bold text-jet dark:text-bright-gray"
+            >
+              {t('settings.logs.filterByChatbot')}
+            </label>
             <Dropdown
               size="w-[55vw] sm:w-[360px]"
               options={[
@@ -104,16 +105,12 @@ export default function Logs() {
               rounded="3xl"
               border="border"
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-8">
-        {loadingLogs ? (
-          <SkeletonLoader component={'logs'} />
-        ) : (
-          <LogsTable logs={logs} setPage={setPage} />
-        )}
+        <LogsTable logs={logs} setPage={setPage} loading={loadingLogs} />
       </div>
     </div>
   );
@@ -122,9 +119,10 @@ export default function Logs() {
 type LogsTableProps = {
   logs: LogData[];
   setPage: React.Dispatch<React.SetStateAction<number>>;
+  loading: boolean;
 };
 
-function LogsTable({ logs, setPage }: LogsTableProps) {
+function LogsTable({ logs, setPage, loading }: LogsTableProps) {
   const { t } = useTranslation();
   const observerRef = useRef<any>();
   const firstObserver = useCallback((node: HTMLDivElement) => {
@@ -147,7 +145,7 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
         ref={observerRef}
         className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-px"
       >
-        {logs.map((log, index) => {
+        {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
               <div ref={firstObserver} key={index}>
@@ -156,6 +154,7 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
             );
           } else return <Log key={index} log={log} />;
         })}
+        {loading && <SkeletonLoader component="logs" />}
       </div>
     </div>
   );

@@ -54,16 +54,28 @@ function Upload({
     const advancedFields = schema.filter((field) => field.advanced);
 
     return (
-      <>
-        {generalFields.map((field: FormField) => renderField(field))}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
+          {generalFields.map((field: FormField) => renderField(field))}
+        </div>
 
-        {advancedFields.length > 0 && showAdvancedOptions && (
-          <>
-            <hr className="my-4 border-[#C4C4C4]/40 border-[1px]" />
-            {advancedFields.map((field: FormField) => renderField(field))}
-          </>
+        {advancedFields.length > 0 && (
+          <div
+            className={`grid transition-all duration-300 ease-in-out ${
+              showAdvancedOptions
+                ? 'grid-rows-[1fr] opacity-100'
+                : 'grid-rows-[0fr] opacity-0'
+            }`}
+          >
+            <div className="overflow-hidden flex flex-col gap-4">
+              <hr className="my-4 border-[#C4C4C4]/40 border-[1px]" />
+              <div className="flex flex-col gap-4">
+                {advancedFields.map((field: FormField) => renderField(field))}
+              </div>
+            </div>
+          </div>
         )}
-      </>
+      </div>
     );
   };
 

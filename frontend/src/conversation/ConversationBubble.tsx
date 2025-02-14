@@ -359,7 +359,7 @@ const ConversationBubble = forwardRef<
                       </SyntaxHighlighter>
                       <div
                         className={`absolute right-3 top-3 lg:invisible 
-                        ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
+                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
                       >
                         <CopyButton
                           text={String(children).replace(/\n$/, '')}
@@ -367,7 +367,9 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code className="whitespace-pre-line">{children}</code>
+                    <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
+                      {children}
+                    </code>
                   );
                 },
                 ul({ children }) {
@@ -390,8 +392,8 @@ const ConversationBubble = forwardRef<
                 },
                 table({ children }) {
                   return (
-                    <div className="relative overflow-x-auto rounded-lg border">
-                      <table className="w-full text-left text-sm text-gray-700">
+                    <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
+                      <table className="w-full text-left text-gray-700 dark:text-bright-gray">
                         {children}
                       </table>
                     </div>
@@ -399,23 +401,23 @@ const ConversationBubble = forwardRef<
                 },
                 thead({ children }) {
                   return (
-                    <thead className="text-xs uppercase text-gray-900 [&>.table-row]:bg-gray-50">
+                    <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
                       {children}
                     </thead>
                   );
                 },
                 tr({ children }) {
                   return (
-                    <tr className="table-row border-b odd:bg-white even:bg-gray-50">
+                    <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
                       {children}
                     </tr>
                   );
                 },
-                td({ children }) {
-                  return <td className="px-6 py-3">{children}</td>;
-                },
                 th({ children }) {
                   return <th className="px-6 py-3">{children}</th>;
+                },
+                td({ children }) {
+                  return <td className="px-6 py-3">{children}</td>;
                 },
               }}
             >

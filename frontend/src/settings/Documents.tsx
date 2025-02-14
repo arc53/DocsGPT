@@ -15,7 +15,7 @@ import DropdownMenu from '../components/DropdownMenu';
 import Input from '../components/Input';
 import SkeletonLoader from '../components/SkeletonLoader';
 import Spinner from '../components/Spinner';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useLoaderState } from '../hooks';
 import ChunkModal from '../modals/ChunkModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
@@ -54,7 +54,7 @@ export default function Documents({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useLoaderState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   // Pagination
@@ -214,123 +214,118 @@ export default function Documents({
           </button>
         </div>
 
-        {loading ? (
-          <SkeletonLoader count={1} />
-        ) : (
-          <div className="flex flex-col flex-grow">
-            {' '}
-            {/* Removed overflow-auto */}
-            <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
-              <table className="w-full min-w-[640px] table-auto">
-                <thead>
-                  <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
-                      {t('settings.documents.name')}
-                    </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
-                      <div className="flex justify-center items-center">
-                        {t('settings.documents.date')}
-                        <img
-                          className="cursor-pointer ml-2"
-                          onClick={() => refreshDocs('date')}
-                          src={caretSort}
-                          alt="sort"
-                        />
-                      </div>
-                    </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
-                      <div className="flex justify-center items-center">
-                        <span className="hidden sm:inline">
-                          {t('settings.documents.tokenUsage')}
-                        </span>
-                        <span className="sm:hidden">
-                          {t('settings.documents.tokenUsage')}
-                        </span>
-                        <img
-                          className="cursor-pointer ml-2"
-                          onClick={() => refreshDocs('tokens')}
-                          src={caretSort}
-                          alt="sort"
-                        />
-                      </div>
-                    </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
-                      <span className="sr-only">
-                        {t('settings.documents.actions')}
+        <div className="flex flex-col flex-grow">
+          {' '}
+          <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
+            <table className="w-full min-w-[640px] table-auto">
+              <thead>
+                <tr className="border-b border-gray-300 dark:border-silver/40">
+                  <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
+                    {t('settings.documents.name')}
+                  </th>
+                  <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
+                    <div className="flex justify-center items-center">
+                      {t('settings.documents.date')}
+                      <img
+                        className="cursor-pointer ml-2"
+                        onClick={() => refreshDocs('date')}
+                        src={caretSort}
+                        alt="sort"
+                      />
+                    </div>
+                  </th>
+                  <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
+                    <div className="flex justify-center items-center">
+                      <span className="hidden sm:inline">
+                        {t('settings.documents.tokenUsage')}
                       </span>
-                    </th>
+                      <span className="sm:hidden">
+                        {t('settings.documents.tokenUsage')}
+                      </span>
+                      <img
+                        className="cursor-pointer ml-2"
+                        onClick={() => refreshDocs('tokens')}
+                        src={caretSort}
+                        alt="sort"
+                      />
+                    </div>
+                  </th>
+                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
+                    <span className="sr-only">
+                      {t('settings.documents.actions')}
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
+                {loading ? (
+                  <SkeletonLoader component="table" />
+                ) : !currentDocuments?.length ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
+                    >
+                      {t('settings.documents.noData')}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
-                  {!currentDocuments?.length ? (
-                    <tr>
+                ) : (
+                  currentDocuments.map((document, index) => (
+                    <tr
+                      key={index}
+                      className="group transition-colors"
+                      onClick={() => setShowDocumentChunks(document)}
+                    >
                       <td
-                        colSpan={4}
-                        className="py-4 text-center text-gray-700 dark:text-[#E0E0E] bg-transparent"
+                        className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                        title={document.name}
                       >
-                        {t('settings.documents.noData')}
+                        {document.name}
+                      </td>
+                      <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                        {document.date ? formatDate(document.date) : ''}
+                      </td>
+                      <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                        {document.tokens ? formatTokens(+document.tokens) : ''}
+                      </td>
+                      <td className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                        <div className="flex items-center justify-end gap-3">
+                          {!document.syncFrequency && (
+                            <div className="w-8"></div>
+                          )}
+                          {document.syncFrequency && (
+                            <DropdownMenu
+                              name={t('settings.documents.sync')}
+                              options={syncOptions}
+                              onSelect={(value: string) => {
+                                handleManageSync(document, value);
+                              }}
+                              defaultValue={document.syncFrequency}
+                              icon={SyncIcon}
+                            />
+                          )}
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDeleteConfirmation(index, document);
+                            }}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                          >
+                            <img
+                              src={Trash}
+                              alt={t('convTile.delete')}
+                              className="h-4 w-4 opacity-60 hover:opacity-100"
+                            />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ) : (
-                    currentDocuments.map((document, index) => (
-                      <tr
-                        key={index}
-                        className="group transition-colors"
-                        onClick={() => setShowDocumentChunks(document)}
-                      >
-                        <td
-                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
-                          title={document.name}
-                        >
-                          {document.name}
-                        </td>
-                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                          {document.date ? formatDate(document.date) : ''}
-                        </td>
-                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                          {document.tokens
-                            ? formatTokens(+document.tokens)
-                            : ''}
-                        </td>
-                        <td className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                          <div className="flex items-center justify-end gap-3">
-                            {!document.syncFrequency && (
-                              <div className="w-8"></div>
-                            )}
-                            {document.syncFrequency && (
-                              <DropdownMenu
-                                name={t('settings.documents.sync')}
-                                options={syncOptions}
-                                onSelect={(value: string) => {
-                                  handleManageSync(document, value);
-                                }}
-                                defaultValue={document.syncFrequency}
-                                icon={SyncIcon}
-                              />
-                            )}
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteConfirmation(index, document);
-                              }}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
-                            >
-                              <img
-                                src={Trash}
-                                alt={t('convTile.delete')}
-                                className="h-4 w-4 opacity-60 hover:opacity-100"
-                              />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="mt-auto pt-4">
@@ -395,7 +390,7 @@ function DocumentChunks({
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(5);
   const [totalChunks, setTotalChunks] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useLoaderState(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [addModal, setAddModal] = useState<ActiveState>('INACTIVE');
   const [editModal, setEditModal] = useState<{
@@ -425,6 +420,7 @@ function DocumentChunks({
         });
     } catch (e) {
       console.log(e);
+      setLoading(false);
     }
   };
 

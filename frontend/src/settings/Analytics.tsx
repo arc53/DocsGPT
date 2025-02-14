@@ -16,6 +16,7 @@ import Dropdown from '../components/Dropdown';
 import { htmlLegendPlugin } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import { APIKeyData } from './types';
+import { useLoaderState } from '../hooks';
 
 import type { ChartData } from 'chart.js';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -88,9 +89,9 @@ export default function Analytics() {
     value: 'last_30_days',
   });
 
-  const [loadingMessages, setLoadingMessages] = useState(true);
-  const [loadingTokens, setLoadingTokens] = useState(true);
-  const [loadingFeedback, setLoadingFeedback] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useLoaderState(true);
+  const [loadingTokens, setLoadingTokens] = useLoaderState(true);
+  const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
 
   const fetchChatbots = async () => {
     try {
