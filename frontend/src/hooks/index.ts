@@ -115,7 +115,7 @@ export function useDarkTheme() {
 
 export function useLoaderState(
   initialState = false,
-  delay = 500,
+  delay = 250,
 ): [boolean, (value: boolean) => void] {
   const [state, setState] = useState<boolean>(initialState);
 
