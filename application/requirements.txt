@@ -1,4 +1,4 @@
-anthropic==0.40.0
+anthropic==0.45.2
 boto3==1.35.97
 beautifulsoup4==4.12.3
 celery==5.4.0
