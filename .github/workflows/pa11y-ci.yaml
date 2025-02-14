@@ -1,0 +1,32 @@
+name: pa11y-ci
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  pa11y-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npm install -g https://github.com/aarongoldenthal/pa11y-ci
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      - name: Start Preview
+        working-directory: frontend
+        run: |
+          npm run preview & sleep 3
+      - name: Run pa11y-ci
+        working-directory: frontend
+        run: pa11y-ci
+        continue-on-error: true
