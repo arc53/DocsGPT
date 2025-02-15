@@ -9,6 +9,7 @@ on:
 
 jobs:
   bandit_scan:
+    if: ${{ github.repository == 'arc53/DocsGPT' }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write
