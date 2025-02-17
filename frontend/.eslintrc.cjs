@@ -18,6 +18,7 @@ module.exports = {
   },
   plugins: ['react', 'unused-imports'],
   rules: {
+    'react/prop-types': 'off',
     'unused-imports/no-unused-imports': 'error',
     'react/react-in-jsx-scope': 'off',
     'prettier/prettier': [

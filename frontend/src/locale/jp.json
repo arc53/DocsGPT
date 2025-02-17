@@ -28,7 +28,7 @@
     },
     {
       "header": "学習支援",
-      "query": "コンテキストに対する潜在的な質問を書いてください"
+      "query": "このコンテンツに対する可能な質問を書いてください"
     }
   ],
   "settings": {
@@ -58,7 +58,20 @@
       "date": "ベクトル日付",
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
-      "noData": "既存のドキュメントはありません"
+      "noData": "既存のドキュメントがありません",
+      "searchPlaceholder": "検索...",
+      "addNew": "新規追加",
+      "preLoaded": "プリロード済み",
+      "private": "プライベート",
+      "sync": "同期",
+      "syncFrequency": {
+        "never": "なし",
+        "daily": "毎日",
+        "weekly": "毎週",
+        "monthly": "毎月"
+      },
+      "actions": "アクション",
+      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？"
     },
     "apiKeys": {
       "label": "チャットボット",
@@ -66,13 +79,44 @@
       "key": "APIキー",
       "sourceDoc": "ソースドキュメント",
       "createNew": "新規作成",
-      "noData": "既存のチャットボットはありません"
+      "noData": "既存のチャットボットはありません",
+      "deleteConfirmation": "APIキー '{{name}}' を削除してもよろしいですか？"
     },
     "analytics": {
-      "label": "分析"
+      "label": "分析",
+      "filterByChatbot": "チャットボットでフィルター",
+      "selectChatbot": "チャットボットを選択",
+      "filterOptions": {
+        "hour": "時間",
+        "last24Hours": "過去24時間",
+        "last7Days": "過去7日間",
+        "last15Days": "過去15日間",
+        "last30Days": "過去30日間"
+      },
+      "messages": "メッセージ",
+      "tokenUsage": "トークン使用量",
+      "feedback": "フィードバック",
+      "filterPlaceholder": "フィルター",
+      "none": "なし",
+      "positiveFeedback": "肯定的なフィードバック",
+      "negativeFeedback": "否定的なフィードバック"
     },
     "logs": {
-      "label": "ログ"
+      "label": "ログ",
+      "filterByChatbot": "チャットボットでフィルター",
+      "selectChatbot": "チャットボットを選択",
+      "none": "なし",
+      "tableHeader": "API生成 / チャットボットの会話"
+    },
+    "tools": {
+      "label": "ツール",
+      "searchPlaceholder": "検索...",
+      "addTool": "ツールを追加",
+      "noToolsFound": "ツールが見つかりません",
+      "selectToolSetup": "設定するツールを選択してください",
+      "settingsIconAlt": "設定アイコン",
+      "configureToolAria": "{toolName} を設定",
+      "toggleToolAria": "{toolName} を切り替え"
     }
   },
   "modals": {
@@ -86,7 +130,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": ".pdf, .txt, .rst, .docx, .md, .json, .pptx, .zipファイルを25MBまでアップロードしてください",
+      "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zipファイルをアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",
@@ -98,8 +142,22 @@
         "secret": "クライアントシークレット",
         "agent": "ユーザーエージェント",
         "searchQueries": "検索クエリ",
-        "numberOfPosts": "投稿数"
-      }
+        "numberOfPosts": "投稿数",
+        "addQuery": "クエリを追加"
+      },
+      "drag": {
+        "title": "ソースファイルをアップロード",
+        "description": "ファイルをここにドロップしてソースとして追加してください"
+      },
+      "progress": {
+        "upload": "アップロード中",
+        "training": "トレーニング中",
+        "completed": "トレーニング完了",
+        "wait": "数分かかる場合があります",
+        "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください"
+      },
+      "showAdvanced": "詳細オプションを表示",
+      "hideAdvanced": "詳細オプションを非表示"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",
@@ -125,6 +183,24 @@
       "note": "ソースドキュメント、個人情報、および以降の会話は非公開のままになります",
       "create": "作成",
       "option": "ユーザーがより多くのクエリを実行できるようにします。"
+    },
+    "configTool": {
+      "title": "ツール設定",
+      "type": "タイプ",
+      "apiKeyLabel": "APIキー / OAuth",
+      "apiKeyPlaceholder": "APIキー / OAuthを入力してください",
+      "addButton": "ツールを追加",
+      "closeButton": "閉じる"
+    },
+    "prompts": {
+      "addPrompt": "プロンプトを追加",
+      "addDescription": "カスタムプロンプトを追加してDocsGPTに保存",
+      "editPrompt": "プロンプトを編集",
+      "editDescription": "カスタムプロンプトを編集してDocsGPTに保存",
+      "promptName": "プロンプト名",
+      "promptText": "プロンプトテキスト",
+      "save": "保存",
+      "nameExists": "名前が既に存在します"
     }
   },
   "sharedConv": {
@@ -137,5 +213,31 @@
     "delete": "削除",
     "rename": "名前変更",
     "deleteWarning": "この会話を削除してもよろしいですか？"
+  },
+  "pagination": {
+    "rowsPerPage": "1ページあたりの行数",
+    "pageOf": "ページ {{currentPage}} / {{totalPages}}",
+    "firstPage": "最初のページ",
+    "previousPage": "前のページ",
+    "nextPage": "次のページ",
+    "lastPage": "最後のページ"
+  },
+  "conversation": {
+    "copy": "コピー",
+    "copied": "コピー済み",
+    "speak": "読み上げ",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "キャンセル",
+      "placeholder": "更新されたクエリを入力..."
+    },
+    "sources": {
+      "title": "ソース",
+      "text": "ソーステキスト",
+      "link": "ソースリンク",
+      "view_more": "さらに{{count}}個のソースを表示"
+    },
+    "retry": "再試行"
   }
 }

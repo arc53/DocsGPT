@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -23,8 +23,8 @@ jobs:
         run: |
           python -m pytest --cov=application --cov-report=xml
       - name: Upload coverage reports to Codecov
-        if: github.event_name == 'pull_request' && matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 

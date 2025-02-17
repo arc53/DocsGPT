@@ -40,7 +40,7 @@ export default function CoppyButton({
         />
       ) : (
         <Copy
-          className="cursor-pointer fill-none"
+          className="w-4 cursor-pointer fill-none"
           onClick={() => {
             handleCopyClick(text);
           }}

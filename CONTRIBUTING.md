@@ -27,6 +27,7 @@ Before creating issues, please check out how the latest version of our app looks
 
 ### 👨‍💻 If you're interested in contributing code, here are some important things to know:
 
+For instructions on setting up a development environment, please refer to our [Development Deployment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
 
 Tech Stack Overview:
 
@@ -34,19 +35,40 @@ Tech Stack Overview:
 
 - 🖥 Backend: Developed in Python 🐍
 
-### 🌐 If you are looking to contribute to frontend (⚛️React, Vite):
+### 🌐 Frontend Contributions (⚛️ React, Vite)
 
-- The current frontend is being migrated from [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) to [`/frontend`](https://github.com/arc53/DocsGPT/tree/main/frontend) with a new design, so please contribute to the new one.
-- Check out this [milestone](https://github.com/arc53/DocsGPT/milestone/1) and its issues.
-- The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).
+*   The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).  Please try to follow the guidelines.
+*   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `fronetend/.eslintrc.js` file.  We recommend configuring your editor with ESLint and Prettier to help with this.
+* **Component Structure:** Strive for small, reusable components.  Favor functional components and hooks over class components where possible.
+* **State Management** If you need to add stores, please use Redux.
 
-Please try to follow the guidelines.
+### 🖥 Backend Contributions (🐍 Python)
 
-### 🖥 If you are looking to contribute to Backend (🐍 Python):
-
-- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) or [`/scripts`](https://github.com/arc53/DocsGPT/tree/main/scripts) (please disregard old [`ingest_rst.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst.py) [`ingest_rst_sphinx.py`](https://github.com/arc53/DocsGPT/blob/main/scripts/old/ingest_rst_sphinx.py) files; these will be deprecated soon).
+- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) 
 - All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
 - Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
+- **Coding Style:** We adhere to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guide for Python code. We use `ruff` as our linter and code formatter.  Please ensure your code is formatted correctly and passes `ruff` checks before submitting.
+- **Type Hinting:**  Please use type hints for all function arguments and return values. This improves code readability and helps catch errors early.  Example:
+
+    ```python
+    def my_function(name: str, count: int) -> list[str]:
+        ...
+    ```
+- **Docstrings:**  All functions and classes should have docstrings explaining their purpose, parameters, and return values.  We prefer the [Google style docstrings](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html). Example:
+
+    ```python
+    def my_function(name: str, count: int) -> list[str]:
+        """Does something with a name and a count.
+
+        Args:
+            name: The name to use.
+            count: The number of times to do it.
+
+        Returns:
+            A list of strings.
+        """
+        ...
+    ```
   
 ### Testing
 

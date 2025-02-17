@@ -1,0 +1,40 @@
+name: Bandit Security Scan
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  bandit_scan:
+    if: ${{ github.repository == 'arc53/DocsGPT' }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit  # Bandit is needed for this action
+          if [ -f application/requirements.txt ]; then pip install -r application/requirements.txt; fi
+
+      - name: Run Bandit scan
+        uses: PyCQA/bandit-action@v1
+        with:
+          severity: medium
+          confidence: medium
+          targets: application/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

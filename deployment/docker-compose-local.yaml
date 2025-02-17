@@ -1,0 +1,26 @@
+services:
+  frontend:
+    build: ../frontend
+    volumes:
+    - ../frontend/src:/app/src
+    environment:
+      - VITE_API_HOST=http://localhost:7091
+      - VITE_API_STREAMING=$VITE_API_STREAMING
+      - VITE_EMBEDDINGS_NAME=$EMBEDDINGS_NAME
+    ports:
+      - "5173:5173"
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/data/db
+
+volumes:
+  mongodb_data_container:

@@ -8,12 +8,12 @@ updates:
   - package-ecosystem: "pip" # See documentation for possible values
     directory: "/application" # Location of package manifests
     schedule:
-      interval: "weekly"
+      interval: "daily"
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/frontend" # Location of package manifests
     schedule:
-      interval: "weekly"
+      interval: "daily"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"

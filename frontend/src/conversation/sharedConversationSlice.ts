@@ -51,6 +51,13 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
                   query: { sources: data.source ?? [] },
                 }),
               );
+            } else if (data.type === 'tool_calls') {
+              dispatch(
+                updateToolCalls({
+                  index: state.sharedConversation.queries.length - 1,
+                  query: { tool_calls: data.tool_calls },
+                }),
+              );
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
@@ -107,6 +114,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
       query: question,
       result: '',
       sources: [],
+      tool_calls: [],
     };
   },
 );
@@ -159,6 +167,15 @@ export const sharedConversationSlice = createSlice({
           ...state.queries[index],
           ...query,
         };
+      }
+    },
+    updateToolCalls(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const { index, query } = action.payload;
+      if (!state.queries[index].tool_calls) {
+        state.queries[index].tool_calls = query?.tool_calls;
       }
     },
     updateQuery(
@@ -232,6 +249,7 @@ export const {
   setClientApiKey,
   updateQuery,
   updateStreamingQuery,
+  updateToolCalls,
   addQuery,
   saveToLocalStorage,
   updateStreamingSource,

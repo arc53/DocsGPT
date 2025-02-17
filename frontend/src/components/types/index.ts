@@ -8,6 +8,8 @@ export type InputProps = {
   maxLength?: number;
   name?: string;
   placeholder?: string;
+  label?: string;
+  required?: boolean;
   className?: string;
   children?: React.ReactElement;
   onChange: (

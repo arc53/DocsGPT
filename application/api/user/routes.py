@@ -1,14 +1,15 @@
 import datetime
+import math
 import os
 import shutil
 import uuid
-import math
+import json
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, jsonify, make_response, request, redirect
-from flask_restx import inputs, fields, Namespace, Resource
+from flask import Blueprint, current_app, jsonify, make_response, redirect, request
+from flask_restx import fields, inputs, Namespace, Resource
 from werkzeug.utils import secure_filename
 
 from application.api.user.tasks import ingest, ingest_remote
@@ -16,9 +17,10 @@ from application.api.user.tasks import ingest, ingest_remote
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
-from application.utils import check_required_fields
-from application.vectorstore.vector_creator import VectorCreator
+from application.tools.tool_manager import ToolManager
 from application.tts.google_tts import GoogleTTS
+from application.utils import check_required_fields, validate_function_name
+from application.vectorstore.vector_creator import VectorCreator
 
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
@@ -30,6 +32,7 @@ api_key_collection = db["api_keys"]
 token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
 user_logs_collection = db["user_logs"]
+user_tools_collection = db["user_tools"]
 
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
@@ -38,6 +41,9 @@ api.add_namespace(user_ns)
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
+
+tool_config = {}
+tool_manager = ToolManager(config=tool_config)
 
 
 def generate_minute_range(start_date, end_date):
@@ -77,7 +83,8 @@ class DeleteConversation(Resource):
         try:
             conversations_collection.delete_one({"_id": ObjectId(conversation_id)})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -91,7 +98,8 @@ class DeleteAllConversations(Resource):
         try:
             conversations_collection.delete_many({"user": user_id})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting all conversations: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -108,7 +116,8 @@ class GetConversations(Resource):
                 for conversation in conversations
             ]
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving conversations: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_conversations), 200)
 
 
@@ -132,7 +141,8 @@ class GetSingleConversation(Resource):
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(conversation["queries"]), 200)
 
 
@@ -164,7 +174,8 @@ class UpdateConversationName(Resource):
                 {"_id": ObjectId(data["id"])}, {"$set": {"name": data["name"]}}
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating conversation name: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -176,10 +187,17 @@ class SubmitFeedback(Resource):
             "FeedbackModel",
             {
                 "question": fields.String(
-                    required=True, description="The user question"
+                    required=False, description="The user question"
                 ),
-                "answer": fields.String(required=True, description="The AI answer"),
+                "answer": fields.String(required=False, description="The AI answer"),
                 "feedback": fields.String(required=True, description="User feedback"),
+                "question_index": fields.Integer(
+                    required=True,
+                    description="The question number in that particular conversation",
+                ),
+                "conversation_id": fields.String(
+                    required=True, description="id of the particular conversation"
+                ),
                 "api_key": fields.String(description="Optional API key"),
             },
         )
@@ -189,25 +207,27 @@ class SubmitFeedback(Resource):
     )
     def post(self):
         data = request.get_json()
-        required_fields = ["question", "answer", "feedback"]
+        required_fields = ["feedback", "conversation_id", "question_index"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
-        new_doc = {
-            "question": data["question"],
-            "answer": data["answer"],
-            "feedback": data["feedback"],
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        }
-
-        if "api_key" in data:
-            new_doc["api_key"] = data["api_key"]
-
         try:
-            feedback_collection.insert_one(new_doc)
+            conversations_collection.update_one(
+                {
+                    "_id": ObjectId(data["conversation_id"]),
+                    f"queries.{data['question_index']}": {"$exists": True},
+                },
+                {
+                    "$set": {
+                        f"queries.{data['question_index']}.feedback": data["feedback"]
+                    }
+                },
+            )
+
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error submitting feedback: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -230,7 +250,8 @@ class DeleteByIds(Resource):
             if result:
                 return make_response(jsonify({"success": True}), 200)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting indexes: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": False}), 400)
 
@@ -248,13 +269,10 @@ class DeleteOldIndexes(Resource):
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
+        doc = sources_collection.find_one({"_id": ObjectId(source_id), "user": "local"})
+        if not doc:
+            return make_response(jsonify({"status": "not found"}), 404)
         try:
-            doc = sources_collection.find_one(
-                {"_id": ObjectId(source_id), "user": "local"}
-            )
-            if not doc:
-                return make_response(jsonify({"status": "not found"}), 404)
-
             if settings.VECTOR_STORE == "faiss":
                 shutil.rmtree(os.path.join(current_dir, "indexes", str(doc["_id"])))
             else:
@@ -263,12 +281,13 @@ class DeleteOldIndexes(Resource):
                 )
                 vectorstore.delete_index()
 
-            sources_collection.delete_one({"_id": ObjectId(source_id)})
         except FileNotFoundError:
             pass
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting old indexes: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
+        sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -339,6 +358,9 @@ class UploadFile(Resource):
                         ".json",
                         ".xlsx",
                         ".pptx",
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
                     ],
                     job_name,
                     final_filename,
@@ -365,6 +387,9 @@ class UploadFile(Resource):
                         ".json",
                         ".xlsx",
                         ".pptx",
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
                     ],
                     job_name,
                     final_filename,
@@ -372,8 +397,8 @@ class UploadFile(Resource):
                 )
 
         except Exception as err:
-            print(f"Error: {err}")
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error uploading file: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -404,21 +429,26 @@ class UploadRemote(Resource):
             return missing_fields
 
         try:
-            if "repo_url" in data:
-                source_data = data["repo_url"]
-                loader = "github"
-            else:
-                source_data = data["data"]
-                loader = data["source"]
+           config = json.loads(data["data"])
+           source_data = None
 
-            task = ingest_remote.delay(
+           if data["source"] == "github":
+                source_data = config.get("repo_url")
+           elif data["source"] in ["crawler", "url"]:
+                source_data = config.get("url")
+           elif data["source"] == "reddit":
+                source_data = config 
+
+
+           task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
                 user=data["user"],
-                loader=loader,
+                loader=data["source"]
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error uploading remote source: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
@@ -450,7 +480,8 @@ class TaskStatus(Resource):
             ):
                 task_meta = str(task_meta)  # Convert to a string representation
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting task status: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"status": task.status, "result": task_meta}), 200)
 
@@ -473,11 +504,24 @@ class PaginatedSources(Resource):
         sort_order = request.args.get("order", "desc")  # Default to 'desc'
         page = int(request.args.get("page", 1))  # Default to 1
         rows_per_page = int(request.args.get("rows", 10))  # Default to 10
+        # add .strip() to remove leading and trailing whitespaces
+        search_term = request.args.get(
+            "search", ""
+        ).strip()  # add search for filter documents
 
-        # Prepare
+        # Prepare query for filtering
         query = {"user": user}
+        if search_term:
+            query["name"] = {
+                "$regex": search_term,
+                "$options": "i",  # using case-insensitive search
+            }
+
         total_documents = sources_collection.count_documents(query)
         total_pages = max(1, math.ceil(total_documents / rows_per_page))
+        page = min(
+            max(1, page), total_pages
+        )  # add this to make sure page inbound is within the range
         sort_order = 1 if sort_order == "asc" else -1
         skip = (page - 1) * rows_per_page
 
@@ -512,7 +556,8 @@ class PaginatedSources(Resource):
             return make_response(jsonify(response), 200)
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving paginated sources: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/sources")
@@ -522,7 +567,7 @@ class CombinedJson(Resource):
         user = "local"
         data = [
             {
-                "name": "default",
+                "name": "Default",
                 "date": "default",
                 "model": settings.EMBEDDINGS_NAME,
                 "location": "remote",
@@ -572,7 +617,8 @@ class CombinedJson(Resource):
                 )
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving sources: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(data), 200)
 
@@ -598,7 +644,8 @@ class CheckDocs(Resource):
             if os.path.exists(vectorstore) or data["docs"] == "default":
                 return {"status": "exists"}, 200
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error checking document: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"status": "not found"}), 404)
 
@@ -636,7 +683,8 @@ class CreatePrompt(Resource):
             )
             new_id = str(resp.inserted_id)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error creating prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id}), 200)
 
@@ -663,7 +711,8 @@ class GetPrompts(Resource):
                     }
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving prompts: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(list_prompts), 200)
 
@@ -704,7 +753,8 @@ class GetSinglePrompt(Resource):
 
             prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"content": prompt["content"]}), 200)
 
@@ -728,7 +778,8 @@ class DeletePrompt(Resource):
         try:
             prompts_collection.delete_one({"_id": ObjectId(data["id"])})
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error deleting prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -761,7 +812,8 @@ class UpdatePrompt(Resource):
                 {"$set": {"name": data["name"], "content": data["content"]}},
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating prompt: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -796,7 +848,8 @@ class GetApiKeys(Resource):
                     }
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error retrieving API keys: {err}")
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_keys), 200)
 
 
@@ -840,7 +893,8 @@ class CreateApiKey(Resource):
             resp = api_key_collection.insert_one(new_api_key)
             new_id = str(resp.inserted_id)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error creating API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id, "key": key}), 201)
 
@@ -866,7 +920,8 @@ class DeleteApiKey(Resource):
             if result.deleted_count == 0:
                 return {"success": False, "message": "API Key not found"}, 404
         except Exception as err:
-            return {"success": False, "error": str(err)}, 400
+            current_app.logger.error(f"Error deleting API key: {err}")
+            return {"success": False}, 400
 
         return {"success": True}, 200
 
@@ -1066,7 +1121,8 @@ class ShareConversation(Resource):
                     201,
                 )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error sharing conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/shared_conversation/<string:identifier>")
@@ -1121,7 +1177,8 @@ class GetPubliclySharedConversations(Resource):
                 res["api_key"] = shared["api_key"]
             return make_response(jsonify(res), 200)
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting shared conversation: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
 
 @user_ns.route("/api/get_message_analytics")
@@ -1162,7 +1219,8 @@ class GetMessageAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -1255,7 +1313,8 @@ class GetMessageAnalytics(Resource):
                     daily_messages[entry["_id"]["day"]] = entry["total_messages"]
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting message analytics: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(
             jsonify({"success": True, "messages": daily_messages}), 200
@@ -1297,7 +1356,8 @@ class GetTokenAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -1406,7 +1466,8 @@ class GetTokenAnalytics(Resource):
                     daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting token analytics: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(
             jsonify({"success": True, "token_usage": daily_token_usage}), 200
@@ -1448,91 +1509,19 @@ class GetFeedbackAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
             start_date = end_date - datetime.timedelta(hours=1)
             group_format = "%Y-%m-%d %H:%M:00"
-            group_stage_1 = {
-                "$group": {
-                    "_id": {
-                        "minute": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        },
-                        "feedback": "$feedback",
-                    },
-                    "count": {"$sum": 1},
-                }
-            }
-            group_stage_2 = {
-                "$group": {
-                    "_id": "$_id.minute",
-                    "likes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "LIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                    "dislikes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
-
+            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
-            group_stage_1 = {
-                "$group": {
-                    "_id": {
-                        "hour": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        },
-                        "feedback": "$feedback",
-                    },
-                    "count": {"$sum": 1},
-                }
-            }
-            group_stage_2 = {
-                "$group": {
-                    "_id": "$_id.hour",
-                    "likes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "LIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                    "dislikes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
-
+            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
@@ -1550,61 +1539,56 @@ class GetFeedbackAnalytics(Resource):
                 hour=23, minute=59, second=59, microsecond=999999
             )
             group_format = "%Y-%m-%d"
-            group_stage_1 = {
-                "$group": {
-                    "_id": {
-                        "day": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        },
-                        "feedback": "$feedback",
-                    },
-                    "count": {"$sum": 1},
-                }
-            }
-            group_stage_2 = {
-                "$group": {
-                    "_id": "$_id.day",
-                    "likes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "LIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                    "dislikes": {
-                        "$sum": {
-                            "$cond": [
-                                {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                "$count",
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
+            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
 
         try:
             match_stage = {
                 "$match": {
-                    "timestamp": {"$gte": start_date, "$lte": end_date},
+                    "date": {"$gte": start_date, "$lte": end_date},
+                    "queries": {"$exists": True, "$ne": []},
                 }
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
 
-            feedback_data = feedback_collection.aggregate(
-                [
-                    match_stage,
-                    group_stage_1,
-                    group_stage_2,
-                    {"$sort": {"_id": 1}},
-                ]
-            )
+            # Unwind the queries array to process each query separately
+            pipeline = [
+                match_stage,
+                {"$unwind": "$queries"},
+                {"$match": {"queries.feedback": {"$exists": True}}},
+                {
+                    "$group": {
+                        "_id": {"time": date_field, "feedback": "$queries.feedback"},
+                        "count": {"$sum": 1},
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$_id.time",
+                        "positive": {
+                            "$sum": {
+                                "$cond": [
+                                    {"$eq": ["$_id.feedback", "LIKE"]},
+                                    "$count",
+                                    0,
+                                ]
+                            }
+                        },
+                        "negative": {
+                            "$sum": {
+                                "$cond": [
+                                    {"$eq": ["$_id.feedback", "DISLIKE"]},
+                                    "$count",
+                                    0,
+                                ]
+                            }
+                        },
+                    }
+                },
+                {"$sort": {"_id": 1}},
+            ]
+
+            feedback_data = conversations_collection.aggregate(pipeline)
 
             if filter_option == "last_hour":
                 intervals = generate_minute_range(start_date, end_date)
@@ -1619,12 +1603,13 @@ class GetFeedbackAnalytics(Resource):
 
             for entry in feedback_data:
                 daily_feedback[entry["_id"]] = {
-                    "positive": entry["likes"],
-                    "negative": entry["dislikes"],
+                    "positive": entry["positive"],
+                    "negative": entry["negative"],
                 }
 
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting feedback analytics: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(
             jsonify({"success": True, "feedback": daily_feedback}), 200
@@ -1666,7 +1651,8 @@ class GetUserLogs(Resource):
                 else None
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error getting API key: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         query = {}
         if api_key:
@@ -1750,7 +1736,8 @@ class ManageSync(Resource):
                 update_data,
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error updating sync frequency: {err}")
+            return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
 
@@ -1785,4 +1772,514 @@ class TextToSpeech(Resource):
                 200,
             )
         except Exception as err:
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error synthesizing audio: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+
+@user_ns.route("/api/available_tools")
+class AvailableTools(Resource):
+    @api.doc(description="Get available tools for a user")
+    def get(self):
+        try:
+            tools_metadata = []
+            for tool_name, tool_instance in tool_manager.tools.items():
+                doc = tool_instance.__doc__.strip()
+                lines = doc.split("\n", 1)
+                name = lines[0].strip()
+                description = lines[1].strip() if len(lines) > 1 else ""
+                tools_metadata.append(
+                    {
+                        "name": tool_name,
+                        "displayName": name,
+                        "description": description,
+                        "configRequirements": tool_instance.get_config_requirements(),
+                        "actions": tool_instance.get_actions_metadata(),
+                    }
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error getting available tools: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
+
+
+@user_ns.route("/api/get_tools")
+class GetTools(Resource):
+    @api.doc(description="Get tools created by a user")
+    def get(self):
+        try:
+            user = "local"
+            tools = user_tools_collection.find({"user": user})
+            user_tools = []
+            for tool in tools:
+                tool["id"] = str(tool["_id"])
+                tool.pop("_id")
+                user_tools.append(tool)
+        except Exception as err:
+            current_app.logger.error(f"Error getting user tools: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True, "tools": user_tools}), 200)
+
+
+@user_ns.route("/api/create_tool")
+class CreateTool(Resource):
+    @api.expect(
+        api.model(
+            "CreateToolModel",
+            {
+                "name": fields.String(required=True, description="Name of the tool"),
+                "displayName": fields.String(
+                    required=True, description="Display name for the tool"
+                ),
+                "description": fields.String(
+                    required=True, description="Tool description"
+                ),
+                "config": fields.Raw(
+                    required=True, description="Configuration of the tool"
+                ),
+                "actions": fields.List(
+                    fields.Raw,
+                    required=True,
+                    description="Actions the tool can perform",
+                ),
+                "status": fields.Boolean(
+                    required=True, description="Status of the tool"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Create a new tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = [
+            "name",
+            "displayName",
+            "description",
+            "actions",
+            "config",
+            "status",
+        ]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        user = "local"
+        transformed_actions = []
+        for action in data["actions"]:
+            action["active"] = True
+            if "parameters" in action:
+                if "properties" in action["parameters"]:
+                    for param_name, param_details in action["parameters"][
+                        "properties"
+                    ].items():
+                        param_details["filled_by_llm"] = True
+                        param_details["value"] = ""
+            transformed_actions.append(action)
+        try:
+            new_tool = {
+                "user": user,
+                "name": data["name"],
+                "displayName": data["displayName"],
+                "description": data["description"],
+                "actions": transformed_actions,
+                "config": data["config"],
+                "status": data["status"],
+            }
+            resp = user_tools_collection.insert_one(new_tool)
+            new_id = str(resp.inserted_id)
+        except Exception as err:
+            current_app.logger.error(f"Error creating tool: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"id": new_id}), 200)
+
+
+@user_ns.route("/api/update_tool")
+class UpdateTool(Resource):
+    @api.expect(
+        api.model(
+            "UpdateToolModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "name": fields.String(description="Name of the tool"),
+                "displayName": fields.String(description="Display name for the tool"),
+                "description": fields.String(description="Tool description"),
+                "config": fields.Raw(description="Configuration of the tool"),
+                "actions": fields.List(
+                    fields.Raw, description="Actions the tool can perform"
+                ),
+                "status": fields.Boolean(description="Status of the tool"),
+            },
+        )
+    )
+    @api.doc(description="Update a tool by ID")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            update_data = {}
+            if "name" in data:
+                update_data["name"] = data["name"]
+            if "displayName" in data:
+                update_data["displayName"] = data["displayName"]
+            if "description" in data:
+                update_data["description"] = data["description"]
+            if "actions" in data:
+                update_data["actions"] = data["actions"]
+            if "config" in data:
+                if "actions" in data["config"]:
+                    for action_name in list(data["config"]["actions"].keys()):
+                        if not validate_function_name(action_name):
+                            return make_response(
+                                jsonify({
+                                    "success": False,
+                                    "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
+                                    "param": "tools[].function.name"
+                                }), 400
+                            )
+                update_data["config"] = data["config"]
+            if "status" in data:
+                update_data["status"] = data["status"]
+
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"]), "user": "local"},
+                {"$set": update_data},
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error updating tool: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/update_tool_config")
+class UpdateToolConfig(Resource):
+    @api.expect(
+        api.model(
+            "UpdateToolConfigModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "config": fields.Raw(
+                    required=True, description="Configuration of the tool"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Update the configuration of a tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "config"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"])},
+                {"$set": {"config": data["config"]}},
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error updating tool config: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/update_tool_actions")
+class UpdateToolActions(Resource):
+    @api.expect(
+        api.model(
+            "UpdateToolActionsModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "actions": fields.List(
+                    fields.Raw,
+                    required=True,
+                    description="Actions the tool can perform",
+                ),
+            },
+        )
+    )
+    @api.doc(description="Update the actions of a tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "actions"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"])},
+                {"$set": {"actions": data["actions"]}},
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error updating tool actions: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/update_tool_status")
+class UpdateToolStatus(Resource):
+    @api.expect(
+        api.model(
+            "UpdateToolStatusModel",
+            {
+                "id": fields.String(required=True, description="Tool ID"),
+                "status": fields.Boolean(
+                    required=True, description="Status of the tool"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Update the status of a tool")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "status"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            user_tools_collection.update_one(
+                {"_id": ObjectId(data["id"])},
+                {"$set": {"status": data["status"]}},
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error updating tool status: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/delete_tool")
+class DeleteTool(Resource):
+    @api.expect(
+        api.model(
+            "DeleteToolModel",
+            {"id": fields.String(required=True, description="Tool ID")},
+        )
+    )
+    @api.doc(description="Delete a tool by ID")
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            result = user_tools_collection.delete_one({"_id": ObjectId(data["id"])})
+            if result.deleted_count == 0:
+                return {"success": False, "message": "Tool not found"}, 404
+        except Exception as err:
+            current_app.logger.error(f"Error deleting tool: {err}")
+            return {"success": False}, 400
+
+        return {"success": True}, 200
+
+
+def get_vector_store(source_id):
+    """
+    Get the Vector Store
+    Args:
+        source_id (str): source id of the document
+    """
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE,
+        source_id=source_id,
+        embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+    )
+    return store
+
+
+@user_ns.route("/api/get_chunks")
+class GetChunks(Resource):
+    @api.doc(
+        description="Retrieves all chunks associated with a document",
+        params={"id": "The document ID"},
+    )
+    def get(self):
+        doc_id = request.args.get("id")
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 10))
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunks = store.get_chunks()
+            total_chunks = len(chunks)
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_chunks = chunks[start:end]
+
+            return make_response(
+                jsonify(
+                    {
+                        "page": page,
+                        "per_page": per_page,
+                        "total": total_chunks,
+                        "chunks": paginated_chunks,
+                    }
+                ),
+                200,
+            )
+
+        except Exception as e:
+            current_app.logger.error(f"Error getting chunks: {e}")
+            return make_response(jsonify({"success": False}), 500)
+
+
+@user_ns.route("/api/add_chunk")
+class AddChunk(Resource):
+    @api.expect(
+        api.model(
+            "AddChunkModel",
+            {
+                "id": fields.String(required=True, description="Document ID"),
+                "text": fields.String(required=True, description="Text of the chunk"),
+                "metadata": fields.Raw(
+                    required=False,
+                    description="Metadata associated with the chunk",
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Adds a new chunk to the document",
+    )
+    def post(self):
+        data = request.get_json()
+        required_fields = ["id", "text"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        doc_id = data.get("id")
+        text = data.get("text")
+        metadata = data.get("metadata", {})
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunk_id = store.add_chunk(text, metadata)
+            return make_response(
+                jsonify({"message": "Chunk added successfully", "chunk_id": chunk_id}),
+                201,
+            )
+        except Exception as e:
+            current_app.logger.error(f"Error adding chunk: {e}")
+            return make_response(jsonify({"success": False}), 500)
+
+
+@user_ns.route("/api/delete_chunk")
+class DeleteChunk(Resource):
+    @api.doc(
+        description="Deletes a specific chunk from the document.",
+        params={"id": "The document ID", "chunk_id": "The ID of the chunk to delete"},
+    )
+    def delete(self):
+        doc_id = request.args.get("id")
+        chunk_id = request.args.get("chunk_id")
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            deleted = store.delete_chunk(chunk_id)
+            if deleted:
+                return make_response(
+                    jsonify({"message": "Chunk deleted successfully"}), 200
+                )
+            else:
+                return make_response(
+                    jsonify({"message": "Chunk not found or could not be deleted"}),
+                    404,
+                )
+        except Exception as e:
+            current_app.logger.error(f"Error deleting chunk: {e}")
+            return make_response(jsonify({"success": False}), 500)
+
+
+@user_ns.route("/api/update_chunk")
+class UpdateChunk(Resource):
+    @api.expect(
+        api.model(
+            "UpdateChunkModel",
+            {
+                "id": fields.String(required=True, description="Document ID"),
+                "chunk_id": fields.String(
+                    required=True, description="Chunk ID to update"
+                ),
+                "text": fields.String(
+                    required=False, description="New text of the chunk"
+                ),
+                "metadata": fields.Raw(
+                    required=False,
+                    description="Updated metadata associated with the chunk",
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Updates an existing chunk in the document.",
+    )
+    def put(self):
+        data = request.get_json()
+        required_fields = ["id", "chunk_id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        doc_id = data.get("id")
+        chunk_id = data.get("chunk_id")
+        text = data.get("text")
+        metadata = data.get("metadata")
+
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        try:
+            store = get_vector_store(doc_id)
+            chunks = store.get_chunks()
+            existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
+            if not existing_chunk:
+                return make_response(jsonify({"error": "Chunk not found"}), 404)
+
+            deleted = store.delete_chunk(chunk_id)
+            if not deleted:
+                return make_response(
+                    jsonify({"error": "Failed to delete existing chunk"}), 500
+                )
+
+            new_text = text if text is not None else existing_chunk["text"]
+            new_metadata = (
+                metadata if metadata is not None else existing_chunk["metadata"]
+            )
+
+            new_chunk_id = store.add_chunk(new_text, new_metadata)
+
+            return make_response(
+                jsonify(
+                    {
+                        "message": "Chunk updated successfully",
+                        "new_chunk_id": new_chunk_id,
+                    }
+                ),
+                200,
+            )
+        except Exception as e:
+            current_app.logger.error(f"Error updating chunk: {e}")
+            return make_response(jsonify({"success": False}), 500)

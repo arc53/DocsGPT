@@ -18,6 +18,18 @@ const endpoints = {
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     LOGS: `/api/get_user_logs`,
     MANAGE_SYNC: '/api/manage_sync',
+    GET_AVAILABLE_TOOLS: '/api/available_tools',
+    GET_USER_TOOLS: '/api/get_tools',
+    CREATE_TOOL: '/api/create_tool',
+    UPDATE_TOOL_STATUS: '/api/update_tool_status',
+    UPDATE_TOOL: '/api/update_tool',
+    DELETE_TOOL: '/api/delete_tool',
+    GET_CHUNKS: (docId: string, page: number, per_page: number) =>
+      `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}`,
+    ADD_CHUNK: '/api/add_chunk',
+    DELETE_CHUNK: (docId: string, chunkId: string) =>
+      `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
+    UPDATE_CHUNK: '/api/update_chunk',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

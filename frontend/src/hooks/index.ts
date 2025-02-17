@@ -112,3 +112,23 @@ export function useDarkTheme() {
 
   return [isDarkTheme, toggleTheme, componentMounted] as const;
 }
+
+export function useLoaderState(
+  initialState = false,
+  delay = 250,
+): [boolean, (value: boolean) => void] {
+  const [state, setState] = useState<boolean>(initialState);
+
+  const setLoaderState = (value: boolean) => {
+    if (value) {
+      setState(true);
+    } else {
+      // Only add delay when changing from true to false
+      setTimeout(() => {
+        setState(false);
+      }, delay);
+    }
+  };
+
+  return [state, setLoaderState];
+}

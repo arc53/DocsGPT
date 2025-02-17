@@ -10,7 +10,7 @@
   "sourceDocs": "源",
   "none": "无",
   "cancel": "取消",
-  "help": "联系支持",
+  "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
   "demo": [
@@ -34,7 +34,7 @@
   "settings": {
     "label": "设置",
     "general": {
-      "label": "般",
+      "label": "一般",
       "selectTheme": "选择主题",
       "light": "浅色",
       "dark": "暗色",
@@ -53,12 +53,26 @@
       "default": "默认"
     },
     "documents": {
-      "label": "文件",
+      "title": "此表格包含所有可供您使用的文档以及您上传的文档",
+      "label": "文档",
       "name": "文件名称",
       "date": "向量日期",
       "type": "类型",
       "tokenUsage": "令牌使用",
-      "noData": "没有现有的文档"
+      "noData": "没有现有的文档",
+      "searchPlaceholder": "搜索...",
+      "addNew": "添加新文档",
+      "preLoaded": "预加载",
+      "private": "私有",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "从不",
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月"
+      },
+      "actions": "操作",
+      "deleteWarning": "您确定要删除 \"{{name}}\" 吗？"
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -66,13 +80,44 @@
       "key": "API 密钥",
       "sourceDoc": "源文档",
       "createNew": "创建新的",
-      "noData": "没有现有的聊天机器人"
+      "noData": "没有现有的聊天机器人",
+      "deleteConfirmation": "您确定要删除 API 密钥 '{{name}}' 吗？"
     },
     "analytics": {
-      "label": "分析"
+      "label": "分析",
+      "filterByChatbot": "按聊天机器人筛选",
+      "selectChatbot": "选择聊天机器人",
+      "filterOptions": {
+        "hour": "小时",
+        "last24Hours": "24 小时",
+        "last7Days": "7 天",
+        "last15Days": "15 天",
+        "last30Days": "30 天"
+      },
+      "messages": "消息",
+      "tokenUsage": "令牌使用",
+      "feedback": "反馈",
+      "filterPlaceholder": "筛选",
+      "none": "无",
+      "positiveFeedback": "正向反馈",
+      "negativeFeedback": "负向反馈"
     },
     "logs": {
-      "label": "日志"
+      "label": "日志",
+      "filterByChatbot": "按聊天机器人筛选",
+      "selectChatbot": "选择聊天机器人",
+      "none": "无",
+      "tableHeader": "API 生成 / 聊天机器人会话"
+    },
+    "tools": {
+      "label": "工具",
+      "searchPlaceholder": "搜索...",
+      "addTool": "添加工具",
+      "noToolsFound": "未找到工具",
+      "selectToolSetup": "选择要设置的工具",
+      "settingsIconAlt": "设置图标",
+      "configureToolAria": "配置 {toolName}",
+      "toggleToolAria": "切换 {toolName}"
     }
   },
   "modals": {
@@ -86,7 +131,7 @@
       "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
-      "info": "请上传 .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip 文件，限 25MB",
+      "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip文件",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "训练",
@@ -94,12 +139,26 @@
       "urlLink": "URL 链接",
       "repoUrl": "存储库 URL",
       "reddit": {
-        "id": "客户端 ID",
+        "id": "客户端ID",
         "secret": "客户端密钥",
         "agent": "用户代理",
         "searchQueries": "搜索查询",
-        "numberOfPosts": "帖子数量"
-      }
+        "numberOfPosts": "帖子数量",
+        "addQuery": "添加查询"
+      },
+      "drag": {
+        "title": "上传源文件",
+        "description": "将文件拖放到此处以添加为源"
+      },
+      "progress": {
+        "upload": "正在上传",
+        "training": "正在训练",
+        "completed": "训练完成",
+        "wait": "这可能需要几分钟",
+        "tokenLimit": "超出令牌限制，请考虑上传较小的文档"
+      },
+      "showAdvanced": "显示高级选项",
+      "hideAdvanced": "隐藏高级选项"
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",
@@ -125,6 +184,24 @@
       "note": "源文档、个人信息和后续对话将保持私密",
       "create": "创建",
       "option": "允许用户进行更多查询。"
+    },
+    "configTool": {
+      "title": "工具配置",
+      "type": "类型",
+      "apiKeyLabel": "API 密钥 / OAuth",
+      "apiKeyPlaceholder": "输入 API 密钥 / OAuth",
+      "addButton": "添加工具",
+      "closeButton": "关闭"
+    },
+    "prompts": {
+      "addPrompt": "添加提示",
+      "addDescription": "添加自定义提示并保存到 DocsGPT",
+      "editPrompt": "编辑提示",
+      "editDescription": "编辑自定义提示并保存到 DocsGPT",
+      "promptName": "提示名称",
+      "promptText": "提示文本",
+      "save": "保存",
+      "nameExists": "名称已存在"
     }
   },
   "sharedConv": {
@@ -137,5 +214,31 @@
     "delete": "删除",
     "rename": "重命名",
     "deleteWarning": "您确定要删除此对话吗？"
+  },
+  "pagination": {
+    "rowsPerPage": "每页行数",
+    "pageOf": "第 {{currentPage}} 页，共 {{totalPages}} 页",
+    "firstPage": "第一页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "lastPage": "最后一页"
+  },
+  "conversation": {
+    "copy": "复制",
+    "copied": "已复制",
+    "speak": "朗读",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "取消",
+      "placeholder": "输入更新的查询..."
+    },
+    "sources": {
+      "title": "来源",
+      "text": "来源文本",
+      "link": "来源链接",
+      "view_more": "更多{{count}}个来源"
+    },
+    "retry": "重试"
   }
 }

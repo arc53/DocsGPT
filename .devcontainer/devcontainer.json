@@ -1,0 +1,24 @@
+{
+	"name": "DocsGPT Dev Container",
+	"dockerComposeFile": ["docker-compose-dev.yaml", "docker-compose.override.yaml"],
+	"service": "dev",
+	"workspaceFolder": "/workspace",
+	"postCreateCommand": ".devcontainer/post-create-command.sh",
+	"forwardPorts": [7091, 5173, 6379, 27017],
+	"customizations": {
+	  "vscode": {
+		"extensions": [
+		  "ms-python.python",
+		  "ms-toolsai.jupyter",
+		  "esbenp.prettier-vscode",
+		  "dbaeumer.vscode-eslint"
+		]
+	  },
+	  "codespaces": {
+			"openFiles": [
+			".devcontainer/devc-welcome.md",
+			"CONTRIBUTING.md"
+			]
+		}
+	}
+  }

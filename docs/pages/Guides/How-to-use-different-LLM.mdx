@@ -1,3 +1,7 @@
+---
+title:
+description:
+---
 
 import { Callout } from 'nextra/components'
 import Image from 'next/image'
@@ -26,24 +30,13 @@ Choose the LLM of your choice.
 <Image src="/llms.gif" alt="prompts" width={800} height={500} />
 
 ### For Open source llm change:
-<Steps >
+<Steps>
 ### Step 1
-For open source you  have to edit .env file with LLM_NAME with their desired LLM name.
+For open source version please edit `LLM_NAME`, `MODEL_NAME` and others in the .env file. Refer to [⚙️ App Configuration](/Deploying/DocsGPT-Settings) for more information.
 ### Step 2
-All the supported LLM providers are here application/llm and you  can check what env variable are needed for each
-List of latest supported LLMs are https://github.com/arc53/DocsGPT/blob/main/application/llm/llm_creator.py
-### Step 3
-Visit application/llm and select the file of your selected llm and there you will find the specific requirements needed to be filled in order to use it,i.e API key of that llm.
+Visit [☁️ Cloud Providers](/Models/cloud-providers) for the updated list of online models. Make sure you have the right API_KEY and correct LLM_NAME.
+For self-hosted please visit [🖥️ Local Inference](/Models/local-inference). 
 </Steps>
-
-### For OpenAI-Compatible Endpoints:
-DocsGPT supports the use of OpenAI-compatible endpoints through base URL substitution. This feature allows you to use alternative AI models or services that implement the OpenAI API interface.
-
-
-Set the OPENAI_BASE_URL in your environment. You can change .env file with OPENAI_BASE_URL with the desired base URL or docker-compose.yml file and add the environment variable to the backend container.
-
-> Make sure you have the right API_KEY and correct LLM_NAME.
-
 
 
 

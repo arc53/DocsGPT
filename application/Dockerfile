@@ -6,21 +6,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
-# Install necessary packages and Python
     apt-get update && \
-    apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.11 python3.11-distutils python3.11-venv && \
+    apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.12 python3.12-venv && \
     rm -rf /var/lib/apt/lists/* 
 
 # Verify Python installation and setup symlink
-RUN if [ -f /usr/bin/python3.11 ]; then \
-        ln -s /usr/bin/python3.11 /usr/bin/python; \
+RUN if [ -f /usr/bin/python3.12 ]; then \
+        ln -s /usr/bin/python3.12 /usr/bin/python; \
     else \
-        echo "Python 3.11 not found"; exit 1; \
+        echo "Python 3.12 not found"; exit 1; \
     fi
 
 # Download and unzip the model
 RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
-    unzip mpnet-base-v2.zip -d model && \
+    unzip mpnet-base-v2.zip -d models && \
     rm mpnet-base-v2.zip
 
 # Install Rust
@@ -33,7 +32,7 @@ RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var
 COPY requirements.txt .
 
 # Setup Python virtual environment
-RUN python3.11 -m venv /venv
+RUN python3.12 -m venv /venv
 
 # Activate virtual environment and install Python packages
 ENV PATH="/venv/bin:$PATH"
@@ -49,9 +48,8 @@ FROM ubuntu:24.04 as final
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
-# Install Python
-    apt-get update && apt-get install -y --no-install-recommends python3.11 && \
-    ln -s /usr/bin/python3.11 /usr/bin/python && \
+    apt-get update && apt-get install -y --no-install-recommends python3.12 && \
+    ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -63,7 +61,8 @@ RUN groupadd -r appuser && \
 
 # Copy the virtual environment and model from the builder stage
 COPY --from=builder /venv /venv
-COPY --from=builder /model /app/model
+
+COPY --from=builder /models /app/models
 
 # Copy your application code
 COPY . /app/application

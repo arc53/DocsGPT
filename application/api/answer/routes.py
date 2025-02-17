@@ -1,14 +1,13 @@
 import asyncio
 import datetime
 import json
-import logging
 import os
-import sys
 import traceback
+import logging
 
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, current_app, make_response, request, Response
+from flask import Blueprint, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
 
@@ -18,7 +17,7 @@ from application.error import bad_request
 from application.extensions import api
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
-from application.utils import check_required_fields
+from application.utils import check_required_fields, limit_chat_history
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ api.add_namespace(answer_ns)
 gpt_model = ""
 # to have some kind of default behaviour
 if settings.LLM_NAME == "openai":
-    gpt_model = "gpt-3.5-turbo"
+    gpt_model = "gpt-4o-mini"
 elif settings.LLM_NAME == "anthropic":
     gpt_model = "claude-2"
 elif settings.LLM_NAME == "groq":
@@ -89,9 +88,6 @@ def get_data_from_api_key(api_key):
     if data is None:
         raise Exception("Invalid API Key, please generate new key", 401)
 
-    if "retriever" not in data:
-        data["retriever"] = None
-
     if "source" in data and isinstance(data["source"], DBRef):
         source_doc = db.dereference(data["source"])
         data["source"] = str(source_doc["_id"])
@@ -118,8 +114,27 @@ def is_azure_configured():
     )
 
 
-def save_conversation(conversation_id, question, response, source_log_docs, llm):
-    if conversation_id is not None and conversation_id != "None":
+def save_conversation(
+    conversation_id, question, response, source_log_docs, tool_calls, llm, index=None
+):
+    if conversation_id is not None and index is not None:
+        conversations_collection.update_one(
+            {"_id": ObjectId(conversation_id), f"queries.{index}": {"$exists": True}},
+            {
+                "$set": {
+                    f"queries.{index}.prompt": question,
+                    f"queries.{index}.response": response,
+                    f"queries.{index}.sources": source_log_docs,
+                    f"queries.{index}.tool_calls": tool_calls,
+                }
+            },
+        )
+        ##remove following queries from the array
+        conversations_collection.update_one(
+            {"_id": ObjectId(conversation_id), f"queries.{index}": {"$exists": True}},
+            {"$push": {"queries": {"$each": [], "$slice": index + 1}}},
+        )
+    elif conversation_id is not None and conversation_id != "None":
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id)},
             {
@@ -128,6 +143,7 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm)
                         "prompt": question,
                         "response": response,
                         "sources": source_log_docs,
+                        "tool_calls": tool_calls,
                     }
                 }
             },
@@ -141,17 +157,13 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm)
                 "role": "assistant",
                 "content": "Summarise following conversation in no more than 3 "
                 "words, respond ONLY with the summary, use the same "
-                "language as the system \n\nUser: "
-                + question
-                + "\n\n"
-                + "AI: "
-                + response,
+                "language as the system",
             },
             {
                 "role": "user",
                 "content": "Summarise following conversation in no more than 3 words, "
                 "respond ONLY with the summary, use the same language as the "
-                "system",
+                "system \n\nUser: " + question + "\n\n" + "AI: " + response,
             },
         ]
 
@@ -166,6 +178,7 @@ def save_conversation(conversation_id, question, response, source_log_docs, llm)
                         "prompt": question,
                         "response": response,
                         "sources": source_log_docs,
+                        "tool_calls": tool_calls,
                     }
                 ],
             }
@@ -186,12 +199,13 @@ def get_prompt(prompt_id):
 
 
 def complete_stream(
-    question, retriever, conversation_id, user_api_key, isNoneDoc=False
+    question, retriever, conversation_id, user_api_key, isNoneDoc=False, index=None
 ):
 
     try:
         response_full = ""
         source_log_docs = []
+        tool_calls = []
         answer = retriever.gen()
         sources = retriever.search()
         for source in sources:
@@ -200,6 +214,7 @@ def complete_stream(
         if len(sources) > 0:
             data = json.dumps({"type": "source", "source": sources})
             yield f"data: {data}\n\n"
+
         for line in answer:
             if "answer" in line:
                 response_full += str(line["answer"])
@@ -207,6 +222,10 @@ def complete_stream(
                 yield f"data: {data}\n\n"
             elif "source" in line:
                 source_log_docs.append(line["source"])
+            elif "tool_calls" in line:
+                tool_calls = line["tool_calls"]
+                data = json.dumps({"type": "tool_calls", "tool_calls": tool_calls})
+                yield f"data: {data}\n\n"
 
         if isNoneDoc:
             for doc in source_log_docs:
@@ -217,7 +236,13 @@ def complete_stream(
         )
         if user_api_key is None:
             conversation_id = save_conversation(
-                conversation_id, question, response_full, source_log_docs, llm
+                conversation_id,
+                question,
+                response_full,
+                source_log_docs,
+                tool_calls,
+                llm,
+                index,
             )
             # send data.type = "end" to indicate that the stream has ended as json
             data = json.dumps({"type": "id", "id": str(conversation_id)})
@@ -240,13 +265,12 @@ def complete_stream(
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
-        print("\033[91merr", str(e), file=sys.stderr)
-        traceback.print_exc()
+        logger.error(f"Error in stream: {str(e)}")
+        logger.error(traceback.format_exc())
         data = json.dumps(
             {
                 "type": "error",
                 "error": "Please try again later. We apologize for any inconvenience.",
-                "error_exception": str(e),
             }
         )
         yield f"data: {data}\n\n"
@@ -282,6 +306,9 @@ class Stream(Resource):
             "isNoneDoc": fields.Boolean(
                 required=False, description="Flag indicating if no document is used"
             ),
+            "index": fields.Integer(
+                required=False, description="The position where query is to be updated"
+            ),
         },
     )
 
@@ -290,19 +317,21 @@ class Stream(Resource):
     def post(self):
         data = request.get_json()
         required_fields = ["question"]
-
+        if "index" in data:
+            required_fields = ["question", "conversation_id"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
         try:
             question = data["question"]
-            history = data.get("history", [])
-            history = json.loads(history)
+            history = limit_chat_history(
+                json.loads(data.get("history", [])), gpt_model=gpt_model
+            )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
-            
 
+            index = data.get("index", None)
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
@@ -324,7 +353,7 @@ class Stream(Resource):
                 source = {}
                 user_api_key = None
 
-            current_app.logger.info(
+            logger.info(
                 f"/stream - request_data: {data}, source: {source}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
@@ -351,30 +380,27 @@ class Stream(Resource):
                     conversation_id=conversation_id,
                     user_api_key=user_api_key,
                     isNoneDoc=data.get("isNoneDoc"),
+                    index=index,
                 ),
                 mimetype="text/event-stream",
             )
 
         except ValueError:
             message = "Malformed request body"
-            print("\033[91merr", str(message), file=sys.stderr)
+            logger.error(f"/stream - error: {message}")
             return Response(
                 error_stream_generate(message),
                 status=400,
                 mimetype="text/event-stream",
             )
         except Exception as e:
-            current_app.logger.error(
+            logger.error(
                 f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
-            message = e.args[0]
             status_code = 400
-            # Custom exceptions with two arguments, index 1 as status code
-            if len(e.args) >= 2:
-                status_code = e.args[1]
             return Response(
-                error_stream_generate(message),
+                error_stream_generate("Unknown error occurred"),
                 status=status_code,
                 mimetype="text/event-stream",
             )
@@ -421,14 +447,16 @@ class Answer(Resource):
     @api.doc(description="Provide an answer based on the question and retriever")
     def post(self):
         data = request.get_json()
-        required_fields = ["question"]       
+        required_fields = ["question"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
         try:
             question = data["question"]
-            history = data.get("history", [])
+            history = limit_chat_history(
+                json.loads(data.get("history", [])), gpt_model=gpt_model
+            )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             chunks = int(data.get("chunks", 2))
@@ -452,7 +480,7 @@ class Answer(Resource):
 
             prompt = get_prompt(prompt_id)
 
-            current_app.logger.info(
+            logger.info(
                 f"/api/answer - request_data: {data}, source: {source}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
@@ -469,13 +497,16 @@ class Answer(Resource):
                 user_api_key=user_api_key,
             )
 
-            source_log_docs = []
             response_full = ""
+            source_log_docs = []
+            tool_calls = []
             for line in retriever.gen():
                 if "source" in line:
                     source_log_docs.append(line["source"])
                 elif "answer" in line:
                     response_full += line["answer"]
+                elif "tool_calls" in line:
+                    tool_calls.append(line["tool_calls"])
 
             if data.get("isNoneDoc"):
                 for doc in source_log_docs:
@@ -488,7 +519,12 @@ class Answer(Resource):
             result = {"answer": response_full, "sources": source_log_docs}
             result["conversation_id"] = str(
                 save_conversation(
-                    conversation_id, question, response_full, source_log_docs, llm
+                    conversation_id,
+                    question,
+                    response_full,
+                    source_log_docs,
+                    tool_calls,
+                    llm,
                 )
             )
             retriever_params = retriever.get_params()
@@ -507,7 +543,7 @@ class Answer(Resource):
             )
 
         except Exception as e:
-            current_app.logger.error(
+            logger.error(
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
@@ -572,7 +608,7 @@ class Search(Resource):
                 source = {}
                 user_api_key = None
 
-            current_app.logger.info(
+            logger.info(
                 f"/api/answer - request_data: {data}, source: {source}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
@@ -610,7 +646,7 @@ class Search(Resource):
                     doc["source"] = "None"
 
         except Exception as e:
-            current_app.logger.error(
+            logger.error(
                 f"/api/search - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )

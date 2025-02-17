@@ -1,6 +1,7 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, useState } from 'react';
+import { forwardRef, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -10,21 +11,27 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import ChevronDown from '../assets/chevron-down.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
+import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
+import UserIcon from '../assets/user.png';
+import Accordion from '../components/Accordion';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
 import SpeakButton from '../components/TextToSpeechButton';
+import { useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+import { ToolCallsType } from './types';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -37,37 +44,118 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     sources?: { title: string; text: string; source: string }[];
+    toolCalls?: ToolCallsType[];
     retryBtn?: React.ReactElement;
+    questionNumber?: number;
+    handleUpdatedQuestionSubmission?: (
+      updatedquestion?: string,
+      updated?: boolean,
+      index?: number,
+    ) => void;
   }
 >(function ConversationBubble(
-  { message, type, className, feedback, handleFeedback, sources, retryBtn },
+  {
+    message,
+    type,
+    className,
+    feedback,
+    handleFeedback,
+    sources,
+    toolCalls,
+    retryBtn,
+    questionNumber,
+    handleUpdatedQuestionSubmission,
+  },
   ref,
 ) {
+  const { t } = useTranslation();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const [isLikeHovered, setIsLikeHovered] = useState(false);
+  const [isEditClicked, setIsEditClicked] = useState(false);
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
+  const [isQuestionHovered, setIsQuestionHovered] = useState(false);
+  const [editInputBox, setEditInputBox] = useState<string>('');
+
   const [isLikeClicked, setIsLikeClicked] = useState(false);
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const editableQueryRef = useRef<HTMLDivElement | null>(null);
 
+  useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
+  const handleEditClick = () => {
+    setIsEditClicked(false);
+    handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
+  };
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
       <div
-        ref={ref}
-        className={`flex flex-row-reverse self-end flex-wrap ${className}`}
+        onMouseEnter={() => setIsQuestionHovered(true)}
+        onMouseLeave={() => setIsQuestionHovered(false)}
       >
-        <Avatar className="mt-2 text-2xl" avatar="🧑‍💻"></Avatar>
         <div
-          style={{
-            wordBreak: 'break-word',
-          }}
-          className="ml-10 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+          ref={ref}
+          className={`flex flex-row-reverse justify-items-start  ${className}`}
         >
-          {message}
+          <Avatar
+            size="SMALL"
+            className="mt-2 text-2xl flex-shrink-0"
+            avatar={
+              <img className="rounded-full mr-1" width={30} src={UserIcon} />
+            }
+          />
+          {!isEditClicked && (
+            <>
+              <div
+                style={{
+                  wordBreak: 'break-word',
+                }}
+                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+              >
+                {message}
+              </div>
+              <button
+                onClick={() => {
+                  setIsEditClicked(true);
+                  setEditInputBox(message);
+                }}
+                className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+              >
+                <img src={Edit} alt="Edit" className="cursor-pointer" />
+              </button>
+            </>
+          )}
+          {isEditClicked && (
+            <div
+              ref={editableQueryRef}
+              className="w-full mx-auto bg-transparent p-4 rounded-lg flex flex-col gap-4"
+            >
+              <textarea
+                placeholder={t('conversation.edit.placeholder')}
+                onChange={(e) => setEditInputBox(e.target.value)}
+                rows={5}
+                value={editInputBox}
+                className="w-full resize-none border-2 border-black dark:border-white rounded-3xl px-4 py-3 text-base leading-relaxed text-black dark:bg-raisin-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#CDB5FF]"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] px-4 py-2 text-purple-30 text-sm font-medium"
+                  onClick={handleEditClick}
+                >
+                  {t('conversation.edit.update')}
+                </button>
+                <button
+                  className="px-4 py-2 text-purple-30 text-sm hover:underline"
+                  onClick={() => setIsEditClicked(false)}
+                >
+                  {t('conversation.edit.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -105,12 +193,14 @@ const ConversationBubble = forwardRef<
                 avatar={
                   <img
                     src={Sources}
-                    alt="Sources"
+                    alt={t('conversation.sources.title')}
                     className="h-full w-full object-fill"
                   />
                 }
               />
-              <p className="text-base font-semibold">Sources</p>
+              <p className="text-base font-semibold">
+                {t('conversation.sources.title')}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
               {Array.from({ length: 4 }).map((_, index) => (
@@ -137,12 +227,14 @@ const ConversationBubble = forwardRef<
                   avatar={
                     <img
                       src={Sources}
-                      alt="Sources"
+                      alt={t('conversation.sources.title')}
                       className="h-full w-full object-fill"
                     />
                   }
                 />
-                <p className="text-base font-semibold">Sources</p>
+                <p className="text-base font-semibold">
+                  {t('conversation.sources.title')}
+                </p>
               </div>
               <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -209,15 +301,20 @@ const ConversationBubble = forwardRef<
                       className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                       onClick={() => setIsSidebarOpen(true)}
                     >
-                      <p className="ellipsis-text h-22 text-xs">{`View ${
-                        sources?.length ? sources.length - 3 : 0
-                      } more`}</p>
+                      <p className="ellipsis-text h-22 text-xs">
+                        {t('conversation.sources.view_more', {
+                          count: sources?.length ? sources.length - 3 : 0,
+                        })}
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
             </div>
           )
+        )}
+        {toolCalls && toolCalls.length > 0 && (
+          <ToolCalls toolCalls={toolCalls} />
         )}
         <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
           <div className="my-2 flex flex-row items-center justify-center gap-3">
@@ -226,12 +323,14 @@ const ConversationBubble = forwardRef<
               avatar={
                 <img
                   src={DocsGPT3}
-                  alt="DocsGPT"
+                  alt={t('conversation.answer')}
                   className="h-full w-full object-cover"
                 />
               }
             />
-            <p className="text-base font-semibold">Answer</p>
+            <p className="text-base font-semibold">
+              {t('conversation.answer')}
+            </p>
           </div>
           <div
             className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
@@ -241,7 +340,7 @@ const ConversationBubble = forwardRef<
             }`}
           >
             <ReactMarkdown
-              className="fade-in whitespace-pre-wrap break-normal leading-normal"
+              className="fade-in whitespace-pre-wrap break-words leading-normal"
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
@@ -261,7 +360,7 @@ const ConversationBubble = forwardRef<
                       </SyntaxHighlighter>
                       <div
                         className={`absolute right-3 top-3 lg:invisible 
-                        ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
+                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
                       >
                         <CopyButton
                           text={String(children).replace(/\n$/, '')}
@@ -269,10 +368,7 @@ const ConversationBubble = forwardRef<
                       </div>
                     </div>
                   ) : (
-                    <code
-                      className={className ? className : 'whitespace-pre-line'}
-                      {...props}
-                    >
+                    <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
                       {children}
                     </code>
                   );
@@ -297,8 +393,8 @@ const ConversationBubble = forwardRef<
                 },
                 table({ children }) {
                   return (
-                    <div className="relative overflow-x-auto rounded-lg border">
-                      <table className="w-full text-left text-sm text-gray-700">
+                    <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
+                      <table className="w-full text-left text-gray-700 dark:text-bright-gray">
                         {children}
                       </table>
                     </div>
@@ -306,23 +402,23 @@ const ConversationBubble = forwardRef<
                 },
                 thead({ children }) {
                   return (
-                    <thead className="text-xs uppercase text-gray-900 [&>.table-row]:bg-gray-50">
+                    <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
                       {children}
                     </thead>
                   );
                 },
                 tr({ children }) {
                   return (
-                    <tr className="table-row border-b odd:bg-white even:bg-gray-50">
+                    <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
                       {children}
                     </tr>
                   );
                 },
-                td({ children }) {
-                  return <td className="px-6 py-3">{children}</td>;
-                },
                 th({ children }) {
                   return <th className="px-6 py-3">{children}</th>;
+                },
+                td({ children }) {
+                  return <td className="px-6 py-3">{children}</td>;
                 },
               }}
             >
@@ -332,7 +428,7 @@ const ConversationBubble = forwardRef<
         </div>
         <div className="my-2 ml-2 flex justify-start">
           <div
-            className={`relative mr-5  block items-center justify-center lg:invisible 
+            className={`relative mr-2  block items-center justify-center lg:invisible 
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
@@ -340,28 +436,29 @@ const ConversationBubble = forwardRef<
             </div>
           </div>
           <div
-            className={`relative mr-5 block items-center justify-center lg:invisible 
+            className={`relative mr-2 block items-center justify-center lg:invisible 
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
           >
             <div>
-              <SpeakButton text={message} /> {/* Add SpeakButton here */}
+              <SpeakButton text={message} />
             </div>
           </div>
           {type === 'ERROR' && (
-            <div className="relative mr-5 block items-center justify-center">
+            <div className="relative mr-2 block items-center justify-center">
               <div>{retryBtn}</div>
             </div>
           )}
           {handleFeedback && (
             <>
               <div
-                className={`relative mr-5 flex items-center justify-center ${
+                className={`relative mr-2 flex items-center justify-center ${
                   !isLikeClicked ? 'lg:invisible' : ''
                 } ${
                   feedback === 'LIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                }
+                ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
               >
                 <div>
                   <div
@@ -379,9 +476,15 @@ const ConversationBubble = forwardRef<
                       : 'fill-none  stroke-gray-4000'
                   }`}
                       onClick={() => {
-                        handleFeedback?.('LIKE');
-                        setIsLikeClicked(true);
-                        setIsDislikeClicked(false);
+                        if (feedback === undefined || feedback === null) {
+                          handleFeedback?.('LIKE');
+                          setIsLikeClicked(true);
+                          setIsDislikeClicked(false);
+                        } else if (feedback === 'LIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsLikeHovered(true)}
                       onMouseLeave={() => setIsLikeHovered(false)}
@@ -396,7 +499,7 @@ const ConversationBubble = forwardRef<
                   feedback === 'DISLIKE' || type !== 'ERROR'
                     ? 'group-hover:lg:visible'
                     : ''
-                }`}
+                } ${feedback === 'LIKE' && type !== 'ERROR' ? ' hidden' : ''} `}
               >
                 <div>
                   <div
@@ -413,9 +516,15 @@ const ConversationBubble = forwardRef<
                           : 'fill-none  stroke-gray-4000'
                       }`}
                       onClick={() => {
-                        handleFeedback?.('DISLIKE');
-                        setIsDislikeClicked(true);
-                        setIsLikeClicked(false);
+                        if (feedback === undefined || feedback === null) {
+                          handleFeedback?.('DISLIKE');
+                          setIsDislikeClicked(true);
+                          setIsLikeClicked(false);
+                        } else if (feedback === 'DISLIKE') {
+                          handleFeedback?.(null);
+                          setIsLikeClicked(false);
+                          setIsDislikeClicked(false);
+                        }
                       }}
                       onMouseEnter={() => setIsDislikeHovered(true)}
                       onMouseLeave={() => setIsDislikeHovered(false)}
@@ -469,7 +578,7 @@ function AllSources(sources: AllSourcesProps) {
               {source.source && source.source !== 'local' ? (
                 <img
                   src={Link}
-                  alt="Link"
+                  alt={'Link'}
                   className="h-3 w-3 cursor-pointer object-fill"
                   onClick={() =>
                     window.open(source.source, '_blank', 'noopener, noreferrer')
@@ -488,3 +597,88 @@ function AllSources(sources: AllSourcesProps) {
 }
 
 export default ConversationBubble;
+
+function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
+  const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
+  return (
+    <div className="mb-4 w-full flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <Avatar
+          className="h-[26px] w-[30px] text-xl"
+          avatar={
+            <img
+              src={Sources}
+              alt={'ToolCalls'}
+              className="h-full w-full object-fill"
+            />
+          }
+        />
+        <button
+          className="flex flex-row items-center gap-2"
+          onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
+        >
+          <p className="text-base font-semibold">Tool Calls</p>
+          <img
+            src={ChevronDown}
+            alt="ChevronDown"
+            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      {isToolCallsOpen && (
+        <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+          <div className="grid grid-cols-1 gap-2">
+            {toolCalls.map((toolCall, index) => (
+              <Accordion
+                key={`tool-call-${index}`}
+                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                className="w-full rounded-[20px] bg-gray-1000 dark:bg-gun-metal hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                titleClassName="px-6 py-2 text-sm font-semibold"
+                children={
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-col border border-silver dark:border-silver/20 rounded-2xl">
+                      <p className="flex flex-row items-center justify-between px-2 py-1 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Arguments
+                        </span>{' '}
+                        <CopyButton
+                          text={JSON.stringify(toolCall.arguments, null, 2)}
+                        />
+                      </p>
+                      <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
+                        <span
+                          className="text-black dark:text-gray-400 leading-[23px]"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {JSON.stringify(toolCall.arguments, null, 2)}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="flex flex-col border border-silver dark:border-silver/20 rounded-2xl">
+                      <p className="flex flex-row items-center justify-between px-2 py-1 text-sm font-semibold bg-black/10 dark:bg-[#191919] rounded-t-2xl break-words">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Response
+                        </span>{' '}
+                        <CopyButton
+                          text={JSON.stringify(toolCall.result, null, 2)}
+                        />
+                      </p>
+                      <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
+                        <span
+                          className="text-black dark:text-gray-400 leading-[23px]"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {JSON.stringify(toolCall.result, null, 2)}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

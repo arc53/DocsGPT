@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
-import ArrowLeft from '../assets/arrow-left.svg';
 import FileUpload from '../assets/file_upload.svg';
 import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
+import ToggleSwitch from '../components/ToggleSwitch';
 import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import {
@@ -17,29 +16,174 @@ import {
   setSourceDocs,
   selectSourceDocs,
 } from '../preferences/preferenceSlice';
+import WrapperModal from '../modals/WrapperModal';
+import {
+  IngestorType,
+  IngestorConfig,
+  IngestorFormSchemas,
+  FormField,
+} from './types/ingestor';
+import { IngestorDefaultConfigs } from '../upload/types/ingestor';
 
 function Upload({
-  modalState,
+  receivedFile = [],
   setModalState,
   isOnboarding,
+  renderTab = null,
+  close,
+  onSuccessfulUpload = () => undefined,
 }: {
-  modalState: ActiveState;
+  receivedFile: File[];
   setModalState: (state: ActiveState) => void;
   isOnboarding: boolean;
+  renderTab: string | null;
+  close: () => void;
+  onSuccessfulUpload?: () => void;
 }) {
-  const [docName, setDocName] = useState('');
-  const [urlName, setUrlName] = useState('');
-  const [url, setUrl] = useState('');
-  const [repoUrl, setRepoUrl] = useState(''); // P3f93
-  const [redditData, setRedditData] = useState({
-    client_id: '',
-    client_secret: '',
-    user_agent: '',
-    search_queries: [''],
-    number_posts: 10,
+  const [docName, setDocName] = useState(receivedFile[0]?.name);
+  const [remoteName, setRemoteName] = useState('');
+  const [files, setfiles] = useState<File[]>(receivedFile);
+  const [activeTab, setActiveTab] = useState<string | null>(renderTab);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+
+  const renderFormFields = () => {
+    const schema = IngestorFormSchemas[ingestor.type];
+    if (!schema) return null;
+
+    const generalFields = schema.filter((field) => !field.advanced);
+    const advancedFields = schema.filter((field) => field.advanced);
+
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
+          {generalFields.map((field: FormField) => renderField(field))}
+        </div>
+
+        {advancedFields.length > 0 && (
+          <div
+            className={`grid transition-all duration-300 ease-in-out ${
+              showAdvancedOptions
+                ? 'grid-rows-[1fr] opacity-100'
+                : 'grid-rows-[0fr] opacity-0'
+            }`}
+          >
+            <div className="overflow-hidden flex flex-col gap-4">
+              <hr className="my-4 border-[#C4C4C4]/40 border-[1px]" />
+              <div className="flex flex-col gap-4">
+                {advancedFields.map((field: FormField) => renderField(field))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderField = (field: FormField) => {
+    const isRequired = field.required ?? false;
+    switch (field.type) {
+      case 'string':
+        return (
+          <Input
+            key={field.name}
+            placeholder={field.label}
+            type="text"
+            name={field.name}
+            value={String(
+              ingestor.config[field.name as keyof typeof ingestor.config],
+            )}
+            onChange={(e) =>
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                e.target.value,
+              )
+            }
+            borderVariant="thin"
+            label={field.label}
+            required={isRequired}
+            colorVariant="gray"
+          />
+        );
+      case 'number':
+        return (
+          <Input
+            key={field.name}
+            placeholder={field.label}
+            type="number"
+            name={field.name}
+            value={String(
+              ingestor.config[field.name as keyof typeof ingestor.config],
+            )}
+            onChange={(e) =>
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                Number(e.target.value),
+              )
+            }
+            borderVariant="thin"
+            label={field.label}
+            required={isRequired}
+            colorVariant="gray"
+          />
+        );
+      case 'enum':
+        return (
+          <Dropdown
+            key={field.name}
+            options={field.options || []}
+            selectedValue={
+              field.options?.find(
+                (opt) =>
+                  opt.value ===
+                  ingestor.config[field.name as keyof typeof ingestor.config],
+              ) || null
+            }
+            onSelect={(selected: { label: string; value: string }) => {
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                selected.value,
+              );
+            }}
+            size="w-full"
+            rounded="3xl"
+            placeholder={field.label}
+            border="border"
+            borderColor="gray-5000"
+          />
+        );
+      case 'boolean':
+        return (
+          <ToggleSwitch
+            key={field.name}
+            label={field.label}
+            checked={Boolean(
+              ingestor.config[field.name as keyof typeof ingestor.config],
+            )}
+            onChange={(checked: boolean) => {
+              handleIngestorChange(
+                field.name as keyof IngestorConfig['config'],
+                checked,
+              );
+            }}
+            className="mt-2"
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  // New unified ingestor state
+  const [ingestor, setIngestor] = useState<IngestorConfig>(() => {
+    const defaultType: IngestorType = 'crawler';
+    const defaultConfig = IngestorDefaultConfigs[defaultType];
+    return {
+      type: defaultType,
+      name: defaultConfig.name,
+      config: defaultConfig.config,
+    };
   });
-  const [activeTab, setActiveTab] = useState<string | null>(null);
-  const [files, setfiles] = useState<File[]>([]);
+
   const [progress, setProgress] = useState<{
     type: 'UPLOAD' | 'TRAINING';
     percentage: number;
@@ -50,18 +194,12 @@ function Upload({
   const { t } = useTranslation();
   const setTimeoutRef = useRef<number | null>();
 
-  const urlOptions: { label: string; value: string }[] = [
+  const urlOptions: { label: string; value: IngestorType }[] = [
     { label: 'Crawler', value: 'crawler' },
-    // { label: 'Sitemap', value: 'sitemap' },
     { label: 'Link', value: 'url' },
+    { label: 'GitHub', value: 'github' },
     { label: 'Reddit', value: 'reddit' },
-    { label: 'GitHub', value: 'github' }, // P3f93
   ];
-
-  const [urlType, setUrlType] = useState<{ label: string; value: string }>({
-    label: 'Crawler',
-    value: 'crawler',
-  });
 
   const sourceDocs = useSelector(selectSourceDocs);
   useEffect(() => {
@@ -110,12 +248,14 @@ function Upload({
       <div className="mt-5 flex flex-col items-center gap-2 text-gray-2000 dark:text-bright-gray">
         <p className="text-gra text-xl tracking-[0.15px]">
           {isTraining &&
-            (progress?.percentage === 100 ? 'Training completed' : title)}
+            (progress?.percentage === 100
+              ? t('modals.uploadDoc.progress.completed')
+              : title)}
           {!isTraining && title}
         </p>
-        <p className="text-sm">This may take several minutes</p>
+        <p className="text-sm">{t('modals.uploadDoc.progress.wait')}</p>
         <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
-          Over the token limit, please consider uploading smaller document
+          {t('modals.uploadDoc.progress.tokenLimit')}
         </p>
         {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
         <ProgressBar progressPercent={progress?.percentage || 0} />
@@ -145,7 +285,7 @@ function Upload({
   }
 
   function UploadProgress() {
-    return <Progress title="Upload is in progress"></Progress>;
+    return <Progress title={t('modals.uploadDoc.progress.upload')}></Progress>;
   }
 
   function TrainingProgress() {
@@ -213,6 +353,7 @@ function Upload({
                   setfiles([]);
                   setProgress(undefined);
                   setModalState('INACTIVE');
+                  onSuccessfulUpload?.();
                 }
               } else if (data.status == 'PROGRESS') {
                 setProgress(
@@ -236,7 +377,7 @@ function Upload({
     }, [progress, dispatch]);
     return (
       <Progress
-        title="Training is in progress"
+        title={t('modals.uploadDoc.progress.training')}
         isCancellable={progress?.percentage === 100}
         isFailed={progress?.failed === true}
         isTraining={true}
@@ -246,7 +387,7 @@ function Upload({
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setfiles(acceptedFiles);
-    setDocName(acceptedFiles[0]?.name);
+    setDocName(acceptedFiles[0]?.name || '');
   }, []);
 
   const doNothing = () => undefined;
@@ -256,6 +397,7 @@ function Upload({
     files.forEach((file) => {
       formData.append('file', file);
     });
+
     formData.append('name', docName);
     formData.append('user', 'local');
     const apiHost = import.meta.env.VITE_API_HOST;
@@ -276,38 +418,58 @@ function Upload({
 
   const uploadRemote = () => {
     const formData = new FormData();
-    formData.append('name', urlName);
+    formData.append('name', remoteName);
     formData.append('user', 'local');
-    if (urlType !== null) {
-      formData.append('source', urlType?.value);
-    }
-    formData.append('data', url);
-    if (
-      redditData.client_id.length > 0 &&
-      redditData.client_secret.length > 0
-    ) {
-      formData.set('name', 'other');
-      formData.set('data', JSON.stringify(redditData));
-    }
-    if (urlType.value === 'github') {
-      formData.append('repo_url', repoUrl); // Pdeac
-    }
-    const apiHost = import.meta.env.VITE_API_HOST;
+    formData.append('source', ingestor.type);
+
+    const defaultConfig = IngestorDefaultConfigs[ingestor.type].config;
+
+    const mergedConfig = { ...defaultConfig, ...ingestor.config };
+    const filteredConfig = Object.entries(mergedConfig).reduce(
+      (acc, [key, value]) => {
+        const field = IngestorFormSchemas[ingestor.type].find(
+          (f) => f.name === key,
+        );
+        // Include the field if:
+        // 1. It's required, or
+        // 2. It's optional and has a non-empty value
+        if (
+          field?.required ||
+          (value !== undefined && value !== null && value !== '')
+        ) {
+          acc[key] = value;
+        }
+        return acc;
+      },
+      {} as Record<string, any>,
+    );
+
+    formData.append('data', JSON.stringify(filteredConfig));
+
+    const apiHost: string = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', (event) => {
-      const progress = +((event.loaded / event.total) * 100).toFixed(2);
-      setProgress({ type: 'UPLOAD', percentage: progress });
+    xhr.upload.addEventListener('progress', (event: ProgressEvent) => {
+      if (event.lengthComputable) {
+        const progressPercentage = +(
+          (event.loaded / event.total) *
+          100
+        ).toFixed(2);
+        setProgress({ type: 'UPLOAD', percentage: progressPercentage });
+      }
     });
     xhr.onload = () => {
-      const { task_id } = JSON.parse(xhr.responseText);
-      setTimeoutRef.current = setTimeout(() => {
-        setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
+      const response = JSON.parse(xhr.responseText) as { task_id: string };
+      setTimeoutRef.current = window.setTimeout(() => {
+        setProgress({
+          type: 'TRAINING',
+          percentage: 0,
+          taskId: response.task_id,
+        });
       }, 3000);
     };
-    xhr.open('POST', `${apiHost + '/api/remote'}`);
+    xhr.open('POST', `${apiHost}/api/remote`);
     xhr.send(formData);
   };
-
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
@@ -332,23 +494,68 @@ function Upload({
       ],
       'application/vnd.openxmlformats-officedocument.presentationml.presentation':
         ['.pptx'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpeg'],
+      'image/jpg': ['.jpg'],
     },
   });
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  const isUploadDisabled = (): boolean => {
+    if (activeTab === 'file') {
+      return !docName?.trim() || files.length === 0;
+    }
+    if (activeTab === 'remote') {
+      if (!remoteName?.trim()) {
+        return true;
+      }
+      const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
+      for (const field of formFields) {
+        if (field.required) {
+          // Validate only required fields
+          const value =
+            ingestor.config[field.name as keyof typeof ingestor.config];
+
+          if (typeof value === 'string' && !value.trim()) {
+            return true;
+          }
+
+          if (
+            typeof value === 'number' &&
+            (value === null || value === undefined || value <= 0)
+          ) {
+            return true;
+          }
+
+          if (typeof value === 'boolean' && value === undefined) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    return true;
+  };
+  const handleIngestorChange = (
+    key: keyof IngestorConfig['config'],
+    value: string | number | boolean,
   ) => {
-    const { name, value } = e.target;
-    if (name === 'search_queries' && value.length > 0) {
-      setRedditData({
-        ...redditData,
-        [name]: value.split(',').map((item) => item.trim()),
-      });
-    } else
-      setRedditData({
-        ...redditData,
-        [name]: name === 'number_posts' ? parseInt(value) : value,
-      });
+    setIngestor((prevState) => ({
+      ...prevState,
+      config: {
+        ...prevState.config,
+        [key]: value,
+      },
+    }));
+  };
+  const handleIngestorTypeChange = (type: IngestorType) => {
+    //Updates the ingestor seleced in dropdown and resets the config to the default config for that type
+    const defaultConfig = IngestorDefaultConfigs[type];
+
+    setIngestor({
+      type,
+      name: defaultConfig.name,
+      config: defaultConfig.config,
+    });
   };
 
   let view;
@@ -416,238 +623,116 @@ function Upload({
             <p className="mb-0 text-xs italic text-gray-4000">
               {t('modals.uploadDoc.info')}
             </p>
-            <div className="mt-0">
+            <div className="mt-0 max-w-full">
               <p className="mb-[14px] font-medium text-eerie-black dark:text-light-gray">
                 {t('modals.uploadDoc.uploadedFiles')}
               </p>
-              {files.map((file) => (
-                <p key={file.name} className="text-gray-6000">
-                  {file.name}
-                </p>
-              ))}
-              {files.length === 0 && (
-                <p className="text-gray-6000 dark:text-light-gray">
-                  {t('none')}
-                </p>
-              )}
+              <div className="max-w-full overflow-hidden">
+                {files.map((file) => (
+                  <p
+                    key={file.name}
+                    className="text-gray-6000 truncate overflow-hidden text-ellipsis"
+                    title={file.name}
+                  >
+                    {file.name}
+                  </p>
+                ))}
+                {files.length === 0 && (
+                  <p className="text-gray-6000 dark:text-light-gray">
+                    {t('none')}
+                  </p>
+                )}
+              </div>
             </div>
           </>
         )}
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              border="border"
+              border="border-2"
               options={urlOptions}
-              selectedValue={urlType}
-              onSelect={(value: { label: string; value: string }) =>
-                setUrlType(value)
+              selectedValue={
+                urlOptions.find((opt) => opt.value === ingestor.type) || null
+              }
+              onSelect={(selected: { label: string; value: string }) =>
+                handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
               rounded="3xl"
             />
-            {urlType.label !== 'Reddit' && urlType.label !== 'GitHub' ? (
-              <>
-                <Input
-                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
-                  type="text"
-                  value={urlName}
-                  onChange={(e) => setUrlName(e.target.value)}
-                  borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.name')}
-                  </span>
-                </div>
-                <Input
-                  placeholder={t('modals.uploadDoc.urlLink')}
-                  type="text"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.link')}
-                  </span>
-                </div>
-              </>
-            ) : urlType.label === 'GitHub' ? ( // P3f93
-              <>
-                <Input
-                  placeholder={`Enter ${t('modals.uploadDoc.name')}`}
-                  type="text"
-                  value={urlName}
-                  onChange={(e) => setUrlName(e.target.value)}
-                  borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.name')}
-                  </span>
-                </div>
-                <Input
-                  placeholder={t('modals.uploadDoc.repoUrl')}
-                  type="text"
-                  value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  borderVariant="thin"
-                ></Input>
-                <div className="relative bottom-12 left-2 mt-[-20px]">
-                  <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                    {t('modals.uploadDoc.repoUrl')}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col gap-1 mt-2">
-                <div>
-                  <Input
-                    placeholder="Enter client ID"
-                    type="text"
-                    name="client_id"
-                    value={redditData.client_id}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.id')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder="Enter client secret"
-                    type="text"
-                    name="client_secret"
-                    value={redditData.client_secret}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.secret')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder="Enter user agent"
-                    type="text"
-                    name="user_agent"
-                    value={redditData.user_agent}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.agent')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder="Enter search queries"
-                    type="text"
-                    name="search_queries"
-                    value={redditData.search_queries}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.searchQueries')}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <Input
-                    placeholder="Enter number of posts"
-                    type="number"
-                    name="number_posts"
-                    value={redditData.number_posts}
-                    onChange={handleChange}
-                    borderVariant="thin"
-                  ></Input>
-                  <div className="relative bottom-[52px] left-2">
-                    <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                      {t('modals.uploadDoc.reddit.numberOfPosts')}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            {/* Dynamically render form fields based on schema */}
+
+            <Input
+              type="text"
+              colorVariant="gray"
+              value={remoteName}
+              onChange={(e) => setRemoteName(e.target.value)}
+              borderVariant="thin"
+              placeholder="Name"
+              label="Name"
+              required={true}
+            />
+            {renderFormFields()}
+            {IngestorFormSchemas[ingestor.type].some(
+              (field) => field.advanced,
+            ) && (
+              <button
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                className="text-purple-30 text-sm font-normal pl-0 py-2 bg-transparent hover:cursor-pointer text-left"
+              >
+                {showAdvancedOptions
+                  ? t('modals.uploadDoc.hideAdvanced')
+                  : t('modals.uploadDoc.showAdvanced')}
+              </button>
             )}
           </>
         )}
-        {activeTab && (
-          <div className="flex w-full justify-between flex-row-reverse">
-            {activeTab === 'file' ? (
-              <button
-                onClick={uploadFile}
-                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 text-sm text-white ${
-                  files.length > 0 && docName.trim().length > 0
-                    ? 'hover:bg-[#6F3FD1]'
-                    : 'bg-opacity-75 text-opacity-80'
-                } py-2 px-6`}
-                disabled={
-                  (files.length === 0 || docName.trim().length === 0) &&
-                  activeTab === 'file'
-                }
-              >
-                {t('modals.uploadDoc.train')}
-              </button>
-            ) : (
-              <button
-                onClick={uploadRemote}
-                className={`ml-2 cursor-pointer rounded-3xl bg-purple-30 py-2 px-6 text-sm text-white hover:bg-[#6F3FD1]`}
-              >
-                {t('modals.uploadDoc.train')}
-              </button>
-            )}
+        <div className="flex justify-between">
+          {activeTab && (
             <button
-              onClick={() => {
-                setDocName('');
-                setfiles([]);
-                setActiveTab(null);
-              }}
-              className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50 flex items-center gap-1"
+              onClick={() => setActiveTab(null)}
+              className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:bg-purple-taupe dark:text-silver"
             >
-              <img
-                src={ArrowLeft}
-                className="w-[10px] h-[10px] dark:filter dark:invert"
-              />
               {t('modals.uploadDoc.back')}
             </button>
-          </div>
-        )}
+          )}
+          {activeTab && (
+            <button
+              onClick={() => {
+                if (activeTab === 'file') {
+                  uploadFile();
+                } else {
+                  uploadRemote();
+                }
+              }}
+              disabled={isUploadDisabled()}
+              className={`rounded-3xl px-4 py-2 font-medium ${
+                isUploadDisabled()
+                  ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                  : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
+              }`}
+            >
+              {t('modals.uploadDoc.train')}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <article
-      className={`${
-        modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } absolute z-30 bg-gray-alpha flex items-center justify-center h-[calc(100vh-4rem)] md:h-screen w-full`}
+    <WrapperModal
+      isPerformingTask={progress !== undefined && progress.percentage < 100}
+      close={() => {
+        close();
+        setDocName('');
+        setfiles([]);
+        setModalState('INACTIVE');
+        setActiveTab(null);
+      }}
     >
-      <article className="relative mx-auto flex w-[90vw] max-w-lg  flex-col gap-4 rounded-lg bg-white p-6 shadow-lg dark:bg-outer-space h-fit-content">
-        {!isOnboarding && !progress && (
-          <button
-            className="absolute top-4 right-4 m-1 w-3"
-            onClick={() => {
-              setDocName('');
-              setfiles([]);
-              setModalState('INACTIVE');
-              setActiveTab(null);
-            }}
-          >
-            <img className="filter dark:invert" src={Exit} />
-          </button>
-        )}
-        {view}
-      </article>
-    </article>
+      {view}
+    </WrapperModal>
   );
 }
 

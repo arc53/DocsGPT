@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
@@ -6,15 +7,17 @@ import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { APIKeyData, LogData } from './types';
 import CoppyButton from '../components/CopyButton';
+import { useLoaderState } from '../hooks';
 
 export default function Logs() {
+  const { t } = useTranslation();
   const [chatbots, setChatbots] = useState<APIKeyData[]>([]);
   const [selectedChatbot, setSelectedChatbot] = useState<APIKeyData | null>();
   const [logs, setLogs] = useState<LogData[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [loadingChatbots, setLoadingChatbots] = useState(true);
-  const [loadingLogs, setLoadingLogs] = useState(true);
+  const [loadingChatbots, setLoadingChatbots] = useLoaderState(true);
+  const [loadingLogs, setLoadingLogs] = useLoaderState(true);
 
   const fetchChatbots = async () => {
     setLoadingChatbots(true);
@@ -64,13 +67,16 @@ export default function Logs() {
   return (
     <div className="mt-12">
       <div className="flex flex-col items-start">
-        <div className="flex flex-col gap-3">
-          <p className="font-bold text-jet dark:text-bright-gray">
-            Filter by chatbot
-          </p>
-          {loadingChatbots ? (
-            <SkeletonLoader />
-          ) : (
+        {loadingChatbots ? (
+          <SkeletonLoader component="dropdown" />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <label
+              id="chatbot-filter-label"
+              className="font-bold text-jet dark:text-bright-gray"
+            >
+              {t('settings.logs.filterByChatbot')}
+            </label>
             <Dropdown
               size="w-[55vw] sm:w-[360px]"
               options={[
@@ -78,9 +84,9 @@ export default function Logs() {
                   label: chatbot.name,
                   value: chatbot.id,
                 })),
-                { label: 'None', value: '' },
+                { label: t('settings.logs.none'), value: '' },
               ]}
-              placeholder="Select chatbot"
+              placeholder={t('settings.logs.selectChatbot')}
               onSelect={(chatbot: { label: string; value: string }) => {
                 setSelectedChatbot(
                   chatbots.find((item) => item.id === chatbot.value),
@@ -99,16 +105,12 @@ export default function Logs() {
               rounded="3xl"
               border="border"
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-8">
-        {loadingLogs ? (
-          <SkeletonLoader component={'logs'} />
-        ) : (
-          <LogsTable logs={logs} setPage={setPage} />
-        )}
+        <LogsTable logs={logs} setPage={setPage} loading={loadingLogs} />
       </div>
     </div>
   );
@@ -117,9 +119,11 @@ export default function Logs() {
 type LogsTableProps = {
   logs: LogData[];
   setPage: React.Dispatch<React.SetStateAction<number>>;
+  loading: boolean;
 };
 
-function LogsTable({ logs, setPage }: LogsTableProps) {
+function LogsTable({ logs, setPage, loading }: LogsTableProps) {
+  const { t } = useTranslation();
   const observerRef = useRef<any>();
   const firstObserver = useCallback((node: HTMLDivElement) => {
     if (observerRef.current) {
@@ -134,14 +138,14 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
     <div className="logs-table border rounded-2xl h-[55vh] w-full overflow-hidden border-silver dark:border-silver/40">
       <div className="h-8 bg-black/10 dark:bg-chinese-black flex flex-col items-start justify-center">
         <p className="px-3 text-xs dark:text-gray-6000">
-          API generated / chatbot conversations
+          {t('settings.logs.tableHeader')}
         </p>
       </div>
       <div
         ref={observerRef}
         className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-px"
       >
-        {logs.map((log, index) => {
+        {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
               <div ref={firstObserver} key={index}>
@@ -150,12 +154,14 @@ function LogsTable({ logs, setPage }: LogsTableProps) {
             );
           } else return <Log key={index} log={log} />;
         })}
+        {loading && <SkeletonLoader component="logs" />}
       </div>
     </div>
   );
 }
 
 function Log({ log }: { log: LogData }) {
+  const { t } = useTranslation();
   const logLevelColor = {
     info: 'text-green-500',
     error: 'text-red-500',
@@ -167,7 +173,7 @@ function Log({ log }: { log: LogData }) {
       <summary className="flex flex-row items-center gap-2 text-gray-900 cursor-pointer p-2 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
         <img
           src={ChevronRight}
-          alt="chevron-right"
+          alt="Expand log entry"
           className="w-3 h-3 transition duration-300 group-open:rotate-90"
         />
         <span className="flex flex-row gap-2">

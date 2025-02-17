@@ -76,7 +76,7 @@ class TestSagemakerAPILLM(unittest.TestCase):
 
             with patch.object(self.sagemaker.runtime, 'invoke_endpoint_with_response_stream', 
                             return_value=self.response) as mock_invoke_endpoint:
-                output = list(self.sagemaker.gen_stream(None, self.messages))
+                output = list(self.sagemaker.gen_stream(None, self.messages, tools=None))
                 mock_invoke_endpoint.assert_called_once_with(
                     EndpointName=self.sagemaker.endpoint,
                     ContentType='application/json',

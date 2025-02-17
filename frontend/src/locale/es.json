@@ -1,5 +1,5 @@
 {
-  "language": "Spanish",
+  "language": "Español",
   "chat": "Chat",
   "chats": "Chats",
   "newChat": "Nuevo Chat",
@@ -8,7 +8,7 @@
   "inputPlaceholder": "Escribe tu mensaje aquí...",
   "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
   "sourceDocs": "Fuente",
-  "none": "Nada",
+  "none": "Ninguno",
   "cancel": "Cancelar",
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
@@ -36,29 +36,43 @@
     "general": {
       "label": "General",
       "selectTheme": "Seleccionar Tema",
-      "light": "de luz",
-      "dark": "oscura",
+      "light": "Claro",
+      "dark": "Oscuro",
       "selectLanguage": "Seleccionar Idioma",
-      "chunks": "Trozos procesados por consulta",
+      "chunks": "Fragmentos procesados por consulta",
       "prompt": "Prompt Activo",
-      "deleteAllLabel": "Eliminar toda la Conversación",
+      "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllBtn": "Eliminar todo",
       "addNew": "Agregar Nuevo",
-      "convHistory": "Historia conversacional",
-      "none": "ninguno",
+      "convHistory": "Historial de conversaciones",
+      "none": "Ninguno",
       "low": "Bajo",
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "predeterminada"
+      "default": "Predeterminado"
     },
     "documents": {
+      "title": "Esta tabla contiene todos los documentos que están disponibles para ti y los que has subido",
       "label": "Documentos",
       "name": "Nombre del Documento",
-      "date": "Fecha Vector",
+      "date": "Fecha de Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
-      "noData": "No hay documentos existentes"
+      "noData": "No hay documentos existentes",
+      "searchPlaceholder": "Buscar...",
+      "addNew": "Agregar Nuevo",
+      "preLoaded": "Precargado",
+      "private": "Privado",
+      "sync": "Sincronizar",
+      "syncFrequency": {
+        "never": "Nunca",
+        "daily": "Diario",
+        "weekly": "Semanal",
+        "monthly": "Mensual"
+      },
+      "actions": "Acciones",
+      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -66,27 +80,58 @@
       "key": "Clave de API",
       "sourceDoc": "Documento Fuente",
       "createNew": "Crear Nuevo",
-      "noData": "No hay chatbots existentes"
+      "noData": "No hay chatbots existentes",
+      "deleteConfirmation": "¿Estás seguro de que quieres eliminar la clave API '{{name}}'?"
     },
     "analytics": {
-      "label": "Analítica"
+      "label": "Analítica",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "filterOptions": {
+        "hour": "Hora",
+        "last24Hours": "24 Horas",
+        "last7Days": "7 Días",
+        "last15Days": "15 Días",
+        "last30Days": "30 Días"
+      },
+      "messages": "Mensajes",
+      "tokenUsage": "Uso de Tokens",
+      "feedback": "Retroalimentación",
+      "filterPlaceholder": "Filtrar",
+      "none": "Ninguno",
+      "positiveFeedback": "Retroalimentación Positiva",
+      "negativeFeedback": "Retroalimentación Negativa"
     },
     "logs": {
-      "label": "Registros"
+      "label": "Registros",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "none": "Ninguno",
+      "tableHeader": "Conversaciones generadas por API / chatbot"
+    },
+    "tools": {
+      "label": "Herramientas",
+      "searchPlaceholder": "Buscar...",
+      "addTool": "Agregar Herramienta",
+      "noToolsFound": "No se encontraron herramientas",
+      "selectToolSetup": "Seleccione una herramienta para configurar",
+      "settingsIconAlt": "Icono de configuración",
+      "configureToolAria": "Configurar {toolName}",
+      "toggleToolAria": "Alternar {toolName}"
     }
   },
   "modals": {
     "uploadDoc": {
       "label": "Subir nuevo documento",
-      "select": "Elija cómo cargar su documento en DocsGPT",
+      "select": "Elige cómo cargar tu documento en DocsGPT",
       "file": "Subir desde el dispositivo",
       "back": "Atrás",
-      "wait": "Espere por favor ...",
+      "wait": "Por favor espera ...",
       "remote": "Recoger desde un sitio web",
-      "start": "Empezar a chatear",
+      "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, suba archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25 MB",
+      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",
@@ -94,48 +139,106 @@
       "urlLink": "Enlace URL",
       "repoUrl": "URL del Repositorio",
       "reddit": {
-        "id": "ID de Cliente",
-        "secret": "Secreto de Cliente",
-        "agent": "Agente de Usuario",
-        "searchQueries": "Consultas de Búsqueda",
-        "numberOfPosts": "Número de publicaciones"
-      }
+        "id": "ID del Cliente",
+        "secret": "Secreto del Cliente",
+        "agent": "Agente de usuario",
+        "searchQueries": "Consultas de búsqueda",
+        "numberOfPosts": "Número de publicaciones",
+        "addQuery": "Agregar Consulta"
+      },
+      "drag": {
+        "title": "Subir archivo fuente",
+        "description": "Arrastra tu archivo aquí para agregarlo como fuente"
+      },
+      "progress": {
+        "upload": "Subida en progreso",
+        "training": "Entrenamiento en progreso",
+        "completed": "Entrenamiento completado",
+        "wait": "Esto puede tardar varios minutos",
+        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño"
+      },
+      "showAdvanced": "Mostrar opciones avanzadas",
+      "hideAdvanced": "Ocultar opciones avanzadas"
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
       "apiKeyName": "Nombre de la Clave de API",
       "chunks": "Fragmentos procesados por consulta",
-      "prompt": "Seleccione el prompt activo",
+      "prompt": "Selecciona el prompt activo",
       "sourceDoc": "Documento Fuente",
       "create": "Crear"
     },
     "saveKey": {
-      "note": "Por favor, guarde su Clave",
-      "disclaimer": "Esta es la única vez que se mostrará su clave.",
+      "note": "Por favor, guarda tu Clave",
+      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
       "copy": "Copiar",
       "copied": "Copiado",
       "confirm": "He guardado la Clave"
     },
     "deleteConv": {
-      "confirm": "¿Está seguro de que desea eliminar todas las conversaciones?",
+      "confirm": "¿Estás seguro de que deseas eliminar todas las conversaciones?",
       "delete": "Eliminar"
     },
     "shareConv": {
       "label": "Crear una página pública para compartir",
-      "note": "El documento original, la información personal y las conversaciones posteriores permanecerán privadas",
+      "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
       "create": "Crear",
-      "option": "Permitir a los usuarios realizar más consultas."
+      "option": "Permitir a los usuarios realizar más consultas"
+    },
+    "configTool": {
+      "title": "Configuración de la Herramienta",
+      "type": "Tipo",
+      "apiKeyLabel": "Clave API / OAuth",
+      "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
+      "addButton": "Agregar Herramienta",
+      "closeButton": "Cerrar"
+    },
+    "prompts": {
+      "addPrompt": "Agregar Prompt",
+      "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
+      "editPrompt": "Editar Prompt",
+      "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
+      "promptName": "Nombre del Prompt",
+      "promptText": "Texto del Prompt",
+      "save": "Guardar",
+      "nameExists": "El nombre ya existe"
     }
   },
   "sharedConv": {
     "subtitle": "Creado con",
     "button": "Comienza con DocsGPT",
-    "meta": "DocsGPT utiliza GenAI, por favor revise la información crítica utilizando fuentes."
+    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes."
   },
   "convTile": {
     "share": "Compartir",
     "delete": "Eliminar",
     "rename": "Renombrar",
     "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+  },
+  "pagination": {
+    "rowsPerPage": "Filas por página",
+    "pageOf": "Página {{currentPage}} de {{totalPages}}",
+    "firstPage": "Primera página",
+    "previousPage": "Página anterior",
+    "nextPage": "Página siguiente",
+    "lastPage": "Última página"
+  },
+  "conversation": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "speak": "Hablar",
+    "answer": "Respuesta",
+    "edit": {
+      "update": "Actualizar",
+      "cancel": "Cancelar",
+      "placeholder": "Ingrese la consulta actualizada..."
+    },
+    "sources": {
+      "title": "Fuentes",
+      "text": "Texto fuente",
+      "link": "Enlace fuente",
+      "view_more": "Ver {{count}} más fuentes"
+    },
+    "retry": "Reintentar"
   }
 }

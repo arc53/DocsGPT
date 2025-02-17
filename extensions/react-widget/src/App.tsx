@@ -1,11 +1,11 @@
 import React from "react"
 import {DocsGPTWidget} from "./components/DocsGPTWidget"
-const App = () => {
+import {SearchBar} from "./components/SearchBar"
+export const App = () => {
   return (
     <div>
+      <SearchBar/>
       <DocsGPTWidget/>
     </div>
   )
 }
-
-export default App
