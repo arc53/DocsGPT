@@ -37,8 +37,7 @@ export interface WidgetProps {
   buttonText?:string;
   buttonBg?:string;
   collectFeedback?:boolean;
-  deafultOpen?: boolean;
-  showSources?: boolean
+  showSources?: boolean;
   defaultOpen?: boolean;
 }
 export interface WidgetCoreProps extends WidgetProps { 
