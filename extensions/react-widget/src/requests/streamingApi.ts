@@ -1,8 +1,10 @@
 import { FEEDBACK } from "@/types";
+
 interface HistoryItem {
   prompt: string;
   response?: string;
 }
+
 interface FetchAnswerStreamingProps {
   question?: string;
   apiKey?: string;
@@ -12,12 +14,14 @@ interface FetchAnswerStreamingProps {
   apiHost?: string;
   onEvent?: (event: MessageEvent) => void;
 }
+
 interface FeedbackPayload {
   question: string;
   answer: string;
   apikey: string;
   feedback: FEEDBACK;
 }
+
 export function fetchAnswerStreaming({
   question = '',
   apiKey = '',
@@ -46,7 +50,7 @@ export function fetchAnswerStreaming({
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-        let counterrr = 0;
+        let counter = 0;
         const processStream = ({
           done,
           value,
@@ -56,7 +60,7 @@ export function fetchAnswerStreaming({
             return;
           }
 
-          counterrr += 1;
+          counter += 1;
 
           const chunk = decoder.decode(value);
 
