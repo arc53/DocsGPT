@@ -35,7 +35,7 @@ const themes = {
       bg: "#F6F6F6"
     }
   }
-}
+};
 
 const sizesConfig = {
   small: { size: 'small', width: '320px', height: '400px' },
@@ -274,7 +274,7 @@ const Conversation = styled.div`
   text-align: left;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #4a4a4a transparent; /* thumb color track color */
+  scrollbar-color: ${props => props.theme.secondary.bg} transparent; /* thumb color track color */
 `;
 const Feedback = styled.div`
   background-color: transparent;
@@ -470,6 +470,75 @@ const Tagline = styled.div`
 `;
 
 
+const SourcesList = styled.div`
+  display: flex;
+  margin:12px 0px;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const SourceLink = styled.a`
+  color: ${props => props.theme.primary.text};
+  text-decoration: none;
+  background: ${props => props.theme.secondary.bg};
+  padding: 4px 12px;
+  border-radius: 85px;
+  font-size: 14px;
+  transition: opacity 0.2s ease;
+  display: inline-block;
+  text-align: center;
+  max-width: 25%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+  
+  &:hover {
+    opacity: 0.8;
+  }
+`;
+
+const ExtraButton = styled.button`
+  color: #9971EC;
+  background: transparent;
+  border-radius: 85px;
+  padding: 4px 12px;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  text-align: center;
+  height:auto;
+  &:hover {
+    opacity: 0.8;
+  }
+`;
+const SourcesComponent = ({ sources }: { sources: Array<{ source: string; title: string }> }) => {
+  const [showAll, setShowAll] = React.useState(false);
+  const visibleSources = showAll ? sources : sources.slice(0, 3);
+  const extraCount = sources.length - 3;
+  
+  return (
+    <SourcesList>
+      {visibleSources.map((source, idx) => (
+        <SourceLink 
+          key={idx} 
+          href={source.source} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          title={source.title}
+        >
+          {source.title}
+        </SourceLink>
+      ))}
+      {sources.length > 3 && (
+        <ExtraButton onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Show less" : `+ ${extraCount} more`}
+        </ExtraButton>
+      )}
+    </SourcesList>
+  );
+};
 
 const Hero = ({ title, description, theme }: { title: string, description: string, theme: string }) => {
   return (
@@ -524,7 +593,8 @@ export const DocsGPTWidget = (props: WidgetProps) => {
 }
 export const WidgetCore = ({
   apiHost = 'https://gptcloud.arc53.com',
-  apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
+  apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
+  //apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -534,8 +604,9 @@ export const WidgetCore = ({
   theme = 'dark',
   collectFeedback = true,
   isOpen = false,
-  prefilledQuery = "",
-  handleClose
+  showSources = true,
+  handleClose,
+  prefilledQuery = ''
 }: WidgetCoreProps) => {
   const [prompt, setPrompt] = React.useState<string>("");
   const [mounted, setMounted] = React.useState(false);
@@ -638,8 +709,10 @@ export const WidgetCore = ({
               setQueries(updatedQueries);
               setStatus('idle')
             }
-            else if (data.type === 'source') {
-              // handle the case where data type === 'source'
+            else if (data.type === 'source' && showSources) {
+              const updatedQueries = [...queries];
+              updatedQueries[updatedQueries.length - 1].sources = data.source;
+              setQueries(updatedQueries);
             }
             else {
               const result = data.answer ? data.answer : ''; //Fallback to an empty string if data.answer is undefined
@@ -666,13 +739,12 @@ export const WidgetCore = ({
     await appendQuery(prompt)
   }
 
-  const appendQuery = async (userQuery:string) => {
-    console.log(userQuery)
-    if(!userQuery)
+  const appendQuery = async (userQuery: string) => {
+    if (!userQuery)
       return;
 
     setEventInterrupt(false);
-    queries.push({ prompt:userQuery});
+    queries.push({ prompt: userQuery });
     setPrompt('');
     await stream(userQuery);
   }
@@ -711,7 +783,8 @@ export const WidgetCore = ({
                   return (
                     <React.Fragment key={index}>
                       {
-                        query.prompt && <MessageBubble type='QUESTION'>
+                        query.prompt &&
+                        <MessageBubble type='QUESTION'>
                           <Message
                             type='QUESTION'
                             ref={(!(query.response || query.error) && index === queries.length - 1) ? endMessageRef : null}>
@@ -721,6 +794,9 @@ export const WidgetCore = ({
                       }
                       {
                         query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
+                          {showSources && query.sources && query.sources.length > 0 && query.sources.some(source => source.source !== 'local') && (
+                            <SourcesComponent sources={query.sources.filter(source => source.source !== 'local')} />
+                          )}
                           <Message
                             type='ANSWER'
                             ref={(index === queries.length - 1) ? endMessageRef : null}
