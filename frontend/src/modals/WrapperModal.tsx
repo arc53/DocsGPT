@@ -59,9 +59,7 @@ export default function WrapperModal({
             <img className="filter dark:invert" src={Exit} alt="Close" />
           </button>
         )}
-        <div className={`${contentClassName}`}>
-          {children}
-        </div>
+        <div className={`${contentClassName}`}>{children}</div>
       </div>
     </div>
   );

@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import { useOutsideAlerter } from '../hooks';
 import { ActiveState } from '../models/misc';
 import ConfigToolModal from './ConfigToolModal';
@@ -90,7 +89,7 @@ export default function AddToolModal({
   return (
     <>
       {modalState === 'ACTIVE' && (
-        <WrapperComponent 
+        <WrapperComponent
           close={() => setModalState('INACTIVE')}
           className="h-[85vh] w-[90vw] md:w-[75vw]"
         >

@@ -73,7 +73,7 @@ export default function CreateAPIKeyModal({
     handleFetchPrompts();
   }, []);
   return (
-    <WrapperModal close={close} className='p-4'>
+    <WrapperModal close={close} className="p-4">
       <div className="mb-6">
         <span className="text-xl text-jet dark:text-bright-gray">
           {t('modals.createAPIKey.label')}
@@ -86,7 +86,7 @@ export default function CreateAPIKeyModal({
           value={APIKeyName}
           label={t('modals.createAPIKey.apiKeyName')}
           onChange={(e) => setAPIKeyName(e.target.value)}
-          borderVariant='thin'
+          borderVariant="thin"
         ></Input>
       </div>
       <div className="my-4">

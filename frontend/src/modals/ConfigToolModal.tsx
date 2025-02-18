@@ -43,9 +43,7 @@ export default function ConfigToolModal({
   if (modalState !== 'ACTIVE') return null;
 
   return (
-    <WrapperModal
-      close={() => setModalState('INACTIVE')}
-    >
+    <WrapperModal close={() => setModalState('INACTIVE')}>
       <div>
         <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
           {t('modals.configTool.title')}

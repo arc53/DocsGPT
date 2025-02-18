@@ -26,8 +26,12 @@ export default function SaveAPIKeyModal({
       </h3>
       <div className="flex justify-between py-2">
         <div>
-          <h2 className="text-base font-semibold text-jet dark:text-bright-gray">API Key</h2>
-          <span className="text-sm font-normal leading-7 text-jet dark:text-bright-gray">{apiKey}</span>
+          <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+            API Key
+          </h2>
+          <span className="text-sm font-normal leading-7 text-jet dark:text-bright-gray">
+            {apiKey}
+          </span>
         </div>
         <button
           className="my-1 h-10 w-20 rounded-full border border-solid border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white"
@@ -45,4 +49,3 @@ export default function SaveAPIKeyModal({
     </WrapperModal>
   );
 }
-

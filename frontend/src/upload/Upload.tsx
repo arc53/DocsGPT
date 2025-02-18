@@ -571,34 +571,34 @@ function Upload({
           {t('modals.uploadDoc.label')}
         </p>
         {!activeTab && (
-  <div>
-    <p className="dark text-gray-6000 dark:text-bright-gray text-sm text-center font-medium">
-      {t('modals.uploadDoc.select')}
-    </p>
-    <div className="w-full gap-4 h-full p-4 flex flex-col md:flex-row md:gap-4 justify-center items-center">
-      <button
-        onClick={() => setActiveTab('file')}
-        className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
-      >
-        <img
-          src={FileUpload}
-          className="w-12 h-12 mr-2 dark:filter dark:invert dark:brightness-50"
-        />
-        {t('modals.uploadDoc.file')}
-      </button>
-      <button
-        onClick={() => setActiveTab('remote')}
-        className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
-      >
-        <img
-          src={WebsiteCollect}
-          className="w-14 h-14 mr-2 dark:filter dark:invert dark:brightness-50"
-        />
-        {t('modals.uploadDoc.remote')}
-      </button>
-    </div>
-  </div>
-)}
+          <div>
+            <p className="dark text-gray-6000 dark:text-bright-gray text-sm text-center font-medium">
+              {t('modals.uploadDoc.select')}
+            </p>
+            <div className="w-full gap-4 h-full p-4 flex flex-col md:flex-row md:gap-4 justify-center items-center">
+              <button
+                onClick={() => setActiveTab('file')}
+                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
+              >
+                <img
+                  src={FileUpload}
+                  className="w-12 h-12 mr-2 dark:filter dark:invert dark:brightness-50"
+                />
+                {t('modals.uploadDoc.file')}
+              </button>
+              <button
+                onClick={() => setActiveTab('remote')}
+                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
+              >
+                <img
+                  src={WebsiteCollect}
+                  className="w-14 h-14 mr-2 dark:filter dark:invert dark:brightness-50"
+                />
+                {t('modals.uploadDoc.remote')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeTab === 'file' && (
           <>
@@ -612,7 +612,7 @@ function Upload({
               label={t('modals.uploadDoc.name')}
               required={true}
             />
-            <div className='my-2' {...getRootProps()}>
+            <div className="my-2" {...getRootProps()}>
               <span className="rounded-3xl bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver border border-[#7F7F82]">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}

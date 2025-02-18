@@ -25,52 +25,52 @@ function AddPrompt({
 
   return (
     <div>
-        <p className="mb-1 text-xl text-jet dark:text-bright-gray">
-          {t('modals.prompts.addPrompt')}
-        </p>
-        <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
-          {t('modals.prompts.addDescription')}
-        </p>
-        <div>
-          <label htmlFor="new-prompt-name" className="sr-only">
-            Prompt Name
-          </label>
-          <Input
-            placeholder={t('modals.prompts.promptName')}
-            type="text"
-            label={t('modals.prompts.promptName')}
-            className="h-10 rounded-lg"
-            value={newPromptName}
-            onChange={(e) => setNewPromptName(e.target.value)}
-          />
-          <div className="relative top-[7px] left-3">
-            <span className="bg-white px-1 text-xs text-silver dark:bg-[#26272E] dark:text-silver">
-              {t('modals.prompts.promptText')}
-            </span>
-          </div>
-          <label htmlFor="new-prompt-content" className="sr-only">
-            Prompt Text
-          </label>
-          <textarea
-            id="new-prompt-content"
-            className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
-            value={newPromptContent}
-            onChange={(e) => setNewPromptContent(e.target.value)}
-            aria-label="Prompt Text"
-          ></textarea>
+      <p className="mb-1 text-xl text-jet dark:text-bright-gray">
+        {t('modals.prompts.addPrompt')}
+      </p>
+      <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
+        {t('modals.prompts.addDescription')}
+      </p>
+      <div>
+        <label htmlFor="new-prompt-name" className="sr-only">
+          Prompt Name
+        </label>
+        <Input
+          placeholder={t('modals.prompts.promptName')}
+          type="text"
+          label={t('modals.prompts.promptName')}
+          className="h-10 rounded-lg"
+          value={newPromptName}
+          onChange={(e) => setNewPromptName(e.target.value)}
+        />
+        <div className="relative top-[7px] left-3">
+          <span className="bg-white px-1 text-xs text-silver dark:bg-[#26272E] dark:text-silver">
+            {t('modals.prompts.promptText')}
+          </span>
         </div>
-        <div className="mt-6 flex flex-row-reverse">
-          <button
-            onClick={handleAddPrompt}
-            className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:opacity-90"
-            disabled={disableSave}
-            title={
-              disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
-            }
-          >
-            {t('modals.prompts.save')}
-          </button>
-        </div>
+        <label htmlFor="new-prompt-content" className="sr-only">
+          Prompt Text
+        </label>
+        <textarea
+          id="new-prompt-content"
+          className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+          value={newPromptContent}
+          onChange={(e) => setNewPromptContent(e.target.value)}
+          aria-label="Prompt Text"
+        ></textarea>
+      </div>
+      <div className="mt-6 flex flex-row-reverse">
+        <button
+          onClick={handleAddPrompt}
+          className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:opacity-90"
+          disabled={disableSave}
+          title={
+            disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
+          }
+        >
+          {t('modals.prompts.save')}
+        </button>
+      </div>
     </div>
   );
 }
