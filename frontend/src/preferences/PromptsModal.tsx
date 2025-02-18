@@ -1,8 +1,8 @@
 import { ActiveState } from '../models/misc';
-import Exit from '../assets/exit.svg';
 import Input from '../components/Input';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import WrapperModal from '../modals/WrapperModal';
 
 function AddPrompt({
   setModalState,
@@ -24,19 +24,7 @@ function AddPrompt({
   const { t } = useTranslation();
 
   return (
-    <div className="relative">
-      <button
-        className="absolute top-3 right-4 m-2 w-3"
-        onClick={() => {
-          setModalState('INACTIVE');
-          setNewPromptName('');
-          setNewPromptContent('');
-        }}
-        aria-label="Close add prompt modal"
-      >
-        <img className="filter dark:invert" src={Exit} alt="Close modal" />
-      </button>
-      <div className="p-8">
+    <div>
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
           {t('modals.prompts.addPrompt')}
         </p>
@@ -50,17 +38,13 @@ function AddPrompt({
           <Input
             placeholder={t('modals.prompts.promptName')}
             type="text"
+            label={t('modals.prompts.promptName')}
             className="h-10 rounded-lg"
             value={newPromptName}
             onChange={(e) => setNewPromptName(e.target.value)}
           />
-          <div className="relative bottom-12 left-3 mt-[-3.00px]">
-            <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
-              {t('modals.prompts.promptName')}
-            </span>
-          </div>
           <div className="relative top-[7px] left-3">
-            <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
+            <span className="bg-white px-1 text-xs text-silver dark:bg-[#26272E] dark:text-silver">
               {t('modals.prompts.promptText')}
             </span>
           </div>
@@ -87,7 +71,6 @@ function AddPrompt({
             {t('modals.prompts.save')}
           </button>
         </div>
-      </div>
     </div>
   );
 }
@@ -114,16 +97,7 @@ function EditPrompt({
   const { t } = useTranslation();
 
   return (
-    <div className="relative">
-      <button
-        className="absolute top-3 right-4 m-2 w-3"
-        onClick={() => {
-          setModalState('INACTIVE');
-        }}
-        aria-label="Close edit prompt modal"
-      >
-        <img className="filter dark:invert" src={Exit} alt="Close modal" />
-      </button>
+    <div>
       <div className="p-8">
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
           {t('modals.prompts.editPrompt')}
@@ -271,15 +245,19 @@ export default function PromptsModal({
   } else {
     view = <></>;
   }
-  return (
-    <article
-      className={`${
-        modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } fixed top-0 left-0 z-30  h-screen w-screen  bg-gray-alpha`}
+
+  return modalState === 'ACTIVE' ? (
+    <WrapperModal
+      close={() => {
+        setModalState('INACTIVE');
+        if (type === 'ADD') {
+          setNewPromptName('');
+          setNewPromptContent('');
+        }
+      }}
+      className="sm:w-[512px] mt-24"
     >
-      <article className="mx-auto mt-24 flex w-[90vw] max-w-lg  flex-col gap-4 rounded-2xl bg-white shadow-lg dark:bg-outer-space">
-        {view}
-      </article>
-    </article>
-  );
+      {view}
+    </WrapperModal>
+  ) : null;
 }

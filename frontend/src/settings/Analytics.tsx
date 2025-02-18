@@ -92,8 +92,10 @@ export default function Analytics() {
   const [loadingMessages, setLoadingMessages] = useLoaderState(true);
   const [loadingTokens, setLoadingTokens] = useLoaderState(true);
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
+  const [loadingChatbots, setLoadingChatbots] = useLoaderState(true);
 
   const fetchChatbots = async () => {
+    setLoadingChatbots(true);
     try {
       const response = await userService.getAPIKeys();
       if (!response.ok) {
@@ -103,6 +105,8 @@ export default function Analytics() {
       setChatbots(chatbots);
     } catch (error) {
       console.error(error);
+    } finally {
+      setLoadingChatbots(false);
     }
   };
 
@@ -188,37 +192,41 @@ export default function Analytics() {
   return (
     <div className="mt-12">
       <div className="flex flex-col items-start">
-        <div className="flex flex-col gap-3">
-          <p className="font-bold text-jet dark:text-bright-gray">
-            {t('settings.analytics.filterByChatbot')}
-          </p>
-          <Dropdown
-            size="w-[55vw] sm:w-[360px]"
-            options={[
-              ...chatbots.map((chatbot) => ({
-                label: chatbot.name,
-                value: chatbot.id,
-              })),
-              { label: t('settings.analytics.none'), value: '' },
-            ]}
-            placeholder={t('settings.analytics.selectChatbot')}
-            onSelect={(chatbot: { label: string; value: string }) => {
-              setSelectedChatbot(
-                chatbots.find((item) => item.id === chatbot.value),
-              );
-            }}
-            selectedValue={
-              (selectedChatbot && {
-                label: selectedChatbot.name,
-                value: selectedChatbot.id,
-              }) ||
-              null
-            }
-            rounded="3xl"
-            border="border"
-            borderColor="gray-700"
-          />
-        </div>
+        {loadingChatbots ? (
+          <SkeletonLoader component="dropdown" />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="font-bold text-jet dark:text-bright-gray">
+              {t('settings.analytics.filterByChatbot')}
+            </p>
+            <Dropdown
+              size="w-[55vw] sm:w-[360px]"
+              options={[
+                ...chatbots.map((chatbot) => ({
+                  label: chatbot.name,
+                  value: chatbot.id,
+                })),
+                { label: t('settings.analytics.none'), value: '' },
+              ]}
+              placeholder={t('settings.analytics.selectChatbot')}
+              onSelect={(chatbot: { label: string; value: string }) => {
+                setSelectedChatbot(
+                  chatbots.find((item) => item.id === chatbot.value),
+                );
+              }}
+              selectedValue={
+                (selectedChatbot && {
+                  label: selectedChatbot.name,
+                  value: selectedChatbot.id,
+                }) ||
+                null
+              }
+              rounded="3xl"
+              border="border"
+              borderColor="gray-700"
+            />
+          </div>
+        )}
 
         {/* Messages Analytics */}
         <div className="mt-8 w-full flex flex-col [@media(min-width:1080px)]:flex-row gap-3">
