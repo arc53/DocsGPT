@@ -532,11 +532,12 @@ function DocumentChunks({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {paginatedChunks.filter((chunk) =>
-            chunk.metadata?.title
+          {paginatedChunks.filter((chunk) => {
+            if (!chunk.metadata?.title) return true;
+            return chunk.metadata.title
               .toLowerCase()
-              .includes(searchTerm.toLowerCase()),
-          ).length === 0 ? (
+              .includes(searchTerm.toLowerCase());
+          }).length === 0 ? (
             <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
               <img
                 src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
@@ -547,11 +548,12 @@ function DocumentChunks({
             </div>
           ) : (
             paginatedChunks
-              .filter((chunk) =>
-                chunk.metadata?.title
+              .filter((chunk) => {
+                if (!chunk.metadata?.title) return true;
+                return chunk.metadata.title
                   .toLowerCase()
-                  .includes(searchTerm.toLowerCase()),
-              )
+                  .includes(searchTerm.toLowerCase());
+              })
               .map((chunk, index) => (
                 <div
                   key={index}
@@ -578,7 +580,7 @@ function DocumentChunks({
                     </div>
                     <div className="mt-[9px]">
                       <p className="h-12 text-sm font-semibold text-eerie-black dark:text-[#EEEEEE] leading-relaxed break-words ellipsis-text">
-                        {chunk.metadata?.title}
+                        {chunk.metadata?.title ?? 'Untitled'}
                       </p>
                       <p className="mt-1 pr-1 h-[110px] overflow-y-auto text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed break-words">
                         {chunk.text}
@@ -591,11 +593,12 @@ function DocumentChunks({
         </div>
       )}
       {!loading &&
-        paginatedChunks.filter((chunk) =>
-          chunk.metadata?.title
+        paginatedChunks.filter((chunk) => {
+          if (!chunk.metadata?.title) return true;
+          return chunk.metadata.title
             .toLowerCase()
-            .includes(searchTerm.toLowerCase()),
-        ).length !== 0 && (
+            .includes(searchTerm.toLowerCase());
+        }).length !== 0 && (
           <div className="mt-10 w-full flex items-center justify-center">
             <Pagination
               currentPage={page}

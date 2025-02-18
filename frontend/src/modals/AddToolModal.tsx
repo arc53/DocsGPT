@@ -120,7 +120,7 @@ export default function AddToolModal({
                     role="button"
                     tabIndex={0}
                     key={index}
-                    className="h-52 w-full p-6 border rounded-2xl border-silver dark:border-[#4D4E58] flex flex-col justify-between dark:bg-[#32333B] cursor-pointer"
+                    className="h-52 w-full p-6 border rounded-2xl border-silver dark:border-[#4D4E58] flex flex-col justify-between dark:bg-[#32333B] cursor-pointer hover:border-[#9d9d9d] hover:dark:border-[#717179]"
                     onClick={() => {
                       setSelectedTool(tool);
                       handleAddTool(tool);
@@ -140,7 +140,10 @@ export default function AddToolModal({
                         />
                       </div>
                       <div className="mt-[9px]">
-                        <p className="px-1 text-sm font-semibold text-eerie-black dark:text-white leading-relaxed capitalize">
+                        <p
+                          title={tool.displayName}
+                          className="px-1 text-sm font-semibold text-eerie-black dark:text-white leading-relaxed capitalize truncate"
+                        >
                           {tool.displayName}
                         </p>
                         <p className="mt-1 px-1 h-24 overflow-auto text-sm text-gray-600 dark:text-[#8a8a8c] leading-relaxed">

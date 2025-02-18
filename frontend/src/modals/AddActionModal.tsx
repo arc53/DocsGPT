@@ -5,16 +5,16 @@ import Exit from '../assets/exit.svg';
 import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
 
+type AddActionModalProps = {
+  modalState: ActiveState;
+  setModalState: (state: ActiveState) => void;
+  handleSubmit: (actionName: string) => void;
+};
+
 const isValidFunctionName = (name: string): boolean => {
   const pattern = /^[a-zA-Z0-9_-]+$/;
   return pattern.test(name);
 };
-
-interface AddActionModalProps {
-  modalState: ActiveState;
-  setModalState: (state: ActiveState) => void;
-  handleSubmit: (actionName: string) => void;
-}
 
 export default function AddActionModal({
   modalState,
@@ -23,18 +23,18 @@ export default function AddActionModal({
 }: AddActionModalProps) {
   const { t } = useTranslation();
   const [actionName, setActionName] = React.useState('');
-  const [functionNameError, setFunctionNameError] = useState<boolean>(false); // New error state
+  const [functionNameError, setFunctionNameError] = useState<boolean>(false);
 
   const handleAddAction = () => {
     if (!isValidFunctionName(actionName)) {
-      setFunctionNameError(true); // Set error state if invalid
+      setFunctionNameError(true);
       return;
     }
-    setFunctionNameError(false); // Clear error state if valid
+    setFunctionNameError(false);
     handleSubmit(actionName);
+    setActionName('');
     setModalState('INACTIVE');
   };
-
   return (
     <div
       className={`${
@@ -46,7 +46,9 @@ export default function AddActionModal({
           <button
             className="absolute top-3 right-4 m-2 w-3"
             onClick={() => {
+              setFunctionNameError(false);
               setModalState('INACTIVE');
+              setActionName('');
             }}
           >
             <img className="filter dark:invert" src={Exit} />
@@ -62,22 +64,25 @@ export default function AddActionModal({
               <Input
                 type="text"
                 value={actionName}
-                onChange={(e) => setActionName(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setActionName(value);
+                  setFunctionNameError(!isValidFunctionName(value));
+                }}
                 borderVariant="thin"
                 placeholder={'Enter name'}
               />
-              <p className="mt-1 text-gray-500 text-xs">
-                Use only letters, numbers, underscores, and hyphens (e.g.,
-                `get_user_data`, `send-report`).
+              <p
+                className={`mt-2 ml-1 text-xs italic ${
+                  functionNameError ? 'text-red-500' : 'text-gray-500'
+                }`}
+              >
+                {functionNameError
+                  ? 'Invalid function name format. Use only letters, numbers, underscores, and hyphens.'
+                  : 'Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)'}
               </p>
-              {functionNameError && (
-                <p className="mt-1 text-red-500 text-xs">
-                  Invalid function name format. Use only letters, numbers,
-                  underscores, and hyphens.
-                </p>
-              )}
             </div>
-            <div className="mt-8 flex flex-row-reverse gap-1 px-3">
+            <div className="mt-3 flex flex-row-reverse gap-1 px-3">
               <button
                 onClick={handleAddAction}
                 className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
@@ -86,7 +91,9 @@ export default function AddActionModal({
               </button>
               <button
                 onClick={() => {
+                  setFunctionNameError(false);
                   setModalState('INACTIVE');
+                  setActionName('');
                 }}
                 className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
               >
