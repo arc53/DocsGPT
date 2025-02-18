@@ -47,7 +47,7 @@ const Input = ({
       </input>
       {label && (
         <div className="absolute -top-2 left-2">
-          <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver flex items-center">
+          <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver flex items-center">
             {label}
             {required && (
               <span className="text-[#D30000] dark:text-[#D42626] ml-0.5">

@@ -1,12 +1,21 @@
 import React, { useEffect, useRef } from 'react';
 
 import Exit from '../assets/exit.svg';
-import { WrapperModalPropsType } from './types';
+
+interface WrapperModalPropsType {
+  children: React.ReactNode;
+  close: () => void;
+  isPerformingTask?: boolean;
+  className?: string;
+  contentClassName?: string;
+}
 
 export default function WrapperModal({
   children,
   close,
-  isPerformingTask,
+  isPerformingTask = false,
+  className = 'sm:w-[512px]', // Default width, but can be overridden
+  contentClassName = 'p-8', // Default padding, but can be overridden
 }: WrapperModalPropsType) {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -40,17 +49,19 @@ export default function WrapperModal({
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
       <div
         ref={modalRef}
-        className="relative w-11/12 rounded-2xl bg-white dark:bg-[#26272E] sm:w-[512px] p-8"
+        className={`relative w-11/12 rounded-2xl bg-white dark:bg-[#26272E] ${className}`}
       >
         {!isPerformingTask && (
           <button
             className="absolute top-3 right-4 m-2 w-3 z-50"
             onClick={close}
           >
-            <img className="filter dark:invert" src={Exit} />
+            <img className="filter dark:invert" src={Exit} alt="Close" />
           </button>
         )}
-        {children}
+        <div className={contentClassName}>
+          {children}
+        </div>
       </div>
     </div>
   );
