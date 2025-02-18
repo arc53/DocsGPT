@@ -2,11 +2,11 @@ import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import { useOutsideAlerter } from '../hooks';
 import { ActiveState } from '../models/misc';
 import ConfigToolModal from './ConfigToolModal';
 import { AvailableToolType } from './types';
+import WrapperComponent from './WrapperModal';
 
 export default function AddToolModal({
   message,
@@ -88,28 +88,12 @@ export default function AddToolModal({
 
   return (
     <>
-      <div
-        className={`${
-          modalState === 'ACTIVE' ? 'visible' : 'hidden'
-        } fixed top-0 left-0 z-30 h-screen w-screen bg-gray-alpha flex items-center justify-center`}
-      >
-        <article
-          ref={modalRef}
-          className="flex h-[85vh] w-[90vw] md:w-[75vw] flex-col gap-4 rounded-2xl bg-[#FBFBFB] shadow-lg dark:bg-[#26272E]"
+      {modalState === 'ACTIVE' && (
+        <WrapperComponent
+          close={() => setModalState('INACTIVE')}
+          className="h-[85vh] w-[90vw] md:w-[75vw]"
         >
-          <div className="relative">
-            <button
-              className="absolute top-3 right-4 m-2 w-3"
-              onClick={() => {
-                setModalState('INACTIVE');
-              }}
-            >
-              <img
-                className="filter dark:invert"
-                src={Exit}
-                alt={t('cancel')}
-              />
-            </button>
+          <div className="flex flex-col gap-4 h-full">
             <div className="p-6">
               <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
                 {t('settings.tools.selectToolSetup')}
@@ -153,8 +137,8 @@ export default function AddToolModal({
               </div>
             </div>
           </div>
-        </article>
-      </div>
+        </WrapperComponent>
+      )}
       <ConfigToolModal
         modalState={configModalState}
         setModalState={setConfigModalState}
