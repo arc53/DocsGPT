@@ -45,10 +45,8 @@ export default function ConfigToolModal({
   return (
     <WrapperModal
       close={() => setModalState('INACTIVE')}
-      className="sm:w-[512px]"
-      contentClassName=""
     >
-      <div className="p-6">
+      <div>
         <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
           {t('modals.configTool.title')}
         </h2>

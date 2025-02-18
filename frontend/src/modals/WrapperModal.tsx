@@ -14,8 +14,8 @@ export default function WrapperModal({
   children,
   close,
   isPerformingTask = false,
-  className = 'sm:w-[512px]', // Default width, but can be overridden
-  contentClassName = 'p-8', // Default padding, but can be overridden
+  className = '', // Default width, but can be overridden
+  contentClassName = '', // Default padding, but can be overridden
 }: WrapperModalPropsType) {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -49,7 +49,7 @@ export default function WrapperModal({
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
       <div
         ref={modalRef}
-        className={`relative w-11/12 rounded-2xl bg-white dark:bg-[#26272E] ${className}`}
+        className={`relative w-11/12 sm:w-[512px] p-8 rounded-2xl bg-white dark:bg-[#26272E] ${className}`}
       >
         {!isPerformingTask && (
           <button
@@ -59,7 +59,7 @@ export default function WrapperModal({
             <img className="filter dark:invert" src={Exit} alt="Close" />
           </button>
         )}
-        <div className={contentClassName}>
+        <div className={`${contentClassName}`}>
           {children}
         </div>
       </div>
