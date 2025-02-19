@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import Exit from '../assets/exit.svg';
+import WrapperModal from './WrapperModal';
 import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
 
@@ -35,23 +35,53 @@ export default function AddActionModal({
     setActionName('');
     setModalState('INACTIVE');
   };
+
+  if (modalState !== 'ACTIVE') return null;
   return (
-    <div
-      className={`${
-        modalState === 'ACTIVE' ? 'visible' : 'hidden'
-      } fixed top-0 left-0 z-30  h-screen w-screen  bg-gray-alpha flex items-center justify-center`}
+    <WrapperModal
+      close={() => setModalState('INACTIVE')}
+      className="sm:w-[512px]"
     >
-      <article className="flex w-11/12 sm:w-[512px] flex-col gap-4 rounded-2xl bg-white shadow-lg dark:bg-[#26272E]">
-        <div className="relative">
+      <div>
+        <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
+          New Action
+        </h2>
+        <div className="mt-6 px-3">
+          <Input
+            type="text"
+            value={actionName}
+            onChange={(e) => setActionName(e.target.value)}
+            borderVariant="thin"
+            placeholder="Enter name"
+            label="Action Name"
+          />
+          <p className="mt-1 text-gray-500 text-xs">
+            Use only letters, numbers, underscores, and hyphens (e.g.,
+            `get_user_data`, `send-report`).
+          </p>
+          {functionNameError && (
+            <p className="mt-1 text-red-500 text-xs">
+              Invalid function name format. Use only letters, numbers,
+              underscores, and hyphens.
+            </p>
+          )}
+        </div>
+        <div className="mt-8 flex flex-row-reverse gap-1 px-3">
           <button
-            className="absolute top-3 right-4 m-2 w-3"
+            onClick={handleAddAction}
+            className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
+          >
+            Add
+          </button>
+          <button
             onClick={() => {
               setFunctionNameError(false);
               setModalState('INACTIVE');
               setActionName('');
             }}
+            className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
           >
-            <img className="filter dark:invert" src={Exit} />
+            {t('modals.configTool.closeButton')}
           </button>
           <div className="p-6">
             <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
@@ -102,7 +132,7 @@ export default function AddActionModal({
             </div>
           </div>
         </div>
-      </article>
-    </div>
+      </div>
+    </WrapperModal>
   );
 }
