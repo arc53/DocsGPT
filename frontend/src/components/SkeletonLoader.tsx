@@ -99,10 +99,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         >
           <div className="w-full flex items-center gap-2">
             <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-lg"></div>
-            <div className="flex flex-row items-center gap-2">
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-52"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-28 bg-opacity-80"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-64"></div>
+            <div className="w-full flex flex-row items-center gap-2">
+              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[30%] lg:w-52"></div>
+              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[16%] lg:w-28"></div>
+              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[40%] lg:w-64"></div>
             </div>
           </div>
         </div>

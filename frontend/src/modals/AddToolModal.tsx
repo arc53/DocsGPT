@@ -97,7 +97,7 @@ export default function AddToolModal({
           className="h-[85vh] w-[90vw] md:w-[75vw]"
         >
           <div className="flex flex-col gap-4 h-full">
-            <div className="p-6">
+            <div>
               <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
                 {t('settings.tools.selectToolSetup')}
               </h2>
