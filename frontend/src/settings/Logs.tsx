@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
-import CoppyButton from '../components/CopyButton';
+import CopyButton from '../components/CopyButton';
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
@@ -193,7 +193,7 @@ function Log({ log }: { log: LogData }) {
           {JSON.stringify(filteredLog, null, 2)}
         </p>
         <div className="my-px w-8">
-          <CoppyButton
+          <CopyButton
             text={JSON.stringify(filteredLog)}
             colorLight="transparent"
           />
