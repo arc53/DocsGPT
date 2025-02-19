@@ -81,7 +81,8 @@
       "sourceDoc": "源文档",
       "createNew": "创建新的",
       "noData": "没有现有的聊天机器人",
-      "deleteConfirmation": "您确定要删除 API 密钥 '{{name}}' 吗？"
+      "deleteConfirmation": "您确定要删除 API 密钥 '{{name}}' 吗？",
+      "description": "在这里，您可以创建和管理您的聊天机器人。聊天机器人可以作为小部件部署到网站上，或在您的应用程序中使用。"
     },
     "analytics": {
       "label": "分析",

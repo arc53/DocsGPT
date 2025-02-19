@@ -98,9 +98,15 @@ export default function APIKeys() {
   }, []);
 
   return (
-    <div className="mt-8">
-      <div className="flex flex-col max-w-[876px]">
-        <div className="flex justify-end">
+    <div className="flex flex-col w-full mt-8">
+      <div className="flex flex-col w-full">
+        <div className="mb-6">
+          <h2 className="text-base font-medium text-sonic-silver">
+            {t('settings.apiKeys.description')}
+          </h2>
+        </div>
+        
+        <div className="flex justify-end mb-6">
           <button
             onClick={() => setCreateModal(true)}
             className="rounded-full bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
@@ -108,6 +114,72 @@ export default function APIKeys() {
             {t('settings.apiKeys.createNew')}
           </button>
         </div>
+
+        <div className="w-full">
+          <div className="w-full border rounded-md border-silver dark:border-silver/40 overflow-hidden">
+            <table className="w-full table-fixed divide-y divide-silver dark:divide-silver/40">
+            <thead>
+        <tr className="border-b border-gray-300 dark:border-silver/40">
+          <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
+            {t('settings.apiKeys.name')}
+          </th>
+          <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
+            {t('settings.apiKeys.sourceDoc')}
+          </th>
+          <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[25%]">
+            {t('settings.apiKeys.key')}
+          </th>
+          <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[5%]">
+            <span className="sr-only">Actions</span>
+          </th>
+        </tr>
+      </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
+                {loading ? (
+                  <SkeletonLoader component="chatbot" />
+                ) : !apiKeys?.length ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="p-4 text-gray-800 dark:text-neutral-200 text-center"
+                    >
+                      {t('settings.apiKeys.noData')}
+                    </td>
+                  </tr>
+                ) : (
+                  Array.isArray(apiKeys) &&
+                  apiKeys.map((element, index) => (
+                    <tr
+                      key={element.id}
+                      className="text-sm font-medium text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
+                      <td className="p-4 truncate">{element.name}</td>
+                      <td className="p-4 truncate">{element.source}</td>
+                      <td className="p-4 truncate font-mono text-sm">
+                        {element.key}
+                      </td>
+                      <td className="p-4 text-center">
+                        <img
+                          src={Trash}
+                          alt={`Delete ${element.name}`}
+                          className="h-4 w-4 cursor-pointer hover:opacity-50 mx-auto"
+                          id={`img-${index}`}
+                          onClick={() =>
+                            setKeyToDelete({
+                              id: element.id,
+                              name: element.name,
+                            })
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {isCreateModalOpen && (
           <CreateAPIKeyModal
             createAPIKey={handleCreateKey}
@@ -132,76 +204,6 @@ export default function APIKeys() {
             handleCancel={() => setKeyToDelete(null)}
           />
         )}
-        <div className="mt-[27px] w-full">
-          <div className="w-full overflow-x-auto">
-            <div className="flex flex-col">
-              <div className="flex-grow">
-                <div className="dark:border-silver/40 border-silver rounded-md border overflow-auto">
-                  <table className="min-w-full divide-y divide-silver dark:divide-silver/40">
-                    <thead>
-                      <tr className="text-start text-sm font-medium text-gray-700 dark:text-gray-50 uppercase">
-                        <th scope="col" className="p-2">
-                          {t('settings.apiKeys.name')}
-                        </th>
-                        <th scope="col" className="p-2">
-                          {t('settings.apiKeys.sourceDoc')}
-                        </th>
-                        <th scope="col" className="p-2">
-                          {t('settings.apiKeys.key')}
-                        </th>
-                        <th
-                          scope="col"
-                          className="p-2"
-                          aria-label="Actions"
-                        ></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
-                      {loading ? (
-                        <SkeletonLoader component="chatbot" />
-                      ) : !apiKeys?.length ? (
-                        <tr>
-                          <td
-                            colSpan={4}
-                            className="!p-4 text-gray-800 dark:text-neutral-200 text-center"
-                          >
-                            {t('settings.apiKeys.noData')}
-                          </td>
-                        </tr>
-                      ) : (
-                        Array.isArray(apiKeys) &&
-                        apiKeys.map((element, index) => (
-                          <tr
-                            key={element.id}
-                            className="text-nowrap whitespace-nowrap text-center text-sm font-medium text-gray-800 dark:text-neutral-200 p-2"
-                          >
-                            <td className="p-2">{element.name}</td>
-                            <td className="p-2">{element.source}</td>
-                            <td className="p-2">{element.key}</td>
-                            <td className="p-2">
-                              <img
-                                src={Trash}
-                                alt={`Delete ${element.name}`}
-                                className="h-4 w-4 cursor-pointer hover:opacity-50 mx-auto"
-                                id={`img-${index}`}
-                                onClick={() =>
-                                  setKeyToDelete({
-                                    id: element.id,
-                                    name: element.name,
-                                  })
-                                }
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

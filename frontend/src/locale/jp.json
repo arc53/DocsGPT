@@ -80,7 +80,8 @@
       "sourceDoc": "ソースドキュメント",
       "createNew": "新規作成",
       "noData": "既存のチャットボットはありません",
-      "deleteConfirmation": "APIキー '{{name}}' を削除してもよろしいですか？"
+      "deleteConfirmation": "APIキー '{{name}}' を削除してもよろしいですか？",
+      "description": "ここでチャットボットを作成・管理できます。チャットボットはウィジェットとしてウェブサイトに導入したり、アプリケーション内で使用したりすることができます。"
     },
     "analytics": {
       "label": "分析",

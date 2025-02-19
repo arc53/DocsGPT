@@ -183,7 +183,7 @@ export default function Documents({
             {t('settings.documents.title')}
           </h2>
         </div>
-        <div className="my-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="w-full sm:w-auto">
             <label htmlFor="document-search-input" className="sr-only">
               {t('settings.documents.searchPlaceholder')}
@@ -352,9 +352,15 @@ export default function Documents({
           isOnboarding={isOnboarding}
           renderTab={null}
           close={() => setModalState('INACTIVE')}
-          onSuccessfulUpload={() =>
-            refreshDocs(undefined, currentPage, rowsPerPage)
-          }
+          onSuccessfulUpload={() => {
+            getDocs()
+              .then((data) => {
+                dispatch(setSourceDocs(data));
+                // Then refresh paginated documents
+                return refreshDocs(undefined, currentPage, rowsPerPage);
+              })
+              .catch((error) => console.error('Error updating docs:', error));
+          }}
         />
       )}
 
