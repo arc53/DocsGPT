@@ -84,7 +84,7 @@ export default function General() {
   return (
     <div className="mt-12">
       <div className="mb-5">
-        <label className="block font-bold text-jet dark:text-bright-gray">
+        <label className="block mb-2 font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}
         </label>
         <Dropdown
