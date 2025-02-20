@@ -285,9 +285,11 @@ export default function Documents({
                           {document.date ? formatDate(document.date) : ''}
                         </td>
                         <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                          {document.tokens ? formatTokens(+document.tokens) : ''}
+                          {document.tokens
+                            ? formatTokens(+document.tokens)
+                            : ''}
                         </td>
-                        <td 
+                        <td
                           className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                           onClick={(e) => e.stopPropagation()} // Stop event propagation for the entire actions cell
                         >

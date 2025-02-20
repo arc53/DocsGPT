@@ -99,13 +99,13 @@ export default function APIKeys() {
 
   return (
     <div className="flex flex-col w-full mt-8 max-w-full overflow-hidden">
-        <div className="flex flex-col relative flex-grow">
+      <div className="flex flex-col relative flex-grow">
         <div className="mb-6">
           <h2 className="text-base font-medium text-sonic-silver">
             {t('settings.apiKeys.description')}
           </h2>
         </div>
-        
+
         <div className="mb-6 flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3">
           <button
             onClick={() => setCreateModal(true)}
@@ -160,23 +160,17 @@ export default function APIKeys() {
                         key={element.id}
                         className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                       >
-                        <td 
-                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0"
-                        >
+                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0">
                           <div className="truncate" title={element.name}>
                             {element.name}
                           </div>
                         </td>
-                        <td 
-                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0"
-                        >
+                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0">
                           <div className="truncate" title={element.source}>
                             {element.source}
                           </div>
                         </td>
-                        <td 
-                          className="py-4 px-4 text-sm font-mono text-gray-700 dark:text-[#E0E0E0] w-[25%]"
-                        >
+                        <td className="py-4 px-4 text-sm font-mono text-gray-700 dark:text-[#E0E0E0] w-[25%]">
                           <div className="truncate" title={element.key}>
                             {element.key}
                           </div>
@@ -209,30 +203,27 @@ export default function APIKeys() {
           </div>
         </div>
       </div>
-        {isCreateModalOpen && (
-          <CreateAPIKeyModal
-            createAPIKey={handleCreateKey}
-            close={() => setCreateModal(false)}
-          />
-        )}
-        {isSaveKeyModalOpen && (
-          <SaveAPIKeyModal
-            apiKey={newKey}
-            close={() => setSaveKeyModal(false)}
-          />
-        )}
-        {keyToDelete && (
-          <ConfirmationModal
-            message={t('settings.apiKeys.deleteConfirmation', {
-              name: keyToDelete.name,
-            })}
-            modalState="ACTIVE"
-            setModalState={() => setKeyToDelete(null)}
-            submitLabel={t('modals.deleteConv.delete')}
-            handleSubmit={() => handleDeleteKey(keyToDelete.id)}
-            handleCancel={() => setKeyToDelete(null)}
-          />
-        )}
+      {isCreateModalOpen && (
+        <CreateAPIKeyModal
+          createAPIKey={handleCreateKey}
+          close={() => setCreateModal(false)}
+        />
+      )}
+      {isSaveKeyModalOpen && (
+        <SaveAPIKeyModal apiKey={newKey} close={() => setSaveKeyModal(false)} />
+      )}
+      {keyToDelete && (
+        <ConfirmationModal
+          message={t('settings.apiKeys.deleteConfirmation', {
+            name: keyToDelete.name,
+          })}
+          modalState="ACTIVE"
+          setModalState={() => setKeyToDelete(null)}
+          submitLabel={t('modals.deleteConv.delete')}
+          handleSubmit={() => handleDeleteKey(keyToDelete.id)}
+          handleCancel={() => setKeyToDelete(null)}
+        />
+      )}
     </div>
   );
 }
