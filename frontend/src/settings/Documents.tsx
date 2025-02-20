@@ -276,7 +276,7 @@ export default function Documents({
                         onClick={() => setShowDocumentChunks(document)}
                       >
                         <td
-                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                           title={document.name}
                         >
                           {document.name}
@@ -287,7 +287,10 @@ export default function Documents({
                         <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
                           {document.tokens ? formatTokens(+document.tokens) : ''}
                         </td>
-                        <td className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                        <td 
+                          className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                          onClick={(e) => e.stopPropagation()} // Stop event propagation for the entire actions cell
+                        >
                           <div className="flex items-center justify-end gap-3">
                             {!document.syncFrequency && (
                               <div className="w-8"></div>
@@ -304,8 +307,7 @@ export default function Documents({
                               />
                             )}
                             <button
-                              onClick={(event) => {
-                                event.stopPropagation();
+                              onClick={() => {
                                 handleDeleteConfirmation(index, document);
                               }}
                               className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
