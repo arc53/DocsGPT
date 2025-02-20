@@ -91,18 +91,18 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   );
 
   const renderLogs = () => (
-    <div className="animate-pulse space-y-px">
+    <div className="w-full animate-pulse space-y-px">
       {[...Array(8)].map((_, idx) => (
         <div
           key={idx}
-          className="flex items-start p-2 hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal"
+          className="w-full flex items-start p-2 hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal"
         >
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-sm"></div>
-            <div className="flex flex-row items-center gap-2">
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-20"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-14 bg-opacity-80"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-40"></div>
+          <div className="w-full flex items-center gap-2">
+            <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-lg"></div>
+            <div className="w-full flex flex-row items-center gap-2">
+              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[30%] lg:w-52"></div>
+              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[16%] lg:w-28"></div>
+              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[40%] lg:w-64"></div>
             </div>
           </div>
         </div>
