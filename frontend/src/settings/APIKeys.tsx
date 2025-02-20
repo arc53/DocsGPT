@@ -98,8 +98,8 @@ export default function APIKeys() {
   }, []);
 
   return (
-    <div className="flex flex-col w-full mt-8">
-      <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full mt-8 max-w-full overflow-hidden">
+      <div className="flex flex-col relative flex-grow">
         <div className="mb-6">
           <h2 className="text-base font-medium text-sonic-silver">
             {t('settings.apiKeys.description')}
@@ -115,71 +115,87 @@ export default function APIKeys() {
           </button>
         </div>
 
-        <div className="w-full">
-          <div className="w-full border rounded-md border-silver dark:border-silver/40 overflow-hidden">
-            <table className="w-full table-fixed divide-y divide-silver dark:divide-silver/40">
-            <thead>
-        <tr className="border-b border-gray-300 dark:border-silver/40">
-          <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
-            {t('settings.apiKeys.name')}
-          </th>
-          <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
-            {t('settings.apiKeys.sourceDoc')}
-          </th>
-          <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[25%]">
-            {t('settings.apiKeys.key')}
-          </th>
-          <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[5%]">
-            <span className="sr-only">Actions</span>
-          </th>
-        </tr>
-      </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
-                {loading ? (
-                  <SkeletonLoader component="chatbot" />
-                ) : !apiKeys?.length ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="p-4 text-gray-800 dark:text-neutral-200 text-center"
-                    >
-                      {t('settings.apiKeys.noData')}
-                    </td>
+        <div className="relative w-full">
+          <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
+            <div className="overflow-x-auto table-scroll">
+              <table className="w-full table-auto">
+                <thead>
+                  <tr className="border-b border-gray-300 dark:border-silver/40">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
+                      {t('settings.apiKeys.name')}
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
+                      {t('settings.apiKeys.sourceDoc')}
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[25%]">
+                      <span className="hidden sm:inline">
+                        {t('settings.apiKeys.key')}
+                      </span>
+                      <span className="sm:hidden">
+                        {t('settings.apiKeys.key')}
+                      </span>
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[5%]">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
-                ) : (
-                  Array.isArray(apiKeys) &&
-                  apiKeys.map((element, index) => (
-                    <tr
-                      key={element.id}
-                      className="text-sm font-medium text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                    >
-                      <td className="p-4 truncate">{element.name}</td>
-                      <td className="p-4 truncate">{element.source}</td>
-                      <td className="p-4 truncate font-mono text-sm">
-                        {element.key}
-                      </td>
-                      <td className="p-4 text-center">
-                        <img
-                          src={Trash}
-                          alt={`Delete ${element.name}`}
-                          className="h-4 w-4 cursor-pointer hover:opacity-50 mx-auto"
-                          id={`img-${index}`}
-                          onClick={() =>
-                            setKeyToDelete({
-                              id: element.id,
-                              name: element.name,
-                            })
-                          }
-                        />
+                </thead>
+                <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
+                  {loading ? (
+                    <SkeletonLoader component="table" />
+                  ) : !apiKeys?.length ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
+                      >
+                        {t('settings.apiKeys.noData')}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    Array.isArray(apiKeys) &&
+                    apiKeys.map((element, index) => (
+                      <tr
+                        key={element.id}
+                        className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                      >
+                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] truncate">
+                          {element.name}
+                        </td>
+                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] truncate">
+                          {element.source}
+                        </td>
+                        <td className="py-4 px-4 text-sm font-mono text-gray-700 dark:text-[#E0E0E0] w-[25%] truncate">
+                          {element.key}
+                        </td>
+                        <td className="py-4 px-4 text-right w-[5%]">
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() =>
+                                setKeyToDelete({
+                                  id: element.id,
+                                  name: element.name,
+                                })
+                              }
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                            >
+                              <img
+                                src={Trash}
+                                alt={t('convTile.delete')}
+                                className="h-4 w-4 opacity-60 hover:opacity-100"
+                              />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-
+      </div>
         {isCreateModalOpen && (
           <CreateAPIKeyModal
             createAPIKey={handleCreateKey}
@@ -204,7 +220,6 @@ export default function APIKeys() {
             handleCancel={() => setKeyToDelete(null)}
           />
         )}
-      </div>
     </div>
   );
 }

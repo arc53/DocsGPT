@@ -272,7 +272,7 @@ export default function Documents({
                     currentDocuments.map((document, index) => (
                       <tr
                         key={index}
-                        className="group transition-colors"
+                        className="group transition-colors cursor-pointer"
                         onClick={() => setShowDocumentChunks(document)}
                       >
                         <td
