@@ -81,7 +81,8 @@
       "sourceDoc": "Documento Fuente",
       "createNew": "Crear Nuevo",
       "noData": "No hay chatbots existentes",
-      "deleteConfirmation": "¿Estás seguro de que quieres eliminar la clave API '{{name}}'?"
+      "deleteConfirmation": "¿Estás seguro de que quieres eliminar la clave API '{{name}}'?",
+      "description": "Aquí puede crear y gestionar sus chatbots. Los chatbots se pueden implementar en sitios web como widgets o utilizarse dentro de sus aplicaciones."
     },
     "analytics": {
       "label": "Analítica",
