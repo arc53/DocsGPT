@@ -99,17 +99,18 @@ export default function APIKeys() {
 
   return (
     <div className="flex flex-col w-full mt-8 max-w-full overflow-hidden">
-      <div className="flex flex-col relative flex-grow">
+        <div className="flex flex-col relative flex-grow">
         <div className="mb-6">
           <h2 className="text-base font-medium text-sonic-silver">
             {t('settings.apiKeys.description')}
           </h2>
         </div>
         
-        <div className="flex justify-end mb-6">
+        <div className="mb-6 flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3">
           <button
             onClick={() => setCreateModal(true)}
-            className="rounded-full bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            title={t('settings.apiKeys.createNew')}
           >
             {t('settings.apiKeys.createNew')}
           </button>
@@ -154,19 +155,31 @@ export default function APIKeys() {
                     </tr>
                   ) : (
                     Array.isArray(apiKeys) &&
-                    apiKeys.map((element, index) => (
+                    apiKeys.map((element) => (
                       <tr
                         key={element.id}
                         className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                       >
-                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] truncate">
-                          {element.name}
+                        <td 
+                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0"
+                        >
+                          <div className="truncate" title={element.name}>
+                            {element.name}
+                          </div>
                         </td>
-                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] truncate">
-                          {element.source}
+                        <td 
+                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0"
+                        >
+                          <div className="truncate" title={element.source}>
+                            {element.source}
+                          </div>
                         </td>
-                        <td className="py-4 px-4 text-sm font-mono text-gray-700 dark:text-[#E0E0E0] w-[25%] truncate">
-                          {element.key}
+                        <td 
+                          className="py-4 px-4 text-sm font-mono text-gray-700 dark:text-[#E0E0E0] w-[25%]"
+                        >
+                          <div className="truncate" title={element.key}>
+                            {element.key}
+                          </div>
                         </td>
                         <td className="py-4 px-4 text-right w-[5%]">
                           <div className="flex justify-end">

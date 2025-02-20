@@ -32,9 +32,9 @@ export default function ConfirmationModal({
         >
           <div className="relative">
             <div>
-              <p className="font-base mb-1 w-[90%] text-lg text-jet dark:text-bright-gray">
-                {message}
-              </p>
+            <p className="font-base mb-1 w-[90%] text-lg break-words text-jet dark:text-bright-gray">
+              {message}
+            </p>
               <div>
                 <div className="mt-6 flex flex-row-reverse gap-1">
                   <button
