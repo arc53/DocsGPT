@@ -176,14 +176,14 @@ export default function Documents({
       }}
     />
   ) : (
-    <div className="flex flex-col mt-8">
+    <div className="flex flex-col mt-8 w-full max-w-full overflow-hidden">
       <div className="flex flex-col relative flex-grow">
         <div className="mb-6">
           <h2 className="text-base font-medium text-sonic-silver">
             {t('settings.documents.title')}
           </h2>
         </div>
-        <div className="my-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="w-full sm:w-auto">
             <label htmlFor="document-search-input" className="sr-only">
               {t('settings.documents.searchPlaceholder')}
@@ -213,117 +213,121 @@ export default function Documents({
             {t('settings.documents.addNew')}
           </button>
         </div>
-
-        <div className="flex flex-col flex-grow">
-          {' '}
+        <div className="relative w-full">
           <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
-            <table className="w-full min-w-[640px] table-auto">
-              <thead>
-                <tr className="border-b border-gray-300 dark:border-silver/40">
-                  <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
-                    {t('settings.documents.name')}
-                  </th>
-                  <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
-                    <div className="flex justify-center items-center">
-                      {t('settings.documents.date')}
-                      <img
-                        className="cursor-pointer ml-2"
-                        onClick={() => refreshDocs('date')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
-                    <div className="flex justify-center items-center">
-                      <span className="hidden sm:inline">
-                        {t('settings.documents.tokenUsage')}
+            <div className="overflow-x-auto table-scroll">
+              <table className="w-full table-auto">
+                <thead>
+                  <tr className="border-b border-gray-300 dark:border-silver/40">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
+                      {t('settings.documents.name')}
+                    </th>
+                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
+                      <div className="flex justify-center items-center">
+                        {t('settings.documents.date')}
+                        <img
+                          className="cursor-pointer ml-2"
+                          onClick={() => refreshDocs('date')}
+                          src={caretSort}
+                          alt="sort"
+                        />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
+                      <div className="flex justify-center items-center">
+                        <span className="hidden sm:inline">
+                          {t('settings.documents.tokenUsage')}
+                        </span>
+                        <span className="sm:hidden">
+                          {t('settings.documents.tokenUsage')}
+                        </span>
+                        <img
+                          className="cursor-pointer ml-2"
+                          onClick={() => refreshDocs('tokens')}
+                          src={caretSort}
+                          alt="sort"
+                        />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
+                      <span className="sr-only">
+                        {t('settings.documents.actions')}
                       </span>
-                      <span className="sm:hidden">
-                        {t('settings.documents.tokenUsage')}
-                      </span>
-                      <img
-                        className="cursor-pointer ml-2"
-                        onClick={() => refreshDocs('tokens')}
-                        src={caretSort}
-                        alt="sort"
-                      />
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
-                    <span className="sr-only">
-                      {t('settings.documents.actions')}
-                    </span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
-                {loading ? (
-                  <SkeletonLoader component="table" />
-                ) : !currentDocuments?.length ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
-                    >
-                      {t('settings.documents.noData')}
-                    </td>
+                    </th>
                   </tr>
-                ) : (
-                  currentDocuments.map((document, index) => (
-                    <tr
-                      key={index}
-                      className="group transition-colors"
-                      onClick={() => setShowDocumentChunks(document)}
-                    >
+                </thead>
+                <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
+                  {loading ? (
+                    <SkeletonLoader component="table" />
+                  ) : !currentDocuments?.length ? (
+                    <tr>
                       <td
-                        className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
-                        title={document.name}
+                        colSpan={4}
+                        className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
                       >
-                        {document.name}
-                      </td>
-                      <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                        {document.date ? formatDate(document.date) : ''}
-                      </td>
-                      <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                        {document.tokens ? formatTokens(+document.tokens) : ''}
-                      </td>
-                      <td className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                        <div className="flex items-center justify-end gap-3">
-                          {!document.syncFrequency && (
-                            <div className="w-8"></div>
-                          )}
-                          {document.syncFrequency && (
-                            <DropdownMenu
-                              name={t('settings.documents.sync')}
-                              options={syncOptions}
-                              onSelect={(value: string) => {
-                                handleManageSync(document, value);
-                              }}
-                              defaultValue={document.syncFrequency}
-                              icon={SyncIcon}
-                            />
-                          )}
-                          <button
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleDeleteConfirmation(index, document);
-                            }}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
-                          >
-                            <img
-                              src={Trash}
-                              alt={t('convTile.delete')}
-                              className="h-4 w-4 opacity-60 hover:opacity-100"
-                            />
-                          </button>
-                        </div>
+                        {t('settings.documents.noData')}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    currentDocuments.map((document, index) => (
+                      <tr
+                        key={index}
+                        className="group transition-colors cursor-pointer"
+                        onClick={() => setShowDocumentChunks(document)}
+                      >
+                        <td
+                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                          title={document.name}
+                        >
+                          {document.name}
+                        </td>
+                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          {document.date ? formatDate(document.date) : ''}
+                        </td>
+                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          {document.tokens
+                            ? formatTokens(+document.tokens)
+                            : ''}
+                        </td>
+                        <td
+                          className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                          onClick={(e) => e.stopPropagation()} // Stop event propagation for the entire actions cell
+                        >
+                          <div className="flex items-center justify-end gap-3">
+                            {!document.syncFrequency && (
+                              <div className="w-8"></div>
+                            )}
+                            {document.syncFrequency && (
+                              <DropdownMenu
+                                name={t('settings.documents.sync')}
+                                options={syncOptions}
+                                onSelect={(value: string) => {
+                                  handleManageSync(document, value);
+                                }}
+                                defaultValue={document.syncFrequency}
+                                icon={SyncIcon}
+                              />
+                            )}
+                            <button
+                              onClick={() => {
+                                handleDeleteConfirmation(index, document);
+                              }}
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                            >
+                              <img
+                                src={Trash}
+                                alt={t('convTile.delete')}
+                                className="h-4 w-4 opacity-60 hover:opacity-100"
+                              />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -532,11 +536,12 @@ function DocumentChunks({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {paginatedChunks.filter((chunk) =>
-            chunk.metadata?.title
+          {paginatedChunks.filter((chunk) => {
+            if (!chunk.metadata?.title) return true;
+            return chunk.metadata.title
               .toLowerCase()
-              .includes(searchTerm.toLowerCase()),
-          ).length === 0 ? (
+              .includes(searchTerm.toLowerCase());
+          }).length === 0 ? (
             <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
               <img
                 src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
@@ -547,11 +552,12 @@ function DocumentChunks({
             </div>
           ) : (
             paginatedChunks
-              .filter((chunk) =>
-                chunk.metadata?.title
+              .filter((chunk) => {
+                if (!chunk.metadata?.title) return true;
+                return chunk.metadata.title
                   .toLowerCase()
-                  .includes(searchTerm.toLowerCase()),
-              )
+                  .includes(searchTerm.toLowerCase());
+              })
               .map((chunk, index) => (
                 <div
                   key={index}
@@ -578,7 +584,7 @@ function DocumentChunks({
                     </div>
                     <div className="mt-[9px]">
                       <p className="h-12 text-sm font-semibold text-eerie-black dark:text-[#EEEEEE] leading-relaxed break-words ellipsis-text">
-                        {chunk.metadata?.title}
+                        {chunk.metadata?.title ?? 'Untitled'}
                       </p>
                       <p className="mt-1 pr-1 h-[110px] overflow-y-auto text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed break-words">
                         {chunk.text}
@@ -591,11 +597,12 @@ function DocumentChunks({
         </div>
       )}
       {!loading &&
-        paginatedChunks.filter((chunk) =>
-          chunk.metadata?.title
+        paginatedChunks.filter((chunk) => {
+          if (!chunk.metadata?.title) return true;
+          return chunk.metadata.title
             .toLowerCase()
-            .includes(searchTerm.toLowerCase()),
-        ).length !== 0 && (
+            .includes(searchTerm.toLowerCase());
+        }).length !== 0 && (
           <div className="mt-10 w-full flex items-center justify-center">
             <Pagination
               currentPage={page}

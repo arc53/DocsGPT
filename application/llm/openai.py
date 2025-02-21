@@ -85,7 +85,6 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
-        print(messages)
         if tools:
             response = self.client.chat.completions.create(
                 model=model,

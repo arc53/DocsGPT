@@ -101,7 +101,7 @@ function Upload({
             borderVariant="thin"
             label={field.label}
             required={isRequired}
-            colorVariant="gray"
+            colorVariant="silver"
           />
         );
       case 'number':
@@ -123,7 +123,7 @@ function Upload({
             borderVariant="thin"
             label={field.label}
             required={isRequired}
-            colorVariant="gray"
+            colorVariant="silver"
           />
         );
       case 'enum':
@@ -572,13 +572,13 @@ function Upload({
         </p>
         {!activeTab && (
           <div>
-            <p className="text-gray-6000 dark:text-bright-gray text-sm text-center font-medium">
+            <p className="dark text-gray-6000 dark:text-bright-gray text-sm text-center font-medium">
               {t('modals.uploadDoc.select')}
             </p>
             <div className="w-full gap-4 h-full p-4 flex flex-col md:flex-row md:gap-4 justify-center items-center">
               <button
                 onClick={() => setActiveTab('file')}
-                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-white text-[#777777] dark:bg-outer-space dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
+                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
               >
                 <img
                   src={FileUpload}
@@ -588,7 +588,7 @@ function Upload({
               </button>
               <button
                 onClick={() => setActiveTab('remote')}
-                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-white text-[#777777] dark:bg-outer-space dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
+                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
               >
                 <img
                   src={WebsiteCollect}
@@ -604,18 +604,16 @@ function Upload({
           <>
             <Input
               type="text"
-              colorVariant="gray"
+              colorVariant="silver"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
               borderVariant="thin"
-            ></Input>
-            <div className="relative bottom-12 left-2 mt-[-20px]">
-              <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-outer-space dark:text-silver">
-                {t('modals.uploadDoc.name')}
-              </span>
-            </div>
-            <div {...getRootProps()}>
-              <span className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:bg-purple-taupe dark:text-silver">
+              placeholder={t('modals.uploadDoc.name')}
+              label={t('modals.uploadDoc.name')}
+              required={true}
+            />
+            <div className="my-2" {...getRootProps()}>
+              <span className="rounded-3xl bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver border border-[#7F7F82]">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}
               </span>
@@ -624,7 +622,7 @@ function Upload({
               {t('modals.uploadDoc.info')}
             </p>
             <div className="mt-0 max-w-full">
-              <p className="mb-[14px] font-medium text-eerie-black dark:text-light-gray">
+              <p className="mb-[14px] text-[14px] font-medium text-eerie-black dark:text-light-gray">
                 {t('modals.uploadDoc.uploadedFiles')}
               </p>
               <div className="max-w-full overflow-hidden">
@@ -638,7 +636,7 @@ function Upload({
                   </p>
                 ))}
                 {files.length === 0 && (
-                  <p className="text-gray-6000 dark:text-light-gray">
+                  <p className="text-[14px] text-gray-6000 dark:text-light-gray">
                     {t('none')}
                   </p>
                 )}
@@ -649,7 +647,7 @@ function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              border="border-2"
+              border="border"
               options={urlOptions}
               selectedValue={
                 urlOptions.find((opt) => opt.value === ingestor.type) || null
@@ -664,7 +662,7 @@ function Upload({
 
             <Input
               type="text"
-              colorVariant="gray"
+              colorVariant="silver"
               value={remoteName}
               onChange={(e) => setRemoteName(e.target.value)}
               borderVariant="thin"
@@ -687,11 +685,11 @@ function Upload({
             )}
           </>
         )}
-        <div className="flex justify-between">
+        <div className="flex justify-end gap-4">
           {activeTab && (
             <button
               onClick={() => setActiveTab(null)}
-              className="rounded-3xl border border-purple-30 px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:bg-purple-taupe dark:text-silver"
+              className="rounded-3xl bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver text-[14px]"
             >
               {t('modals.uploadDoc.back')}
             </button>
@@ -706,7 +704,7 @@ function Upload({
                 }
               }}
               disabled={isUploadDisabled()}
-              className={`rounded-3xl px-4 py-2 font-medium ${
+              className={`rounded-3xl px-4 py-2 font-medium text-[14px] ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
                   : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'

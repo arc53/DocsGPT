@@ -83,7 +83,7 @@ function SourceDropdown({
                 return (
                   <div
                     key={index}
-                    className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
+                    className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-[#545561]"
                     onClick={() => {
                       dispatch(setSelectedDocs(option));
                       setIsDocsListOpen(false);

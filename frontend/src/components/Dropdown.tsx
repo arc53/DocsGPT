@@ -119,7 +119,7 @@ function Dropdown({
           {options.map((option: any, index) => (
             <div
               key={index}
-              className="hover:eerie-black flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-purple-taupe"
+              className="hover:eerie-black flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-[#545561]"
             >
               <span
                 onClick={() => {

@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
+import CopyButton from '../components/CopyButton';
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { APIKeyData, LogData } from './types';
-import CoppyButton from '../components/CopyButton';
 import { useLoaderState } from '../hooks';
+import { APIKeyData, LogData } from './types';
 
 export default function Logs() {
   const { t } = useTranslation();
@@ -148,7 +148,7 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
         {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
-              <div ref={firstObserver} key={index}>
+              <div ref={firstObserver} key={index} className="w-full">
                 <Log log={log} />
               </div>
             );
@@ -170,26 +170,30 @@ function Log({ log }: { log: LogData }) {
   const { id, action, timestamp, ...filteredLog } = log;
   return (
     <details className="group bg-transparent [&_summary::-webkit-details-marker]:hidden w-full hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal">
-      <summary className="flex flex-row items-center gap-2 text-gray-900 cursor-pointer p-2 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
+      <summary className="flex flex-row items-start gap-2 text-gray-900 cursor-pointer p-2 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
         <img
           src={ChevronRight}
           alt="Expand log entry"
-          className="w-3 h-3 transition duration-300 group-open:rotate-90"
+          className="mt-[3px] w-3 h-3 transition duration-300 group-open:rotate-90"
         />
         <span className="flex flex-row gap-2">
           <h2 className="text-xs text-black/60 dark:text-bright-gray">{`${log.timestamp}`}</h2>
           <h2 className="text-xs text-[#913400] dark:text-[#DF5200]">{`[${log.action}]`}</h2>
           <h2
-            className={`text-xs ${logLevelColor[log.level]}`}
-          >{`${log.question}`}</h2>
+            className={`max-w-72 text-xs ${logLevelColor[log.level]} break-words`}
+          >
+            {`${log.question}`.length > 250
+              ? `${log.question.substring(0, 250)}...`
+              : log.question}
+          </h2>
         </span>
       </summary>
       <div className="px-4 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
-        <p className="px-2 leading-relaxed text-gray-700 dark:text-gray-400 text-xs">
+        <p className="px-2 leading-relaxed text-gray-700 dark:text-gray-400 text-xs break-words">
           {JSON.stringify(filteredLog, null, 2)}
         </p>
         <div className="my-px w-8">
-          <CoppyButton
+          <CopyButton
             text={JSON.stringify(filteredLog)}
             colorLight="transparent"
           />
