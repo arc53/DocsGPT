@@ -115,7 +115,7 @@ def is_azure_configured():
 
 
 def save_conversation(
-    conversation_id, question, response, source_log_docs, tool_calls, llm, index=None
+    conversation_id, question, response, source_log_docs, tool_calls, llm, index=None, api_key=None
 ):
     if conversation_id is not None and index is not None:
         conversations_collection.update_one(
@@ -168,21 +168,24 @@ def save_conversation(
         ]
 
         completion = llm.gen(model=gpt_model, messages=messages_summary, max_tokens=30)
-        conversation_id = conversations_collection.insert_one(
-            {
-                "user": "local",
-                "date": datetime.datetime.utcnow(),
-                "name": completion,
-                "queries": [
-                    {
-                        "prompt": question,
-                        "response": response,
-                        "sources": source_log_docs,
-                        "tool_calls": tool_calls,
-                    }
-                ],
-            }
-        ).inserted_id
+        conversation_data = {
+            "user": "local",
+            "date": datetime.datetime.utcnow(),
+            "name": completion,
+            "queries": [
+                {
+                    "prompt": question,
+                    "response": response,
+                    "sources": source_log_docs,
+                    "tool_calls": tool_calls,
+                }
+            ],
+        }
+        if api_key:
+            api_key_doc = api_key_collection.find_one({"key": api_key})
+            if api_key_doc:
+                conversation_data["api_key"] = api_key_doc["key"]
+        conversation_id = conversations_collection.insert_one(conversation_data).inserted_id
     return conversation_id
 
 
@@ -197,11 +200,14 @@ def get_prompt(prompt_id):
         prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})["content"]
     return prompt
 
-
 def complete_stream(
-    question, retriever, conversation_id, user_api_key, isNoneDoc=False, index=None
+    question, 
+    retriever, 
+    conversation_id, 
+    user_api_key, 
+    isNoneDoc=False, 
+    index=None
 ):
-
     try:
         response_full = ""
         source_log_docs = []
@@ -232,21 +238,24 @@ def complete_stream(
                 doc["source"] = "None"
 
         llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
+            settings.LLM_NAME, 
+            api_key=settings.API_KEY, 
+            user_api_key=user_api_key
         )
-        if user_api_key is None:
-            conversation_id = save_conversation(
-                conversation_id,
-                question,
-                response_full,
-                source_log_docs,
-                tool_calls,
-                llm,
-                index,
-            )
-            # send data.type = "end" to indicate that the stream has ended as json
-            data = json.dumps({"type": "id", "id": str(conversation_id)})
-            yield f"data: {data}\n\n"
+        
+        conversation_id = save_conversation(
+            conversation_id,
+            question,
+            response_full,
+            source_log_docs,
+            tool_calls,
+            llm,
+            index,
+            api_key=user_api_key 
+        )
+        # send data.type = "end" to indicate that the stream has ended as json
+        data = json.dumps({"type": "id", "id": str(conversation_id)})
+        yield f"data: {data}\n\n"
 
         retriever_params = retriever.get_params()
         user_logs_collection.insert_one(

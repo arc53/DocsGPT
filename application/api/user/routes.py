@@ -1287,6 +1287,9 @@ class GetMessageAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
+            else:
+                match_stage["$match"]["api_key"] = {"$exists": False}
+
             message_data = conversations_collection.aggregate(
                 [
                     match_stage,
