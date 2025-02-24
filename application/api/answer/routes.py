@@ -117,6 +117,7 @@ def is_azure_configured():
 def save_conversation(
     conversation_id, question, response, source_log_docs, tool_calls, llm, index=None, api_key=None
 ):
+    current_time = datetime.datetime.now(datetime.timezone.utc)
     if conversation_id is not None and index is not None:
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id), f"queries.{index}": {"$exists": True}},
@@ -126,6 +127,7 @@ def save_conversation(
                     f"queries.{index}.response": response,
                     f"queries.{index}.sources": source_log_docs,
                     f"queries.{index}.tool_calls": tool_calls,
+                    f"queries.{index}.timestamp": current_time
                 }
             },
         )
@@ -144,6 +146,7 @@ def save_conversation(
                         "response": response,
                         "sources": source_log_docs,
                         "tool_calls": tool_calls,
+                        "timestamp": current_time
                     }
                 }
             },
@@ -178,6 +181,7 @@ def save_conversation(
                     "response": response,
                     "sources": source_log_docs,
                     "tool_calls": tool_calls,
+                    "timestamp": current_time
                 }
             ],
         }

@@ -1190,21 +1190,12 @@ class GetMessageAnalytics(Resource):
     get_message_analytics_model = api.model(
         "GetMessageAnalyticsModel",
         {
-            "api_key_id": fields.String(
-                required=False,
-                description="API Key ID",
-            ),
+            "api_key_id": fields.String(required=False, description="API Key ID"),
             "filter_option": fields.String(
                 required=False,
                 description="Filter option for analytics",
                 default="last_30_days",
-                enum=[
-                    "last_hour",
-                    "last_24_hour",
-                    "last_7_days",
-                    "last_15_days",
-                    "last_30_days",
-                ],
+                enum=["last_hour", "last_24_hour", "last_7_days", "last_15_days", "last_30_days"],
             ),
         },
     )
@@ -1225,42 +1216,21 @@ class GetMessageAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}")
             return make_response(jsonify({"success": False}), 400)
+
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
             start_date = end_date - datetime.timedelta(hours=1)
             group_format = "%Y-%m-%d %H:%M:00"
-            group_stage = {
-                "$group": {
-                    "_id": {
-                        "minute": {
-                            "$dateToString": {"format": group_format, "date": "$date"}
-                        }
-                    },
-                    "total_messages": {"$sum": 1},
-                }
-            }
-
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
-            group_stage = {
-                "$group": {
-                    "_id": {
-                        "hour": {
-                            "$dateToString": {"format": group_format, "date": "$date"}
-                        }
-                    },
-                    "total_messages": {"$sum": 1},
-                }
-            }
-
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
-                    6
-                    if filter_option == "last_7_days"
-                    else (14 if filter_option == "last_15_days" else 29)
+                    6 if filter_option == "last_7_days"
+                    else 14 if filter_option == "last_15_days"
+                    else 29
                 )
             else:
                 return make_response(
@@ -1268,39 +1238,44 @@ class GetMessageAnalytics(Resource):
                 )
             start_date = end_date - datetime.timedelta(days=filter_days)
             start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(
-                hour=23, minute=59, second=59, microsecond=999999
-            )
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
             group_format = "%Y-%m-%d"
-            group_stage = {
-                "$group": {
-                    "_id": {
-                        "day": {
-                            "$dateToString": {"format": group_format, "date": "$date"}
-                        }
-                    },
-                    "total_messages": {"$sum": 1},
-                }
-            }
 
         try:
-            match_stage = {
-                "$match": {
-                    "date": {"$gte": start_date, "$lte": end_date},
-                }
-            }
-            if api_key:
-                match_stage["$match"]["api_key"] = api_key
-            else:
-                match_stage["$match"]["api_key"] = {"$exists": False}
+            pipeline = [
+                # Initial match for API key if provided
+                {
+                    "$match": {
+                        "api_key": api_key if api_key else {"$exists": False}
+                    }
+                },
+                {"$unwind": "$queries"},
+                # Match queries within the time range
+                {
+                    "$match": {
+                        "queries.timestamp": {
+                            "$gte": start_date,
+                            "$lte": end_date
+                        }
+                    }
+                },
+                # Group by formatted timestamp
+                {
+                    "$group": {
+                        "_id": {
+                            "$dateToString": {
+                                "format": group_format,
+                                "date": "$queries.timestamp"
+                            }
+                        },
+                        "count": {"$sum": 1}
+                    }
+                },
+                # Sort by timestamp
+                {"$sort": {"_id": 1}}
+            ]
 
-            message_data = conversations_collection.aggregate(
-                [
-                    match_stage,
-                    group_stage,
-                    {"$sort": {"_id": 1}},
-                ]
-            )
+            message_data = conversations_collection.aggregate(pipeline)
 
             if filter_option == "last_hour":
                 intervals = generate_minute_range(start_date, end_date)
@@ -1312,12 +1287,7 @@ class GetMessageAnalytics(Resource):
             daily_messages = {interval: 0 for interval in intervals}
 
             for entry in message_data:
-                if filter_option == "last_hour":
-                    daily_messages[entry["_id"]["minute"]] = entry["total_messages"]
-                elif filter_option == "last_24_hour":
-                    daily_messages[entry["_id"]["hour"]] = entry["total_messages"]
-                else:
-                    daily_messages[entry["_id"]["day"]] = entry["total_messages"]
+                daily_messages[entry["_id"]] = entry["count"]
 
         except Exception as err:
             current_app.logger.error(f"Error getting message analytics: {err}")
