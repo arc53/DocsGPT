@@ -1361,6 +1361,7 @@ class GetTokenAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}")
             return make_response(jsonify({"success": False}), 400)
+
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -1381,7 +1382,6 @@ class GetTokenAnalytics(Resource):
                     },
                 }
             }
-
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
@@ -1400,7 +1400,6 @@ class GetTokenAnalytics(Resource):
                     },
                 }
             }
-
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
@@ -1442,6 +1441,8 @@ class GetTokenAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
+            else:
+                match_stage["$match"]["api_key"] = {"$exists": False}
 
             token_usage_data = token_usage_collection.aggregate(
                 [
@@ -1553,6 +1554,8 @@ class GetFeedbackAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
+            else:
+                match_stage["$match"]["api_key"] = {"$exists":False}
 
             # Unwind the queries array to process each query separately
             pipeline = [
