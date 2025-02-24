@@ -106,11 +106,14 @@ class DeleteAllConversations(Resource):
 @user_ns.route("/api/get_conversations")
 class GetConversations(Resource):
     @api.doc(
-        description="Retrieve a list of the latest 30 conversations",
+        description="Retrieve a list of the latest 30 conversations (excluding API key conversations)",
     )
     def get(self):
         try:
-            conversations = conversations_collection.find().sort("date", -1).limit(30)
+            conversations = conversations_collection.find(
+                {"api_key": {"$exists": False}}
+            ).sort("date", -1).limit(30)
+            
             list_conversations = [
                 {"id": str(conversation["_id"]), "name": conversation["name"]}
                 for conversation in conversations
@@ -220,7 +223,8 @@ class SubmitFeedback(Resource):
                 },
                 {
                     "$set": {
-                        f"queries.{data['question_index']}.feedback": data["feedback"]
+                        f"queries.{data['question_index']}.feedback": data["feedback"],
+                        f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(datetime.timezone.utc)
                     }
                 },
             )
@@ -1521,11 +1525,11 @@ class GetFeedbackAnalytics(Resource):
         if filter_option == "last_hour":
             start_date = end_date - datetime.timedelta(hours=1)
             group_format = "%Y-%m-%d %H:%M:00"
-            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
+            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
-            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
+            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
@@ -1543,19 +1547,19 @@ class GetFeedbackAnalytics(Resource):
                 hour=23, minute=59, second=59, microsecond=999999
             )
             group_format = "%Y-%m-%d"
-            date_field = {"$dateToString": {"format": group_format, "date": "$date"}}
+            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
 
         try:
             match_stage = {
                 "$match": {
-                    "date": {"$gte": start_date, "$lte": end_date},
-                    "queries": {"$exists": True, "$ne": []},
+                    "queries.feedback_timestamp": {"$gte": start_date, "$lte": end_date},
+                    "queries.feedback": {"$exists": True}
                 }
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
             else:
-                match_stage["$match"]["api_key"] = {"$exists":False}
+                match_stage["$match"]["api_key"] = {"$exists": False}
 
             # Unwind the queries array to process each query separately
             pipeline = [
