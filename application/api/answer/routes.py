@@ -17,6 +17,7 @@ from application.error import bad_request
 from application.extensions import api
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
+from application.tools.agent import ClassicAgent
 from application.utils import check_required_fields, limit_chat_history
 
 logger = logging.getLogger(__name__)
@@ -199,15 +200,21 @@ def get_prompt(prompt_id):
 
 
 def complete_stream(
-    question, retriever, conversation_id, user_api_key, isNoneDoc=False, index=None
+    question,
+    agent,
+    retriever,
+    conversation_id,
+    user_api_key,
+    isNoneDoc=False,
+    index=None,
 ):
 
     try:
         response_full = ""
         source_log_docs = []
         tool_calls = []
-        answer = retriever.gen()
-        sources = retriever.search()
+        answer = agent.gen(question, retriever)
+        sources = retriever.search(question)
         for source in sources:
             if "text" in source:
                 source["text"] = source["text"][:100].strip() + "..."
@@ -361,9 +368,16 @@ class Stream(Resource):
             prompt = get_prompt(prompt_id)
             if "isNoneDoc" in data and data["isNoneDoc"] is True:
                 chunks = 0
+            agent = ClassicAgent(
+                settings.LLM_NAME,
+                gpt_model,
+                settings.API_KEY,
+                user_api_key=user_api_key,
+                prompt=prompt,
+                chat_history=history,
+            )
             retriever = RetrieverCreator.create_retriever(
                 retriever_name,
-                question=question,
                 source=source,
                 chat_history=history,
                 prompt=prompt,
@@ -376,6 +390,7 @@ class Stream(Resource):
             return Response(
                 complete_stream(
                     question=question,
+                    agent=agent,
                     retriever=retriever,
                     conversation_id=conversation_id,
                     user_api_key=user_api_key,

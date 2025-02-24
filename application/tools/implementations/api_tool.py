@@ -31,10 +31,27 @@ class APITool(Tool):
             print(f"Making API call: {method} {url} with body: {body}")
             response = requests.request(method, url, headers=headers, data=body)
             response.raise_for_status()
-            try:
-                data = response.json()
-            except ValueError:
+
+            content_type = response.headers.get(
+                "Content-Type", "application/json"
+            ).lower()
+            if "application/json" in content_type:
+                try:
+                    data = response.json()
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding JSON: {e}.  Raw response: {response.text}")
+                    return {
+                        "status_code": response.status_code,
+                        "message": f"API call returned invalid JSON.  Error: {e}",
+                        "data": response.text,
+                    }
+            elif "text/" in content_type or "application/xml" in content_type:
+                data = response.text
+            elif not response.content:
                 data = None
+            else:
+                print(f"Unsupported content type: {content_type}")
+                data = response.content
 
             return {
                 "status_code": response.status_code,
