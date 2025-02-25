@@ -210,7 +210,8 @@ def complete_stream(
     conversation_id, 
     user_api_key, 
     isNoneDoc=False, 
-    index=None
+    index=None,
+    should_save_conversation=True
 ):
     try:
         response_full = ""
@@ -247,16 +248,20 @@ def complete_stream(
             user_api_key=user_api_key
         )
         
-        conversation_id = save_conversation(
-            conversation_id,
-            question,
-            response_full,
-            source_log_docs,
-            tool_calls,
-            llm,
-            index,
-            api_key=user_api_key 
-        )
+        if should_save_conversation:
+            conversation_id = save_conversation(
+                conversation_id,
+                question,
+                response_full,
+                source_log_docs,
+                tool_calls,
+                llm,
+                index,
+                api_key=user_api_key 
+            )
+        else:
+            conversation_id = None
+
         # send data.type = "end" to indicate that the stream has ended as json
         data = json.dumps({"type": "id", "id": str(conversation_id)})
         yield f"data: {data}\n\n"
@@ -322,6 +327,9 @@ class Stream(Resource):
             "index": fields.Integer(
                 required=False, description="The position where query is to be updated"
             ),
+            "save_conversation": fields.Boolean(
+                required=False, default=True, description="Flag to save conversation"
+            ),
         },
     )
 
@@ -335,6 +343,8 @@ class Stream(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+
+        save_conv = data.get("save_conversation", True)
 
         try:
             question = data["question"]
@@ -394,6 +404,7 @@ class Stream(Resource):
                     user_api_key=user_api_key,
                     isNoneDoc=data.get("isNoneDoc"),
                     index=index,
+                    should_save_conversation=save_conv,
                 ),
                 mimetype="text/event-stream",
             )
