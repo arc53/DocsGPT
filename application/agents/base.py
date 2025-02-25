@@ -1,10 +1,11 @@
 from typing import Dict, Generator
 
+from application.agents.llm_handler import get_llm_handler
+from application.agents.tools.tool_action_parser import ToolActionParser
+from application.agents.tools.tool_manager import ToolManager
+
 from application.core.mongo_db import MongoDB
 from application.llm.llm_creator import LLMCreator
-from application.tools.llm_handler import get_llm_handler
-from application.tools.tool_action_parser import ToolActionParser
-from application.tools.tool_manager import ToolManager
 
 
 class BaseAgent:

@@ -1,8 +1,9 @@
 import uuid
 from typing import Dict, Generator
 
+from application.agents.base import BaseAgent
+
 from application.retriever.base import BaseRetriever
-from application.tools.base_agent import BaseAgent
 
 
 class ClassicAgent(BaseAgent):

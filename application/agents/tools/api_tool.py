@@ -1,7 +1,7 @@
 import json
 
 import requests
-from application.tools.base import Tool
+from application.agents.tools.base import Tool
 
 
 class APITool(Tool):

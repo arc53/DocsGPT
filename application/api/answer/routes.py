@@ -1,15 +1,16 @@
 import asyncio
 import datetime
 import json
+import logging
 import os
 import traceback
-import logging
 
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
 from flask import Blueprint, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
+from application.agents.classic_agent import ClassicAgent
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
@@ -17,7 +18,6 @@ from application.error import bad_request
 from application.extensions import api
 from application.llm.llm_creator import LLMCreator
 from application.retriever.retriever_creator import RetrieverCreator
-from application.tools.agent import ClassicAgent
 from application.utils import check_required_fields, limit_chat_history
 
 logger = logging.getLogger(__name__)

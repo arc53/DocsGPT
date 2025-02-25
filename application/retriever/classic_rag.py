@@ -51,10 +51,12 @@ class ClassicRAG(BaseRetriever):
 
         Rephrase the following user question to be a standalone search query 
         that captures all relevant context from the conversation:
-        {self.original_question}
         """
 
-        messages = [{"role": "system", "content": prompt}]
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": self.original_question},
+        ]
 
         try:
             rephrased_query = self.llm.gen(model=self.gpt_model, messages=messages)
