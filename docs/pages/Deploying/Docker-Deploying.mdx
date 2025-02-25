@@ -84,11 +84,11 @@ There are two Ollama optional files:
 
     **CPU:**
     ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml up -d
+    docker compose --env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml up -d
     ```
     **GPU:**
     ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml up -d
+    docker compose --env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml up -d
     ```
 
 3.  **Pull the Ollama Model:**
