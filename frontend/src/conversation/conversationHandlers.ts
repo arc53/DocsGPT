@@ -262,6 +262,7 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
       question: question,
       history: JSON.stringify(history),
       api_key: apiKey,
+      save_conversation: false,
     };
     conversationService
       .answerStream(payload, signal)
