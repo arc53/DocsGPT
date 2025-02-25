@@ -15,11 +15,13 @@ interface FetchAnswerStreamingProps {
   onEvent?: (event: MessageEvent) => void;
 }
 
-interface FeedbackPayload {
-  question: string;
-  answer: string;
-  apikey: string;
-  feedback: FEEDBACK;
+export interface FeedbackPayload {
+  question?: string;
+  answer?: string;
+  feedback: string | null;
+  apikey?: string;
+  conversation_id: string;
+  question_index: number;
 }
 
 export function fetchAnswerStreaming({
@@ -94,7 +96,7 @@ export function fetchAnswerStreaming({
 }
 
 
-export const sendFeedback = (payload: FeedbackPayload,apiHost:string): Promise<Response> => {
+export  const sendFeedback = (payload: FeedbackPayload, apiHost: string): Promise<Response> => {
   return fetch(`${apiHost}/api/feedback`, {
     method: 'POST',
     headers: {
@@ -104,7 +106,9 @@ export const sendFeedback = (payload: FeedbackPayload,apiHost:string): Promise<R
       question: payload.question,
       answer: payload.answer,
       feedback: payload.feedback,
-      api_key:payload.apikey
+      api_key: payload.apikey,
+      conversation_id: payload.conversation_id,
+      question_index: payload.question_index
     }),
   });
 };

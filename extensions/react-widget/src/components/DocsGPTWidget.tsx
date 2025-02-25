@@ -6,8 +6,8 @@ import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from 
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetCoreProps, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import { ThemeProvider } from 'styled-components';
-import Like from "../assets/like.svg"
-import Dislike from "../assets/dislike.svg"
+import Like from '../assets/like.svg';
+import Dislike from '../assets/dislike.svg';
 import MarkdownIt from 'markdown-it';
 
 const themes = {
@@ -592,8 +592,8 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   )
 }
 export const WidgetCore = ({
-  apiHost = 'https://gptcloud.arc53.com',
-  apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
+  apiHost = 'http://localhost:7091',
+  apiKey = "1a31e931-90c9-4fb7-af99-2cba70a0f3ee",
   //apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
@@ -655,32 +655,59 @@ export const WidgetCore = ({
   }, [queries.length, queries[queries.length - 1]?.response]);
 
   async function handleFeedback(feedback: FEEDBACK, index: number) {
-    let query = queries[index]
-    if (!query.response)
+    let query = queries[index];
+    if (!query.response || !conversationId) {
+      console.log("Cannot submit feedback: missing response or conversation ID");
       return;
-    if (query.feedback != feedback) {
-      sendFeedback({
+    }
+
+    // If clicking the same feedback button that's already active, remove the feedback by sending null
+    if (query.feedback === feedback) {
+      try {
+        const response = await sendFeedback({
+          question: query.prompt,
+          answer: query.response,
+          feedback: null,
+          apikey: apiKey,
+          conversation_id: conversationId,
+          question_index: index,
+        }, apiHost);
+
+        if (response.status === 200) {
+          const updatedQuery = { ...query };
+          delete updatedQuery.feedback;
+          setQueries((prev: Query[]) =>
+            prev.map((q, i) => (i === index ? updatedQuery : q))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to submit feedback:", err);
+      }
+      return;
+    }
+
+    try {
+      const response = await sendFeedback({
         question: query.prompt,
         answer: query.response,
         feedback: feedback,
-        apikey: apiKey
-      }, apiHost)
-        .then(res => {
-          if (res.status == 200) {
-            query.feedback = feedback;
-            setQueries((prev: Query[]) => {
-              return prev.map((q, i) => (i === index ? query : q));
-            });
-          }
-        })
-        .catch(err => console.log("Connection failed", err))
-    }
-    else {
-      delete query.feedback;
-      setQueries((prev: Query[]) => {
-        return prev.map((q, i) => (i === index ? query : q));
-      });
+        apikey: apiKey,
+        conversation_id: conversationId,
+        question_index: index,
+      }, apiHost);
 
+      if (response.status === 200) {
+        setQueries((prev: Query[]) => {
+          return prev.map((q, i) => {
+            if (i === index) {
+              return { ...q, feedback: feedback };
+            }
+            return q;
+          });
+        });
+      }
+    } catch (err) {
+      console.error("Failed to submit feedback:", err);
     }
   }
 
@@ -808,20 +835,34 @@ export const WidgetCore = ({
 
                           {collectFeedback &&
                             <Feedback>
+                              <button
+                                style={{backgroundColor:'transparent', border:'none',cursor:'pointer'}}
+                                onClick={(e) => {
+                                e.stopPropagation()
+                                handleFeedback("LIKE", index)}
+                                }>
                               <Like
                                 style={{
                                   stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
                                   visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
                                 }}
                                 fill='none'
-                                onClick={() => handleFeedback("LIKE", index)} />
+                                 />
+                              </button>
+                              <button
+                                style={{backgroundColor:'transparent', border:'none',cursor:'pointer'}}
+                                onClick={(e) => {
+                                e.stopPropagation()
+                                handleFeedback("DISLIKE", index)}
+                                }>
                               <Dislike
                                 style={{
                                   stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
                                   visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
                                 }}
                                 fill='none'
-                                onClick={() => handleFeedback("DISLIKE", index)} />
+                                 />
+                              </button>
                             </Feedback>}
                         </MessageBubble>
                           : <div>
