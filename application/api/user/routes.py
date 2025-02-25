@@ -216,18 +216,34 @@ class SubmitFeedback(Resource):
             return missing_fields
 
         try:
-            conversations_collection.update_one(
-                {
-                    "_id": ObjectId(data["conversation_id"]),
-                    f"queries.{data['question_index']}": {"$exists": True},
-                },
-                {
-                    "$set": {
-                        f"queries.{data['question_index']}.feedback": data["feedback"],
-                        f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(datetime.timezone.utc)
-                    }
-                },
-            )
+            if data["feedback"] is None:
+                # Remove feedback and feedback_timestamp if feedback is null
+                conversations_collection.update_one(
+                    {
+                        "_id": ObjectId(data["conversation_id"]),
+                        f"queries.{data['question_index']}": {"$exists": True},
+                    },
+                    {
+                        "$unset": {
+                            f"queries.{data['question_index']}.feedback": "",
+                            f"queries.{data['question_index']}.feedback_timestamp": ""
+                        }
+                    },
+                )
+            else:
+                # Set feedback and feedback_timestamp if feedback has a value
+                conversations_collection.update_one(
+                    {
+                        "_id": ObjectId(data["conversation_id"]),
+                        f"queries.{data['question_index']}": {"$exists": True},
+                    },
+                    {
+                        "$set": {
+                            f"queries.{data['question_index']}.feedback": data["feedback"],
+                            f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(datetime.timezone.utc)
+                        }
+                    },
+                )
 
         except Exception as err:
             current_app.logger.error(f"Error submitting feedback: {err}")
