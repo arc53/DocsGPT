@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import DOMPurify from 'dompurify';
 import styled, { keyframes, css } from 'styled-components';
 import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from '@radix-ui/react-icons';
@@ -591,10 +591,10 @@ export const DocsGPTWidget = (props: WidgetProps) => {
     </>
   )
 }
+
 export const WidgetCore = ({
-  apiHost = 'http://localhost:7091',
-  apiKey = "1a31e931-90c9-4fb7-af99-2cba70a0f3ee",
-  //apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
+  apiHost = 'https://gptcloud.arc53.com',
+  apiKey = "82962c9a-aa77-4152-94e5-a4f84fd44c6a",
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -614,8 +614,10 @@ export const WidgetCore = ({
   const [queries, setQueries] = React.useState<Query[]>([]);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
   const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
+  const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
 
   const isBubbleHovered = useRef<boolean>(false);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
 
@@ -632,26 +634,38 @@ export const WidgetCore = ({
     }
   }, [isOpen]);
 
-
-
   const handleUserInterrupt = () => {
-    (status === 'loading') && setEventInterrupt(true);
+    if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
   }
-  const scrollToBottom = (element: Element | null) => {
-    //recursive function to scroll to the last child of the last child ...
-    // to get to the bottom most element
-    if (!element) return;
-    if (element?.children.length === 0) {
-      element?.scrollIntoView({
+
+  const scrollIntoView = () => {
+    if (!conversationRef?.current || eventInterrupt) return;
+
+    if (status === 'idle' || !queries.length || !queries[queries.length - 1].response) {
+      conversationRef.current.scrollTo({
         behavior: 'smooth',
-        block: 'start',
+        top: conversationRef.current.scrollHeight,
       });
+    } else {
+      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
     }
-    const lastChild = element?.children?.[element.children.length - 1]
-    lastChild && scrollToBottom(lastChild)
+    setHasScrolledToLast(true);
   };
+
+  const checkScroll = () => {
+    const el = conversationRef.current;
+    if (!el) return;
+    const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
+    setHasScrolledToLast(isBottom);
+  };
+
   React.useEffect(() => {
-    !eventInterrupt && scrollToBottom(endMessageRef.current);
+    !eventInterrupt && scrollIntoView();
+    
+    conversationRef.current?.addEventListener('scroll', checkScroll);
+    return () => {
+      conversationRef.current?.removeEventListener('scroll', checkScroll);
+    };
   }, [queries.length, queries[queries.length - 1]?.response]);
 
   async function handleFeedback(feedback: FEEDBACK, index: number) {
@@ -804,7 +818,11 @@ export const WidgetCore = ({
                 </ContentWrapper>
               </Header>
             </div>
-            <Conversation onWheel={handleUserInterrupt} onTouchMove={handleUserInterrupt}>
+            <Conversation 
+              ref={conversationRef}
+              onWheel={handleUserInterrupt} 
+              onTouchMove={handleUserInterrupt}
+            > 
               {
                 queries.length > 0 ? queries?.map((query, index) => {
                   return (
