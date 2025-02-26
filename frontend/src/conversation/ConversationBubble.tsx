@@ -5,10 +5,14 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import {
+  vscDarkPlus,
+  oneLight,
+} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import { useDarkTheme } from '../hooks';
 
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import ChevronDown from '../assets/chevron-down.svg';
@@ -69,6 +73,7 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const { t } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -333,7 +338,7 @@ const ConversationBubble = forwardRef<
             </p>
           </div>
           <div
-            className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
+            className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[18px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
                 ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
@@ -347,25 +352,31 @@ const ConversationBubble = forwardRef<
                 code(props) {
                   const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
+                  const language = match ? match[1] : '';
 
                   return match ? (
-                    <div className="group relative">
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={match[1]}
-                        style={vscDarkPlus}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                      <div
-                        className={`absolute right-3 top-3 lg:invisible 
-                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
-                      >
+                    <div className="group relative rounded-lg overflow-hidden border border-light-silver dark:border-raisin-black">
+                      <div className="flex justify-between items-center px-3 py-2 bg-platinum dark:bg-eerie-black-2">
+                        <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+                          {language}
+                        </span>
                         <CopyButton
                           text={String(children).replace(/\n$/, '')}
                         />
                       </div>
+                      <SyntaxHighlighter
+                        {...rest}
+                        PreTag="div"
+                        language={language}
+                        style={isDarkTheme ? vscDarkPlus : oneLight}
+                        className="!mt-0"
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: 0,
+                        }}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
                     </div>
                   ) : (
                     <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">

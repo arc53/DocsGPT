@@ -382,10 +382,10 @@ export default function Conversation() {
         )}
       </div>
 
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[62%] h-auto py-1">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[58%] xl:max-w-[52vw] h-auto py-1">
         <div
           {...getRootProps()}
-          className="flex w-full items-center rounded-[40px] border border-silver bg-white dark:bg-raisin-black"
+          className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-raisin-black"
         >
           <label htmlFor="file-upload" className="sr-only">
             {t('modals.uploadDoc.label')}
@@ -423,7 +423,7 @@ export default function Conversation() {
                 className="flex items-center justify-center"
               >
                 <img
-                  className="ml-[4px] h-6 w-6 text-white"
+                  className="ml-[4px] h-6 w-6 text-white filter dark:invert-[0.45] invert-[0.35]"
                   src={isDarkTheme ? SendDark : Send}
                   alt={t('send')}
                 />
@@ -432,7 +432,7 @@ export default function Conversation() {
           )}
         </div>
 
-        <p className="text-gray-595959 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-bright-gray md:inline md:w-full">
+        <p className="text-gray-4000 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-sonic-silver md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
