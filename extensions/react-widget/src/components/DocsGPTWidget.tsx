@@ -592,8 +592,8 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   )
 }
 export const WidgetCore = ({
-  apiHost = 'http://localhost:7091',
-  apiKey = "1a31e931-90c9-4fb7-af99-2cba70a0f3ee",
+  apiHost = 'https://gptcloud.arc53.com',
+  apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
   //apiKey = '82962c9a-aa77-4152-94e5-a4f84fd44c6a',
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
