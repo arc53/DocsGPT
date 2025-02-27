@@ -127,7 +127,7 @@ const ConversationBubble = forwardRef<
                   setIsEditClicked(true);
                   setEditInputBox(message);
                 }}
-                className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+                className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-light-silver dark:hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
               >
                 <img src={Edit} alt="Edit" className="cursor-pointer" />
               </button>
@@ -143,17 +143,17 @@ const ConversationBubble = forwardRef<
                 onChange={(e) => setEditInputBox(e.target.value)}
                 rows={5}
                 value={editInputBox}
-                className="w-full resize-none border-2 border-black dark:border-white rounded-3xl px-4 py-3 text-base leading-relaxed text-black dark:bg-raisin-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#CDB5FF]"
+                className="w-full resize-none border border-silver dark:border-philippine-grey rounded-3xl px-4 py-3 text-base leading-relaxed text-carbon dark:text-chinese-white dark:bg-raisin-black focus:outline-none"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] px-4 py-2 text-purple-30 text-sm font-medium"
+                  className="rounded-full bg-purple-30 hover:bg-purple-hover px-4 py-2 text-white text-sm font-medium transition-colors"
                   onClick={handleEditClick}
                 >
                   {t('conversation.edit.update')}
                 </button>
                 <button
-                  className="px-4 py-2 text-purple-30 text-sm hover:underline"
+                  className="px-4 py-2 text-purple-30 text-sm hover:text-rich-black hover:bg-light-gray-hover dark:hover:bg-charcoal transition-colors rounded-full"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
@@ -355,8 +355,8 @@ const ConversationBubble = forwardRef<
                   const language = match ? match[1] : '';
 
                   return match ? (
-                    <div className="group relative rounded-lg overflow-hidden border border-light-silver dark:border-raisin-black">
-                      <div className="flex justify-between items-center px-3 py-2 bg-platinum dark:bg-eerie-black-2">
+                    <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
+                      <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
                         <span className="text-xs font-medium text-just-black dark:text-chinese-white">
                           {language}
                         </span>
