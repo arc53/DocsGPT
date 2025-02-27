@@ -56,11 +56,24 @@ module.exports = {
         'dim-gray': '#6A6A6A',
         'cultured': '#f4f4f4',
         'charleston-green': '#2b2c31',
-        'grey':'#7e7e7e',
-        'lotion':'#fbfbfb',
-        'platinum':'#e6e6e6',
+        'charleston-green-2' : '#26272e',
+        'grey': '#7e7e7e',
+        'lotion': '#fbfbfb',
+        'platinum': '#e6e6e6',
         'eerie-black-2': '#191919',
         'light-silver': '#D9D9D9',
+        'carbon': '#2E2E2E',
+        'onyx':'#35363B',
+
+        // New colors for edit buttons
+        'purple-hover': '#6C4AB0', //royal purple
+        'rich-black': '#0F1419', // chinese-black-2
+        'light-gray-hover': '#D9DCDE', //gainsboro
+        'charcoal': '#35383C',//onyx 2
+        'philippine-grey': '#929292',
+        'charcoal-grey':'#53545D',
+        'rosso-corsa': '#D30000',
+        'apple-green': '#4CAF50',
       },
     },
   },
