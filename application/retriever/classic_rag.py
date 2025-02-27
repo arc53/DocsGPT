@@ -43,7 +43,11 @@ class ClassicRAG(BaseRetriever):
         self.vectorstore = source["active_docs"] if "active_docs" in source else None
 
     def _rephrase_query(self):
-        if not self.chat_history or self.chat_history == []:
+        if (
+            not self.original_question
+            or not self.chat_history
+            or self.chat_history == []
+        ):
             return self.original_question
 
         prompt = f"""Given the following conversation history:

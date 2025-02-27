@@ -10,7 +10,7 @@ from bson.objectid import ObjectId
 from flask import Blueprint, make_response, request, Response
 from flask_restx import fields, Namespace, Resource
 
-from application.agents.classic_agent import ClassicAgent
+from application.agents.agent_creator import AgentCreator
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
@@ -213,7 +213,7 @@ def complete_stream(
         response_full = ""
         source_log_docs = []
         tool_calls = []
-        answer = agent.gen(question, retriever)
+        answer = agent.gen(query=question, retriever=retriever)
         sources = retriever.search(question)
         for source in sources:
             if "text" in source:
@@ -368,14 +368,18 @@ class Stream(Resource):
             prompt = get_prompt(prompt_id)
             if "isNoneDoc" in data and data["isNoneDoc"] is True:
                 chunks = 0
-            agent = ClassicAgent(
-                settings.LLM_NAME,
-                gpt_model,
-                settings.API_KEY,
+
+            agent = AgentCreator.create_agent(
+                settings.AGENT_NAME,
+                endpoint="stream",
+                llm_name=settings.LLM_NAME,
+                gpt_model=gpt_model,
+                api_key=settings.API_KEY,
                 user_api_key=user_api_key,
                 prompt=prompt,
                 chat_history=history,
             )
+
             retriever = RetrieverCreator.create_retriever(
                 retriever_name,
                 source=source,

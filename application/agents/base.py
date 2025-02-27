@@ -9,7 +9,8 @@ from application.llm.llm_creator import LLMCreator
 
 
 class BaseAgent:
-    def __init__(self, llm_name, gpt_model, api_key, user_api_key=None):
+    def __init__(self, endpoint, llm_name, gpt_model, api_key, user_api_key=None):
+        self.endpoint = endpoint
         self.llm = LLMCreator.create_llm(
             llm_name, api_key=api_key, user_api_key=user_api_key
         )
@@ -19,7 +20,7 @@ class BaseAgent:
         self.tool_config = {}
         self.tool_calls = []
 
-    def gen(self, query: str) -> Generator[Dict, None, None]:
+    def gen(self, *args, **kwargs) -> Generator[Dict, None, None]:
         raise NotImplementedError('Method "gen" must be implemented in the child class')
 
     def _get_user_tools(self, user="local"):

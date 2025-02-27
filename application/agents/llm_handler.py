@@ -1,8 +1,14 @@
 import json
 from abc import ABC, abstractmethod
 
+from application.logging import build_stack_data
+
 
 class LLMHandler(ABC):
+    def __init__(self):
+        self.llm_calls = []
+        self.tool_calls = []
+
     @abstractmethod
     def handle_response(self, agent, resp, tools_dict, messages, **kwargs):
         pass
@@ -21,6 +27,7 @@ class OpenAILLMHandler(LLMHandler):
             tool_calls = resp.message.tool_calls
             for call in tool_calls:
                 try:
+                    self.tool_calls.append(call)
                     tool_response, call_id = agent._execute_tool_action(
                         tools_dict, call
                     )
@@ -57,6 +64,7 @@ class OpenAILLMHandler(LLMHandler):
             resp = agent.llm.gen(
                 model=agent.gpt_model, messages=messages, tools=agent.tools
             )
+            self.llm_calls.append(build_stack_data(agent.llm))
         return resp
 
 
@@ -68,11 +76,13 @@ class GoogleLLMHandler(LLMHandler):
             response = agent.llm.gen(
                 model=agent.gpt_model, messages=messages, tools=agent.tools
             )
+            self.llm_calls.append(build_stack_data(agent.llm))
             if response.candidates and response.candidates[0].content.parts:
                 tool_call_found = False
                 for part in response.candidates[0].content.parts:
                     if part.function_call:
                         tool_call_found = True
+                        self.tool_calls.append(part.function_call)
                         tool_response, call_id = agent._execute_tool_action(
                             tools_dict, part.function_call
                         )
