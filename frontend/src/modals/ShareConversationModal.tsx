@@ -8,6 +8,7 @@ import {
   selectPrompt,
 } from '../preferences/preferenceSlice';
 import Dropdown from '../components/Dropdown';
+import ToggleSwitch from '../components/ToggleSwitch';
 import { Doc } from '../models/misc';
 import Spinner from '../assets/spinner.svg';
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
@@ -101,38 +102,21 @@ export const ShareConversationModal = ({
   return (
     <WrapperModal close={close}>
       <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-medium text-eerie-black dark:text-white">
+        <h2 className="text-xl font-medium text-eerie-black dark:text-chinese-white">
           {t('modals.shareConv.label')}
         </h2>
-        <p className="text-sm text-eerie-black dark:text-white">
+        <p className="text-sm text-eerie-black dark:text-silver/60">
           {t('modals.shareConv.note')}
         </p>
         <div className="flex items-center justify-between">
           <span className="text-lg text-eerie-black dark:text-white">
             {t('modals.shareConv.option')}
           </span>
-          <label className="cursor-pointer select-none items-center">
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={allowPrompt}
-                onChange={togglePromptPermission}
-                className="sr-only"
-              />
-              <div
-                className={`box block h-8 w-14 rounded-full border border-purple-30 ${
-                  allowPrompt
-                    ? 'bg-purple-30 dark:bg-purple-30'
-                    : 'dark:bg-transparent'
-                }`}
-              ></div>
-              <div
-                className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full  transition ${
-                  allowPrompt ? 'translate-x-full bg-silver' : 'bg-purple-30'
-                }`}
-              ></div>
-            </div>
-          </label>
+          <ToggleSwitch
+            checked={allowPrompt}
+            onChange={togglePromptPermission}
+            size="medium"
+          />
         </div>
         {allowPrompt && (
           <div className="my-4">
@@ -149,19 +133,19 @@ export const ShareConversationModal = ({
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">
-          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 py-3 px-4 text-eerie-black dark:text-white">
+          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 border-silver dark:border-silver/40 py-3 px-4 text-eerie-black dark:text-white">
             {`${domain}/share/${identifier ?? '....'}`}
           </span>
           {status === 'fetched' ? (
             <button
-              className="my-1 h-10 w-28 rounded-full border border-solid  bg-purple-30 p-2 text-sm text-white hover:bg-[#6F3FD1]"
+              className="my-1 h-10 w-28 rounded-full border border-solid  bg-purple-30 p-2 text-sm text-white hover:bg-purple-hover"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
             </button>
           ) : (
             <button
-              className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full  border border-solid bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-[#6F3FD1]"
+              className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-purple-hover"
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}
