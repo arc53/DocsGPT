@@ -294,19 +294,18 @@ export default function Conversation() {
   return (
     <div className="flex flex-col gap-1 h-full justify-end ">
       {conversationId && queries.length > 0 && (
-        <div className="absolute top-4 right-20 z-10  ">
-          {' '}
-          <div className="flex mt-2 items-center gap-4 ">
+        <div className="absolute top-4 right-20">
+          <div className="flex mt-2 items-center gap-4">
             {isMobile && queries.length > 0 && (
               <button
                 title="Open New Chat"
                 onClick={() => {
                   newChat();
                 }}
-                className="hover:bg-bright-gray dark:hover:bg-[#28292E]"
+                className="hover:bg-bright-gray dark:hover:bg-[#28292E] rounded-full p-2"
               >
                 <img
-                  className=" h-5 w-5 filter dark:invert "
+                  className="h-5 w-5 filter dark:invert"
                   alt="NewChat"
                   src={newChatIcon}
                 />
@@ -318,22 +317,27 @@ export default function Conversation() {
               onClick={() => {
                 setShareModalState(true);
               }}
-              className=" hover:bg-bright-gray dark:hover:bg-[#28292E]"
+              className="hover:bg-bright-gray dark:hover:bg-[#28292E] rounded-full p-2"
             >
               <img
-                className=" h-5 w-5 filter dark:invert"
+                className="h-5 w-5 filter dark:invert"
                 alt="share"
                 src={ShareIcon}
               />
             </button>
           </div>
           {isShareModalOpen && (
-            <ShareConversationModal
-              close={() => {
-                setShareModalState(false);
-              }}
-              conversationId={conversationId}
-            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/50 dark:bg-gray-alpha" />
+              <div className="relative z-50 w-full max-w-md rounded-3xl">
+                <ShareConversationModal
+                  close={() => {
+                    setShareModalState(false);
+                  }}
+                  conversationId={conversationId}
+                />
+              </div>
+            </div>
           )}
         </div>
       )}
