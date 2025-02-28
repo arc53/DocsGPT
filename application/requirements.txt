@@ -7,14 +7,14 @@ docx2txt==0.8
 duckduckgo-search==7.4.2
 ebooklib==0.18
 elastic-transport==8.17.0
-elasticsearch==8.17.0
+elasticsearch==8.17.1
 escodegen==1.0.11
 esprima==4.0.1
 esutils==1.0.1
 Flask==3.1.0
 faiss-cpu==1.9.0.post1
 flask-restx==1.3.0
-google-genai==0.5.0
+google-genai==1.3.0
 google-generativeai==0.8.3
 gTTS==2.5.4
 gunicorn==23.0.0
@@ -37,7 +37,7 @@ langchain-openai==0.3.0
 langchain-text-splitters==0.3.5
 langsmith==0.2.10
 lazy-object-proxy==1.10.0
-lxml==5.3.0
+lxml==5.3.1
 markupsafe==3.0.2
 marshmallow==3.26.1
 mpmath==1.3.0
@@ -46,7 +46,7 @@ mypy-extensions==1.0.0
 networkx==3.4.2
 numpy==2.2.1
 openai==1.59.5
-openapi-schema-validator==0.6.2
+openapi-schema-validator==0.6.3
 openapi-spec-validator==0.6.0
 openapi3-parser==1.1.19
 orjson==3.10.14
@@ -62,7 +62,7 @@ prompt-toolkit==3.0.50
 protobuf==5.29.3
 psycopg2-binary==2.9.10
 py==1.11.0
-pydantic==2.10.4
+pydantic==2.10.6
 pydantic-core==2.27.2
 pydantic-settings==2.7.1
 pymongo==4.10.1
@@ -70,7 +70,7 @@ pypdf==5.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-pptx==1.0.2
-qdrant-client==1.12.2
+qdrant-client==1.13.2
 redis==5.2.1
 referencing==0.30.2
 regex==2024.11.6
@@ -81,7 +81,7 @@ tiktoken==0.8.0
 tokenizers==0.21.0
 torch==2.5.1
 tqdm==4.67.1
-transformers==4.48.0
+transformers==4.49.0
 typing-extensions==4.12.2
 typing-inspect==0.9.0
 tzdata==2024.2

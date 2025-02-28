@@ -22,7 +22,7 @@ class GoogleLLM(BaseLLM):
             parts = []
             if role and content is not None:
                 if isinstance(content, str):
-                    parts = [types.Part.from_text(content)]
+                    parts = [types.Part.from_text(text=content)]
                 elif isinstance(content, list):
                     for item in content:
                         if "text" in item:
