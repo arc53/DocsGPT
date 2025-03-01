@@ -450,5 +450,17 @@ function AnalyticsChart({
       },
     },
   };
-  return <Bar options={options} plugins={[htmlLegendPlugin]} data={data} />;
+  return (
+    <Bar
+      options={options}
+      plugins={[htmlLegendPlugin]}
+      data={{
+        ...data,
+        datasets: data.datasets.map((dataset) => ({
+          ...dataset,
+          hoverBackgroundColor: `${dataset.backgroundColor}CC`, // 80% opacity
+        })),
+      }}
+    />
+  );
 }
