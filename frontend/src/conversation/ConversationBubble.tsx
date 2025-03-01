@@ -118,7 +118,7 @@ const ConversationBubble = forwardRef<
                 style={{
                   wordBreak: 'break-word',
                 }}
-                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
               >
                 {message}
               </div>
@@ -147,16 +147,16 @@ const ConversationBubble = forwardRef<
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="rounded-full bg-purple-30 hover:bg-purple-hover px-4 py-2 text-white text-sm font-medium transition-colors"
-                  onClick={handleEditClick}
-                >
-                  {t('conversation.edit.update')}
-                </button>
-                <button
                   className="px-4 py-2 text-purple-30 text-sm hover:text-rich-black hover:bg-light-gray-hover dark:hover:bg-charcoal transition-colors rounded-full"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
+                </button>
+                <button
+                  className="rounded-full bg-purple-30 hover:bg-purple-hover px-4 py-2 text-white text-sm font-medium transition-colors"
+                  onClick={handleEditClick}
+                >
+                  {t('conversation.edit.update')}
                 </button>
               </div>
             </div>

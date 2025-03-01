@@ -69,7 +69,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
           }`}
         ></div>
         <div
-          className={`absolute ${toggle} flex items-center justify-center rounded-full transition bg-white ${
+          className={`absolute ${toggle} flex items-center justify-center rounded-full transition bg-white opacity-80 ${
             checked ? `${translate} bg-silver` : ''
           }`}
         ></div>

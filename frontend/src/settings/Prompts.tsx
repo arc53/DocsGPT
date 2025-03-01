@@ -174,7 +174,7 @@ export default function Prompts({
               setModalState('ACTIVE');
             }}
           >
-            {t('settings.general.addNew')}
+            {t('settings.general.add')}
           </button>
         </div>
       </div>
