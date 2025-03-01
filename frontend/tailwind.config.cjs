@@ -74,6 +74,8 @@ module.exports = {
         'charcoal-grey':'#53545D',
         'rosso-corsa': '#D30000',
         'apple-green': '#4CAF50',
+        'medium-purple': '#8d66dd',
+        'slate-blue': '#6f5fca',
       },
     },
   },

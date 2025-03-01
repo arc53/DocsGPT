@@ -50,7 +50,8 @@
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "Default"
+      "default": "Default",
+      "add": "Add"
     },
     "documents": {
       "title": "This table contains all the documents that are available to you and those you have uploaded",

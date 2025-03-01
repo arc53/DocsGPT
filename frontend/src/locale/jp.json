@@ -50,7 +50,8 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無制限",
-      "default": "デフォルト"
+      "default": "デフォルト",
+      "add": "追加"
     },
     "documents": {
       "label": "ドキュメント",
