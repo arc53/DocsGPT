@@ -139,12 +139,12 @@ const ConversationBubble = forwardRef<
                   setEditInputBox(e.target.value);
                 }}
                 onKeyDown={(e) => { 
-                  if(e.key === 'Enter' && !e.shiftKey){ //Checks for enter key while ensuring Shift + Enter still allows new lines
-                    e.preventDefault(); //Prevent default behaviour of new line
-                    handleEditClick(); //Submit edited message
+                  if(e.key === 'Enter' && !e.shiftKey){ 
+                    e.preventDefault(); 
+                    handleEditClick();
                   }
                 }}
-                rows={1}
+                rows={5}
                 value={editInputBox}
                 className="w-full resize-none border-2 border-black dark:border-white rounded-3xl px-4 py-3 text-base leading-relaxed text-black dark:bg-raisin-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#CDB5FF]"
               />
