@@ -6,6 +6,11 @@ type DropdownMenuProps = {
   onSelect: (value: string) => void;
   defaultValue?: string;
   icon?: string;
+  isOpen?: boolean;
+  onOpenChange?: (isOpen: boolean) => void;
+  anchorRef?: React.RefObject<HTMLElement>;
+  className?: string;
+  position?: 'left' | 'right';
 };
 
 export default function DropdownMenu({
@@ -14,16 +19,22 @@ export default function DropdownMenu({
   onSelect,
   defaultValue = 'none',
   icon,
+  isOpen: controlledIsOpen,
+  onOpenChange,
+  anchorRef,
+  className,
+  position = 'left',
 }: DropdownMenuProps) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [internalIsOpen, setInternalIsOpen] = React.useState(false);
   const [selectedOption, setSelectedOption] = React.useState(
     options.find((option) => option.value === defaultValue) || options[0],
   );
 
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-  };
+  const isOpen =
+    controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+  const setIsOpen = onOpenChange || setInternalIsOpen;
+
   const handleClickOutside = (event: MouseEvent) => {
     if (
       dropdownRef.current &&
@@ -32,6 +43,7 @@ export default function DropdownMenu({
       setIsOpen(false);
     }
   };
+
   const handleClickOption = (optionId: number) => {
     setIsOpen(false);
     setSelectedOption(options[optionId]);
@@ -44,17 +56,11 @@ export default function DropdownMenu({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
   return (
-    <div className="static inline-block text-left" ref={dropdownRef}>
-      <button
-        onClick={handleToggle}
-        className="flex w-20 cursor-pointer flex-row  gap-1 rounded-3xl border-purple-30/25 bg-purple-30 p-2 text-xs text-white hover:bg-[#6F3FD1] focus:outline-none"
-      >
-        {icon && <img src={icon} alt="OptionIcon" className="h-4 w-4" />}
-        {selectedOption.value !== 'never' ? selectedOption.label : name}
-      </button>
+    <div className={`fixed ${className || ''}`} ref={dropdownRef}>
       <div
-        className={`absolute z-50 right-0 mt-1 w-28 transform rounded-md bg-transparent shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${
+        className={`w-28 transform rounded-md bg-white dark:bg-dark-charcoal shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${
           isOpen
             ? 'scale-100 opacity-100'
             : 'pointer-events-none scale-95 opacity-0'

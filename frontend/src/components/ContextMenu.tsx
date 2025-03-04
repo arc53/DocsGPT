@@ -1,4 +1,4 @@
-import { SyntheticEvent, useRef, useEffect } from 'react';
+import { SyntheticEvent, useRef, useEffect, CSSProperties } from 'react';
 
 export interface MenuOption {
   icon?: string;
@@ -27,82 +27,93 @@ export default function ContextMenu({
   anchorRef,
   className = '',
   position = 'bottom-right',
-  offset = { x: 1, y: 5 },
+  offset = { x: 0, y: 8 },
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const handleClickOutside = (event: MouseEvent) => {
-    if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-      setIsOpen(false);
-    }
-  };
-
   useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(event.target as Node) &&
+        !anchorRef.current?.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
     };
-  }, []);
 
-  const getPositionClasses = () => {
-    const positionMap = {
-      'bottom-right': 'translate-x-1 translate-y-5',
-      'bottom-left': '-translate-x-full translate-y-5',
-      'top-right': 'translate-x-1 -translate-y-full',
-      'top-left': '-translate-x-full -translate-y-full',
-    };
-    return positionMap[position];
-  };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen, setIsOpen]);
 
   if (!isOpen) return null;
 
-  const getMenuPosition = () => {
+  const getMenuPosition = (): CSSProperties => {
     if (!anchorRef.current) return {};
 
     const rect = anchorRef.current.getBoundingClientRect();
-    return {
-      top: `${rect.top + window.scrollY + offset.y}px`,
-    };
-  };
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    const scrollX = window.scrollX || document.documentElement.scrollLeft;
 
-  const getOptionStyles = (option: MenuOption, index: number) => {
-    if (option.variant === 'danger') {
-      return `
-          dark:text-red-2000 dark:hover:bg-charcoal-grey
-          text-rosso-corsa hover:bg-bright-gray
-      }`;
+    let top = rect.bottom + scrollY + offset.y;
+    let left = rect.right + scrollX + offset.x;
+
+    // Adjust position based on position prop
+    switch (position) {
+      case 'bottom-left':
+        left = rect.left + scrollX - offset.x;
+        break;
+      case 'top-right':
+        top = rect.top + scrollY - offset.y;
+        break;
+      case 'top-left':
+        top = rect.top + scrollY - offset.y;
+        left = rect.left + scrollX - offset.x;
+        break;
+      // bottom-right is default
     }
 
-    return `
-      dark:text-bright-gray dark:hover:bg-charcoal-grey
-        text-eerie-black hover:bg-bright-gray
-    }`;
+    return {
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+    };
   };
 
   return (
     <div
       ref={menuRef}
-      className={`absolute z-30 ${getPositionClasses()} ${className}`}
-      style={getMenuPosition()}
+      className={`fixed z-50 ${className}`}
+      style={{ ...getMenuPosition() }}
+      onClick={(e) => e.stopPropagation()}
     >
       <div
-        className={`flex w-32 flex-col rounded-xl text-sm shadow-xl md:w-36 dark:bg-charleston-green-2 bg-lotion`}
+        className="flex w-32 flex-col rounded-xl text-sm shadow-xl md:w-36 dark:bg-charleston-green-2 bg-lotion"
         style={{ minWidth: '144px' }}
       >
         {options.map((option, index) => (
           <button
             key={index}
-            onClick={(event: SyntheticEvent) => {
+            onClick={(event) => {
+              event.preventDefault();
               event.stopPropagation();
               option.onClick(event);
               setIsOpen(false);
             }}
-            className={`${`
-      flex justify-start items-center gap-4 p-3
-      transition-colors duration-200 ease-in-out
-      ${index === 0 ? 'rounded-t-xl' : ''}
-      ${index === options.length - 1 ? 'rounded-b-xl' : ''}
-    `}${getOptionStyles(option, index)}`}
+            className={`
+              flex justify-start items-center gap-4 p-3
+              transition-colors duration-200 ease-in-out
+              ${index === 0 ? 'rounded-t-xl' : ''}
+              ${index === options.length - 1 ? 'rounded-b-xl' : ''}
+              ${
+                option.variant === 'danger'
+                  ? 'dark:text-red-2000 dark:hover:bg-charcoal-grey text-rosso-corsa hover:bg-bright-gray'
+                  : 'dark:text-bright-gray dark:hover:bg-charcoal-grey text-eerie-black hover:bg-bright-gray'
+              }
+            `}
           >
             {option.icon && (
               <img
@@ -110,7 +121,7 @@ export default function ContextMenu({
                 height={option.iconHeight || 16}
                 src={option.icon}
                 alt={option.label}
-                className={`cursor-pointer hover:opacity-75 ${option.iconClassName}`}
+                className={`cursor-pointer hover:opacity-75 ${option.iconClassName || ''}`}
               />
             )}
             <span>{option.label}</span>
