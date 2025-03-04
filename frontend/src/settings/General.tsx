@@ -82,9 +82,13 @@ export default function General() {
     changeLanguage(selectedLanguage?.value);
   }, [selectedLanguage, changeLanguage]);
   return (
-    <div className="mt-12">
-      <div className="mb-5">
-        <label className="block mb-2 font-bold text-jet dark:text-bright-gray">
+    <div className="mt-12 flex flex-col gap-6">
+      {' '}
+      {/* Added consistent gap between sections */}
+      <div className="flex flex-col gap-6">
+        {' '}
+        {/* Consistent gap between label and input */}
+        <label className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}
         </label>
         <Dropdown
@@ -101,8 +105,8 @@ export default function General() {
           border="border"
         />
       </div>
-      <div className="mb-5">
-        <label className="block mb-2 font-bold text-jet dark:text-bright-gray">
+      <div className="flex flex-col gap-6">
+        <label className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectLanguage')}
         </label>
         <Dropdown
@@ -119,8 +123,8 @@ export default function General() {
           border="border"
         />
       </div>
-      <div className="mb-5">
-        <label className="block font-bold text-jet dark:text-bright-gray">
+      <div className="flex flex-col gap-6">
+        <label className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.chunks')}
         </label>
         <Dropdown
@@ -132,8 +136,8 @@ export default function General() {
           border="border"
         />
       </div>
-      <div className="mb-5">
-        <label className="mb-2 block font-bold text-jet dark:text-bright-gray">
+      <div className="flex flex-col gap-6">
+        <label className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.convHistory')}
         </label>
         <Dropdown
@@ -157,7 +161,7 @@ export default function General() {
           border="border"
         />
       </div>
-      <div className="mb-5">
+      <div className="flex flex-col gap-6">
         <Prompts
           prompts={prompts}
           selectedPrompt={selectedPrompt}
@@ -167,12 +171,12 @@ export default function General() {
           setPrompts={setPrompts}
         />
       </div>
-      <div className="w-56">
-        <label className="block font-bold text-jet dark:text-bright-gray">
-          {t('settings.general.deleteAllLabel')}
-        </label>
+      {/* Add horizontal line before delete button */}
+      <hr className="border-t border-silver dark:border-silver/40" />
+      {/* Delete conversations button without label */}
+      <div className="flex flex-col gap-2">
         <button
-          className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-3xl border border-solid border-red-700 px-5 py-3 text-red-700 transition-colors hover:bg-red-700 hover:text-white dark:border-red-600 dark:text-red-600 dark:hover:bg-red-600 dark:hover:text-white"
+          className="flex w-56 cursor-pointer items-center justify-between rounded-3xl border border-solid border-red-700 px-5 py-3 text-red-700 transition-colors hover:bg-red-700 hover:text-white dark:border-red-600 dark:text-red-600 dark:hover:bg-red-600 dark:hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}

@@ -50,7 +50,8 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無限制",
-      "default": "預設"
+      "default": "預設",
+      "add": "添加"
     },
     "documents": {
       "title": "此表格包含所有可供您使用的文件以及您上傳的文件",
