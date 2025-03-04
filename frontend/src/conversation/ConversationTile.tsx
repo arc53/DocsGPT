@@ -111,6 +111,20 @@ export default function ConversationTile({
     }
   }, [isOpen]);
 
+  const handleEscape = (event: KeyboardEvent) => {
+    if (event.key == 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
   function onClear() {
     setConversationsName(conversation.name);
     setIsEdit(false);
