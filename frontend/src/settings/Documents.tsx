@@ -6,6 +6,7 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import caretSort from '../assets/caret-sort.svg';
 import Edit from '../assets/edit.svg';
+import EyeView from '../assets/eye-view.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SyncIcon from '../assets/sync.svg';
@@ -81,13 +82,19 @@ export default function Documents({
     e.preventDefault();
     e.stopPropagation();
 
-    // Close any open menu if clicking on a different button
-    if (activeMenuId && activeMenuId !== docId) {
+    const isAnyMenuOpen =
+      (syncMenuState.isOpen && syncMenuState.docId === docId) ||
+      activeMenuId === docId;
+
+    if (isAnyMenuOpen) {
+      // Close both menus
+      setSyncMenuState((prev) => ({ ...prev, isOpen: false, docId: null }));
       setActiveMenuId(null);
+      return;
     }
 
-    // Toggle the clicked menu
-    setActiveMenuId((prev) => (prev === docId ? null : docId));
+    // If no menu is open, open the context menu
+    setActiveMenuId(docId);
   };
 
   // Close menu when clicking outside
@@ -224,6 +231,16 @@ export default function Documents({
   const getActionOptions = (index: number, document: Doc): MenuOption[] => {
     const actions: MenuOption[] = [
       {
+        icon: EyeView,
+        label: t('settings.documents.view'),
+        onClick: () => {
+          setShowDocumentChunks(document);
+        },
+        iconWidth: 18,
+        iconHeight: 18,
+        variant: 'primary',
+      },
+      {
         icon: Trash,
         label: t('convTile.delete'),
         onClick: () => {
@@ -312,8 +329,8 @@ export default function Documents({
                     <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
                       {t('settings.documents.name')}
                     </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
-                      <div className="flex justify-center items-center">
+                    <th className="py-3 px-4 text-xs font-medium text-sonic-silver uppercase w-[30%]">
+                      <div className="flex justify-start items-center">
                         {t('settings.documents.date')}
                         <img
                           className="cursor-pointer ml-2"
@@ -323,8 +340,8 @@ export default function Documents({
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
-                      <div className="flex justify-center items-center">
+                    <th className="py-3 px-4 text-xs font-medium text-sonic-silver uppercase w-[15%]">
+                      <div className="flex justify-start items-center">
                         <span className="hidden sm:inline">
                           {t('settings.documents.tokenUsage')}
                         </span>
@@ -339,10 +356,8 @@ export default function Documents({
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
-                      <span className="sr-only">
-                        {t('settings.documents.actions')}
-                      </span>
+                    <th className="py-3 px-4 sr-only w-[10%]">
+                      {t('settings.documents.actions')}
                     </th>
                   </tr>
                 </thead>
@@ -363,27 +378,23 @@ export default function Documents({
                       const docId = document.id ? document.id.toString() : '';
 
                       return (
-                        <tr
-                          key={docId}
-                          className="group transition-colors cursor-pointer"
-                          onClick={() => setShowDocumentChunks(document)}
-                        >
+                        <tr key={docId} className="group transition-colors">
                           <td
-                            className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                             title={document.name}
                           >
                             {document.name}
                           </td>
-                          <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
                             {document.date ? formatDate(document.date) : ''}
                           </td>
-                          <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}
                           </td>
                           <td
-                            className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            className="py-4 px-4 text-right group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div
@@ -412,7 +423,9 @@ export default function Documents({
                                     }));
                                   }}
                                   anchorRef={getMenuRef(docId)}
-                                  className="absolute right-12 top-0"
+                                  position="bottom-left"
+                                  offset={{ x: 24, y: -24 }}
+                                  className="min-w-[120px]"
                                 />
                               )}
                               <button
