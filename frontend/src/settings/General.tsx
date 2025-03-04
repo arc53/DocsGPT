@@ -176,7 +176,7 @@ export default function General() {
       {/* Delete conversations button without label */}
       <div className="flex flex-col gap-2">
         <button
-          className="flex w-56 cursor-pointer items-center justify-between rounded-3xl border border-solid border-red-700 px-5 py-3 text-red-700 transition-colors hover:bg-red-700 hover:text-white dark:border-red-600 dark:text-red-600 dark:hover:bg-red-600 dark:hover:text-white"
+          className="flex w-56 cursor-pointer items-center justify-between rounded-3xl border border-solid border-rosso-corsa bg-transparent px-5 py-3 text-rosso-corsa transition-colors hover:bg-rosso-corsa hover:text-white dark:hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}

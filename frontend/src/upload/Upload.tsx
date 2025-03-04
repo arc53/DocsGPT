@@ -656,6 +656,7 @@ function Upload({
                 handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
+              darkBorderColor="dim-gray"
               rounded="3xl"
             />
             {/* Dynamically render form fields based on schema */}

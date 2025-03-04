@@ -73,6 +73,7 @@
         "monthly": "Monthly"
       },
       "actions": "Actions",
+      "view": "View",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?"
     },
     "apiKeys": {

@@ -73,6 +73,7 @@
         "monthly": "每月"
       },
       "actions": "操作",
+      "view": "查看",
       "deleteWarning": "您确定要删除 \"{{name}}\" 吗？"
     },
     "apiKeys": {
