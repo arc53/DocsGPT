@@ -222,6 +222,7 @@ export default function APIKeys() {
           submitLabel={t('modals.deleteConv.delete')}
           handleSubmit={() => handleDeleteKey(keyToDelete.id)}
           handleCancel={() => setKeyToDelete(null)}
+          variant="danger"
         />
       )}
     </div>

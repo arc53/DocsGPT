@@ -507,6 +507,7 @@ export default function Documents({
             setDocumentToDelete(null);
           }}
           submitLabel={t('convTile.delete')}
+          variant="danger"
         />
       )}
     </div>
