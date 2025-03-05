@@ -206,13 +206,6 @@ def get_prompt(prompt_id):
     return prompt
 
 def complete_stream(
-    question,
-    agent,
-    retriever,
-    conversation_id,
-    user_api_key,
-    isNoneDoc=False,
-    index=None,
     question, 
     retriever, 
     conversation_id, 
