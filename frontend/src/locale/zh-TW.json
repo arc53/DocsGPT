@@ -99,7 +99,7 @@
       },
       "messages": "訊息",
       "tokenUsage": "Token 使用量",
-      "feedback": "回饋",
+      "userFeedback": "使用者回饋",
       "filterPlaceholder": "篩選",
       "none": "無",
       "positiveFeedback": "正向回饋",

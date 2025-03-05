@@ -98,7 +98,7 @@
       },
       "messages": "Mensajes",
       "tokenUsage": "Uso de Tokens",
-      "feedback": "Retroalimentación",
+      "userFeedback": "Retroalimentación del usuario",
       "filterPlaceholder": "Filtrar",
       "none": "Ninguno",
       "positiveFeedback": "Retroalimentación Positiva",

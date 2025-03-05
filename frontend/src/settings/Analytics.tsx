@@ -337,7 +337,7 @@ export default function Analytics() {
           <div className="h-[345px] w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
-                {t('settings.analytics.feedback')}
+                {t('settings.analytics.userFeedback')}
               </p>
               <Dropdown
                 size="w-[125px]"

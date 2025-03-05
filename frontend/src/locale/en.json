@@ -99,7 +99,7 @@
       },
       "messages": "Messages",
       "tokenUsage": "Token Usage",
-      "feedback": "Feedback",
+      "userFeedback": "User feedback",
       "filterPlaceholder": "Filter",
       "none": "None",
       "positiveFeedback": "Positive Feedback",

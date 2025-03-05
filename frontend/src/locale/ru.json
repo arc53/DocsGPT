@@ -99,7 +99,7 @@
       },
       "messages": "Сообщения",
       "tokenUsage": "Использование токена",
-      "feedback": "Обратная связь",
+      "userFeedback": "Обратная связь пользователя",
       "filterPlaceholder": "Фильтр",
       "none": "Нет",
       "positiveFeedback": "Положительная обратная связь",

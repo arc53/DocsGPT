@@ -99,7 +99,7 @@
       },
       "messages": "消息",
       "tokenUsage": "令牌使用",
-      "feedback": "反馈",
+      "userFeedback": "用户反馈",
       "filterPlaceholder": "筛选",
       "none": "无",
       "positiveFeedback": "正向反馈",
