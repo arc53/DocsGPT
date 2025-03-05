@@ -81,7 +81,8 @@
       "sourceDoc": "來源文件",
       "createNew": "建立新的",
       "noData": "沒有現有的聊天機器人",
-      "deleteConfirmation": "您確定要刪除 API 金鑰 '{{name}}' 嗎？"
+      "deleteConfirmation": "您確定要刪除 API 金鑰 '{{name}}' 嗎？",
+      "description": "在這裡，您可以創建和管理您的聊天機器人。聊天機器人可以作為小部件部署到網站上，或在您的應用程序中使用。"
     },
     "analytics": {
       "label": "分析",

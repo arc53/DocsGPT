@@ -159,14 +159,9 @@ export const sharedConversationSlice = createSlice({
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
       const { index, query } = action.payload;
-      if (query.response != undefined) {
+      if (query.response !== undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
-      } else {
-        state.queries[index] = {
-          ...state.queries[index],
-          ...query,
-        };
       }
     },
     updateToolCalls(

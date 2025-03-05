@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
-import CoppyButton from '../components/CopyButton';
+import CopyButton from '../components/CopyButton';
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
@@ -67,42 +67,46 @@ export default function Logs() {
   return (
     <div className="mt-12">
       <div className="flex flex-col items-start">
-        <div className="flex flex-col gap-3">
-          <label
-            id="chatbot-filter-label"
-            className="font-bold text-jet dark:text-bright-gray"
-          >
-            {t('settings.logs.filterByChatbot')}
-          </label>
-          <Dropdown
-            size="w-[55vw] sm:w-[360px]"
-            options={[
-              ...chatbots.map((chatbot) => ({
-                label: chatbot.name,
-                value: chatbot.id,
-              })),
-              { label: t('settings.logs.none'), value: '' },
-            ]}
-            placeholder={t('settings.logs.selectChatbot')}
-            onSelect={(chatbot: { label: string; value: string }) => {
-              setSelectedChatbot(
-                chatbots.find((item) => item.id === chatbot.value),
-              );
-              setLogs([]);
-              setPage(1);
-              setHasMore(true);
-            }}
-            selectedValue={
-              (selectedChatbot && {
-                label: selectedChatbot.name,
-                value: selectedChatbot.id,
-              }) ||
-              null
-            }
-            rounded="3xl"
-            border="border"
-          />
-        </div>
+        {loadingChatbots ? (
+          <SkeletonLoader component="dropdown" />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <label
+              id="chatbot-filter-label"
+              className="font-bold text-jet dark:text-bright-gray"
+            >
+              {t('settings.logs.filterByChatbot')}
+            </label>
+            <Dropdown
+              size="w-[55vw] sm:w-[360px]"
+              options={[
+                ...chatbots.map((chatbot) => ({
+                  label: chatbot.name,
+                  value: chatbot.id,
+                })),
+                { label: t('settings.logs.none'), value: '' },
+              ]}
+              placeholder={t('settings.logs.selectChatbot')}
+              onSelect={(chatbot: { label: string; value: string }) => {
+                setSelectedChatbot(
+                  chatbots.find((item) => item.id === chatbot.value),
+                );
+                setLogs([]);
+                setPage(1);
+                setHasMore(true);
+              }}
+              selectedValue={
+                (selectedChatbot && {
+                  label: selectedChatbot.name,
+                  value: selectedChatbot.id,
+                }) ||
+                null
+              }
+              rounded="3xl"
+              border="border"
+            />
+          </div>
+        )}
       </div>
 
       <div className="mt-8">
@@ -189,7 +193,7 @@ function Log({ log }: { log: LogData }) {
           {JSON.stringify(filteredLog, null, 2)}
         </p>
         <div className="my-px w-8">
-          <CoppyButton
+          <CopyButton
             text={JSON.stringify(filteredLog)}
             colorLight="transparent"
           />

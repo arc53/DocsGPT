@@ -81,7 +81,8 @@
       "sourceDoc": "Source Document",
       "createNew": "Create New",
       "noData": "No existing Chatbots",
-      "deleteConfirmation": "Are you sure you want to delete the API key '{{name}}'?"
+      "deleteConfirmation": "Are you sure you want to delete the API key '{{name}}'?",
+      "description": "Here you can create and manage your chatbots. Chatbots can be deployed to websites as widgets or used inside your applications."
     },
     "analytics": {
       "label": "Analytics",

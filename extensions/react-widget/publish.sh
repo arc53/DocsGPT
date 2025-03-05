@@ -8,6 +8,15 @@ cp package-lock.json package-lock_original.json
 # Store the latest version after publishing
 LATEST_VERSION=""
 
+# Check if a specific version was provided
+if [ "$1" ]; then
+    VERSION_UPDATE_TYPE="$1"
+    echo "Using custom version update: $VERSION_UPDATE_TYPE"
+else
+    VERSION_UPDATE_TYPE="patch"
+    echo "No version specified, defaulting to patch update"
+fi
+
 publish_package() {
     PACKAGE_NAME=$1
     BUILD_COMMAND=$2
@@ -34,27 +43,24 @@ publish_package() {
         rm -rf dist
     fi
 
-    # update version and store it
-    LATEST_VERSION=$(npm version patch)
+    # Update version based on input parameter or default to patch
+    if [[ "$VERSION_UPDATE_TYPE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        # If full version number is provided (e.g., 0.5.0)
+        LATEST_VERSION=$(npm version "$VERSION_UPDATE_TYPE" --no-git-tag-version)
+    else
+        # If update type is provided (patch, minor, major)
+        LATEST_VERSION=$(npm version "$VERSION_UPDATE_TYPE" --no-git-tag-version)
+    fi
+    
     echo "New version: ${LATEST_VERSION}"
 
     # Build package
     npm run "$BUILD_COMMAND"
 
-    # Replace npm publish with npm pack for testing
+    # Publish package
     npm publish
 
-    echo "Successfully packaged ${PACKAGE_NAME}"
-
-    # Log the bundle size
-    TARBALL="${PACKAGE_NAME}-${LATEST_VERSION#v}.tgz"
-    if [ -f "$TARBALL" ]; then
-        BUNDLE_SIZE=$(du -h "$TARBALL" | cut -f1)
-        echo "Bundle size for ${PACKAGE_NAME}: ${BUNDLE_SIZE}"
-    else
-        echo "Error: ${TARBALL} not found."
-        exit 1
-    fi
+    echo "Successfully published ${PACKAGE_NAME} version ${LATEST_VERSION}"
 }
 
 # First publish docsgpt (HTML bundle)
@@ -70,7 +76,7 @@ cp package-lock_original.json package-lock.json
 # Update the version in the final package.json
 jq --arg version "${LATEST_VERSION#v}" '.version=$version' package.json > temp.json && mv temp.json package.json
 
-# Run npm install to update package-lock.json with the new version
+# Run npm install to update package-lock-only
 npm install --package-lock-only
 
 # Cleanup backup files
@@ -81,5 +87,4 @@ rm -f temp.json
 echo "---Process completed---"
 echo "Final version in package.json: $(jq -r '.version' package.json)"
 echo "Final version in package-lock.json: $(jq -r '.version' package-lock.json)"
-echo "Generated test packages:"
-ls *.tgz
+

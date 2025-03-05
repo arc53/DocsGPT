@@ -452,13 +452,11 @@ const ConversationBubble = forwardRef<
             <>
               <div
                 className={`relative mr-2 flex items-center justify-center ${
-                  !isLikeClicked ? 'lg:invisible' : ''
-                } ${
-                  feedback === 'LIKE' || type !== 'ERROR'
-                    ? 'group-hover:lg:visible'
-                    : ''
-                }
-                ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
+                  feedback === 'LIKE' || isLikeClicked
+                    ? 'visible'
+                    : 'lg:invisible'
+                } ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}
+  ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
               >
                 <div>
                   <div
@@ -492,14 +490,14 @@ const ConversationBubble = forwardRef<
                   </div>
                 </div>
               </div>
+
               <div
-                className={`mr-13 relative flex items-center justify-center ${
-                  !isDislikeClicked ? 'lg:invisible' : ''
-                } ${
-                  feedback === 'DISLIKE' || type !== 'ERROR'
-                    ? 'group-hover:lg:visible'
-                    : ''
-                } ${feedback === 'LIKE' && type !== 'ERROR' ? ' hidden' : ''} `}
+                className={`relative mr-2 flex items-center justify-center ${
+                  feedback === 'DISLIKE' || isLikeClicked
+                    ? 'visible'
+                    : 'lg:invisible'
+                } ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}
+  ${feedback === 'LIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
               >
                 <div>
                   <div

@@ -77,45 +77,6 @@ export default function ConfigToolModal({
           >
             {t('modals.configTool.closeButton')}
           </button>
-          <div className="p-6">
-            <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
-              {t('modals.configTool.title')}
-            </h2>
-            <p className="mt-5 text-sm text-gray-600 dark:text-gray-400 px-3">
-              {t('modals.configTool.type')}:{' '}
-              <span className="font-semibold">{tool?.name} </span>
-            </p>
-            <div className="mt-6 relative px-3">
-              <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
-                {t('modals.configTool.apiKeyLabel')}
-              </span>
-              <Input
-                type="text"
-                value={authKey}
-                onChange={(e) => setAuthKey(e.target.value)}
-                borderVariant="thin"
-                placeholder={t('modals.configTool.apiKeyPlaceholder')}
-              ></Input>
-            </div>
-            <div className="mt-8 flex flex-row-reverse gap-1 px-3">
-              <button
-                onClick={() => {
-                  handleAddTool(tool as AvailableToolType);
-                }}
-                className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
-              >
-                {t('modals.configTool.addButton')}
-              </button>
-              <button
-                onClick={() => {
-                  setModalState('INACTIVE');
-                }}
-                className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
-              >
-                {t('modals.configTool.closeButton')}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </WrapperModal>
