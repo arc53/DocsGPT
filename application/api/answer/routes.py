@@ -207,6 +207,7 @@ def get_prompt(prompt_id):
 
 def complete_stream(
     question, 
+    agent,
     retriever, 
     conversation_id, 
     user_api_key, 
