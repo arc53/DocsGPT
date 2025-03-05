@@ -76,6 +76,12 @@ module.exports = {
         'apple-green': '#4CAF50',
         'medium-purple': '#8d66dd',
         'slate-blue': '#6f5fca',
+        'old-silver': '#848484',
+        'arsenic': '#4D4E58',
+        'light-gainsboro': '#d7D7D7',
+        'raisin-black-light': '#18181B',
+        'gunmetal': '#32333B',
+        'sonic-silver-light': '#7f7f82'
       },
     },
   },
