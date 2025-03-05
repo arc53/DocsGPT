@@ -152,7 +152,15 @@ class GoogleLLM(BaseLLM):
             config=config,
         )
         for chunk in response:
-            if chunk.text is not None:
+            if hasattr(chunk, "candidates") and chunk.candidates:
+                for candidate in chunk.candidates:
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if part.function_call:
+                                yield part
+                            elif part.text:
+                                yield part.text
+            elif hasattr(chunk, "text"):
                 yield chunk.text
 
     def _supports_tools(self):

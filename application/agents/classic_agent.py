@@ -104,7 +104,8 @@ class ClassicAgent(BaseAgent):
                 model=self.gpt_model, messages=messages_combine, tools=self.tools
             )
             for line in completion:
-                yield {"answer": line}
+                if isinstance(line, str):
+                    yield {"answer": line}
 
         yield {"tool_calls": self.tool_calls.copy()}
 
@@ -116,7 +117,7 @@ class ClassicAgent(BaseAgent):
         return retrieved_data
 
     def _llm_gen(self, messages_combine, log_context):
-        resp = self.llm.gen(
+        resp = self.llm.gen_stream(
             model=self.gpt_model, messages=messages_combine, tools=self.tools
         )
         if log_context:
@@ -131,5 +132,4 @@ class ClassicAgent(BaseAgent):
         if log_context:
             data = build_stack_data(self.llm_handler)
             log_context.stacks.append({"component": "llm_handler", "data": data})
-
         return resp

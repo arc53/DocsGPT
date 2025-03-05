@@ -14,9 +14,20 @@ class ToolActionParser:
         return parser(call)
 
     def _parse_openai_llm(self, call):
-        call_args = json.loads(call.function.arguments)
-        tool_id = call.function.name.split("_")[-1]
-        action_name = call.function.name.rsplit("_", 1)[0]
+        if isinstance(call, dict):
+            try:
+                call_args = json.loads(call["function"]["arguments"])
+                tool_id = call["function"]["name"].split("_")[-1]
+                action_name = call["function"]["name"].rsplit("_", 1)[0]
+            except (KeyError, TypeError) as e:
+                return None, None, None
+        else:
+            try:
+                call_args = json.loads(call.function.arguments)
+                tool_id = call.function.name.split("_")[-1]
+                action_name = call.function.name.rsplit("_", 1)[0]
+            except (AttributeError, TypeError) as e:
+                return None, None, None
         return tool_id, action_name, call_args
 
     def _parse_google_llm(self, call):
