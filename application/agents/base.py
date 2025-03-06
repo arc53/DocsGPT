@@ -1,22 +1,27 @@
+from typing import Dict, Generator
+
+from application.agents.llm_handler import get_llm_handler
+from application.agents.tools.tool_action_parser import ToolActionParser
+from application.agents.tools.tool_manager import ToolManager
+
 from application.core.mongo_db import MongoDB
 from application.llm.llm_creator import LLMCreator
-from application.tools.llm_handler import get_llm_handler
-from application.tools.tool_action_parser import ToolActionParser
-from application.tools.tool_manager import ToolManager
 
 
-class Agent:
-    def __init__(self, llm_name, gpt_model, api_key, user_api_key=None):
-        # Initialize the LLM with the provided parameters
+class BaseAgent:
+    def __init__(self, endpoint, llm_name, gpt_model, api_key, user_api_key=None):
+        self.endpoint = endpoint
         self.llm = LLMCreator.create_llm(
             llm_name, api_key=api_key, user_api_key=user_api_key
         )
         self.llm_handler = get_llm_handler(llm_name)
         self.gpt_model = gpt_model
-        # Static tool configuration (to be replaced later)
         self.tools = []
         self.tool_config = {}
         self.tool_calls = []
+
+    def gen(self, *args, **kwargs) -> Generator[Dict, None, None]:
+        raise NotImplementedError('Method "gen" must be implemented in the child class')
 
     def _get_user_tools(self, user="local"):
         mongo = MongoDB.get_client()
@@ -135,50 +140,3 @@ class Agent:
         self.tool_calls.append(tool_call_data)
 
         return result, call_id
-
-    def _simple_tool_agent(self, messages):
-        tools_dict = self._get_user_tools()
-        self._prepare_tools(tools_dict)
-
-        resp = self.llm.gen(model=self.gpt_model, messages=messages, tools=self.tools)
-
-        if isinstance(resp, str):
-            yield resp
-            return
-        if (
-            hasattr(resp, "message")
-            and hasattr(resp.message, "content")
-            and resp.message.content is not None
-        ):
-            yield resp.message.content
-            return
-
-        resp = self.llm_handler.handle_response(self, resp, tools_dict, messages)
-
-        if isinstance(resp, str):
-            yield resp
-        elif (
-            hasattr(resp, "message")
-            and hasattr(resp.message, "content")
-            and resp.message.content is not None
-        ):
-            yield resp.message.content
-        else:
-            completion = self.llm.gen_stream(
-                model=self.gpt_model, messages=messages, tools=self.tools
-            )
-            for line in completion:
-                yield line
-
-        return
-
-    def gen(self, messages):
-        self.tool_calls = []
-        if self.llm.supports_tools():
-            resp = self._simple_tool_agent(messages)
-            for line in resp:
-                yield line
-        else:
-            resp = self.llm.gen_stream(model=self.gpt_model, messages=messages)
-            for line in resp:
-                yield line
