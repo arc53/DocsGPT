@@ -1,5 +1,5 @@
 import psycopg2
-from application.tools.base import Tool
+from application.agents.tools.base import Tool
 
 class PostgresTool(Tool):
     """
