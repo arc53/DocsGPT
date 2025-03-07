@@ -140,7 +140,15 @@ const ConversationBubble = forwardRef<
             >
               <textarea
                 placeholder={t('conversation.edit.placeholder')}
-                onChange={(e) => setEditInputBox(e.target.value)}
+                onChange={(e) => {
+                  setEditInputBox(e.target.value);
+                }}
+                onKeyDown={(e) => { 
+                  if(e.key === 'Enter' && !e.shiftKey){ 
+                    e.preventDefault(); 
+                    handleEditClick();
+                  }
+                }}
                 rows={5}
                 value={editInputBox}
                 className="w-full resize-none border border-silver dark:border-philippine-grey rounded-3xl px-4 py-3 text-base leading-relaxed text-carbon dark:text-chinese-white dark:bg-raisin-black focus:outline-none"

@@ -1,9 +1,9 @@
 import datetime
+import json
 import math
 import os
 import shutil
 import uuid
-import json
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -12,12 +12,13 @@ from flask import Blueprint, current_app, jsonify, make_response, redirect, requ
 from flask_restx import fields, inputs, Namespace, Resource
 from werkzeug.utils import secure_filename
 
+from application.agents.tools.tool_manager import ToolManager
+
 from application.api.user.tasks import ingest, ingest_remote
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
-from application.tools.tool_manager import ToolManager
 from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
@@ -449,22 +450,21 @@ class UploadRemote(Resource):
             return missing_fields
 
         try:
-           config = json.loads(data["data"])
-           source_data = None
+            config = json.loads(data["data"])
+            source_data = None
 
-           if data["source"] == "github":
+            if data["source"] == "github":
                 source_data = config.get("repo_url")
-           elif data["source"] in ["crawler", "url"]:
+            elif data["source"] in ["crawler", "url"]:
                 source_data = config.get("url")
-           elif data["source"] == "reddit":
-                source_data = config 
+            elif data["source"] == "reddit":
+                source_data = config
 
-
-           task = ingest_remote.delay(
+            task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
                 user=data["user"],
-                loader=data["source"]
+                loader=data["source"],
             )
         except Exception as err:
             current_app.logger.error(f"Error uploading remote source: {err}")
@@ -1932,11 +1932,14 @@ class UpdateTool(Resource):
                     for action_name in list(data["config"]["actions"].keys()):
                         if not validate_function_name(action_name):
                             return make_response(
-                                jsonify({
-                                    "success": False,
-                                    "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
-                                    "param": "tools[].function.name"
-                                }), 400
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
+                                        "param": "tools[].function.name",
+                                    }
+                                ),
+                                400,
                             )
                 update_data["config"] = data["config"]
             if "status" in data:

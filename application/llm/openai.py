@@ -111,13 +111,24 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
-        response = self.client.chat.completions.create(
-            model=model, messages=messages, stream=stream, **kwargs
-        )
+        if tools:
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=stream,
+                tools=tools,
+                **kwargs,
+            )
+        else:
+            response = self.client.chat.completions.create(
+                model=model, messages=messages, stream=stream, **kwargs
+            )
 
         for line in response:
             if line.choices[0].delta.content is not None:
                 yield line.choices[0].delta.content
+            else:
+                yield line.choices[0]
 
     def _supports_tools(self):
         return True
