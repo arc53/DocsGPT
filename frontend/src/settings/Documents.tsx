@@ -240,16 +240,6 @@ export default function Documents({
         iconHeight: 18,
         variant: 'primary',
       },
-      {
-        icon: Trash,
-        label: t('convTile.delete'),
-        onClick: () => {
-          handleDeleteConfirmation(index, document);
-        },
-        iconWidth: 18,
-        iconHeight: 18,
-        variant: 'danger',
-      },
     ];
 
     if (document.syncFrequency) {
@@ -268,6 +258,17 @@ export default function Documents({
         variant: 'primary',
       });
     }
+
+    actions.push({
+      icon: Trash,
+      label: t('convTile.delete'),
+      onClick: () => {
+        handleDeleteConfirmation(index, document);
+      },
+      iconWidth: 18,
+      iconHeight: 18,
+      variant: 'danger',
+    });
 
     return actions;
   };
@@ -310,7 +311,7 @@ export default function Documents({
             />
           </div>
           <button
-            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-[#6F3FD1] flex items-center justify-center"
             title={t('settings.documents.addNew')}
             onClick={() => {
               setIsOnboarding(false);

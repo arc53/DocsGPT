@@ -99,9 +99,9 @@ function Upload({
               )
             }
             borderVariant="thin"
-            label={field.label}
             required={isRequired}
             colorVariant="silver"
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
         );
       case 'number':
@@ -121,9 +121,9 @@ function Upload({
               )
             }
             borderVariant="thin"
-            label={field.label}
             required={isRequired}
             colorVariant="silver"
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
         );
       case 'enum':
@@ -609,7 +609,7 @@ function Upload({
               onChange={(e) => setDocName(e.target.value)}
               borderVariant="thin"
               placeholder={t('modals.uploadDoc.name')}
-              label={t('modals.uploadDoc.name')}
+              labelBgClassName="bg-white dark:bg-charleston-green-2"
               required={true}
             />
             <div className="my-2" {...getRootProps()}>
@@ -668,8 +668,8 @@ function Upload({
               onChange={(e) => setRemoteName(e.target.value)}
               borderVariant="thin"
               placeholder="Name"
-              label="Name"
               required={true}
+              labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
             {renderFormFields()}
             {IngestorFormSchemas[ingestor.type].some(

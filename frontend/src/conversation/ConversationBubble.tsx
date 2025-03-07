@@ -143,9 +143,9 @@ const ConversationBubble = forwardRef<
                 onChange={(e) => {
                   setEditInputBox(e.target.value);
                 }}
-                onKeyDown={(e) => { 
-                  if(e.key === 'Enter' && !e.shiftKey){ 
-                    e.preventDefault(); 
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
                     handleEditClick();
                   }
                 }}
