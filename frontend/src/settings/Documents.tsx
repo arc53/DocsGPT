@@ -87,17 +87,13 @@ export default function Documents({
       activeMenuId === docId;
 
     if (isAnyMenuOpen) {
-      // Close both menus
       setSyncMenuState((prev) => ({ ...prev, isOpen: false, docId: null }));
       setActiveMenuId(null);
       return;
     }
-
-    // If no menu is open, open the context menu
     setActiveMenuId(docId);
   };
 
-  // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (activeMenuId) {

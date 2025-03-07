@@ -61,7 +61,6 @@ export default function ContextMenu({
     let top = rect.bottom + scrollY + offset.y;
     let left = rect.right + scrollX + offset.x;
 
-    // Adjust position based on position prop
     switch (position) {
       case 'bottom-left':
         left = rect.left + scrollX - offset.x;

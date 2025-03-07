@@ -84,10 +84,8 @@ export default function General() {
   return (
     <div className="mt-12 flex flex-col gap-6">
       {' '}
-      {/* Added consistent gap between sections */}
       <div className="flex flex-col gap-6">
         {' '}
-        {/* Consistent gap between label and input */}
         <label className="font-bold text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}
         </label>
@@ -171,9 +169,7 @@ export default function General() {
           setPrompts={setPrompts}
         />
       </div>
-      {/* Add horizontal line before delete button */}
       <hr className="border-t border-silver dark:border-silver/40" />
-      {/* Delete conversations button without label */}
       <div className="flex flex-col gap-2">
         <button
           className="flex w-56 cursor-pointer items-center justify-between rounded-3xl border border-solid border-rosso-corsa bg-transparent px-5 py-3 text-rosso-corsa transition-colors hover:bg-rosso-corsa hover:text-white dark:hover:text-white"

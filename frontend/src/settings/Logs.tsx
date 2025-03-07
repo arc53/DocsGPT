@@ -141,15 +141,12 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
   };
 
   const firstObserver = useCallback((node: HTMLDivElement | null) => {
-    // Cleanup previous observer
     if (observerRef.current) {
       observerRef.current.disconnect();
     }
 
-    // If node is null, just cleanup and return
     if (!node) return;
 
-    // Create new observer
     observerRef.current = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting) {
         setPage((prev) => prev + 1);
@@ -159,7 +156,6 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
     observerRef.current.observe(node);
   }, []);
 
-  // Cleanup observer on component unmount
   useEffect(() => {
     return () => {
       if (observerRef.current) {

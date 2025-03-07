@@ -13,7 +13,6 @@ type DropdownMenuProps = {
   className?: string;
   position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
   offset?: { x: number; y: number };
-  contextMenuAdjacent?: boolean; // New prop to indicate if it should position next to context menu
 };
 
 export default function DropdownMenu({
@@ -28,7 +27,6 @@ export default function DropdownMenu({
   className = '',
   position = 'bottom-right',
   offset = { x: 0, y: 8 },
-  contextMenuAdjacent = false, // Default to false for backward compatibility
 }: DropdownMenuProps) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [internalIsOpen, setInternalIsOpen] = React.useState(false);
@@ -71,30 +69,8 @@ export default function DropdownMenu({
 
     const rect = anchorRef.current.getBoundingClientRect();
 
-    // Default positioning
-    let top = rect.bottom + offset.y;
-    let left = rect.right + offset.x;
-
-    if (contextMenuAdjacent) {
-      // Position to the left of the context menu
-      left = rect.left - 50; // Width of dropdown + some spacing
-      top = rect.top; // Align tops
-    } else {
-      // Standard positioning based on position prop
-      switch (position) {
-        case 'bottom-left':
-          left = rect.left - offset.x;
-          break;
-        case 'top-right':
-          top = rect.top - offset.y;
-          break;
-        case 'top-left':
-          top = rect.top - offset.y;
-          left = rect.left - offset.x;
-          break;
-        // bottom-right is default
-      }
-    }
+    const top = rect.bottom + offset.y;
+    const left = rect.right + offset.x;
 
     return {
       position: 'fixed',
