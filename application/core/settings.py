@@ -32,6 +32,7 @@ class Settings(BaseSettings):
         "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
     )
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"]  # also brave_search
+    AGENT_NAME: str = "classic"
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"

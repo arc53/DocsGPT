@@ -1,5 +1,5 @@
 import requests
-from application.tools.base import Tool
+from application.agents.tools.base import Tool
 
 
 class CryptoPriceTool(Tool):
@@ -31,7 +31,6 @@ class CryptoPriceTool(Tool):
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
-            # data will be like {"USD": <price>} if the call is successful
             if currency.upper() in data:
                 return {
                     "status_code": response.status_code,

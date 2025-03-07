@@ -3,7 +3,7 @@ import inspect
 import os
 import pkgutil
 
-from application.tools.base import Tool
+from application.agents.tools.base import Tool
 
 
 class ToolManager:
@@ -13,13 +13,11 @@ class ToolManager:
         self.load_tools()
 
     def load_tools(self):
-        tools_dir = os.path.join(os.path.dirname(__file__), "implementations")
+        tools_dir = os.path.join(os.path.dirname(__file__))
         for finder, name, ispkg in pkgutil.iter_modules([tools_dir]):
             if name == "base" or name.startswith("__"):
                 continue
-            module = importlib.import_module(
-                f"application.tools.implementations.{name}"
-            )
+            module = importlib.import_module(f"application.agents.tools.{name}")
             for member_name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Tool) and obj is not Tool:
                     tool_config = self.config.get(name, {})
@@ -27,9 +25,7 @@ class ToolManager:
 
     def load_tool(self, tool_name, tool_config):
         self.config[tool_name] = tool_config
-        module = importlib.import_module(
-            f"application.tools.implementations.{tool_name}"
-        )
+        module = importlib.import_module(f"application.agents.tools.{tool_name}")
         for member_name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Tool) and obj is not Tool:
                 return obj(tool_config)
