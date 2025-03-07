@@ -20,6 +20,7 @@ import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
 import ContextMenu from '../components/ContextMenu';
 import { MenuOption } from '../components/ContextMenu';
+import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
   name: string;
@@ -163,6 +164,17 @@ export default function ConversationTile({
     },
   ];
 
+  useOutsideAlerter(
+    tileRef,
+    () => {
+      if (isEdit) {
+        onClear();
+      }
+    },
+    [isEdit],
+    true,
+  );
+
   return (
     <>
       <div
@@ -171,7 +183,9 @@ export default function ConversationTile({
           setIsHovered(true);
         }}
         onMouseLeave={() => {
-          setIsHovered(false);
+          if (!isEdit) {
+            setIsHovered(false);
+          }
         }}
         onClick={() => {
           onCoversationClick();
@@ -179,7 +193,7 @@ export default function ConversationTile({
             selectConversation(conversation.id);
         }}
         className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
-          conversationId === conversation.id || isOpen || isHovered
+          conversationId === conversation.id || isOpen || isHovered || isEdit
             ? 'bg-bright-gray dark:bg-dark-charcoal'
             : ''
         }`}
