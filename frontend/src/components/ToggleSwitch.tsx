@@ -8,6 +8,8 @@ type ToggleSwitchProps = {
   disabled?: boolean;
   size?: 'small' | 'medium' | 'large';
   labelPosition?: 'left' | 'right';
+  id?: string;
+  ariaLabel?: string;
 };
 
 const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
@@ -18,13 +20,15 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   disabled = false,
   size = 'medium',
   labelPosition = 'left',
+  id,
+  ariaLabel,
 }) => {
   // Size configurations
   const sizeConfig = {
     small: {
-      box: 'h-6 w-10',
-      toggle: 'h-4 w-4 left-1 top-1',
-      translate: 'translate-x-4',
+      box: 'h-5 w-9',
+      toggle: 'h-4 w-4 left-0.5 top-0.5',
+      translate: 'translate-x-full',
     },
     medium: {
       box: 'h-8 w-14',
@@ -58,14 +62,16 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
       <div className="relative">
         <input
           type="checkbox"
+          id={id}
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
           className="sr-only"
           disabled={disabled}
+          aria-label={ariaLabel}
         />
         <div
-          className={`box block ${box} rounded-full ${
-            checked ? 'bg-apple-green' : 'bg-silver dark:bg-charcoal-grey'
+          className={`block ${box} rounded-full ${
+            checked ? 'bg-north-texas-green' : 'bg-silver dark:bg-charcoal-grey'
           }`}
         ></div>
         <div
