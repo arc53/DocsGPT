@@ -49,8 +49,6 @@ module.exports = {
         'independence': '#54546D',
         'philippine-yellow': '#FFC700',
         'bright-gray': '#EBEBEB',
-        
-        // New semantically named colors for UI elements
         'chinese-white': '#e0e0e0',
         'dark-gray': '#aaaaaa',
         'dim-gray': '#6A6A6A',
@@ -64,12 +62,10 @@ module.exports = {
         'light-silver': '#D9D9D9',
         'carbon': '#2E2E2E',
         'onyx':'#35363B',
-
-        // New colors for edit buttons
-        'purple-hover': '#6C4AB0', //royal purple
-        'rich-black': '#0F1419', // chinese-black-2
-        'light-gray-hover': '#D9DCDE', //gainsboro
-        'charcoal': '#35383C',//onyx 2
+        'royal-purple': '#6C4AB0',
+        'chinese-black-2': '#0F1419',
+        'gainsboro': '#D9DCDE',
+        'onyx-2': '#35383C',
         'philippine-grey': '#929292',
         'charcoal-grey':'#53545D',
         'rosso-corsa': '#D30000',
