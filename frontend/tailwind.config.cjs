@@ -73,7 +73,7 @@ module.exports = {
         'philippine-grey': '#929292',
         'charcoal-grey':'#53545D',
         'rosso-corsa': '#D30000',
-        'apple-green': '#4CAF50',
+        'north-texas-green': '#0C9D35',
         'medium-purple': '#8d66dd',
         'slate-blue': '#6f5fca',
         'old-silver': '#848484',
