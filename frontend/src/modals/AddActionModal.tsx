@@ -59,6 +59,7 @@ export default function AddActionModal({
               setFunctionNameError(!isValidFunctionName(value));
             }}
             borderVariant="thin"
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
             placeholder={'Enter name'}
           />
           <p

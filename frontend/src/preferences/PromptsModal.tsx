@@ -38,7 +38,6 @@ function AddPrompt({
         <Input
           placeholder={t('modals.prompts.promptName')}
           type="text"
-          label={t('modals.prompts.promptName')}
           className="h-10 rounded-lg"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
@@ -115,6 +114,7 @@ function EditPrompt({
             className="h-10 rounded-lg"
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
           <div className="relative bottom-12 left-3 mt-[-3.00px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">

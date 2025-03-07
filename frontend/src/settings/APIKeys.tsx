@@ -109,7 +109,7 @@ export default function APIKeys() {
         <div className="mb-6 flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3">
           <button
             onClick={() => setCreateModal(true)}
-            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            className="rounded-full text-sm w-[108px] h-[30px] bg-purple-30 text-white hover:bg-[#6F3FD1] flex items-center justify-center"
             title={t('settings.apiKeys.createNew')}
           >
             {t('settings.apiKeys.createNew')}

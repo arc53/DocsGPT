@@ -61,6 +61,7 @@ export default function ChunkModal({
                   onChange={(e) => setTitle(e.target.value)}
                   borderVariant="thin"
                   placeholder={'Enter title'}
+                  labelBgClassName="bg-white dark:bg-charleston-green-2"
                 ></Input>
               </div>
               <div className="mt-6 relative px-3">
@@ -123,15 +124,13 @@ export default function ChunkModal({
                 Edit Chunk
               </h2>
               <div className="mt-6 relative px-3">
-                <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
-                  Title
-                </span>
                 <Input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   borderVariant="thin"
                   placeholder={'Enter title'}
+                  labelBgClassName="bg-white dark:bg-charleston-green-2"
                 ></Input>
               </div>
               <div className="mt-6 relative px-3">
