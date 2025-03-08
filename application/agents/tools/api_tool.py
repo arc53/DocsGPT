@@ -29,9 +29,10 @@ class APITool(Tool):
             body = json.dumps(body)
         try:
             print(f"Making API call: {method} {url} with body: {body}")
+            if body == "{}":
+                body = None
             response = requests.request(method, url, headers=headers, data=body)
             response.raise_for_status()
-
             content_type = response.headers.get(
                 "Content-Type", "application/json"
             ).lower()
