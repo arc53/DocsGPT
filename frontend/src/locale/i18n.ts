@@ -8,6 +8,7 @@ import jp from './jp.json'; //Japanese
 import zh from './zh.json'; //Mandarin
 import zhTW from './zh-TW.json'; //Traditional Chinese
 import ru from './ru.json'; //Russian
+import ar from './ar.json'; //Arabic
 
 i18n
   .use(LanguageDetector)
@@ -32,6 +33,9 @@ i18n
       ru: {
         translation: ru,
       },
+      ar: {
+        translation: ar,
+      }
     },
     fallbackLng: 'en',
     detection: {
