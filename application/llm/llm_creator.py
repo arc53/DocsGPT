@@ -7,7 +7,7 @@ from application.llm.anthropic import AnthropicLLM
 from application.llm.docsgpt_provider import DocsGPTAPILLM
 from application.llm.premai import PremAILLM
 from application.llm.google_ai import GoogleLLM
-
+from application.llm.novita import NovitaLLM
 
 class LLMCreator:
     llms = {
@@ -20,7 +20,8 @@ class LLMCreator:
         "docsgpt": DocsGPTAPILLM,
         "premai": PremAILLM,
         "groq": GroqLLM,
-        "google": GoogleLLM
+        "google": GoogleLLM,
+        "novita": NovitaLLM
     }
 
     @classmethod

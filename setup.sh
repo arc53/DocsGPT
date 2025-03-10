@@ -148,6 +148,7 @@ prompt_cloud_api_provider_options() {
     echo -e "${YELLOW}4) Groq${NC}"
     echo -e "${YELLOW}5) HuggingFace Inference API${NC}"
     echo -e "${YELLOW}6) Azure OpenAI${NC}"
+    echo -e "${YELLOW}7) Novita${NC}"
     echo -e "${YELLOW}b) Back to Main Menu${NC}"
     echo
     read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" provider_choice
@@ -426,6 +427,12 @@ connect_cloud_api_provider() {
                 provider_name="Azure OpenAI"
                 llm_name="azure_openai"
                 model_name="gpt-4o"
+                get_api_key
+                break ;;
+            7) # Novita
+                provider_name="Novita"
+                llm_name="novita"
+                model_name="deepseek/deepseek-r1"
                 get_api_key
                 break ;;
             b|B) clear; return ;; # Clear screen and Back to Main Menu
