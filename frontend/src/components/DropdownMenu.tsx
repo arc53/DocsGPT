@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 
 type DropdownMenuProps = {
   name: string;
@@ -6,6 +7,12 @@ type DropdownMenuProps = {
   onSelect: (value: string) => void;
   defaultValue?: string;
   icon?: string;
+  isOpen?: boolean;
+  onOpenChange?: (isOpen: boolean) => void;
+  anchorRef?: React.RefObject<HTMLElement>;
+  className?: string;
+  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  offset?: { x: number; y: number };
 };
 
 export default function DropdownMenu({
@@ -14,24 +21,33 @@ export default function DropdownMenu({
   onSelect,
   defaultValue = 'none',
   icon,
+  isOpen: controlledIsOpen,
+  onOpenChange,
+  anchorRef,
+  className = '',
+  position = 'bottom-right',
+  offset = { x: 0, y: 8 },
 }: DropdownMenuProps) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [internalIsOpen, setInternalIsOpen] = React.useState(false);
   const [selectedOption, setSelectedOption] = React.useState(
     options.find((option) => option.value === defaultValue) || options[0],
   );
 
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-  };
+  const isOpen =
+    controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+  const setIsOpen = onOpenChange || setInternalIsOpen;
+
   const handleClickOutside = (event: MouseEvent) => {
     if (
       dropdownRef.current &&
-      !dropdownRef.current.contains(event.target as Node)
+      !dropdownRef.current.contains(event.target as Node) &&
+      !anchorRef?.current?.contains(event.target as Node)
     ) {
       setIsOpen(false);
     }
   };
+
   const handleClickOption = (optionId: number) => {
     setIsOpen(false);
     setSelectedOption(options[optionId]);
@@ -39,26 +55,40 @@ export default function DropdownMenu({
   };
 
   React.useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const getMenuPosition = (): React.CSSProperties => {
+    if (!anchorRef?.current) return {};
+
+    const rect = anchorRef.current.getBoundingClientRect();
+
+    const top = rect.bottom + offset.y;
+    const left = rect.right + offset.x;
+
+    return {
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      zIndex: 9999,
     };
-  }, []);
-  return (
-    <div className="static inline-block text-left" ref={dropdownRef}>
-      <button
-        onClick={handleToggle}
-        className="flex w-20 cursor-pointer flex-row  gap-1 rounded-3xl border-purple-30/25 bg-purple-30 p-2 text-xs text-white hover:bg-[#6F3FD1] focus:outline-none"
-      >
-        {icon && <img src={icon} alt="OptionIcon" className="h-4 w-4" />}
-        {selectedOption.value !== 'never' ? selectedOption.label : name}
-      </button>
+  };
+
+  // Use a portal to render the dropdown outside the table flow
+  return ReactDOM.createPortal(
+    <div
+      ref={dropdownRef}
+      style={{ ...getMenuPosition() }}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div
-        className={`absolute z-50 right-0 mt-1 w-28 transform rounded-md bg-transparent shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${
-          isOpen
-            ? 'scale-100 opacity-100'
-            : 'pointer-events-none scale-95 opacity-0'
-        }`}
+        className={`w-28 transform rounded-md bg-white dark:bg-dark-charcoal shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${className}`}
       >
         <div
           role="menu"
@@ -83,6 +113,7 @@ export default function DropdownMenu({
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

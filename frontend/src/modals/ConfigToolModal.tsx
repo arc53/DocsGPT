@@ -59,7 +59,7 @@ export default function ConfigToolModal({
             onChange={(e) => setAuthKey(e.target.value)}
             borderVariant="thin"
             placeholder={t('modals.configTool.apiKeyPlaceholder')}
-            label={t('modals.configTool.apiKeyLabel')}
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
         </div>
         <div className="mt-8 flex flex-row-reverse gap-1 px-3">

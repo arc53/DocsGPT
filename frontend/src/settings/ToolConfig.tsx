@@ -1,5 +1,4 @@
 import React from 'react';
-
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import CircleCheck from '../assets/circle-check.svg';
@@ -7,9 +6,11 @@ import CircleX from '../assets/circle-x.svg';
 import Trash from '../assets/trash.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
+import ToggleSwitch from '../components/ToggleSwitch';
 import AddActionModal from '../modals/AddActionModal';
 import { ActiveState } from '../models/misc';
 import { APIActionType, APIToolType, UserToolType } from './types';
+import { useTranslation } from 'react-i18next';
 
 export default function ToolConfig({
   tool,
@@ -25,7 +26,7 @@ export default function ToolConfig({
   );
   const [actionModalState, setActionModalState] =
     React.useState<ActiveState>('INACTIVE');
-
+  const { t } = useTranslation();
   const handleCheckboxChange = (actionIndex: number, property: string) => {
     setTool({
       ...tool,
@@ -134,16 +135,13 @@ export default function ToolConfig({
           {Object.keys(tool?.config).length !== 0 &&
             tool.name !== 'api_tool' && (
               <div className="relative w-96">
-                <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
-                  API Key / Oauth
-                </span>
                 <Input
                   type="text"
                   value={authKey}
                   onChange={(e) => setAuthKey(e.target.value)}
                   borderVariant="thin"
-                  placeholder="Enter API Key / Oauth"
-                ></Input>
+                  placeholder={t('modals.configTool.apiKeyPlaceholder')}
+                />
               </div>
             )}
           <div className="flex items-center gap-2">
@@ -192,33 +190,27 @@ export default function ToolConfig({
                       <p className="font-semibold text-eerie-black dark:text-bright-gray">
                         {action.name}
                       </p>
-                      <label
-                        htmlFor={`actionToggle-${actionIndex}`}
-                        className="relative inline-block h-6 w-10 cursor-pointer rounded-full bg-gray-300 dark:bg-[#D2D5DA33]/20 transition [-webkit-tap-highlight-color:_transparent] has-[:checked]:bg-[#0C9D35CC] has-[:checked]:dark:bg-[#0C9D35CC]"
-                      >
-                        <input
-                          type="checkbox"
-                          id={`actionToggle-${actionIndex}`}
-                          className="peer sr-only"
-                          checked={action.active}
-                          onChange={() => {
-                            setTool({
-                              ...tool,
-                              actions: tool.actions.map((act, index) => {
-                                if (index === actionIndex) {
-                                  return { ...act, active: !act.active };
-                                }
-                                return act;
-                              }),
-                            });
-                          }}
-                        />
-                        <span className="absolute inset-y-0 start-0 m-[3px] size-[18px] rounded-full bg-white transition-all peer-checked:start-4"></span>
-                      </label>
+                      <ToggleSwitch
+                        checked={action.active}
+                        onChange={(checked) => {
+                          setTool({
+                            ...tool,
+                            actions: tool.actions.map((act, index) => {
+                              if (index === actionIndex) {
+                                return { ...act, active: checked };
+                              }
+                              return act;
+                            }),
+                          });
+                        }}
+                        size="small"
+                        id={`actionToggle-${actionIndex}`}
+                      />
                     </div>
-                    <div className="mt-5 relative px-5 w-full sm:w-96">
+                    <div className="mt-5 relative">
                       <Input
                         type="text"
+                        className="w-[97%] ml-5"
                         placeholder="Enter description"
                         value={action.description}
                         onChange={(e) => {
@@ -236,7 +228,7 @@ export default function ToolConfig({
                           });
                         }}
                         borderVariant="thin"
-                      ></Input>
+                      />
                     </div>
                     <div className="px-5 py-4">
                       <table className="table-default">
@@ -431,19 +423,12 @@ function APIToolConfig({
                   <p className="font-semibold text-eerie-black dark:text-bright-gray">
                     {action.name}
                   </p>
-                  <label
-                    htmlFor={`actionToggle-${actionIndex}`}
-                    className="relative inline-block h-6 w-10 cursor-pointer rounded-full bg-gray-300 dark:bg-[#D2D5DA33]/20 transition [-webkit-tap-highlight-color:_transparent] has-[:checked]:bg-[#0C9D35CC] has-[:checked]:dark:bg-[#0C9D35CC]"
-                  >
-                    <input
-                      type="checkbox"
-                      id={`actionToggle-${actionIndex}`}
-                      className="peer sr-only"
-                      checked={action.active}
-                      onChange={() => handleActionToggle(actionName)}
-                    />
-                    <span className="absolute inset-y-0 start-0 m-[3px] size-[18px] rounded-full bg-white transition-all peer-checked:start-4"></span>
-                  </label>
+                  <ToggleSwitch
+                    checked={action.active}
+                    onChange={() => handleActionToggle(actionName)}
+                    size="small"
+                    id={`actionToggle-${actionIndex}`}
+                  />
                 </div>
                 <div className="mt-8 px-5">
                   <div className="relative w-full">

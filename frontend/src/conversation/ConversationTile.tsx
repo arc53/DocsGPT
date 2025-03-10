@@ -18,6 +18,9 @@ import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
+import ContextMenu from '../components/ContextMenu';
+import { MenuOption } from '../components/ContextMenu';
+import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
   name: string;
@@ -128,6 +131,50 @@ export default function ConversationTile({
     }
   };
 
+  const menuOptions: MenuOption[] = [
+    {
+      icon: Share,
+      label: t('convTile.share'),
+      onClick: (event: SyntheticEvent) => {
+        event.stopPropagation();
+        setShareModalState(true);
+        setOpen(false);
+      },
+      variant: 'primary',
+      iconWidth: 14,
+      iconHeight: 14,
+    },
+    {
+      icon: Edit,
+      label: t('convTile.rename'),
+      onClick: handleEditConversation,
+      variant: 'primary',
+    },
+    {
+      icon: Trash,
+      label: t('convTile.delete'),
+      onClick: (event: SyntheticEvent) => {
+        event.stopPropagation();
+        setDeleteModalState('ACTIVE');
+        setOpen(false);
+      },
+      iconWidth: 18,
+      iconHeight: 18,
+      variant: 'danger',
+    },
+  ];
+
+  useOutsideAlerter(
+    tileRef,
+    () => {
+      if (isEdit) {
+        onClear();
+      }
+    },
+    [isEdit],
+    true,
+  );
+
   return (
     <>
       <div
@@ -136,16 +183,18 @@ export default function ConversationTile({
           setIsHovered(true);
         }}
         onMouseLeave={() => {
-          setIsHovered(false);
+          if (!isEdit) {
+            setIsHovered(false);
+          }
         }}
         onClick={() => {
           onCoversationClick();
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-          conversationId === conversation.id || isOpen || isHovered
-            ? 'bg-gray-100 dark:bg-[#28292E]'
+        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+          conversationId === conversation.id || isOpen || isHovered || isEdit
+            ? 'bg-bright-gray dark:bg-dark-charcoal'
             : ''
         }`}
       >
@@ -160,13 +209,13 @@ export default function ConversationTile({
               onKeyDown={handleRenameKeyDown}
             />
           ) : (
-            <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black dark:text-white">
+            <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black dark:text-bright-gray">
               {conversationName}
             </p>
           )}
         </div>
         {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div className="flex text-white dark:text-[#949494]" ref={menuRef}>
+          <div className="flex text-white dark:text-sonic-silver" ref={menuRef}>
             {isEdit ? (
               <div className="flex gap-1">
                 <img
@@ -204,64 +253,14 @@ export default function ConversationTile({
                 <img src={threeDots} width={8} />
               </button>
             )}
-            {isOpen && (
-              <div
-                className="flex-start absolute z-30 flex w-32 translate-x-1 translate-y-5 flex-col rounded-xl bg-stone-100 text-sm text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver md:w-36"
-                style={{
-                  top: `${(tileRef.current?.getBoundingClientRect().top ?? 0) + window.scrollY + 8}px`,
-                }}
-              >
-                <button
-                  onClick={(event: SyntheticEvent) => {
-                    event.stopPropagation();
-                    setShareModalState(true);
-                    setOpen(false);
-                  }}
-                  className="flex-start flex items-center gap-4 rounded-t-xl p-3 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
-                >
-                  <img
-                    src={Share}
-                    alt="Share"
-                    width={14}
-                    height={14}
-                    className="cursor-pointer hover:opacity-50"
-                    id={`img-${conversation.id}`}
-                  />
-                  <span>{t('convTile.share')}</span>
-                </button>
-                <button
-                  onClick={handleEditConversation}
-                  className="flex-start flex items-center gap-4 p-3 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
-                >
-                  <img
-                    src={Edit}
-                    alt="Edit"
-                    width={16}
-                    height={16}
-                    className="cursor-pointer hover:opacity-50"
-                    id={`img-${conversation.id}`}
-                  />
-                  <span>{t('convTile.rename')}</span>
-                </button>
-                <button
-                  onClick={(event: SyntheticEvent) => {
-                    event.stopPropagation();
-                    setDeleteModalState('ACTIVE');
-                    setOpen(false);
-                  }}
-                  className="flex-start flex items-center gap-3 rounded-b-xl p-2 text-red-700 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
-                >
-                  <img
-                    src={Trash}
-                    alt="Delete"
-                    width={24}
-                    height={24}
-                    className="cursor-pointer hover:opacity-50"
-                  />
-                  <span>{t('convTile.delete')}</span>
-                </button>
-              </div>
-            )}
+            <ContextMenu
+              isOpen={isOpen}
+              setIsOpen={setOpen}
+              options={menuOptions}
+              anchorRef={tileRef}
+              position="bottom-right"
+              offset={{ x: 1, y: 8 }}
+            />
           </div>
         )}
       </div>

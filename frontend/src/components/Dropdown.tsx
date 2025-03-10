@@ -11,6 +11,7 @@ function Dropdown({
   rounded = 'xl',
   border = 'border-2',
   borderColor = 'silver',
+  darkBorderColor = 'dim-gray',
   showEdit,
   onEdit,
   showDelete,
@@ -38,6 +39,7 @@ function Dropdown({
   rounded?: 'xl' | '3xl';
   border?: 'border' | 'border-2';
   borderColor?: string;
+  darkBorderColor?: string;
   showEdit?: boolean;
   onEdit?: (value: { name: string; id: string; type: string }) => void;
   showDelete?: boolean;
@@ -77,7 +79,7 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${borderColor}/40 dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${darkBorderColor} dark:bg-transparent ${
           isOpen ? `${borderTopRadius}` : `${borderRadius}`
         }`}
       >
@@ -114,7 +116,7 @@ function Dropdown({
       </button>
       {isOpen && (
         <div
-          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-white shadow-lg dark:border-${borderColor}/40 dark:bg-dark-charcoal`}
+          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-white shadow-lg dark:border-${darkBorderColor} dark:bg-dark-charcoal`}
         >
           {options.map((option: any, index) => (
             <div

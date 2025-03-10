@@ -77,8 +77,8 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
             onClick={() => setActiveTab(tab)}
             className={`snap-start h-9 rounded-3xl px-4 font-bold transition-colors ${
               activeTab === tab
-                ? 'bg-neutral-200 text-neutral-900 dark:bg-dark-charcoal dark:text-white'
-                : 'text-neutral-700 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                ? 'bg-[#F4F4F5] text-neutral-900 dark:bg-dark-charcoal dark:text-white'
+                : 'text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white'
             }`}
             role="tab"
             aria-selected={activeTab === tab}
