@@ -20,7 +20,7 @@ gTTS==2.5.4
 gunicorn==23.0.0
 html2text==2024.2.26
 javalang==0.13.0
-jinja2==3.1.5
+jinja2==3.1.6
 jiter==0.8.2
 jmespath==1.0.1
 joblib==1.4.2
