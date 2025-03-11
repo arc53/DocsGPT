@@ -107,6 +107,7 @@ class ClassicAgent(BaseAgent):
                 if isinstance(line, str):
                     yield {"answer": line}
 
+        yield {"sources": retrieved_data}
         yield {"tool_calls": self.tool_calls.copy()}
 
     def _retriever_search(self, retriever, query, log_context):
