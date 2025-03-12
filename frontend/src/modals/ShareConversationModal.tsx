@@ -138,14 +138,14 @@ export const ShareConversationModal = ({
           </span>
           {status === 'fetched' ? (
             <button
-              className="my-1 h-10 w-28 rounded-full border border-solid  bg-purple-30 p-2 text-sm text-white hover:bg-royal-purple"
+              className="my-1 h-10 w-28 rounded-full border border-solid bg-purple-30 p-2 text-sm text-white hover:bg-violets-are-blue"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
             </button>
           ) : (
             <button
-              className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-royal-purple"
+              className="my-1 flex h-10 w-28 items-center justify-evenly rounded-full bg-purple-30 p-2 text-center text-sm font-normal text-white hover:bg-violets-are-blue"
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}

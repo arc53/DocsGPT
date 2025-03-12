@@ -165,7 +165,7 @@ export default function Prompts({
             />
 
             <button
-              className="mt-[24px] rounded-3xl border border-solid border-purple-30 px-5 py-3 text-purple-30 transition-colors hover:text-white hover:bg-[#6F3FD1] dark:border-purple-30 dark:text-purple-30 dark:hover:bg-purple-30 dark:hover:text-white"
+              className="mt-[24px] rounded-3xl border border-solid border-violets-are-blue px-5 py-3 text-violets-are-blue transition-colors hover:text-white hover:bg-violets-are-blue"
               onClick={() => {
                 setModalType('ADD');
                 setModalState('ACTIVE');

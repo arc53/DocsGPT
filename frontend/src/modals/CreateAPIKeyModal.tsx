@@ -145,7 +145,7 @@ export default function CreateAPIKeyModal({
             createAPIKey(payload);
           }
         }}
-        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
+        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-violets-are-blue disabled:opacity-50"
       >
         {t('modals.createAPIKey.create')}
       </button>

@@ -307,7 +307,7 @@ export default function Documents({
             />
           </div>
           <button
-            className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-[#6F3FD1] flex items-center justify-center"
+            className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
             title={t('settings.documents.addNew')}
             onClick={() => {
               setIsOnboarding(false);

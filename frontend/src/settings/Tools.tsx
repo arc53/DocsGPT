@@ -111,7 +111,7 @@ export default function Tools() {
                 />
               </div>
               <button
-                className="rounded-full w-[108px] h-[30px] text-sm bg-purple-30 text-white hover:bg-[#6F3FD1] flex items-center justify-center"
+                className="rounded-full w-[108px] h-[30px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}

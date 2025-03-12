@@ -146,7 +146,7 @@ export default function ToolConfig({
             )}
           <div className="flex items-center gap-2">
             <button
-              className="rounded-full px-5 py-[10px] bg-purple-30 text-white hover:bg-[#6F3FD1] text-nowrap text-sm"
+              className="rounded-full px-5 py-[10px] bg-purple-30 text-white hover:bg-violets-are-blue text-nowrap text-sm"
               onClick={handleSaveChanges}
             >
               Save changes
@@ -170,7 +170,7 @@ export default function ToolConfig({
             onClick={() => {
               setActionModalState('ACTIVE');
             }}
-            className="border border-solid border-purple-30  text-purple-30 dark:border-purple-30 dark:text-purple-30 transition-colors hover:bg-[#6F3FD1] hover:text-white  dark:hover:bg-purple-30 dark:hover:text-white rounded-full text-sm px-5 py-1"
+            className="border border-solid border-violets-are-blue text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white rounded-full text-sm px-5 py-1"
           >
             Add action
           </button>
@@ -823,7 +823,7 @@ function APIActionTable({
             <td colSpan={4} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="bg-purple-30 text-white hover:bg-[#6F3FD1] rounded-full px-5 py-[4px] mr-1 text-sm"
+                className="bg-purple-30 text-white hover:bg-violets-are-blue rounded-full px-5 py-[4px] mr-1 text-sm"
               >
                 {' '}
                 Add{' '}
@@ -850,7 +850,7 @@ function APIActionTable({
             <td colSpan={5}>
               <button
                 onClick={() => handleAddPropertyStart(section)}
-                className="flex items-start rounded-full px-5 py-[4px] border border-solid border-purple-30  text-purple-30 dark:border-purple-30 dark:text-purple-30 transition-colors hover:bg-[#6F3FD1] hover:text-white  dark:hover:bg-purple-30 dark:hover:text-white text-nowrap text-sm"
+                className="flex items-start rounded-full px-5 py-[4px] border border-solid  text-violets-are-blue border-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white text-nowrap text-sm"
               >
                 Add New Field
               </button>

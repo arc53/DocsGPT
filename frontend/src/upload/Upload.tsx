@@ -708,7 +708,7 @@ function Upload({
               className={`rounded-3xl px-4 py-2 font-medium text-[14px] ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
-                  : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
+                  : 'cursor-pointer bg-purple-30 text-white hover:bg-violets-are-blue'
               }`}
             >
               {t('modals.uploadDoc.train')}

@@ -84,7 +84,7 @@ export default function ChunkModal({
                     handleSubmit(title, chunkText);
                     setModalState('INACTIVE');
                   }}
-                  className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
+                  className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue"
                 >
                   Add
                 </button>
@@ -162,7 +162,7 @@ export default function ChunkModal({
                       handleSubmit(title, chunkText);
                       setModalState('INACTIVE');
                     }}
-                    className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
+                    className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue"
                   >
                     Update
                   </button>
