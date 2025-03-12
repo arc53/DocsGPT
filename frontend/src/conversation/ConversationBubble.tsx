@@ -381,6 +381,7 @@ const ConversationBubble = forwardRef<
                         customStyle={{
                           margin: 0,
                           borderRadius: 0,
+                          scrollbarWidth: 'thin',
                         }}
                       >
                         {String(children).replace(/\n$/, '')}

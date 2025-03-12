@@ -37,7 +37,7 @@ export default function Hero({
               <Fragment key={key}>
                 <button
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`w-full rounded-full border bg-transparent px-6 py-4 text-left xl:min-w-[24vw] focus:outline-none
+                  className={`w-full rounded-full border bg-transparent px-6 py-4 text-left min-w-11/12 sm:min-w-[362px] focus:outline-none
                     border-dark-gray text-just-black hover:bg-cultured
                     dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green`}
                 >

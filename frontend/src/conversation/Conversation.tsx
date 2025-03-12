@@ -386,7 +386,7 @@ export default function Conversation() {
         )}
       </div>
 
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[58%] xl:w-[664px] 2xl:w-[49vw] h-auto py-1">
+      <div className="flex flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 w-[calc(min(742px,92%))] h-auto py-1">
         <div
           {...getRootProps()}
           className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3"

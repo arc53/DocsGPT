@@ -165,7 +165,7 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
   }, []);
 
   return (
-    <div className="logs-table rounded-xl h-[55vh] w-full overflow-hidden bg-white dark:bg-black">
+    <div className="logs-table rounded-xl h-[55vh] w-full overflow-hidden bg-white dark:bg-black border border-light-silver dark:border-transparent">
       <div className="h-8 bg-black/10 dark:bg-[#191919] flex flex-col items-start justify-center">
         <p className="px-3 text-xs dark:text-gray-6000">
           {t('settings.logs.tableHeader')}
