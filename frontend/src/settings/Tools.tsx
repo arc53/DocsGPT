@@ -127,7 +127,7 @@ export default function Tools() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+              <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
                 {userTools
                   .filter((tool) =>
                     tool.displayName
@@ -137,53 +137,53 @@ export default function Tools() {
                   .map((tool, index) => (
                     <div
                       key={index}
-                      className="relative h-52 border rounded-2xl border-light-gainsboro dark:border-arsenic"
+                      className="h-52 w-[300px] p-6 border rounded-2xl border-light-gainsboro dark:border-arsenic bg-white-3000 dark:bg-transparent flex flex-col justify-between relative"
                     >
-                      <div className="h-full flex flex-col p-6">
-                        <button
-                          onClick={() => handleSettingsClick(tool)}
-                          aria-label={t('settings.tools.configureToolAria', {
+                      <button
+                        onClick={() => handleSettingsClick(tool)}
+                        aria-label={t('settings.tools.configureToolAria', {
+                          toolName: tool.displayName,
+                        })}
+                        className="absolute top-4 right-4"
+                      >
+                        <img
+                          src={CogwheelIcon}
+                          alt={t('settings.tools.settingsIconAlt')}
+                          className="h-[19px] w-[19px]"
+                        />
+                      </button>
+                      <div className="w-full">
+                        <div className="px-1 w-full flex items-center">
+                          <img
+                            src={`/toolIcons/tool_${tool.name}.svg`}
+                            alt={`${tool.displayName} icon`}
+                            className="h-6 w-6"
+                          />
+                        </div>
+                        <div className="mt-[9px]">
+                          <p
+                            title={tool.displayName}
+                            className="px-1 text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray leading-relaxed capitalize truncate"
+                          >
+                            {tool.displayName}
+                          </p>
+                          <p className="mt-1 px-1 h-24 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light leading-relaxed">
+                            {tool.description}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="absolute bottom-4 right-4">
+                        <ToggleSwitch
+                          checked={tool.status}
+                          onChange={(checked) =>
+                            updateToolStatus(tool.id, checked)
+                          }
+                          size="small"
+                          id={`toolToggle-${index}`}
+                          ariaLabel={t('settings.tools.toggleToolAria', {
                             toolName: tool.displayName,
                           })}
-                          className="absolute top-4 right-4"
-                        >
-                          <img
-                            src={CogwheelIcon}
-                            alt={t('settings.tools.settingsIconAlt')}
-                            className="h-[19px] w-[19px]"
-                          />
-                        </button>
-                        <div className="flex-1">
-                          <div className="flex flex-col items-start space-y-3">
-                            <img
-                              src={`/toolIcons/tool_${tool.name}.svg`}
-                              alt={`${tool.displayName} icon`}
-                              className="h-6 w-6"
-                            />
-                            <p
-                              title={tool.displayName}
-                              className="w-[calc(100%-24px)] text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray capitalize truncate"
-                            >
-                              {tool.displayName}
-                            </p>
-                            <p className="h-20 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light">
-                              {tool.description}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex justify-end pt-2">
-                          <ToggleSwitch
-                            checked={tool.status}
-                            onChange={(checked) =>
-                              updateToolStatus(tool.id, checked)
-                            }
-                            size="small"
-                            id={`toolToggle-${index}`}
-                            ariaLabel={t('settings.tools.toggleToolAria', {
-                              toolName: tool.displayName,
-                            })}
-                          />
-                        </div>
+                        />
                       </div>
                     </div>
                   ))}
