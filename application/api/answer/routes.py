@@ -706,7 +706,6 @@ class Search(Resource):
 
             retriever = RetrieverCreator.create_retriever(
                 retriever_name,
-                question=question,
                 source=source,
                 chat_history=[],
                 prompt="default",
@@ -716,7 +715,7 @@ class Search(Resource):
                 user_api_key=user_api_key,
             )
 
-            docs = retriever.search()
+            docs = retriever.search(question)
             retriever_params = retriever.get_params()
 
             user_logs_collection.insert_one(
