@@ -55,8 +55,9 @@ module.exports = {
         'cultured': '#f4f4f4',
         'charleston-green': '#2b2c31',
         'charleston-green-2' : '#26272e',
+        'charleston-green-3':'#26272A',
         'grey': '#7e7e7e',
-        'lotion': '#fbfbfb',
+        'lotion': '#FBFBFB',
         'platinum': '#e6e6e6',
         'eerie-black-2': '#191919',
         'light-silver': '#D9D9D9',
@@ -77,7 +78,8 @@ module.exports = {
         'light-gainsboro': '#d7D7D7',
         'raisin-black-light': '#18181B',
         'gunmetal': '#32333B',
-        'sonic-silver-light': '#7f7f82'
+        'sonic-silver-light': '#7f7f82',
+        'violets-are-blue':'#976AF3'
       },
     },
   },

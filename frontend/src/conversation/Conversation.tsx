@@ -386,10 +386,10 @@ export default function Conversation() {
         )}
       </div>
 
-      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[58%] xl:w-[650px] 2xl:w-[49vw] h-auto py-1">
+      <div className="flex w-11/12 flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 sm:w-[58%] xl:w-[664px] 2xl:w-[49vw] h-auto py-1">
         <div
           {...getRootProps()}
-          className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-raisin-black"
+          className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3"
         >
           <label htmlFor="file-upload" className="sr-only">
             {t('modals.uploadDoc.label')}
@@ -403,7 +403,7 @@ export default function Conversation() {
             ref={inputRef}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className={`inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-transparent py-5 text-base leading-tight opacity-100 focus:outline-none dark:bg-transparent dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50`}
+            className={`inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-lotion dark:bg-charleston-green-3 py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50`}
             onInput={handleInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

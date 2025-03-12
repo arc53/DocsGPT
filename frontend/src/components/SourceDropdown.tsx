@@ -54,7 +54,7 @@ function SourceDropdown({
     <div className="relative w-5/6 rounded-3xl" ref={dropdownRef}>
       <button
         onClick={() => setIsDocsListOpen(!isDocsListOpen)}
-        className={`flex w-full cursor-pointer items-center border border-silver bg-white p-[14px] dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center border border-silver bg-white p-[11px] dark:bg-transparent ${
           isDocsListOpen
             ? 'rounded-t-3xl dark:border-silver/40'
             : 'rounded-3xl dark:border-purple-taupe'

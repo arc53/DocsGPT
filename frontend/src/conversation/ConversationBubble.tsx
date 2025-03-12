@@ -161,7 +161,7 @@ const ConversationBubble = forwardRef<
                   {t('conversation.edit.cancel')}
                 </button>
                 <button
-                  className="rounded-full bg-purple-30 hover:bg-royal-purple px-4 py-2 text-white text-sm font-medium transition-colors"
+                  className="rounded-full bg-purple-30 hover:bg-violets-are-blue dark:hover:bg-royal-purple px-4 py-2 text-white text-sm font-medium transition-colors"
                   onClick={handleEditClick}
                 >
                   {t('conversation.edit.update')}
