@@ -132,8 +132,8 @@ export default function Prompts({
   return (
     <>
       <div>
-        <div className="flex flex-col">
-          <p className="font-semibold dark:text-bright-gray">
+        <div className="flex flex-col gap-4">
+          <p className="font-medium dark:text-bright-gray">
             {t('settings.general.prompt')}
           </p>
           <div className="flex flex-row justify-start items-baseline gap-6">
@@ -165,7 +165,7 @@ export default function Prompts({
             />
 
             <button
-              className="mt-[24px] rounded-3xl border border-solid border-violets-are-blue px-5 py-3 text-violets-are-blue transition-colors hover:text-white hover:bg-violets-are-blue"
+              className="rounded-3xl w-20 h-10 text-sm border border-solid border-violets-are-blue text-violets-are-blue transition-colors hover:text-white hover:bg-violets-are-blue"
               onClick={() => {
                 setModalType('ADD');
                 setModalState('ACTIVE');
