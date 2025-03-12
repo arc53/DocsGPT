@@ -485,25 +485,24 @@ template {
 ::-webkit-scrollbar {
   width: 10;
 }
-
-input:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0 50px white inset;
+/* Light mode specific autofill styles */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: #343541 !important; /* jet color */
+  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
-input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 50px white inset;
-}
-
-@media (prefers-color-scheme: dark) {
-  input:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
-    -webkit-text-fill-color: white;
-  }
-
-  input:-webkit-autofill:focus {
-    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
-    -webkit-text-fill-color: white;
-  }
+/* Dark mode specific autofill styles */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark input:-webkit-autofill:active {
+  -webkit-text-fill-color: white !important;
+  -webkit-box-shadow: 0 0 0 30px #202124 inset !important; /* raisin-black */
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 .inputbox-style {
