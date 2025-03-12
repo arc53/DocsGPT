@@ -323,10 +323,10 @@ export default function Documents({
               <table className="w-full table-auto">
                 <thead>
                   <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[45%]">
                       {t('settings.documents.name')}
                     </th>
-                    <th className="py-3 px-4 text-xs font-medium text-sonic-silver uppercase w-[30%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[30%]">
                       <div className="flex justify-start items-center">
                         {t('settings.documents.date')}
                         <img
@@ -337,7 +337,7 @@ export default function Documents({
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 text-xs font-medium text-sonic-silver uppercase w-[15%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[15%]">
                       <div className="flex justify-start items-center">
                         <span className="hidden sm:inline">
                           {t('settings.documents.tokenUsage')}
@@ -377,7 +377,7 @@ export default function Documents({
                       return (
                         <tr key={docId} className="group transition-colors">
                           <td
-                            className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            className="py-4 px-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                             title={document.name}
                           >
                             {document.name}
