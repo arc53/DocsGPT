@@ -45,6 +45,9 @@ def gen_cache_key(messages, model="docgpt", tools=None):
 
 def gen_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
+        if tools is not None:
+            return func(self, model, messages, stream, tools, *args, **kwargs)
+        
         try:
             cache_key = gen_cache_key(messages, model, tools)
         except ValueError as e:
@@ -74,12 +77,16 @@ def gen_cache(func):
 
 def stream_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
+        if tools is not None:
+            yield from func(self, model, messages, stream, tools, *args, **kwargs)
+            return
+        
         try:
             cache_key = gen_cache_key(messages, model, tools)
         except ValueError as e:
             logger.error(f"Cache key generation failed: {e}")
-            result = func(self, model, messages, stream, tools=tools, *args, **kwargs)
-            return result
+            yield from func(self, model, messages, stream, tools, *args, **kwargs)
+            return
 
         redis_client = get_redis_instance()
         if redis_client:
@@ -90,15 +97,13 @@ def stream_cache(func):
                     cached_response = json.loads(cached_response.decode("utf-8"))
                     for chunk in cached_response:
                         yield chunk
-                        time.sleep(0.03)
+                        time.sleep(0.03)  # Simulate streaming delay
                     return
             except Exception as e:
                 logger.error(f"Error getting cached stream: {e}")
 
-        result = func(self, model, messages, stream, tools=tools, *args, **kwargs)
         stream_cache_data = []
-
-        for chunk in result:
+        for chunk in func(self, model, messages, stream, tools, *args, **kwargs):
             yield chunk
             stream_cache_data.append(str(chunk))
 
