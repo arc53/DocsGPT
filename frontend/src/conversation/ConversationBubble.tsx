@@ -155,7 +155,7 @@ const ConversationBubble = forwardRef<
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="px-4 py-2 text-purple-30 text-sm hover:text-chinese-black-2 hover:bg-gainsboro dark:hover:bg-onyx-2 transition-colors rounded-full"
+                  className="px-4 py-2 text-purple-30 text-sm font-semibold hover:text-chinese-black-2 dark:hover:text-[#B9BCBE] hover:bg-gainsboro dark:hover:bg-onyx-2 transition-colors rounded-full"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}

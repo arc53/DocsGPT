@@ -35,7 +35,15 @@ const Input = ({
     <div className={`relative ${className}`}>
       <input
         ref={inputRef}
-        className={`peer h-[42px] w-full rounded-full px-3 py-1 bg-transparent outline-none dark:text-white placeholder-transparent ${colorStyles[colorVariant]} ${borderStyles[borderVariant]}`}
+        className={`h-[42px] w-full rounded-full px-3 py-1 
+          bg-transparent outline-none 
+          text-jet dark:text-bright-gray
+          placeholder-transparent 
+          ${colorStyles[colorVariant]} 
+          ${borderStyles[borderVariant]}
+          [&:-webkit-autofill]:bg-transparent
+          [&:-webkit-autofill]:appearance-none
+          [&:-webkit-autofill_selected]:bg-transparent`}
         type={type}
         id={id}
         name={name}

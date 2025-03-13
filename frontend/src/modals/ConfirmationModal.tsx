@@ -26,7 +26,7 @@ export default function ConfirmationModal({
 
   const submitButtonClasses =
     variant === 'danger'
-      ? 'rounded-3xl bg-rosso-corsa px-5 py-2 text-sm text-lotion transition-all hover:bg-red-2000 hover:font-bold tracking-[0.015em] hover:tracking-normal'
+      ? 'rounded-3xl bg-rosso-corsa px-5 py-2 text-sm text-lotion transition-all hover:bg-red-2000 hover:font-bold tracking-[0.019em] hover:tracking-normal'
       : 'rounded-3xl bg-purple-30 px-5 py-2 text-sm text-lotion transition-all hover:bg-violets-are-blue';
 
   return (

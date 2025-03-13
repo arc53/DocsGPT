@@ -490,9 +490,10 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-text-fill-color: #343541 !important; /* jet color */
-  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  -webkit-text-fill-color: #343541 !important;
+  -webkit-box-shadow: 0 0 0 30px transparent inset !important;
   transition: background-color 5000s ease-in-out 0s;
+  caret-color: #343541;
 }
 
 /* Dark mode specific autofill styles */
@@ -500,9 +501,15 @@ input:-webkit-autofill:active {
 .dark input:-webkit-autofill:hover,
 .dark input:-webkit-autofill:focus,
 .dark input:-webkit-autofill:active {
-  -webkit-text-fill-color: white !important;
-  -webkit-box-shadow: 0 0 0 30px #202124 inset !important; /* raisin-black */
-  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: #E5E7EB !important;
+  -webkit-box-shadow: 0 0 0 30px transparent inset !important;
+  background-color: transparent !important;
+  caret-color: #E5E7EB;
+}
+
+/* Additional autocomplete dropdown styles for dark mode */
+.dark input:-webkit-autofill::first-line {
+  color: #E5E7EB;
 }
 
 .inputbox-style {
