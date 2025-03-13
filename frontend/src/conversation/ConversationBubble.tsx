@@ -22,7 +22,7 @@ import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
-import UserIcon from '../assets/user.png';
+import UserIcon from '../assets/user.svg';
 import Accordion from '../components/Accordion';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
