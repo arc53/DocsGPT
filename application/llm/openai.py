@@ -125,9 +125,9 @@ class OpenAILLM(BaseLLM):
             )
 
         for line in response:
-            if line.choices[0].delta.content is not None:
+            if len(line.choices) > 0 and line.choices[0].delta.content is not None and len(line.choices[0].delta.content) > 0:
                 yield line.choices[0].delta.content
-            else:
+            elif len(line.choices) > 0:
                 yield line.choices[0]
 
     def _supports_tools(self):
