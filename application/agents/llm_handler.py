@@ -72,9 +72,9 @@ class OpenAILLMHandler(LLMHandler):
             while True:
                 tool_calls = {}
                 for chunk in resp:
-                    if isinstance(chunk, str):
+                    if isinstance(chunk, str) and len(chunk) > 0:
                         return
-                    else:
+                    elif hasattr(chunk, "delta"): 
                         chunk_delta = chunk.delta
 
                         if (
@@ -113,6 +113,8 @@ class OpenAILLMHandler(LLMHandler):
                                     tool_response, call_id = agent._execute_tool_action(
                                         tools_dict, call
                                     )
+                                    if isinstance(call["function"]["arguments"], str):
+                                        call["function"]["arguments"] = json.loads(call["function"]["arguments"])
 
                                     function_call_dict = {
                                         "function_call": {
@@ -156,6 +158,8 @@ class OpenAILLMHandler(LLMHandler):
                             and chunk.finish_reason == "stop"
                         ):
                             return
+                    elif isinstance(chunk, str) and len(chunk) == 0:
+                            continue
 
                 resp = agent.llm.gen_stream(
                     model=agent.gpt_model, messages=messages, tools=agent.tools

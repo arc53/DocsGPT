@@ -42,6 +42,8 @@ elif settings.LLM_NAME == "anthropic":
     gpt_model = "claude-2"
 elif settings.LLM_NAME == "groq":
     gpt_model = "llama3-8b-8192"
+elif settings.LLM_NAME == "novita":
+    gpt_model = "deepseek/deepseek-r1"
 
 if settings.MODEL_NAME:  # in case there is particular model name configured
     gpt_model = settings.MODEL_NAME
@@ -706,7 +708,6 @@ class Search(Resource):
 
             retriever = RetrieverCreator.create_retriever(
                 retriever_name,
-                question=question,
                 source=source,
                 chat_history=[],
                 prompt="default",
@@ -716,7 +717,7 @@ class Search(Resource):
                 user_api_key=user_api_key,
             )
 
-            docs = retriever.search()
+            docs = retriever.search(question)
             retriever_params = retriever.get_params()
 
             user_logs_collection.insert_one(
