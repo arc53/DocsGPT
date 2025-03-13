@@ -104,6 +104,7 @@ export default function Logs() {
               }
               rounded="3xl"
               border="border"
+              darkBorderColor="dim-gray"
             />
           </div>
         )}
@@ -121,46 +122,78 @@ type LogsTableProps = {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
 };
-
 function LogsTable({ logs, setPage, loading }: LogsTableProps) {
   const { t } = useTranslation();
-  const observerRef = useRef<any>();
-  const firstObserver = useCallback((node: HTMLDivElement) => {
-    if (observerRef.current) {
-      observerRef.current = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting) setPage((prev) => prev + 1);
-      });
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const [openLogId, setOpenLogId] = useState<string | null>(null);
+
+  const handleLogToggle = (logId: string) => {
+    if (openLogId && openLogId !== logId) {
+      // If a different log is being opened, close the current one
+      const currentOpenLog = document.getElementById(
+        openLogId,
+      ) as HTMLDetailsElement;
+      if (currentOpenLog) {
+        currentOpenLog.open = false;
+      }
     }
-    if (node && observerRef.current) observerRef.current.observe(node);
+    setOpenLogId(logId);
+  };
+
+  const firstObserver = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
+    if (!node) return;
+
+    observerRef.current = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setPage((prev) => prev + 1);
+      }
+    });
+
+    observerRef.current.observe(node);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
   }, []);
 
   return (
-    <div className="logs-table border rounded-2xl h-[55vh] w-full overflow-hidden border-silver dark:border-silver/40">
-      <div className="h-8 bg-black/10 dark:bg-chinese-black flex flex-col items-start justify-center">
+    <div className="logs-table rounded-xl h-[55vh] w-full overflow-hidden bg-white dark:bg-black border border-light-silver dark:border-transparent">
+      <div className="h-8 bg-black/10 dark:bg-[#191919] flex flex-col items-start justify-center">
         <p className="px-3 text-xs dark:text-gray-6000">
           {t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div
-        ref={observerRef}
-        className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-px"
-      >
+      <div className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-2 p-4">
         {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
               <div ref={firstObserver} key={index} className="w-full">
-                <Log log={log} />
+                <Log log={log} onToggle={handleLogToggle} />
               </div>
             );
-          } else return <Log key={index} log={log} />;
+          } else
+            return <Log key={index} log={log} onToggle={handleLogToggle} />;
         })}
         {loading && <SkeletonLoader component="logs" />}
       </div>
     </div>
   );
 }
-
-function Log({ log }: { log: LogData }) {
+function Log({
+  log,
+  onToggle,
+}: {
+  log: LogData;
+  onToggle: (id: string) => void;
+}) {
   const { t } = useTranslation();
   const logLevelColor = {
     info: 'text-green-500',
@@ -168,9 +201,18 @@ function Log({ log }: { log: LogData }) {
     warning: 'text-yellow-500',
   };
   const { id, action, timestamp, ...filteredLog } = log;
+
   return (
-    <details className="group bg-transparent [&_summary::-webkit-details-marker]:hidden w-full hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal">
-      <summary className="flex flex-row items-start gap-2 text-gray-900 cursor-pointer p-2 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
+    <details
+      id={log.id}
+      className="group bg-transparent [&_summary::-webkit-details-marker]:hidden w-full hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal rounded-xl group-open:opacity-80 [&[open]]:border [&[open]]:border-[#d9d9d9]"
+      onToggle={(e) => {
+        if ((e.target as HTMLDetailsElement).open) {
+          onToggle(log.id);
+        }
+      }}
+    >
+      <summary className="flex flex-row items-start gap-2 text-gray-900 cursor-pointer px-4 py-3 group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B] group-open:rounded-t-xl p-2">
         <img
           src={ChevronRight}
           alt="Expand log entry"
@@ -188,14 +230,15 @@ function Log({ log }: { log: LogData }) {
           </h2>
         </span>
       </summary>
-      <div className="px-4 group-open:bg-[#F9F9F9] dark:group-open:bg-dark-charcoal">
+      <div className="px-4 py-3 group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B] group-open:rounded-b-xl">
         <p className="px-2 leading-relaxed text-gray-700 dark:text-gray-400 text-xs break-words">
           {JSON.stringify(filteredLog, null, 2)}
         </p>
-        <div className="my-px w-8">
+        <div className="my-px w-fit">
           <CopyButton
             text={JSON.stringify(filteredLog)}
             colorLight="transparent"
+            showText={true}
           />
         </div>
       </div>

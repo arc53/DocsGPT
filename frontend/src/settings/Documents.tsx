@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
 
@@ -6,10 +6,11 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import caretSort from '../assets/caret-sort.svg';
 import Edit from '../assets/edit.svg';
+import EyeView from '../assets/eye-view.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SyncIcon from '../assets/sync.svg';
-import Trash from '../assets/trash.svg';
+import Trash from '../assets/red-trash.svg';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import Input from '../components/Input';
@@ -27,6 +28,8 @@ import {
 import Upload from '../upload/Upload';
 import { formatDate } from '../utils/dateTimeUtils';
 import { ChunkType } from './types';
+import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import ThreeDots from '../assets/three-dots.svg';
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -61,6 +64,53 @@ export default function Documents({
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
+
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const menuRefs = useRef<{ [key: string]: React.RefObject<HTMLDivElement> }>(
+    {},
+  );
+
+  // Create or get a ref for each document wrapper div (not the td)
+  const getMenuRef = (docId: string) => {
+    if (!menuRefs.current[docId]) {
+      menuRefs.current[docId] = React.createRef<HTMLDivElement>();
+    }
+    return menuRefs.current[docId];
+  };
+
+  const handleMenuClick = (e: React.MouseEvent, docId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isAnyMenuOpen =
+      (syncMenuState.isOpen && syncMenuState.docId === docId) ||
+      activeMenuId === docId;
+
+    if (isAnyMenuOpen) {
+      setSyncMenuState((prev) => ({ ...prev, isOpen: false, docId: null }));
+      setActiveMenuId(null);
+      return;
+    }
+    setActiveMenuId(docId);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (activeMenuId) {
+        const activeRef = menuRefs.current[activeMenuId];
+        if (
+          activeRef?.current &&
+          !activeRef.current.contains(event.target as Node)
+        ) {
+          setActiveMenuId(null);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeMenuId]);
+
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
     { label: t('settings.documents.syncFrequency.never'), value: 'never' },
@@ -69,6 +119,16 @@ export default function Documents({
     { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [showDocumentChunks, setShowDocumentChunks] = useState<Doc>();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [syncMenuState, setSyncMenuState] = useState<{
+    isOpen: boolean;
+    docId: string | null;
+    document: Doc | null;
+  }>({
+    isOpen: false,
+    docId: null,
+    document: null,
+  });
 
   const refreshDocs = useCallback(
     (
@@ -164,6 +224,50 @@ export default function Documents({
     }
   };
 
+  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
+    const actions: MenuOption[] = [
+      {
+        icon: EyeView,
+        label: t('settings.documents.view'),
+        onClick: () => {
+          setShowDocumentChunks(document);
+        },
+        iconWidth: 18,
+        iconHeight: 18,
+        variant: 'primary',
+      },
+    ];
+
+    if (document.syncFrequency) {
+      actions.push({
+        icon: SyncIcon,
+        label: t('settings.documents.sync'),
+        onClick: () => {
+          setSyncMenuState({
+            isOpen: true,
+            docId: document.id ?? null,
+            document: document,
+          });
+        },
+        iconWidth: 14,
+        iconHeight: 14,
+        variant: 'primary',
+      });
+    }
+
+    actions.push({
+      icon: Trash,
+      label: t('convTile.delete'),
+      onClick: () => {
+        handleDeleteConfirmation(index, document);
+      },
+      iconWidth: 18,
+      iconHeight: 18,
+      variant: 'danger',
+    });
+
+    return actions;
+  };
   useEffect(() => {
     refreshDocs(undefined, 1, rowsPerPage);
   }, [searchTerm]);
@@ -203,7 +307,7 @@ export default function Documents({
             />
           </div>
           <button
-            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
             title={t('settings.documents.addNew')}
             onClick={() => {
               setIsOnboarding(false);
@@ -219,11 +323,11 @@ export default function Documents({
               <table className="w-full table-auto">
                 <thead>
                   <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[45%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[45%]">
                       {t('settings.documents.name')}
                     </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[20%]">
-                      <div className="flex justify-center items-center">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[30%]">
+                      <div className="flex justify-start items-center">
                         {t('settings.documents.date')}
                         <img
                           className="cursor-pointer ml-2"
@@ -233,8 +337,8 @@ export default function Documents({
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-sonic-silver uppercase w-[25%]">
-                      <div className="flex justify-center items-center">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[15%]">
+                      <div className="flex justify-start items-center">
                         <span className="hidden sm:inline">
                           {t('settings.documents.tokenUsage')}
                         </span>
@@ -249,10 +353,8 @@ export default function Documents({
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[10%]">
-                      <span className="sr-only">
-                        {t('settings.documents.actions')}
-                      </span>
+                    <th className="py-3 px-4 sr-only w-[10%]">
+                      {t('settings.documents.actions')}
                     </th>
                   </tr>
                 </thead>
@@ -269,61 +371,88 @@ export default function Documents({
                       </td>
                     </tr>
                   ) : (
-                    currentDocuments.map((document, index) => (
-                      <tr
-                        key={index}
-                        className="group transition-colors cursor-pointer"
-                        onClick={() => setShowDocumentChunks(document)}
-                      >
-                        <td
-                          className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[45%] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
-                          title={document.name}
-                        >
-                          {document.name}
-                        </td>
-                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[20%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                          {document.date ? formatDate(document.date) : ''}
-                        </td>
-                        <td className="py-4 px-4 text-center text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap w-[25%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
-                          {document.tokens
-                            ? formatTokens(+document.tokens)
-                            : ''}
-                        </td>
-                        <td
-                          className="py-4 px-4 text-right w-[10%] group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
-                          onClick={(e) => e.stopPropagation()} // Stop event propagation for the entire actions cell
-                        >
-                          <div className="flex items-center justify-end gap-3">
-                            {!document.syncFrequency && (
-                              <div className="w-8"></div>
-                            )}
-                            {document.syncFrequency && (
-                              <DropdownMenu
-                                name={t('settings.documents.sync')}
-                                options={syncOptions}
-                                onSelect={(value: string) => {
-                                  handleManageSync(document, value);
-                                }}
-                                defaultValue={document.syncFrequency}
-                                icon={SyncIcon}
-                              />
-                            )}
-                            <button
-                              onClick={() => {
-                                handleDeleteConfirmation(index, document);
-                              }}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                    currentDocuments.map((document, index) => {
+                      const docId = document.id ? document.id.toString() : '';
+
+                      return (
+                        <tr key={docId} className="group transition-colors">
+                          <td
+                            className="py-4 px-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            title={document.name}
+                          >
+                            {document.name}
+                          </td>
+                          <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                            {document.date ? formatDate(document.date) : ''}
+                          </td>
+                          <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                            {document.tokens
+                              ? formatTokens(+document.tokens)
+                              : ''}
+                          </td>
+                          <td
+                            className="py-4 px-4 text-right group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div
+                              ref={getMenuRef(docId)}
+                              className="flex items-center justify-end gap-3 relative"
                             >
-                              <img
-                                src={Trash}
-                                alt={t('convTile.delete')}
-                                className="h-4 w-4 opacity-60 hover:opacity-100"
+                              {document.syncFrequency && (
+                                <DropdownMenu
+                                  name={t('settings.documents.sync')}
+                                  options={syncOptions}
+                                  onSelect={(value: string) => {
+                                    handleManageSync(document, value);
+                                  }}
+                                  defaultValue={document.syncFrequency}
+                                  icon={SyncIcon}
+                                  isOpen={
+                                    syncMenuState.docId === docId &&
+                                    syncMenuState.isOpen
+                                  }
+                                  onOpenChange={(isOpen) => {
+                                    setSyncMenuState((prev) => ({
+                                      ...prev,
+                                      isOpen,
+                                      docId: isOpen ? docId : null,
+                                      document: isOpen ? document : null,
+                                    }));
+                                  }}
+                                  anchorRef={getMenuRef(docId)}
+                                  position="bottom-left"
+                                  offset={{ x: 24, y: -24 }}
+                                  className="min-w-[120px]"
+                                />
+                              )}
+                              <button
+                                onClick={(e) => handleMenuClick(e, docId)}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                                aria-label="Open menu"
+                                data-testid={`menu-button-${docId}`}
+                              >
+                                <img
+                                  src={ThreeDots}
+                                  alt={t('convTile.menu')}
+                                  className="h-4 w-4 opacity-60 hover:opacity-100"
+                                />
+                              </button>
+                              <ContextMenu
+                                isOpen={activeMenuId === docId}
+                                setIsOpen={(isOpen) => {
+                                  setActiveMenuId(isOpen ? docId : null);
+                                }}
+                                options={getActionOptions(index, document)}
+                                anchorRef={getMenuRef(docId)}
+                                position="bottom-left"
+                                offset={{ x: 48, y: -24 }}
+                                className="z-50"
                               />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -375,6 +504,7 @@ export default function Documents({
             setDocumentToDelete(null);
           }}
           submitLabel={t('convTile.delete')}
+          variant="danger"
         />
       )}
     </div>
@@ -521,7 +651,7 @@ function DocumentChunks({
           />
         </div>
         <button
-          className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+          className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
           title={t('settings.documents.addNew')}
           onClick={() => setAddModal('ACTIVE')}
         >

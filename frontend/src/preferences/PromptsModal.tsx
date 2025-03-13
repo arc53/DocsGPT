@@ -32,16 +32,14 @@ function AddPrompt({
         {t('modals.prompts.addDescription')}
       </p>
       <div>
-        <label htmlFor="new-prompt-name" className="sr-only">
-          Prompt Name
-        </label>
         <Input
           placeholder={t('modals.prompts.promptName')}
           type="text"
-          label={t('modals.prompts.promptName')}
-          className="h-10 rounded-lg"
+          className="mb-4"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
+          labelBgClassName="bg-white dark:bg-[#26272E]"
+          borderVariant="thin"
         />
         <div className="relative top-[7px] left-3">
           <span className="bg-white px-1 text-xs text-silver dark:bg-[#26272E] dark:text-silver">
@@ -49,7 +47,7 @@ function AddPrompt({
           </span>
         </div>
         <label htmlFor="new-prompt-content" className="sr-only">
-          Prompt Text
+          {t('modals.prompts.promptText')}
         </label>
         <textarea
           id="new-prompt-content"
@@ -62,7 +60,7 @@ function AddPrompt({
       <div className="mt-6 flex flex-row-reverse">
         <button
           onClick={handleAddPrompt}
-          className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:opacity-90"
+          className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue disabled:hover:bg-purple-30"
           disabled={disableSave}
           title={
             disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
@@ -98,7 +96,7 @@ function EditPrompt({
 
   return (
     <div>
-      <div className="p-8">
+      <div className="">
         <p className="mb-1 text-xl text-jet dark:text-bright-gray">
           {t('modals.prompts.editPrompt')}
         </p>
@@ -106,28 +104,22 @@ function EditPrompt({
           {t('modals.prompts.editDescription')}
         </p>
         <div>
-          <label htmlFor="edit-prompt-name" className="sr-only">
-            Prompt Name
-          </label>
           <Input
             placeholder={t('modals.prompts.promptName')}
             type="text"
-            className="h-10 rounded-lg"
+            className="mb-4"
             value={editPromptName}
             onChange={(e) => setEditPromptName(e.target.value)}
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
+            borderVariant="thin"
           />
-          <div className="relative bottom-12 left-3 mt-[-3.00px]">
-            <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
-              {t('modals.prompts.promptName')}
-            </span>
-          </div>
           <div className="relative top-[7px] left-3">
-            <span className="bg-white px-1 text-xs text-silver dark:bg-outer-space dark:text-silver">
+            <span className="bg-white px-1 text-xs text-silver dark:bg-charleston-green-2 dark:text-silver">
               {t('modals.prompts.promptText')}
             </span>
           </div>
           <label htmlFor="edit-prompt-content" className="sr-only">
-            Prompt Text
+            {t('modals.prompts.promptText')}
           </label>
           <textarea
             id="edit-prompt-content"
@@ -139,10 +131,10 @@ function EditPrompt({
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">
           <button
-            className={`rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all ${
+            className={`rounded-3xl bg-purple-30 disabled:hover:bg-purple-30  hover:bg-violets-are-blue px-5 py-2 text-sm text-white transition-all ${
               currentPromptEdit.type === 'public'
                 ? 'cursor-not-allowed opacity-50'
-                : 'hover:opacity-90'
+                : ''
             }`}
             onClick={() => {
               handleEditPrompt &&

@@ -6,9 +6,10 @@ type ToggleSwitchProps = {
   className?: string;
   label?: string;
   disabled?: boolean;
-  activeColor?: string;
-  inactiveColor?: string;
+  size?: 'small' | 'medium' | 'large';
+  labelPosition?: 'left' | 'right';
   id?: string;
+  ariaLabel?: string;
 };
 
 const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
@@ -17,37 +18,65 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   className = '',
   label,
   disabled = false,
-  activeColor = 'bg-purple-30',
-  inactiveColor = 'bg-transparent',
+  size = 'medium',
+  labelPosition = 'left',
   id,
+  ariaLabel,
 }) => {
+  // Size configurations
+  const sizeConfig = {
+    small: {
+      box: 'h-5 w-9',
+      toggle: 'h-4 w-4 left-0.5 top-0.5',
+      translate: 'translate-x-full',
+    },
+    medium: {
+      box: 'h-8 w-14',
+      toggle: 'h-6 w-6 left-1 top-1',
+      translate: 'translate-x-full',
+    },
+    large: {
+      box: 'h-10 w-16',
+      toggle: 'h-8 w-8 left-1 top-1',
+      translate: 'translate-x-full',
+    },
+  };
+
+  const { box, toggle, translate } = sizeConfig[size];
+
   return (
     <label
-      className={`cursor-pointer select-none justify-between flex flex-row items-center ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
-      htmlFor={id}
+      className={`cursor-pointer select-none flex flex-row items-center ${
+        labelPosition === 'right' ? 'flex-row-reverse' : ''
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
     >
       {label && (
-        <span className="mr-2 text-eerie-black dark:text-white">{label}</span>
+        <span
+          className={`text-eerie-black dark:text-white ${
+            labelPosition === 'left' ? 'mr-1' : 'ml-1'
+          }`}
+        >
+          {label}
+        </span>
       )}
       <div className="relative">
         <input
           type="checkbox"
+          id={id}
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
           className="sr-only"
           disabled={disabled}
-          id={id}
+          aria-label={ariaLabel}
         />
         <div
-          className={`box block h-8 w-14 rounded-full border border-purple-30 ${
-            checked
-              ? `${activeColor} dark:${activeColor}`
-              : `${inactiveColor} dark:${inactiveColor}`
+          className={`block ${box} rounded-full ${
+            checked ? 'bg-north-texas-green' : 'bg-silver dark:bg-charcoal-grey'
           }`}
         ></div>
         <div
-          className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full transition ${
-            checked ? 'translate-x-full bg-silver' : 'bg-purple-30'
+          className={`absolute ${toggle} flex items-center justify-center rounded-full transition bg-white opacity-80 ${
+            checked ? `${translate} bg-silver` : ''
           }`}
         ></div>
       </div>

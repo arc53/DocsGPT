@@ -34,7 +34,7 @@ export default function SaveAPIKeyModal({
           </span>
         </div>
         <button
-          className="my-1 h-10 w-20 rounded-full border border-solid border-purple-30 p-2 text-sm text-purple-30 hover:bg-purple-30 hover:text-white"
+          className="my-1 h-10 w-20 rounded-full border border-solid border-violets-are-blue p-2 text-sm text-violets-are-blue hover:bg-violets-are-blue hover:text-white"
           onClick={handleCopyKey}
         >
           {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}

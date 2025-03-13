@@ -1,4 +1,5 @@
 import { InputProps } from './types';
+import { useRef } from 'react';
 
 const Input = ({
   id,
@@ -7,13 +8,13 @@ const Input = ({
   value,
   isAutoFocused = false,
   placeholder,
-  label,
   required = false,
   maxLength,
-  className,
+  className = '',
   colorVariant = 'silver',
   borderVariant = 'thick',
   children,
+  labelBgClassName = 'bg-white dark:bg-raisin-black',
   onChange,
   onPaste,
   onKeyDown,
@@ -27,15 +28,27 @@ const Input = ({
     thin: 'border',
     thick: 'border-2',
   };
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
   return (
-    <div className="relative">
+    <div className={`relative ${className}`}>
       <input
-        className={`h-[42px] w-full rounded-full px-3 py-1 outline-none dark:bg-transparent dark:text-white ${className} ${colorStyles[colorVariant]} ${borderStyles[borderVariant]}`}
+        ref={inputRef}
+        className={`h-[42px] w-full rounded-full px-3 py-1 
+          bg-transparent outline-none 
+          text-jet dark:text-bright-gray
+          placeholder-transparent 
+          ${colorStyles[colorVariant]} 
+          ${borderStyles[borderVariant]}
+          [&:-webkit-autofill]:bg-transparent
+          [&:-webkit-autofill]:appearance-none
+          [&:-webkit-autofill_selected]:bg-transparent`}
         type={type}
         id={id}
         name={name}
         autoFocus={isAutoFocused}
-        placeholder={placeholder}
+        placeholder={placeholder || ''}
         maxLength={maxLength}
         value={value}
         onChange={onChange}
@@ -45,17 +58,20 @@ const Input = ({
       >
         {children}
       </input>
-      {label && (
-        <div className="absolute -top-2 left-2">
-          <span className="bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver flex items-center">
-            {label}
-            {required && (
-              <span className="text-[#D30000] dark:text-[#D42626] ml-0.5">
-                *
-              </span>
-            )}
-          </span>
-        </div>
+      {placeholder && (
+        <label
+          htmlFor={id}
+          className={`absolute left-3 -top-2.5 px-2 text-xs transition-all 
+            peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base 
+            peer-placeholder-shown:text-gray-4000 peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs 
+            peer-focus:text-gray-4000 dark:text-silver dark:peer-placeholder-shown:text-gray-400 
+            cursor-none pointer-events-none ${labelBgClassName}`}
+        >
+          {placeholder}
+          {required && (
+            <span className="text-[#D30000] dark:text-[#D42626] ml-0.5">*</span>
+          )}
+        </label>
       )}
     </div>
   );

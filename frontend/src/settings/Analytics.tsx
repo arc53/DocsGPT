@@ -223,7 +223,7 @@ export default function Analytics() {
               }
               rounded="3xl"
               border="border"
-              borderColor="gray-700"
+              darkBorderColor="dim-gray"
             />
           </div>
         )}
@@ -337,7 +337,7 @@ export default function Analytics() {
           <div className="h-[345px] w-full px-6 py-5 border rounded-2xl border-silver dark:border-silver/40 overflow-hidden">
             <div className="flex flex-row items-center justify-start gap-3">
               <p className="font-bold text-jet dark:text-bright-gray">
-                {t('settings.analytics.feedback')}
+                {t('settings.analytics.userFeedback')}
               </p>
               <Dropdown
                 size="w-[125px]"
@@ -450,5 +450,17 @@ function AnalyticsChart({
       },
     },
   };
-  return <Bar options={options} plugins={[htmlLegendPlugin]} data={data} />;
+  return (
+    <Bar
+      options={options}
+      plugins={[htmlLegendPlugin]}
+      data={{
+        ...data,
+        datasets: data.datasets.map((dataset) => ({
+          ...dataset,
+          hoverBackgroundColor: `${dataset.backgroundColor}CC`, // 80% opacity
+        })),
+      }}
+    />
+  );
 }

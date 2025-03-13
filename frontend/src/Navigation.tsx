@@ -240,7 +240,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-white transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-lotion dark:bg-chinese-black transition-all dark:border-r-purple-taupe  dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -283,8 +283,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           }}
           className={({ isActive }) =>
             `${
-              isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
-            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-gray-3000 dark:border-purple-taupe dark:text-white dark:hover:bg-transparent`
+              isActive ? 'bg-transparent' : ''
+            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray dark:border-purple-taupe dark:text-white hover:bg-transparent`
           }
         >
           <img
@@ -339,7 +339,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
           <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
-            <div className="relative my-4 mx-4 flex gap-2">
+            <div className="relative my-4 mx-4 flex gap-4 items-center">
               <SourceDropdown
                 options={docs}
                 selectedDocs={selectedDocs}
@@ -354,8 +354,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 }}
               />
               <img
-                className="mt-2 h-9 w-9 hover:cursor-pointer"
+                className="hover:cursor-pointer"
                 src={UploadIcon}
+                width={28}
+                height={25}
                 alt="Upload document"
                 onClick={() => {
                   setUploadModalState('ACTIVE');
@@ -385,7 +387,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 src={SettingGear}
                 alt="Settings"
-                className="ml-2 w-5 filter dark:invert"
+                className="ml-2 w- filter dark:invert"
               />
               <p className="my-auto text-sm text-eerie-black  dark:text-white">
                 {t('settings.label')}

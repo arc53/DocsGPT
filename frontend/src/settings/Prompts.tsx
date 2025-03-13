@@ -35,10 +35,7 @@ export default function Prompts({
   });
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
-  const {
-    t,
-    i18n: { changeLanguage, language },
-  } = useTranslation();
+  const { t } = useTranslation();
 
   const handleAddPrompt = async () => {
     try {
@@ -135,11 +132,11 @@ export default function Prompts({
   return (
     <>
       <div>
-        <div className="flex flex-row items-center gap-8">
-          <div>
-            <p className="font-semibold dark:text-bright-gray">
-              {t('settings.general.prompt')}
-            </p>
+        <div className="flex flex-col gap-4">
+          <p className="font-medium dark:text-bright-gray">
+            {t('settings.general.prompt')}
+          </p>
+          <div className="flex flex-row justify-start items-baseline gap-6">
             <Dropdown
               options={prompts}
               selectedValue={selectedPrompt.name}
@@ -166,16 +163,17 @@ export default function Prompts({
               }}
               onDelete={handleDeletePrompt}
             />
+
+            <button
+              className="rounded-3xl w-20 h-10 text-sm border border-solid border-violets-are-blue text-violets-are-blue transition-colors hover:text-white hover:bg-violets-are-blue"
+              onClick={() => {
+                setModalType('ADD');
+                setModalState('ACTIVE');
+              }}
+            >
+              {t('settings.general.add')}
+            </button>
           </div>
-          <button
-            className="mt-[24px] rounded-3xl border border-solid border-purple-30 px-5 py-3 text-purple-30 transition-colors hover:text-white hover:bg-[#6F3FD1] dark:border-purple-30 dark:text-purple-30 dark:hover:bg-purple-30 dark:hover:text-white"
-            onClick={() => {
-              setModalType('ADD');
-              setModalState('ACTIVE');
-            }}
-          >
-            {t('settings.general.addNew')}
-          </button>
         </div>
       </div>
       <PromptsModal

@@ -84,9 +84,10 @@ export default function CreateAPIKeyModal({
           type="text"
           className="rounded-md"
           value={APIKeyName}
-          label={t('modals.createAPIKey.apiKeyName')}
+          placeholder={t('modals.createAPIKey.apiKeyName')}
           onChange={(e) => setAPIKeyName(e.target.value)}
           borderVariant="thin"
+          labelBgClassName="bg-white dark:bg-charleston-green-2"
         ></Input>
       </div>
       <div className="my-4">
@@ -144,7 +145,7 @@ export default function CreateAPIKeyModal({
             createAPIKey(payload);
           }
         }}
-        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
+        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-violets-are-blue disabled:opacity-50"
       >
         {t('modals.createAPIKey.create')}
       </button>

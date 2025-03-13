@@ -11,6 +11,7 @@ export default function ConfirmationModal({
   handleSubmit,
   cancelLabel,
   handleCancel,
+  variant = 'default',
 }: {
   message: string;
   modalState: ActiveState;
@@ -19,8 +20,15 @@ export default function ConfirmationModal({
   handleSubmit: () => void;
   cancelLabel?: string;
   handleCancel?: () => void;
+  variant?: 'default' | 'danger';
 }) {
   const { t } = useTranslation();
+
+  const submitButtonClasses =
+    variant === 'danger'
+      ? 'rounded-3xl bg-rosso-corsa px-5 py-2 text-sm text-lotion transition-all hover:bg-red-2000 hover:font-bold tracking-[0.019em] hover:tracking-normal'
+      : 'rounded-3xl bg-purple-30 px-5 py-2 text-sm text-lotion transition-all hover:bg-violets-are-blue';
+
   return (
     <>
       {modalState === 'ACTIVE' && (
@@ -39,7 +47,7 @@ export default function ConfirmationModal({
                 <div className="mt-6 flex flex-row-reverse gap-1">
                   <button
                     onClick={handleSubmit}
-                    className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-[#6F3FD1]"
+                    className={submitButtonClasses}
                   >
                     {submitLabel}
                   </button>
