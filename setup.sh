@@ -450,7 +450,7 @@ connect_cloud_api_provider() {
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build && docker compose -f "${COMPOSE_FILE}" up -d
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build
     docker_compose_status=$?
 
     echo "Docker Compose Exit Status: $docker_compose_status" # Debug output
@@ -476,16 +476,16 @@ while true; do # Main menu loop
     case $main_choice in
         1) # Use DocsGPT Public API Endpoint
             use_docs_public_api_endpoint
-            ;;
+            break ;;
         2) # Serve Local (with Ollama)
             serve_local_ollama
-            ;;
+            break ;;
         3) # Connect Local Inference Engine
             connect_local_inference_engine
-            ;;
+            break ;;
         4) # Connect Cloud API Provider
             connect_cloud_api_provider
-            ;;
+            break ;;
         *)
             echo -e "\n${RED}Invalid choice. Please choose 1-4.${NC}" ; sleep 1 ;;
     esac
