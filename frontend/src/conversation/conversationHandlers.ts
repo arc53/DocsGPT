@@ -6,6 +6,7 @@ import { ToolCallsType } from './types';
 export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
+  token: string | null,
   selectedDocs: Doc | null,
   history: Array<any> = [],
   conversationId: string | null,
@@ -52,7 +53,7 @@ export function handleFetchAnswer(
   }
   payload.retriever = selectedDocs?.retriever as string;
   return conversationService
-    .answer(payload, signal)
+    .answer(payload, token, signal)
     .then((response) => {
       if (response.ok) {
         return response.json();
@@ -76,6 +77,7 @@ export function handleFetchAnswer(
 export function handleFetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
+  token: string | null,
   selectedDocs: Doc | null,
   history: Array<any> = [],
   conversationId: string | null,
@@ -109,7 +111,7 @@ export function handleFetchAnswerSteaming(
 
   return new Promise<Answer>((resolve, reject) => {
     conversationService
-      .answerStream(payload, signal)
+      .answerStream(payload, token, signal)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -160,6 +162,7 @@ export function handleFetchAnswerSteaming(
 
 export function handleSearch(
   question: string,
+  token: string | null,
   selectedDocs: Doc | null,
   conversation_id: string | null,
   history: Array<any> = [],
@@ -185,7 +188,7 @@ export function handleSearch(
     payload.active_docs = selectedDocs.id as string;
   payload.retriever = selectedDocs?.retriever as string;
   return conversationService
-    .search(payload)
+    .search(payload, token)
     .then((response) => response.json())
     .then((data) => {
       return data;
@@ -206,11 +209,14 @@ export function handleSearchViaApiKey(
     };
   });
   return conversationService
-    .search({
-      question: question,
-      history: JSON.stringify(history),
-      api_key: api_key,
-    })
+    .search(
+      {
+        question: question,
+        history: JSON.stringify(history),
+        api_key: api_key,
+      },
+      null,
+    )
     .then((response) => response.json())
     .then((data) => {
       return data;
@@ -224,15 +230,19 @@ export function handleSendFeedback(
   feedback: FEEDBACK,
   conversation_id: string,
   prompt_index: number,
+  token: string | null,
 ) {
   return conversationService
-    .feedback({
-      question: prompt,
-      answer: response,
-      feedback: feedback,
-      conversation_id: conversation_id,
-      question_index: prompt_index,
-    })
+    .feedback(
+      {
+        question: prompt,
+        answer: response,
+        feedback: feedback,
+        conversation_id: conversation_id,
+        question_index: prompt_index,
+      },
+      token,
+    )
     .then((response) => {
       if (response.ok) {
         return Promise.resolve();
@@ -265,7 +275,7 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
       save_conversation: false,
     };
     conversationService
-      .answerStream(payload, signal)
+      .answerStream(payload, null, signal)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -339,6 +349,7 @@ export function handleFetchSharedAnswer(
         question: question,
         api_key: apiKey,
       },
+      null,
       signal,
     )
     .then((response) => {

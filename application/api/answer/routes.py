@@ -122,6 +122,7 @@ def save_conversation(
     source_log_docs,
     tool_calls,
     llm,
+    decoded_token,
     index=None,
     api_key=None,
 ):
@@ -180,7 +181,7 @@ def save_conversation(
 
         completion = llm.gen(model=gpt_model, messages=messages_summary, max_tokens=30)
         conversation_data = {
-            "user": "local",
+            "user": decoded_token.get("sub"),
             "date": datetime.datetime.utcnow(),
             "name": completion,
             "queries": [
@@ -221,6 +222,7 @@ def complete_stream(
     retriever,
     conversation_id,
     user_api_key,
+    decoded_token,
     isNoneDoc=False,
     index=None,
     should_save_conversation=True,
@@ -271,6 +273,7 @@ def complete_stream(
                 source_log_docs,
                 tool_calls,
                 llm,
+                decoded_token,
                 index,
                 api_key=user_api_key,
             )
@@ -286,7 +289,7 @@ def complete_stream(
             {
                 "action": "stream_answer",
                 "level": "info",
-                "user": "local",
+                "user": decoded_token.get("sub"),
                 "api_key": user_api_key,
                 "question": question,
                 "response": response_full,
@@ -381,15 +384,21 @@ class Stream(Resource):
                 source = {"active_docs": data_key.get("source")}
                 retriever_name = data_key.get("retriever", retriever_name)
                 user_api_key = data["api_key"]
+                decoded_token = {"sub": data_key.get("user")}
 
             elif "active_docs" in data:
                 source = {"active_docs": data["active_docs"]}
                 retriever_name = get_retriever(data["active_docs"]) or retriever_name
                 user_api_key = None
+                decoded_token = request.decoded_token
 
             else:
                 source = {}
                 user_api_key = None
+                decoded_token = request.decoded_token
+
+            if not decoded_token:
+                return bad_request(401, "Unauthorized")
 
             logger.info(
                 f"/stream - request_data: {data}, source: {source}",
@@ -429,6 +438,7 @@ class Stream(Resource):
                     retriever=retriever,
                     conversation_id=conversation_id,
                     user_api_key=user_api_key,
+                    decoded_token=decoded_token,
                     isNoneDoc=data.get("isNoneDoc"),
                     index=index,
                     should_save_conversation=save_conv,
@@ -521,13 +531,21 @@ class Answer(Resource):
                 source = {"active_docs": data_key.get("source")}
                 retriever_name = data_key.get("retriever", retriever_name)
                 user_api_key = data["api_key"]
+                decoded_token = {"sub": data_key.get("user")}
+
             elif "active_docs" in data:
                 source = {"active_docs": data["active_docs"]}
                 retriever_name = get_retriever(data["active_docs"]) or retriever_name
                 user_api_key = None
+                decoded_token = request.decoded_token
+
             else:
                 source = {}
                 user_api_key = None
+                decoded_token = request.decoded_token
+
+            if not decoded_token:
+                return bad_request(401, "Unauthorized")
 
             prompt = get_prompt(prompt_id)
 
@@ -614,6 +632,7 @@ class Answer(Resource):
                     source_log_docs,
                     tool_calls,
                     llm,
+                    decoded_token,
                     api_key=user_api_key,
                 )
             )
@@ -623,7 +642,7 @@ class Answer(Resource):
                 {
                     "action": "api_answer",
                     "level": "info",
-                    "user": "local",
+                    "user": decoded_token.get("sub"),
                     "api_key": user_api_key,
                     "question": question,
                     "response": response_full,
@@ -692,12 +711,17 @@ class Search(Resource):
                 chunks = int(data_key.get("chunks", 2))
                 source = {"active_docs": data_key.get("source")}
                 user_api_key = data["api_key"]
+                decoded_token = {"sub": data_key.get("user")}
+
             elif "active_docs" in data:
                 source = {"active_docs": data["active_docs"]}
                 user_api_key = None
+                decoded_token = request.decoded_token
+
             else:
                 source = {}
                 user_api_key = None
+                decoded_token = request.decoded_token
 
             logger.info(
                 f"/api/answer - request_data: {data}, source: {source}",
@@ -723,7 +747,7 @@ class Search(Resource):
                 {
                     "action": "api_search",
                     "level": "info",
-                    "user": "local",
+                    "user": decoded_token.get("sub"),
                     "api_key": user_api_key,
                     "question": question,
                     "sources": docs,
