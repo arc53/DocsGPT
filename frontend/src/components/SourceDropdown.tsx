@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Trash from '../assets/trash.svg';
 import Arrow2 from '../assets/dropdown-arrow.svg';
-import { Doc } from '../models/misc';
+import { Doc, ActiveState } from '../models/misc';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import ConfirmationModal from '../modals/ConfirmationModal';
+
 type Props = {
   options: Doc[] | null;
   selectedDocs: Doc | null;
@@ -30,6 +32,10 @@ function SourceDropdown({
     import.meta.env.VITE_EMBEDDINGS_NAME ||
     'huggingface_sentence-transformers/all-mpnet-base-v2';
 
+  const [deleteModalState, setDeleteModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [documentToDelete, setDocumentToDelete] = useState<Doc | null>(null);
+
   const handleEmptyDocumentSelect = () => {
     dispatch(setSelectedDocs(null));
     setIsDocsListOpen(false);
@@ -50,6 +56,25 @@ function SourceDropdown({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  const confirmDelete = (option: Doc) => {
+    setDocumentToDelete(option);
+    setDeleteModalState('ACTIVE');
+  };
+
+  const handleConfirmedDelete = () => {
+    if (documentToDelete) {
+      handleDeleteClick(documentToDelete);
+      setDeleteModalState('INACTIVE');
+      setDocumentToDelete(null);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteModalState('INACTIVE');
+    setDocumentToDelete(null);
+  };
+
   return (
     <div className="relative w-5/6 rounded-3xl" ref={dropdownRef}>
       <button
@@ -106,7 +131,7 @@ function SourceDropdown({
                         id={`img-${index}`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          handleDeleteClick(option);
+                          confirmDelete(option);
                         }}
                       />
                     )}
@@ -132,6 +157,17 @@ function SourceDropdown({
           </div>
         </div>
       )}
+      <ConfirmationModal
+        message={t('settings.documents.deleteWarning', {
+          name: documentToDelete?.name,
+        })}
+        modalState={deleteModalState}
+        setModalState={setDeleteModalState}
+        handleSubmit={handleConfirmedDelete}
+        handleCancel={handleCancelDelete}
+        submitLabel={t('convTile.delete')}
+        variant="danger"
+      />
     </div>
   );
 }
