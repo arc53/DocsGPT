@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import ConversationMessages from './ConversationMessages';
@@ -37,23 +37,13 @@ export const SharedConversation = () => {
   const status = useSelector(selectStatus);
 
   const [input, setInput] = useState('');
-  const sharedConversationRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-  const [eventInterrupt, setEventInterrupt] = useState(false);
-
-  useEffect(() => {
-    !eventInterrupt && scrollIntoView();
-  }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
     identifier && dispatch(setIdentifier(identifier));
-    const element = document.getElementById('inputbox') as HTMLInputElement;
-    if (element) {
-      element.focus();
-    }
   }, []);
 
   useEffect(() => {
@@ -62,20 +52,6 @@ export const SharedConversation = () => {
       queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
     }
   }, [queries[queries.length - 1]]);
-
-  const scrollIntoView = () => {
-    if (!sharedConversationRef?.current || eventInterrupt) return;
-
-    if (status === 'idle' || !queries[queries.length - 1].response) {
-      sharedConversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: sharedConversationRef.current.scrollHeight,
-      });
-    } else {
-      sharedConversationRef.current.scrollTop =
-        sharedConversationRef.current.scrollHeight;
-    }
-  };
 
   const fetchQueries = () => {
     identifier &&
@@ -133,7 +109,6 @@ export const SharedConversation = () => {
   }) => {
     question = question.trim();
     if (question === '') return;
-    setEventInterrupt(false);
     !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
     dispatch(fetchSharedAnswer({ question }));
   };

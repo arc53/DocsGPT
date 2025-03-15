@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import newChatIcon from '../assets/openNewChat.svg';
@@ -29,11 +28,9 @@ import MessageInput from '../components/MessageInput';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
-  const navigate = useNavigate();
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState('');
   const fetchStream = useRef<any>(null);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
