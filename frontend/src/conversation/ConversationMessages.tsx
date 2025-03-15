@@ -139,7 +139,7 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex justify-center w-full overflow-y-auto h-screen sm:mt-12"
+      className="flex justify-center w-full overflow-y-auto h-screen sm:pt-12 "
     >
       {queries.length > 0 && !hasScrolledToLast && (
         <button
@@ -156,7 +156,7 @@ export default function ConversationMessages({
       )}
 
       {queries.length > 0 ? (
-        <div className="w-full md:w-8/12 lg:w-7/12 xl:w-6/12 2xl:w-5/12 max-w-[1200px]">
+        <div className="w-full px-2 md:w-6/12">
           {queries.map((query, index) => (
             <Fragment key={index}>
               <ConversationBubble

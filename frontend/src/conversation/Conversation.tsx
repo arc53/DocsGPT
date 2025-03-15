@@ -5,12 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import newChatIcon from '../assets/openNewChat.svg';
-import Send from '../assets/send.svg';
-import SendDark from '../assets/send_dark.svg';
 import ShareIcon from '../assets/share.svg';
-import SpinnerDark from '../assets/spinner-dark.svg';
-import Spinner from '../assets/spinner.svg';
-import { useDarkTheme, useMediaQuery } from '../hooks';
+import { useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
@@ -29,6 +25,7 @@ import {
 import Upload from '../upload/Upload';
 import { ActiveState } from '../models/misc';
 import ConversationMessages from './ConversationMessages';
+import MessageInput from '../components/MessageInput';
 
 export default function Conversation() {
   const queries = useSelector(selectQueries);
@@ -36,9 +33,8 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const dispatch = useDispatch<AppDispatch>();
-  const conversationRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [isDarkTheme] = useDarkTheme();
+  const [input, setInput] = useState('');
   const fetchStream = useRef<any>(null);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
@@ -85,13 +81,6 @@ export default function Conversation() {
         ['.pptx'],
     },
   });
-
-  useEffect(() => {
-    const element = document.getElementById('inputbox') as HTMLTextAreaElement;
-    if (element) {
-      element.focus();
-    }
-  }, []);
 
   useEffect(() => {
     if (queries.length) {
@@ -152,14 +141,14 @@ export default function Conversation() {
   ) => {
     if (updated === true) {
       handleQuestion({ question: updatedQuestion as string, updated, indx });
-    } else if (inputRef.current?.value && status !== 'loading') {
+    } else if (input && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: inputRef.current.value,
+              prompt: input,
             },
           }),
         );
@@ -168,10 +157,9 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: inputRef.current.value });
+        handleQuestion({ question: input });
       }
-      inputRef.current.value = '';
-      handleInput();
+      setInput('');
     }
   };
   const resetConversation = () => {
@@ -184,17 +172,6 @@ export default function Conversation() {
   };
   const newChat = () => {
     if (queries && queries.length > 0) resetConversation();
-  };
-
-  const handleInput = () => {
-    if (inputRef.current) {
-      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
-      else inputRef.current.style.height = '64px';
-      inputRef.current.style.height = `${Math.min(
-        inputRef.current.scrollHeight,
-        96,
-      )}px`;
-    }
   };
 
   return (
@@ -251,54 +228,21 @@ export default function Conversation() {
         status={status}
       />
 
-      <div className="flex flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 w-[calc(min(742px,92%))] h-auto py-1">
+      <div className="flex flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 w-full md:w-6/12 h-auto py-1">
         <div
           {...getRootProps()}
-          className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3"
+          className="flex w-full items-center rounded-[40px]"
         >
           <label htmlFor="file-upload" className="sr-only">
             {t('modals.uploadDoc.label')}
           </label>
           <input {...getInputProps()} id="file-upload" />
-          <label htmlFor="message-input" className="sr-only">
-            {t('inputPlaceholder')}
-          </label>
-          <textarea
-            id="message-input"
-            ref={inputRef}
-            tabIndex={1}
-            placeholder={t('inputPlaceholder')}
-            className={`inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-lotion dark:bg-charleston-green-3 py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50`}
-            onInput={handleInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleQuestionSubmission();
-              }
-            }}
-            aria-label={t('inputPlaceholder')}
-          ></textarea>
-          {status === 'loading' ? (
-            <img
-              src={isDarkTheme ? SpinnerDark : Spinner}
-              className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
-              alt={t('loading')}
-            />
-          ) : (
-            <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
-              <button
-                onClick={() => handleQuestionSubmission()}
-                aria-label={t('send')}
-                className="flex items-center justify-center"
-              >
-                <img
-                  className="ml-[4px] h-6 w-6 text-white filter dark:invert-[0.45] invert-[0.35]"
-                  src={isDarkTheme ? SendDark : Send}
-                  alt={t('send')}
-                />
-              </button>
-            </div>
-          )}
+          <MessageInput
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onSubmit={handleQuestionSubmission}
+            loading={status === 'loading'}
+          />
         </div>
 
         <p className="text-gray-4000 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-sonic-silver md:inline md:w-full">
