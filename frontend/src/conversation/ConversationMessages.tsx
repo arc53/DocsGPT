@@ -139,7 +139,7 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex justify-center w-full overflow-y-auto h-screen sm:pt-12 "
+      className="flex justify-center w-full overflow-y-auto h-screen sm:pt-12"
     >
       {queries.length > 0 && !hasScrolledToLast && (
         <button
@@ -155,9 +155,9 @@ export default function ConversationMessages({
         </button>
       )}
 
-      {queries.length > 0 ? (
-        <div className="w-full px-2 md:w-6/12">
-          {queries.map((query, index) => (
+      <div className="w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1300px] px-2">
+        {queries.length > 0 ? (
+          queries.map((query, index) => (
             <Fragment key={index}>
               <ConversationBubble
                 className={'first:mt-5'}
@@ -170,11 +170,11 @@ export default function ConversationMessages({
               />
               {prepResponseView(query, index)}
             </Fragment>
-          ))}
-        </div>
-      ) : (
-        <Hero handleQuestion={handleQuestion} />
-      )}
+          ))
+        ) : (
+          <Hero handleQuestion={handleQuestion} />
+        )}
+      </div>
     </div>
   );
 }

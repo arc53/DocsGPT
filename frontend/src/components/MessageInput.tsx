@@ -52,7 +52,7 @@ export default function MessageInput({
   };
 
   return (
-    <div className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3">
+    <div className="flex w-full mx-2 items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3">
       <label htmlFor="message-input" className="sr-only">
         {t('inputPlaceholder')}
       </label>

@@ -228,7 +228,7 @@ export default function Conversation() {
         status={status}
       />
 
-      <div className="flex flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 w-full md:w-6/12 h-auto py-1">
+      <div className="flex flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1300px] h-auto py-1">
         <div
           {...getRootProps()}
           className="flex w-full items-center rounded-[40px]"

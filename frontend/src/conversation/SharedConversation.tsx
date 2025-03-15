@@ -158,8 +158,8 @@ export const SharedConversation = () => {
           content="Shared conversations with DocsGPT"
         />
       </Helmet>
-      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
-        <div className="border-b p-2 dark:border-b-silver w-full md:w-6/12">
+      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black ">
+        <div className="border-b p-2 dark:border-b-silver w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1200px]">
           <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
             {title}
           </h1>
@@ -179,7 +179,7 @@ export const SharedConversation = () => {
           queries={queries}
           status={status}
         />
-        <div className="flex flex-col items-center gap-4 pb-2 w-full md:w-6/12">
+        <div className="flex flex-col items-center gap-4 pb-2 w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1200px]">
           {apiKey ? (
             <MessageInput
               value={input}
