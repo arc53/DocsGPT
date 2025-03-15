@@ -138,7 +138,7 @@ export const ShareConversationModal = ({
           </span>
           {status === 'fetched' ? (
             <button
-              className="my-1 h-10 w-28 rounded-full border border-solid bg-purple-30 p-2 text-sm text-white hover:bg-violets-are-blue"
+              className="my-1 h-10 w-28 rounded-full bg-purple-30 p-2 text-sm text-white hover:bg-violets-are-blue"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}

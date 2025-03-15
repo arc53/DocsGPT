@@ -1,19 +1,18 @@
-import { Query } from './conversationModels';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useDarkTheme } from '../hooks';
 
 import conversationService from '../api/services/conversationService';
-import ConversationBubble from './ConversationBubble';
+import ConversationMessages from './ConversationMessages';
 import Send from '../assets/send.svg';
+import SendDark from '../assets/send_dark.svg';
 import Spinner from '../assets/spinner.svg';
+import SpinnerDark from '../assets/spinner-dark.svg';
 import {
-  selectClientAPIKey,
   setClientApiKey,
-  updateQuery,
   addQuery,
   fetchSharedAnswer,
-  selectStatus,
 } from './sharedConversationSlice';
 import { setIdentifier, setFetchedData } from './sharedConversationSlice';
 
@@ -24,6 +23,8 @@ import {
   selectDate,
   selectTitle,
   selectQueries,
+  selectClientAPIKey,
+  selectStatus,
 } from './sharedConversationSlice';
 import { useSelector } from 'react-redux';
 import { Helmet } from 'react-helmet';
@@ -31,56 +32,32 @@ import { Helmet } from 'react-helmet';
 export const SharedConversation = () => {
   const navigate = useNavigate();
   const { identifier } = useParams(); //identifier is a uuid, not conversationId
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [isDarkTheme] = useDarkTheme();
 
   const queries = useSelector(selectQueries);
   const title = useSelector(selectTitle);
   const date = useSelector(selectDate);
   const apiKey = useSelector(selectClientAPIKey);
   const status = useSelector(selectStatus);
-
-  const inputRef = useRef<HTMLDivElement>(null);
-  const sharedConversationRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
-  const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-  const [eventInterrupt, setEventInterrupt] = useState(false);
-  const endMessageRef = useRef<HTMLDivElement>(null);
-  const handleUserInterruption = () => {
-    if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
+  const handleInput = () => {
+    if (inputRef.current) {
+      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+      else inputRef.current.style.height = '64px';
+      inputRef.current.style.height = `${Math.min(
+        inputRef.current.scrollHeight,
+        96,
+      )}px`;
+    }
   };
-  useEffect(() => {
-    !eventInterrupt && scrollIntoView();
-  }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
     identifier && dispatch(setIdentifier(identifier));
-    const element = document.getElementById('inputbox') as HTMLInputElement;
-    if (element) {
-      element.focus();
-    }
+    fetchQueries();
   }, []);
-
-  useEffect(() => {
-    if (queries.length) {
-      queries[queries.length - 1].error && setLastQueryReturnedErr(true);
-      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
-    }
-  }, [queries[queries.length - 1]]);
-
-  const scrollIntoView = () => {
-    if (!sharedConversationRef?.current || eventInterrupt) return;
-
-    if (status === 'idle' || !queries[queries.length - 1].response) {
-      sharedConversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: sharedConversationRef.current.scrollHeight,
-      });
-    } else {
-      sharedConversationRef.current.scrollTop =
-        sharedConversationRef.current.scrollHeight;
-    }
-  };
 
   const fetchQueries = () => {
     identifier &&
@@ -105,60 +82,6 @@ export const SharedConversation = () => {
           }
         });
   };
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    inputRef.current && (inputRef.current.innerText = text);
-  };
-  const prepResponseView = (query: Query, index: number) => {
-    let responseView;
-    if (query.response) {
-      responseView = (
-        <ConversationBubble
-          ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
-          key={`${index}ANSWER`}
-          message={query.response}
-          type={'ANSWER'}
-          sources={query.sources ?? []}
-          toolCalls={query.tool_calls}
-        ></ConversationBubble>
-      );
-    } else if (query.error) {
-      responseView = (
-        <ConversationBubble
-          ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
-          key={`${index}ERROR`}
-          message={query.error}
-          type="ERROR"
-        ></ConversationBubble>
-      );
-    }
-    return responseView;
-  };
-  const handleQuestionSubmission = () => {
-    if (inputRef.current?.textContent && status !== 'loading') {
-      if (lastQueryReturnedErr) {
-        // update last failed query with new prompt
-        dispatch(
-          updateQuery({
-            index: queries.length - 1,
-            query: {
-              prompt: inputRef.current.textContent,
-            },
-          }),
-        );
-        handleQuestion({
-          question: queries[queries.length - 1].prompt,
-          isRetry: true,
-        });
-      } else {
-        handleQuestion({ question: inputRef.current.textContent });
-      }
-      inputRef.current.textContent = '';
-    }
-  };
 
   const handleQuestion = ({
     question,
@@ -169,13 +92,19 @@ export const SharedConversation = () => {
   }) => {
     question = question.trim();
     if (question === '') return;
-    setEventInterrupt(false);
-    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
+    !isRetry && dispatch(addQuery({ prompt: question }));
     dispatch(fetchSharedAnswer({ question }));
   };
-  useEffect(() => {
-    fetchQueries();
-  }, []);
+
+  const handleQuestionSubmission = (
+    updatedQuestion?: string,
+    updated?: boolean,
+    indx?: number,
+  ) => {
+    if (updatedQuestion && status !== 'loading') {
+      handleQuestion({ question: updatedQuestion });
+    }
+  };
 
   return (
     <>
@@ -194,94 +123,105 @@ export const SharedConversation = () => {
           content="Shared conversations with DocsGPT"
         />
       </Helmet>
-      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
-        <div
-          ref={sharedConversationRef}
-          onWheel={handleUserInterruption}
-          onTouchMove={handleUserInterruption}
-          className="flex w-full justify-center overflow-auto"
-        >
-          <div className="mt-0 w-11/12 md:w-10/12 lg:w-6/12">
-            <div className="mb-2 w-full border-b pb-2 dark:border-b-silver">
-              <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
-                {title}
-              </h1>
-              <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
-                {t('sharedConv.subtitle')}{' '}
-                <a href="/" className="text-[#007DFF]">
-                  DocsGPT
-                </a>
-              </h2>
-              <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
-                {date}
-              </h2>
-            </div>
-            <div className="">
-              {queries?.map((query, index) => {
-                return (
-                  <Fragment key={index}>
-                    <ConversationBubble
-                      ref={endMessageRef}
-                      className={'mb-1 last:mb-28 md:mb-7'}
-                      key={`${index}QUESTION`}
-                      message={query.prompt}
-                      type="QUESTION"
-                      sources={query.sources}
-                    ></ConversationBubble>
 
-                    {prepResponseView(query, index)}
-                  </Fragment>
-                );
-              })}
-            </div>
+      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
+        {/* Header section */}
+        <div className="w-11/12 md:w-10/12 lg:w-6/12 mt-4">
+          <div className="mb-2 w-full border-b pb-2 dark:border-b-silver">
+            <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
+              {title}
+            </h1>
+            <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
+              {t('sharedConv.subtitle')}{' '}
+              <a href="/" className="text-[#007DFF]">
+                DocsGPT
+              </a>
+            </h2>
+            <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
+              {date}
+            </h2>
           </div>
         </div>
 
-        <div className="flex w-11/12 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-6/12">
-          {apiKey ? (
-            <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
-              <div
-                id="inputbox"
-                ref={inputRef}
-                tabIndex={1}
-                onPaste={handlePaste}
-                placeholder={t('inputPlaceholder')}
-                contentEditable
-                className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleQuestionSubmission();
-                  }
-                }}
-              ></div>
-              {status === 'loading' ? (
-                <img
-                  src={Spinner}
-                  className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent filter dark:invert"
-                ></img>
-              ) : (
-                <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
-                  <img
-                    onClick={handleQuestionSubmission}
-                    className="ml-[4px] h-6 w-6 text-white filter dark:invert"
-                    src={Send}
-                  ></img>
-                </div>
-              )}
-            </div>
-          ) : (
+        {/* Conditionally render based on API key */}
+        {!apiKey ? (
+          <div className="flex flex-col items-center justify-center h-full">
             <button
               onClick={() => navigate('/')}
               className="w-fit rounded-full bg-purple-30 p-4 text-white shadow-xl transition-colors duration-200 hover:bg-purple-taupe mb-14 sm:mb-0"
             >
               {t('sharedConv.button')}
             </button>
-          )}
-          <span className="mb-2 hidden text-xs text-dark-charcoal dark:text-silver sm:inline">
-            {t('sharedConv.meta')}
-          </span>
-        </div>
+            <span className="mb-2 hidden text-xs text-dark-charcoal dark:text-silver sm:inline">
+              {t('sharedConv.meta')}
+            </span>
+          </div>
+        ) : (
+          <>
+            <ConversationMessages
+              handleQuestion={handleQuestion}
+              handleQuestionSubmission={handleQuestionSubmission}
+              queries={queries}
+              status={status}
+            />
+
+            {/* Add the textarea input here */}
+            <div className="flex flex-col items-center self-center rounded-2xl bg-opacity-0 z-3 w-full px-4 md:px-0">
+              <div className="w-full md:w-8/12 lg:w-7/12 xl:w-6/12 2xl:w-5/12 max-w-[1200px]">
+                <div className="flex w-full items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3">
+                  <label htmlFor="message-input" className="sr-only">
+                    {t('inputPlaceholder')}
+                  </label>
+                  <textarea
+                    id="message-input"
+                    ref={inputRef}
+                    tabIndex={1}
+                    placeholder={t('inputPlaceholder')}
+                    className="inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-lotion dark:bg-charleston-green-3 py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 px-6"
+                    onInput={handleInput}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleQuestionSubmission(inputRef.current?.value);
+                        if (inputRef.current) {
+                          inputRef.current.value = '';
+                          handleInput();
+                        }
+                      }
+                    }}
+                    aria-label={t('inputPlaceholder')}
+                  />
+                  {status === 'loading' ? (
+                    <img
+                      src={isDarkTheme ? SpinnerDark : Spinner}
+                      className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
+                      alt={t('loading')}
+                    />
+                  ) : (
+                    <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
+                      <button
+                        onClick={() =>
+                          handleQuestionSubmission(inputRef.current?.value)
+                        }
+                        aria-label={t('send')}
+                        className="flex items-center justify-center"
+                      >
+                        <img
+                          className="ml-[4px] h-6 w-6 text-white filter dark:invert-[0.45] invert-[0.35]"
+                          src={isDarkTheme ? SendDark : Send}
+                          alt={t('send')}
+                        />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="text-gray-4000 hidden w-full bg-transparent py-2 text-center text-xs dark:text-sonic-silver md:inline">
+                {t('tagline')}
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </>
   );
