@@ -15,7 +15,10 @@ import Spinner from '../assets/spinner.svg';
 import RetryIcon from '../components/RetryIcon';
 import { useDarkTheme, useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
-import { selectConversationId } from '../preferences/preferenceSlice';
+import {
+  selectConversationId,
+  selectToken,
+} from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import { handleSendFeedback } from './conversationHandlers';
@@ -34,6 +37,7 @@ import Upload from '../upload/Upload';
 import { ActiveState } from '../models/misc';
 
 export default function Conversation() {
+  const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const navigate = useNavigate();
   const status = useSelector(selectStatus);
@@ -161,6 +165,7 @@ export default function Conversation() {
       feedback,
       conversationId as string,
       index,
+      token,
     ).catch(() =>
       handleSendFeedback(
         query.prompt,
@@ -168,6 +173,7 @@ export default function Conversation() {
         feedback,
         conversationId as string,
         index,
+        token,
       ).catch(() =>
         dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
       ),

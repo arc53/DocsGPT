@@ -16,6 +16,7 @@ const doc = localStorage.getItem('DocsGPTRecentDocs');
 const preloadedState: { preference: Preference } = {
   preference: {
     apiKey: key ?? '',
+    token: localStorage.getItem('authToken') ?? null,
     prompt:
       prompt !== null
         ? JSON.parse(prompt)

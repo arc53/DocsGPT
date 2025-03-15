@@ -1,20 +1,26 @@
 import platform
 
 import dotenv
-from flask import Flask, redirect, request
+from flask import Flask, jsonify, redirect, request
+from jose import jwt
+
+from application.auth import get_or_create_user_id, handle_auth
+
 from application.core.logging_config import setup_logging
+
 setup_logging()
 
-from application.api.answer.routes import answer # noqa: E402
-from application.api.internal.routes import internal # noqa: E402
-from application.api.user.routes import user # noqa: E402
-from application.celery_init import celery # noqa: E402
-from application.core.settings import settings # noqa: E402
-from application.extensions import api # noqa: E402
+from application.api.answer.routes import answer  # noqa: E402
+from application.api.internal.routes import internal  # noqa: E402
+from application.api.user.routes import user  # noqa: E402
+from application.celery_init import celery  # noqa: E402
+from application.core.settings import settings  # noqa: E402
+from application.extensions import api  # noqa: E402
 
 
 if platform.system() == "Windows":
     import pathlib
+
     pathlib.PosixPath = pathlib.WindowsPath
 
 dotenv.load_dotenv()
@@ -32,6 +38,13 @@ app.config.update(
 celery.config_from_object("application.celeryconfig")
 api.init_app(app)
 
+SIMPLE_JWT_TOKEN = None
+if settings.AUTH_TYPE == "simple_jwt":
+    user_id = get_or_create_user_id()
+    payload = {"sub": user_id}
+    SIMPLE_JWT_TOKEN = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm="HS256")
+    print(f"Generated Simple JWT Token: {SIMPLE_JWT_TOKEN}")
+
 
 @app.route("/")
 def home():
@@ -41,11 +54,27 @@ def home():
         return "Welcome to DocsGPT Backend!"
 
 
+@app.before_request
+def authenticate_request():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    decoded_token = handle_auth(request)
+    if "message" in decoded_token:
+        request.decoded_token = None
+    elif "error" in decoded_token:
+        return jsonify(decoded_token), 401
+    else:
+        request.decoded_token = decoded_token
+
+
 @app.after_request
 def after_request(response):
     response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    response.headers.add(
+        "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
+    )
     return response
 
 

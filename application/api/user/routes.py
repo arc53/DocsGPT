@@ -15,7 +15,6 @@ from werkzeug.utils import secure_filename
 from application.agents.tools.tool_manager import ToolManager
 
 from application.api.user.tasks import ingest, ingest_remote
-
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
@@ -110,11 +109,18 @@ class GetConversations(Resource):
         description="Retrieve a list of the latest 30 conversations (excluding API key conversations)",
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         try:
-            conversations = conversations_collection.find(
-                {"api_key": {"$exists": False}}
-            ).sort("date", -1).limit(30)
-            
+            conversations = (
+                conversations_collection.find(
+                    {"api_key": {"$exists": False}, "user": decoded_token.get("sub")}
+                )
+                .sort("date", -1)
+                .limit(30)
+            )
+
             list_conversations = [
                 {"id": str(conversation["_id"]), "name": conversation["name"]}
                 for conversation in conversations
@@ -132,6 +138,9 @@ class GetSingleConversation(Resource):
         params={"id": "The conversation ID"},
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         conversation_id = request.args.get("id")
         if not conversation_id:
             return make_response(
@@ -140,7 +149,7 @@ class GetSingleConversation(Resource):
 
         try:
             conversation = conversations_collection.find_one(
-                {"_id": ObjectId(conversation_id)}
+                {"_id": ObjectId(conversation_id), "user": decoded_token.get("sub")}
             )
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
@@ -227,7 +236,7 @@ class SubmitFeedback(Resource):
                     {
                         "$unset": {
                             f"queries.{data['question_index']}.feedback": "",
-                            f"queries.{data['question_index']}.feedback_timestamp": ""
+                            f"queries.{data['question_index']}.feedback_timestamp": "",
                         }
                     },
                 )
@@ -240,8 +249,12 @@ class SubmitFeedback(Resource):
                     },
                     {
                         "$set": {
-                            f"queries.{data['question_index']}.feedback": data["feedback"],
-                            f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(datetime.timezone.utc)
+                            f"queries.{data['question_index']}.feedback": data[
+                                "feedback"
+                            ],
+                            f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(
+                                datetime.timezone.utc
+                            ),
                         }
                     },
                 )
@@ -1211,7 +1224,13 @@ class GetMessageAnalytics(Resource):
                 required=False,
                 description="Filter option for analytics",
                 default="last_30_days",
-                enum=["last_hour", "last_24_hour", "last_7_days", "last_15_days", "last_30_days"],
+                enum=[
+                    "last_hour",
+                    "last_24_hour",
+                    "last_7_days",
+                    "last_15_days",
+                    "last_30_days",
+                ],
             ),
         },
     )
@@ -1244,9 +1263,9 @@ class GetMessageAnalytics(Resource):
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
-                    6 if filter_option == "last_7_days"
-                    else 14 if filter_option == "last_15_days"
-                    else 29
+                    6
+                    if filter_option == "last_7_days"
+                    else 14 if filter_option == "last_15_days" else 29
                 )
             else:
                 return make_response(
@@ -1254,25 +1273,20 @@ class GetMessageAnalytics(Resource):
                 )
             start_date = end_date - datetime.timedelta(days=filter_days)
             start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            end_date = end_date.replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
             group_format = "%Y-%m-%d"
 
         try:
             pipeline = [
                 # Initial match for API key if provided
-                {
-                    "$match": {
-                        "api_key": api_key if api_key else {"$exists": False}
-                    }
-                },
+                {"$match": {"api_key": api_key if api_key else {"$exists": False}}},
                 {"$unwind": "$queries"},
                 # Match queries within the time range
                 {
                     "$match": {
-                        "queries.timestamp": {
-                            "$gte": start_date,
-                            "$lte": end_date
-                        }
+                        "queries.timestamp": {"$gte": start_date, "$lte": end_date}
                     }
                 },
                 # Group by formatted timestamp
@@ -1281,14 +1295,14 @@ class GetMessageAnalytics(Resource):
                         "_id": {
                             "$dateToString": {
                                 "format": group_format,
-                                "date": "$queries.timestamp"
+                                "date": "$queries.timestamp",
                             }
                         },
-                        "count": {"$sum": 1}
+                        "count": {"$sum": 1},
                     }
                 },
                 # Sort by timestamp
-                {"$sort": {"_id": 1}}
+                {"$sort": {"_id": 1}},
             ]
 
             message_data = conversations_collection.aggregate(pipeline)
@@ -1511,11 +1525,21 @@ class GetFeedbackAnalytics(Resource):
         if filter_option == "last_hour":
             start_date = end_date - datetime.timedelta(hours=1)
             group_format = "%Y-%m-%d %H:%M:00"
-            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
+            date_field = {
+                "$dateToString": {
+                    "format": group_format,
+                    "date": "$queries.feedback_timestamp",
+                }
+            }
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
-            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
+            date_field = {
+                "$dateToString": {
+                    "format": group_format,
+                    "date": "$queries.feedback_timestamp",
+                }
+            }
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
@@ -1533,13 +1557,21 @@ class GetFeedbackAnalytics(Resource):
                 hour=23, minute=59, second=59, microsecond=999999
             )
             group_format = "%Y-%m-%d"
-            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
+            date_field = {
+                "$dateToString": {
+                    "format": group_format,
+                    "date": "$queries.feedback_timestamp",
+                }
+            }
 
         try:
             match_stage = {
                 "$match": {
-                    "queries.feedback_timestamp": {"$gte": start_date, "$lte": end_date},
-                    "queries.feedback": {"$exists": True}
+                    "queries.feedback_timestamp": {
+                        "$gte": start_date,
+                        "$lte": end_date,
+                    },
+                    "queries.feedback": {"$exists": True},
                 }
             }
             if api_key:

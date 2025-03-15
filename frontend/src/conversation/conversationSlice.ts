@@ -42,6 +42,7 @@ export const fetchAnswer = createAsyncThunk<
       await handleFetchAnswerSteaming(
         question,
         signal,
+        state.preference.token,
         state.preference.selectedDocs!,
         state.conversation.queries,
         state.conversation.conversationId,
@@ -53,7 +54,7 @@ export const fetchAnswer = createAsyncThunk<
 
           if (data.type === 'end') {
             dispatch(conversationSlice.actions.setStatus('idle'));
-            getConversations()
+            getConversations(state.preference.token)
               .then((fetchedConversations) => {
                 dispatch(setConversations(fetchedConversations));
               })
@@ -114,6 +115,7 @@ export const fetchAnswer = createAsyncThunk<
       const answer = await handleFetchAnswer(
         question,
         signal,
+        state.preference.token,
         state.preference.selectedDocs!,
         state.conversation.queries,
         state.conversation.conversationId,
@@ -150,7 +152,7 @@ export const fetchAnswer = createAsyncThunk<
           }),
         );
         dispatch(conversationSlice.actions.setStatus('idle'));
-        getConversations()
+        getConversations(state.preference.token)
           .then((fetchedConversations) => {
             dispatch(setConversations(fetchedConversations));
           })

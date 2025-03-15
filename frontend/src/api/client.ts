@@ -4,14 +4,24 @@ const defaultHeaders = {
   'Content-Type': 'application/json',
 };
 
+const getHeaders = (token: string | null, customHeaders = {}): HeadersInit => {
+  return {
+    ...defaultHeaders,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...customHeaders,
+  };
+};
+
 const apiClient = {
-  get: (url: string, headers = {}, signal?: AbortSignal): Promise<any> =>
+  get: (
+    url: string,
+    token: string | null,
+    headers = {},
+    signal?: AbortSignal,
+  ): Promise<any> =>
     fetch(`${baseURL}${url}`, {
       method: 'GET',
-      headers: {
-        ...defaultHeaders,
-        ...headers,
-      },
+      headers: getHeaders(token, headers),
       signal,
     }).then((response) => {
       return response;
@@ -20,15 +30,13 @@ const apiClient = {
   post: (
     url: string,
     data: any,
+    token: string | null,
     headers = {},
     signal?: AbortSignal,
   ): Promise<any> =>
     fetch(`${baseURL}${url}`, {
       method: 'POST',
-      headers: {
-        ...defaultHeaders,
-        ...headers,
-      },
+      headers: getHeaders(token, headers),
       body: JSON.stringify(data),
       signal,
     }).then((response) => {
@@ -38,28 +46,28 @@ const apiClient = {
   put: (
     url: string,
     data: any,
+    token: string | null,
     headers = {},
     signal?: AbortSignal,
   ): Promise<any> =>
     fetch(`${baseURL}${url}`, {
       method: 'PUT',
-      headers: {
-        ...defaultHeaders,
-        ...headers,
-      },
+      headers: getHeaders(token, headers),
       body: JSON.stringify(data),
       signal,
     }).then((response) => {
       return response;
     }),
 
-  delete: (url: string, headers = {}, signal?: AbortSignal): Promise<any> =>
+  delete: (
+    url: string,
+    token: string | null,
+    headers = {},
+    signal?: AbortSignal,
+  ): Promise<any> =>
     fetch(`${baseURL}${url}`, {
       method: 'DELETE',
-      headers: {
-        ...defaultHeaders,
-        ...headers,
-      },
+      headers: getHeaders(token, headers),
       signal,
     }).then((response) => {
       return response;
