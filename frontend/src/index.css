@@ -501,15 +501,15 @@ input:-webkit-autofill:active {
 .dark input:-webkit-autofill:hover,
 .dark input:-webkit-autofill:focus,
 .dark input:-webkit-autofill:active {
-  -webkit-text-fill-color: #E5E7EB !important;
+  -webkit-text-fill-color: #e5e7eb !important;
   -webkit-box-shadow: 0 0 0 30px transparent inset !important;
   background-color: transparent !important;
-  caret-color: #E5E7EB;
+  caret-color: #e5e7eb;
 }
 
 /* Additional autocomplete dropdown styles for dark mode */
 .dark input:-webkit-autofill::first-line {
-  color: #E5E7EB;
+  color: #e5e7eb;
 }
 
 .inputbox-style {

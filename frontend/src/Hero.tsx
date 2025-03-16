@@ -1,6 +1,6 @@
-import { Fragment } from 'react';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import { useTranslation } from 'react-i18next';
+
 export default function Hero({
   handleQuestion,
 }: {
@@ -17,40 +17,41 @@ export default function Hero({
     header: string;
     query: string;
   }>;
-  return (
-    <div
-      className={`pt-20 sm:pt-0 pb-6 sm:pb-12 flex h-full  w-full flex-col  text-black-1000 dark:text-bright-gray sm:w-full px-2 sm:px-0`}
-    >
-      <div className="flex h-full w-full flex-col items-center justify-center">
-        <div className="flex items-center">
-          <span className="p-0 text-4xl font-semibold">DocsGPT</span>
-          <img className="mb-1 inline w-14 p-0" src={DocsGPT3} alt="docsgpt" />
-        </div>
 
-        <div className="mb-4 flex flex-col items-center justify-center dark:text-white"></div>
+  return (
+    <div className="flex h-full w-full flex-col text-black-1000 dark:text-bright-gray items-center justify-between">
+      {/* Header Section */}
+      <div className="flex flex-col items-center justify-center flex-grow pt-8 md:pt-0">
+        <div className="flex items-center mb-4">
+          <span className="text-4xl font-semibold">DocsGPT</span>
+          <img className="mb-1 inline w-14" src={DocsGPT3} alt="docsgpt" />
+        </div>
       </div>
-      <div className="mb-16 grid w-full grid-cols-1 items-center gap-4 self-center text-xs sm:w-auto sm:gap-6  md:mb-0 md:text-sm lg:grid-cols-2">
-        {demos?.map(
-          (demo: { header: string; query: string }, key: number) =>
-            demo.header &&
-            demo.query && (
-              <Fragment key={key}>
+
+      {/* Demo Buttons Section */}
+      <div className="w-full max-w-full mb-8 md:mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 text-xs">
+          {demos?.map(
+            (demo: { header: string; query: string }, key: number) =>
+              demo.header &&
+              demo.query && (
                 <button
+                  key={key}
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`w-full rounded-full border bg-transparent px-6 py-4 text-left min-w-11/12 sm:min-w-[362px] focus:outline-none
+                  className="w-full rounded-[66px] border bg-transparent px-6 py-[14px] text-left transition-colors
                     border-dark-gray text-just-black hover:bg-cultured
-                    dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green`}
+                    dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green"
                 >
-                  <p className="mb-1 font-semibold text-black-1000 dark:text-bright-gray">
+                  <p className="mb-2 font-semibold text-black-1000 dark:text-bright-gray">
                     {demo.header}
                   </p>
-                  <span className="text-gray-700 dark:text-gray-300 opacity-60">
+                  <span className="text-gray-700 dark:text-gray-300 opacity-60 line-clamp-2">
                     {demo.query}
                   </span>
                 </button>
-              </Fragment>
-            ),
-        )}
+              ),
+          )}
+        </div>
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ const Input = ({
     <div className={`relative ${className}`}>
       <input
         ref={inputRef}
-        className={`h-[42px] w-full rounded-full px-3 py-1 
+        className={`peer h-[42px] w-full rounded-full px-3 py-1 
           bg-transparent outline-none 
           text-jet dark:text-bright-gray
           placeholder-transparent 
