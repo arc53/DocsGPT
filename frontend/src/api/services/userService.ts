@@ -2,6 +2,9 @@ import apiClient from '../client';
 import endpoints from '../endpoints';
 
 const userService = {
+  getConfig: (): Promise<any> => apiClient.get(endpoints.USER.CONFIG, null),
+  getNewToken: (): Promise<any> =>
+    apiClient.get(endpoints.USER.NEW_TOKEN, null),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>

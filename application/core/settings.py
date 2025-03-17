@@ -100,7 +100,6 @@ class Settings(BaseSettings):
     FLASK_DEBUG_MODE: bool = False
 
     JWT_SECRET_KEY: str = ""
-    USER_ID_FILE: str = os.path.join(current_dir, "user_id.txt")
 
 
 path = Path(__file__).parent.parent.absolute()

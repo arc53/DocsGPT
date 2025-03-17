@@ -28,6 +28,7 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
+import useTokenAuth from './hooks/useTokenAuth';
 import DeleteConvModal from './modals/DeleteConvModal';
 import JWTModal from './modals/JWTModal';
 import { ActiveState, Doc } from './models/misc';
@@ -72,9 +73,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const { t } = useTranslation();
   const isApiKeySet = useSelector(selectApiKeyStatus);
 
+  const { showTokenModal, handleTokenSubmit } = useTokenAuth();
+
   const [uploadModalState, setUploadModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [authKeyModalState, setAuthKeyModalState] =
     useState<ActiveState>('INACTIVE');
 
   const navRef = useRef(null);
@@ -204,15 +205,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!isMobile);
   }, [isMobile]);
 
-  useEffect(() => {
-    const authToken = localStorage.getItem('authToken');
-    if (!authToken) {
-      setAuthKeyModalState('ACTIVE');
-    }
-  }, []);
-
   useDefaultDocument();
-
   return (
     <>
       {!navOpen && (
@@ -485,8 +478,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ></Upload>
       )}
       <JWTModal
-        modalState={authKeyModalState}
-        setModalState={setAuthKeyModalState}
+        modalState={showTokenModal ? 'ACTIVE' : 'INACTIVE'}
+        handleTokenSubmit={handleTokenSubmit}
       />
     </>
   );
