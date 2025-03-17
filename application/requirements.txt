@@ -50,7 +50,7 @@ openapi-schema-validator==0.6.3
 openapi-spec-validator==0.6.0
 openapi3-parser==1.1.19
 orjson==3.10.14
-packaging==24.1
+packaging==24.2
 pandas==2.2.3
 openpyxl==3.1.5
 pathable==0.4.4
