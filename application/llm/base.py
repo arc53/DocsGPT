@@ -5,7 +5,8 @@ from application.usage import gen_token_usage, stream_token_usage
 
 
 class BaseLLM(ABC):
-    def __init__(self):
+    def __init__(self, decoded_token):
+        self.decoded_token = decoded_token
         self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
 
     def _apply_decorator(self, method, decorators, *args, **kwargs):

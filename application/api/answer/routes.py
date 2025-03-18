@@ -264,7 +264,10 @@ def complete_stream(
                 doc["source"] = "None"
 
         llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
+            settings.LLM_NAME,
+            api_key=settings.API_KEY,
+            user_api_key=user_api_key,
+            decoded_token=decoded_token,
         )
 
         if should_save_conversation:
@@ -420,6 +423,7 @@ class Stream(Resource):
                 user_api_key=user_api_key,
                 prompt=prompt,
                 chat_history=history,
+                decoded_token=decoded_token,
             )
 
             retriever = RetrieverCreator.create_retriever(
@@ -431,6 +435,7 @@ class Stream(Resource):
                 token_limit=token_limit,
                 gpt_model=gpt_model,
                 user_api_key=user_api_key,
+                decoded_token=decoded_token,
             )
 
             return Response(
@@ -565,6 +570,7 @@ class Answer(Resource):
                 user_api_key=user_api_key,
                 prompt=prompt,
                 chat_history=history,
+                decoded_token=decoded_token,
             )
 
             retriever = RetrieverCreator.create_retriever(
@@ -576,6 +582,7 @@ class Answer(Resource):
                 token_limit=token_limit,
                 gpt_model=gpt_model,
                 user_api_key=user_api_key,
+                decoded_token=decoded_token,
             )
 
             response_full = ""
@@ -623,7 +630,10 @@ class Answer(Resource):
                     doc["source"] = "None"
 
             llm = LLMCreator.create_llm(
-                settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=user_api_key
+                settings.LLM_NAME,
+                api_key=settings.API_KEY,
+                user_api_key=user_api_key,
+                decoded_token=decoded_token,
             )
 
             result = {"answer": response_full, "sources": source_log_docs}
@@ -743,6 +753,7 @@ class Search(Resource):
                 token_limit=token_limit,
                 gpt_model=gpt_model,
                 user_api_key=user_api_key,
+                decoded_token=decoded_token,
             )
 
             docs = retriever.search(question)

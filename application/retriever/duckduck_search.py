@@ -17,6 +17,7 @@ class DuckDuckSearch(BaseRetriever):
         token_limit=150,
         gpt_model="docsgpt",
         user_api_key=None,
+        decoded_token=None,
     ):
         self.question = question
         self.source = source
@@ -35,6 +36,7 @@ class DuckDuckSearch(BaseRetriever):
             )
         )
         self.user_api_key = user_api_key
+        self.decoded_token = decoded_token
 
     def _parse_lang_string(self, input_string):
         result = []
@@ -88,17 +90,20 @@ class DuckDuckSearch(BaseRetriever):
         for doc in docs:
             yield {"source": doc}
 
-        if len(self.chat_history) > 0:      
+        if len(self.chat_history) > 0:
             for i in self.chat_history:
-                    if "prompt" in i and "response" in i:
-                        messages_combine.append({"role": "user", "content": i["prompt"]})
-                        messages_combine.append(
-                            {"role": "assistant", "content": i["response"]}
-                        )
+                if "prompt" in i and "response" in i:
+                    messages_combine.append({"role": "user", "content": i["prompt"]})
+                    messages_combine.append(
+                        {"role": "assistant", "content": i["response"]}
+                    )
         messages_combine.append({"role": "user", "content": self.question})
 
         llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
+            settings.LLM_NAME,
+            api_key=settings.API_KEY,
+            user_api_key=self.user_api_key,
+            decoded_token=self.decoded_token,
         )
 
         completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
@@ -107,7 +112,7 @@ class DuckDuckSearch(BaseRetriever):
 
     def search(self):
         return self._get_data()
-    
+
     def get_params(self):
         return {
             "question": self.question,
@@ -117,5 +122,5 @@ class DuckDuckSearch(BaseRetriever):
             "chunks": self.chunks,
             "token_limit": self.token_limit,
             "gpt_model": self.gpt_model,
-            "user_api_key": self.user_api_key
+            "user_api_key": self.user_api_key,
         }
