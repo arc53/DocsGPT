@@ -398,7 +398,7 @@ class Stream(Resource):
                 decoded_token = request.decoded_token
 
             if not decoded_token:
-                return bad_request(401, "Unauthorized")
+                return make_response({"error": "Unauthorized"}, 401)
 
             logger.info(
                 f"/stream - request_data: {data}, source: {source}",
@@ -545,7 +545,7 @@ class Answer(Resource):
                 decoded_token = request.decoded_token
 
             if not decoded_token:
-                return bad_request(401, "Unauthorized")
+                return make_response({"error": "Unauthorized"}, 401)
 
             prompt = get_prompt(prompt_id)
 
@@ -722,6 +722,9 @@ class Search(Resource):
                 source = {}
                 user_api_key = None
                 decoded_token = request.decoded_token
+
+            if not decoded_token:
+                return make_response({"error": "Unauthorized"}, 401)
 
             logger.info(
                 f"/api/answer - request_data: {data}, source: {source}",

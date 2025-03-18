@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
@@ -7,10 +8,12 @@ import CopyButton from '../components/CopyButton';
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
+import { selectToken } from '../preferences/preferenceSlice';
 import { APIKeyData, LogData } from './types';
 
 export default function Logs() {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const [chatbots, setChatbots] = useState<APIKeyData[]>([]);
   const [selectedChatbot, setSelectedChatbot] = useState<APIKeyData | null>();
   const [logs, setLogs] = useState<LogData[]>([]);
@@ -22,7 +25,7 @@ export default function Logs() {
   const fetchChatbots = async () => {
     setLoadingChatbots(true);
     try {
-      const response = await userService.getAPIKeys();
+      const response = await userService.getAPIKeys(token);
       if (!response.ok) {
         throw new Error('Failed to fetch Chatbots');
       }
@@ -38,11 +41,14 @@ export default function Logs() {
   const fetchLogs = async () => {
     setLoadingLogs(true);
     try {
-      const response = await userService.getLogs({
-        page: page,
-        api_key_id: selectedChatbot?.id,
-        page_size: 10,
-      });
+      const response = await userService.getLogs(
+        {
+          page: page,
+          api_key_id: selectedChatbot?.id,
+          page_size: 10,
+        },
+        token,
+      );
       if (!response.ok) {
         throw new Error('Failed to fetch logs');
       }

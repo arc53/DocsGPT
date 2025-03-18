@@ -10,7 +10,7 @@ current_dir = os.path.dirname(
 
 
 class Settings(BaseSettings):
-    AUTH_TYPE: Optional[str] = "simple_jwt"
+    AUTH_TYPE: Optional[str] = None
     LLM_NAME: str = "docsgpt"
     MODEL_NAME: Optional[str] = (
         None  # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo

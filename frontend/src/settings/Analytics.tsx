@@ -1,5 +1,3 @@
-import React, { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   BarElement,
   CategoryScale,
@@ -9,18 +7,21 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
+import React, { useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
+import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
+import SkeletonLoader from '../components/SkeletonLoader';
+import { useLoaderState } from '../hooks';
+import { selectToken } from '../preferences/preferenceSlice';
 import { htmlLegendPlugin } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import { APIKeyData } from './types';
-import { useLoaderState } from '../hooks';
 
 import type { ChartData } from 'chart.js';
-import SkeletonLoader from '../components/SkeletonLoader';
-
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -32,6 +33,7 @@ ChartJS.register(
 
 export default function Analytics() {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
 
   const filterOptions = [
     { label: t('settings.analytics.filterOptions.hour'), value: 'last_hour' },
@@ -97,7 +99,7 @@ export default function Analytics() {
   const fetchChatbots = async () => {
     setLoadingChatbots(true);
     try {
-      const response = await userService.getAPIKeys();
+      const response = await userService.getAPIKeys(token);
       if (!response.ok) {
         throw new Error('Failed to fetch Chatbots');
       }
@@ -113,10 +115,13 @@ export default function Analytics() {
   const fetchMessagesData = async (chatbot_id?: string, filter?: string) => {
     setLoadingMessages(true);
     try {
-      const response = await userService.getMessageAnalytics({
-        api_key_id: chatbot_id,
-        filter_option: filter,
-      });
+      const response = await userService.getMessageAnalytics(
+        {
+          api_key_id: chatbot_id,
+          filter_option: filter,
+        },
+        token,
+      );
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
       }
@@ -132,10 +137,13 @@ export default function Analytics() {
   const fetchTokenData = async (chatbot_id?: string, filter?: string) => {
     setLoadingTokens(true);
     try {
-      const response = await userService.getTokenAnalytics({
-        api_key_id: chatbot_id,
-        filter_option: filter,
-      });
+      const response = await userService.getTokenAnalytics(
+        {
+          api_key_id: chatbot_id,
+          filter_option: filter,
+        },
+        token,
+      );
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
       }
@@ -151,10 +159,13 @@ export default function Analytics() {
   const fetchFeedbackData = async (chatbot_id?: string, filter?: string) => {
     setLoadingFeedback(true);
     try {
-      const response = await userService.getFeedbackAnalytics({
-        api_key_id: chatbot_id,
-        filter_option: filter,
-      });
+      const response = await userService.getFeedbackAnalytics(
+        {
+          api_key_id: chatbot_id,
+          filter_option: filter,
+        },
+        token,
+      );
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
       }

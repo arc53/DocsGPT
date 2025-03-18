@@ -1,12 +1,14 @@
 import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import Spinner from '../components/Spinner';
 import { useOutsideAlerter } from '../hooks';
 import { ActiveState } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
 import { AvailableToolType } from './types';
-import Spinner from '../components/Spinner';
 import WrapperComponent from './WrapperModal';
 
 export default function AddToolModal({
@@ -23,6 +25,7 @@ export default function AddToolModal({
   onToolAdded: (toolId: string) => void;
 }) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const modalRef = useRef<HTMLDivElement>(null);
   const [availableTools, setAvailableTools] = React.useState<
     AvailableToolType[]
@@ -42,7 +45,7 @@ export default function AddToolModal({
   const getAvailableTools = () => {
     setLoading(true);
     userService
-      .getAvailableTools()
+      .getAvailableTools(token)
       .then((res) => {
         return res.json();
       })
@@ -55,14 +58,17 @@ export default function AddToolModal({
   const handleAddTool = (tool: AvailableToolType) => {
     if (Object.keys(tool.configRequirements).length === 0) {
       userService
-        .createTool({
-          name: tool.name,
-          displayName: tool.displayName,
-          description: tool.description,
-          config: {},
-          actions: tool.actions,
-          status: true,
-        })
+        .createTool(
+          {
+            name: tool.name,
+            displayName: tool.displayName,
+            description: tool.description,
+            config: {},
+            actions: tool.actions,
+            status: true,
+          },
+          token,
+        )
         .then((res) => {
           if (res.status === 200) {
             return res.json();

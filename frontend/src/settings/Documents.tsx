@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
@@ -21,6 +21,7 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
+  selectToken,
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
@@ -50,6 +51,7 @@ export default function Documents({
 }: DocumentsProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const token = useSelector(selectToken);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
@@ -103,6 +105,7 @@ export default function Documents({
         page,
         rowsPerPg,
         searchTerm,
+        token,
       )
         .then((data) => {
           dispatch(setPaginatedDocuments(data ? data.docs : []));
@@ -119,9 +122,9 @@ export default function Documents({
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
     userService
-      .manageSync({ source_id: doc.id, sync_frequency })
+      .manageSync({ source_id: doc.id, sync_frequency }, token)
       .then(() => {
-        return getDocs();
+        return getDocs(token);
       })
       .then((data) => {
         dispatch(setSourceDocs(data));
@@ -130,6 +133,8 @@ export default function Documents({
           sortOrder,
           currentPage,
           rowsPerPage,
+          searchTerm,
+          token,
         );
       })
       .then((paginatedData) => {
@@ -389,6 +394,7 @@ function DocumentChunks({
   handleGoBack: () => void;
 }) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const [isDarkTheme] = useDarkTheme();
   const [paginatedChunks, setPaginatedChunks] = useState<ChunkType[]>([]);
   const [page, setPage] = useState(1);
@@ -406,7 +412,7 @@ function DocumentChunks({
     setLoading(true);
     try {
       userService
-        .getDocumentChunks(document.id ?? '', page, perPage)
+        .getDocumentChunks(document.id ?? '', page, perPage, token)
         .then((response) => {
           if (!response.ok) {
             setLoading(false);
@@ -431,13 +437,16 @@ function DocumentChunks({
   const handleAddChunk = (title: string, text: string) => {
     try {
       userService
-        .addChunk({
-          id: document.id ?? '',
-          text: text,
-          metadata: {
-            title: title,
+        .addChunk(
+          {
+            id: document.id ?? '',
+            text: text,
+            metadata: {
+              title: title,
+            },
           },
-        })
+          token,
+        )
         .then((response) => {
           if (!response.ok) {
             throw new Error('Failed to add chunk');
@@ -452,14 +461,17 @@ function DocumentChunks({
   const handleUpdateChunk = (title: string, text: string, chunk: ChunkType) => {
     try {
       userService
-        .updateChunk({
-          id: document.id ?? '',
-          chunk_id: chunk.doc_id,
-          text: text,
-          metadata: {
-            title: title,
+        .updateChunk(
+          {
+            id: document.id ?? '',
+            chunk_id: chunk.doc_id,
+            text: text,
+            metadata: {
+              title: title,
+            },
           },
-        })
+          token,
+        )
         .then((response) => {
           if (!response.ok) {
             throw new Error('Failed to update chunk');
@@ -474,7 +486,7 @@ function DocumentChunks({
   const handleDeleteChunk = (chunk: ChunkType) => {
     try {
       userService
-        .deleteChunk(document.id ?? '', chunk.doc_id)
+        .deleteChunk(document.id ?? '', chunk.doc_id, token)
         .then((response) => {
           if (!response.ok) {
             throw new Error('Failed to delete chunk');

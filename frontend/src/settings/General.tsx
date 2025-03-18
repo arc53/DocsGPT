@@ -8,6 +8,7 @@ import { useDarkTheme } from '../hooks';
 import {
   selectChunks,
   selectPrompt,
+  selectToken,
   selectTokenLimit,
   setChunks,
   setModalStateDeleteConv,
@@ -21,6 +22,7 @@ export default function General() {
     t,
     i18n: { changeLanguage },
   } = useTranslation();
+  const token = useSelector(selectToken);
   const themes = [
     { value: 'Light', label: t('settings.general.light') },
     { value: 'Dark', label: t('settings.general.dark') },
@@ -64,7 +66,7 @@ export default function General() {
   React.useEffect(() => {
     const handleFetchPrompts = async () => {
       try {
-        const response = await userService.getPrompts();
+        const response = await userService.getPrompts(token);
         if (!response.ok) {
           throw new Error('Failed to fetch prompts');
         }

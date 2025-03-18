@@ -1,9 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
 import { ActiveState, PromptProps } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 
 export default function Prompts({
@@ -24,6 +26,7 @@ export default function Prompts({
     setEditPromptName(name);
     onSelectPrompt(name, id, type);
   };
+  const token = useSelector(selectToken);
   const [newPromptName, setNewPromptName] = React.useState('');
   const [newPromptContent, setNewPromptContent] = React.useState('');
   const [editPromptName, setEditPromptName] = React.useState('');
@@ -42,10 +45,13 @@ export default function Prompts({
 
   const handleAddPrompt = async () => {
     try {
-      const response = await userService.createPrompt({
-        name: newPromptName,
-        content: newPromptContent,
-      });
+      const response = await userService.createPrompt(
+        {
+          name: newPromptName,
+          content: newPromptContent,
+        },
+        token,
+      );
       if (!response.ok) {
         throw new Error('Failed to add prompt');
       }
@@ -68,7 +74,7 @@ export default function Prompts({
   const handleDeletePrompt = (id: string) => {
     setPrompts(prompts.filter((prompt) => prompt.id !== id));
     userService
-      .deletePrompt({ id })
+      .deletePrompt({ id }, token)
       .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to delete prompt');
@@ -84,7 +90,7 @@ export default function Prompts({
 
   const handleFetchPromptContent = async (id: string) => {
     try {
-      const response = await userService.getSinglePrompt(id);
+      const response = await userService.getSinglePrompt(id, token);
       if (!response.ok) {
         throw new Error('Failed to fetch prompt content');
       }
@@ -97,11 +103,14 @@ export default function Prompts({
 
   const handleSaveChanges = (id: string, type: string) => {
     userService
-      .updatePrompt({
-        id: id,
-        name: editPromptName,
-        content: editPromptContent,
-      })
+      .updatePrompt(
+        {
+          id: id,
+          name: editPromptName,
+          content: editPromptContent,
+        },
+        token,
+      )
       .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to update prompt');

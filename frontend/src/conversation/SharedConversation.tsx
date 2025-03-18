@@ -1,37 +1,35 @@
-import { Query } from './conversationModels';
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { Helmet } from 'react-helmet';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import conversationService from '../api/services/conversationService';
-import ConversationBubble from './ConversationBubble';
 import Send from '../assets/send.svg';
 import Spinner from '../assets/spinner.svg';
+import { selectToken } from '../preferences/preferenceSlice';
+import { AppDispatch } from '../store';
+import ConversationBubble from './ConversationBubble';
+import { Query } from './conversationModels';
 import {
-  selectClientAPIKey,
-  setClientApiKey,
-  updateQuery,
   addQuery,
   fetchSharedAnswer,
-  selectStatus,
-} from './sharedConversationSlice';
-import { setIdentifier, setFetchedData } from './sharedConversationSlice';
-
-import { useDispatch } from 'react-redux';
-import { AppDispatch } from '../store';
-
-import {
+  selectClientAPIKey,
   selectDate,
-  selectTitle,
   selectQueries,
+  selectStatus,
+  selectTitle,
+  setClientApiKey,
+  setFetchedData,
+  setIdentifier,
+  updateQuery,
 } from './sharedConversationSlice';
-import { useSelector } from 'react-redux';
-import { Helmet } from 'react-helmet';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();
   const { identifier } = useParams(); //identifier is a uuid, not conversationId
 
+  const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const title = useSelector(selectTitle);
   const date = useSelector(selectDate);
@@ -85,7 +83,7 @@ export const SharedConversation = () => {
   const fetchQueries = () => {
     identifier &&
       conversationService
-        .getSharedConversation(identifier || '')
+        .getSharedConversation(identifier || '', token)
         .then((res) => {
           if (res.status === 404 || res.status === 400)
             navigate('/pagenotfound');

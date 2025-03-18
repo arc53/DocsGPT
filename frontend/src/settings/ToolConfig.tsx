@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
@@ -9,6 +10,7 @@ import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import AddActionModal from '../modals/AddActionModal';
 import { ActiveState } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType, APIToolType, UserToolType } from './types';
 
 export default function ToolConfig({
@@ -20,6 +22,7 @@ export default function ToolConfig({
   setTool: (tool: UserToolType | APIToolType) => void;
   handleGoBack: () => void;
 }) {
+  const token = useSelector(selectToken);
   const [authKey, setAuthKey] = React.useState<string>(
     'token' in tool.config ? tool.config.token : '',
   );
@@ -56,22 +59,25 @@ export default function ToolConfig({
 
   const handleSaveChanges = () => {
     userService
-      .updateTool({
-        id: tool.id,
-        name: tool.name,
-        displayName: tool.displayName,
-        description: tool.description,
-        config: tool.name === 'api_tool' ? tool.config : { token: authKey },
-        actions: 'actions' in tool ? tool.actions : [],
-        status: tool.status,
-      })
+      .updateTool(
+        {
+          id: tool.id,
+          name: tool.name,
+          displayName: tool.displayName,
+          description: tool.description,
+          config: tool.name === 'api_tool' ? tool.config : { token: authKey },
+          actions: 'actions' in tool ? tool.actions : [],
+          status: tool.status,
+        },
+        token,
+      )
       .then(() => {
         handleGoBack();
       });
   };
 
   const handleDelete = () => {
-    userService.deleteTool({ id: tool.id }).then(() => {
+    userService.deleteTool({ id: tool.id }, token).then(() => {
       handleGoBack();
     });
   };
