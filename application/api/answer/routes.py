@@ -589,6 +589,7 @@ class Answer(Resource):
                 retriever=retriever,
                 conversation_id=conversation_id,
                 user_api_key=user_api_key,
+                decoded_token=decoded_token,
                 isNoneDoc=data.get("isNoneDoc"),
                 index=None,
                 should_save_conversation=False,

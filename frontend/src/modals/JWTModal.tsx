@@ -27,10 +27,10 @@ export default function JWTModal({
       </div>
       <div className="relative mt-5 mb-4">
         <Input
+          name="JWT Token"
           type="text"
           className="rounded-md"
           value={jwtToken}
-          label="JWT Token"
           onChange={(e) => setJwtToken(e.target.value)}
           borderVariant="thin"
         />

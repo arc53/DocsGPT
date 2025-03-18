@@ -1,20 +1,15 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
-
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
-import ConversationMessages from './ConversationMessages';
-import MessageInput from '../components/MessageInput';
-import conversationService from '../api/services/conversationService';
 
-import Send from '../assets/send.svg';
-import Spinner from '../assets/spinner.svg';
+import conversationService from '../api/services/conversationService';
+import MessageInput from '../components/MessageInput';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import ConversationBubble from './ConversationBubble';
-import { Query } from './conversationModels';
-
+import { formatDate } from '../utils/dateTimeUtils';
+import ConversationMessages from './ConversationMessages';
 import {
   addQuery,
   fetchSharedAnswer,
@@ -28,7 +23,6 @@ import {
   setIdentifier,
   updateQuery,
 } from './sharedConversationSlice';
-import { formatDate } from '../utils/dateTimeUtils';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();

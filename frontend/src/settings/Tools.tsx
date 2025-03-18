@@ -6,17 +6,17 @@ import userService from '../api/services/userService';
 import CogwheelIcon from '../assets/cogwheel.svg';
 import Input from '../components/Input';
 import Spinner from '../components/Spinner';
+import ToggleSwitch from '../components/ToggleSwitch';
 import AddToolModal from '../modals/AddToolModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
-import ToggleSwitch from '../components/ToggleSwitch';
 
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
+
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
