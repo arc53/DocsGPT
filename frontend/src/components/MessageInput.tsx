@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDarkTheme } from '../hooks';
-import Send from '../assets/send.svg';
-import SendDark from '../assets/send_dark.svg';
+import PaperPlane from '../assets/paper_plane.svg';
+import SourceIcon from '../assets/source.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 
@@ -34,7 +34,6 @@ export default function MessageInput({
     }
   };
 
-  // Focus the textarea and set initial height on mount.
   useEffect(() => {
     inputRef.current?.focus();
     handleInput();
@@ -52,43 +51,59 @@ export default function MessageInput({
   };
 
   return (
-    <div className="flex w-full mx-2 items-center rounded-[40px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3">
-      <label htmlFor="message-input" className="sr-only">
-        {t('inputPlaceholder')}
-      </label>
-      <textarea
-        id="message-input"
-        ref={inputRef}
-        value={value}
-        onChange={onChange}
-        tabIndex={1}
-        placeholder={t('inputPlaceholder')}
-        className="inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-lotion dark:bg-charleston-green-3 py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 px-6"
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        aria-label={t('inputPlaceholder')}
-      />
-      {loading ? (
-        <img
-          src={isDarkTheme ? SpinnerDark : Spinner}
-          className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent"
-          alt={t('loading')}
-        />
-      ) : (
-        <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
+    <div className="flex flex-col w-full mx-2">
+      <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3 relative">
+        <div className="w-full">
+          <label htmlFor="message-input" className="sr-only">
+            {t('inputPlaceholder')}
+          </label>
+          <textarea
+            id="message-input"
+            ref={inputRef}
+            value={value}
+            onChange={onChange}
+            tabIndex={1}
+            placeholder={t('inputPlaceholder')}
+            className="inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-t-[23px] bg-lotion dark:bg-charleston-green-3 py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 px-6 no-scrollbar"
+            onInput={handleInput}
+            onKeyDown={handleKeyDown}
+            aria-label={t('inputPlaceholder')}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-t border-[#EEEEEE] dark:border-[#333333]">
+          <div className="flex-grow flex flex-wrap gap-2">
+            <button className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors">
+              <img src={SourceIcon} alt="Sources" className="w-4 h-4 mr-1.5" />
+              <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium">
+                Sources
+              </span>
+            </button>
+            {/* Additional badges can be added here in the future */}
+          </div>
+
           <button
-            onClick={onSubmit}
-            aria-label={t('send')}
-            className="flex items-center justify-center"
+            onClick={loading ? undefined : onSubmit}
+            aria-label={loading ? t('loading') : t('send')}
+            className={`flex items-center justify-center p-2.5 rounded-full ${loading ? 'bg-gray-300 dark:bg-gray-600' : 'bg-black dark:bg-white'} ml-auto`}
+            disabled={loading}
           >
-            <img
-              className="ml-[4px] h-6 w-6 text-white filter dark:invert-[0.45] invert-[0.35]"
-              src={isDarkTheme ? SendDark : Send}
-              alt={t('send')}
-            />
+            {loading ? (
+              <img
+                src={isDarkTheme ? SpinnerDark : Spinner}
+                className="w-4 h-4 animate-spin"
+                alt={t('loading')}
+              />
+            ) : (
+              <img
+                className={`w-4 h-4 ${isDarkTheme ? 'filter invert' : ''}`}
+                src={PaperPlane}
+                alt={t('send')}
+              />
+            )}
           </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
