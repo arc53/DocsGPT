@@ -101,9 +101,9 @@ function Upload({
               )
             }
             borderVariant="thin"
-            label={field.label}
             required={isRequired}
             colorVariant="silver"
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
         );
       case 'number':
@@ -123,9 +123,9 @@ function Upload({
               )
             }
             borderVariant="thin"
-            label={field.label}
             required={isRequired}
             colorVariant="silver"
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
         );
       case 'enum':
@@ -612,7 +612,7 @@ function Upload({
               onChange={(e) => setDocName(e.target.value)}
               borderVariant="thin"
               placeholder={t('modals.uploadDoc.name')}
-              label={t('modals.uploadDoc.name')}
+              labelBgClassName="bg-white dark:bg-charleston-green-2"
               required={true}
             />
             <div className="my-2" {...getRootProps()}>
@@ -659,6 +659,7 @@ function Upload({
                 handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
+              darkBorderColor="dim-gray"
               rounded="3xl"
             />
             {/* Dynamically render form fields based on schema */}
@@ -670,8 +671,8 @@ function Upload({
               onChange={(e) => setRemoteName(e.target.value)}
               borderVariant="thin"
               placeholder="Name"
-              label="Name"
               required={true}
+              labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
             {renderFormFields()}
             {IngestorFormSchemas[ingestor.type].some(
@@ -710,7 +711,7 @@ function Upload({
               className={`rounded-3xl px-4 py-2 font-medium text-[14px] ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
-                  : 'cursor-pointer bg-purple-30 text-white hover:bg-purple-40'
+                  : 'cursor-pointer bg-purple-30 text-white hover:bg-violets-are-blue'
               }`}
             >
               {t('modals.uploadDoc.train')}

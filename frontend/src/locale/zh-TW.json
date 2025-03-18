@@ -50,7 +50,8 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無限制",
-      "default": "預設"
+      "default": "預設",
+      "add": "添加"
     },
     "documents": {
       "title": "此表格包含所有可供您使用的文件以及您上傳的文件",
@@ -72,6 +73,7 @@
         "monthly": "每月"
       },
       "actions": "操作",
+      "view": "查看",
       "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？"
     },
     "apiKeys": {
@@ -97,7 +99,7 @@
       },
       "messages": "訊息",
       "tokenUsage": "Token 使用量",
-      "feedback": "回饋",
+      "userFeedback": "使用者反饋",
       "filterPlaceholder": "篩選",
       "none": "無",
       "positiveFeedback": "正向回饋",

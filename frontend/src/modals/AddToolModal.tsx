@@ -100,57 +100,60 @@ export default function AddToolModal({
       {modalState === 'ACTIVE' && (
         <WrapperComponent
           close={() => setModalState('INACTIVE')}
-          className="h-[85vh] w-[90vw] md:w-[75vw]"
+          className="max-w-[950px] w-[90vw] md:w-[85vw] lg:w-[75vw] h-[85vh]"
         >
-          <div className="flex flex-col gap-4 h-full">
+          <div className="flex flex-col h-full">
             <div>
               <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
                 {t('settings.tools.selectToolSetup')}
               </h2>
-              <div className="mt-5 flex flex-col sm:grid sm:grid-cols-3 gap-4 h-[73vh] overflow-auto px-3 py-px">
+              <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
                 {loading ? (
-                  <div className="h-full col-span-3 flex items-center justify-center">
+                  <div className="h-full flex items-center justify-center">
                     <Spinner />
                   </div>
                 ) : (
-                  availableTools.map((tool, index) => (
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      key={index}
-                      className="h-52 w-full p-6 border rounded-2xl border-silver dark:border-[#4D4E58] flex flex-col justify-between dark:bg-[#32333B] cursor-pointer hover:border-[#9d9d9d] hover:dark:border-[#717179]"
-                      onClick={() => {
-                        setSelectedTool(tool);
-                        handleAddTool(tool);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr pb-2">
+                    {availableTools.map((tool, index) => (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        key={index}
+                        className="h-52 w-full p-6 border rounded-2xl border-light-gainsboro dark:border-arsenic bg-white-3000 dark:bg-gunmetal flex flex-col justify-between cursor-pointer hover:border-[#9d9d9d] hover:dark:border-[#717179]"
+                        onClick={() => {
                           setSelectedTool(tool);
                           handleAddTool(tool);
-                        }
-                      }}
-                    >
-                      <div className="w-full">
-                        <div className="px-1 w-full flex items-center justify-between">
-                          <img
-                            src={`/toolIcons/tool_${tool.name}.svg`}
-                            className="h-8 w-8"
-                          />
-                        </div>
-                        <div className="mt-[9px]">
-                          <p
-                            title={tool.displayName}
-                            className="px-1 text-sm font-semibold text-eerie-black dark:text-white leading-relaxed capitalize truncate"
-                          >
-                            {tool.displayName}
-                          </p>
-                          <p className="mt-1 px-1 h-24 overflow-auto text-sm text-gray-600 dark:text-[#8a8a8c] leading-relaxed">
-                            {tool.description}
-                          </p>
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setSelectedTool(tool);
+                            handleAddTool(tool);
+                          }
+                        }}
+                      >
+                        <div className="w-full">
+                          <div className="px-1 w-full flex items-center justify-between">
+                            <img
+                              src={`/toolIcons/tool_${tool.name}.svg`}
+                              className="h-6 w-6"
+                              alt={`${tool.name} icon`}
+                            />
+                          </div>
+                          <div className="mt-[9px]">
+                            <p
+                              title={tool.displayName}
+                              className="px-1 text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray leading-relaxed capitalize truncate"
+                            >
+                              {tool.displayName}
+                            </p>
+                            <p className="mt-1 px-1 h-24 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light leading-relaxed">
+                              {tool.description}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

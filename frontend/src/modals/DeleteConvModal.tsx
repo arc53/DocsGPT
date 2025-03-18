@@ -42,6 +42,7 @@ export default function DeleteConvModal({
       submitLabel={t('modals.deleteConv.delete')}
       handleSubmit={handleSubmit}
       handleCancel={handleCancel}
+      variant="danger"
     />
   );
 }

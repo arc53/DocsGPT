@@ -11,21 +11,25 @@ from application.utils import get_hash
 logger = logging.getLogger(__name__)
 
 _redis_instance = None
+_redis_creation_failed = False
 _instance_lock = Lock()
 
-
 def get_redis_instance():
-    global _redis_instance
-    if _redis_instance is None:
+    global _redis_instance, _redis_creation_failed
+    if _redis_instance is None and not _redis_creation_failed:
         with _instance_lock:
-            if _redis_instance is None:
+            if _redis_instance is None and not _redis_creation_failed:
                 try:
                     _redis_instance = redis.Redis.from_url(
                         settings.CACHE_REDIS_URL, socket_connect_timeout=2
                     )
+                except ValueError as e:
+                    logger.error(f"Invalid Redis URL: {e}")
+                    _redis_creation_failed = True  # Stop future attempts
+                    _redis_instance = None
                 except redis.ConnectionError as e:
                     logger.error(f"Redis connection error: {e}")
-                    _redis_instance = None
+                    _redis_instance = None  # Keep trying for connection errors
     return _redis_instance
 
 
@@ -41,36 +45,48 @@ def gen_cache_key(messages, model="docgpt", tools=None):
 
 def gen_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
+        if tools is not None:
+            return func(self, model, messages, stream, tools, *args, **kwargs)
+        
         try:
             cache_key = gen_cache_key(messages, model, tools)
-            redis_client = get_redis_instance()
-            if redis_client:
-                try:
-                    cached_response = redis_client.get(cache_key)
-                    if cached_response:
-                        return cached_response.decode("utf-8")
-                except redis.ConnectionError as e:
-                    logger.error(f"Redis connection error: {e}")
-
-            result = func(self, model, messages, stream, tools, *args, **kwargs)
-            if redis_client and isinstance(result, str):
-                try:
-                    redis_client.set(cache_key, result, ex=1800)
-                except redis.ConnectionError as e:
-                    logger.error(f"Redis connection error: {e}")
-
-            return result
         except ValueError as e:
-            logger.error(e)
-            return "Error: No user message found in the conversation to generate a cache key."
+            logger.error(f"Cache key generation failed: {e}")
+            return func(self, model, messages, stream, tools, *args, **kwargs)
+
+        redis_client = get_redis_instance()
+        if redis_client:
+            try:
+                cached_response = redis_client.get(cache_key)
+                if cached_response:
+                    return cached_response.decode("utf-8")
+            except Exception as e:
+                logger.error(f"Error getting cached response: {e}")
+
+        result = func(self, model, messages, stream, tools, *args, **kwargs)
+        if redis_client and isinstance(result, str):
+            try:
+                redis_client.set(cache_key, result, ex=1800)
+            except Exception as e:
+                logger.error(f"Error setting cache: {e}")
+
+        return result
 
     return wrapper
 
 
 def stream_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
-        cache_key = gen_cache_key(messages, model, tools)
-        logger.info(f"Stream cache key: {cache_key}")
+        if tools is not None:
+            yield from func(self, model, messages, stream, tools, *args, **kwargs)
+            return
+        
+        try:
+            cache_key = gen_cache_key(messages, model, tools)
+        except ValueError as e:
+            logger.error(f"Cache key generation failed: {e}")
+            yield from func(self, model, messages, stream, tools, *args, **kwargs)
+            return
 
         redis_client = get_redis_instance()
         if redis_client:
@@ -81,23 +97,21 @@ def stream_cache(func):
                     cached_response = json.loads(cached_response.decode("utf-8"))
                     for chunk in cached_response:
                         yield chunk
-                        time.sleep(0.03)
+                        time.sleep(0.03)  # Simulate streaming delay
                     return
-            except redis.ConnectionError as e:
-                logger.error(f"Redis connection error: {e}")
+            except Exception as e:
+                logger.error(f"Error getting cached stream: {e}")
 
-        result = func(self, model, messages, stream, tools=tools, *args, **kwargs)
         stream_cache_data = []
-
-        for chunk in result:
-            stream_cache_data.append(chunk)
+        for chunk in func(self, model, messages, stream, tools, *args, **kwargs):
             yield chunk
+            stream_cache_data.append(str(chunk))
 
         if redis_client:
             try:
                 redis_client.set(cache_key, json.dumps(stream_cache_data), ex=1800)
                 logger.info(f"Stream cache saved for key: {cache_key}")
-            except redis.ConnectionError as e:
-                logger.error(f"Redis connection error: {e}")
+            except Exception as e:
+                logger.error(f"Error setting stream cache: {e}")
 
     return wrapper

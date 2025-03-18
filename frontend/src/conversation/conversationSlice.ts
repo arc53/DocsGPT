@@ -267,8 +267,7 @@ export const conversationSlice = createSlice({
           return state;
         }
         state.status = 'failed';
-        state.queries[state.queries.length - 1].error =
-          'Something went wrong. Please check your internet connection.';
+        state.queries[state.queries.length - 1].error = 'Something went wrong';
       });
   },
 });

@@ -50,7 +50,8 @@
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "Default"
+      "default": "Default",
+      "add": "Add"
     },
     "documents": {
       "title": "This table contains all the documents that are available to you and those you have uploaded",
@@ -72,6 +73,7 @@
         "monthly": "Monthly"
       },
       "actions": "Actions",
+      "view": "View",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?"
     },
     "apiKeys": {
@@ -97,7 +99,7 @@
       },
       "messages": "Messages",
       "tokenUsage": "Token Usage",
-      "feedback": "Feedback",
+      "userFeedback": "User Feedback",
       "filterPlaceholder": "Filter",
       "none": "None",
       "positiveFeedback": "Positive Feedback",

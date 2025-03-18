@@ -125,9 +125,9 @@ class OpenAILLM(BaseLLM):
             )
 
         for line in response:
-            if line.choices[0].delta.content is not None:
+            if len(line.choices) > 0 and line.choices[0].delta.content is not None and len(line.choices[0].delta.content) > 0:
                 yield line.choices[0].delta.content
-            else:
+            elif len(line.choices) > 0:
                 yield line.choices[0]
 
     def _supports_tools(self):
@@ -137,17 +137,17 @@ class OpenAILLM(BaseLLM):
 class AzureOpenAILLM(OpenAILLM):
 
     def __init__(
-        self, openai_api_key, openai_api_base, openai_api_version, deployment_name
+        self, api_key, user_api_key, *args, **kwargs 
     ):
-        super().__init__(openai_api_key)
+
+        super().__init__(api_key)
         self.api_base = (settings.OPENAI_API_BASE,)
         self.api_version = (settings.OPENAI_API_VERSION,)
         self.deployment_name = (settings.AZURE_DEPLOYMENT_NAME,)
         from openai import AzureOpenAI
 
         self.client = AzureOpenAI(
-            api_key=openai_api_key,
+            api_key=api_key,
             api_version=settings.OPENAI_API_VERSION,
-            api_base=settings.OPENAI_API_BASE,
-            deployment_name=settings.AZURE_DEPLOYMENT_NAME,
+            azure_endpoint=settings.OPENAI_API_BASE
         )

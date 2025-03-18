@@ -112,7 +112,7 @@ export default function APIKeys() {
         <div className="mb-6 flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3">
           <button
             onClick={() => setCreateModal(true)}
-            className="rounded-full w-full sm:w-40 bg-purple-30 px-4 py-3 text-white hover:bg-[#6F3FD1]"
+            className="rounded-full text-sm w-[108px] h-[30px] bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
             title={t('settings.apiKeys.createNew')}
           >
             {t('settings.apiKeys.createNew')}
@@ -125,13 +125,13 @@ export default function APIKeys() {
               <table className="w-full table-auto">
                 <thead>
                   <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[35%]">
                       {t('settings.apiKeys.name')}
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[35%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[35%]">
                       {t('settings.apiKeys.sourceDoc')}
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver uppercase w-[25%]">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[25%]">
                       <span className="hidden sm:inline">
                         {t('settings.apiKeys.key')}
                       </span>
@@ -139,7 +139,7 @@ export default function APIKeys() {
                         {t('settings.apiKeys.key')}
                       </span>
                     </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] uppercase w-[5%]">
+                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] w-[5%]">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
@@ -163,7 +163,7 @@ export default function APIKeys() {
                         key={element.id}
                         className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                       >
-                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0">
+                        <td className="py-4 px-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0">
                           <div className="truncate" title={element.name}>
                             {element.name}
                           </div>
@@ -225,6 +225,7 @@ export default function APIKeys() {
           submitLabel={t('modals.deleteConv.delete')}
           handleSubmit={() => handleDeleteKey(keyToDelete.id)}
           handleCancel={() => setKeyToDelete(null)}
+          variant="danger"
         />
       )}
     </div>

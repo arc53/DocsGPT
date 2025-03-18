@@ -5,10 +5,14 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import {
+  vscDarkPlus,
+  oneLight,
+} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import { useDarkTheme } from '../hooks';
 
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import ChevronDown from '../assets/chevron-down.svg';
@@ -18,7 +22,7 @@ import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
-import UserIcon from '../assets/user.png';
+import UserIcon from '../assets/user.svg';
 import Accordion from '../components/Accordion';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
@@ -69,6 +73,7 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const { t } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -113,7 +118,7 @@ const ConversationBubble = forwardRef<
                 style={{
                   wordBreak: 'break-word',
                 }}
-                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-purple-30 py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
               >
                 {message}
               </div>
@@ -122,7 +127,7 @@ const ConversationBubble = forwardRef<
                   setIsEditClicked(true);
                   setEditInputBox(message);
                 }}
-                className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+                className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-light-silver dark:hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
               >
                 <img src={Edit} alt="Edit" className="cursor-pointer" />
               </button>
@@ -138,28 +143,28 @@ const ConversationBubble = forwardRef<
                 onChange={(e) => {
                   setEditInputBox(e.target.value);
                 }}
-                onKeyDown={(e) => { 
-                  if(e.key === 'Enter' && !e.shiftKey){ 
-                    e.preventDefault(); 
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
                     handleEditClick();
                   }
                 }}
                 rows={5}
                 value={editInputBox}
-                className="w-full resize-none border-2 border-black dark:border-white rounded-3xl px-4 py-3 text-base leading-relaxed text-black dark:bg-raisin-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#CDB5FF]"
+                className="w-full resize-none border border-silver dark:border-philippine-grey rounded-3xl px-4 py-3 text-base leading-relaxed text-carbon dark:text-chinese-white dark:bg-raisin-black focus:outline-none"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="rounded-full bg-[#CDB5FF] hover:bg-[#E1D3FF] px-4 py-2 text-purple-30 text-sm font-medium"
-                  onClick={handleEditClick}
-                >
-                  {t('conversation.edit.update')}
-                </button>
-                <button
-                  className="px-4 py-2 text-purple-30 text-sm hover:underline"
+                  className="px-4 py-2 text-purple-30 text-sm font-semibold hover:text-chinese-black-2 dark:hover:text-[#B9BCBE] hover:bg-gainsboro dark:hover:bg-onyx-2 transition-colors rounded-full"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
+                </button>
+                <button
+                  className="rounded-full bg-purple-30 hover:bg-violets-are-blue dark:hover:bg-royal-purple px-4 py-2 text-white text-sm font-medium transition-colors"
+                  onClick={handleEditClick}
+                >
+                  {t('conversation.edit.update')}
                 </button>
               </div>
             </div>
@@ -341,7 +346,7 @@ const ConversationBubble = forwardRef<
             </p>
           </div>
           <div
-            className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[14px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
+            className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[18px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
               type === 'ERROR'
                 ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
                 : 'flex-col rounded-3xl'
@@ -355,25 +360,32 @@ const ConversationBubble = forwardRef<
                 code(props) {
                   const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
+                  const language = match ? match[1] : '';
 
                   return match ? (
-                    <div className="group relative">
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={match[1]}
-                        style={vscDarkPlus}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                      <div
-                        className={`absolute right-3 top-3 lg:invisible 
-                         ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''} `}
-                      >
+                    <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
+                      <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
+                        <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+                          {language}
+                        </span>
                         <CopyButton
                           text={String(children).replace(/\n$/, '')}
                         />
                       </div>
+                      <SyntaxHighlighter
+                        {...rest}
+                        PreTag="div"
+                        language={language}
+                        style={isDarkTheme ? vscDarkPlus : oneLight}
+                        className="!mt-0"
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: 0,
+                          scrollbarWidth: 'thin',
+                        }}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
                     </div>
                   ) : (
                     <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">

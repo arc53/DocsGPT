@@ -485,25 +485,31 @@ template {
 ::-webkit-scrollbar {
   width: 10;
 }
-
-input:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0 50px white inset;
+/* Light mode specific autofill styles */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: #343541 !important;
+  -webkit-box-shadow: 0 0 0 30px transparent inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: #343541;
 }
 
-input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 50px white inset;
+/* Dark mode specific autofill styles */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark input:-webkit-autofill:active {
+  -webkit-text-fill-color: #e5e7eb !important;
+  -webkit-box-shadow: 0 0 0 30px transparent inset !important;
+  background-color: transparent !important;
+  caret-color: #e5e7eb;
 }
 
-@media (prefers-color-scheme: dark) {
-  input:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
-    -webkit-text-fill-color: white;
-  }
-
-  input:-webkit-autofill:focus {
-    -webkit-box-shadow: 0 0 0 50px rgb(68, 70, 84) inset;
-    -webkit-text-fill-color: white;
-  }
+/* Additional autocomplete dropdown styles for dark mode */
+.dark input:-webkit-autofill::first-line {
+  color: #e5e7eb;
 }
 
 .inputbox-style {

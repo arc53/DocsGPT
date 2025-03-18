@@ -148,6 +148,7 @@ prompt_cloud_api_provider_options() {
     echo -e "${YELLOW}4) Groq${NC}"
     echo -e "${YELLOW}5) HuggingFace Inference API${NC}"
     echo -e "${YELLOW}6) Azure OpenAI${NC}"
+    echo -e "${YELLOW}7) Novita${NC}"
     echo -e "${YELLOW}b) Back to Main Menu${NC}"
     echo
     read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" provider_choice
@@ -428,6 +429,12 @@ connect_cloud_api_provider() {
                 model_name="gpt-4o"
                 get_api_key
                 break ;;
+            7) # Novita
+                provider_name="Novita"
+                llm_name="novita"
+                model_name="deepseek/deepseek-r1"
+                get_api_key
+                break ;;
             b|B) clear; return ;; # Clear screen and Back to Main Menu
             *) echo -e "\n${RED}Invalid choice. Please choose 1-6, or b.${NC}" ; sleep 1 ;;
         esac
@@ -443,7 +450,7 @@ connect_cloud_api_provider() {
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build && docker compose -f "${COMPOSE_FILE}" up -d
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build
     docker_compose_status=$?
 
     echo "Docker Compose Exit Status: $docker_compose_status" # Debug output
@@ -469,16 +476,16 @@ while true; do # Main menu loop
     case $main_choice in
         1) # Use DocsGPT Public API Endpoint
             use_docs_public_api_endpoint
-            ;;
+            break ;;
         2) # Serve Local (with Ollama)
             serve_local_ollama
-            ;;
+            break ;;
         3) # Connect Local Inference Engine
             connect_local_inference_engine
-            ;;
+            break ;;
         4) # Connect Cloud API Provider
             connect_cloud_api_provider
-            ;;
+            break ;;
         *)
             echo -e "\n${RED}Invalid choice. Please choose 1-4.${NC}" ; sleep 1 ;;
     esac

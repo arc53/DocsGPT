@@ -43,7 +43,7 @@
       "prompt": "Prompt Activo",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllBtn": "Eliminar todo",
-      "addNew": "Agregar Nuevo",
+      "add": "Añadir",
       "convHistory": "Historial de conversaciones",
       "none": "Ninguno",
       "low": "Bajo",
@@ -72,6 +72,7 @@
         "monthly": "Mensual"
       },
       "actions": "Acciones",
+      "view": "Ver",
       "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?"
     },
     "apiKeys": {
@@ -97,7 +98,7 @@
       },
       "messages": "Mensajes",
       "tokenUsage": "Uso de Tokens",
-      "feedback": "Retroalimentación",
+      "userFeedback": "Retroalimentación del Usuario",
       "filterPlaceholder": "Filtrar",
       "none": "Ninguno",
       "positiveFeedback": "Retroalimentación Positiva",

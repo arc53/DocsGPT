@@ -1,16 +1,20 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
+
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
-
+import ConversationMessages from './ConversationMessages';
+import MessageInput from '../components/MessageInput';
 import conversationService from '../api/services/conversationService';
+
 import Send from '../assets/send.svg';
 import Spinner from '../assets/spinner.svg';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import ConversationBubble from './ConversationBubble';
 import { Query } from './conversationModels';
+
 import {
   addQuery,
   fetchSharedAnswer,
@@ -24,6 +28,7 @@ import {
   setIdentifier,
   updateQuery,
 } from './sharedConversationSlice';
+import { formatDate } from '../utils/dateTimeUtils';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();
@@ -36,27 +41,14 @@ export const SharedConversation = () => {
   const apiKey = useSelector(selectClientAPIKey);
   const status = useSelector(selectStatus);
 
-  const inputRef = useRef<HTMLDivElement>(null);
-  const sharedConversationRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState('');
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-  const [eventInterrupt, setEventInterrupt] = useState(false);
-  const endMessageRef = useRef<HTMLDivElement>(null);
-  const handleUserInterruption = () => {
-    if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
-  };
-  useEffect(() => {
-    !eventInterrupt && scrollIntoView();
-  }, [queries.length, queries[queries.length - 1]]);
 
   useEffect(() => {
     identifier && dispatch(setIdentifier(identifier));
-    const element = document.getElementById('inputbox') as HTMLInputElement;
-    if (element) {
-      element.focus();
-    }
   }, []);
 
   useEffect(() => {
@@ -65,20 +57,6 @@ export const SharedConversation = () => {
       queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
     }
   }, [queries[queries.length - 1]]);
-
-  const scrollIntoView = () => {
-    if (!sharedConversationRef?.current || eventInterrupt) return;
-
-    if (status === 'idle' || !queries[queries.length - 1].response) {
-      sharedConversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: sharedConversationRef.current.scrollHeight,
-      });
-    } else {
-      sharedConversationRef.current.scrollTop =
-        sharedConversationRef.current.scrollHeight;
-    }
-  };
 
   const fetchQueries = () => {
     identifier &&
@@ -95,7 +73,7 @@ export const SharedConversation = () => {
               setFetchedData({
                 queries: data.queries,
                 title: data.title,
-                date: data.date,
+                date: formatDate(data.timestamp),
                 identifier,
               }),
             );
@@ -103,47 +81,16 @@ export const SharedConversation = () => {
           }
         });
   };
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    inputRef.current && (inputRef.current.innerText = text);
-  };
-  const prepResponseView = (query: Query, index: number) => {
-    let responseView;
-    if (query.response) {
-      responseView = (
-        <ConversationBubble
-          ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
-          key={`${index}ANSWER`}
-          message={query.response}
-          type={'ANSWER'}
-          sources={query.sources ?? []}
-          toolCalls={query.tool_calls}
-        ></ConversationBubble>
-      );
-    } else if (query.error) {
-      responseView = (
-        <ConversationBubble
-          ref={endMessageRef}
-          className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'} `}
-          key={`${index}ERROR`}
-          message={query.error}
-          type="ERROR"
-        ></ConversationBubble>
-      );
-    }
-    return responseView;
-  };
+
   const handleQuestionSubmission = () => {
-    if (inputRef.current?.textContent && status !== 'loading') {
+    if (input && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: inputRef.current.textContent,
+              prompt: input,
             },
           }),
         );
@@ -152,9 +99,9 @@ export const SharedConversation = () => {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: inputRef.current.textContent });
+        handleQuestion({ question: input });
       }
-      inputRef.current.textContent = '';
+      setInput('');
     }
   };
 
@@ -167,7 +114,6 @@ export const SharedConversation = () => {
   }) => {
     question = question.trim();
     if (question === '') return;
-    setEventInterrupt(false);
     !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
     dispatch(fetchSharedAnswer({ question }));
   };
@@ -192,93 +138,47 @@ export const SharedConversation = () => {
           content="Shared conversations with DocsGPT"
         />
       </Helmet>
-      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
-        <div
-          ref={sharedConversationRef}
-          onWheel={handleUserInterruption}
-          onTouchMove={handleUserInterruption}
-          className="flex w-full justify-center overflow-auto"
-        >
-          <div className="mt-0 w-11/12 md:w-10/12 lg:w-6/12">
-            <div className="mb-2 w-full border-b pb-2 dark:border-b-silver">
-              <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
-                {title}
-              </h1>
-              <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
-                {t('sharedConv.subtitle')}{' '}
-                <a href="/" className="text-[#007DFF]">
-                  DocsGPT
-                </a>
-              </h2>
-              <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
-                {date}
-              </h2>
-            </div>
-            <div className="">
-              {queries?.map((query, index) => {
-                return (
-                  <Fragment key={index}>
-                    <ConversationBubble
-                      ref={endMessageRef}
-                      className={'mb-1 last:mb-28 md:mb-7'}
-                      key={`${index}QUESTION`}
-                      message={query.prompt}
-                      type="QUESTION"
-                      sources={query.sources}
-                    ></ConversationBubble>
-
-                    {prepResponseView(query, index)}
-                  </Fragment>
-                );
-              })}
-            </div>
-          </div>
+      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black ">
+        <div className="border-b p-2 dark:border-b-silver w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1200px]">
+          <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
+            {title}
+          </h1>
+          <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
+            {t('sharedConv.subtitle')}{' '}
+            <a href="/" className="text-[#007DFF]">
+              DocsGPT
+            </a>
+          </h2>
+          <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
+            {date}
+          </h2>
         </div>
-
-        <div className="flex w-11/12 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-6/12">
+        <ConversationMessages
+          handleQuestion={handleQuestion}
+          handleQuestionSubmission={handleQuestionSubmission}
+          queries={queries}
+          status={status}
+        />
+        <div className="flex flex-col items-center gap-4 pb-2 w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1200px]">
           {apiKey ? (
-            <div className="flex h-full w-full items-center rounded-[40px] border border-silver bg-white py-1 dark:bg-raisin-black">
-              <div
-                id="inputbox"
-                ref={inputRef}
-                tabIndex={1}
-                onPaste={handlePaste}
-                placeholder={t('inputPlaceholder')}
-                contentEditable
-                className={`inputbox-style max-h-24 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-full bg-white pt-5 pb-[22px] text-base leading-tight opacity-100 focus:outline-none dark:bg-raisin-black dark:text-bright-gray`}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleQuestionSubmission();
-                  }
-                }}
-              ></div>
-              {status === 'loading' ? (
-                <img
-                  src={Spinner}
-                  className="relative right-[38px] bottom-[24px] -mr-[30px] animate-spin cursor-pointer self-end bg-transparent filter dark:invert"
-                ></img>
-              ) : (
-                <div className="mx-1 cursor-pointer rounded-full p-3 text-center hover:bg-gray-3000 dark:hover:bg-dark-charcoal">
-                  <img
-                    onClick={handleQuestionSubmission}
-                    className="ml-[4px] h-6 w-6 text-white filter dark:invert"
-                    src={Send}
-                  ></img>
-                </div>
-              )}
-            </div>
+            <MessageInput
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onSubmit={() => handleQuestionSubmission()}
+              loading={status === 'loading'}
+            />
           ) : (
             <button
               onClick={() => navigate('/')}
-              className="w-fit rounded-full bg-purple-30 p-4 text-white shadow-xl transition-colors duration-200 hover:bg-purple-taupe mb-14 sm:mb-0"
+              className="w-fit rounded-full bg-purple-30 py-3 px-5 text-white shadow-xl transition-colors duration-200 hover:bg-violets-are-blue mb-14 sm:mb-0"
             >
               {t('sharedConv.button')}
             </button>
           )}
-          <span className="mb-2 hidden text-xs text-dark-charcoal dark:text-silver sm:inline">
+
+          <p className="text-gray-4000 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-sonic-silver md:inline md:w-full">
             {t('sharedConv.meta')}
-          </span>
+          </p>
         </div>
       </div>
     </>
