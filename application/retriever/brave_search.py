@@ -17,6 +17,7 @@ class BraveRetSearch(BaseRetriever):
         token_limit=150,
         gpt_model="docsgpt",
         user_api_key=None,
+        decoded_token=None,
     ):
         self.question = question
         self.source = source
@@ -35,6 +36,7 @@ class BraveRetSearch(BaseRetriever):
             )
         )
         self.user_api_key = user_api_key
+        self.decoded_token = decoded_token
 
     def _get_data(self):
         if self.chunks == 0:
@@ -81,7 +83,10 @@ class BraveRetSearch(BaseRetriever):
         messages_combine.append({"role": "user", "content": self.question})
 
         llm = LLMCreator.create_llm(
-            settings.LLM_NAME, api_key=settings.API_KEY, user_api_key=self.user_api_key
+            settings.LLM_NAME,
+            api_key=settings.API_KEY,
+            user_api_key=self.user_api_key,
+            decoded_token=self.decoded_token,
         )
 
         completion = llm.gen_stream(model=self.gpt_model, messages=messages_combine)
@@ -100,5 +105,5 @@ class BraveRetSearch(BaseRetriever):
             "chunks": self.chunks,
             "token_limit": self.token_limit,
             "gpt_model": self.gpt_model,
-            "user_api_key": self.user_api_key
+            "user_api_key": self.user_api_key,
         }

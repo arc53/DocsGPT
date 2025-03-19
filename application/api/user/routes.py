@@ -15,7 +15,6 @@ from werkzeug.utils import secure_filename
 from application.agents.tools.tool_manager import ToolManager
 
 from application.api.user.tasks import ingest, ingest_remote
-
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
@@ -68,6 +67,21 @@ def generate_date_range(start_date, end_date):
     }
 
 
+def get_vector_store(source_id):
+    """
+    Get the Vector Store
+    Args:
+        source_id (str): source id of the document
+    """
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE,
+        source_id=source_id,
+        embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+    )
+    return store
+
+
 @user_ns.route("/api/delete_conversation")
 class DeleteConversation(Resource):
     @api.doc(
@@ -75,6 +89,9 @@ class DeleteConversation(Resource):
         params={"id": "The ID of the conversation to delete"},
     )
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         conversation_id = request.args.get("id")
         if not conversation_id:
             return make_response(
@@ -82,7 +99,9 @@ class DeleteConversation(Resource):
             )
 
         try:
-            conversations_collection.delete_one({"_id": ObjectId(conversation_id)})
+            conversations_collection.delete_one(
+                {"_id": ObjectId(conversation_id), "user": decoded_token["sub"]}
+            )
         except Exception as err:
             current_app.logger.error(f"Error deleting conversation: {err}")
             return make_response(jsonify({"success": False}), 400)
@@ -95,7 +114,10 @@ class DeleteAllConversations(Resource):
         description="Deletes all conversations for a specific user",
     )
     def get(self):
-        user_id = "local"
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user_id = decoded_token.get("sub")
         try:
             conversations_collection.delete_many({"user": user_id})
         except Exception as err:
@@ -110,11 +132,18 @@ class GetConversations(Resource):
         description="Retrieve a list of the latest 30 conversations (excluding API key conversations)",
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         try:
-            conversations = conversations_collection.find(
-                {"api_key": {"$exists": False}}
-            ).sort("date", -1).limit(30)
-            
+            conversations = (
+                conversations_collection.find(
+                    {"api_key": {"$exists": False}, "user": decoded_token.get("sub")}
+                )
+                .sort("date", -1)
+                .limit(30)
+            )
+
             list_conversations = [
                 {"id": str(conversation["_id"]), "name": conversation["name"]}
                 for conversation in conversations
@@ -132,6 +161,9 @@ class GetSingleConversation(Resource):
         params={"id": "The conversation ID"},
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         conversation_id = request.args.get("id")
         if not conversation_id:
             return make_response(
@@ -140,7 +172,7 @@ class GetSingleConversation(Resource):
 
         try:
             conversation = conversations_collection.find_one(
-                {"_id": ObjectId(conversation_id)}
+                {"_id": ObjectId(conversation_id), "user": decoded_token.get("sub")}
             )
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
@@ -167,6 +199,9 @@ class UpdateConversationName(Resource):
         description="Updates the name of a conversation",
     )
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         data = request.get_json()
         required_fields = ["id", "name"]
         missing_fields = check_required_fields(data, required_fields)
@@ -175,7 +210,8 @@ class UpdateConversationName(Resource):
 
         try:
             conversations_collection.update_one(
-                {"_id": ObjectId(data["id"])}, {"$set": {"name": data["name"]}}
+                {"_id": ObjectId(data["id"]), "user": decoded_token.get("sub")},
+                {"$set": {"name": data["name"]}},
             )
         except Exception as err:
             current_app.logger.error(f"Error updating conversation name: {err}")
@@ -210,6 +246,9 @@ class SubmitFeedback(Resource):
         description="Submit feedback for a conversation",
     )
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         data = request.get_json()
         required_fields = ["feedback", "conversation_id", "question_index"]
         missing_fields = check_required_fields(data, required_fields)
@@ -222,12 +261,13 @@ class SubmitFeedback(Resource):
                 conversations_collection.update_one(
                     {
                         "_id": ObjectId(data["conversation_id"]),
+                        "user": decoded_token.get("sub"),
                         f"queries.{data['question_index']}": {"$exists": True},
                     },
                     {
                         "$unset": {
                             f"queries.{data['question_index']}.feedback": "",
-                            f"queries.{data['question_index']}.feedback_timestamp": ""
+                            f"queries.{data['question_index']}.feedback_timestamp": "",
                         }
                     },
                 )
@@ -236,12 +276,17 @@ class SubmitFeedback(Resource):
                 conversations_collection.update_one(
                     {
                         "_id": ObjectId(data["conversation_id"]),
+                        "user": decoded_token.get("sub"),
                         f"queries.{data['question_index']}": {"$exists": True},
                     },
                     {
                         "$set": {
-                            f"queries.{data['question_index']}.feedback": data["feedback"],
-                            f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(datetime.timezone.utc)
+                            f"queries.{data['question_index']}.feedback": data[
+                                "feedback"
+                            ],
+                            f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(
+                                datetime.timezone.utc
+                            ),
                         }
                     },
                 )
@@ -284,13 +329,18 @@ class DeleteOldIndexes(Resource):
         params={"source_id": "The source ID to delete"},
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         source_id = request.args.get("source_id")
         if not source_id:
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
 
-        doc = sources_collection.find_one({"_id": ObjectId(source_id), "user": "local"})
+        doc = sources_collection.find_one(
+            {"_id": ObjectId(source_id), "user": decoded_token.get("sub")}
+        )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
         try:
@@ -328,6 +378,9 @@ class UploadFile(Resource):
         description="Uploads a file to be vectorized and indexed",
     )
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         data = request.form
         files = request.files.getlist("file")
         required_fields = ["user", "name"]
@@ -343,7 +396,7 @@ class UploadFile(Resource):
                 400,
             )
 
-        user = secure_filename(request.form["user"])
+        user = secure_filename(decoded_token.get("sub"))
         job_name = secure_filename(request.form["name"])
         try:
             save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
@@ -443,6 +496,9 @@ class UploadRemote(Resource):
         description="Uploads remote source for vectorization",
     )
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         data = request.form
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
@@ -463,7 +519,7 @@ class UploadRemote(Resource):
             task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
-                user=data["user"],
+                user=decoded_token.get("sub"),
                 loader=data["source"],
             )
         except Exception as err:
@@ -519,7 +575,10 @@ class RedirectToSources(Resource):
 class PaginatedSources(Resource):
     @api.doc(description="Get document with pagination, sorting and filtering")
     def get(self):
-        user = "local"
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         sort_field = request.args.get("sort", "date")  # Default to 'date'
         sort_order = request.args.get("order", "desc")  # Default to 'desc'
         page = int(request.args.get("page", 1))  # Default to 1
@@ -584,7 +643,10 @@ class PaginatedSources(Resource):
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
     def get(self):
-        user = "local"
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = [
             {
                 "name": "Default",
@@ -685,13 +747,16 @@ class CreatePrompt(Resource):
     @api.expect(create_prompt_model)
     @api.doc(description="Create a new prompt")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         data = request.get_json()
         required_fields = ["content", "name"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
-        user = "local"
+        user = decoded_token.get("sub")
         try:
 
             resp = prompts_collection.insert_one(
@@ -713,7 +778,10 @@ class CreatePrompt(Resource):
 class GetPrompts(Resource):
     @api.doc(description="Get all prompts for the user")
     def get(self):
-        user = "local"
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         try:
             prompts = prompts_collection.find({"user": user})
             list_prompts = [
@@ -741,6 +809,10 @@ class GetPrompts(Resource):
 class GetSinglePrompt(Resource):
     @api.doc(params={"id": "ID of the prompt"}, description="Get a single prompt by ID")
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         prompt_id = request.args.get("id")
         if not prompt_id:
             return make_response(
@@ -771,7 +843,9 @@ class GetSinglePrompt(Resource):
                     chat_reduce_strict = f.read()
                 return make_response(jsonify({"content": chat_reduce_strict}), 200)
 
-            prompt = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
+            prompt = prompts_collection.find_one(
+                {"_id": ObjectId(prompt_id), "user": user}
+            )
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompt: {err}")
             return make_response(jsonify({"success": False}), 400)
@@ -789,6 +863,10 @@ class DeletePrompt(Resource):
     @api.expect(delete_prompt_model)
     @api.doc(description="Delete a prompt by ID")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id"]
         missing_fields = check_required_fields(data, required_fields)
@@ -796,7 +874,7 @@ class DeletePrompt(Resource):
             return missing_fields
 
         try:
-            prompts_collection.delete_one({"_id": ObjectId(data["id"])})
+            prompts_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}")
             return make_response(jsonify({"success": False}), 400)
@@ -820,6 +898,10 @@ class UpdatePrompt(Resource):
     @api.expect(update_prompt_model)
     @api.doc(description="Update an existing prompt")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id", "name", "content"]
         missing_fields = check_required_fields(data, required_fields)
@@ -828,7 +910,7 @@ class UpdatePrompt(Resource):
 
         try:
             prompts_collection.update_one(
-                {"_id": ObjectId(data["id"])},
+                {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": {"name": data["name"], "content": data["content"]}},
             )
         except Exception as err:
@@ -842,7 +924,10 @@ class UpdatePrompt(Resource):
 class GetApiKeys(Resource):
     @api.doc(description="Retrieve API keys for the user")
     def get(self):
-        user = "local"
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         try:
             keys = api_key_collection.find({"user": user})
             list_keys = []
@@ -889,13 +974,16 @@ class CreateApiKey(Resource):
     @api.expect(create_api_key_model)
     @api.doc(description="Create a new API key")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["name", "prompt_id", "chunks"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
-        user = "local"
         try:
             key = str(uuid.uuid4())
             new_api_key = {
@@ -929,6 +1017,10 @@ class DeleteApiKey(Resource):
     @api.expect(delete_api_key_model)
     @api.doc(description="Delete an API key by ID")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id"]
         missing_fields = check_required_fields(data, required_fields)
@@ -936,7 +1028,9 @@ class DeleteApiKey(Resource):
             return missing_fields
 
         try:
-            result = api_key_collection.delete_one({"_id": ObjectId(data["id"])})
+            result = api_key_collection.delete_one(
+                {"_id": ObjectId(data["id"]), "user": user}
+            )
             if result.deleted_count == 0:
                 return {"success": False, "message": "API Key not found"}, 404
         except Exception as err:
@@ -963,6 +1057,10 @@ class ShareConversation(Resource):
     @api.expect(share_conversation_model)
     @api.doc(description="Share a conversation")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["conversation_id"]
         missing_fields = check_required_fields(data, required_fields)
@@ -974,8 +1072,6 @@ class ShareConversation(Resource):
             return make_response(
                 jsonify({"success": False, "message": "isPromptable is required"}), 400
             )
-
-        user = data.get("user", "local")
         conversation_id = data["conversation_id"]
 
         try:
@@ -1211,7 +1307,13 @@ class GetMessageAnalytics(Resource):
                 required=False,
                 description="Filter option for analytics",
                 default="last_30_days",
-                enum=["last_hour", "last_24_hour", "last_7_days", "last_15_days", "last_30_days"],
+                enum=[
+                    "last_hour",
+                    "last_24_hour",
+                    "last_7_days",
+                    "last_15_days",
+                    "last_30_days",
+                ],
             ),
         },
     )
@@ -1219,13 +1321,19 @@ class GetMessageAnalytics(Resource):
     @api.expect(get_message_analytics_model)
     @api.doc(description="Get message analytics based on filter option")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
 
         try:
             api_key = (
-                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one(
+                    {"_id": ObjectId(api_key_id), "user": user}
+                )["key"]
                 if api_key_id
                 else None
             )
@@ -1244,9 +1352,9 @@ class GetMessageAnalytics(Resource):
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
-                    6 if filter_option == "last_7_days"
-                    else 14 if filter_option == "last_15_days"
-                    else 29
+                    6
+                    if filter_option == "last_7_days"
+                    else 14 if filter_option == "last_15_days" else 29
                 )
             else:
                 return make_response(
@@ -1254,41 +1362,40 @@ class GetMessageAnalytics(Resource):
                 )
             start_date = end_date - datetime.timedelta(days=filter_days)
             start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            end_date = end_date.replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
             group_format = "%Y-%m-%d"
 
         try:
+            match_stage = {
+                "$match": {
+                    "user": user,
+                }
+            }
+            if api_key:
+                match_stage["$match"]["api_key"] = api_key
+                
             pipeline = [
-                # Initial match for API key if provided
-                {
-                    "$match": {
-                        "api_key": api_key if api_key else {"$exists": False}
-                    }
-                },
+                match_stage,
                 {"$unwind": "$queries"},
-                # Match queries within the time range
                 {
                     "$match": {
-                        "queries.timestamp": {
-                            "$gte": start_date,
-                            "$lte": end_date
-                        }
+                        "queries.timestamp": {"$gte": start_date, "$lte": end_date}
                     }
                 },
-                # Group by formatted timestamp
                 {
                     "$group": {
                         "_id": {
                             "$dateToString": {
                                 "format": group_format,
-                                "date": "$queries.timestamp"
+                                "date": "$queries.timestamp",
                             }
                         },
-                        "count": {"$sum": 1}
+                        "count": {"$sum": 1},
                     }
                 },
-                # Sort by timestamp
-                {"$sort": {"_id": 1}}
+                {"$sort": {"_id": 1}},
             ]
 
             message_data = conversations_collection.aggregate(pipeline)
@@ -1338,13 +1445,19 @@ class GetTokenAnalytics(Resource):
     @api.expect(get_token_analytics_model)
     @api.doc(description="Get token analytics data")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
 
         try:
             api_key = (
-                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one(
+                    {"_id": ObjectId(api_key_id), "user": user}
+                )["key"]
                 if api_key_id
                 else None
             )
@@ -1426,13 +1539,12 @@ class GetTokenAnalytics(Resource):
         try:
             match_stage = {
                 "$match": {
+                    "user_id": user,
                     "timestamp": {"$gte": start_date, "$lte": end_date},
                 }
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-            else:
-                match_stage["$match"]["api_key"] = {"$exists": False}
 
             token_usage_data = token_usage_collection.aggregate(
                 [
@@ -1492,13 +1604,19 @@ class GetFeedbackAnalytics(Resource):
     @api.expect(get_feedback_analytics_model)
     @api.doc(description="Get feedback analytics data")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
 
         try:
             api_key = (
-                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+                api_key_collection.find_one(
+                    {"_id": ObjectId(api_key_id), "user": user}
+                )["key"]
                 if api_key_id
                 else None
             )
@@ -1511,11 +1629,21 @@ class GetFeedbackAnalytics(Resource):
         if filter_option == "last_hour":
             start_date = end_date - datetime.timedelta(hours=1)
             group_format = "%Y-%m-%d %H:%M:00"
-            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
+            date_field = {
+                "$dateToString": {
+                    "format": group_format,
+                    "date": "$queries.feedback_timestamp",
+                }
+            }
         elif filter_option == "last_24_hour":
             start_date = end_date - datetime.timedelta(hours=24)
             group_format = "%Y-%m-%d %H:00"
-            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
+            date_field = {
+                "$dateToString": {
+                    "format": group_format,
+                    "date": "$queries.feedback_timestamp",
+                }
+            }
         else:
             if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
                 filter_days = (
@@ -1533,21 +1661,26 @@ class GetFeedbackAnalytics(Resource):
                 hour=23, minute=59, second=59, microsecond=999999
             )
             group_format = "%Y-%m-%d"
-            date_field = {"$dateToString": {"format": group_format, "date": "$queries.feedback_timestamp"}}
+            date_field = {
+                "$dateToString": {
+                    "format": group_format,
+                    "date": "$queries.feedback_timestamp",
+                }
+            }
 
         try:
             match_stage = {
                 "$match": {
-                    "queries.feedback_timestamp": {"$gte": start_date, "$lte": end_date},
-                    "queries.feedback": {"$exists": True}
+                    "queries.feedback_timestamp": {
+                        "$gte": start_date,
+                        "$lte": end_date,
+                    },
+                    "queries.feedback": {"$exists": True},
                 }
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-            else:
-                match_stage["$match"]["api_key"] = {"$exists": False}
 
-            # Unwind the queries array to process each query separately
             pipeline = [
                 match_stage,
                 {"$unwind": "$queries"},
@@ -1634,6 +1767,10 @@ class GetUserLogs(Resource):
     @api.expect(get_user_logs_model)
     @api.doc(description="Get user logs with pagination")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         page = int(data.get("page", 1))
         api_key_id = data.get("api_key_id")
@@ -1650,7 +1787,7 @@ class GetUserLogs(Resource):
             current_app.logger.error(f"Error getting API key: {err}")
             return make_response(jsonify({"success": False}), 400)
 
-        query = {}
+        query = {"user": user}
         if api_key:
             query = {"api_key": api_key}
 
@@ -1708,6 +1845,10 @@ class ManageSync(Resource):
     @api.expect(manage_sync_model)
     @api.doc(description="Manage sync frequency for sources")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["source_id", "sync_frequency"]
         missing_fields = check_required_fields(data, required_fields)
@@ -1727,7 +1868,7 @@ class ManageSync(Resource):
             sources_collection.update_one(
                 {
                     "_id": ObjectId(source_id),
-                    "user": "local",
+                    "user": user,
                 },
                 update_data,
             )
@@ -1804,7 +1945,10 @@ class GetTools(Resource):
     @api.doc(description="Get tools created by a user")
     def get(self):
         try:
-            user = "local"
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False}), 401)
+            user = decoded_token.get("sub")
             tools = user_tools_collection.find({"user": user})
             user_tools = []
             for tool in tools:
@@ -1847,6 +1991,10 @@ class CreateTool(Resource):
     )
     @api.doc(description="Create a new tool")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = [
             "name",
@@ -1860,7 +2008,6 @@ class CreateTool(Resource):
         if missing_fields:
             return missing_fields
 
-        user = "local"
         transformed_actions = []
         for action in data["actions"]:
             action["active"] = True
@@ -1911,6 +2058,10 @@ class UpdateTool(Resource):
     )
     @api.doc(description="Update a tool by ID")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id"]
         missing_fields = check_required_fields(data, required_fields)
@@ -1946,7 +2097,7 @@ class UpdateTool(Resource):
                 update_data["status"] = data["status"]
 
             user_tools_collection.update_one(
-                {"_id": ObjectId(data["id"]), "user": "local"},
+                {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": update_data},
             )
         except Exception as err:
@@ -1971,6 +2122,10 @@ class UpdateToolConfig(Resource):
     )
     @api.doc(description="Update the configuration of a tool")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id", "config"]
         missing_fields = check_required_fields(data, required_fields)
@@ -1979,7 +2134,7 @@ class UpdateToolConfig(Resource):
 
         try:
             user_tools_collection.update_one(
-                {"_id": ObjectId(data["id"])},
+                {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": {"config": data["config"]}},
             )
         except Exception as err:
@@ -2006,6 +2161,10 @@ class UpdateToolActions(Resource):
     )
     @api.doc(description="Update the actions of a tool")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id", "actions"]
         missing_fields = check_required_fields(data, required_fields)
@@ -2014,7 +2173,7 @@ class UpdateToolActions(Resource):
 
         try:
             user_tools_collection.update_one(
-                {"_id": ObjectId(data["id"])},
+                {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": {"actions": data["actions"]}},
             )
         except Exception as err:
@@ -2039,6 +2198,10 @@ class UpdateToolStatus(Resource):
     )
     @api.doc(description="Update the status of a tool")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id", "status"]
         missing_fields = check_required_fields(data, required_fields)
@@ -2047,7 +2210,7 @@ class UpdateToolStatus(Resource):
 
         try:
             user_tools_collection.update_one(
-                {"_id": ObjectId(data["id"])},
+                {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": {"status": data["status"]}},
             )
         except Exception as err:
@@ -2067,6 +2230,10 @@ class DeleteTool(Resource):
     )
     @api.doc(description="Delete a tool by ID")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id"]
         missing_fields = check_required_fields(data, required_fields)
@@ -2074,7 +2241,9 @@ class DeleteTool(Resource):
             return missing_fields
 
         try:
-            result = user_tools_collection.delete_one({"_id": ObjectId(data["id"])})
+            result = user_tools_collection.delete_one(
+                {"_id": ObjectId(data["id"]), "user": user}
+            )
             if result.deleted_count == 0:
                 return {"success": False, "message": "Tool not found"}, 404
         except Exception as err:
@@ -2084,21 +2253,6 @@ class DeleteTool(Resource):
         return {"success": True}, 200
 
 
-def get_vector_store(source_id):
-    """
-    Get the Vector Store
-    Args:
-        source_id (str): source id of the document
-    """
-
-    store = VectorCreator.create_vectorstore(
-        settings.VECTOR_STORE,
-        source_id=source_id,
-        embeddings_key=os.getenv("EMBEDDINGS_KEY"),
-    )
-    return store
-
-
 @user_ns.route("/api/get_chunks")
 class GetChunks(Resource):
     @api.doc(
@@ -2106,12 +2260,22 @@ class GetChunks(Resource):
         params={"id": "The document ID"},
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         doc_id = request.args.get("id")
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 10))
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+        if not doc:
+            return make_response(
+                jsonify({"error": "Document not found or access denied"}), 404
+            )
 
         try:
             store = get_vector_store(doc_id)
@@ -2157,6 +2321,10 @@ class AddChunk(Resource):
         description="Adds a new chunk to the document",
     )
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id", "text"]
         missing_fields = check_required_fields(data, required_fields)
@@ -2169,6 +2337,12 @@ class AddChunk(Resource):
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+        if not doc:
+            return make_response(
+                jsonify({"error": "Document not found or access denied"}), 404
+            )
 
         try:
             store = get_vector_store(doc_id)
@@ -2189,11 +2363,21 @@ class DeleteChunk(Resource):
         params={"id": "The document ID", "chunk_id": "The ID of the chunk to delete"},
     )
     def delete(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         doc_id = request.args.get("id")
         chunk_id = request.args.get("chunk_id")
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+        if not doc:
+            return make_response(
+                jsonify({"error": "Document not found or access denied"}), 404
+            )
 
         try:
             store = get_vector_store(doc_id)
@@ -2236,6 +2420,10 @@ class UpdateChunk(Resource):
         description="Updates an existing chunk in the document.",
     )
     def put(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         data = request.get_json()
         required_fields = ["id", "chunk_id"]
         missing_fields = check_required_fields(data, required_fields)
@@ -2249,6 +2437,12 @@ class UpdateChunk(Resource):
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
+
+        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+        if not doc:
+            return make_response(
+                jsonify({"error": "Document not found or access denied"}), 404
+            )
 
         try:
             store = get_vector_store(doc_id)

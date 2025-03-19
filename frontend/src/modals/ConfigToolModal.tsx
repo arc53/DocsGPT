@@ -1,11 +1,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
-import WrapperModal from './WrapperModal';
+import userService from '../api/services/userService';
 import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
 import { AvailableToolType } from './types';
-import userService from '../api/services/userService';
+import WrapperModal from './WrapperModal';
 
 interface ConfigToolModalProps {
   modalState: ActiveState;
@@ -21,18 +23,22 @@ export default function ConfigToolModal({
   getUserTools,
 }: ConfigToolModalProps) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const [authKey, setAuthKey] = React.useState<string>('');
 
   const handleAddTool = (tool: AvailableToolType) => {
     userService
-      .createTool({
-        name: tool.name,
-        displayName: tool.displayName,
-        description: tool.description,
-        config: { token: authKey },
-        actions: tool.actions,
-        status: true,
-      })
+      .createTool(
+        {
+          name: tool.name,
+          displayName: tool.displayName,
+          description: tool.description,
+          config: { token: authKey },
+          actions: tool.actions,
+          status: true,
+        },
+        token,
+      )
       .then(() => {
         setModalState('INACTIVE');
         getUserTools();

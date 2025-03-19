@@ -1,18 +1,22 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import CogwheelIcon from '../assets/cogwheel.svg';
 import Input from '../components/Input';
 import Spinner from '../components/Spinner';
+import ToggleSwitch from '../components/ToggleSwitch';
 import AddToolModal from '../modals/AddToolModal';
 import { ActiveState } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
-import ToggleSwitch from '../components/ToggleSwitch';
 
 export default function Tools() {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
+
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
@@ -25,7 +29,7 @@ export default function Tools() {
   const getUserTools = () => {
     setLoading(true);
     userService
-      .getUserTools()
+      .getUserTools(token)
       .then((res) => {
         return res.json();
       })
@@ -41,7 +45,7 @@ export default function Tools() {
 
   const updateToolStatus = (toolId: string, newStatus: boolean) => {
     userService
-      .updateToolStatus({ id: toolId, status: newStatus })
+      .updateToolStatus({ id: toolId, status: newStatus }, token)
       .then(() => {
         setUserTools((prevTools) =>
           prevTools.map((tool) =>
@@ -65,7 +69,7 @@ export default function Tools() {
 
   const handleToolAdded = (toolId: string) => {
     userService
-      .getUserTools()
+      .getUserTools(token)
       .then((res) => res.json())
       .then((data) => {
         const newTool = data.tools.find(

@@ -7,7 +7,10 @@ import newChatIcon from '../assets/openNewChat.svg';
 import ShareIcon from '../assets/share.svg';
 import { useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
-import { selectConversationId } from '../preferences/preferenceSlice';
+import {
+  selectConversationId,
+  selectToken,
+} from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { handleSendFeedback } from './conversationHandlers';
 import { FEEDBACK, Query } from './conversationModels';
@@ -27,6 +30,7 @@ import ConversationMessages from './ConversationMessages';
 import MessageInput from '../components/MessageInput';
 
 export default function Conversation() {
+  const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
@@ -118,6 +122,7 @@ export default function Conversation() {
       feedback,
       conversationId as string,
       index,
+      token,
     ).catch(() =>
       handleSendFeedback(
         query.prompt,
@@ -125,6 +130,7 @@ export default function Conversation() {
         feedback,
         conversationId as string,
         index,
+        token,
       ).catch(() =>
         dispatch(updateQuery({ index, query: { feedback: prevFeedback } })),
       ),

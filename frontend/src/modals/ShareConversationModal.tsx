@@ -1,25 +1,27 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import {
-  selectSourceDocs,
-  selectSelectedDocs,
-  selectChunks,
-  selectPrompt,
-} from '../preferences/preferenceSlice';
+
+import conversationService from '../api/services/conversationService';
+import Spinner from '../assets/spinner.svg';
 import Dropdown from '../components/Dropdown';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { Doc } from '../models/misc';
-import Spinner from '../assets/spinner.svg';
+import {
+  selectChunks,
+  selectPrompt,
+  selectSelectedDocs,
+  selectSourceDocs,
+  selectToken,
+} from '../preferences/preferenceSlice';
+import WrapperModal from './WrapperModal';
+
 const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
   'huggingface_sentence-transformers/all-mpnet-base-v2';
 
 type StatusType = 'loading' | 'idle' | 'fetched' | 'failed';
-
-import conversationService from '../api/services/conversationService';
-import WrapperModal from './WrapperModal';
 
 export const ShareConversationModal = ({
   close,
@@ -29,6 +31,7 @@ export const ShareConversationModal = ({
   conversationId: string;
 }) => {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
 
   const domain = window.location.origin;
 
@@ -86,7 +89,7 @@ export const ShareConversationModal = ({
       sourcePath && (payload.source = sourcePath.value);
     }
     conversationService
-      .shareConversation(isPromptable, payload)
+      .shareConversation(isPromptable, payload, token)
       .then((res) => {
         return res.json();
       })

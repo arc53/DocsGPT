@@ -1,15 +1,30 @@
-import { Routes, Route } from 'react-router-dom';
-import Navigation from './Navigation';
-import Conversation from './conversation/Conversation';
-import About from './About';
-import PageNotFound from './PageNotFound';
-import { useMediaQuery } from './hooks';
-import { useState } from 'react';
-import Setting from './settings';
 import './locale/i18n';
-import { Outlet } from 'react-router-dom';
+
+import { useState } from 'react';
+import { Outlet, Route, Routes } from 'react-router-dom';
+
+import About from './About';
+import Spinner from './components/Spinner';
+import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
-import { useDarkTheme } from './hooks';
+import { useDarkTheme, useMediaQuery } from './hooks';
+import useTokenAuth from './hooks/useTokenAuth';
+import Navigation from './Navigation';
+import PageNotFound from './PageNotFound';
+import Setting from './settings';
+
+function AuthWrapper({ children }: { children: React.ReactNode }) {
+  const { isAuthLoading } = useTokenAuth();
+
+  if (isAuthLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function MainLayout() {
   const { isMobile } = useMediaQuery();
@@ -39,7 +54,13 @@ export default function App() {
   return (
     <div className="h-full relative overflow-auto">
       <Routes>
-        <Route element={<MainLayout />}>
+        <Route
+          element={
+            <AuthWrapper>
+              <MainLayout />
+            </AuthWrapper>
+          }
+        >
           <Route index element={<Conversation />} />
           <Route path="/about" element={<About />} />
           <Route path="/settings" element={<Setting />} />
