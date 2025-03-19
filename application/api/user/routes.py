@@ -1368,22 +1368,22 @@ class GetMessageAnalytics(Resource):
             group_format = "%Y-%m-%d"
 
         try:
+            match_stage = {
+                "$match": {
+                    "user": user,
+                }
+            }
+            if api_key:
+                match_stage["$match"]["api_key"] = api_key
+                
             pipeline = [
-                # Initial match for user and API key if provided
-                {
-                    "$match": {
-                        "user": user,
-                        "api_key": api_key if api_key else {"$exists": False},
-                    }
-                },
+                match_stage,
                 {"$unwind": "$queries"},
-                # Match queries within the time range
                 {
                     "$match": {
                         "queries.timestamp": {"$gte": start_date, "$lte": end_date}
                     }
                 },
-                # Group by formatted timestamp
                 {
                     "$group": {
                         "_id": {
@@ -1395,7 +1395,6 @@ class GetMessageAnalytics(Resource):
                         "count": {"$sum": 1},
                     }
                 },
-                # Sort by timestamp
                 {"$sort": {"_id": 1}},
             ]
 
@@ -1546,8 +1545,6 @@ class GetTokenAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-            else:
-                match_stage["$match"]["api_key"] = {"$exists": False}
 
             token_usage_data = token_usage_collection.aggregate(
                 [
@@ -1683,10 +1680,7 @@ class GetFeedbackAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-            else:
-                match_stage["$match"]["api_key"] = {"$exists": False}
 
-            # Unwind the queries array to process each query separately
             pipeline = [
                 match_stage,
                 {"$unwind": "$queries"},
