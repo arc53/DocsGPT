@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
 import conversationService from './api/services/conversationService';
-import userService from './api/services/userService';
 import Add from './assets/add.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Hamburger from './assets/hamburger.svg';
@@ -13,8 +12,6 @@ import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
 import SettingGear from './assets/settingGear.svg';
 import Twitter from './assets/TwitterX.svg';
-import UploadIcon from './assets/upload.svg';
-import SourceDropdown from './components/SourceDropdown';
 import {
   setConversation,
   updateConversationId,
@@ -24,26 +21,18 @@ import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
 import DeleteConvModal from './modals/DeleteConvModal';
-import { ActiveState, Doc } from './models/misc';
-import { getConversations, getDocs } from './preferences/preferenceApi';
+import { getConversations } from './preferences/preferenceApi';
 import {
   selectApiKeyStatus,
   selectConversationId,
   selectConversations,
   selectModalStateDeleteConv,
-  selectSelectedDocs,
-  selectSourceDocs,
-  selectPaginatedDocuments,
   setConversations,
   setModalStateDeleteConv,
-  setSelectedDocs,
-  setSourceDocs,
-  setPaginatedDocuments,
 } from './preferences/preferenceSlice';
 import Spinner from './assets/spinner.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
 import { selectQueries } from './conversation/conversationSlice';
-import Upload from './upload/Upload';
 import Help from './components/Help';
 
 interface NavigationProps {
@@ -54,25 +43,17 @@ interface NavigationProps {
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const queries = useSelector(selectQueries);
-  const docs = useSelector(selectSourceDocs);
-  const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
-  const paginatedDocuments = useSelector(selectPaginatedDocuments);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
-  const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
   const isApiKeySet = useSelector(selectApiKeyStatus);
 
-  const [uploadModalState, setUploadModalState] =
-    useState<ActiveState>('INACTIVE');
-
   const navRef = useRef(null);
-
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -113,32 +94,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .then(() => {
         fetchConversations();
         resetConversation();
-      })
-      .catch((error) => console.error(error));
-  };
-
-  const handleDeleteClick = (doc: Doc) => {
-    userService
-      .deletePath(doc.id ?? '')
-      .then(() => {
-        return getDocs();
-      })
-      .then((updatedDocs) => {
-        dispatch(setSourceDocs(updatedDocs));
-        const updatedPaginatedDocs = paginatedDocuments?.filter(
-          (document) => document.id !== doc.id,
-        );
-        dispatch(
-          setPaginatedDocuments(updatedPaginatedDocs || paginatedDocuments),
-        );
-        dispatch(
-          setSelectedDocs(
-            Array.isArray(updatedDocs) &&
-              updatedDocs?.find(
-                (doc: Doc) => doc.name.toLowerCase() === 'default',
-              ),
-          ),
-        );
       })
       .catch((error) => console.error(error));
   };
@@ -202,7 +157,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   return (
     <>
       {!navOpen && (
-        <div className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block">
+        <div className="duration-25 absolute top-3 left-3 z-20 hidden transition-all md:block">
           <div className="flex gap-3 items-center">
             <button
               onClick={() => {
@@ -292,7 +247,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
+          <p className="text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
             {t('newChat')}
           </p>
         </NavLink>
@@ -311,7 +266,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div>
-              <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
+              <div className="my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
@@ -338,37 +293,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
         </div>
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
-          <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
-            <div className="relative my-4 mx-4 flex gap-4 items-center">
-              <SourceDropdown
-                options={docs}
-                selectedDocs={selectedDocs}
-                setSelectedDocs={setSelectedDocs}
-                isDocsListOpen={isDocsListOpen}
-                setIsDocsListOpen={setIsDocsListOpen}
-                handleDeleteClick={handleDeleteClick}
-                handlePostDocumentSelect={(option?: string) => {
-                  if (isMobile) {
-                    setNavOpen(!navOpen);
-                  }
-                }}
-              />
-              <img
-                className="hover:cursor-pointer"
-                src={UploadIcon}
-                width={28}
-                height={25}
-                alt="Upload document"
-                onClick={() => {
-                  setUploadModalState('ACTIVE');
-                  if (isMobile) {
-                    setNavOpen(!navOpen);
-                  }
-                }}
-              ></img>
-            </div>
-            <p className="ml-5 mt-3 text-sm font-semibold">{t('sourceDocs')}</p>
-          </div>
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
               onClick={() => {
@@ -389,7 +313,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 alt="Settings"
                 className="ml-2 w- filter dark:invert"
               />
-              <p className="my-auto text-sm text-eerie-black  dark:text-white">
+              <p className="my-auto text-sm text-eerie-black dark:text-white">
                 {t('settings.label')}
               </p>
             </NavLink>
@@ -397,14 +321,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <div className="flex flex-col justify-end text-eerie-black dark:text-white">
             <div className="flex justify-between items-center py-1">
               <Help />
-
               <div className="flex items-center gap-1 pr-4">
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/WHJdfbQDR4'}
-                  className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                  }
+                  className="rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]"
                 >
                   <img
                     src={Discord}
@@ -463,15 +384,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         setModalState={setModalStateDeleteConv}
         handleDeleteAllConv={handleDeleteAllConversations}
       />
-      {uploadModalState === 'ACTIVE' && (
-        <Upload
-          receivedFile={[]}
-          setModalState={setUploadModalState}
-          isOnboarding={false}
-          renderTab={null}
-          close={() => setUploadModalState('INACTIVE')}
-        ></Upload>
-      )}
     </>
   );
 }
