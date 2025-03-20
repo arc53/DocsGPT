@@ -11,6 +11,7 @@ import {
   selectSourceDocs,
   setPaginatedDocuments,
   setSourceDocs,
+  selectToken,
 } from '../preferences/preferenceSlice';
 import Analytics from './Analytics';
 import APIKeys from './APIKeys';
@@ -28,6 +29,7 @@ export default function Settings() {
     null,
   );
 
+  const token = useSelector(selectToken);
   const documents = useSelector(selectSourceDocs);
   const paginatedDocuments = useSelector(selectPaginatedDocuments);
   const updateWidgetScreenshot = (screenshot: File | null) => {
@@ -41,7 +43,7 @@ export default function Settings() {
 
   const handleDeleteClick = (index: number, doc: Doc) => {
     userService
-      .deletePath(doc.id ?? '')
+      .deletePath(doc.id ?? '', token)
       .then((response) => {
         if (response.ok && documents) {
           if (paginatedDocuments) {

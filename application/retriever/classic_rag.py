@@ -17,6 +17,7 @@ class ClassicRAG(BaseRetriever):
         user_api_key=None,
         llm_name=settings.LLM_NAME,
         api_key=settings.API_KEY,
+        decoded_token=None,
     ):
         self.original_question = ""
         self.chat_history = chat_history if chat_history is not None else []
@@ -37,10 +38,14 @@ class ClassicRAG(BaseRetriever):
         self.llm_name = llm_name
         self.api_key = api_key
         self.llm = LLMCreator.create_llm(
-            self.llm_name, api_key=self.api_key, user_api_key=self.user_api_key
+            self.llm_name,
+            api_key=self.api_key,
+            user_api_key=self.user_api_key,
+            decoded_token=decoded_token,
         )
         self.question = self._rephrase_query()
         self.vectorstore = source["active_docs"] if "active_docs" in source else None
+        self.decoded_token = decoded_token
 
     def _rephrase_query(self):
         if (

@@ -1,5 +1,7 @@
 const endpoints = {
   USER: {
+    CONFIG: '/api/config',
+    NEW_TOKEN: '/api/generate_token',
     DOCS: '/api/sources',
     DOCS_CHECK: '/api/docs_check',
     DOCS_PAGINATED: '/api/sources/paginated',

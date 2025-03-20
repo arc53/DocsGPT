@@ -1,20 +1,22 @@
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { getDocs } from '../preferences/preferenceApi';
 import { Doc } from '../models/misc';
+import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSelectedDocs,
+  selectToken,
   setSelectedDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 
 export default function useDefaultDocument() {
   const dispatch = useDispatch();
+  const token = useSelector(selectToken);
   const selectedDoc = useSelector(selectSelectedDocs);
 
   const fetchDocs = () => {
-    getDocs().then((data) => {
+    getDocs(token).then((data) => {
       dispatch(setSourceDocs(data));
       if (!selectedDoc)
         Array.isArray(data) &&

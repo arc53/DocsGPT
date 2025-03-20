@@ -9,10 +9,21 @@ from application.llm.llm_creator import LLMCreator
 
 
 class BaseAgent:
-    def __init__(self, endpoint, llm_name, gpt_model, api_key, user_api_key=None):
+    def __init__(
+        self,
+        endpoint,
+        llm_name,
+        gpt_model,
+        api_key,
+        user_api_key=None,
+        decoded_token=None,
+    ):
         self.endpoint = endpoint
         self.llm = LLMCreator.create_llm(
-            llm_name, api_key=api_key, user_api_key=user_api_key
+            llm_name,
+            api_key=api_key,
+            user_api_key=user_api_key,
+            decoded_token=decoded_token,
         )
         self.llm_handler = get_llm_handler(llm_name)
         self.gpt_model = gpt_model

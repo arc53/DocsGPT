@@ -9,6 +9,7 @@ from application.llm.premai import PremAILLM
 from application.llm.google_ai import GoogleLLM
 from application.llm.novita import NovitaLLM
 
+
 class LLMCreator:
     llms = {
         "openai": OpenAILLM,
@@ -21,12 +22,14 @@ class LLMCreator:
         "premai": PremAILLM,
         "groq": GroqLLM,
         "google": GoogleLLM,
-        "novita": NovitaLLM
+        "novita": NovitaLLM,
     }
 
     @classmethod
-    def create_llm(cls, type, api_key, user_api_key, *args, **kwargs):
+    def create_llm(cls, type, api_key, user_api_key, decoded_token, *args, **kwargs):
         llm_class = cls.llms.get(type.lower())
         if not llm_class:
             raise ValueError(f"No LLM class found for type {type}")
-        return llm_class(api_key, user_api_key, *args, **kwargs)
+        return llm_class(
+            api_key, user_api_key, decoded_token=decoded_token, *args, **kwargs
+        )

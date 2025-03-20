@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Trash from '../assets/trash.svg';
-import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
-import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
-import ConfirmationModal from '../modals/ConfirmationModal';
-import { APIKeyData } from './types';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
+import ConfirmationModal from '../modals/ConfirmationModal';
+import CreateAPIKeyModal from '../modals/CreateAPIKeyModal';
+import SaveAPIKeyModal from '../modals/SaveAPIKeyModal';
+import { selectToken } from '../preferences/preferenceSlice';
+import { APIKeyData } from './types';
 
 export default function APIKeys() {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const [isCreateModalOpen, setCreateModal] = useState(false);
   const [isSaveKeyModalOpen, setSaveKeyModal] = useState(false);
   const [newKey, setNewKey] = useState('');
@@ -25,7 +28,7 @@ export default function APIKeys() {
   const handleFetchKeys = async () => {
     setLoading(true);
     try {
-      const response = await userService.getAPIKeys();
+      const response = await userService.getAPIKeys(token);
       if (!response.ok) {
         throw new Error('Failed to fetch API Keys');
       }
@@ -41,7 +44,7 @@ export default function APIKeys() {
   const handleDeleteKey = (id: string) => {
     setLoading(true);
     userService
-      .deleteAPIKey({ id })
+      .deleteAPIKey({ id }, token)
       .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to delete API Key');
@@ -71,7 +74,7 @@ export default function APIKeys() {
   }) => {
     setLoading(true);
     userService
-      .createAPIKey(payload)
+      .createAPIKey(payload, token)
       .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to create API Key');

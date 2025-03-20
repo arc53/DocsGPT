@@ -1,35 +1,34 @@
 import { useEffect, useState } from 'react';
+import { Helmet } from 'react-helmet';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
-import ConversationMessages from './ConversationMessages';
-import MessageInput from '../components/MessageInput';
+
 import conversationService from '../api/services/conversationService';
+import MessageInput from '../components/MessageInput';
+import { selectToken } from '../preferences/preferenceSlice';
+import { AppDispatch } from '../store';
+import { formatDate } from '../utils/dateTimeUtils';
+import ConversationMessages from './ConversationMessages';
 import {
-  selectClientAPIKey,
-  setClientApiKey,
-  updateQuery,
   addQuery,
   fetchSharedAnswer,
-  selectStatus,
-} from './sharedConversationSlice';
-import { setIdentifier, setFetchedData } from './sharedConversationSlice';
-
-import { useDispatch } from 'react-redux';
-import { AppDispatch } from '../store';
-
-import {
+  selectClientAPIKey,
   selectDate,
-  selectTitle,
   selectQueries,
+  selectStatus,
+  selectTitle,
+  setClientApiKey,
+  setFetchedData,
+  setIdentifier,
+  updateQuery,
 } from './sharedConversationSlice';
-import { useSelector } from 'react-redux';
-import { Helmet } from 'react-helmet';
-import { formatDate } from '../utils/dateTimeUtils';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();
   const { identifier } = useParams(); //identifier is a uuid, not conversationId
 
+  const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const title = useSelector(selectTitle);
   const date = useSelector(selectDate);
@@ -56,7 +55,7 @@ export const SharedConversation = () => {
   const fetchQueries = () => {
     identifier &&
       conversationService
-        .getSharedConversation(identifier || '')
+        .getSharedConversation(identifier || '', token)
         .then((res) => {
           if (res.status === 404 || res.status === 400)
             navigate('/pagenotfound');

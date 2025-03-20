@@ -10,6 +10,7 @@ current_dir = os.path.dirname(
 
 
 class Settings(BaseSettings):
+    AUTH_TYPE: Optional[str] = None
     LLM_NAME: str = "docsgpt"
     MODEL_NAME: Optional[str] = (
         None  # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
@@ -97,6 +98,8 @@ class Settings(BaseSettings):
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
+
+    JWT_SECRET_KEY: str = ""
 
 
 path = Path(__file__).parent.parent.absolute()

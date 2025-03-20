@@ -9,21 +9,22 @@ import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
+import WrapperModal from '../modals/WrapperModal';
 import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import {
+  selectSourceDocs,
+  selectToken,
   setSelectedDocs,
   setSourceDocs,
-  selectSourceDocs,
 } from '../preferences/preferenceSlice';
-import WrapperModal from '../modals/WrapperModal';
+import { IngestorDefaultConfigs } from '../upload/types/ingestor';
 import {
-  IngestorType,
+  FormField,
   IngestorConfig,
   IngestorFormSchemas,
-  FormField,
+  IngestorType,
 } from './types/ingestor';
-import { IngestorDefaultConfigs } from '../upload/types/ingestor';
 
 function Upload({
   receivedFile = [],
@@ -40,6 +41,7 @@ function Upload({
   close: () => void;
   onSuccessfulUpload?: () => void;
 }) {
+  const token = useSelector(selectToken);
   const [docName, setDocName] = useState(receivedFile[0]?.name);
   const [remoteName, setRemoteName] = useState('');
   const [files, setfiles] = useState<File[]>(receivedFile);
@@ -297,12 +299,12 @@ function Upload({
       if ((progress?.percentage ?? 0) < 100) {
         timeoutID = setTimeout(() => {
           userService
-            .getTaskStatus(progress?.taskId as string)
+            .getTaskStatus(progress?.taskId as string, null)
             .then((data) => data.json())
             .then((data) => {
               if (data.status == 'SUCCESS') {
                 if (data.result.limited === true) {
-                  getDocs().then((data) => {
+                  getDocs(token).then((data) => {
                     dispatch(setSourceDocs(data));
                     dispatch(
                       setSelectedDocs(
@@ -322,7 +324,7 @@ function Upload({
                       },
                   );
                 } else {
-                  getDocs().then((data) => {
+                  getDocs(token).then((data) => {
                     dispatch(setSourceDocs(data));
                     const docIds = new Set(
                       (Array.isArray(sourceDocs) &&
@@ -413,6 +415,7 @@ function Upload({
       }, 3000);
     };
     xhr.open('POST', `${apiHost + '/api/upload'}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
 
