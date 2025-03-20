@@ -1,10 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDarkTheme } from '../hooks';
+import { useSelector } from 'react-redux';
 import PaperPlane from '../assets/paper_plane.svg';
 import SourceIcon from '../assets/source.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
+import SourcesPopup from './SourcesPopup';
+import { selectSelectedDocs } from '../preferences/preferenceSlice';
+import { ActiveState } from '../models/misc';
+import Upload from '../upload/Upload';
+import ClipIcon from '../assets/clip.svg';
 
 interface MessageInputProps {
   value: string;
@@ -22,6 +28,12 @@ export default function MessageInput({
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sourceButtonRef = useRef<HTMLButtonElement>(null);
+  const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
+  const [uploadModalState, setUploadModalState] =
+    useState<ActiveState>('INACTIVE');
+
+  const selectedDocs = useSelector(selectSelectedDocs);
 
   const handleInput = () => {
     if (inputRef.current) {
@@ -50,6 +62,10 @@ export default function MessageInput({
     }
   };
 
+  const handlePostDocumentSelect = (doc: any) => {
+    console.log('Selected document:', doc);
+  };
+
   return (
     <div className="flex flex-col w-full mx-2">
       <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3 relative">
@@ -71,14 +87,30 @@ export default function MessageInput({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-t border-[#EEEEEE] dark:border-[#333333]">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           <div className="flex-grow flex flex-wrap gap-2">
-            <button className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors">
+            <button
+              ref={sourceButtonRef}
+              className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors"
+              onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
+            >
               <img src={SourceIcon} alt="Sources" className="w-4 h-4 mr-1.5" />
               <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium">
-                Sources
+                {selectedDocs
+                  ? selectedDocs.name
+                  : t('conversation.sources.title')}
               </span>
             </button>
+            <button
+              className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors"
+              onClick={() => setUploadModalState('ACTIVE')}
+            >
+              <img src={ClipIcon} alt="Attach" className="w-4 h-4 mr-1.5" />
+              <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium">
+                Attach
+              </span>
+            </button>
+
             {/* Additional badges can be added here in the future */}
           </div>
 
@@ -104,6 +136,24 @@ export default function MessageInput({
           </button>
         </div>
       </div>
+
+      <SourcesPopup
+        isOpen={isSourcesPopupOpen}
+        onClose={() => setIsSourcesPopupOpen(false)}
+        anchorRef={sourceButtonRef}
+        handlePostDocumentSelect={handlePostDocumentSelect}
+        setUploadModalState={setUploadModalState}
+      />
+
+      {uploadModalState === 'ACTIVE' && (
+        <Upload
+          receivedFile={[]}
+          setModalState={setUploadModalState}
+          isOnboarding={false}
+          renderTab={null}
+          close={() => setUploadModalState('INACTIVE')}
+        />
+      )}
     </div>
   );
 }
