@@ -17,8 +17,12 @@ class ClassicAgent(BaseAgent):
         user_api_key=None,
         prompt="",
         chat_history=None,
+        decoded_token=None,
     ):
-        super().__init__(endpoint, llm_name, gpt_model, api_key, user_api_key)
+        super().__init__(
+            endpoint, llm_name, gpt_model, api_key, user_api_key, decoded_token
+        )
+        self.user = decoded_token.get("sub")
         self.prompt = prompt
         self.chat_history = chat_history if chat_history is not None else []
 
@@ -73,7 +77,7 @@ class ClassicAgent(BaseAgent):
                         )
         messages_combine.append({"role": "user", "content": query})
 
-        tools_dict = self._get_user_tools()
+        tools_dict = self._get_user_tools(self.user)
         self._prepare_tools(tools_dict)
 
         resp = self._llm_gen(messages_combine, log_context)

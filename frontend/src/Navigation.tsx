@@ -2,28 +2,35 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
+
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Add from './assets/add.svg';
-import openNewChat from './assets/openNewChat.svg';
-import Hamburger from './assets/hamburger.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
+import Hamburger from './assets/hamburger.svg';
+import openNewChat from './assets/openNewChat.svg';
 import SettingGear from './assets/settingGear.svg';
+import SpinnerDark from './assets/spinner-dark.svg';
+import Spinner from './assets/spinner.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
+import Help from './components/Help';
 import SourceDropdown from './components/SourceDropdown';
 import {
+  handleAbort,
+  selectQueries,
   setConversation,
   updateConversationId,
-  handleAbort,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDefaultDocument from './hooks/useDefaultDocument';
+import useTokenAuth from './hooks/useTokenAuth';
 import DeleteConvModal from './modals/DeleteConvModal';
+import JWTModal from './modals/JWTModal';
 import { ActiveState, Doc } from './models/misc';
 import { getConversations, getDocs } from './preferences/preferenceApi';
 import {
@@ -31,20 +38,17 @@ import {
   selectConversationId,
   selectConversations,
   selectModalStateDeleteConv,
+  selectPaginatedDocuments,
   selectSelectedDocs,
   selectSourceDocs,
-  selectPaginatedDocuments,
+  selectToken,
   setConversations,
   setModalStateDeleteConv,
+  setPaginatedDocuments,
   setSelectedDocs,
   setSourceDocs,
-  setPaginatedDocuments,
 } from './preferences/preferenceSlice';
-import Spinner from './assets/spinner.svg';
-import SpinnerDark from './assets/spinner-dark.svg';
-import { selectQueries } from './conversation/conversationSlice';
 import Upload from './upload/Upload';
-import Help from './components/Help';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -53,6 +57,7 @@ interface NavigationProps {
 
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
+  const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const docs = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -67,6 +72,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
   const isApiKeySet = useSelector(selectApiKeyStatus);
+
+  const { showTokenModal, handleTokenSubmit } = useTokenAuth();
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -86,7 +93,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   async function fetchConversations() {
     dispatch(setConversations({ ...conversations, loading: true }));
-    return await getConversations()
+    return await getConversations(token)
       .then((fetchedConversations) => {
         dispatch(setConversations(fetchedConversations));
       })
@@ -99,7 +106,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const handleDeleteAllConversations = () => {
     setIsDeletingConversation(true);
     conversationService
-      .deleteAll()
+      .deleteAll(token)
       .then(() => {
         fetchConversations();
       })
@@ -109,7 +116,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const handleDeleteConversation = (id: string) => {
     setIsDeletingConversation(true);
     conversationService
-      .delete(id, {})
+      .delete(id, {}, token)
       .then(() => {
         fetchConversations();
         resetConversation();
@@ -119,9 +126,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const handleDeleteClick = (doc: Doc) => {
     userService
-      .deletePath(doc.id ?? '')
+      .deletePath(doc.id ?? '', token)
       .then(() => {
-        return getDocs();
+        return getDocs(token);
       })
       .then((updatedDocs) => {
         dispatch(setSourceDocs(updatedDocs));
@@ -145,7 +152,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const handleConversationClick = (index: string) => {
     conversationService
-      .getConversation(index)
+      .getConversation(index, token)
       .then((response) => response.json())
       .then((data) => {
         navigate('/');
@@ -177,7 +184,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     id: string;
   }) {
     await conversationService
-      .update(updatedConversation)
+      .update(updatedConversation, token)
       .then((response) => response.json())
       .then((data) => {
         if (data) {
@@ -197,8 +204,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   useEffect(() => {
     setNavOpen(!isMobile);
   }, [isMobile]);
-  useDefaultDocument();
 
+  useDefaultDocument();
   return (
     <>
       {!navOpen && (
@@ -472,6 +479,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           close={() => setUploadModalState('INACTIVE')}
         ></Upload>
       )}
+      <JWTModal
+        modalState={showTokenModal ? 'ACTIVE' : 'INACTIVE'}
+        handleTokenSubmit={handleTokenSubmit}
+      />
     </>
   );
 }

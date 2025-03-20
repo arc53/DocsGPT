@@ -19,6 +19,7 @@ export interface Preference {
     data: { name: string; id: string }[] | null;
     loading: boolean;
   };
+  token: string | null;
   modalState: ActiveState;
   paginatedDocuments: Doc[] | null;
 }
@@ -42,6 +43,7 @@ const initialState: Preference = {
     data: null,
     loading: false,
   },
+  token: localStorage.getItem('authToken') || null,
   modalState: 'INACTIVE',
   paginatedDocuments: null,
 };
@@ -65,6 +67,9 @@ export const prefSlice = createSlice({
     setConversations: (state, action) => {
       state.conversations = action.payload;
     },
+    setToken: (state, action) => {
+      state.token = action.payload;
+    },
     setPrompt: (state, action) => {
       state.prompt = action.payload;
     },
@@ -85,6 +90,7 @@ export const {
   setSelectedDocs,
   setSourceDocs,
   setConversations,
+  setToken,
   setPrompt,
   setChunks,
   setTokenLimit,
@@ -157,6 +163,7 @@ export const selectConversations = (state: RootState) =>
   state.preference.conversations;
 export const selectConversationId = (state: RootState) =>
   state.conversation.conversationId;
+export const selectToken = (state: RootState) => state.preference.token;
 export const selectPrompt = (state: RootState) => state.preference.prompt;
 export const selectChunks = (state: RootState) => state.preference.chunks;
 export const selectTokenLimit = (state: RootState) =>

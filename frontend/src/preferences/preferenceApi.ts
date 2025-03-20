@@ -3,9 +3,9 @@ import userService from '../api/services/userService';
 import { Doc, GetDocsResponse } from '../models/misc';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
-export async function getDocs(): Promise<Doc[] | null> {
+export async function getDocs(token: string | null): Promise<Doc[] | null> {
   try {
-    const response = await userService.getDocs();
+    const response = await userService.getDocs(token);
     const data = await response.json();
 
     const docs: Doc[] = [];
@@ -26,10 +26,11 @@ export async function getDocsWithPagination(
   pageNumber = 1,
   rowsPerPage = 10,
   searchTerm = '',
+  token: string | null,
 ): Promise<GetDocsResponse | null> {
   try {
     const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
-    const response = await userService.getDocsWithPagination(query);
+    const response = await userService.getDocsWithPagination(query, token);
     const data = await response.json();
     const docs: Doc[] = [];
     Array.isArray(data.paginated) &&
@@ -48,12 +49,12 @@ export async function getDocsWithPagination(
   }
 }
 
-export async function getConversations(): Promise<{
+export async function getConversations(token: string | null): Promise<{
   data: { name: string; id: string }[] | null;
   loading: boolean;
 }> {
   try {
-    const response = await conversationService.getConversations();
+    const response = await conversationService.getConversations(token);
     const data = await response.json();
 
     const conversations: { name: string; id: string }[] = [];
@@ -100,8 +101,11 @@ export function setLocalRecentDocs(doc: Doc | null): void {
     docPath = 'local' + '/' + doc.name + '/';
   }
   userService
-    .checkDocs({
-      docs: docPath,
-    })
+    .checkDocs(
+      {
+        docs: docPath,
+      },
+      null,
+    )
     .then((response) => response.json());
 }

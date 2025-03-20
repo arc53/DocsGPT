@@ -2,63 +2,74 @@ import apiClient from '../client';
 import endpoints from '../endpoints';
 
 const userService = {
-  getDocs: (): Promise<any> => apiClient.get(`${endpoints.USER.DOCS}`),
-  getDocsWithPagination: (query: string): Promise<any> =>
-    apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`),
-  checkDocs: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.DOCS_CHECK, data),
-  getAPIKeys: (): Promise<any> => apiClient.get(endpoints.USER.API_KEYS),
-  createAPIKey: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.CREATE_API_KEY, data),
-  deleteAPIKey: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.DELETE_API_KEY, data),
-  getPrompts: (): Promise<any> => apiClient.get(endpoints.USER.PROMPTS),
-  createPrompt: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.CREATE_PROMPT, data),
-  deletePrompt: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.DELETE_PROMPT, data),
-  updatePrompt: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.UPDATE_PROMPT, data),
-  getSinglePrompt: (id: string): Promise<any> =>
-    apiClient.get(endpoints.USER.SINGLE_PROMPT(id)),
-  deletePath: (docPath: string): Promise<any> =>
-    apiClient.get(endpoints.USER.DELETE_PATH(docPath)),
-  getTaskStatus: (task_id: string): Promise<any> =>
-    apiClient.get(endpoints.USER.TASK_STATUS(task_id)),
-  getMessageAnalytics: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data),
-  getTokenAnalytics: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data),
-  getFeedbackAnalytics: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data),
-  getLogs: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.LOGS, data),
-  manageSync: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.MANAGE_SYNC, data),
-  getAvailableTools: (): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS),
-  getUserTools: (): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_USER_TOOLS),
-  createTool: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.CREATE_TOOL, data),
-  updateToolStatus: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.UPDATE_TOOL_STATUS, data),
-  updateTool: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.UPDATE_TOOL, data),
-  deleteTool: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.DELETE_TOOL, data),
+  getConfig: (): Promise<any> => apiClient.get(endpoints.USER.CONFIG, null),
+  getNewToken: (): Promise<any> =>
+    apiClient.get(endpoints.USER.NEW_TOKEN, null),
+  getDocs: (token: string | null): Promise<any> =>
+    apiClient.get(`${endpoints.USER.DOCS}`, token),
+  getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
+    apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token),
+  checkDocs: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DOCS_CHECK, data, token),
+  getAPIKeys: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.API_KEYS, token),
+  createAPIKey: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.CREATE_API_KEY, data, token),
+  deleteAPIKey: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_API_KEY, data, token),
+  getPrompts: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.PROMPTS, token),
+  createPrompt: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.CREATE_PROMPT, data, token),
+  deletePrompt: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_PROMPT, data, token),
+  updatePrompt: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_PROMPT, data, token),
+  getSinglePrompt: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
+  deletePath: (docPath: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
+  getTaskStatus: (task_id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.TASK_STATUS(task_id), token),
+  getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
+  getTokenAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data, token),
+  getFeedbackAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data, token),
+  getLogs: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.LOGS, data, token),
+  manageSync: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
+  getAvailableTools: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
+  getUserTools: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.GET_USER_TOOLS, token),
+  createTool: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.CREATE_TOOL, data, token),
+  updateToolStatus: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_TOOL_STATUS, data, token),
+  updateTool: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_TOOL, data, token),
+  deleteTool: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_TOOL, data, token),
   getDocumentChunks: (
     docId: string,
     page: number,
     perPage: number,
+    token: string | null,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage)),
-  addChunk: (data: any): Promise<any> =>
-    apiClient.post(endpoints.USER.ADD_CHUNK, data),
-  deleteChunk: (docId: string, chunkId: string): Promise<any> =>
-    apiClient.delete(endpoints.USER.DELETE_CHUNK(docId, chunkId)),
-  updateChunk: (data: any): Promise<any> =>
-    apiClient.put(endpoints.USER.UPDATE_CHUNK, data),
+    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage), token),
+  addChunk: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
+  deleteChunk: (
+    docId: string,
+    chunkId: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.delete(endpoints.USER.DELETE_CHUNK(docId, chunkId), token),
+  updateChunk: (data: any, token: string | null): Promise<any> =>
+    apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
 };
 
 export default userService;

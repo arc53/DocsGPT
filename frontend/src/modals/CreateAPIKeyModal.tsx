@@ -6,7 +6,7 @@ import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import { CreateAPIKeyModalProps, Doc } from '../models/misc';
-import { selectSourceDocs } from '../preferences/preferenceSlice';
+import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 import WrapperModal from './WrapperModal';
 
 const embeddingsName =
@@ -18,6 +18,7 @@ export default function CreateAPIKeyModal({
   createAPIKey,
 }: CreateAPIKeyModalProps) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const docs = useSelector(selectSourceDocs);
 
   const [APIKeyName, setAPIKeyName] = React.useState<string>('');
@@ -60,7 +61,7 @@ export default function CreateAPIKeyModal({
   React.useEffect(() => {
     const handleFetchPrompts = async () => {
       try {
-        const response = await userService.getPrompts();
+        const response = await userService.getPrompts(token);
         if (!response.ok) {
           throw new Error('Failed to fetch prompts');
         }

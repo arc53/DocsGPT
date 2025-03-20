@@ -69,6 +69,7 @@ pymongo==4.10.1
 pypdf==5.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
+python-jose==3.4.0
 python-pptx==1.0.2
 qdrant-client==1.13.2
 redis==5.2.1
