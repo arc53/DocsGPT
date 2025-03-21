@@ -1,15 +1,16 @@
 import json
-from application.retriever.base import BaseRetriever
+
+from langchain_community.tools import BraveSearch
+
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
-from langchain_community.tools import BraveSearch
+from application.retriever.base import BaseRetriever
 
 
 class BraveRetSearch(BaseRetriever):
 
     def __init__(
         self,
-        question,
         source,
         chat_history,
         prompt,
@@ -19,7 +20,7 @@ class BraveRetSearch(BaseRetriever):
         user_api_key=None,
         decoded_token=None,
     ):
-        self.question = question
+        self.question = ""
         self.source = source
         self.chat_history = chat_history
         self.prompt = prompt
@@ -93,7 +94,9 @@ class BraveRetSearch(BaseRetriever):
         for line in completion:
             yield {"answer": str(line)}
 
-    def search(self):
+    def search(self, query: str = ""):
+        if query:
+            self.question = query
         return self._get_data()
 
     def get_params(self):
