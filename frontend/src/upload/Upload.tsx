@@ -471,6 +471,7 @@ function Upload({
       }, 3000);
     };
     xhr.open('POST', `${apiHost}/api/remote`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
