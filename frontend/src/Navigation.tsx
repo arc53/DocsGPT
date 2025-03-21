@@ -327,7 +327,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     key={conversation.id}
                     conversation={conversation}
                     selectConversation={(id) => handleConversationClick(id)}
-                    onCoversationClick={() => {
+                    onConversationClick={() => {
                       if (isMobile) {
                         setNavOpen(false);
                       }
