@@ -118,7 +118,8 @@
       "selectToolSetup": "Select a tool to set up",
       "settingsIconAlt": "Settings icon",
       "configureToolAria": "Configure {toolName}",
-      "toggleToolAria": "Toggle {toolName}"
+      "toggleToolAria": "Toggle {toolName}",
+      "manageTools": "Go to Tools"
     }
   },
   "modals": {
