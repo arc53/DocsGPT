@@ -63,7 +63,7 @@ export default function App() {
         >
           <Route index element={<Conversation />} />
           <Route path="/about" element={<About />} />
-          <Route path="/settings" element={<Setting />} />
+          <Route path="/settings/*" element={<Setting />} />
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/*" element={<PageNotFound />} />
