@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -29,6 +29,31 @@ export default function ToolsPopup({
   const [searchTerm, setSearchTerm] = useState('');
   const [isDarkTheme] = useDarkTheme();
   const popupRef = useRef<HTMLDivElement>(null);
+  const [popupPosition, setPopupPosition] = useState({ bottom: 0, left: 0 });
+
+  useLayoutEffect(() => {
+    if (!isOpen || !anchorRef.current) return;
+    
+    const updatePosition = () => {
+      if (!anchorRef.current) return;
+      
+      const rect = anchorRef.current.getBoundingClientRect();
+      setPopupPosition({
+        bottom: Math.min(
+          window.innerHeight - rect.top + 10,
+          window.innerHeight - 20
+        ),
+        left: Math.min(
+          rect.left,
+          window.innerWidth - Math.min(462, window.innerWidth * 0.95) - 10
+        )
+      });
+    };
+    
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, [isOpen, anchorRef]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -91,16 +116,10 @@ export default function ToolsPopup({
   return (
     <div
       ref={popupRef}
-      className="absolute z-10 w-[462px] rounded-lg border border-light-silver dark:border-dim-gray bg-lotion dark:bg-charleston-green-2 shadow-lg"
+      className="absolute z-10 w-[462px] max-w-[95vw] rounded-lg border border-light-silver dark:border-dim-gray bg-lotion dark:bg-charleston-green-2 shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
       style={{
-        bottom: anchorRef.current
-          ? window.innerHeight -
-            anchorRef.current.getBoundingClientRect().top +
-            10
-          : 0,
-        left: anchorRef.current
-          ? anchorRef.current.getBoundingClientRect().left
-          : 0,
+        bottom: popupPosition.bottom,
+        left: popupPosition.left,
         position: 'fixed',
         zIndex: 9999,
       }}
@@ -128,7 +147,10 @@ export default function ToolsPopup({
           </div>
         ) : (
           <div className="border border-[#D9D9D9] dark:border-dim-gray rounded-md overflow-hidden">
-            <div className="h-[440px] overflow-y-auto">
+            <div 
+              className="h-[calc(min(480px,100vh-220px))] overflow-y-auto [&::-webkit-scrollbar-thumb]:bg-[#888] [&::-webkit-scrollbar-thumb]:hover:bg-[#555] [&::-webkit-scrollbar-track]:bg-[#E2E8F0] dark:[&::-webkit-scrollbar-track]:bg-[#2C2E3C]"
+             
+            >
               {userTools.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full py-8">
                   <img
@@ -153,26 +175,29 @@ export default function ToolsPopup({
                       onClick={() => updateToolStatus(tool.id, !tool.status)}
                       className="flex items-center justify-between p-3 border-b border-[#D9D9D9] dark:border-dim-gray hover:bg-gray-100 dark:hover:bg-charleston-green-3"
                     >
-                      <div className="flex items-center">
+                      <div className="flex items-center flex-grow mr-3">
                         <img
                           src={`/toolIcons/tool_${tool.name}.svg`}
                           alt={`${tool.displayName} icon`}
-                          className="h-6 w-6 mr-4"
+                          className="h-5 w-5 mr-4 flex-shrink-0"
                         />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-medium text-gray-900 dark:text-white overflow-hidden overflow-ellipsis whitespace-nowrap">
                             {tool.displayName}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center">
-                        <img
-                          src={tool.status ? CheckmarkIcon : ''}
-                          alt="Tool enabled"
-                          width={14}
-                          height={14}
-                          className={`${!tool.status && 'hidden'}`}
-                        />
+                      <div className="flex items-center flex-shrink-0">
+                        <div className={`w-4 h-4 border flex items-center justify-center p-[0.5px] dark:border-[#757783] border-[#C6C6C6]`}>
+                          {tool.status && (
+                            <img
+                              src={CheckmarkIcon}
+                              alt="Tool enabled"
+                              width={12}
+                              height={12}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))
