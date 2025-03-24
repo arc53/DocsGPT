@@ -4,9 +4,11 @@ import { useDarkTheme } from '../hooks';
 import { useSelector } from 'react-redux';
 import PaperPlane from '../assets/paper_plane.svg';
 import SourceIcon from '../assets/source.svg';
+import ToolIcon from '../assets/tool.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import SourcesPopup from './SourcesPopup';
+import ToolsPopup from './ToolsPopup';
 import { selectSelectedDocs } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import Upload from '../upload/Upload';
@@ -29,7 +31,9 @@ export default function MessageInput({
   const [isDarkTheme] = useDarkTheme();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sourceButtonRef = useRef<HTMLButtonElement>(null);
+  const toolButtonRef = useRef<HTMLButtonElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
+  const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
 
@@ -68,7 +72,7 @@ export default function MessageInput({
 
   return (
     <div className="flex flex-col w-full mx-2">
-      <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-charleston-green-3 relative">
+      <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-transparent relative">
         <div className="w-full">
           <label htmlFor="message-input" className="sr-only">
             {t('inputPlaceholder')}
@@ -80,7 +84,7 @@ export default function MessageInput({
             onChange={onChange}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-t-[23px] bg-lotion dark:bg-charleston-green-3 py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 px-6 no-scrollbar"
+            className="inputbox-style w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-t-[23px] bg-lotion dark:bg-transparent py-5 text-base leading-tight opacity-100 focus:outline-none dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 px-6 no-scrollbar"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             aria-label={t('inputPlaceholder')}
@@ -91,17 +95,28 @@ export default function MessageInput({
           <div className="flex-grow flex flex-wrap gap-2">
             <button
               ref={sourceButtonRef}
-              className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors"
+              className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[200px]"
               onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
             >
-              <img src={SourceIcon} alt="Sources" className="w-4 h-4 mr-1.5" />
-              <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium">
+              <img src={SourceIcon} alt="Sources" className="w-4 h-4 mr-1.5 flex-shrink-0" />
+              <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium truncate overflow-hidden">
                 {selectedDocs
                   ? selectedDocs.name
                   : t('conversation.sources.title')}
               </span>
             </button>
+            
             <button
+              ref={toolButtonRef}
+              className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[200px]"
+              onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
+            >
+              <img src={ToolIcon} alt="Tools" className="w-4 h-4 mr-1.5 flex-shrink-0" />
+              <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium truncate overflow-hidden">
+                {t('settings.tools.label')}
+              </span>
+            </button>
+            {/*<button
               className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors"
               onClick={() => setUploadModalState('ACTIVE')}
             >
@@ -109,7 +124,7 @@ export default function MessageInput({
               <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium">
                 Attach
               </span>
-            </button>
+            </button>*/}
 
             {/* Additional badges can be added here in the future */}
           </div>
@@ -143,6 +158,12 @@ export default function MessageInput({
         anchorRef={sourceButtonRef}
         handlePostDocumentSelect={handlePostDocumentSelect}
         setUploadModalState={setUploadModalState}
+      />
+
+      <ToolsPopup
+        isOpen={isToolsPopupOpen}
+        onClose={() => setIsToolsPopupOpen(false)}
+        anchorRef={toolButtonRef}
       />
 
       {uploadModalState === 'ACTIVE' && (
