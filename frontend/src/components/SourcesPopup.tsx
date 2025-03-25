@@ -143,13 +143,16 @@ export default function SourcesPopup({
                       {option.name}
                     </span>
                     <div className={`w-4 h-4 border flex-shrink-0 flex items-center justify-center p-[0.5px] dark:border-[#757783] border-[#C6C6C6]`}>
-                      {selectedDocs && selectedDocs.id === option.id && (
+                      {selectedDocs && 
+                        (option.id ? 
+                          selectedDocs.id === option.id :  // For documents with MongoDB IDs
+                          selectedDocs.date === option.date) &&  // For preloaded sources
                         <img
                           src={CheckIcon}
                           alt="Selected"
                           className="h-3 w-3"
                         />
-                      )}
+                      }
                     </div>
                   </div>
                 );
