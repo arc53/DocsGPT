@@ -649,7 +649,6 @@ class CombinedJson(Resource):
         user = decoded_token.get("sub")
         data = [
             {
-                "id": "default",
                 "name": "Default",
                 "date": "default",
                 "model": settings.EMBEDDINGS_NAME,
@@ -677,7 +676,6 @@ class CombinedJson(Resource):
             if "duckduck_search" in settings.RETRIEVERS_ENABLED:
                 data.append(
                     {
-                        "id": "duckduck_search",
                         "name": "DuckDuckGo Search",
                         "date": "duckduck_search",
                         "model": settings.EMBEDDINGS_NAME,
@@ -690,7 +688,6 @@ class CombinedJson(Resource):
             if "brave_search" in settings.RETRIEVERS_ENABLED:
                 data.append(
                     {
-                        "id": "brave_search",
                         "name": "Brave Search",
                         "language": "en",
                         "date": "brave_search",
