@@ -2488,50 +2488,49 @@ class StoreAttachment(Resource):
             },
         )
     )
-    @api.doc(description="Stores an attachment without vectorization or training")
+    @api.doc(description="Stores a single attachment without vectorization or training")
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         
-        files = request.files.getlist("file")
+        # Get single file instead of list
+        file = request.files.get("file")
         
-        if not files or all(file.filename == "" for file in files):
+        if not file or file.filename == "":
             return make_response(
-                jsonify({"status": "error", "message": "Missing files"}),
+                jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
 
         user = secure_filename(decoded_token.get("sub"))
-        saved_files = []
         
         try:
-            for file in files:
-                original_filename = secure_filename(file.filename)
-                folder_name = original_filename
-                
-                # Create directory structure: user/attachments/filename/
-                base_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, "attachments", folder_name)
-                os.makedirs(base_dir, exist_ok=True)
-                
-                file_path = os.path.join(base_dir, original_filename)
-                
-                # Handle filename conflicts
-                if os.path.exists(file_path):
-                    name_parts = os.path.splitext(original_filename)
-                    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                    new_filename = f"{name_parts[0]}_{timestamp}{name_parts[1]}"
-                    file_path = os.path.join(base_dir, new_filename)
-                    original_filename = new_filename
-                
-                file.save(file_path)
-                saved_files.append({"folder": folder_name, "filename": original_filename})
-                current_app.logger.info(f"Saved file: {file_path}")
+            original_filename = secure_filename(file.filename)
+            folder_name = original_filename
             
-            # Start async task to process files
+            # Create directory structure: user/attachments/filename/
+            base_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, "attachments", folder_name)
+            os.makedirs(base_dir, exist_ok=True)
+            
+            file_path = os.path.join(base_dir, original_filename)
+            
+            # Handle filename conflicts
+            if os.path.exists(file_path):
+                name_parts = os.path.splitext(original_filename)
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                new_filename = f"{name_parts[0]}_{timestamp}{name_parts[1]}"
+                file_path = os.path.join(base_dir, new_filename)
+                original_filename = new_filename
+            
+            file.save(file_path)
+            file_info = {"folder": folder_name, "filename": original_filename}
+            current_app.logger.info(f"Saved file: {file_path}")
+            
+            # Start async task to process single file
             task = store_attachment.delay(
                 os.path.abspath(os.path.join(current_dir, settings.UPLOAD_FOLDER)),
-                saved_files,
+                file_info,
                 user
             )
             
@@ -2539,7 +2538,7 @@ class StoreAttachment(Resource):
                 jsonify({
                     "success": True,
                     "task_id": task.id,
-                    "message": "Files uploaded successfully. Processing started."
+                    "message": "File uploaded successfully. Processing started."
                 }),
                 200
             )
