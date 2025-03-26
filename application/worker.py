@@ -312,3 +312,93 @@ def sync_worker(self, frequency):
         key: sync_counts[key]
         for key in ["total_sync_count", "sync_success", "sync_failure"]
     }
+
+def attachment_worker(self, directory, saved_files, user):
+    """
+    Process and store attachments without vectorization.
+    
+    Args:
+        self: Reference to the instance of the task.
+        directory (str): Base directory for storing files.
+        saved_files (list): List of dictionaries with folder and filename info.
+        user (str): User identifier.
+        
+    Returns:
+        dict: Information about processed attachments.
+    """
+    import datetime
+    import os
+    from application.utils import num_tokens_from_string
+    
+    mongo = MongoDB.get_client()
+    db = mongo["docsgpt"]
+    attachments_collection = db["attachments"]
+    
+    file_entries = []
+    total_tokens = 0
+    total_files = len(saved_files)
+    
+    job_name = saved_files[0]["folder"] if saved_files else "attachment_job"
+    logging.info(f"Processing attachments: {job_name}", extra={"user": user, "job": job_name})
+    
+    for idx, file_info in enumerate(saved_files):
+
+        progress = int(((idx + 1) / total_files) * 100)
+        self.update_state(state="PROGRESS", meta={"current": progress})
+        
+        folder_name = file_info["folder"]
+        filename = file_info["filename"]
+        
+        base_dir = os.path.join(directory, user, "attachments", folder_name)
+        file_path = os.path.join(base_dir, filename)
+        
+        logging.info(f"Processing file: {file_path}", extra={"user": user, "job": job_name})
+        
+        if not os.path.exists(file_path):
+            logging.warning(f"File not found: {file_path}", extra={"user": user, "job": job_name})
+            continue
+        
+        try:
+            reader = SimpleDirectoryReader(
+                input_files=[file_path]
+            )
+            
+            documents = reader.load_data()
+            
+            if documents:
+                content = documents[0].text
+                token_count = num_tokens_from_string(content)
+                total_tokens += token_count
+                
+                file_entries.append({
+                    "path": f"{user}/attachments/{folder_name}/{filename}",
+                    "content": content,
+                    "token_count": token_count
+                })
+                logging.info(f"Successfully processed {filename} with {token_count} tokens", 
+                             extra={"user": user, "job": job_name})
+        except Exception as e:
+            logging.error(f"Error processing file {filename}: {e}", 
+                         extra={"user": user, "job": job_name}, exc_info=True)
+
+    if file_entries:
+        attachment_id = attachments_collection.insert_one({
+            "user": user,
+            "files": file_entries,
+            "total_tokens": total_tokens,
+            "date": datetime.datetime.now(),
+        }).inserted_id
+        
+        logging.info(f"Stored attachment with ID: {attachment_id}", 
+                    extra={"user": user, "job": job_name})
+        
+        return {
+            "attachment_id": str(attachment_id),
+            "files": [{"filename": fe["filename"], "folder": fe["folder"], "path": fe["path"]} for fe in file_entries],
+            "total_tokens": total_tokens,
+            "file_contents": [{"filename": fe["filename"], "token_count": fe["token_count"]} for fe in file_entries]
+        }
+    else:
+        logging.warning("No files were successfully processed", 
+                       extra={"user": user, "job": job_name})
+        return {"error": "No files were successfully processed"}
