@@ -121,6 +121,7 @@ def save_conversation(
     conversation_id,
     question,
     response,
+    thought,
     source_log_docs,
     tool_calls,
     llm,
@@ -136,6 +137,7 @@ def save_conversation(
                 "$set": {
                     f"queries.{index}.prompt": question,
                     f"queries.{index}.response": response,
+                    f"queries.{index}.thought": thought,
                     f"queries.{index}.sources": source_log_docs,
                     f"queries.{index}.tool_calls": tool_calls,
                     f"queries.{index}.timestamp": current_time,
@@ -155,6 +157,7 @@ def save_conversation(
                     "queries": {
                         "prompt": question,
                         "response": response,
+                        "thought": thought,
                         "sources": source_log_docs,
                         "tool_calls": tool_calls,
                         "timestamp": current_time,
@@ -190,6 +193,7 @@ def save_conversation(
                 {
                     "prompt": question,
                     "response": response,
+                    "thought": thought,
                     "sources": source_log_docs,
                     "tool_calls": tool_calls,
                     "timestamp": current_time,
@@ -230,9 +234,7 @@ def complete_stream(
     should_save_conversation=True,
 ):
     try:
-        response_full = ""
-        source_log_docs = []
-        tool_calls = []
+        response_full, thought, source_log_docs, tool_calls = "", "", [], []
 
         answer = agent.gen(query=question, retriever=retriever)
 
@@ -258,6 +260,10 @@ def complete_stream(
                 tool_calls = line["tool_calls"]
                 data = json.dumps({"type": "tool_calls", "tool_calls": tool_calls})
                 yield f"data: {data}\n\n"
+            elif "thought" in line:
+                thought += line["thought"]
+                data = json.dumps({"type": "thought", "thought": line["thought"]})
+                yield f"data: {data}\n\n"
 
         if isNoneDoc:
             for doc in source_log_docs:
@@ -275,6 +281,7 @@ def complete_stream(
                 conversation_id,
                 question,
                 response_full,
+                thought,
                 source_log_docs,
                 tool_calls,
                 llm,

@@ -17,6 +17,7 @@ export function handleFetchAnswer(
   | {
       result: any;
       answer: any;
+      thought: any;
       sources: any;
       toolCalls: ToolCallsType[];
       conversationId: any;
@@ -25,6 +26,7 @@ export function handleFetchAnswer(
   | {
       result: any;
       answer: any;
+      thought: any;
       sources: any;
       toolCalls: ToolCallsType[];
       query: string;
@@ -67,9 +69,11 @@ export function handleFetchAnswer(
         answer: result,
         query: question,
         result,
+        thought: data.thought,
         sources: data.sources,
         toolCalls: data.tool_calls,
         conversationId: data.conversation_id,
+        title: data.title || null,
       };
     });
 }
@@ -91,6 +95,7 @@ export function handleFetchAnswerSteaming(
     return {
       prompt: item.prompt,
       response: item.response,
+      thought: item.thought,
       tool_calls: item.tool_calls,
     };
   });

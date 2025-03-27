@@ -6,16 +6,16 @@ import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
-  vscDarkPlus,
   oneLight,
+  vscDarkPlus,
 } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import { useDarkTheme } from '../hooks';
 
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import ChevronDown from '../assets/chevron-down.svg';
+import Cloud from '../assets/cloud.svg';
+import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
 import Edit from '../assets/edit.svg';
@@ -28,7 +28,7 @@ import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
 import SpeakButton from '../components/TextToSpeechButton';
-import { useOutsideAlerter } from '../hooks';
+import { useDarkTheme, useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
@@ -42,11 +42,12 @@ const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 const ConversationBubble = forwardRef<
   HTMLDivElement,
   {
-    message: string;
+    message?: string;
     type: MESSAGE_TYPE;
     className?: string;
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
+    thought?: string;
     sources?: { title: string; text: string; source: string }[];
     toolCalls?: ToolCallsType[];
     retryBtn?: React.ReactElement;
@@ -64,6 +65,7 @@ const ConversationBubble = forwardRef<
     className,
     feedback,
     handleFeedback,
+    thought,
     sources,
     toolCalls,
     retryBtn,
@@ -125,7 +127,7 @@ const ConversationBubble = forwardRef<
               <button
                 onClick={() => {
                   setIsEditClicked(true);
-                  setEditInputBox(message);
+                  setEditInputBox(message ?? '');
                 }}
                 className={`flex-shrink-0 h-fit mt-3 p-2 cursor-pointer rounded-full hover:bg-light-silver dark:hover:bg-[#35363B] flex items-center ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
               >
@@ -329,230 +331,237 @@ const ConversationBubble = forwardRef<
         {toolCalls && toolCalls.length > 0 && (
           <ToolCalls toolCalls={toolCalls} />
         )}
-        <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
-          <div className="my-2 flex flex-row items-center justify-center gap-3">
-            <Avatar
-              className="h-[34px] w-[34px] text-2xl"
-              avatar={
-                <img
-                  src={DocsGPT3}
-                  alt={t('conversation.answer')}
-                  className="h-full w-full object-cover"
-                />
-              }
-            />
-            <p className="text-base font-semibold">
-              {t('conversation.answer')}
-            </p>
-          </div>
-          <div
-            className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[18px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
-              type === 'ERROR'
-                ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
-                : 'flex-col rounded-3xl'
-            }`}
-          >
-            <ReactMarkdown
-              className="fade-in whitespace-pre-wrap break-words leading-normal"
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={{
-                code(props) {
-                  const { children, className, node, ref, ...rest } = props;
-                  const match = /language-(\w+)/.exec(className || '');
-                  const language = match ? match[1] : '';
-
-                  return match ? (
-                    <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
-                      <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
-                        <span className="text-xs font-medium text-just-black dark:text-chinese-white">
-                          {language}
-                        </span>
-                        <CopyButton
-                          text={String(children).replace(/\n$/, '')}
-                        />
-                      </div>
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={language}
-                        style={isDarkTheme ? vscDarkPlus : oneLight}
-                        className="!mt-0"
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                          scrollbarWidth: 'thin',
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    </div>
-                  ) : (
-                    <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
-                      {children}
-                    </code>
-                  );
-                },
-                ul({ children }) {
-                  return (
-                    <ul
-                      className={`list-inside list-disc whitespace-normal pl-4 ${classes.list}`}
-                    >
-                      {children}
-                    </ul>
-                  );
-                },
-                ol({ children }) {
-                  return (
-                    <ol
-                      className={`list-inside list-decimal whitespace-normal pl-4 ${classes.list}`}
-                    >
-                      {children}
-                    </ol>
-                  );
-                },
-                table({ children }) {
-                  return (
-                    <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
-                      <table className="w-full text-left text-gray-700 dark:text-bright-gray">
-                        {children}
-                      </table>
-                    </div>
-                  );
-                },
-                thead({ children }) {
-                  return (
-                    <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
-                      {children}
-                    </thead>
-                  );
-                },
-                tr({ children }) {
-                  return (
-                    <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
-                      {children}
-                    </tr>
-                  );
-                },
-                th({ children }) {
-                  return <th className="px-6 py-3">{children}</th>;
-                },
-                td({ children }) {
-                  return <td className="px-6 py-3">{children}</td>;
-                },
-              }}
+        {thought && (
+          <Thought thought={thought} preprocessLaTeX={preprocessLaTeX} />
+        )}
+        {message && (
+          <div className="flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+            <div className="my-2 flex flex-row items-center justify-center gap-3">
+              <Avatar
+                className="h-[34px] w-[34px] text-2xl"
+                avatar={
+                  <img
+                    src={DocsGPT3}
+                    alt={t('conversation.answer')}
+                    className="h-full w-full object-cover"
+                  />
+                }
+              />
+              <p className="text-base font-semibold">
+                {t('conversation.answer')}
+              </p>
+            </div>
+            <div
+              className={`fade-in-bubble ml-2 mr-5 flex max-w-[90vw] rounded-[28px] bg-gray-1000 py-[18px] px-7 dark:bg-gun-metal md:max-w-[70vw] lg:max-w-[50vw] ${
+                type === 'ERROR'
+                  ? 'relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal text-red-3000  dark:border-red-2000 dark:text-white'
+                  : 'flex-col rounded-3xl'
+              }`}
             >
-              {preprocessLaTeX(message)}
-            </ReactMarkdown>
-          </div>
-        </div>
-        <div className="my-2 ml-2 flex justify-start">
-          <div
-            className={`relative mr-2  block items-center justify-center lg:invisible 
-            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
-          >
-            <div>
-              <CopyButton text={message} />
-            </div>
-          </div>
-          <div
-            className={`relative mr-2 block items-center justify-center lg:invisible 
-            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
-          >
-            <div>
-              <SpeakButton text={message} />
-            </div>
-          </div>
-          {type === 'ERROR' && (
-            <div className="relative mr-2 block items-center justify-center">
-              <div>{retryBtn}</div>
-            </div>
-          )}
-          {handleFeedback && (
-            <>
-              <div
-                className={`relative mr-2 flex items-center justify-center ${
-                  feedback === 'LIKE' || isLikeClicked
-                    ? 'visible'
-                    : 'lg:invisible'
-                } ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}
-  ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
+              <ReactMarkdown
+                className="fade-in whitespace-pre-wrap break-words leading-normal"
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  code(props) {
+                    const { children, className, node, ref, ...rest } = props;
+                    const match = /language-(\w+)/.exec(className || '');
+                    const language = match ? match[1] : '';
+
+                    return match ? (
+                      <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
+                        <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
+                          <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+                            {language}
+                          </span>
+                          <CopyButton
+                            text={String(children).replace(/\n$/, '')}
+                          />
+                        </div>
+                        <SyntaxHighlighter
+                          {...rest}
+                          PreTag="div"
+                          language={language}
+                          style={isDarkTheme ? vscDarkPlus : oneLight}
+                          className="!mt-0"
+                          customStyle={{
+                            margin: 0,
+                            borderRadius: 0,
+                            scrollbarWidth: 'thin',
+                          }}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      </div>
+                    ) : (
+                      <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
+                        {children}
+                      </code>
+                    );
+                  },
+                  ul({ children }) {
+                    return (
+                      <ul
+                        className={`list-inside list-disc whitespace-normal pl-4 ${classes.list}`}
+                      >
+                        {children}
+                      </ul>
+                    );
+                  },
+                  ol({ children }) {
+                    return (
+                      <ol
+                        className={`list-inside list-decimal whitespace-normal pl-4 ${classes.list}`}
+                      >
+                        {children}
+                      </ol>
+                    );
+                  },
+                  table({ children }) {
+                    return (
+                      <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
+                        <table className="w-full text-left text-gray-700 dark:text-bright-gray">
+                          {children}
+                        </table>
+                      </div>
+                    );
+                  },
+                  thead({ children }) {
+                    return (
+                      <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
+                        {children}
+                      </thead>
+                    );
+                  },
+                  tr({ children }) {
+                    return (
+                      <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
+                        {children}
+                      </tr>
+                    );
+                  },
+                  th({ children }) {
+                    return <th className="px-6 py-3">{children}</th>;
+                  },
+                  td({ children }) {
+                    return <td className="px-6 py-3">{children}</td>;
+                  },
+                }}
               >
-                <div>
-                  <div
-                    className={`flex items-center justify-center rounded-full p-2 ${
-                      isLikeHovered
-                        ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
-                        : 'bg-[#ffffff] dark:bg-transparent'
-                    }`}
-                  >
-                    <Like
-                      className={`cursor-pointer 
+                {preprocessLaTeX(message)}
+              </ReactMarkdown>
+            </div>
+          </div>
+        )}
+        {message && (
+          <div className="my-2 ml-2 flex justify-start">
+            <div
+              className={`relative mr-2  block items-center justify-center lg:invisible 
+            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
+            >
+              <div>
+                <CopyButton text={message} />
+              </div>
+            </div>
+            <div
+              className={`relative mr-2 block items-center justify-center lg:invisible 
+            ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
+            >
+              <div>
+                <SpeakButton text={message} />
+              </div>
+            </div>
+            {type === 'ERROR' && (
+              <div className="relative mr-2 block items-center justify-center">
+                <div>{retryBtn}</div>
+              </div>
+            )}
+            {handleFeedback && (
+              <>
+                <div
+                  className={`relative mr-2 flex items-center justify-center ${
+                    feedback === 'LIKE' || isLikeClicked
+                      ? 'visible'
+                      : 'lg:invisible'
+                  } ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}
+  ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
+                >
+                  <div>
+                    <div
+                      className={`flex items-center justify-center rounded-full p-2 ${
+                        isLikeHovered
+                          ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
+                          : 'bg-[#ffffff] dark:bg-transparent'
+                      }`}
+                    >
+                      <Like
+                        className={`cursor-pointer 
                   ${
                     isLikeClicked || feedback === 'LIKE'
                       ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
                       : 'fill-none  stroke-gray-4000'
                   }`}
-                      onClick={() => {
-                        if (feedback === undefined || feedback === null) {
-                          handleFeedback?.('LIKE');
-                          setIsLikeClicked(true);
-                          setIsDislikeClicked(false);
-                        } else if (feedback === 'LIKE') {
-                          handleFeedback?.(null);
-                          setIsLikeClicked(false);
-                          setIsDislikeClicked(false);
-                        }
-                      }}
-                      onMouseEnter={() => setIsLikeHovered(true)}
-                      onMouseLeave={() => setIsLikeHovered(false)}
-                    ></Like>
+                        onClick={() => {
+                          if (feedback === undefined || feedback === null) {
+                            handleFeedback?.('LIKE');
+                            setIsLikeClicked(true);
+                            setIsDislikeClicked(false);
+                          } else if (feedback === 'LIKE') {
+                            handleFeedback?.(null);
+                            setIsLikeClicked(false);
+                            setIsDislikeClicked(false);
+                          }
+                        }}
+                        onMouseEnter={() => setIsLikeHovered(true)}
+                        onMouseLeave={() => setIsLikeHovered(false)}
+                      ></Like>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div
-                className={`relative mr-2 flex items-center justify-center ${
-                  feedback === 'DISLIKE' || isLikeClicked
-                    ? 'visible'
-                    : 'lg:invisible'
-                } ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}
+                <div
+                  className={`relative mr-2 flex items-center justify-center ${
+                    feedback === 'DISLIKE' || isLikeClicked
+                      ? 'visible'
+                      : 'lg:invisible'
+                  } ${type !== 'ERROR' ? 'group-hover:lg:visible' : ''}
   ${feedback === 'LIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
-              >
-                <div>
-                  <div
-                    className={`flex items-center justify-center rounded-full p-2 ${
-                      isDislikeHovered
-                        ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
-                        : 'bg-[#ffffff] dark:bg-transparent'
-                    }`}
-                  >
-                    <Dislike
-                      className={`cursor-pointer ${
-                        isDislikeClicked || feedback === 'DISLIKE'
-                          ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
-                          : 'fill-none  stroke-gray-4000'
+                >
+                  <div>
+                    <div
+                      className={`flex items-center justify-center rounded-full p-2 ${
+                        isDislikeHovered
+                          ? 'bg-[#EEEEEE] dark:bg-purple-taupe'
+                          : 'bg-[#ffffff] dark:bg-transparent'
                       }`}
-                      onClick={() => {
-                        if (feedback === undefined || feedback === null) {
-                          handleFeedback?.('DISLIKE');
-                          setIsDislikeClicked(true);
-                          setIsLikeClicked(false);
-                        } else if (feedback === 'DISLIKE') {
-                          handleFeedback?.(null);
-                          setIsLikeClicked(false);
-                          setIsDislikeClicked(false);
-                        }
-                      }}
-                      onMouseEnter={() => setIsDislikeHovered(true)}
-                      onMouseLeave={() => setIsDislikeHovered(false)}
-                    ></Dislike>
+                    >
+                      <Dislike
+                        className={`cursor-pointer ${
+                          isDislikeClicked || feedback === 'DISLIKE'
+                            ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
+                            : 'fill-none  stroke-gray-4000'
+                        }`}
+                        onClick={() => {
+                          if (feedback === undefined || feedback === null) {
+                            handleFeedback?.('DISLIKE');
+                            setIsDislikeClicked(true);
+                            setIsLikeClicked(false);
+                          } else if (feedback === 'DISLIKE') {
+                            handleFeedback?.(null);
+                            setIsLikeClicked(false);
+                            setIsDislikeClicked(false);
+                          }
+                        }}
+                        onMouseEnter={() => setIsDislikeHovered(true)}
+                        onMouseLeave={() => setIsDislikeHovered(false)}
+                      ></Dislike>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        )}
         {sources && (
           <Sidebar
             isOpen={isSidebarOpen}
@@ -693,6 +702,139 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                 </div>
               </Accordion>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Thought({
+  thought,
+  preprocessLaTeX,
+}: {
+  thought: string;
+  preprocessLaTeX: (content: string) => string;
+}) {
+  const [isDarkTheme] = useDarkTheme();
+  const [isThoughtOpen, setIsThoughtOpen] = useState(true);
+
+  return (
+    <div className="mb-4 w-full flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <Avatar
+          className="h-[26px] w-[30px] text-xl"
+          avatar={
+            <img
+              src={Cloud}
+              alt={'Thought'}
+              className="h-full w-full object-fill"
+            />
+          }
+        />
+        <button
+          className="flex flex-row items-center gap-2"
+          onClick={() => setIsThoughtOpen(!isThoughtOpen)}
+        >
+          <p className="text-base font-semibold">Reasoning</p>
+          <img
+            src={ChevronDown}
+            alt="ChevronDown"
+            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isThoughtOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      {isThoughtOpen && (
+        <div className="fade-in ml-2 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+          <div className="rounded-[28px] bg-gray-1000 py-[18px] px-7 dark:bg-gun-metal">
+            <ReactMarkdown
+              className="fade-in whitespace-pre-wrap break-words leading-normal"
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              components={{
+                code(props) {
+                  const { children, className, node, ref, ...rest } = props;
+                  const match = /language-(\w+)/.exec(className || '');
+                  const language = match ? match[1] : '';
+
+                  return match ? (
+                    <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
+                      <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
+                        <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+                          {language}
+                        </span>
+                        <CopyButton
+                          text={String(children).replace(/\n$/, '')}
+                        />
+                      </div>
+                      <SyntaxHighlighter
+                        {...rest}
+                        PreTag="div"
+                        language={language}
+                        style={isDarkTheme ? vscDarkPlus : oneLight}
+                        className="!mt-0"
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: 0,
+                          scrollbarWidth: 'thin',
+                        }}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    </div>
+                  ) : (
+                    <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
+                      {children}
+                    </code>
+                  );
+                },
+                ul({ children }) {
+                  return (
+                    <ul className="list-inside list-disc whitespace-normal pl-4">
+                      {children}
+                    </ul>
+                  );
+                },
+                ol({ children }) {
+                  return (
+                    <ol className="list-inside list-decimal whitespace-normal pl-4">
+                      {children}
+                    </ol>
+                  );
+                },
+                table({ children }) {
+                  return (
+                    <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
+                      <table className="w-full text-left text-gray-700 dark:text-bright-gray">
+                        {children}
+                      </table>
+                    </div>
+                  );
+                },
+                thead({ children }) {
+                  return (
+                    <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
+                      {children}
+                    </thead>
+                  );
+                },
+                tr({ children }) {
+                  return (
+                    <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
+                      {children}
+                    </tr>
+                  );
+                },
+                th({ children }) {
+                  return <th className="px-6 py-3">{children}</th>;
+                },
+                td({ children }) {
+                  return <td className="px-6 py-3">{children}</td>;
+                },
+              }}
+            >
+              {preprocessLaTeX(thought ?? '')}
+            </ReactMarkdown>
           </div>
         </div>
       )}
