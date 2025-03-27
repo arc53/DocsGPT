@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import ConversationBubble from './ConversationBubble';
-import Hero from '../Hero';
-import { FEEDBACK, Query, Status } from './conversationModels';
+
 import ArrowDown from '../assets/arrow-down.svg';
 import RetryIcon from '../components/RetryIcon';
+import Hero from '../Hero';
 import { useDarkTheme } from '../hooks';
+import ConversationBubble from './ConversationBubble';
+import { FEEDBACK, Query, Status } from './conversationModels';
 
 interface ConversationMessagesProps {
   handleQuestion: (params: {
@@ -83,13 +84,14 @@ export default function ConversationMessages({
 
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
-    if (query.response) {
+    if (query.thought || query.response) {
       responseView = (
         <ConversationBubble
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
           key={`${index}ANSWER`}
           message={query.response}
           type={'ANSWER'}
+          thought={query.thought}
           sources={query.sources}
           toolCalls={query.tool_calls}
           feedback={query.feedback}
