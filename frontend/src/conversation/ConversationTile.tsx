@@ -29,7 +29,7 @@ interface ConversationProps {
 interface ConversationTileProps {
   conversation: ConversationProps;
   selectConversation: (arg1: string) => void;
-  onCoversationClick: () => void; //Callback to handle click on conversation tile regardless of selected or not
+  onConversationClick: () => void; //Callback to handle click on conversation tile regardless of selected or not
   onDeleteConversation: (arg1: string) => void;
   onSave: ({ name, id }: ConversationProps) => void;
 }
@@ -37,7 +37,7 @@ interface ConversationTileProps {
 export default function ConversationTile({
   conversation,
   selectConversation,
-  onCoversationClick,
+  onConversationClick,
   onDeleteConversation,
   onSave,
 }: ConversationTileProps) {
@@ -188,7 +188,7 @@ export default function ConversationTile({
           }
         }}
         onClick={() => {
-          onCoversationClick();
+          onConversationClick();
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
