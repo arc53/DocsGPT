@@ -29,11 +29,12 @@ export interface Query {
   prompt: string;
   response?: string;
   feedback?: FEEDBACK;
-  error?: string;
   conversationId?: string | null;
   title?: string | null;
   sources?: { title: string; text: string; source: string }[];
   tool_calls?: ToolCallsType[];
+  error?: string;
+  attachments?: { fileName: string; id: string }[];
 }
 
 export interface RetrievalPayload {
@@ -47,4 +48,5 @@ export interface RetrievalPayload {
   token_limit: number;
   isNoneDoc: boolean;
   index?: number;
+  attachments?: string[];
 }
