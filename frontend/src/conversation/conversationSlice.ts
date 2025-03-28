@@ -27,8 +27,8 @@ export function handleAbort() {
 
 export const fetchAnswer = createAsyncThunk<
   Answer,
-  { question: string; indx?: number }
->('fetchAnswer', async ({ question, indx }, { dispatch, getState }) => {
+  { question: string; indx?: number; attachments?: string[] }
+>('fetchAnswer', async ({ question, indx, attachments }, { dispatch, getState }) => {
   if (abortController) {
     abortController.abort();
   }
@@ -110,6 +110,7 @@ export const fetchAnswer = createAsyncThunk<
           }
         },
         indx,
+        attachments
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -122,6 +123,7 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.prompt.id,
         state.preference.chunks,
         state.preference.token_limit,
+        attachments
       );
       if (answer) {
         let sourcesPrepped = [];
