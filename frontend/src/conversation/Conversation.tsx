@@ -29,6 +29,11 @@ import { ActiveState } from '../models/misc';
 import ConversationMessages from './ConversationMessages';
 import MessageInput from '../components/MessageInput';
 
+interface AttachmentState {
+  fileName: string;
+  id: string;
+}
+
 export default function Conversation() {
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -45,6 +50,7 @@ export default function Conversation() {
     useState<ActiveState>('INACTIVE');
   const [files, setFiles] = useState<File[]>([]);
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
+  const [attachments, setAttachments] = useState<AttachmentState[]>([]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setUploadModalState('ACTIVE');
@@ -95,21 +101,26 @@ export default function Conversation() {
     isRetry = false,
     updated = null,
     indx = undefined,
+    attachments = [],
   }: {
     question: string;
     isRetry?: boolean;
     updated?: boolean | null;
     indx?: number;
+    attachments?: { fileName: string; id: string }[];
   }) => {
     if (updated === true) {
       !isRetry &&
-        dispatch(resendQuery({ index: indx as number, prompt: question })); //dispatch only new queries
+        dispatch(resendQuery({ index: indx as number, prompt: question }));
       fetchStream.current = dispatch(fetchAnswer({ question, indx }));
     } else {
       question = question.trim();
       if (question === '') return;
-      !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
-      fetchStream.current = dispatch(fetchAnswer({ question }));
+      !isRetry && dispatch(addQuery({ prompt: question, attachments }));
+      fetchStream.current = dispatch(fetchAnswer({ 
+        question, 
+        attachments: attachments.map(a => a.id) 
+      }));
     }
   };
 
@@ -160,7 +171,11 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: input });
+        handleQuestion({ 
+          question: input, 
+          attachments: attachments
+        });
+        setAttachments([]);
       }
       setInput('');
     }
@@ -245,6 +260,7 @@ export default function Conversation() {
             onChange={(e) => setInput(e.target.value)}
             onSubmit={handleQuestionSubmission}
             loading={status === 'loading'}
+            onAttachmentChange={setAttachments}
           />
         </div>
 

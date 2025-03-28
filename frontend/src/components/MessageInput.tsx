@@ -22,6 +22,7 @@ interface MessageInputProps {
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   loading: boolean;
+  onAttachmentChange?: (attachments: { fileName: string; id: string }[]) => void;
 }
 
 interface UploadState {
@@ -38,6 +39,7 @@ export default function MessageInput({
   onChange,
   onSubmit,
   loading,
+  onAttachmentChange,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
@@ -54,66 +56,66 @@ export default function MessageInput({
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    
+
     const file = e.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
-    
+
     const uploadState: UploadState = {
       taskId: '',
       fileName: file.name,
       progress: 0,
       status: 'uploading'
     };
-    
+
     setUploads(prev => [...prev, uploadState]);
     const uploadIndex = uploads.length;
-    
+
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) {
         const progress = Math.round((event.loaded / event.total) * 100);
-        setUploads(prev => prev.map((upload, index) => 
-          index === uploadIndex 
+        setUploads(prev => prev.map((upload, index) =>
+          index === uploadIndex
             ? { ...upload, progress }
             : upload
         ));
       }
     });
-    
+
     xhr.onload = () => {
       if (xhr.status === 200) {
         const response = JSON.parse(xhr.responseText);
         console.log('File uploaded successfully:', response);
-        
+
         if (response.task_id) {
-          setUploads(prev => prev.map((upload, index) => 
-            index === uploadIndex 
+          setUploads(prev => prev.map((upload, index) =>
+            index === uploadIndex
               ? { ...upload, taskId: response.task_id, status: 'processing' }
               : upload
           ));
         }
       } else {
-        setUploads(prev => prev.map((upload, index) => 
-          index === uploadIndex 
+        setUploads(prev => prev.map((upload, index) =>
+          index === uploadIndex
             ? { ...upload, status: 'failed' }
             : upload
         ));
         console.error('Error uploading file:', xhr.responseText);
       }
     };
-    
+
     xhr.onerror = () => {
-      setUploads(prev => prev.map((upload, index) => 
-        index === uploadIndex 
+      setUploads(prev => prev.map((upload, index) =>
+        index === uploadIndex
           ? { ...upload, status: 'failed' }
           : upload
       ));
       console.error('Network error during file upload');
     };
-    
+
     xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
@@ -122,22 +124,22 @@ export default function MessageInput({
 
   useEffect(() => {
     let timeoutIds: number[] = [];
-    
+
     const checkTaskStatus = () => {
-      const processingUploads = uploads.filter(upload => 
+      const processingUploads = uploads.filter(upload =>
         upload.status === 'processing' && upload.taskId
       );
-      
+
       processingUploads.forEach(upload => {
         userService
           .getTaskStatus(upload.taskId, null)
           .then((data) => data.json())
           .then((data) => {
             console.log('Task status:', data);
-            
+
             setUploads(prev => prev.map(u => {
               if (u.taskId !== upload.taskId) return u;
-              
+
               if (data.status === 'SUCCESS') {
                 return {
                   ...u,
@@ -153,7 +155,7 @@ export default function MessageInput({
               }
               return u;
             }));
-            
+
             if (data.status !== 'SUCCESS' && data.status !== 'FAILURE') {
               const timeoutId = window.setTimeout(() => checkTaskStatus(), 2000);
               timeoutIds.push(timeoutId);
@@ -161,20 +163,20 @@ export default function MessageInput({
           })
           .catch((error) => {
             console.error('Error checking task status:', error);
-            setUploads(prev => prev.map(u => 
-              u.taskId === upload.taskId 
+            setUploads(prev => prev.map(u =>
+              u.taskId === upload.taskId
                 ? { ...u, status: 'failed' }
                 : u
             ));
           });
       });
     };
-    
+
     if (uploads.some(upload => upload.status === 'processing')) {
       const timeoutId = window.setTimeout(checkTaskStatus, 2000);
       timeoutIds.push(timeoutId);
     }
-    
+
     return () => {
       timeoutIds.forEach(id => clearTimeout(id));
     };
@@ -199,7 +201,7 @@ export default function MessageInput({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSubmit();
+      handleSubmit();
       if (inputRef.current) {
         inputRef.current.value = '';
         handleInput();
@@ -211,58 +213,62 @@ export default function MessageInput({
     console.log('Selected document:', doc);
   };
 
-  const renderUploadStatus = () => {
-    const activeUploads = uploads.filter(u => 
-      u.status === 'uploading' || u.status === 'processing'
-    );
-    
-    if (activeUploads.length === 0) {
-      return 'Attach';
+  useEffect(() => {
+    if (onAttachmentChange) {
+      const completedAttachments = uploads
+        .filter(upload => upload.status === 'completed' && upload.attachment_id)
+        .map(upload => ({
+          fileName: upload.fileName,
+          id: upload.attachment_id as string
+        }));
+      onAttachmentChange(completedAttachments);
     }
-    
-    return `Uploading ${activeUploads.length} file(s)`;
-  };
+  }, [uploads, onAttachmentChange]);
 
+  const handleSubmit = () => {
+    onSubmit();
+    setUploads(prevUploads => prevUploads.filter(upload => upload.status !== 'completed'));
+  };
   return (
     <div className="flex flex-col w-full mx-2">
       <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-transparent relative">
         <div className="flex flex-wrap gap-2 px-6 pt-3 pb-0">
           {uploads.map((upload, index) => (
-            <div 
+            <div
               key={index}
               className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[14px] text-[#5D5D5D] dark:text-bright-gray"
             >
               <span className="font-medium truncate max-w-[150px]">{upload.fileName}</span>
-              
+
               {upload.status === 'completed' && (
                 <span className="ml-2 text-green-500">✓</span>
               )}
-              
+
               {upload.status === 'failed' && (
                 <span className="ml-2 text-red-500">✗</span>
               )}
-              
+
               {(upload.status === 'uploading' || upload.status === 'processing') && (
                 <div className="ml-2 w-4 h-4 relative">
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <circle 
-                      className="text-gray-200 dark:text-gray-700" 
-                      cx="12" 
-                      cy="12" 
-                      r="10" 
-                      stroke="currentColor" 
-                      strokeWidth="4" 
+                    <circle
+                      className="text-gray-200 dark:text-gray-700"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
                       fill="none"
                     />
-                    <circle 
-                      className="text-blue-600 dark:text-blue-400" 
-                      cx="12" 
-                      cy="12" 
-                      r="10" 
-                      stroke="currentColor" 
-                      strokeWidth="4" 
-                      fill="none" 
-                      strokeDasharray="62.83" 
+                    <circle
+                      className="text-blue-600 dark:text-blue-400"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                      strokeDasharray="62.83"
                       strokeDashoffset={62.83 - (upload.progress / 100) * 62.83}
                       transform="rotate(-90 12 12)"
                     />
@@ -305,7 +311,7 @@ export default function MessageInput({
                   : t('conversation.sources.title')}
               </span>
             </button>
-            
+
             <button
               ref={toolButtonRef}
               className="flex items-center px-3 py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[200px]"
@@ -321,9 +327,9 @@ export default function MessageInput({
               <span className="text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium">
                 Attach
               </span>
-              <input 
-                type="file" 
-                className="hidden" 
+              <input
+                type="file"
+                className="hidden"
                 onChange={handleFileAttachment}
               />
             </label>
@@ -332,7 +338,7 @@ export default function MessageInput({
           </div>
 
           <button
-            onClick={loading ? undefined : onSubmit}
+            onClick={loading ? undefined : handleSubmit}
             aria-label={loading ? t('loading') : t('send')}
             className={`flex items-center justify-center p-2.5 rounded-full ${loading ? 'bg-gray-300 dark:bg-gray-600' : 'bg-black dark:bg-white'} ml-auto`}
             disabled={loading}
