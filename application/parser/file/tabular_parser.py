@@ -104,9 +104,13 @@ class PandasCSVParser(BaseParser):
             raise ValueError("pandas module is required to read CSV files.")
 
         df = pd.read_csv(file, **self._pandas_config)
+        headers = df.columns.tolist()
 
         text_list = df.apply(
-            lambda row: (self._col_joiner).join(row.astype(str).tolist()), axis=1
+            lambda row: self._col_joiner.join(
+                [f"{headers[i]}: {str(val)}" for i, val in enumerate(row)]
+            ),
+            axis=1,
         ).tolist()
 
         if self._concat_rows:
@@ -169,9 +173,13 @@ class ExcelParser(BaseParser):
             raise ValueError("pandas module is required to read Excel files.")
 
         df = pd.read_excel(file, **self._pandas_config)
+        headers = df.columns.tolist()
 
         text_list = df.apply(
-            lambda row: (self._col_joiner).join(row.astype(str).tolist()), axis=1
+            lambda row: self._col_joiner.join(
+                [f"{headers[i]}: {str(val)}" for i, val in enumerate(row)]
+            ),
+            axis=1,
         ).tolist()
 
         if self._concat_rows:
