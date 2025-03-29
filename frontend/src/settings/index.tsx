@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import SettingsBar from '../components/SettingsBar';
@@ -24,10 +25,42 @@ import Widgets from './Widgets';
 export default function Settings() {
   const dispatch = useDispatch();
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = React.useState(t('settings.general.label'));
-  const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
-    null,
-  );
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(null);
+
+  const getActiveTabFromPath = () => {
+    const path = location.pathname;
+    if (path.includes('/settings/documents')) return t('settings.documents.label');
+    if (path.includes('/settings/apikeys')) return t('settings.apiKeys.label');
+    if (path.includes('/settings/analytics')) return t('settings.analytics.label');
+    if (path.includes('/settings/logs')) return t('settings.logs.label');
+    if (path.includes('/settings/tools')) return t('settings.tools.label');
+    if (path.includes('/settings/widgets')) return 'Widgets';
+    return t('settings.general.label');
+  };
+
+  const [activeTab, setActiveTab] = React.useState(getActiveTabFromPath());
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === t('settings.general.label')) navigate('/settings');
+    else if (tab === t('settings.documents.label')) navigate('/settings/documents');
+    else if (tab === t('settings.apiKeys.label')) navigate('/settings/apikeys');
+    else if (tab === t('settings.analytics.label')) navigate('/settings/analytics');
+    else if (tab === t('settings.logs.label')) navigate('/settings/logs');
+    else if (tab === t('settings.tools.label')) navigate('/settings/tools');
+    else if (tab === 'Widgets') navigate('/settings/widgets');
+  };
+
+  React.useEffect(() => {
+    setActiveTab(getActiveTabFromPath());
+  }, [location.pathname]);
+
+  React.useEffect(() => {
+    const newActiveTab = getActiveTabFromPath();
+    setActiveTab(newActiveTab);
+  }, [i18n.language]);
 
   const token = useSelector(selectToken);
   const documents = useSelector(selectSourceDocs);
@@ -59,54 +92,32 @@ export default function Settings() {
       .catch((error) => console.error(error));
   };
 
-  React.useEffect(() => {
-    setActiveTab(t('settings.general.label'));
-  }, [i18n.language]);
   return (
     <div className="p-4 md:p-12 h-full overflow-auto">
       <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
         {t('settings.label')}
       </p>
-      <SettingsBar activeTab={activeTab} setActiveTab={setActiveTab} />
-      {renderActiveTab()}
-
-      {/* {activeTab === 'Widgets' && (
-        <Widgets
-          widgetScreenshot={widgetScreenshot}
-          onWidgetScreenshotChange={updateWidgetScreenshot}
-        />
-      )} */}
-    </div>
-  );
-
-  function renderActiveTab() {
-    switch (activeTab) {
-      case t('settings.general.label'):
-        return <General />;
-      case t('settings.documents.label'):
-        return (
+      <SettingsBar activeTab={activeTab} setActiveTab={(tab) => handleTabChange(tab as string)} />
+      <Routes>
+        <Route index element={<General />} />
+        <Route path="documents" element={
           <Documents
             paginatedDocuments={paginatedDocuments}
             handleDeleteDocument={handleDeleteClick}
           />
-        );
-      case 'Widgets':
-        return (
+        } />
+        <Route path="apikeys" element={<APIKeys />} />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="logs" element={<Logs />} />
+        <Route path="tools" element={<Tools />} />
+        <Route path="widgets" element={
           <Widgets
             widgetScreenshot={widgetScreenshot}
             onWidgetScreenshotChange={updateWidgetScreenshot}
           />
-        );
-      case t('settings.apiKeys.label'):
-        return <APIKeys />;
-      case t('settings.analytics.label'):
-        return <Analytics />;
-      case t('settings.logs.label'):
-        return <Logs />;
-      case t('settings.tools.label'):
-        return <Tools />;
-      default:
-        return null;
-    }
-  }
+        } />
+        <Route path="*" element={<Navigate to="/settings" replace />} />
+      </Routes>
+    </div>
+  );
 }

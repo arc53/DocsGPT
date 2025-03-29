@@ -18,7 +18,6 @@ import Spinner from './assets/spinner.svg';
 import Twitter from './assets/TwitterX.svg';
 import UploadIcon from './assets/upload.svg';
 import Help from './components/Help';
-import SourceDropdown from './components/SourceDropdown';
 import {
   handleAbort,
   selectQueries,
@@ -31,22 +30,16 @@ import useDefaultDocument from './hooks/useDefaultDocument';
 import useTokenAuth from './hooks/useTokenAuth';
 import DeleteConvModal from './modals/DeleteConvModal';
 import JWTModal from './modals/JWTModal';
-import { ActiveState, Doc } from './models/misc';
-import { getConversations, getDocs } from './preferences/preferenceApi';
+import { ActiveState } from './models/misc';
+import { getConversations } from './preferences/preferenceApi';
 import {
   selectApiKeyStatus,
   selectConversationId,
   selectConversations,
   selectModalStateDeleteConv,
-  selectPaginatedDocuments,
-  selectSelectedDocs,
-  selectSourceDocs,
   selectToken,
   setConversations,
   setModalStateDeleteConv,
-  setPaginatedDocuments,
-  setSelectedDocs,
-  setSourceDocs,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
 
@@ -59,17 +52,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
-  const docs = useSelector(selectSourceDocs);
-  const selectedDocs = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const conversationId = useSelector(selectConversationId);
-  const paginatedDocuments = useSelector(selectPaginatedDocuments);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
 
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
-  const [isDocsListOpen, setIsDocsListOpen] = useState(false);
   const { t } = useTranslation();
   const isApiKeySet = useSelector(selectApiKeyStatus);
 
@@ -124,32 +113,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .catch((error) => console.error(error));
   };
 
-  const handleDeleteClick = (doc: Doc) => {
-    userService
-      .deletePath(doc.id ?? '', token)
-      .then(() => {
-        return getDocs(token);
-      })
-      .then((updatedDocs) => {
-        dispatch(setSourceDocs(updatedDocs));
-        const updatedPaginatedDocs = paginatedDocuments?.filter(
-          (document) => document.id !== doc.id,
-        );
-        dispatch(
-          setPaginatedDocuments(updatedPaginatedDocs || paginatedDocuments),
-        );
-        dispatch(
-          setSelectedDocs(
-            Array.isArray(updatedDocs) &&
-              updatedDocs?.find(
-                (doc: Doc) => doc.name.toLowerCase() === 'default',
-              ),
-          ),
-        );
-      })
-      .catch((error) => console.error(error));
-  };
-
   const handleConversationClick = (index: string) => {
     conversationService
       .getConversation(index, token)
@@ -174,11 +137,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       }),
     );
   };
+
   const newChat = () => {
     if (queries && queries?.length > 0) {
       resetConversation();
     }
   };
+
   async function updateConversationName(updatedConversation: {
     name: string;
     id: string;
@@ -197,10 +162,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       });
   }
 
-  /*
-    Needed to fix bug where if mobile nav was closed and then window was resized to desktop, nav would still be closed but the button to open would be gone, as per #1 on issue #146
-  */
-
   useEffect(() => {
     setNavOpen(!isMobile);
   }, [isMobile]);
@@ -209,7 +170,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   return (
     <>
       {!navOpen && (
-        <div className="duration-25 absolute  top-3 left-3 z-20 hidden transition-all md:block">
+        <div className="duration-25 absolute top-3 left-3 z-20 hidden transition-all md:block">
           <div className="flex gap-3 items-center">
             <button
               onClick={() => {
@@ -247,7 +208,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-lotion dark:bg-chinese-black transition-all dark:border-r-purple-taupe  dark:text-white`}
+        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-r-[1px] border-b-0 bg-lotion dark:bg-chinese-black transition-all dark:border-r-purple-taupe dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -299,7 +260,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className=" text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
+          <p className="text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
             {t('newChat')}
           </p>
         </NavLink>
@@ -318,7 +279,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div>
-              <div className=" my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
+              <div className="my-auto mx-4 mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
@@ -345,37 +306,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
         </div>
         <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
-          <div className="flex flex-col-reverse border-b-[1px] dark:border-b-purple-taupe">
-            <div className="relative my-4 mx-4 flex gap-4 items-center">
-              <SourceDropdown
-                options={docs}
-                selectedDocs={selectedDocs}
-                setSelectedDocs={setSelectedDocs}
-                isDocsListOpen={isDocsListOpen}
-                setIsDocsListOpen={setIsDocsListOpen}
-                handleDeleteClick={handleDeleteClick}
-                handlePostDocumentSelect={(option?: string) => {
-                  if (isMobile) {
-                    setNavOpen(!navOpen);
-                  }
-                }}
-              />
-              <img
-                className="hover:cursor-pointer"
-                src={UploadIcon}
-                width={28}
-                height={25}
-                alt="Upload document"
-                onClick={() => {
-                  setUploadModalState('ACTIVE');
-                  if (isMobile) {
-                    setNavOpen(!navOpen);
-                  }
-                }}
-              ></img>
-            </div>
-            <p className="ml-5 mt-3 text-sm font-semibold">{t('sourceDocs')}</p>
-          </div>
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
               onClick={() => {

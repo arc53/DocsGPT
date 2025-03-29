@@ -56,6 +56,7 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
+    attachments?: { fileName: string; id: string }[];
   }
 >(function ConversationBubble(
   {
@@ -69,6 +70,7 @@ const ConversationBubble = forwardRef<
     retryBtn,
     questionNumber,
     handleUpdatedQuestionSubmission,
+    attachments,
   },
   ref,
 ) {
@@ -95,6 +97,36 @@ const ConversationBubble = forwardRef<
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
   let bubble;
+  const renderAttachments = () => {
+    if (!attachments || attachments.length === 0) return null;
+    
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {attachments.map((attachment, index) => (
+          <div 
+            key={index} 
+            className="flex items-center rounded-md bg-gray-100 px-2 py-1 text-sm dark:bg-gray-700"
+          >
+            <svg 
+              className="mr-1 h-4 w-4" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24" 
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" 
+              />
+            </svg>
+            <span>{attachment.fileName}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
   if (type === 'QUESTION') {
     bubble = (
       <div
@@ -103,7 +135,7 @@ const ConversationBubble = forwardRef<
       >
         <div
           ref={ref}
-          className={`flex flex-row-reverse justify-items-start  ${className}`}
+          className={`flex flex-row-reverse justify-items-start ${className}`}
         >
           <Avatar
             size="SMALL"
@@ -114,13 +146,16 @@ const ConversationBubble = forwardRef<
           />
           {!isEditClicked && (
             <>
-              <div
-                style={{
-                  wordBreak: 'break-word',
-                }}
-                className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
-              >
-                {message}
+              <div className="flex flex-col mr-2">
+                <div
+                  style={{
+                    wordBreak: 'break-word',
+                  }}
+                  className="text-sm sm:text-base ml-2 mr-2 flex items-center rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] px-[19px] text-white max-w-full whitespace-pre-wrap leading-normal"
+                >
+                  {message}
+                </div>
+                {renderAttachments()}
               </div>
               <button
                 onClick={() => {

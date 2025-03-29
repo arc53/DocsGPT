@@ -159,6 +159,7 @@ export default function ConversationMessages({
         {queries.length > 0 ? (
           queries.map((query, index) => (
             <Fragment key={index}>
+              
               <ConversationBubble
                 className={'first:mt-5'}
                 key={`${index}QUESTION`}
@@ -167,6 +168,7 @@ export default function ConversationMessages({
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
                 questionNumber={index}
                 sources={query.sources}
+                attachments={query.attachments}
               />
               {prepResponseView(query, index)}
             </Fragment>

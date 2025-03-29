@@ -4,9 +4,12 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import CogwheelIcon from '../assets/cogwheel.svg';
+import NoFilesIcon from '../assets/no-files.svg';
+import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import Input from '../components/Input';
 import Spinner from '../components/Spinner';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { useDarkTheme } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -16,6 +19,7 @@ import { APIToolType, UserToolType } from './types';
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const [isDarkTheme] = useDarkTheme();
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
@@ -132,65 +136,78 @@ export default function Tools() {
               </div>
             ) : (
               <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
-                {userTools
-                  .filter((tool) =>
-                    tool.displayName
-                      .toLowerCase()
-                      .includes(searchTerm.toLowerCase()),
-                  )
-                  .map((tool, index) => (
-                    <div
-                      key={index}
-                      className="h-52 w-[300px] p-6 border rounded-2xl border-light-gainsboro dark:border-arsenic bg-white-3000 dark:bg-transparent flex flex-col justify-between relative"
-                    >
-                      <button
-                        onClick={() => handleSettingsClick(tool)}
-                        aria-label={t('settings.tools.configureToolAria', {
-                          toolName: tool.displayName,
-                        })}
-                        className="absolute top-4 right-4"
+                {userTools.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center w-full py-12">
+                    <img
+                      src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                      alt="No tools found"
+                      className="h-32 w-32 mx-auto mb-6"
+                    />
+                    <p className="text-gray-500 dark:text-gray-400 text-center text-lg">
+                      {t('settings.tools.noToolsFound')}
+                    </p>
+                  </div>
+                ) : (
+                  userTools
+                    .filter((tool) =>
+                      tool.displayName
+                        .toLowerCase()
+                        .includes(searchTerm.toLowerCase()),
+                    )
+                    .map((tool, index) => (
+                      <div
+                        key={index}
+                        className="h-52 w-[300px] p-6 border rounded-2xl border-light-gainsboro dark:border-arsenic bg-white-3000 dark:bg-transparent flex flex-col justify-between relative"
                       >
-                        <img
-                          src={CogwheelIcon}
-                          alt={t('settings.tools.settingsIconAlt')}
-                          className="h-[19px] w-[19px]"
-                        />
-                      </button>
-                      <div className="w-full">
-                        <div className="px-1 w-full flex items-center">
-                          <img
-                            src={`/toolIcons/tool_${tool.name}.svg`}
-                            alt={`${tool.displayName} icon`}
-                            className="h-6 w-6"
-                          />
-                        </div>
-                        <div className="mt-[9px]">
-                          <p
-                            title={tool.displayName}
-                            className="px-1 text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray leading-relaxed capitalize truncate"
-                          >
-                            {tool.displayName}
-                          </p>
-                          <p className="mt-1 px-1 h-24 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light leading-relaxed">
-                            {tool.description}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="absolute bottom-4 right-4">
-                        <ToggleSwitch
-                          checked={tool.status}
-                          onChange={(checked) =>
-                            updateToolStatus(tool.id, checked)
-                          }
-                          size="small"
-                          id={`toolToggle-${index}`}
-                          ariaLabel={t('settings.tools.toggleToolAria', {
+                        <button
+                          onClick={() => handleSettingsClick(tool)}
+                          aria-label={t('settings.tools.configureToolAria', {
                             toolName: tool.displayName,
                           })}
-                        />
+                          className="absolute top-4 right-4"
+                        >
+                          <img
+                            src={CogwheelIcon}
+                            alt={t('settings.tools.settingsIconAlt')}
+                            className="h-[19px] w-[19px]"
+                          />
+                        </button>
+                        <div className="w-full">
+                          <div className="px-1 w-full flex items-center">
+                            <img
+                              src={`/toolIcons/tool_${tool.name}.svg`}
+                              alt={`${tool.displayName} icon`}
+                              className="h-6 w-6"
+                            />
+                          </div>
+                          <div className="mt-[9px]">
+                            <p
+                              title={tool.displayName}
+                              className="px-1 text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray leading-relaxed capitalize truncate"
+                            >
+                              {tool.displayName}
+                            </p>
+                            <p className="mt-1 px-1 h-24 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light leading-relaxed">
+                              {tool.description}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="absolute bottom-4 right-4">
+                          <ToggleSwitch
+                            checked={tool.status}
+                            onChange={(checked) =>
+                              updateToolStatus(tool.id, checked)
+                            }
+                            size="small"
+                            id={`toolToggle-${index}`}
+                            ariaLabel={t('settings.tools.toggleToolAria', {
+                              toolName: tool.displayName,
+                            })}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                )}
               </div>
             )}
           </div>
