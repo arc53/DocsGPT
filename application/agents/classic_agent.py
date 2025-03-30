@@ -18,9 +18,10 @@ class ClassicAgent(BaseAgent):
         prompt="",
         chat_history=None,
         decoded_token=None,
+        proxy_id=None,
     ):
         super().__init__(
-            endpoint, llm_name, gpt_model, api_key, user_api_key, decoded_token
+            endpoint, llm_name, gpt_model, api_key, user_api_key, decoded_token, proxy_id
         )
         self.user = decoded_token.get("sub")
         self.prompt = prompt

@@ -17,6 +17,7 @@ class BaseAgent:
         api_key,
         user_api_key=None,
         decoded_token=None,
+        proxy_id=None,
     ):
         self.endpoint = endpoint
         self.llm = LLMCreator.create_llm(
@@ -30,6 +31,7 @@ class BaseAgent:
         self.tools = []
         self.tool_config = {}
         self.tool_calls = []
+        self.proxy_id = proxy_id
 
     def gen(self, *args, **kwargs) -> Generator[Dict, None, None]:
         raise NotImplementedError('Method "gen" must be implemented in the child class')
@@ -41,6 +43,11 @@ class BaseAgent:
         user_tools = user_tools_collection.find({"user": user, "status": True})
         user_tools = list(user_tools)
         tools_by_id = {str(tool["_id"]): tool for tool in user_tools}
+        if hasattr(self, 'proxy_id') and self.proxy_id:
+            for tool_id, tool in tools_by_id.items():
+                if 'config' not in tool:
+                    tool['config'] = {}
+                tool['config']['proxy_id'] = self.proxy_id
         return tools_by_id
 
     def _build_tool_parameters(self, action):
@@ -126,6 +133,7 @@ class BaseAgent:
                     "method": tool_data["config"]["actions"][action_name]["method"],
                     "headers": headers,
                     "query_params": query_params,
+                    "proxy_id": self.proxy_id,
                 }
                 if tool_data["name"] == "api_tool"
                 else tool_data["config"]

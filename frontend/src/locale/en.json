@@ -41,6 +41,7 @@
       "selectLanguage": "Select Language",
       "chunks": "Chunks processed per query",
       "prompt": "Active Prompt",
+      "proxy": "Active Proxy",
       "deleteAllLabel": "Delete All Conversations",
       "deleteAllBtn": "Delete All",
       "addNew": "Add New",
@@ -205,6 +206,14 @@
       "promptText": "Prompt Text",
       "save": "Save",
       "nameExists": "Name already exists"
+    },
+    "proxies": {
+      "addProxy": "Add Proxy",
+      "addDescription": "Add your custom proxy to query tools and save it to DocsGPT",
+      "editProxy": "Edit Proxy",
+      "proxyName": "Proxy Name",
+      "proxyProtocol": "Proxy Protocol",
+      "connectionString": "Connection String"
     }
   },
   "sharedConv": {

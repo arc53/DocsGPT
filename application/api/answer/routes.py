@@ -335,6 +335,9 @@ class Stream(Resource):
             "prompt_id": fields.String(
                 required=False, default="default", description="Prompt ID"
             ),
+            "proxy_id": fields.String(
+                required=False, description="Proxy ID to use for API calls"
+            ),
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
@@ -376,6 +379,7 @@ class Stream(Resource):
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
+            proxy_id = data.get("proxy_id", None)
 
             index = data.get("index", None)
             chunks = int(data.get("chunks", 2))
@@ -386,6 +390,7 @@ class Stream(Resource):
                 data_key = get_data_from_api_key(data["api_key"])
                 chunks = int(data_key.get("chunks", 2))
                 prompt_id = data_key.get("prompt_id", "default")
+                proxy_id = data_key.get("proxy_id", None)
                 source = {"active_docs": data_key.get("source")}
                 retriever_name = data_key.get("retriever", retriever_name)
                 user_api_key = data["api_key"]
@@ -422,6 +427,7 @@ class Stream(Resource):
                 api_key=settings.API_KEY,
                 user_api_key=user_api_key,
                 prompt=prompt,
+                proxy_id=proxy_id,
                 chat_history=history,
                 decoded_token=decoded_token,
             )
@@ -496,6 +502,9 @@ class Answer(Resource):
             "prompt_id": fields.String(
                 required=False, default="default", description="Prompt ID"
             ),
+            "proxy_id": fields.String(
+                required=False, description="Proxy ID to use for API calls"
+            ),
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
@@ -527,6 +536,7 @@ class Answer(Resource):
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
+            proxy_id = data.get("proxy_id", None)
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
@@ -535,6 +545,7 @@ class Answer(Resource):
                 data_key = get_data_from_api_key(data["api_key"])
                 chunks = int(data_key.get("chunks", 2))
                 prompt_id = data_key.get("prompt_id", "default")
+                proxy_id = data_key.get("proxy_id", None)
                 source = {"active_docs": data_key.get("source")}
                 retriever_name = data_key.get("retriever", retriever_name)
                 user_api_key = data["api_key"]
@@ -569,6 +580,7 @@ class Answer(Resource):
                 api_key=settings.API_KEY,
                 user_api_key=user_api_key,
                 prompt=prompt,
+                proxy_id=proxy_id,
                 chat_history=history,
                 decoded_token=decoded_token,
             )

@@ -47,6 +47,7 @@ export const fetchAnswer = createAsyncThunk<
         state.conversation.queries,
         state.conversation.conversationId,
         state.preference.prompt.id,
+        state.preference.proxy?.id ?? null,
         state.preference.chunks,
         state.preference.token_limit,
         (event) => {
@@ -120,6 +121,7 @@ export const fetchAnswer = createAsyncThunk<
         state.conversation.queries,
         state.conversation.conversationId,
         state.preference.prompt.id,
+        state.preference.proxy?.id ?? null,
         state.preference.chunks,
         state.preference.token_limit,
       );

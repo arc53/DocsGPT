@@ -43,6 +43,7 @@ export interface RetrievalPayload {
   history: string;
   conversation_id: string | null;
   prompt_id?: string | null;
+  proxy_id?: string | null;
   chunks: string;
   token_limit: number;
   isNoneDoc: boolean;

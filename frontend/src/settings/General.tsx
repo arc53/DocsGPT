@@ -8,14 +8,17 @@ import { useDarkTheme } from '../hooks';
 import {
   selectChunks,
   selectPrompt,
+  selectProxy,
   selectToken,
   selectTokenLimit,
   setChunks,
   setModalStateDeleteConv,
   setPrompt,
+  setProxy,
   setTokenLimit,
 } from '../preferences/preferenceSlice';
 import Prompts from './Prompts';
+import Proxies from './Proxies';
 
 export default function General() {
   const {
@@ -48,6 +51,9 @@ export default function General() {
   const [prompts, setPrompts] = React.useState<
     { name: string; id: string; type: string }[]
   >([]);
+  const [proxies, setProxies] = React.useState<
+    { name: string; id: string; type: string }[]
+  >([]);
   const selectedChunks = useSelector(selectChunks);
   const selectedTokenLimit = useSelector(selectTokenLimit);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
@@ -62,6 +68,44 @@ export default function General() {
       : languageOptions[0],
   );
   const selectedPrompt = useSelector(selectPrompt);
+  const selectedProxy = useSelector(selectProxy);
+
+  React.useEffect(() => {
+    // Set default proxy state first (only if no stored preference exists)
+    const storedProxy = localStorage.getItem('DocsGPTProxy');
+    if (!storedProxy) {
+      const noneProxy = { name: 'None', id: 'none', type: 'public' };
+      dispatch(setProxy(noneProxy));
+    } else {
+      try {
+        const parsedProxy = JSON.parse(storedProxy);
+        dispatch(setProxy(parsedProxy));
+      } catch (e) {
+        console.error('Error parsing stored proxy', e);
+        // Fallback to None if parsing fails
+        dispatch(setProxy({ name: 'None', id: 'none', type: 'public' }));
+      }
+    }
+    // Fetch available proxies
+    const handleFetchProxies = async () => {
+      try {
+        const response = await userService.getProxies(token);
+        if (!response.ok) {
+          console.warn('Proxies API not implemented yet or failed to fetch');
+          return;
+        }
+        const proxiesData = await response.json();
+        if (proxiesData && Array.isArray(proxiesData)) {
+          // Filter out 'none' as we add it separately in the component
+          const filteredProxies = proxiesData.filter((p) => p.id !== 'none');
+          setProxies(filteredProxies);
+        }
+      } catch (error) {
+        console.error('Error fetching proxies:', error);
+      }
+    };
+    handleFetchProxies();
+  }, [token, dispatch]);
 
   React.useEffect(() => {
     const handleFetchPrompts = async () => {
@@ -77,12 +121,13 @@ export default function General() {
       }
     };
     handleFetchPrompts();
-  }, []);
+  }, [token]);
 
   React.useEffect(() => {
     localStorage.setItem('docsgpt-locale', selectedLanguage?.value as string);
     changeLanguage(selectedLanguage?.value);
   }, [selectedLanguage, changeLanguage]);
+
   return (
     <div className="mt-12 flex flex-col gap-4">
       {' '}
@@ -169,6 +214,16 @@ export default function General() {
             dispatch(setPrompt({ name: name, id: id, type: type }))
           }
           setPrompts={setPrompts}
+        />
+      </div>
+      <div className="flex flex-col gap-4">
+        <Proxies
+          proxies={proxies}
+          selectedProxy={selectedProxy}
+          onSelectProxy={(name, id, type) =>
+            dispatch(setProxy({ name: name, id: id, type: type }))
+          }
+          setProxies={setProxies}
         />
       </div>
       <hr className="border-t w-[calc(min(665px,100%))] my-4 border-silver dark:border-silver/40" />

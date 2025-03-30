@@ -27,6 +27,16 @@ const userService = {
     apiClient.post(endpoints.USER.UPDATE_PROMPT, data, token),
   getSinglePrompt: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
+  getProxies: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.PROXIES, token),
+  createProxy: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.CREATE_PROXY, data, token),
+  deleteProxy: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_PROXY, data, token),
+  updateProxy: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.UPDATE_PROXY, data, token),
+  getSingleProxy: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.SINGLE_PROXY(id), token),
   deletePath: (docPath: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
   getTaskStatus: (task_id: string, token: string | null): Promise<any> =>

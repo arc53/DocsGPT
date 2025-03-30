@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useDispatch } from 'react-redux';
 
 import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
@@ -19,7 +18,13 @@ export default function JWTModal({
   if (modalState !== 'ACTIVE') return null;
 
   return (
-    <WrapperModal className="p-4" isPerformingTask={true} close={() => {}}>
+    <WrapperModal
+      className="p-4"
+      isPerformingTask={true}
+      close={() => {
+        /* Modal close handler */
+      }}
+    >
       <div className="mb-6">
         <span className="text-lg text-jet dark:text-bright-gray">
           Add JWT Token

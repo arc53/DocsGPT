@@ -27,6 +27,7 @@ db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
+proxies_collection = db["proxies"]
 feedback_collection = db["feedback"]
 api_key_collection = db["api_keys"]
 token_usage_collection = db["token_usage"]
@@ -919,6 +920,183 @@ class UpdatePrompt(Resource):
 
         return make_response(jsonify({"success": True}), 200)
 
+@user_ns.route("/api/get_proxies")
+class GetProxies(Resource):
+    @api.doc(description="Get all proxies for the user")
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            proxies = proxies_collection.find({"user": user})
+            list_proxies = [
+                {"id": "none", "name": "None", "type": "public"},
+            ]
+
+            for proxy in proxies:
+                list_proxies.append(
+                    {
+                        "id": str(proxy["_id"]),
+                        "name": proxy["name"],
+                        "type": "private",
+                    }
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving proxies: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify(list_proxies), 200)
+
+
+@user_ns.route("/api/get_single_proxy")
+class GetSingleProxy(Resource):
+    @api.doc(params={"id": "ID of the proxy"}, description="Get a single proxy by ID")
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        proxy_id = request.args.get("id")
+        if not proxy_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        try:
+            if proxy_id == "none":
+                return make_response(jsonify({"connection": ""}), 200)
+
+            proxy = proxies_collection.find_one(
+                {"_id": ObjectId(proxy_id), "user": user}
+            )
+            if not proxy:
+                return make_response(jsonify({"status": "not found"}), 404)
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving proxy: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"connection": proxy["connection"]}), 200)
+
+
+@user_ns.route("/api/create_proxy")
+class CreateProxy(Resource):
+    create_proxy_model = api.model(
+        "CreateProxyModel",
+        {
+            "connection": fields.String(
+                required=True, description="Connection string of the proxy"
+            ),
+            "name": fields.String(required=True, description="Name of the proxy"),
+        },
+    )
+
+    @api.expect(create_proxy_model)
+    @api.doc(description="Create a new proxy")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        data = request.get_json()
+        required_fields = ["connection", "name"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        user = decoded_token.get("sub")
+        try:
+            resp = proxies_collection.insert_one(
+                {
+                    "name": data["name"],
+                    "connection": data["connection"],
+                    "user": user,
+                }
+            )
+            new_id = str(resp.inserted_id)
+        except Exception as err:
+            current_app.logger.error(f"Error creating proxy: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"id": new_id}), 200)
+
+
+@user_ns.route("/api/delete_proxy")
+class DeleteProxy(Resource):
+    delete_proxy_model = api.model(
+        "DeleteProxyModel",
+        {"id": fields.String(required=True, description="Proxy ID to delete")},
+    )
+
+    @api.expect(delete_proxy_model)
+    @api.doc(description="Delete a proxy by ID")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+        required_fields = ["id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            # Don't allow deleting the 'none' proxy
+            if data["id"] == "none":
+                return make_response(jsonify({"success": False, "message": "Cannot delete default proxy"}), 400)
+                
+            result = proxies_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
+            if result.deleted_count == 0:
+                return make_response(jsonify({"success": False, "message": "Proxy not found"}), 404)
+        except Exception as err:
+            current_app.logger.error(f"Error deleting proxy: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/update_proxy")
+class UpdateProxy(Resource):
+    update_proxy_model = api.model(
+        "UpdateProxyModel",
+        {
+            "id": fields.String(required=True, description="Proxy ID to update"),
+            "name": fields.String(required=True, description="New name of the proxy"),
+            "connection": fields.String(
+                required=True, description="New connection string of the proxy"
+            ),
+        },
+    )
+
+    @api.expect(update_proxy_model)
+    @api.doc(description="Update an existing proxy")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+        required_fields = ["id", "name", "connection"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+
+        try:
+            # Don't allow updating the 'none' proxy
+            if data["id"] == "none":
+                return make_response(jsonify({"success": False, "message": "Cannot update default proxy"}), 400)
+                
+            result = proxies_collection.update_one(
+                {"_id": ObjectId(data["id"]), "user": user},
+                {"$set": {"name": data["name"], "connection": data["connection"]}},
+            )
+            if result.modified_count == 0:
+                return make_response(jsonify({"success": False, "message": "Proxy not found"}), 404)
+        except Exception as err:
+            current_app.logger.error(f"Error updating proxy: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
 
 @user_ns.route("/api/get_api_keys")
 class GetApiKeys(Resource):

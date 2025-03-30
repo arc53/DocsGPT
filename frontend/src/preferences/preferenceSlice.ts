@@ -11,6 +11,7 @@ import { ActiveState, Doc } from '../models/misc';
 export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
+  proxy: { name: string; id: string; type: string } | null;
   chunks: string;
   token_limit: number;
   selectedDocs: Doc | null;
@@ -27,6 +28,7 @@ export interface Preference {
 const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
+  proxy: null,
   chunks: '2',
   token_limit: 2000,
   selectedDocs: {
@@ -73,6 +75,9 @@ export const prefSlice = createSlice({
     setPrompt: (state, action) => {
       state.prompt = action.payload;
     },
+    setProxy: (state, action) => {
+      state.proxy = action.payload;
+    },
     setChunks: (state, action) => {
       state.chunks = action.payload;
     },
@@ -92,6 +97,7 @@ export const {
   setConversations,
   setToken,
   setPrompt,
+  setProxy,
   setChunks,
   setTokenLimit,
   setModalStateDeleteConv,
@@ -122,6 +128,16 @@ prefListenerMiddleware.startListening({
     localStorage.setItem(
       'DocsGPTPrompt',
       JSON.stringify((listenerApi.getState() as RootState).preference.prompt),
+    );
+  },
+});
+
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setProxy),
+  effect: (action, listenerApi) => {
+    localStorage.setItem(
+      'DocsGPTProxy',
+      JSON.stringify((listenerApi.getState() as RootState).preference.proxy),
     );
   },
 });
@@ -165,6 +181,7 @@ export const selectConversationId = (state: RootState) =>
   state.conversation.conversationId;
 export const selectToken = (state: RootState) => state.preference.token;
 export const selectPrompt = (state: RootState) => state.preference.prompt;
+export const selectProxy = (state: RootState) => state.preference.proxy;
 export const selectChunks = (state: RootState) => state.preference.chunks;
 export const selectTokenLimit = (state: RootState) =>
   state.preference.token_limit;

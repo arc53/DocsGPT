@@ -23,15 +23,43 @@ class APITool(Tool):
         )
 
     def _make_api_call(self, url, method, headers, query_params, body):
+        sanitized_headers = {}
+        for key, value in headers.items():
+            if isinstance(value, str):
+                sanitized_value = value.encode('latin-1', errors='ignore').decode('latin-1')
+                sanitized_headers[key] = sanitized_value
+            else:
+                sanitized_headers[key] = value
+
         if query_params:
             url = f"{url}?{requests.compat.urlencode(query_params)}"
         if isinstance(body, dict):
             body = json.dumps(body)
+        response = None
         try:
             print(f"Making API call: {method} {url} with body: {body}")
             if body == "{}":
                 body = None
-            response = requests.request(method, url, headers=headers, data=body)
+
+            proxy_id = self.config.get("proxy_id", None)
+            request_kwargs = {
+                'method': method,
+                'url': url,
+                'headers': sanitized_headers,
+                'data': body
+            }
+            try:
+                if proxy_id:
+                    from application.agents.tools.proxy_handler import apply_proxy_to_request
+                    response = apply_proxy_to_request(
+                        requests.request,
+                        proxy_id=proxy_id,
+                        **request_kwargs
+                    )
+                else:
+                    response = requests.request(**request_kwargs)
+            except ImportError:
+                response = requests.request(**request_kwargs)
             response.raise_for_status()
             content_type = response.headers.get(
                 "Content-Type", "application/json"
