@@ -11,10 +11,11 @@ class ClassicAgent(BaseAgent):
         self, query: str, retriever: BaseRetriever, log_context: LogContext
     ) -> Generator[Dict, None, None]:
         retrieved_data = self._retriever_search(retriever, query, log_context)
-        messages = self._build_messages(self.prompt, query, retrieved_data)
 
         tools_dict = self._get_user_tools(self.user)
         self._prepare_tools(tools_dict)
+
+        messages = self._build_messages(self.prompt, query, retrieved_data)
 
         resp = self._llm_gen(messages, log_context)
 
@@ -46,5 +47,6 @@ class ClassicAgent(BaseAgent):
             for line in completion:
                 if isinstance(line, str):
                     yield {"answer": line}
+
         yield {"sources": retrieved_data}
         yield {"tool_calls": self.tool_calls.copy()}
