@@ -1,17 +1,28 @@
+import os
 from typing import Dict, Generator, List
 
 from application.agents.base import BaseAgent
 from application.logging import build_stack_data, LogContext
 from application.retriever.base import BaseRetriever
 
+current_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+with open(
+    os.path.join(current_dir, "application/prompts", "react_planning_prompt.txt"), "r"
+) as f:
+    planning_prompt = f.read()
+with open(
+    os.path.join(current_dir, "application/prompts", "react_final_prompt.txt"),
+    "r",
+) as f:
+    final_prompt = f.read()
+
 
 class ReActAgent(BaseAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.plan = ""
-        self.planning_prompt: str = (
-            "You are an AI assistant and talk like you're thinking out loud. Given the following query, outline a concise thought process that includes key steps and considerations necessary for effective analysis and response and don't give pointwise. The goal is to break down the query into manageable components without excessive detail, focusing on clarity and logical progression.Include the following elements in your thought process: 1.Identify the main objective of the query.2.Determine any relevant context or background information needed to understand the query.3.List potential approaches or methods to address the query.4.Highlight any critical factors or constraints that may influence the outcome.5.Summarize the anticipated next steps based on the outlined thought process. Query: {query} Summaries: {summaries}"
-        )
         self.observations: List[str] = []
 
     def _gen_inner(
@@ -79,8 +90,8 @@ class ReActAgent(BaseAgent):
     def _create_plan(
         self, query: str, docs_data: str, log_context: LogContext = None
     ) -> Generator[str, None, None]:
-        plan_prompt = self.planning_prompt.replace("{query}", query)
-        if "{summaries}" in self.planning_prompt:
+        plan_prompt = planning_prompt.replace("{query}", query)
+        if "{summaries}" in planning_prompt:
             summaries = docs_data
             plan_prompt = plan_prompt.replace("{summaries}", summaries)
 
@@ -98,7 +109,9 @@ class ReActAgent(BaseAgent):
         self, query: str, observations: List[str], log_context: LogContext = None
     ) -> str:
         observation_string = "\n".join(observations)
-        final_answer_prompt = f"Query: {query} \n Observations: {observation_string} \n Now, using the insights from the observations, formulate a well-structured and precise final answer."
+        final_answer_prompt = final_prompt.format(
+            query=query, observations=observation_string
+        )
 
         messages = [{"role": "user", "content": final_answer_prompt}]
         final_answer = self.llm.gen_stream(model=self.gpt_model, messages=messages)
