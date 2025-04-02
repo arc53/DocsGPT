@@ -4,7 +4,8 @@ from application.agents.base import BaseAgent
 from application.logging import LogContext
 
 from application.retriever.base import BaseRetriever
-
+import logging
+logger = logging.getLogger(__name__)
 
 class ClassicAgent(BaseAgent):
     def _gen_inner(
@@ -18,6 +19,8 @@ class ClassicAgent(BaseAgent):
         messages = self._build_messages(self.prompt, query, retrieved_data)
 
         resp = self._llm_gen(messages, log_context)
+        
+        attachments = self.attachments
 
         if isinstance(resp, str):
             yield {"answer": resp}
@@ -30,7 +33,7 @@ class ClassicAgent(BaseAgent):
             yield {"answer": resp.message.content}
             return
 
-        resp = self._llm_handler(resp, tools_dict, messages, log_context)
+        resp = self._llm_handler(resp, tools_dict, messages, log_context,attachments)
 
         if isinstance(resp, str):
             yield {"answer": resp}

@@ -32,6 +32,7 @@ const endpoints = {
     DELETE_CHUNK: (docId: string, chunkId: string) =>
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
     UPDATE_CHUNK: '/api/update_chunk',
+    STORE_ATTACHMENT: '/api/store_attachment',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

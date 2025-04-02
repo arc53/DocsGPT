@@ -3,9 +3,7 @@
   "chat": "Chat",
   "chats": "Chats",
   "newChat": "New Chat",
-  "myPlan": "My Plan",
-  "about": "About",
-  "inputPlaceholder": "Type your message here...",
+  "inputPlaceholder": "How can DocsGPT help you?",
   "tagline": "DocsGPT uses GenAI, please review critical information using sources.",
   "sourceDocs": "Source",
   "none": "None",
@@ -120,7 +118,8 @@
       "selectToolSetup": "Select a tool to set up",
       "settingsIconAlt": "Settings icon",
       "configureToolAria": "Configure {toolName}",
-      "toggleToolAria": "Toggle {toolName}"
+      "toggleToolAria": "Toggle {toolName}",
+      "manageTools": "Go to Tools"
     }
   },
   "modals": {
@@ -238,7 +237,7 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Source text",
+      "text": "Choose Your Sources",
       "link": "Source link",
       "view_more": "{{count}} more sources"
     },

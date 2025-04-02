@@ -13,6 +13,7 @@ const initialState: ConversationState = {
   queries: [],
   status: 'idle',
   conversationId: null,
+  attachments: [],
 };
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
@@ -37,6 +38,8 @@ export const fetchAnswer = createAsyncThunk<
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
+  const attachments = state.conversation.attachments?.map(a => a.id) || [];
+  
   if (state.preference) {
     if (API_STREAMING) {
       await handleFetchAnswerSteaming(
@@ -119,6 +122,7 @@ export const fetchAnswer = createAsyncThunk<
           }
         },
         indx,
+        attachments
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -131,6 +135,7 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.prompt.id,
         state.preference.chunks,
         state.preference.token_limit,
+        attachments
       );
       if (answer) {
         let sourcesPrepped = [];
@@ -281,6 +286,9 @@ export const conversationSlice = createSlice({
       const { index, message } = action.payload;
       state.queries[index].error = message;
     },
+    setAttachments: (state, action: PayloadAction<{ fileName: string; id: string }[]>) => {
+      state.attachments = action.payload;
+    },
   },
   extraReducers(builder) {
     builder
@@ -314,5 +322,6 @@ export const {
   updateStreamingSource,
   updateToolCalls,
   setConversation,
+  setAttachments,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;

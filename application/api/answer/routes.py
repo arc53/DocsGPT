@@ -29,6 +29,7 @@ sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 api_key_collection = db["api_keys"]
 user_logs_collection = db["user_logs"]
+attachments_collection = db["attachments"]
 
 answer = Blueprint("answer", __name__)
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
@@ -127,7 +128,7 @@ def save_conversation(
     llm,
     decoded_token,
     index=None,
-    api_key=None,
+    api_key=None
 ):
     current_time = datetime.datetime.now(datetime.timezone.utc)
     if conversation_id is not None and index is not None:
@@ -232,9 +233,15 @@ def complete_stream(
     isNoneDoc=False,
     index=None,
     should_save_conversation=True,
+    attachments=None,
 ):
     try:
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
+        attachment_ids = []
+
+        if attachments:
+            attachment_ids = [attachment["id"] for attachment in attachments]
+            logger.info(f"Processing request with {len(attachments)} attachments: {attachment_ids}")
 
         answer = agent.gen(query=question, retriever=retriever)
 
@@ -287,7 +294,7 @@ def complete_stream(
                 llm,
                 decoded_token,
                 index,
-                api_key=user_api_key,
+                api_key=user_api_key
             )
         else:
             conversation_id = None
@@ -307,6 +314,7 @@ def complete_stream(
                 "response": response_full,
                 "sources": source_log_docs,
                 "retriever_params": retriever_params,
+                "attachments": attachment_ids,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
             }
         )
@@ -355,10 +363,13 @@ class Stream(Resource):
                 required=False, description="Flag indicating if no document is used"
             ),
             "index": fields.Integer(
-                required=False, description="The position where query is to be updated"
+                required=False, description="Index of the query to update"
             ),
             "save_conversation": fields.Boolean(
-                required=False, default=True, description="Flag to save conversation"
+                required=False, default=True, description="Whether to save the conversation"
+            ),
+            "attachments": fields.List(
+                fields.String, required=False, description="List of attachment IDs"
             ),
         },
     )
@@ -383,6 +394,7 @@ class Stream(Resource):
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
+            attachment_ids = data.get("attachments", [])
 
             index = data.get("index", None)
             chunks = int(data.get("chunks", 2))
@@ -411,9 +423,11 @@ class Stream(Resource):
 
             if not decoded_token:
                 return make_response({"error": "Unauthorized"}, 401)
+            
+            attachments = get_attachments_content(attachment_ids, decoded_token.get("sub"))
 
             logger.info(
-                f"/stream - request_data: {data}, source: {source}",
+                f"/stream - request_data: {data}, source: {source}, attachments: {len(attachments)}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
 
@@ -431,6 +445,7 @@ class Stream(Resource):
                 prompt=prompt,
                 chat_history=history,
                 decoded_token=decoded_token,
+                attachments=attachments,
             )
 
             retriever = RetrieverCreator.create_retriever(
@@ -791,3 +806,38 @@ class Search(Resource):
             return bad_request(500, str(e))
 
         return make_response(docs, 200)
+
+
+def get_attachments_content(attachment_ids, user):
+    """
+    Retrieve content from attachment documents based on their IDs.
+    
+    Args:
+        attachment_ids (list): List of attachment document IDs
+        user (str): User identifier to verify ownership
+        
+    Returns:
+        list: List of dictionaries containing attachment content and metadata
+    """
+    if not attachment_ids:
+        return []
+    
+    attachments = []
+    for attachment_id in attachment_ids:
+        try:
+            attachment_doc = attachments_collection.find_one({
+                "_id": ObjectId(attachment_id),
+                "user": user
+            })
+            
+            if attachment_doc:
+                attachments.append({
+                    "id": str(attachment_doc["_id"]),
+                    "content": attachment_doc["content"],
+                    "token_count": attachment_doc.get("token_count", 0),
+                    "path": attachment_doc.get("path", "")
+                })
+        except Exception as e:
+            logger.error(f"Error retrieving attachment {attachment_id}: {e}")
+    
+    return attachments

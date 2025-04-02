@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from application.celery_init import celery
-from application.worker import ingest_worker, remote_worker, sync_worker
+from application.worker import ingest_worker, remote_worker, sync_worker, attachment_worker
 
 
 @celery.task(bind=True)
@@ -19,6 +19,12 @@ def ingest_remote(self, source_data, job_name, user, loader):
 @celery.task(bind=True)
 def schedule_syncs(self, frequency):
     resp = sync_worker(self, frequency)
+    return resp
+
+
+@celery.task(bind=True)
+def store_attachment(self, directory, saved_files, user):
+    resp = attachment_worker(self, directory, saved_files, user)
     return resp
 
 

@@ -103,12 +103,12 @@ export default function Conversation() {
   }) => {
     if (updated === true) {
       !isRetry &&
-        dispatch(resendQuery({ index: indx as number, prompt: question })); //dispatch only new queries
+        dispatch(resendQuery({ index: indx as number, prompt: question }));
       fetchStream.current = dispatch(fetchAnswer({ question, indx }));
     } else {
       question = question.trim();
       if (question === '') return;
-      !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
+      !isRetry && dispatch(addQuery({ prompt: question }));
       fetchStream.current = dispatch(fetchAnswer({ question }));
     }
   };
@@ -160,7 +160,9 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: input });
+        handleQuestion({ 
+          question: input,
+        });
       }
       setInput('');
     }

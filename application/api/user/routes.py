@@ -14,7 +14,7 @@ from werkzeug.utils import secure_filename
 
 from application.agents.tools.tool_manager import ToolManager
 
-from application.api.user.tasks import ingest, ingest_remote
+from application.api.user.tasks import ingest, ingest_remote, store_attachment
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
@@ -2476,3 +2476,71 @@ class UpdateChunk(Resource):
         except Exception as e:
             current_app.logger.error(f"Error updating chunk: {e}")
             return make_response(jsonify({"success": False}), 500)
+
+
+@user_ns.route("/api/store_attachment")
+class StoreAttachment(Resource):
+    @api.expect(
+        api.model(
+            "AttachmentModel",
+            {
+                "file": fields.Raw(required=True, description="File to upload"),
+            },
+        )
+    )
+    @api.doc(description="Stores a single attachment without vectorization or training")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        
+        # Get single file instead of list
+        file = request.files.get("file")
+        
+        if not file or file.filename == "":
+            return make_response(
+                jsonify({"status": "error", "message": "Missing file"}),
+                400,
+            )
+
+        user = secure_filename(decoded_token.get("sub"))
+        
+        try:
+            original_filename = secure_filename(file.filename)
+            folder_name = original_filename
+            save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, "attachments",folder_name)
+            os.makedirs(save_dir, exist_ok=True)
+            # Create directory structure: user/attachments/filename/
+            file_path = os.path.join(save_dir, original_filename)
+            
+            # Handle filename conflicts
+            if os.path.exists(file_path):
+                name_parts = os.path.splitext(original_filename)
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                new_filename = f"{name_parts[0]}_{timestamp}{name_parts[1]}"
+                file_path = os.path.join(save_dir, new_filename)
+                original_filename = new_filename
+            
+            file.save(file_path)
+            file_info = {"folder": folder_name, "filename": original_filename}
+            current_app.logger.info(f"Saved file: {file_path}")
+            
+            # Start async task to process single file
+            task = store_attachment.delay(
+                save_dir,
+                file_info,
+                user
+            )
+            
+            return make_response(
+                jsonify({
+                    "success": True,
+                    "task_id": task.id,
+                    "message": "File uploaded successfully. Processing started."
+                }),
+                200
+            )
+            
+        except Exception as err:
+            current_app.logger.error(f"Error storing attachment: {err}")
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)

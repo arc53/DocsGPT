@@ -312,3 +312,85 @@ def sync_worker(self, frequency):
         key: sync_counts[key]
         for key in ["total_sync_count", "sync_success", "sync_failure"]
     }
+
+def attachment_worker(self, directory, file_info, user):
+    """
+    Process and store a single attachment without vectorization.
+    
+    Args:
+        self: Reference to the instance of the task.
+        directory (str): Base directory for storing files.
+        file_info (dict): Dictionary with folder and filename info.
+        user (str): User identifier.
+        
+    Returns:
+        dict: Information about processed attachment.
+    """
+    import datetime
+    import os
+    from application.utils import num_tokens_from_string
+    
+    mongo = MongoDB.get_client()
+    db = mongo["docsgpt"]
+    attachments_collection = db["attachments"]
+    
+    job_name = file_info["folder"]
+    logging.info(f"Processing attachment: {job_name}", extra={"user": user, "job": job_name})
+    
+    self.update_state(state="PROGRESS", meta={"current": 10})
+    
+    folder_name = file_info["folder"]
+    filename = file_info["filename"]
+    
+    file_path = os.path.join(directory, filename)
+    
+    
+    logging.info(f"Processing file: {file_path}", extra={"user": user, "job": job_name})
+    
+    if not os.path.exists(file_path):
+        logging.warning(f"File not found: {file_path}", extra={"user": user, "job": job_name})
+        return {"error": "File not found"}
+    
+    try:
+        reader = SimpleDirectoryReader(
+            input_files=[file_path]
+        )
+        
+        documents = reader.load_data()
+        
+        self.update_state(state="PROGRESS", meta={"current": 50})
+        
+        if documents:
+            content = documents[0].text
+            token_count = num_tokens_from_string(content)
+            
+            file_path_relative = f"{user}/attachments/{folder_name}/{filename}"
+            
+            attachment_id = attachments_collection.insert_one({
+                "user": user,
+                "path": file_path_relative,
+                "content": content,
+                "token_count": token_count,
+                "date": datetime.datetime.now(),
+            }).inserted_id
+            
+            logging.info(f"Stored attachment with ID: {attachment_id}", 
+                        extra={"user": user, "job": job_name})
+            
+            self.update_state(state="PROGRESS", meta={"current": 100})
+            
+            return {
+                "attachment_id": str(attachment_id),
+                "filename": filename,
+                "folder": folder_name,
+                "path": file_path_relative,
+                "token_count": token_count
+            }
+        else:
+            logging.warning("No content was extracted from the file", 
+                           extra={"user": user, "job": job_name})
+            return {"error": "No content was extracted from the file"}
+    except Exception as e:
+        logging.error(f"Error processing file {filename}: {e}", 
+                     extra={"user": user, "job": job_name}, exc_info=True)
+        return {"error": f"Error processing file: {str(e)}"}

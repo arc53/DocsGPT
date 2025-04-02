@@ -13,6 +13,7 @@ export interface ConversationState {
   queries: Query[];
   status: Status;
   conversationId: string | null;
+  attachments?: { fileName: string; id: string }[];
 }
 
 export interface Answer {
@@ -30,12 +31,13 @@ export interface Query {
   prompt: string;
   response?: string;
   feedback?: FEEDBACK;
-  error?: string;
   conversationId?: string | null;
   title?: string | null;
   thought?: string;
   sources?: { title: string; text: string; source: string }[];
   tool_calls?: ToolCallsType[];
+  error?: string;
+  attachments?: { fileName: string; id: string }[];
 }
 
 export interface RetrievalPayload {
@@ -49,4 +51,5 @@ export interface RetrievalPayload {
   token_limit: number;
   isNoneDoc: boolean;
   index?: number;
+  attachments?: string[];
 }
