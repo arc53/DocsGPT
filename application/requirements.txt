@@ -35,7 +35,7 @@ langchain-community==0.3.19
 langchain-core==0.3.45
 langchain-openai==0.3.8
 langchain-text-splitters==0.3.6
-langsmith==0.3.15
+langsmith==0.3.19
 lazy-object-proxy==1.10.0
 lxml==5.3.1
 markupsafe==3.0.2
@@ -65,7 +65,7 @@ py==1.11.0
 pydantic==2.10.6
 pydantic-core==2.27.2
 pydantic-settings==2.7.1
-pymongo==4.10.1
+pymongo==4.11.3
 pypdf==5.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1

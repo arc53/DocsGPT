@@ -22,6 +22,7 @@ export interface Answer {
   result: string;
   conversationId: string | null;
   title: string | null;
+  thought: string;
   sources: { title: string; text: string; source: string }[];
   tool_calls: ToolCallsType[];
 }
@@ -32,6 +33,7 @@ export interface Query {
   feedback?: FEEDBACK;
   conversationId?: string | null;
   title?: string | null;
+  thought?: string;
   sources?: { title: string; text: string; source: string }[];
   tool_calls?: ToolCallsType[];
   error?: string;

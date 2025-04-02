@@ -122,30 +122,28 @@ def save_conversation(
     conversation_id,
     question,
     response,
+    thought,
     source_log_docs,
     tool_calls,
     llm,
     decoded_token,
     index=None,
-    api_key=None,
-    attachment_ids=None, 
+    api_key=None
 ):
     current_time = datetime.datetime.now(datetime.timezone.utc)
     if conversation_id is not None and index is not None:
-        update_data = {
-            f"queries.{index}.prompt": question,
-            f"queries.{index}.response": response,
-            f"queries.{index}.sources": source_log_docs,
-            f"queries.{index}.tool_calls": tool_calls,
-            f"queries.{index}.timestamp": current_time,
-        }
-        
-        if attachment_ids:
-            update_data[f"queries.{index}.attachments"] = attachment_ids
-            
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id), f"queries.{index}": {"$exists": True}},
-            {"$set": update_data},
+            {
+                "$set": {
+                    f"queries.{index}.prompt": question,
+                    f"queries.{index}.response": response,
+                    f"queries.{index}.thought": thought,
+                    f"queries.{index}.sources": source_log_docs,
+                    f"queries.{index}.tool_calls": tool_calls,
+                    f"queries.{index}.timestamp": current_time,
+                }
+            },
         )
         ##remove following queries from the array
         conversations_collection.update_one(
@@ -153,20 +151,20 @@ def save_conversation(
             {"$push": {"queries": {"$each": [], "$slice": index + 1}}},
         )
     elif conversation_id is not None and conversation_id != "None":
-        query_data = {
-            "prompt": question,
-            "response": response,
-            "sources": source_log_docs,
-            "tool_calls": tool_calls,
-            "timestamp": current_time,
-        }
-        
-        if attachment_ids:
-            query_data["attachments"] = attachment_ids
-            
         conversations_collection.update_one(
             {"_id": ObjectId(conversation_id)},
-            {"$push": {"queries": query_data}},
+            {
+                "$push": {
+                    "queries": {
+                        "prompt": question,
+                        "response": response,
+                        "thought": thought,
+                        "sources": source_log_docs,
+                        "tool_calls": tool_calls,
+                        "timestamp": current_time,
+                    }
+                }
+            },
         )
 
     else:
@@ -196,6 +194,7 @@ def save_conversation(
                 {
                     "prompt": question,
                     "response": response,
+                    "thought": thought,
                     "sources": source_log_docs,
                     "tool_calls": tool_calls,
                     "timestamp": current_time,
@@ -237,9 +236,7 @@ def complete_stream(
     attachments=None,
 ):
     try:
-        response_full = ""
-        source_log_docs = []
-        tool_calls = []
+        response_full, thought, source_log_docs, tool_calls = "", "", [], []
         attachment_ids = []
 
         if attachments:
@@ -270,6 +267,10 @@ def complete_stream(
                 tool_calls = line["tool_calls"]
                 data = json.dumps({"type": "tool_calls", "tool_calls": tool_calls})
                 yield f"data: {data}\n\n"
+            elif "thought" in line:
+                thought += line["thought"]
+                data = json.dumps({"type": "thought", "thought": line["thought"]})
+                yield f"data: {data}\n\n"
 
         if isNoneDoc:
             for doc in source_log_docs:
@@ -287,13 +288,13 @@ def complete_stream(
                 conversation_id,
                 question,
                 response_full,
+                thought,
                 source_log_docs,
                 tool_calls,
                 llm,
                 decoded_token,
                 index,
-                api_key=user_api_key,
-                attachment_ids=attachment_ids,
+                api_key=user_api_key
             )
         else:
             conversation_id = None
