@@ -23,7 +23,7 @@ class BaseAgent(ABC):
         prompt: str = "",
         chat_history: Optional[List[Dict]] = None,
         decoded_token: Optional[Dict] = None,
-        attachments: Optional[str]=None,
+        attachments: Optional[List[Dict]]=None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -44,7 +44,7 @@ class BaseAgent(ABC):
             decoded_token=decoded_token,
         )
         self.llm_handler = get_llm_handler(llm_name)
-        set.attachments = attachments or []
+        self.attachments = attachments or []
 
     @log_activity()
     def gen(
@@ -243,8 +243,9 @@ class BaseAgent(ABC):
         tools_dict: Dict,
         messages: List[Dict],
         log_context: Optional[LogContext] = None,
+        attachments: Optional[List[Dict]] = None
     ):
-        resp = self.llm_handler.handle_response(self, resp, tools_dict, messages)
+        resp = self.llm_handler.handle_response(self, resp, tools_dict, messages, attachments)
         if log_context:
             data = build_stack_data(self.llm_handler)
             log_context.stacks.append({"component": "llm_handler", "data": data})
