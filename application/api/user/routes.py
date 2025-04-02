@@ -2508,19 +2508,17 @@ class StoreAttachment(Resource):
         try:
             original_filename = secure_filename(file.filename)
             folder_name = original_filename
-            
+            save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, "attachments",folder_name)
+            os.makedirs(save_dir, exist_ok=True)
             # Create directory structure: user/attachments/filename/
-            base_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, "attachments", folder_name)
-            os.makedirs(base_dir, exist_ok=True)
-            
-            file_path = os.path.join(base_dir, original_filename)
+            file_path = os.path.join(save_dir, original_filename)
             
             # Handle filename conflicts
             if os.path.exists(file_path):
                 name_parts = os.path.splitext(original_filename)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
                 new_filename = f"{name_parts[0]}_{timestamp}{name_parts[1]}"
-                file_path = os.path.join(base_dir, new_filename)
+                file_path = os.path.join(save_dir, new_filename)
                 original_filename = new_filename
             
             file.save(file_path)
@@ -2529,7 +2527,7 @@ class StoreAttachment(Resource):
             
             # Start async task to process single file
             task = store_attachment.delay(
-                os.path.abspath(os.path.join(current_dir, settings.UPLOAD_FOLDER)),
+                save_dir,
                 file_info,
                 user
             )

@@ -342,8 +342,7 @@ def attachment_worker(self, directory, file_info, user):
     folder_name = file_info["folder"]
     filename = file_info["filename"]
     
-    base_dir = os.path.join(directory, user, "attachments", folder_name)
-    file_path = os.path.join(base_dir, filename)
+    file_path = os.path.join(directory, filename)
     
     
     logging.info(f"Processing file: {file_path}", extra={"user": user, "job": job_name})
