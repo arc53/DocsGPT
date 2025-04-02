@@ -55,3 +55,6 @@ class BaseLLM(ABC):
 
     def _supports_tools(self):
         raise NotImplementedError("Subclass must implement _supports_tools method")
+
+    def prepare_messages_with_attachments(self, messages, attachments=None):
+        return messages
