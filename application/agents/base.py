@@ -17,6 +17,7 @@ class BaseAgent:
         api_key,
         user_api_key=None,
         decoded_token=None,
+        attachments=None,
     ):
         self.endpoint = endpoint
         self.llm = LLMCreator.create_llm(
@@ -30,6 +31,7 @@ class BaseAgent:
         self.tools = []
         self.tool_config = {}
         self.tool_calls = []
+        self.attachments = attachments or []
 
     def gen(self, *args, **kwargs) -> Generator[Dict, None, None]:
         raise NotImplementedError('Method "gen" must be implemented in the child class')

@@ -345,6 +345,7 @@ def attachment_worker(self, directory, file_info, user):
     base_dir = os.path.join(directory, user, "attachments", folder_name)
     file_path = os.path.join(base_dir, filename)
     
+    
     logging.info(f"Processing file: {file_path}", extra={"user": user, "job": job_name})
     
     if not os.path.exists(file_path):

@@ -5,7 +5,8 @@ from application.agents.base import BaseAgent
 from application.logging import build_stack_data, log_activity, LogContext
 
 from application.retriever.base import BaseRetriever
-
+import logging
+logger = logging.getLogger(__name__)
 
 class ClassicAgent(BaseAgent):
     def __init__(
@@ -18,9 +19,10 @@ class ClassicAgent(BaseAgent):
         prompt="",
         chat_history=None,
         decoded_token=None,
+        attachments=None,
     ):
         super().__init__(
-            endpoint, llm_name, gpt_model, api_key, user_api_key, decoded_token
+            endpoint, llm_name, gpt_model, api_key, user_api_key, decoded_token, attachments
         )
         self.user = decoded_token.get("sub")
         self.prompt = prompt
@@ -93,7 +95,7 @@ class ClassicAgent(BaseAgent):
             yield {"answer": resp.message.content}
             return
 
-        resp = self._llm_handler(resp, tools_dict, messages_combine, log_context)
+        resp = self._llm_handler(resp, tools_dict, messages_combine, log_context, self.attachments)
 
         if isinstance(resp, str):
             yield {"answer": resp}
@@ -130,9 +132,10 @@ class ClassicAgent(BaseAgent):
             log_context.stacks.append({"component": "llm", "data": data})
         return resp
 
-    def _llm_handler(self, resp, tools_dict, messages_combine, log_context):
+    def _llm_handler(self, resp, tools_dict, messages_combine, log_context, attachments=None):
+        logger.info(f"Handling LLM response with {len(attachments) if attachments else 0} attachments")
         resp = self.llm_handler.handle_response(
-            self, resp, tools_dict, messages_combine
+            self, resp, tools_dict, messages_combine, attachments=attachments
         )
         if log_context:
             data = build_stack_data(self.llm_handler)
