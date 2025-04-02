@@ -75,6 +75,15 @@ export const fetchAnswer = createAsyncThunk<
                 query: { conversationId: data.id },
               }),
             );
+          } else if (data.type === 'thought') {
+            const result = data.thought;
+            console.log('thought', result);
+            dispatch(
+              updateThought({
+                index: indx ?? state.conversation.queries.length - 1,
+                query: { thought: result },
+              }),
+            );
           } else if (data.type === 'source') {
             isSourceUpdated = true;
             dispatch(
@@ -143,6 +152,7 @@ export const fetchAnswer = createAsyncThunk<
             index: indx ?? state.conversation.queries.length - 1,
             query: {
               response: answer.answer,
+              thought: answer.thought,
               sources: sourcesPrepped,
               tool_calls: answer.toolCalls,
             },
@@ -170,6 +180,7 @@ export const fetchAnswer = createAsyncThunk<
     answer: '',
     query: question,
     result: '',
+    thought: '',
     sources: [],
     tool_calls: [],
   };
@@ -216,6 +227,21 @@ export const conversationSlice = createSlice({
     ) {
       state.conversationId = action.payload.query.conversationId ?? null;
       state.status = 'idle';
+    },
+    updateThought(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const { index, query } = action.payload;
+      if (query.thought != undefined) {
+        state.queries[index].thought =
+          (state.queries[index].thought || '') + query.thought;
+      } else {
+        state.queries[index] = {
+          ...state.queries[index],
+          ...query,
+        };
+      }
     },
     updateStreamingSource(
       state,
@@ -286,6 +312,7 @@ export const {
   resendQuery,
   updateStreamingQuery,
   updateConversationId,
+  updateThought,
   updateStreamingSource,
   updateToolCalls,
   setConversation,

@@ -44,6 +44,15 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
               // set status to 'idle'
               dispatch(sharedConversationSlice.actions.setStatus('idle'));
               dispatch(saveToLocalStorage());
+            } else if (data.type === 'thought') {
+              const result = data.thought;
+              console.log('thought', result);
+              dispatch(
+                updateThought({
+                  index: state.sharedConversation.queries.length - 1,
+                  query: { thought: result },
+                }),
+              );
             } else if (data.type === 'source') {
               dispatch(
                 updateStreamingSource({
@@ -113,6 +122,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
       answer: '',
       query: question,
       result: '',
+      thought: '',
       sources: [],
       tool_calls: [],
     };
@@ -183,6 +193,21 @@ export const sharedConversationSlice = createSlice({
         ...query,
       };
     },
+    updateThought(
+      state,
+      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+    ) {
+      const { index, query } = action.payload;
+      if (query.thought != undefined) {
+        state.queries[index].thought =
+          (state.queries[index].thought || '') + query.thought;
+      } else {
+        state.queries[index] = {
+          ...state.queries[index],
+          ...query,
+        };
+      }
+    },
     updateStreamingSource(
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
@@ -243,6 +268,7 @@ export const {
   setClientApiKey,
   updateQuery,
   updateStreamingQuery,
+  updateThought,
   updateToolCalls,
   addQuery,
   saveToLocalStorage,
