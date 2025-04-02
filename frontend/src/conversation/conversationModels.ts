@@ -13,6 +13,7 @@ export interface ConversationState {
   queries: Query[];
   status: Status;
   conversationId: string | null;
+  attachments?: { fileName: string; id: string }[];
 }
 
 export interface Answer {

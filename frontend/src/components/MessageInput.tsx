@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDarkTheme } from '../hooks';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import userService from '../api/services/userService';
 import endpoints from '../api/endpoints';
 import PaperPlane from '../assets/paper_plane.svg';
@@ -15,14 +15,13 @@ import { selectSelectedDocs, selectToken } from '../preferences/preferenceSlice'
 import { ActiveState } from '../models/misc';
 import Upload from '../upload/Upload';
 import ClipIcon from '../assets/clip.svg';
-
+import { setAttachments } from '../conversation/conversationSlice';
 
 interface MessageInputProps {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   loading: boolean;
-  onAttachmentChange?: (attachments: { fileName: string; id: string }[]) => void;
 }
 
 interface UploadState {
@@ -39,7 +38,6 @@ export default function MessageInput({
   onChange,
   onSubmit,
   loading,
-  onAttachmentChange,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
@@ -53,6 +51,8 @@ export default function MessageInput({
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
+  
+  const dispatch = useDispatch();
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -213,21 +213,18 @@ export default function MessageInput({
     console.log('Selected document:', doc);
   };
 
-  useEffect(() => {
-    if (onAttachmentChange) {
-      const completedAttachments = uploads
-        .filter(upload => upload.status === 'completed' && upload.attachment_id)
-        .map(upload => ({
-          fileName: upload.fileName,
-          id: upload.attachment_id as string
-        }));
-      onAttachmentChange(completedAttachments);
-    }
-  }, [uploads, onAttachmentChange]);
 
   const handleSubmit = () => {
+    const completedAttachments = uploads
+      .filter(upload => upload.status === 'completed' && upload.attachment_id)
+      .map(upload => ({
+        fileName: upload.fileName,
+        id: upload.attachment_id as string
+      }));
+    
+    dispatch(setAttachments(completedAttachments));
+    
     onSubmit();
-    setUploads(prevUploads => prevUploads.filter(upload => upload.status !== 'completed'));
   };
   return (
     <div className="flex flex-col w-full mx-2">
