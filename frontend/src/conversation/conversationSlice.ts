@@ -289,6 +289,9 @@ export const conversationSlice = createSlice({
     setAttachments: (state, action: PayloadAction<{ fileName: string; id: string }[]>) => {
       state.attachments = action.payload;
     },
+    removeAttachment(state, action: PayloadAction<string>) {
+      state.attachments = state.attachments?.filter(att => att.id !== action.payload);
+    },
   },
   extraReducers(builder) {
     builder
@@ -323,5 +326,6 @@ export const {
   updateToolCalls,
   setConversation,
   setAttachments,
+  removeAttachment,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;

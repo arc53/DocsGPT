@@ -9,13 +9,16 @@ import SourceIcon from '../assets/source.svg';
 import ToolIcon from '../assets/tool.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
+import ExitIcon from '../assets/exit.svg';
+import AlertIcon from '../assets/alert.svg';
 import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { selectSelectedDocs, selectToken } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import Upload from '../upload/Upload';
 import ClipIcon from '../assets/clip.svg';
-import { setAttachments } from '../conversation/conversationSlice';
+import { setAttachments, removeAttachment } from '../conversation/conversationSlice';
+
 
 interface MessageInputProps {
   value: string;
@@ -71,50 +74,59 @@ export default function MessageInput({
       status: 'uploading'
     };
 
-    setUploads(prev => [...prev, uploadState]);
-    const uploadIndex = uploads.length;
-
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        setUploads(prev => prev.map((upload, index) =>
-          index === uploadIndex
-            ? { ...upload, progress }
-            : upload
-        ));
-      }
-    });
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        const response = JSON.parse(xhr.responseText);
-        console.log('File uploaded successfully:', response);
-
-        if (response.task_id) {
-          setUploads(prev => prev.map((upload, index) =>
-            index === uploadIndex
-              ? { ...upload, taskId: response.task_id, status: 'processing' }
+    setUploads(prev => {
+      const newUploads = [...prev, uploadState];
+      const uploadIndex = newUploads.length - 1;
+      
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          setUploads(current => current.map((upload, idx) =>
+            idx === uploadIndex
+              ? { ...upload, progress }
               : upload
           ));
         }
-      } else {
-        setUploads(prev => prev.map((upload, index) =>
-          index === uploadIndex
+      });
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          console.log('File uploaded successfully:', response);
+
+          if (response.task_id) {
+            setUploads(current => current.map((upload, idx) =>
+              idx === uploadIndex
+                ? { 
+                    ...upload, 
+                    taskId: response.task_id, 
+                    status: 'processing',
+                    progress: 10
+                  }
+                : upload
+            ));
+          }
+        } else {
+          setUploads(current => current.map((upload, idx) =>
+            idx === uploadIndex
+              ? { ...upload, status: 'failed' }
+              : upload
+          ));
+          console.error('Error uploading file:', xhr.responseText);
+        }
+      };
+
+      xhr.onerror = () => {
+        setUploads(current => current.map((upload, idx) =>
+          idx === uploadIndex
             ? { ...upload, status: 'failed' }
             : upload
         ));
-        console.error('Error uploading file:', xhr.responseText);
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploads(prev => prev.map((upload, index) =>
-        index === uploadIndex
-          ? { ...upload, status: 'failed' }
-          : upload
-      ));
-      console.error('Network error during file upload');
-    };
+        console.error('Network error during file upload');
+      };
+      
+      return newUploads;
+    });
 
     xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -233,45 +245,68 @@ export default function MessageInput({
           {uploads.map((upload, index) => (
             <div
               key={index}
-              className="flex items-center px-2 sm:px-3 py-1 sm:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray"
+              className={`flex items-center px-2 sm:px-3 py-1 sm:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray group relative ${
+                upload.status !== 'completed' ? 'opacity-70' : 'opacity-100'
+              }`}
             >
               <span className="font-medium truncate max-w-[120px] sm:max-w-[150px]">{upload.fileName}</span>
 
               {upload.status === 'completed' && (
-                <span className="ml-2 text-green-500">✓</span>
+                <button 
+                  className="ml-2 invisible group-hover:visible focus:visible transition-opacity"
+                  onClick={() => {
+                    setUploads(prev => prev.filter((_, i) => i !== index));
+                    if (upload.attachment_id) {
+                      dispatch(removeAttachment(upload.attachment_id));
+                    }
+                  }}
+                  aria-label="Remove attachment"
+                >
+                  <img 
+                    src={ExitIcon} 
+                    alt="Remove" 
+                    className="w-3 h-3 filter dark:invert" 
+                  />
+                </button>
               )}
 
               {upload.status === 'failed' && (
-                <span className="ml-2 text-red-500">✗</span>
+                <img 
+                  src={AlertIcon} 
+                  alt="Upload failed" 
+                  className="ml-2 w-3.5 h-3.5" 
+                  title="Upload failed"
+                />
               )}
 
-              {(upload.status === 'uploading' || upload.status === 'processing') && (
-                <div className="ml-2 w-4 h-4 relative">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <circle
-                      className="text-gray-200 dark:text-gray-700"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <circle
-                      className="text-blue-600 dark:text-blue-400"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                      strokeDasharray="62.83"
-                      strokeDashoffset={62.83 - (upload.progress / 100) * 62.83}
-                      transform="rotate(-90 12 12)"
-                    />
-                  </svg>
-                </div>
-              )}
+{(upload.status === 'uploading' || upload.status === 'processing') && (
+  <div className="ml-2 w-4 h-4 relative">
+    <svg className="w-4 h-4" viewBox="0 0 24 24">
+      {/* Background circle */}
+      <circle
+        className="text-gray-200 dark:text-gray-700"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+        fill="none"
+      />
+        <circle
+          className="text-blue-600 dark:text-blue-400"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+          fill="none"
+          strokeDasharray="62.83"
+          strokeDashoffset={62.83 * (1 - upload.progress / 100)}
+          transform="rotate(-90 12 12)"
+        />
+    </svg>
+  </div>
+)}
             </div>
           ))}
         </div>
