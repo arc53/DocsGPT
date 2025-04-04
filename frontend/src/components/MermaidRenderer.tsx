@@ -267,9 +267,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           <div className="bg-red-100 dark:bg-red-900/30 px-4 py-2 text-red-800 dark:text-red-300 text-sm whitespace-normal break-words overflow-auto">
             {error}
           </div>
-          {/* <pre className="p-4 whitespace-pre-wrap overflow-auto bg-white dark:bg-eerie-black text-just-black dark:text-chinese-white">
-            {code}
-          </pre> */}
         </div>
       ) : (
         <div className="flex flex-col md:flex-row">
