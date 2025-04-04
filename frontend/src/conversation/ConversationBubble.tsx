@@ -36,6 +36,7 @@ import {
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import { ToolCallsType } from './types';
+import MermaidRenderer from '../components/MermaidRenderer';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -101,26 +102,25 @@ const ConversationBubble = forwardRef<
   let bubble;
   const renderAttachments = () => {
     if (!attachments || attachments.length === 0) return null;
-    
     return (
       <div className="mt-2 flex flex-wrap gap-2">
         {attachments.map((attachment, index) => (
-          <div 
-            key={index} 
+          <div
+            key={index}
             className="flex items-center rounded-md bg-gray-100 px-2 py-1 text-sm dark:bg-gray-700"
           >
-            <svg 
-              className="mr-1 h-4 w-4" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24" 
+            <svg
+              className="mr-1 h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" 
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
               />
             </svg>
             <span>{attachment.fileName}</span>
@@ -791,6 +791,15 @@ function Thought({
                   const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
                   const language = match ? match[1] : '';
+
+                  if (language === 'mermaid') {
+                    return (
+                      <MermaidRenderer
+                        isDarkTheme={isDarkTheme}
+                        code={String(children)}
+                      />
+                    );
+                  }
 
                   return match ? (
                     <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
