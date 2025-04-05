@@ -92,13 +92,15 @@ A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available
    ./setup.sh
    ```
 
-This interactive script will guide you through setting up DocsGPT. It offers four options: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider.  The script will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
-
 **For Windows:**
 
-2. **Follow the Docker Deployment Guide:**
+2. **Run the PowerShell setup script:**
 
-   Please refer to the [Docker Deployment documentation](https://docs.docsgpt.cloud/Deploying/Docker-Deploying) for detailed step-by-step instructions on setting up DocsGPT using Docker. 
+   ```powershell
+   PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
+   ```
+
+Either script will guide you through setting up DocsGPT. Four options available: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider.  Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
 
 **Navigate to http://localhost:5173/**
 
@@ -107,7 +109,7 @@ To stop DocsGPT, open a terminal in the `DocsGPT` directory and run:
 ```bash
 docker compose -f deployment/docker-compose.yaml down
 ```
-(or use the specific `docker compose down` command shown after running `setup.sh`).
+(or use the specific `docker compose down` command shown after running the setup script).
 
 > [!Note]
 > For development environment setup instructions, please refer to the [Development Environment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
