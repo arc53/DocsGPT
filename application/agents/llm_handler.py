@@ -15,7 +15,7 @@ class LLMHandler(ABC):
     @abstractmethod
     def handle_response(self, agent, resp, tools_dict, messages, attachments=None, **kwargs):
         pass
-        
+    
     def prepare_messages_with_attachments(self, agent, messages, attachments=None):
         """
         Prepare messages with attachment content if available.
@@ -33,15 +33,53 @@ class LLMHandler(ABC):
         
         logger.info(f"Preparing messages with {len(attachments)} attachments")
         
-        # Check if the LLM has its own custom attachment handling implementation
-        if hasattr(agent.llm, "prepare_messages_with_attachments") and agent.llm.__class__.__name__ != "BaseLLM":
-            logger.info(f"Using {agent.llm.__class__.__name__}'s own prepare_messages_with_attachments method")
-            return agent.llm.prepare_messages_with_attachments(messages, attachments)
+        supported_types = agent.llm.get_supported_attachment_types()
         
-        # Otherwise, append attachment content to the system prompt
+        supported_attachments = []
+        unsupported_attachments = []
+        
+        for attachment in attachments:
+            mime_type = attachment.get('mime_type')
+            if not mime_type:
+                import mimetypes
+                file_path = attachment.get('path')
+                if file_path:
+                    mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
+                else:
+                    unsupported_attachments.append(attachment)
+                    continue
+            
+            if mime_type in supported_types:
+                supported_attachments.append(attachment)
+            else:
+                unsupported_attachments.append(attachment)
+        
+        # Process supported attachments with the LLM's custom method
+        prepared_messages = messages
+        if supported_attachments:
+            logger.info(f"Processing {len(supported_attachments)} supported attachments with {agent.llm.__class__.__name__}'s method")
+            prepared_messages = agent.llm.prepare_messages_with_attachments(messages, supported_attachments)
+        
+        # Process unsupported attachments with the default method
+        if unsupported_attachments:
+            logger.info(f"Processing {len(unsupported_attachments)} unsupported attachments with default method")
+            prepared_messages = self._append_attachment_content_to_system(prepared_messages, unsupported_attachments)
+            
+        return prepared_messages
+    
+    def _append_attachment_content_to_system(self, messages, attachments):
+        """
+        Default method to append attachment content to the system prompt.
+        
+        Args:
+            messages (list): List of message dictionaries.
+            attachments (list): List of attachment dictionaries with content.
+            
+        Returns:
+            list: Messages with attachment context added to the system prompt.
+        """
         prepared_messages = messages.copy()
         
-        # Build attachment content string
         attachment_texts = []
         for attachment in attachments:
             logger.info(f"Adding attachment {attachment.get('id')} to context")
