@@ -328,6 +328,7 @@ def attachment_worker(self, directory, file_info, user):
     """
     import datetime
     import os
+    import mimetypes
     from application.utils import num_tokens_from_string
     
     mongo = MongoDB.get_client()
@@ -361,6 +362,8 @@ def attachment_worker(self, directory, file_info, user):
             
             file_path_relative = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{attachment_id}/{filename}"
             
+            mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
+            
             doc_id = ObjectId(attachment_id)
             attachments_collection.insert_one({
                 "_id": doc_id,
@@ -368,6 +371,7 @@ def attachment_worker(self, directory, file_info, user):
                 "path": file_path_relative,
                 "content": content,
                 "token_count": token_count,
+                "mime_type": mime_type,
                 "date": datetime.datetime.now(),
             })
             
@@ -380,7 +384,8 @@ def attachment_worker(self, directory, file_info, user):
                 "filename": filename,
                 "path": file_path_relative,
                 "token_count": token_count,
-                "attachment_id": attachment_id
+                "attachment_id": attachment_id,
+                "mime_type": mime_type
             }
         else:
             logging.warning("No content was extracted from the file", 
