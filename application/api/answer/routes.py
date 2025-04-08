@@ -611,6 +611,7 @@ class Answer(Resource):
             source_log_docs = []
             tool_calls = []
             stream_ended = False
+            thought = ""
 
             for line in complete_stream(
                 question=question,
@@ -633,6 +634,8 @@ class Answer(Resource):
                         source_log_docs = event["source"]
                     elif event["type"] == "tool_calls":
                         tool_calls = event["tool_calls"]
+                    elif event["type"] == "thought":
+                        thought = event["thought"]
                     elif event["type"] == "error":
                         logger.error(f"Error from stream: {event['error']}")
                         return bad_request(500, event["error"])
@@ -664,6 +667,7 @@ class Answer(Resource):
                     conversation_id,
                     question,
                     response_full,
+                    thought,
                     source_log_docs,
                     tool_calls,
                     llm,
