@@ -49,11 +49,11 @@
 - [x] Manually updating chunks in the app UI (Feb 2025)
 - [x] Devcontainer for easy development (Feb 2025)
 - [x] ReACT agent (March 2025)
-- [ ] Anthropic Tool compatibility
-- [ ] New input box in the conversation menu
-- [ ] Add triggerable actions / tools (webhook)
+- [ ] Chatbots menu re-design to handle tools, agent types, and more (April 2025)
+- [ ] New input box in the conversation menu (April 2025)
+- [ ] Anthropic Tool compatibility (April 2025)
+- [ ] Add triggerable actions / tools (webhook) (April 2025)
 - [ ] Add OAuth 2.0 authentication for tools and sources
-- [ ] Chatbots menu re-design to handle tools, agent types, and more
 - [ ] Agent scheduling
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
