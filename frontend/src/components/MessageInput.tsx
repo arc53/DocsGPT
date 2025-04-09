@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef,useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDarkTheme } from '../hooks';
 import { useSelector, useDispatch } from 'react-redux';
@@ -18,7 +18,12 @@ import { selectSelectedDocs, selectToken } from '../preferences/preferenceSlice'
 import { ActiveState } from '../models/misc';
 import Upload from '../upload/Upload';
 import ClipIcon from '../assets/clip.svg';
-import { setAttachments, removeAttachment } from '../conversation/conversationSlice';
+import { 
+  addAttachment, 
+  updateAttachment, 
+  removeAttachment,
+  selectAttachments 
+} from '../conversation/conversationSlice';
 
 
 interface MessageInputProps {
@@ -51,10 +56,10 @@ export default function MessageInput({
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] = useState<ActiveState>('INACTIVE');
-  const [uploads, setUploads] = useState<UploadState[]>([]);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
+  const attachments = useSelector(selectAttachments);
   
   const dispatch = useDispatch();
 
@@ -88,66 +93,52 @@ export default function MessageInput({
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
 
-    const uploadState: UploadState = {
-      taskId: '',
+    const newAttachment = {
       fileName: file.name,
       progress: 0,
-      status: 'uploading'
+      status: 'uploading' as const,
+      taskId: '',
     };
 
-    setUploads(prev => {
-      const newUploads = [...prev, uploadState];
-      const uploadIndex = newUploads.length - 1;
-      
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          setUploads(current => current.map((upload, idx) =>
-            idx === uploadIndex
-              ? { ...upload, progress }
-              : upload
-          ));
-        }
-      });
+    dispatch(addAttachment(newAttachment));
 
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          console.log('File uploaded successfully:', response);
-
-          if (response.task_id) {
-            setUploads(current => current.map((upload, idx) =>
-              idx === uploadIndex
-                ? { 
-                    ...upload, 
-                    taskId: response.task_id, 
-                    status: 'processing',
-                    progress: 10
-                  }
-                : upload
-            ));
-          }
-        } else {
-          setUploads(current => current.map((upload, idx) =>
-            idx === uploadIndex
-              ? { ...upload, status: 'failed' }
-              : upload
-          ));
-          console.error('Error uploading file:', xhr.responseText);
-        }
-      };
-
-      xhr.onerror = () => {
-        setUploads(current => current.map((upload, idx) =>
-          idx === uploadIndex
-            ? { ...upload, status: 'failed' }
-            : upload
-        ));
-        console.error('Network error during file upload');
-      };
-      
-      return newUploads;
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const progress = Math.round((event.loaded / event.total) * 100);
+        dispatch(updateAttachment({ 
+          taskId: newAttachment.taskId, 
+          updates: { progress } 
+        }));
+      }
     });
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const response = JSON.parse(xhr.responseText);
+        if (response.task_id) {
+          dispatch(updateAttachment({
+            taskId: newAttachment.taskId,
+            updates: {
+              taskId: response.task_id,
+              status: 'processing',
+              progress: 10
+            }
+          }));
+        }
+      } else {
+        dispatch(updateAttachment({
+          taskId: newAttachment.taskId,
+          updates: { status: 'failed' }
+        }));
+      }
+    };
+
+    xhr.onerror = () => {
+      dispatch(updateAttachment({
+        taskId: newAttachment.taskId,
+        updates: { status: 'failed' }
+      }));
+    };
 
     xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -156,64 +147,55 @@ export default function MessageInput({
   };
 
   useEffect(() => {
-    let timeoutIds: number[] = [];
-
     const checkTaskStatus = () => {
-      const processingUploads = uploads.filter(upload =>
-        upload.status === 'processing' && upload.taskId
+      const processingAttachments = attachments.filter(att => 
+        att.status === 'processing' && att.taskId
       );
 
-      processingUploads.forEach(upload => {
+      processingAttachments.forEach(attachment => {
         userService
-          .getTaskStatus(upload.taskId, null)
+          .getTaskStatus(attachment.taskId!, null)
           .then((data) => data.json())
           .then((data) => {
-            console.log('Task status:', data);
-
-            setUploads(prev => prev.map(u => {
-              if (u.taskId !== upload.taskId) return u;
-
-              if (data.status === 'SUCCESS') {
-                return {
-                  ...u,
+            if (data.status === 'SUCCESS') {
+              dispatch(updateAttachment({
+                taskId: attachment.taskId!,
+                updates: {
                   status: 'completed',
                   progress: 100,
-                  attachment_id: data.result?.attachment_id,
+                  id: data.result?.attachment_id,
                   token_count: data.result?.token_count
-                };
-              } else if (data.status === 'FAILURE') {
-                return { ...u, status: 'failed' };
-              } else if (data.status === 'PROGRESS' && data.result?.current) {
-                return { ...u, progress: data.result.current };
-              }
-              return u;
-            }));
-
-            if (data.status !== 'SUCCESS' && data.status !== 'FAILURE') {
-              const timeoutId = window.setTimeout(() => checkTaskStatus(), 2000);
-              timeoutIds.push(timeoutId);
+                }
+              }));
+            } else if (data.status === 'FAILURE') {
+              dispatch(updateAttachment({
+                taskId: attachment.taskId!,
+                updates: { status: 'failed' }
+              }));
+            } else if (data.status === 'PROGRESS' && data.result?.current) {
+              dispatch(updateAttachment({
+                taskId: attachment.taskId!,
+                updates: { progress: data.result.current }
+              }));
             }
           })
-          .catch((error) => {
-            console.error('Error checking task status:', error);
-            setUploads(prev => prev.map(u =>
-              u.taskId === upload.taskId
-                ? { ...u, status: 'failed' }
-                : u
-            ));
+          .catch(() => {
+            dispatch(updateAttachment({
+              taskId: attachment.taskId!,
+              updates: { status: 'failed' }
+            }));
           });
       });
     };
 
-    if (uploads.some(upload => upload.status === 'processing')) {
-      const timeoutId = window.setTimeout(checkTaskStatus, 2000);
-      timeoutIds.push(timeoutId);
-    }
+    const interval = setInterval(() => {
+      if (attachments.some(att => att.status === 'processing')) {
+        checkTaskStatus();
+      }
+    }, 2000);
 
-    return () => {
-      timeoutIds.forEach(id => clearTimeout(id));
-    };
-  }, [uploads]);
+    return () => clearInterval(interval);
+  }, [attachments, dispatch]);
 
   const handleInput = () => {
     if (inputRef.current) {
@@ -248,37 +230,27 @@ export default function MessageInput({
 
 
   const handleSubmit = () => {
-    const completedAttachments = uploads
-      .filter(upload => upload.status === 'completed' && upload.attachment_id)
-      .map(upload => ({
-        fileName: upload.fileName,
-        id: upload.attachment_id as string
-      }));
-    
-    dispatch(setAttachments(completedAttachments));
-    
     onSubmit();
   };
   return (
     <div className="flex flex-col w-full mx-2">
       <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-transparent relative">
         <div className="flex flex-wrap gap-1.5 sm:gap-2 px-4 sm:px-6 pt-3 pb-0">
-          {uploads.map((upload, index) => (
+          {attachments.map((attachment, index) => (
             <div
               key={index}
               className={`flex items-center px-2 sm:px-3 py-1 sm:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray group relative ${
-                upload.status !== 'completed' ? 'opacity-70' : 'opacity-100'
+                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               }`}
             >
-              <span className="font-medium truncate max-w-[120px] sm:max-w-[150px]">{upload.fileName}</span>
+              <span className="font-medium truncate max-w-[120px] sm:max-w-[150px]">{attachment.fileName}</span>
 
-              {upload.status === 'completed' && (
+              {attachment.status === 'completed' && (
                 <button 
                   className="ml-2 invisible group-hover:visible focus:visible transition-opacity"
                   onClick={() => {
-                    setUploads(prev => prev.filter((_, i) => i !== index));
-                    if (upload.attachment_id) {
-                      dispatch(removeAttachment(upload.attachment_id));
+                    if (attachment.id) {
+                      dispatch(removeAttachment(attachment.id));
                     }
                   }}
                   aria-label="Remove attachment"
@@ -291,7 +263,7 @@ export default function MessageInput({
                 </button>
               )}
 
-              {upload.status === 'failed' && (
+              {attachment.status === 'failed' && (
                 <img 
                   src={AlertIcon} 
                   alt="Upload failed" 
@@ -300,34 +272,34 @@ export default function MessageInput({
                 />
               )}
 
-{(upload.status === 'uploading' || upload.status === 'processing') && (
-  <div className="ml-2 w-4 h-4 relative">
-    <svg className="w-4 h-4" viewBox="0 0 24 24">
-      {/* Background circle */}
-      <circle
-        className="text-gray-200 dark:text-gray-700"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-        fill="none"
-      />
-        <circle
-          className="text-blue-600 dark:text-blue-400"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeWidth="4"
-          fill="none"
-          strokeDasharray="62.83"
-          strokeDashoffset={62.83 * (1 - upload.progress / 100)}
-          transform="rotate(-90 12 12)"
-        />
-    </svg>
-  </div>
-)}
+              {(attachment.status === 'uploading' || attachment.status === 'processing') && (
+                <div className="ml-2 w-4 h-4 relative">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    {/* Background circle */}
+                    <circle
+                      className="text-gray-200 dark:text-gray-700"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <circle
+                      className="text-blue-600 dark:text-blue-400"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                      strokeDasharray="62.83"
+                      strokeDashoffset={62.83 * (1 - attachment.progress / 100)}
+                      transform="rotate(-90 12 12)"
+                    />
+                  </svg>
+                </div>
+              )}
             </div>
           ))}
         </div>
