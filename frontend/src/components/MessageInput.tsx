@@ -4,6 +4,7 @@ import { useDarkTheme } from '../hooks';
 import { useSelector, useDispatch } from 'react-redux';
 import userService from '../api/services/userService';
 import endpoints from '../api/endpoints';
+import { getOS, isTouchDevice } from '../utils/browserUtils';
 import PaperPlane from '../assets/paper_plane.svg';
 import SourceIcon from '../assets/source.svg';
 import ToolIcon from '../assets/tool.svg';
@@ -56,6 +57,26 @@ export default function MessageInput({
   const token = useSelector(selectToken);
   
   const dispatch = useDispatch();
+
+  const browserOS = getOS();
+  const isTouch = isTouchDevice();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        ((browserOS === 'win' || browserOS === 'linux') && event.ctrlKey && event.key === 'k') ||
+        (browserOS === 'mac' && event.metaKey && event.key === 'k')
+      ) {
+        event.preventDefault();
+        setIsSourcesPopupOpen(!isSourcesPopupOpen);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [browserOS]);
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -333,15 +354,20 @@ export default function MessageInput({
           <div className="flex-grow flex flex-wrap gap-1 sm:gap-2">
             <button
               ref={sourceButtonRef}
-              className="flex items-center px-2 xs:px-3 py-1 xs:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[130px] xs:max-w-[150px]"
+              className="flex items-center px-2 xs:px-3 py-1 xs:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[130px] sm:max-w-[150px]"
               onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
             >
-              <img src={SourceIcon} alt="Sources" className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-1 sm:mr-1.5 flex-shrink-0" />
+              <img src={SourceIcon} alt="Sources" className="w-3.5 h-3.5 sm:h-4 mr-1 sm:mr-1.5 flex-shrink-0" />
               <span className="text-[10px] xs:text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium truncate overflow-hidden">
                 {selectedDocs
                   ? selectedDocs.name
                   : t('conversation.sources.title')}
               </span>
+              {!isTouch && (
+                <span className="hidden sm:inline-block ml-1 text-[10px] text-gray-500 dark:text-gray-400">
+                  {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
+                </span>
+              )}
             </button>
 
             <button
