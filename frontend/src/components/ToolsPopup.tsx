@@ -217,10 +217,10 @@ export default function ToolsPopup({
           </div>
         )}
 
-        <div className="p-4 flex-shrink-0">
+        <div className="p-4 flex-shrink-0 opacity-75 hover:opacity-100 transition-opacity duration-200">
           <a
             href="/settings/tools"
-            className="text-base text-purple-30 font-medium hover:text-violets-are-blue flex items-center"
+            className="text-base text-purple-30 font-medium inline-flex items-center"
           >
             {t('settings.tools.manageTools')}
             <img

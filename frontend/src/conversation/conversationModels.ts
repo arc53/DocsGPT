@@ -9,11 +9,21 @@ export interface Message {
   type: MESSAGE_TYPE;
 }
 
+
+export interface Attachment {
+  id?: string;
+  fileName: string;
+  status: 'uploading' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  taskId?: string;
+  token_count?: number;
+}
+
 export interface ConversationState {
   queries: Query[];
   status: Status;
   conversationId: string | null;
-  attachments?: { fileName: string; id: string }[];
+  attachments: Attachment[];
 }
 
 export interface Answer {

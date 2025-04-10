@@ -328,34 +328,30 @@ def attachment_worker(self, directory, file_info, user):
     """
     import datetime
     import os
+    import mimetypes
     from application.utils import num_tokens_from_string
     
     mongo = MongoDB.get_client()
     db = mongo["docsgpt"]
     attachments_collection = db["attachments"]
     
-    job_name = file_info["folder"]
-    logging.info(f"Processing attachment: {job_name}", extra={"user": user, "job": job_name})
+    filename = file_info["filename"]
+    attachment_id = file_info["attachment_id"]
+    
+    logging.info(f"Processing attachment: {attachment_id}/{filename}", extra={"user": user})
     
     self.update_state(state="PROGRESS", meta={"current": 10})
     
-    folder_name = file_info["folder"]
-    filename = file_info["filename"]
-    
     file_path = os.path.join(directory, filename)
     
-    
-    logging.info(f"Processing file: {file_path}", extra={"user": user, "job": job_name})
-    
     if not os.path.exists(file_path):
-        logging.warning(f"File not found: {file_path}", extra={"user": user, "job": job_name})
-        return {"error": "File not found"}
+        logging.warning(f"File not found: {file_path}", extra={"user": user})
+        raise FileNotFoundError(f"File not found: {file_path}")
     
     try:
         reader = SimpleDirectoryReader(
             input_files=[file_path]
         )
-        
         documents = reader.load_data()
         
         self.update_state(state="PROGRESS", meta={"current": 50})
@@ -364,33 +360,37 @@ def attachment_worker(self, directory, file_info, user):
             content = documents[0].text
             token_count = num_tokens_from_string(content)
             
-            file_path_relative = f"{user}/attachments/{folder_name}/{filename}"
+            file_path_relative = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{attachment_id}/{filename}"
             
-            attachment_id = attachments_collection.insert_one({
+            mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
+            
+            doc_id = ObjectId(attachment_id)
+            attachments_collection.insert_one({
+                "_id": doc_id,
                 "user": user,
                 "path": file_path_relative,
                 "content": content,
                 "token_count": token_count,
+                "mime_type": mime_type,
                 "date": datetime.datetime.now(),
-            }).inserted_id
+            })
             
             logging.info(f"Stored attachment with ID: {attachment_id}", 
-                        extra={"user": user, "job": job_name})
+                        extra={"user": user})
             
             self.update_state(state="PROGRESS", meta={"current": 100})
             
             return {
-                "attachment_id": str(attachment_id),
                 "filename": filename,
-                "folder": folder_name,
                 "path": file_path_relative,
-                "token_count": token_count
+                "token_count": token_count,
+                "attachment_id": attachment_id,
+                "mime_type": mime_type
             }
         else:
             logging.warning("No content was extracted from the file", 
-                           extra={"user": user, "job": job_name})
-            return {"error": "No content was extracted from the file"}
+                           extra={"user": user})
+            raise ValueError("No content was extracted from the file")
     except Exception as e:
-        logging.error(f"Error processing file {filename}: {e}", 
-                     extra={"user": user, "job": job_name}, exc_info=True)
-        return {"error": f"Error processing file: {str(e)}"}
+        logging.error(f"Error processing file {filename}: {e}", extra={"user": user}, exc_info=True)
+        raise

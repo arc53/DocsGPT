@@ -7,7 +7,7 @@ import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
 } from './conversationHandlers';
-import { Answer, ConversationState, Query, Status } from './conversationModels';
+import { Answer, Query, Status, ConversationState, Attachment } from './conversationModels';
 
 const initialState: ConversationState = {
   queries: [],
@@ -38,7 +38,9 @@ export const fetchAnswer = createAsyncThunk<
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
-  const attachments = state.conversation.attachments?.map(a => a.id) || [];
+  const attachmentIds = state.conversation.attachments
+    .filter(a => a.id && a.status === 'completed')
+    .map(a => a.id) as string[];
   
   if (state.preference) {
     if (API_STREAMING) {
@@ -122,7 +124,7 @@ export const fetchAnswer = createAsyncThunk<
           }
         },
         indx,
-        attachments
+        attachmentIds
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -135,7 +137,7 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.prompt.id,
         state.preference.chunks,
         state.preference.token_limit,
-        attachments
+        attachmentIds
       );
       if (answer) {
         let sourcesPrepped = [];
@@ -286,8 +288,28 @@ export const conversationSlice = createSlice({
       const { index, message } = action.payload;
       state.queries[index].error = message;
     },
-    setAttachments: (state, action: PayloadAction<{ fileName: string; id: string }[]>) => {
+    setAttachments: (state, action: PayloadAction<Attachment[]>) => {
       state.attachments = action.payload;
+    },
+    addAttachment: (state, action: PayloadAction<Attachment>) => {
+      state.attachments.push(action.payload);
+    },
+    updateAttachment: (state, action: PayloadAction<{ 
+      taskId: string; 
+      updates: Partial<Attachment>;
+    }>) => {
+      const index = state.attachments.findIndex(att => att.taskId === action.payload.taskId);
+      if (index !== -1) {
+        state.attachments[index] = {
+          ...state.attachments[index],
+          ...action.payload.updates
+        };
+      }
+    },
+    removeAttachment: (state, action: PayloadAction<string>) => {
+      state.attachments = state.attachments.filter(att => 
+        att.taskId !== action.payload && att.id !== action.payload
+      );
     },
   },
   extraReducers(builder) {
@@ -312,6 +334,10 @@ export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
 
+export const selectAttachments = (state: RootState) => state.conversation.attachments;
+export const selectCompletedAttachments = (state: RootState) => 
+  state.conversation.attachments.filter(att => att.status === 'completed');
+
 export const {
   addQuery,
   updateQuery,
@@ -323,5 +349,8 @@ export const {
   updateToolCalls,
   setConversation,
   setAttachments,
+  addAttachment,
+  updateAttachment,
+  removeAttachment,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;
