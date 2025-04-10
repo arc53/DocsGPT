@@ -3,6 +3,7 @@ from google.genai import types
 import os
 import logging
 import mimetypes
+import json
 
 from application.llm.base import BaseLLM
 
@@ -41,11 +42,11 @@ class GoogleLLM(BaseLLM):
         Returns:
             list: Messages formatted with file references for Google AI API.
         """
-        
         if not attachments:
             return messages
         
         prepared_messages = messages.copy()
+        logging.info(f"GoogleLLM: Initial messages before attachment processing: {json.dumps(prepared_messages, indent=2)}")
         
         # Find the user message to attach files to the last one
         user_message_index = None
@@ -53,7 +54,6 @@ class GoogleLLM(BaseLLM):
             if prepared_messages[i].get("role") == "user":
                 user_message_index = i
                 break
-        
         
         if user_message_index is None:
             user_message = {"role": "user", "content": []}
@@ -68,7 +68,7 @@ class GoogleLLM(BaseLLM):
         elif not isinstance(prepared_messages[user_message_index].get("content"), list):
             prepared_messages[user_message_index]["content"] = []
         
-        file_uris = []
+        files = []
         for attachment in attachments:
             mime_type = attachment.get('mime_type')
             if not mime_type:
@@ -80,7 +80,7 @@ class GoogleLLM(BaseLLM):
                 try:
                     file_uri = self._upload_file_to_google(attachment)
                     logging.info(f"GoogleLLM: Successfully uploaded file, got URI: {file_uri}")
-                    file_uris.append((file_uri, mime_type))
+                    files.append({"file_uri": file_uri, "mime_type": mime_type})
                 except Exception as e:
                     logging.error(f"GoogleLLM: Error uploading file: {e}")
                     if 'content' in attachment:
@@ -89,13 +89,13 @@ class GoogleLLM(BaseLLM):
                             "text": f"[File could not be processed: {attachment.get('path', 'unknown')}]"
                         })
         
-        if file_uris:
-            logging.info(f"GoogleLLM: Adding {len(file_uris)} file URIs to message")
+        if files:
+            logging.info(f"GoogleLLM: Adding {len(files)} files to message")
             prepared_messages[user_message_index]["content"].append({
-                "type": "file_uris",
-                "file_uris": file_uris
+                "files": files
             })
         
+        logging.info(f"GoogleLLM: Final prepared messages: {json.dumps(prepared_messages, indent=2)}")
         return prepared_messages
 
     def _upload_file_to_google(self, attachment):
@@ -149,6 +149,7 @@ class GoogleLLM(BaseLLM):
             raise
 
     def _clean_messages_google(self, messages):
+        logging.info(f"GoogleLLM: Starting message cleaning. Input messages: {json.dumps(messages, indent=2)}")
         cleaned_messages = []
         for message in messages:
             role = message.get("role")
@@ -179,14 +180,14 @@ class GoogleLLM(BaseLLM):
                                     response=item["function_response"]["response"],
                                 )
                             )
-                        elif "type" in item and item["type"] == "file_uris":
-                            for file_uri, mime_type in item["file_uris"]:
-                                parts.append(
-                                    types.Part.from_uri(
-                                        file_uri=file_uri,
-                                        mime_type=mime_type
+                        elif "files" in item:
+                                for file_data in item["files"]:
+                                    parts.append(
+                                        types.Part.from_uri(
+                                            file_uri=file_data["file_uri"],
+                                            mime_type=file_data["mime_type"]
+                                        )
                                     )
-                                )
                         else:
                             raise ValueError(
                                 f"Unexpected content dictionary format:{item}"
