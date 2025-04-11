@@ -32,7 +32,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     const renderDiagram = async (): Promise<void> => {
       try {
         // Generate unique ID
-        const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
+        const id = `mermaid-${crypto.randomUUID()}`;
 
         // Render the diagram
         const { svg } = await mermaid.render(id, code);
