@@ -1,4 +1,5 @@
 import React from 'react';
+
 import Arrow2 from '../assets/dropdown-arrow.svg';
 import Edit from '../assets/edit.svg';
 import Trash from '../assets/trash.svg';
@@ -9,6 +10,10 @@ function Dropdown({
   onSelect,
   size = 'w-32',
   rounded = 'xl',
+  buttonBackgroundColor = 'white',
+  buttonDarkBackgroundColor = 'transparent',
+  optionsBackgroundColor = 'white',
+  optionsDarkBackgroundColor = 'dark-charcoal',
   border = 'border-2',
   borderColor = 'silver',
   darkBorderColor = 'dim-gray',
@@ -17,6 +22,8 @@ function Dropdown({
   showDelete,
   onDelete,
   placeholder,
+  placeholderTextColor = 'gray-500',
+  darkPlaceholderTextColor = 'gray-400',
   contentSize = 'text-base',
 }: {
   options:
@@ -37,6 +44,10 @@ function Dropdown({
     | ((value: { value: number; description: string }) => void);
   size?: string;
   rounded?: 'xl' | '3xl';
+  buttonBackgroundColor?: string;
+  buttonDarkBackgroundColor?: string;
+  optionsBackgroundColor?: string;
+  optionsDarkBackgroundColor?: string;
   border?: 'border' | 'border-2';
   borderColor?: string;
   darkBorderColor?: string;
@@ -45,6 +56,8 @@ function Dropdown({
   showDelete?: boolean;
   onDelete?: (value: string) => void;
   placeholder?: string;
+  placeholderTextColor?: string;
+  darkPlaceholderTextColor?: string;
   contentSize?: string;
 }) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -71,7 +84,7 @@ function Dropdown({
     <div
       className={[
         typeof selectedValue === 'string'
-          ? 'relative mt-2'
+          ? 'relative'
           : 'relative align-middle',
         size,
       ].join(' ')}
@@ -79,7 +92,7 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-white px-5 py-3 dark:border-${darkBorderColor} dark:bg-transparent ${
+        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-${buttonBackgroundColor} px-5 py-3 dark:border-${darkBorderColor} dark:bg-${buttonDarkBackgroundColor} ${
           isOpen ? `${borderTopRadius}` : `${borderRadius}`
         }`}
       >
@@ -89,8 +102,9 @@ function Dropdown({
           </span>
         ) : (
           <span
-            className={`truncate dark:text-bright-gray ${
-              !selectedValue && 'text-silver dark:text-gray-400'
+            className={`truncate ${selectedValue && `dark:text-bright-gray`} ${
+              !selectedValue &&
+              `text-${placeholderTextColor} dark:text-${darkPlaceholderTextColor}`
             } ${contentSize}`}
           >
             {selectedValue && 'label' in selectedValue
@@ -116,7 +130,7 @@ function Dropdown({
       </button>
       {isOpen && (
         <div
-          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-white shadow-lg dark:border-${darkBorderColor} dark:bg-dark-charcoal`}
+          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-${optionsBackgroundColor} shadow-lg dark:border-${darkBorderColor} dark:bg-${optionsDarkBackgroundColor}`}
         >
           {options.map((option: any, index) => (
             <div

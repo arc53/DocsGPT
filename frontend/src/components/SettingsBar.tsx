@@ -1,7 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
-import { useTranslation } from 'react-i18next';
 
 type HiddenGradientType = 'left' | 'right' | undefined;
 
@@ -10,7 +11,6 @@ const useTabs = () => {
   const tabs = [
     t('settings.general.label'),
     t('settings.documents.label'),
-    t('settings.apiKeys.label'),
     t('settings.analytics.label'),
     t('settings.logs.label'),
     t('settings.tools.label'),
@@ -48,18 +48,18 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
     [containerRef.current],
   );
   return (
-    <div className="relative mt-6 flex flex-row items-center space-x-1 md:space-x-0 overflow-auto">
+    <div className="relative mt-6 flex flex-row items-center space-x-1 overflow-auto md:space-x-0">
       <div
-        className={`${hiddenGradient === 'left' ? 'hidden' : ''} md:hidden absolute inset-y-0 left-6 w-14 bg-gradient-to-r from-white dark:from-raisin-black pointer-events-none`}
+        className={`${hiddenGradient === 'left' ? 'hidden' : ''} pointer-events-none absolute inset-y-0 left-6 w-14 bg-gradient-to-r from-white dark:from-raisin-black md:hidden`}
       ></div>
       <div
-        className={`${hiddenGradient === 'right' ? 'hidden' : ''} md:hidden absolute inset-y-0 right-6 w-14 bg-gradient-to-l from-white dark:from-raisin-black pointer-events-none`}
+        className={`${hiddenGradient === 'right' ? 'hidden' : ''} pointer-events-none absolute inset-y-0 right-6 w-14 bg-gradient-to-l from-white dark:from-raisin-black md:hidden`}
       ></div>
 
-      <div className="md:hidden z-10">
+      <div className="z-10 md:hidden">
         <button
           onClick={() => scrollTabs(-1)}
-          className="flex h-6 w-6 items-center rounded-full justify-center transition-all hover:bg-gray-200 dark:hover:bg-gray-700"
+          className="flex h-6 w-6 items-center justify-center rounded-full transition-all hover:bg-gray-200 dark:hover:bg-gray-700"
           aria-label="Scroll tabs left"
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3" />
@@ -67,7 +67,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       </div>
       <div
         ref={containerRef}
-        className="flex flex-nowrap overflow-x-auto no-scrollbar md:space-x-4 scroll-smooth snap-x"
+        className="no-scrollbar flex snap-x flex-nowrap overflow-x-auto scroll-smooth md:space-x-4"
         role="tablist"
         aria-label="Settings tabs"
       >
@@ -75,7 +75,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
           <button
             key={index}
             onClick={() => setActiveTab(tab)}
-            className={`snap-start h-9 rounded-3xl px-4 font-bold transition-colors ${
+            className={`h-9 snap-start rounded-3xl px-4 font-bold transition-colors ${
               activeTab === tab
                 ? 'bg-[#F4F4F5] text-neutral-900 dark:bg-dark-charcoal dark:text-white'
                 : 'text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white'
@@ -89,10 +89,10 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
           </button>
         ))}
       </div>
-      <div className="md:hidden z-10">
+      <div className="z-10 md:hidden">
         <button
           onClick={() => scrollTabs(1)}
-          className="flex h-6 w-6 rounded-full items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700"
+          className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
           aria-label="Scroll tabs right"
         >
           <img src={ArrowRight} alt="right-arrow" className="h-3" />
