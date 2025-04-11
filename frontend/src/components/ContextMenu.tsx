@@ -90,7 +90,7 @@ export default function ContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className="flex w-32 flex-col rounded-xl text-sm shadow-xl md:w-36 dark:bg-charleston-green-2 bg-lotion"
+        className="flex w-32 flex-col rounded-xl bg-lotion text-sm shadow-xl dark:bg-charleston-green-2 md:w-36"
         style={{ minWidth: '144px' }}
       >
         {options.map((option, index) => (
@@ -102,26 +102,22 @@ export default function ContextMenu({
               option.onClick(event);
               setIsOpen(false);
             }}
-            className={`
-              flex justify-start items-center gap-4 p-3
-              transition-colors duration-200 ease-in-out
-              ${index === 0 ? 'rounded-t-xl' : ''}
-              ${index === options.length - 1 ? 'rounded-b-xl' : ''}
-              ${
-                option.variant === 'danger'
-                  ? 'dark:text-red-2000 dark:hover:bg-charcoal-grey text-rosso-corsa hover:bg-bright-gray'
-                  : 'dark:text-bright-gray dark:hover:bg-charcoal-grey text-eerie-black hover:bg-bright-gray'
-              }
-            `}
+            className={`flex items-center justify-start gap-4 p-3 transition-colors duration-200 ease-in-out ${index === 0 ? 'rounded-t-xl' : ''} ${index === options.length - 1 ? 'rounded-b-xl' : ''} ${
+              option.variant === 'danger'
+                ? 'text-rosso-corsa hover:bg-bright-gray dark:text-red-2000 dark:hover:bg-charcoal-grey'
+                : 'text-eerie-black hover:bg-bright-gray dark:text-bright-gray dark:hover:bg-charcoal-grey'
+            } `}
           >
             {option.icon && (
-              <img
-                width={option.iconWidth || 16}
-                height={option.iconHeight || 16}
-                src={option.icon}
-                alt={option.label}
-                className={`cursor-pointer hover:opacity-75 ${option.iconClassName || ''}`}
-              />
+              <div className="flex w-4 justify-center">
+                <img
+                  width={option.iconWidth || 16}
+                  height={option.iconHeight || 16}
+                  src={option.icon}
+                  alt={option.label}
+                  className={`cursor-pointer hover:opacity-75 ${option.iconClassName || ''}`}
+                />
+              </div>
             )}
             <span>{option.label}</span>
           </button>

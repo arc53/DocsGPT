@@ -17,6 +17,20 @@ const userService = {
     apiClient.post(endpoints.USER.CREATE_API_KEY, data, token),
   deleteAPIKey: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.DELETE_API_KEY, data, token),
+  getAgent: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.AGENT(id), token),
+  getAgents: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.AGENTS, token),
+  createAgent: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.CREATE_AGENT, data, token),
+  updateAgent: (
+    agent_id: string,
+    data: any,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.USER.UPDATE_AGENT(agent_id), data, token),
+  deleteAgent: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.DELETE_AGENT(id), token),
   getPrompts: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PROMPTS, token),
   createPrompt: (data: any, token: string | null): Promise<any> =>

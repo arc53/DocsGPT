@@ -5,38 +5,22 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
 import CopyButton from '../components/CopyButton';
-import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
-import { APIKeyData, LogData } from './types';
+import { LogData } from './types';
 
-export default function Logs() {
-  const { t } = useTranslation();
+type LogsProps = {
+  agentId?: string;
+  tableHeader?: string;
+};
+
+export default function Logs({ agentId, tableHeader }: LogsProps) {
   const token = useSelector(selectToken);
-  const [chatbots, setChatbots] = useState<APIKeyData[]>([]);
-  const [selectedChatbot, setSelectedChatbot] = useState<APIKeyData | null>();
   const [logs, setLogs] = useState<LogData[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [loadingChatbots, setLoadingChatbots] = useLoaderState(true);
   const [loadingLogs, setLoadingLogs] = useLoaderState(true);
-
-  const fetchChatbots = async () => {
-    setLoadingChatbots(true);
-    try {
-      const response = await userService.getAPIKeys(token);
-      if (!response.ok) {
-        throw new Error('Failed to fetch Chatbots');
-      }
-      const chatbots = await response.json();
-      setChatbots(chatbots);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingChatbots(false);
-    }
-  };
 
   const fetchLogs = async () => {
     setLoadingLogs(true);
@@ -44,14 +28,12 @@ export default function Logs() {
       const response = await userService.getLogs(
         {
           page: page,
-          api_key_id: selectedChatbot?.id,
+          api_key_id: agentId,
           page_size: 10,
         },
         token,
       );
-      if (!response.ok) {
-        throw new Error('Failed to fetch logs');
-      }
+      if (!response.ok) throw new Error('Failed to fetch logs');
       const olderLogs = await response.json();
       setLogs((prevLogs) => [...prevLogs, ...olderLogs.logs]);
       setHasMore(olderLogs.has_more);
@@ -63,61 +45,17 @@ export default function Logs() {
   };
 
   useEffect(() => {
-    fetchChatbots();
-  }, []);
-
-  useEffect(() => {
     if (hasMore) fetchLogs();
-  }, [page, selectedChatbot]);
-
+  }, [page, agentId]);
   return (
     <div className="mt-12">
-      <div className="flex flex-col items-start">
-        {loadingChatbots ? (
-          <SkeletonLoader component="dropdown" />
-        ) : (
-          <div className="flex flex-col gap-3">
-            <label
-              id="chatbot-filter-label"
-              className="font-bold text-jet dark:text-bright-gray"
-            >
-              {t('settings.logs.filterByChatbot')}
-            </label>
-            <Dropdown
-              size="w-[55vw] sm:w-[360px]"
-              options={[
-                ...chatbots.map((chatbot) => ({
-                  label: chatbot.name,
-                  value: chatbot.id,
-                })),
-                { label: t('settings.logs.none'), value: '' },
-              ]}
-              placeholder={t('settings.logs.selectChatbot')}
-              onSelect={(chatbot: { label: string; value: string }) => {
-                setSelectedChatbot(
-                  chatbots.find((item) => item.id === chatbot.value),
-                );
-                setLogs([]);
-                setPage(1);
-                setHasMore(true);
-              }}
-              selectedValue={
-                (selectedChatbot && {
-                  label: selectedChatbot.name,
-                  value: selectedChatbot.id,
-                }) ||
-                null
-              }
-              rounded="3xl"
-              border="border"
-              darkBorderColor="dim-gray"
-            />
-          </div>
-        )}
-      </div>
-
       <div className="mt-8">
-        <LogsTable logs={logs} setPage={setPage} loading={loadingLogs} />
+        <LogsTable
+          logs={logs}
+          setPage={setPage}
+          loading={loadingLogs}
+          tableHeader={tableHeader}
+        />
       </div>
     </div>
   );
@@ -127,8 +65,9 @@ type LogsTableProps = {
   logs: LogData[];
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
+  tableHeader?: string;
 };
-function LogsTable({ logs, setPage, loading }: LogsTableProps) {
+function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
   const { t } = useTranslation();
   const observerRef = useRef<IntersectionObserver | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
@@ -171,13 +110,13 @@ function LogsTable({ logs, setPage, loading }: LogsTableProps) {
   }, []);
 
   return (
-    <div className="logs-table rounded-xl h-[55vh] w-full overflow-hidden bg-white dark:bg-black border border-light-silver dark:border-transparent">
-      <div className="h-8 bg-black/10 dark:bg-[#191919] flex flex-col items-start justify-center">
+    <div className="logs-table h-[55vh] w-full overflow-hidden rounded-xl border border-light-silver bg-white dark:border-transparent dark:bg-black">
+      <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-[#191919]">
         <p className="px-3 text-xs dark:text-gray-6000">
-          {t('settings.logs.tableHeader')}
+          {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="flex flex-col items-start h-[51vh] overflow-y-auto bg-transparent flex-grow gap-2 p-4">
+      <div className="flex h-[51vh] flex-grow flex-col items-start gap-2 overflow-y-auto bg-transparent p-4">
         {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
@@ -211,18 +150,18 @@ function Log({
   return (
     <details
       id={log.id}
-      className="group bg-transparent [&_summary::-webkit-details-marker]:hidden w-full hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal rounded-xl group-open:opacity-80 [&[open]]:border [&[open]]:border-[#d9d9d9]"
+      className="group w-full rounded-xl bg-transparent hover:bg-[#F9F9F9] group-open:opacity-80 hover:dark:bg-dark-charcoal [&[open]]:border [&[open]]:border-[#d9d9d9] [&_summary::-webkit-details-marker]:hidden"
       onToggle={(e) => {
         if ((e.target as HTMLDetailsElement).open) {
           onToggle(log.id);
         }
       }}
     >
-      <summary className="flex flex-row items-start gap-2 text-gray-900 cursor-pointer px-4 py-3 group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B] group-open:rounded-t-xl p-2">
+      <summary className="flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-gray-900 group-open:rounded-t-xl group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B]">
         <img
           src={ChevronRight}
           alt="Expand log entry"
-          className="mt-[3px] w-3 h-3 transition duration-300 group-open:rotate-90"
+          className="mt-[3px] h-3 w-3 transition duration-300 group-open:rotate-90"
         />
         <span className="flex flex-row gap-2">
           <h2 className="text-xs text-black/60 dark:text-bright-gray">{`${log.timestamp}`}</h2>
@@ -236,8 +175,8 @@ function Log({
           </h2>
         </span>
       </summary>
-      <div className="px-4 py-3 group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B] group-open:rounded-b-xl">
-        <p className="px-2 leading-relaxed text-gray-700 dark:text-gray-400 text-xs break-words">
+      <div className="px-4 py-3 group-open:rounded-b-xl group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B]">
+        <p className="break-words px-2 text-xs leading-relaxed text-gray-700 dark:text-gray-400">
           {JSON.stringify(filteredLog, null, 2)}
         </p>
         <div className="my-px w-fit">
