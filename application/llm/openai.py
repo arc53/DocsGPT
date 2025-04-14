@@ -39,15 +39,6 @@ class OpenAILLM(BaseLLM):
                             cleaned_messages.append(
                                 {"role": role, "content": item["text"]}
                             )
-                        elif isinstance(item, dict):
-                            content_parts = []
-                            if "text" in item:
-                                content_parts.append({"type": "text", "text": item["text"]})
-                            elif "type" in item and item["type"] == "text" and "text" in item:
-                                content_parts.append(item)
-                            elif "type" in item and item["type"] == "file" and "file" in item:
-                                content_parts.append(item)
-                            cleaned_messages.append({"role": role, "content": content_parts})
                         elif "function_call" in item:
                             tool_call = {
                                 "id": item["function_call"]["call_id"],
@@ -78,6 +69,15 @@ class OpenAILLM(BaseLLM):
                                     ),
                                 }
                             )
+                        elif isinstance(item, dict):
+                            content_parts = []
+                            if "text" in item:
+                                content_parts.append({"type": "text", "text": item["text"]})
+                            elif "type" in item and item["type"] == "text" and "text" in item:
+                                content_parts.append(item)
+                            elif "type" in item and item["type"] == "file" and "file" in item:
+                                content_parts.append(item)
+                            cleaned_messages.append({"role": role, "content": content_parts})
                         else:
                             raise ValueError(
                                 f"Unexpected content dictionary format: {item}"
