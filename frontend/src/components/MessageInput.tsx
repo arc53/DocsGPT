@@ -242,12 +242,13 @@ export default function MessageInput({
               className={`flex items-center px-2 sm:px-3 py-1 sm:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray group relative ${
                 attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               }`}
+              title={attachment.fileName}
             >
               <span className="font-medium truncate max-w-[120px] sm:max-w-[150px]">{attachment.fileName}</span>
 
               {attachment.status === 'completed' && (
                 <button 
-                  className="ml-2 invisible group-hover:visible focus:visible transition-opacity"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity bg-white dark:bg-[#1F2028] rounded-full p-1 hover:bg-white/95 dark:hover:bg-[#1F2028]/95"
                   onClick={() => {
                     if (attachment.id) {
                       dispatch(removeAttachment(attachment.id));
@@ -258,11 +259,11 @@ export default function MessageInput({
                   <img 
                     src={ExitIcon} 
                     alt="Remove" 
-                    className="w-3 h-3 filter dark:invert" 
+                    className="w-2.5 h-2.5 filter dark:invert" 
                   />
                 </button>
               )}
-
+            
               {attachment.status === 'failed' && (
                 <img 
                   src={AlertIcon} 
@@ -271,7 +272,7 @@ export default function MessageInput({
                   title="Upload failed"
                 />
               )}
-
+            
               {(attachment.status === 'uploading' || attachment.status === 'processing') && (
                 <div className="ml-2 w-4 h-4 relative">
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -328,6 +329,7 @@ export default function MessageInput({
               ref={sourceButtonRef}
               className="flex items-center px-2 xs:px-3 py-1 xs:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[130px] sm:max-w-[150px]"
               onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
+              title={selectedDocs ? selectedDocs.name : t('conversation.sources.title')}
             >
               <img src={SourceIcon} alt="Sources" className="w-3.5 h-3.5 sm:h-4 mr-1 sm:mr-1.5 flex-shrink-0" />
               <span className="text-[10px] xs:text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium truncate overflow-hidden">
