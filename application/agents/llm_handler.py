@@ -164,7 +164,6 @@ class OpenAILLMHandler(LLMHandler):
             while True:
                 tool_calls = {}
                 for chunk in resp:
-                    logger.info(f"Chunk: {chunk}")
                     if isinstance(chunk, str) and len(chunk) > 0:
                         yield chunk
                         continue
