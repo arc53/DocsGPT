@@ -323,40 +323,6 @@ class GoogleLLM(BaseLLM):
                                 yield part.text
             elif hasattr(chunk, "text"):
                 yield chunk.text
-        
-        if has_attachments and tools and function_call_seen:
-            logging.info("GoogleLLM: Detected both attachments and function calls. Making additional call for final response.")
-            
-            last_user_message_index = -1
-            for i, message in enumerate(messages):
-                if message.role == 'user':
-                    last_user_message_index = i
-            
-            if last_user_message_index >= 0:
-                text_parts = []
-                for part in messages[last_user_message_index].parts:
-                    if hasattr(part, 'text') and part.text is not None:
-                        text_parts.append(part)
-                
-                if text_parts:
-                    messages[last_user_message_index].parts = text_parts
-                    follow_up_response = client.models.generate_content_stream(
-                        model=model,
-                        contents=messages,
-                        config=config,
-                    )
-                    
-                    for chunk in follow_up_response:
-                        if hasattr(chunk, "candidates") and chunk.candidates:
-                            for candidate in chunk.candidates:
-                                if candidate.content and candidate.content.parts:
-                                    for part in candidate.content.parts:
-                                        if part.text:
-                                            logging.info(f"GoogleLLM: Follow-up response text: {part.text[:50]}...")
-                                            yield part.text
-                        elif hasattr(chunk, "text"):
-                            logging.info(f"GoogleLLM: Follow-up response text: {chunk.text[:50]}...")
-                            yield chunk.text
 
     def _supports_tools(self):
         return True

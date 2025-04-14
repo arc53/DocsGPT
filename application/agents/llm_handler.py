@@ -160,12 +160,14 @@ class OpenAILLMHandler(LLMHandler):
             return resp
 
         else:
-            
+            text_buffer = ""
             while True:
                 tool_calls = {}
                 for chunk in resp:
+                    logger.info(f"Chunk: {chunk}")
                     if isinstance(chunk, str) and len(chunk) > 0:
-                        return
+                        yield chunk
+                        continue
                     elif hasattr(chunk, "delta"): 
                         chunk_delta = chunk.delta
 
@@ -244,12 +246,17 @@ class OpenAILLMHandler(LLMHandler):
                                         }
                                     )
                             tool_calls = {}
+                        if hasattr(chunk_delta, "content") and chunk_delta.content:
+                            # Add to buffer or yield immediately based on your preference
+                            text_buffer += chunk_delta.content
+                            yield text_buffer
+                            text_buffer = ""
 
                         if (
                             hasattr(chunk, "finish_reason")
                             and chunk.finish_reason == "stop"
                         ):
-                            return
+                            return resp
                     elif isinstance(chunk, str) and len(chunk) == 0:
                             continue
                 
@@ -265,7 +272,7 @@ class GoogleLLMHandler(LLMHandler):
         from google.genai import types
         
         messages = self.prepare_messages_with_attachments(agent, messages, attachments)
-
+        
         while True:
             if not stream:
                 response = agent.llm.gen(
@@ -336,6 +343,9 @@ class GoogleLLMHandler(LLMHandler):
                                 "content": [function_response_part.to_json_dict()],
                             }
                         )
+                    else:
+                        tool_call_found = False
+                        yield result
 
                 if not tool_call_found:
                     return response
