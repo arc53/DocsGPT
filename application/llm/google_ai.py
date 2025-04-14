@@ -308,8 +308,6 @@ class GoogleLLM(BaseLLM):
             config=config,
         )
         
-        # Track if we've seen any function calls
-        function_call_seen = False
         
         for chunk in response:
             if hasattr(chunk, "candidates") and chunk.candidates:
@@ -317,7 +315,6 @@ class GoogleLLM(BaseLLM):
                     if candidate.content and candidate.content.parts:
                         for part in candidate.content.parts:
                             if part.function_call:
-                                function_call_seen = True
                                 yield part
                             elif part.text:
                                 yield part.text
