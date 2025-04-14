@@ -835,12 +835,7 @@ def get_attachments_content(attachment_ids, user):
             })
             
             if attachment_doc:
-                attachments.append({
-                    "id": str(attachment_doc["_id"]),
-                    "content": attachment_doc["content"],
-                    "token_count": attachment_doc.get("token_count", 0),
-                    "path": attachment_doc.get("path", "")
-                })
+                attachments.append(attachment_doc)
         except Exception as e:
             logger.error(f"Error retrieving attachment {attachment_id}: {e}")
     

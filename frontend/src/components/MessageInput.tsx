@@ -1,21 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef,useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDarkTheme } from '../hooks';
 import { useSelector, useDispatch } from 'react-redux';
 import userService from '../api/services/userService';
 import endpoints from '../api/endpoints';
+import { getOS, isTouchDevice } from '../utils/browserUtils';
 import PaperPlane from '../assets/paper_plane.svg';
 import SourceIcon from '../assets/source.svg';
 import ToolIcon from '../assets/tool.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
+import ExitIcon from '../assets/exit.svg';
+import AlertIcon from '../assets/alert.svg';
 import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { selectSelectedDocs, selectToken } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import Upload from '../upload/Upload';
 import ClipIcon from '../assets/clip.svg';
-import { setAttachments } from '../conversation/conversationSlice';
+import { 
+  addAttachment, 
+  updateAttachment, 
+  removeAttachment,
+  selectAttachments 
+} from '../conversation/conversationSlice';
+
 
 interface MessageInputProps {
   value: string;
@@ -47,12 +56,32 @@ export default function MessageInput({
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] = useState<ActiveState>('INACTIVE');
-  const [uploads, setUploads] = useState<UploadState[]>([]);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
+  const attachments = useSelector(selectAttachments);
   
   const dispatch = useDispatch();
+
+  const browserOS = getOS();
+  const isTouch = isTouchDevice();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        ((browserOS === 'win' || browserOS === 'linux') && event.ctrlKey && event.key === 'k') ||
+        (browserOS === 'mac' && event.metaKey && event.key === 'k')
+      ) {
+        event.preventDefault();
+        setIsSourcesPopupOpen(!isSourcesPopupOpen);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [browserOS]);
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -64,56 +93,51 @@ export default function MessageInput({
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
 
-    const uploadState: UploadState = {
-      taskId: '',
+    const newAttachment = {
       fileName: file.name,
       progress: 0,
-      status: 'uploading'
+      status: 'uploading' as const,
+      taskId: '',
     };
 
-    setUploads(prev => [...prev, uploadState]);
-    const uploadIndex = uploads.length;
+    dispatch(addAttachment(newAttachment));
 
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) {
         const progress = Math.round((event.loaded / event.total) * 100);
-        setUploads(prev => prev.map((upload, index) =>
-          index === uploadIndex
-            ? { ...upload, progress }
-            : upload
-        ));
+        dispatch(updateAttachment({ 
+          taskId: newAttachment.taskId, 
+          updates: { progress } 
+        }));
       }
     });
 
     xhr.onload = () => {
       if (xhr.status === 200) {
         const response = JSON.parse(xhr.responseText);
-        console.log('File uploaded successfully:', response);
-
         if (response.task_id) {
-          setUploads(prev => prev.map((upload, index) =>
-            index === uploadIndex
-              ? { ...upload, taskId: response.task_id, status: 'processing' }
-              : upload
-          ));
+          dispatch(updateAttachment({
+            taskId: newAttachment.taskId,
+            updates: {
+              taskId: response.task_id,
+              status: 'processing',
+              progress: 10
+            }
+          }));
         }
       } else {
-        setUploads(prev => prev.map((upload, index) =>
-          index === uploadIndex
-            ? { ...upload, status: 'failed' }
-            : upload
-        ));
-        console.error('Error uploading file:', xhr.responseText);
+        dispatch(updateAttachment({
+          taskId: newAttachment.taskId,
+          updates: { status: 'failed' }
+        }));
       }
     };
 
     xhr.onerror = () => {
-      setUploads(prev => prev.map((upload, index) =>
-        index === uploadIndex
-          ? { ...upload, status: 'failed' }
-          : upload
-      ));
-      console.error('Network error during file upload');
+      dispatch(updateAttachment({
+        taskId: newAttachment.taskId,
+        updates: { status: 'failed' }
+      }));
     };
 
     xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
@@ -123,64 +147,55 @@ export default function MessageInput({
   };
 
   useEffect(() => {
-    let timeoutIds: number[] = [];
-
     const checkTaskStatus = () => {
-      const processingUploads = uploads.filter(upload =>
-        upload.status === 'processing' && upload.taskId
+      const processingAttachments = attachments.filter(att => 
+        att.status === 'processing' && att.taskId
       );
 
-      processingUploads.forEach(upload => {
+      processingAttachments.forEach(attachment => {
         userService
-          .getTaskStatus(upload.taskId, null)
+          .getTaskStatus(attachment.taskId!, null)
           .then((data) => data.json())
           .then((data) => {
-            console.log('Task status:', data);
-
-            setUploads(prev => prev.map(u => {
-              if (u.taskId !== upload.taskId) return u;
-
-              if (data.status === 'SUCCESS') {
-                return {
-                  ...u,
+            if (data.status === 'SUCCESS') {
+              dispatch(updateAttachment({
+                taskId: attachment.taskId!,
+                updates: {
                   status: 'completed',
                   progress: 100,
-                  attachment_id: data.result?.attachment_id,
+                  id: data.result?.attachment_id,
                   token_count: data.result?.token_count
-                };
-              } else if (data.status === 'FAILURE') {
-                return { ...u, status: 'failed' };
-              } else if (data.status === 'PROGRESS' && data.result?.current) {
-                return { ...u, progress: data.result.current };
-              }
-              return u;
-            }));
-
-            if (data.status !== 'SUCCESS' && data.status !== 'FAILURE') {
-              const timeoutId = window.setTimeout(() => checkTaskStatus(), 2000);
-              timeoutIds.push(timeoutId);
+                }
+              }));
+            } else if (data.status === 'FAILURE') {
+              dispatch(updateAttachment({
+                taskId: attachment.taskId!,
+                updates: { status: 'failed' }
+              }));
+            } else if (data.status === 'PROGRESS' && data.result?.current) {
+              dispatch(updateAttachment({
+                taskId: attachment.taskId!,
+                updates: { progress: data.result.current }
+              }));
             }
           })
-          .catch((error) => {
-            console.error('Error checking task status:', error);
-            setUploads(prev => prev.map(u =>
-              u.taskId === upload.taskId
-                ? { ...u, status: 'failed' }
-                : u
-            ));
+          .catch(() => {
+            dispatch(updateAttachment({
+              taskId: attachment.taskId!,
+              updates: { status: 'failed' }
+            }));
           });
       });
     };
 
-    if (uploads.some(upload => upload.status === 'processing')) {
-      const timeoutId = window.setTimeout(checkTaskStatus, 2000);
-      timeoutIds.push(timeoutId);
-    }
+    const interval = setInterval(() => {
+      if (attachments.some(att => att.status === 'processing')) {
+        checkTaskStatus();
+      }
+    }, 2000);
 
-    return () => {
-      timeoutIds.forEach(id => clearTimeout(id));
-    };
-  }, [uploads]);
+    return () => clearInterval(interval);
+  }, [attachments, dispatch]);
 
   const handleInput = () => {
     if (inputRef.current) {
@@ -215,39 +230,53 @@ export default function MessageInput({
 
 
   const handleSubmit = () => {
-    const completedAttachments = uploads
-      .filter(upload => upload.status === 'completed' && upload.attachment_id)
-      .map(upload => ({
-        fileName: upload.fileName,
-        id: upload.attachment_id as string
-      }));
-    
-    dispatch(setAttachments(completedAttachments));
-    
     onSubmit();
   };
   return (
     <div className="flex flex-col w-full mx-2">
       <div className="flex flex-col w-full rounded-[23px] border dark:border-grey border-dark-gray bg-lotion dark:bg-transparent relative">
         <div className="flex flex-wrap gap-1.5 sm:gap-2 px-4 sm:px-6 pt-3 pb-0">
-          {uploads.map((upload, index) => (
+          {attachments.map((attachment, index) => (
             <div
               key={index}
-              className="flex items-center px-2 sm:px-3 py-1 sm:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray"
+              className={`flex items-center px-2 sm:px-3 py-1 sm:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe bg-white dark:bg-[#1F2028] text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray group relative ${
+                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
+              }`}
+              title={attachment.fileName}
             >
-              <span className="font-medium truncate max-w-[120px] sm:max-w-[150px]">{upload.fileName}</span>
+              <span className="font-medium truncate max-w-[120px] sm:max-w-[150px]">{attachment.fileName}</span>
 
-              {upload.status === 'completed' && (
-                <span className="ml-2 text-green-500">✓</span>
+              {attachment.status === 'completed' && (
+                <button 
+                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity bg-white dark:bg-[#1F2028] rounded-full p-1 hover:bg-white/95 dark:hover:bg-[#1F2028]/95"
+                  onClick={() => {
+                    if (attachment.id) {
+                      dispatch(removeAttachment(attachment.id));
+                    }
+                  }}
+                  aria-label="Remove attachment"
+                >
+                  <img 
+                    src={ExitIcon} 
+                    alt="Remove" 
+                    className="w-2.5 h-2.5 filter dark:invert" 
+                  />
+                </button>
               )}
-
-              {upload.status === 'failed' && (
-                <span className="ml-2 text-red-500">✗</span>
+            
+              {attachment.status === 'failed' && (
+                <img 
+                  src={AlertIcon} 
+                  alt="Upload failed" 
+                  className="ml-2 w-3.5 h-3.5" 
+                  title="Upload failed"
+                />
               )}
-
-              {(upload.status === 'uploading' || upload.status === 'processing') && (
+            
+              {(attachment.status === 'uploading' || attachment.status === 'processing') && (
                 <div className="ml-2 w-4 h-4 relative">
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    {/* Background circle */}
                     <circle
                       className="text-gray-200 dark:text-gray-700"
                       cx="12"
@@ -266,7 +295,7 @@ export default function MessageInput({
                       strokeWidth="4"
                       fill="none"
                       strokeDasharray="62.83"
-                      strokeDashoffset={62.83 - (upload.progress / 100) * 62.83}
+                      strokeDashoffset={62.83 * (1 - attachment.progress / 100)}
                       transform="rotate(-90 12 12)"
                     />
                   </svg>
@@ -298,15 +327,21 @@ export default function MessageInput({
           <div className="flex-grow flex flex-wrap gap-1 sm:gap-2">
             <button
               ref={sourceButtonRef}
-              className="flex items-center px-2 xs:px-3 py-1 xs:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[130px] xs:max-w-[150px]"
+              className="flex items-center px-2 xs:px-3 py-1 xs:py-1.5 rounded-[32px] border border-[#AAAAAA] dark:border-purple-taupe hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors max-w-[130px] sm:max-w-[150px]"
               onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
+              title={selectedDocs ? selectedDocs.name : t('conversation.sources.title')}
             >
-              <img src={SourceIcon} alt="Sources" className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-1 sm:mr-1.5 flex-shrink-0" />
+              <img src={SourceIcon} alt="Sources" className="w-3.5 h-3.5 sm:h-4 mr-1 sm:mr-1.5 flex-shrink-0" />
               <span className="text-[10px] xs:text-[12px] sm:text-[14px] text-[#5D5D5D] dark:text-bright-gray font-medium truncate overflow-hidden">
                 {selectedDocs
                   ? selectedDocs.name
                   : t('conversation.sources.title')}
               </span>
+              {!isTouch && (
+                <span className="hidden sm:inline-block ml-1 text-[10px] text-gray-500 dark:text-gray-400">
+                  {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
+                </span>
+              )}
             </button>
 
             <button
