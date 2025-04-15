@@ -43,6 +43,7 @@ import {
   setConversations,
   setModalStateDeleteConv,
   setSelectedAgent,
+  setAgents,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
 
@@ -90,9 +91,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   async function getAgents() {
     const response = await userService.getAgents(token);
     if (!response.ok) throw new Error('Failed to fetch agents');
-    const data = await response.json();
+    const data: Agent[] = await response.json();
+    dispatch(setAgents(data));
     setRecentAgents(
-      data.filter((agent: Agent) => agent.status === 'published'),
+      data
+        .filter((agent: Agent) => agent.status === 'published')
+        .sort(
+          (a: Agent, b: Agent) =>
+            new Date(b.last_used_at ?? 0).getTime() -
+            new Date(a.last_used_at ?? 0).getTime(),
+        )
+        .slice(0, 3),
     );
   }
 
@@ -356,7 +365,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </div>
           ) : (
             <div
-              className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+              className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
               onClick={() => navigate('/agents')}
             >
               <div className="flex w-6 justify-center">
@@ -366,7 +375,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   className="h-[18px] w-[18px]"
                 />
               </div>
-              <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black hover:text-purple-30 dark:text-bright-gray hover:dark:text-purple-30">
+              <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
                 Manage Agents
               </p>
             </div>

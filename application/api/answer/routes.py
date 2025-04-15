@@ -90,14 +90,23 @@ def get_agent_key(agent_id, user_id):
     if not agent_id:
         return None
 
-    agent = agents_collection.find_one({"_id": ObjectId(agent_id)})
-    if agent is None:
-        raise Exception("Agent not found", 404)
+    try:
+        agent = agents_collection.find_one({"_id": ObjectId(agent_id)})
+        if agent is None:
+            raise Exception("Agent not found", 404)
 
-    if agent.get("is_public") or agent.get("user") == user_id:
-        return str(agent["key"])
+        if agent.get("user") == user_id:
+            agents_collection.update_one(
+                {"_id": ObjectId(agent_id)},
+                {"$set": {"lastUsedAt": datetime.datetime.now(datetime.timezone.utc)}},
+            )
+            return str(agent["key"])
 
-    raise Exception("Unauthorized access to the agent", 403)
+        raise Exception("Unauthorized access to the agent", 403)
+
+    except Exception as e:
+        logger.error(f"Error in get_agent_key: {str(e)}")
+        raise
 
 
 def get_data_from_api_key(api_key):

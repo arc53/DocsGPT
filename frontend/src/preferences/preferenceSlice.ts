@@ -24,6 +24,7 @@ export interface Preference {
   token: string | null;
   modalState: ActiveState;
   paginatedDocuments: Doc[] | null;
+  agents: Agent[] | null;
   selectedAgent: Agent | null;
 }
 
@@ -49,6 +50,7 @@ const initialState: Preference = {
   token: localStorage.getItem('authToken') || null,
   modalState: 'INACTIVE',
   paginatedDocuments: null,
+  agents: null,
   selectedAgent: null,
 };
 
@@ -86,6 +88,9 @@ export const prefSlice = createSlice({
     setModalStateDeleteConv: (state, action: PayloadAction<ActiveState>) => {
       state.modalState = action.payload;
     },
+    setAgents: (state, action) => {
+      state.agents = action.payload;
+    },
     setSelectedAgent: (state, action) => {
       state.selectedAgent = action.payload;
     },
@@ -103,6 +108,7 @@ export const {
   setTokenLimit,
   setModalStateDeleteConv,
   setPaginatedDocuments,
+  setAgents,
   setSelectedAgent,
 } = prefSlice.actions;
 export default prefSlice.reducer;
@@ -178,5 +184,6 @@ export const selectTokenLimit = (state: RootState) =>
   state.preference.token_limit;
 export const selectPaginatedDocuments = (state: RootState) =>
   state.preference.paginatedDocuments;
+export const selectAgents = (state: RootState) => state.preference.agents;
 export const selectSelectedAgent = (state: RootState) =>
   state.preference.selectedAgent;

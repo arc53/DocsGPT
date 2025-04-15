@@ -1,5 +1,5 @@
 import React, { SyntheticEvent, useEffect, useRef, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
@@ -12,10 +12,11 @@ import ThreeDots from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
-import { selectToken } from '../preferences/preferenceSlice';
+import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
 import AgentLogs from './AgentLogs';
 import NewAgent from './NewAgent';
 import { Agent } from './types';
+import Spinner from '../components/Spinner';
 
 export default function Agents() {
   return (
@@ -33,14 +34,23 @@ function AgentsList() {
   const token = useSelector(selectToken);
 
   const [userAgents, setUserAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    const getAgents = async () => {
+  const getAgents = async () => {
+    try {
+      setLoading(true);
       const response = await userService.getAgents(token);
       if (!response.ok) throw new Error('Failed to fetch agents');
       const data = await response.json();
       setUserAgents(data);
-    };
+      setLoading(false);
+    } catch (error) {
+      console.error('Error:', error);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     getAgents();
   }, [token]);
   return (
@@ -107,9 +117,29 @@ function AgentsList() {
           </button>
         </div>
         <div className="flex w-full flex-wrap gap-4">
-          {userAgents.map((agent, idx) => (
-            <AgentCard key={idx} agent={agent} setUserAgents={setUserAgents} />
-          ))}
+          {loading ? (
+            <div className="flex h-72 w-full items-center justify-center">
+              <Spinner />
+            </div>
+          ) : userAgents.length > 0 ? (
+            userAgents.map((agent) => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                setUserAgents={setUserAgents}
+              />
+            ))
+          ) : (
+            <div className="flex h-72 w-full flex-col items-center justify-center gap-3 text-base text-[#18181B] dark:text-[#E0E0E0]">
+              <p>You don’t have any created agents yet </p>
+              <button
+                className="ml-2 rounded-full bg-purple-30 px-4 py-2 text-sm text-white hover:bg-violets-are-blue"
+                onClick={() => navigate('/agents/new')}
+              >
+                New Agent
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -124,11 +154,14 @@ function AgentCard({
   setUserAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
 }) {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
-  const menuRef = useRef<HTMLDivElement>(null);
+
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
+
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const menuOptions: MenuOption[] = [
     {
@@ -156,12 +189,20 @@ function AgentCard({
     {
       icon: Trash,
       label: 'Delete',
-      onClick: () => setDeleteConfirmation('ACTIVE'),
+      onClick: (e: SyntheticEvent) => {
+        e.stopPropagation();
+        setDeleteConfirmation('ACTIVE');
+      },
       variant: 'danger',
       iconWidth: 12,
       iconHeight: 12,
     },
   ];
+
+  const handleClick = () => {
+    dispatch(setSelectedAgent(agent));
+    navigate(`/`);
+  };
 
   const handleDelete = async (agentId: string) => {
     const response = await userService.deleteAgent(agentId, token);
@@ -172,13 +213,17 @@ function AgentCard({
     );
   };
   return (
-    <div className="relative flex h-44 w-48 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 dark:bg-[#383838]">
+    <div
+      className="relative flex h-44 w-48 cursor-pointer flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 dark:bg-[#383838]"
+      onClick={(e) => handleClick()}
+    >
       <div
         ref={menuRef}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           setIsMenuOpen(true);
         }}
-        className="absolute right-4 top-4 cursor-pointer"
+        className="absolute right-4 top-4 z-50 cursor-pointer"
       >
         <img src={ThreeDots} alt={'use-agent'} className="h-[19px] w-[19px]" />
         <ContextMenu

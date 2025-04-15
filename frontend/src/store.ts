@@ -1,4 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
+
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import {
@@ -40,6 +41,7 @@ const preloadedState: { preference: Preference } = {
     ],
     modalState: 'INACTIVE',
     paginatedDocuments: null,
+    agents: null,
     selectedAgent: null,
   },
 };

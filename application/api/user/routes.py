@@ -970,6 +970,9 @@ class GetAgent(Resource):
                 "tools": agent.get("tools", []),
                 "agent_type": agent["agent_type"],
                 "status": agent["status"],
+                "createdAt": agent["createdAt"],
+                "updatedAt": agent["updatedAt"],
+                "lastUsedAt": agent["lastUsedAt"],
                 "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
             }
         except Exception as err:
@@ -1005,6 +1008,9 @@ class GetAgents(Resource):
                     "tools": agent.get("tools", []),
                     "agent_type": agent["agent_type"],
                     "status": agent["status"],
+                    "created_at": agent["createdAt"],
+                    "updated_at": agent["updatedAt"],
+                    "last_used_at": agent["lastUsedAt"],
                     "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
                 }
                 for agent in agents
