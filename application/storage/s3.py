@@ -1,6 +1,6 @@
 """S3 storage implementation."""
 import io
-from typing import BinaryIO, List
+from typing import BinaryIO, List, Callable
 
 import boto3
 from botocore.exceptions import ClientError
@@ -24,7 +24,6 @@ class S3Storage(BaseStorage):
         """
         self.bucket_name = bucket_name
         
-        # Initialize S3 client
         self.s3 = boto3.client(
             's3',
             aws_access_key_id=aws_access_key_id,
@@ -79,3 +78,37 @@ class S3Storage(BaseStorage):
                     result.append(obj['Key'])
                     
         return result
+
+    def process_file(self, path: str, processor_func: Callable, **kwargs):
+        """
+        Process a file using the provided processor function.
+        
+        For S3 storage, we need to download the file to a temporary location first.
+        
+        Args:
+            path: Path to the file
+            processor_func: Function that processes the file
+            **kwargs: Additional arguments to pass to the processor function
+            
+        Returns:
+            The result of the processor function
+        """
+        import tempfile
+        import os
+        
+        if not self.file_exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+        
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            self.s3.download_fileobj(self.bucket_name, path, temp_file)
+            temp_path = temp_file.name
+        
+        try:
+            result = processor_func(file_path=temp_path, **kwargs)
+            return result
+        finally:
+            try:
+                os.unlink(temp_path)
+            except Exception as e:
+                import logging
+                logging.warning(f"Failed to delete temporary file: {e}")

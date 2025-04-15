@@ -1,9 +1,8 @@
 """Local file system implementation."""
 import os
 import shutil
-from typing import BinaryIO, List
+from typing import BinaryIO, List, Callable
 
-from application.core.settings import settings
 from application.storage.base import BaseStorage
 
 
@@ -83,3 +82,24 @@ class LocalStorage(BaseStorage):
                 result.append(rel_path)
         
         return result
+
+    def process_file(self, path: str, processor_func: Callable, **kwargs):
+        """
+        Process a file using the provided processor function.
+        
+        For local storage, we can directly pass the full path to the processor.
+        
+        Args:
+            path: Path to the file
+            processor_func: Function that processes the file
+            **kwargs: Additional arguments to pass to the processor function
+            
+        Returns:
+            The result of the processor function
+        """
+        full_path = self._get_full_path(path)
+        
+        if not os.path.exists(full_path):
+            raise FileNotFoundError(f"File not found: {full_path}")
+        
+        return processor_func(file_path=full_path, **kwargs)
