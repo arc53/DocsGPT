@@ -14,8 +14,8 @@ import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Robot from './assets/robot.svg';
-import Spark from './assets/spark.svg';
 import SettingGear from './assets/settingGear.svg';
+import Spark from './assets/spark.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
 import Spinner from './assets/spinner.svg';
 import Twitter from './assets/TwitterX.svg';
@@ -35,13 +35,14 @@ import JWTModal from './modals/JWTModal';
 import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
 import {
-  selectApiKeyStatus,
   selectConversationId,
   selectConversations,
   selectModalStateDeleteConv,
+  selectSelectedAgent,
   selectToken,
   setConversations,
   setModalStateDeleteConv,
+  setSelectedAgent,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
 
@@ -59,7 +60,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const conversations = useSelector(selectConversations);
+  const conversationId = useSelector(selectConversationId);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
+  const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
@@ -84,14 +87,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       });
   }
 
-  const getAgents = async () => {
+  async function getAgents() {
     const response = await userService.getAgents(token);
     if (!response.ok) throw new Error('Failed to fetch agents');
     const data = await response.json();
     setRecentAgents(
       data.filter((agent: Agent) => agent.status === 'published'),
     );
-  };
+  }
 
   useEffect(() => {
     if (recentAgents.length === 0) getAgents();
@@ -120,18 +123,34 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .catch((error) => console.error(error));
   };
 
+  const handleAgentClick = (agent: Agent) => {
+    resetConversation();
+    dispatch(setSelectedAgent(agent));
+    if (isMobile) setNavOpen(!navOpen);
+    navigate('/');
+  };
+
   const handleConversationClick = (index: string) => {
     conversationService
       .getConversation(index, token)
       .then((response) => response.json())
       .then((data) => {
         navigate('/');
-        dispatch(setConversation(data));
+        dispatch(setConversation(data.queries));
         dispatch(
           updateConversationId({
             query: { conversationId: index },
           }),
         );
+        if (data.agent_id) {
+          userService.getAgent(data.agent_id, token).then((response) => {
+            if (response.ok) {
+              response.json().then((agent: Agent) => {
+                dispatch(setSelectedAgent(agent));
+              });
+            }
+          });
+        } else dispatch(setSelectedAgent(null));
       });
   };
 
@@ -143,6 +162,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         query: { conversationId: null },
       }),
     );
+    dispatch(setSelectedAgent(null));
   };
 
   const newChat = () => {
@@ -284,55 +304,73 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               />
             </div>
           )}
-          {
+          {recentAgents?.length > 0 ? (
             <div>
               <div className="mx-4 my-auto mt-2 flex h-6 items-center">
                 <p className="ml-4 mt-1 text-sm font-semibold">Agents</p>
               </div>
               <div className="agents-container">
-                {recentAgents?.length > 0 ? (
-                  <div>
-                    {recentAgents.map((agent, idx) => (
-                      <div
-                        key={idx}
-                        className="mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
-                      >
-                        <div className="flex w-6 justify-center">
-                          <img
-                            src={agent.image ?? Robot}
-                            alt="agent-logo"
-                            className="h-6 w-6 rounded-full"
-                          />
-                        </div>
-                        <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
-                          {agent.name}
-                        </p>
-                      </div>
-                    ))}
+                <div>
+                  {recentAgents.map((agent, idx) => (
                     <div
-                      className="mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
-                      onClick={() => navigate('/agents')}
+                      key={idx}
+                      className={`mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+                        agent.id === selectedAgent?.id && !conversationId
+                          ? 'bg-bright-gray dark:bg-dark-charcoal'
+                          : ''
+                      }`}
+                      onClick={() => handleAgentClick(agent)}
                     >
                       <div className="flex w-6 justify-center">
                         <img
-                          src={Spark}
-                          alt="manage-agents"
-                          className="h-[18px] w-[18px]"
+                          src={agent.image ?? Robot}
+                          alt="agent-logo"
+                          className="h-6 w-6 rounded-full"
                         />
                       </div>
                       <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
-                        Manage Agents
+                        {agent.name}
                       </p>
                     </div>
+                  ))}
+                </div>
+                <div
+                  className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
+                  onClick={() => {
+                    dispatch(setSelectedAgent(null));
+                    navigate('/agents');
+                  }}
+                >
+                  <div className="flex w-6 justify-center">
+                    <img
+                      src={Spark}
+                      alt="manage-agents"
+                      className="h-[18px] w-[18px]"
+                    />
                   </div>
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">
-                    No agents available.
-                  </div>
-                )}
+                  <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
+                    Manage Agents
+                  </p>
+                </div>
               </div>
             </div>
-          }
+          ) : (
+            <div
+              className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+              onClick={() => navigate('/agents')}
+            >
+              <div className="flex w-6 justify-center">
+                <img
+                  src={Spark}
+                  alt="manage-agents"
+                  className="h-[18px] w-[18px]"
+                />
+              </div>
+              <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black hover:text-purple-30 dark:text-bright-gray hover:dark:text-purple-30">
+                Manage Agents
+              </p>
+            </div>
+          )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
               <div className="mx-4 my-auto mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">

@@ -38,8 +38,8 @@ export const fetchAnswer = createAsyncThunk<
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
-  const attachments = state.conversation.attachments?.map(a => a.id) || [];
-  
+  const attachments = state.conversation.attachments?.map((a) => a.id) || [];
+
   if (state.preference) {
     if (API_STREAMING) {
       await handleFetchAnswerSteaming(
@@ -80,7 +80,6 @@ export const fetchAnswer = createAsyncThunk<
             );
           } else if (data.type === 'thought') {
             const result = data.thought;
-            console.log('thought', result);
             dispatch(
               updateThought({
                 index: indx ?? state.conversation.queries.length - 1,
@@ -122,7 +121,8 @@ export const fetchAnswer = createAsyncThunk<
           }
         },
         indx,
-        attachments
+        state.preference.selectedAgent?.id,
+        attachments,
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -135,7 +135,8 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.prompt.id,
         state.preference.chunks,
         state.preference.token_limit,
-        attachments
+        state.preference.selectedAgent?.id,
+        attachments,
       );
       if (answer) {
         let sourcesPrepped = [];
@@ -286,7 +287,10 @@ export const conversationSlice = createSlice({
       const { index, message } = action.payload;
       state.queries[index].error = message;
     },
-    setAttachments: (state, action: PayloadAction<{ fileName: string; id: string }[]>) => {
+    setAttachments: (
+      state,
+      action: PayloadAction<{ fileName: string; id: string }[]>,
+    ) => {
       state.attachments = action.payload;
     },
   },

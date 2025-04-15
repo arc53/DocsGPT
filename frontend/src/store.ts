@@ -40,6 +40,7 @@ const preloadedState: { preference: Preference } = {
     ],
     modalState: 'INACTIVE',
     paginatedDocuments: null,
+    selectedAgent: null,
   },
 };
 const store = configureStore({

@@ -86,6 +86,20 @@ def run_async_chain(chain, question, chat_history):
     return result
 
 
+def get_agent_key(agent_id, user_id):
+    if not agent_id:
+        return None
+
+    agent = agents_collection.find_one({"_id": ObjectId(agent_id)})
+    if agent is None:
+        raise Exception("Agent not found", 404)
+
+    if agent.get("is_public") or agent.get("user") == user_id:
+        return str(agent["key"])
+
+    raise Exception("Unauthorized access to the agent", 403)
+
+
 def get_data_from_api_key(api_key):
     data = agents_collection.find_one({"key": api_key})
     if not data:
@@ -129,6 +143,7 @@ def save_conversation(
     decoded_token,
     index=None,
     api_key=None,
+    agent_id=None,
 ):
     current_time = datetime.datetime.now(datetime.timezone.utc)
     if conversation_id is not None and index is not None:
@@ -202,6 +217,8 @@ def save_conversation(
             ],
         }
         if api_key:
+            if agent_id:
+                conversation_data["agent_id"] = agent_id
             api_key_doc = agents_collection.find_one({"key": api_key})
             if api_key_doc:
                 conversation_data["api_key"] = api_key_doc["key"]
@@ -234,6 +251,7 @@ def complete_stream(
     index=None,
     should_save_conversation=True,
     attachments=None,
+    agent_id=None,
 ):
     try:
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
@@ -297,6 +315,7 @@ def complete_stream(
                 decoded_token,
                 index,
                 api_key=user_api_key,
+                agent_id=agent_id,
             )
         else:
             conversation_id = None
@@ -404,7 +423,14 @@ class Stream(Resource):
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
+            agent_id = data.get("agent_id", None)
             agent_type = settings.AGENT_NAME
+            agent_key = get_agent_key(agent_id, request.decoded_token.get("sub"))
+
+            if agent_key:
+                data.update({"api_key": agent_key})
+            else:
+                agent_id = None
 
             if "api_key" in data:
                 data_key = get_data_from_api_key(data["api_key"])
@@ -479,6 +505,7 @@ class Stream(Resource):
                     isNoneDoc=data.get("isNoneDoc"),
                     index=index,
                     should_save_conversation=save_conv,
+                    agent_id=agent_id,
                 ),
                 mimetype="text/event-stream",
             )

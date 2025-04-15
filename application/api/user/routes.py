@@ -138,14 +138,24 @@ class GetConversations(Resource):
         try:
             conversations = (
                 conversations_collection.find(
-                    {"api_key": {"$exists": False}, "user": decoded_token.get("sub")}
+                    {
+                        "$or": [
+                            {"api_key": {"$exists": False}},
+                            {"agent_id": {"$exists": True}},
+                        ],
+                        "user": decoded_token.get("sub"),
+                    }
                 )
                 .sort("date", -1)
                 .limit(30)
             )
 
             list_conversations = [
-                {"id": str(conversation["_id"]), "name": conversation["name"]}
+                {
+                    "id": str(conversation["_id"]),
+                    "name": conversation["name"],
+                    "agent_id": conversation.get("agent_id", None),
+                }
                 for conversation in conversations
             ]
         except Exception as err:
@@ -179,7 +189,12 @@ class GetSingleConversation(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving conversation: {err}")
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(conversation["queries"]), 200)
+
+        data = {
+            "queries": conversation["queries"],
+            "agent_id": conversation.get("agent_id"),
+        }
+        return make_response(jsonify(data), 200)
 
 
 @user_ns.route("/api/update_conversation_name")

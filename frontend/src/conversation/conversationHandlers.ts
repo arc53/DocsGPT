@@ -13,6 +13,7 @@ export function handleFetchAnswer(
   promptId: string | null,
   chunks: string,
   token_limit: number,
+  agentId?: string,
   attachments?: string[],
 ): Promise<
   | {
@@ -50,13 +51,14 @@ export function handleFetchAnswer(
     chunks: chunks,
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
+    agent_id: agentId,
   };
-  
+
   // Add attachments to payload if they exist
   if (attachments && attachments.length > 0) {
     payload.attachments = attachments;
   }
-  
+
   if (selectedDocs && 'id' in selectedDocs) {
     payload.active_docs = selectedDocs.id as string;
   }
@@ -97,6 +99,7 @@ export function handleFetchAnswerSteaming(
   token_limit: number,
   onEvent: (event: MessageEvent) => void,
   indx?: number,
+  agentId?: string,
   attachments?: string[],
 ): Promise<Answer> {
   history = history.map((item) => {
@@ -116,13 +119,14 @@ export function handleFetchAnswerSteaming(
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
     index: indx,
+    agent_id: agentId,
   };
-  
+
   // Add attachments to payload if they exist
   if (attachments && attachments.length > 0) {
     payload.attachments = attachments;
   }
-  
+
   if (selectedDocs && 'id' in selectedDocs) {
     payload.active_docs = selectedDocs.id as string;
   }
