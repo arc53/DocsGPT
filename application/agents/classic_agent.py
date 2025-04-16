@@ -48,10 +48,13 @@ class ClassicAgent(BaseAgent):
         ):
             yield {"answer": resp.message.content}
         else:
-            completion = self.llm.gen_stream(
-                model=self.gpt_model, messages=messages, tools=self.tools
-            )
-            for line in completion:
+            # completion = self.llm.gen_stream(
+            #     model=self.gpt_model, messages=messages, tools=self.tools
+            # )
+            # log type of resp
+            logger.info(f"Response type: {type(resp)}")
+            logger.info(f"Response: {resp}")
+            for line in resp:
                 if isinstance(line, str):
                     yield {"answer": line}
 

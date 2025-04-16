@@ -2792,25 +2792,25 @@ class StoreAttachment(Resource):
         user = secure_filename(decoded_token.get("sub"))
 
         try:
+            attachment_id = ObjectId()
             original_filename = secure_filename(file.filename)
-            folder_name = original_filename
+
             save_dir = os.path.join(
-                current_dir, settings.UPLOAD_FOLDER, user, "attachments", folder_name
+                current_dir,
+                settings.UPLOAD_FOLDER,
+                user,
+                "attachments",
+                str(attachment_id),
             )
             os.makedirs(save_dir, exist_ok=True)
-            # Create directory structure: user/attachments/filename/
+
             file_path = os.path.join(save_dir, original_filename)
 
-            # Handle filename conflicts
-            if os.path.exists(file_path):
-                name_parts = os.path.splitext(original_filename)
-                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                new_filename = f"{name_parts[0]}_{timestamp}{name_parts[1]}"
-                file_path = os.path.join(save_dir, new_filename)
-                original_filename = new_filename
-
             file.save(file_path)
-            file_info = {"folder": folder_name, "filename": original_filename}
+            file_info = {
+                "filename": original_filename,
+                "attachment_id": str(attachment_id),
+            }
             current_app.logger.info(f"Saved file: {file_path}")
 
             # Start async task to process single file

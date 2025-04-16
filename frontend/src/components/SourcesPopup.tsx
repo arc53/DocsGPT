@@ -207,7 +207,7 @@ export default function SourcesPopup({
         <div className="px-4 md:px-6 py-4 opacity-75 hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
           <a 
             href="/settings/documents" 
-            className="text-violets-are-blue text-base font-medium flex items-center gap-2"
+            className="text-violets-are-blue text-base font-medium inline-flex items-center gap-2"
             onClick={onClose}
           >
             Go to Documents
