@@ -15,6 +15,7 @@ export function handleFetchAnswer(
   token_limit: number,
   agentId?: string,
   attachments?: string[],
+  save_conversation: boolean = true,
 ): Promise<
   | {
       result: any;
@@ -52,6 +53,7 @@ export function handleFetchAnswer(
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
     agent_id: agentId,
+    save_conversation: save_conversation,
   };
 
   // Add attachments to payload if they exist
@@ -101,6 +103,7 @@ export function handleFetchAnswerSteaming(
   indx?: number,
   agentId?: string,
   attachments?: string[],
+  save_conversation: boolean = true,
 ): Promise<Answer> {
   history = history.map((item) => {
     return {
@@ -120,6 +123,7 @@ export function handleFetchAnswerSteaming(
     isNoneDoc: selectedDocs === null,
     index: indx,
     agent_id: agentId,
+    save_conversation: save_conversation,
   };
 
   // Add attachments to payload if they exist

@@ -22,7 +22,7 @@ export default function AgentDetailsModal({
     <WrapperModal
       className="sm:w-[512px]"
       close={() => {
-        if (mode === 'new') navigate('/agents');
+        // if (mode === 'new') navigate('/agents');
         setModalState('INACTIVE');
       }}
     >

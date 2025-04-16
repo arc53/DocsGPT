@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
@@ -7,12 +7,18 @@ import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
 import Dropdown from '../components/Dropdown';
 import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
-import { ActiveState, Doc } from '../models/misc';
-import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
-import { UserToolType } from '../settings/types';
-import { Agent } from './types';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
+import { ActiveState, Doc } from '../models/misc';
+import {
+  selectSourceDocs,
+  selectToken,
+  setSelectedAgent,
+  selectSelectedAgent,
+} from '../preferences/preferenceSlice';
+import { UserToolType } from '../settings/types';
+import AgentPreview from './AgentPreview';
+import { Agent } from './types';
 
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
@@ -20,9 +26,12 @@ const embeddingsName =
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const { agentId } = useParams();
+
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
+  const selectedAgent = useSelector(selectSelectedAgent);
 
   const [effectiveMode, setEffectiveMode] = useState(mode);
   const [agent, setAgent] = useState<Agent>({
@@ -100,7 +109,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
   };
 
-  const handleCancel = () => navigate('/agents');
+  const handleCancel = () => {
+    if (selectedAgent) dispatch(setSelectedAgent(null));
+    navigate('/agents');
+  };
 
   const handleDelete = async (agentId: string) => {
     const response = await userService.deleteAgent(agentId, token);
@@ -139,8 +151,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           );
     if (!response.ok) throw new Error('Failed to publish agent');
     const data = await response.json();
+    if (data.id) setAgent((prev) => ({ ...prev, id: data.id }));
     if (data.key) setAgent((prev) => ({ ...prev, key: data.key }));
-    if (effectiveMode === 'new') setAgentDetails('ACTIVE');
+    if (effectiveMode === 'new') {
+      setAgentDetails('ACTIVE');
+      setEffectiveMode('edit');
+    }
   };
 
   useEffect(() => {
@@ -221,12 +237,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         .filter((id): id is string => typeof id === 'string'),
     }));
   }, [selectedToolIds]);
+
+  useEffect(() => {
+    if (isPublishable()) dispatch(setSelectedAgent(agent));
+  }, [agent, dispatch]);
   return (
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
         <button
           className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
-          onClick={() => navigate('/agents')}
+          onClick={handleCancel}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
@@ -287,7 +307,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </button>
         </div>
       </div>
-      <div className="mt-5 flex w-full grid-cols-5 flex-col gap-10 min-[1024px]:grid min-[1024px]:gap-5">
+      <div className="mt-5 flex w-full grid-cols-5 flex-col gap-10 min-[1180px]:grid min-[1180px]:gap-5">
         <div className="col-span-2 flex flex-col gap-5">
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Meta</h2>
@@ -469,7 +489,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </div>
         <div className="col-span-3 flex flex-col gap-3 rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
           <h2 className="text-lg font-semibold">Preview</h2>
-          <AgentPreview />
+          <AgentPreviewArea />
         </div>
       </div>
       <ConfirmationModal
@@ -494,8 +514,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   );
 }
 
-function AgentPreview() {
+function AgentPreviewArea() {
+  const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white dark:border-[#7E7E7E] dark:bg-[#222327] max-[1024px]:min-h-[48rem]"></div>
+    <div className="h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white dark:border-[#7E7E7E] dark:bg-[#222327] max-[1024px]:min-h-[48rem]">
+      {selectedAgent?.id ? (
+        <div className="flex h-full w-full flex-col justify-end overflow-auto rounded-[30px]">
+          <AgentPreview />
+        </div>
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2">
+          <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
+          <p className="text-xs text-[#18181B] dark:text-[#949494]">
+            Published agents can be previewd here
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
