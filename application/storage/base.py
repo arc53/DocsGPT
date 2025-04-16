@@ -1,6 +1,6 @@
 """Base storage class for file system abstraction."""
 from abc import ABC, abstractmethod
-from typing import BinaryIO, List, Optional, Callable
+from typing import BinaryIO, List, Callable
 
 
 class BaseStorage(ABC):
