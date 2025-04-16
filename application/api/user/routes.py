@@ -28,7 +28,7 @@ conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
 feedback_collection = db["feedback"]
-api_key_collection = db["api_keys"]
+agents_collection = db["agents"]
 token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
 user_logs_collection = db["user_logs"]
@@ -138,14 +138,24 @@ class GetConversations(Resource):
         try:
             conversations = (
                 conversations_collection.find(
-                    {"api_key": {"$exists": False}, "user": decoded_token.get("sub")}
+                    {
+                        "$or": [
+                            {"api_key": {"$exists": False}},
+                            {"agent_id": {"$exists": True}},
+                        ],
+                        "user": decoded_token.get("sub"),
+                    }
                 )
                 .sort("date", -1)
                 .limit(30)
             )
 
             list_conversations = [
-                {"id": str(conversation["_id"]), "name": conversation["name"]}
+                {
+                    "id": str(conversation["_id"]),
+                    "name": conversation["name"],
+                    "agent_id": conversation.get("agent_id", None),
+                }
                 for conversation in conversations
             ]
         except Exception as err:
@@ -179,7 +189,12 @@ class GetSingleConversation(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving conversation: {err}")
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(conversation["queries"]), 200)
+
+        data = {
+            "queries": conversation["queries"],
+            "agent_id": conversation.get("agent_id"),
+        }
+        return make_response(jsonify(data), 200)
 
 
 @user_ns.route("/api/update_conversation_name")
@@ -920,124 +935,398 @@ class UpdatePrompt(Resource):
         return make_response(jsonify({"success": True}), 200)
 
 
-@user_ns.route("/api/get_api_keys")
-class GetApiKeys(Resource):
-    @api.doc(description="Retrieve API keys for the user")
+@user_ns.route("/api/get_agent")
+class GetAgent(Resource):
+    @api.doc(params={"id": "ID of the agent"}, description="Get a single agent by ID")
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        try:
+            agent = agents_collection.find_one(
+                {"_id": ObjectId(agent_id), "user": user}
+            )
+            if not agent:
+                return make_response(jsonify({"status": "Not found"}), 404)
+            data = {
+                "id": str(agent["_id"]),
+                "name": agent["name"],
+                "description": agent["description"],
+                "source": (
+                    str(db.dereference(agent["source"])["_id"])
+                    if "source" in agent and isinstance(agent["source"], DBRef)
+                    else ""
+                ),
+                "chunks": agent["chunks"],
+                "retriever": agent.get("retriever", ""),
+                "prompt_id": agent["prompt_id"],
+                "tools": agent.get("tools", []),
+                "agent_type": agent["agent_type"],
+                "status": agent["status"],
+                "createdAt": agent["createdAt"],
+                "updatedAt": agent["updatedAt"],
+                "lastUsedAt": agent["lastUsedAt"],
+                "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
+            }
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving agent: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify(data), 200)
+
+
+@user_ns.route("/api/get_agents")
+class GetAgents(Resource):
+    @api.doc(description="Retrieve agents for the user")
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         try:
-            keys = api_key_collection.find({"user": user})
-            list_keys = []
-            for key in keys:
-                if "source" in key and isinstance(key["source"], DBRef):
-                    source = db.dereference(key["source"])
-                    if source is None:
-                        continue
-                    source_name = source["name"]
-                elif "retriever" in key:
-                    source_name = key["retriever"]
-                else:
-                    continue
-
-                list_keys.append(
-                    {
-                        "id": str(key["_id"]),
-                        "name": key["name"],
-                        "key": key["key"][:4] + "..." + key["key"][-4:],
-                        "source": source_name,
-                        "prompt_id": key["prompt_id"],
-                        "chunks": key["chunks"],
-                    }
-                )
+            agents = agents_collection.find({"user": user})
+            list_agents = [
+                {
+                    "id": str(agent["_id"]),
+                    "name": agent["name"],
+                    "description": agent["description"],
+                    "source": (
+                        str(db.dereference(agent["source"])["_id"])
+                        if "source" in agent and isinstance(agent["source"], DBRef)
+                        else ""
+                    ),
+                    "chunks": agent["chunks"],
+                    "retriever": agent.get("retriever", ""),
+                    "prompt_id": agent["prompt_id"],
+                    "tools": agent.get("tools", []),
+                    "agent_type": agent["agent_type"],
+                    "status": agent["status"],
+                    "created_at": agent["createdAt"],
+                    "updated_at": agent["updatedAt"],
+                    "last_used_at": agent["lastUsedAt"],
+                    "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
+                }
+                for agent in agents
+                if "source" in agent or "retriever" in agent
+            ]
         except Exception as err:
-            current_app.logger.error(f"Error retrieving API keys: {err}")
+            current_app.logger.error(f"Error retrieving agents: {err}")
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(list_keys), 200)
+        return make_response(jsonify(list_agents), 200)
 
 
-@user_ns.route("/api/create_api_key")
-class CreateApiKey(Resource):
-    create_api_key_model = api.model(
-        "CreateApiKeyModel",
+@user_ns.route("/api/create_agent")
+class CreateAgent(Resource):
+    create_agent_model = api.model(
+        "CreateAgentModel",
         {
-            "name": fields.String(required=True, description="Name of the API key"),
-            "prompt_id": fields.String(required=True, description="Prompt ID"),
+            "name": fields.String(required=True, description="Name of the agent"),
+            "description": fields.String(
+                required=True, description="Description of the agent"
+            ),
+            "image": fields.String(
+                required=False, description="Image URL or identifier"
+            ),
+            "source": fields.String(required=True, description="Source ID"),
             "chunks": fields.Integer(required=True, description="Chunks count"),
-            "source": fields.String(description="Source ID (optional)"),
-            "retriever": fields.String(description="Retriever (optional)"),
+            "retriever": fields.String(required=True, description="Retriever ID"),
+            "prompt_id": fields.String(required=True, description="Prompt ID"),
+            "tools": fields.List(
+                fields.String, required=False, description="List of tool identifiers"
+            ),
+            "agent_type": fields.String(required=True, description="Type of the agent"),
+            "status": fields.String(
+                required=True, description="Status of the agent (draft or published)"
+            ),
         },
     )
 
-    @api.expect(create_api_key_model)
-    @api.doc(description="Create a new API key")
+    @api.expect(create_agent_model)
+    @api.doc(description="Create a new agent")
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         data = request.get_json()
-        required_fields = ["name", "prompt_id", "chunks"]
+
+        if data.get("status") not in ["draft", "published"]:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid status"}), 400
+            )
+
+        required_fields = []
+        if data.get("status") == "published":
+            required_fields = [
+                "name",
+                "description",
+                "source",
+                "chunks",
+                "retriever",
+                "prompt_id",
+                "agent_type",
+            ]
+        else:
+            required_fields = ["name"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
         try:
             key = str(uuid.uuid4())
-            new_api_key = {
-                "name": data["name"],
-                "key": key,
+            new_agent = {
                 "user": user,
-                "prompt_id": data["prompt_id"],
-                "chunks": data["chunks"],
+                "name": data.get("name"),
+                "description": data.get("description", ""),
+                "image": data.get("image", ""),
+                "source": (
+                    DBRef("sources", ObjectId(data.get("source")))
+                    if ObjectId.is_valid(data.get("source"))
+                    else ""
+                ),
+                "chunks": data.get("chunks", ""),
+                "retriever": data.get("retriever", ""),
+                "prompt_id": data.get("prompt_id", ""),
+                "tools": data.get("tools", []),
+                "agent_type": data.get("agent_type", ""),
+                "status": data.get("status"),
+                "createdAt": datetime.datetime.now(datetime.timezone.utc),
+                "updatedAt": datetime.datetime.now(datetime.timezone.utc),
+                "lastUsedAt": None,
+                "key": key,
             }
-            if "source" in data and ObjectId.is_valid(data["source"]):
-                new_api_key["source"] = DBRef("sources", ObjectId(data["source"]))
-            if "retriever" in data:
-                new_api_key["retriever"] = data["retriever"]
 
-            resp = api_key_collection.insert_one(new_api_key)
+            resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
         except Exception as err:
-            current_app.logger.error(f"Error creating API key: {err}")
+            current_app.logger.error(f"Error creating agent: {err}")
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id, "key": key}), 201)
 
 
-@user_ns.route("/api/delete_api_key")
-class DeleteApiKey(Resource):
-    delete_api_key_model = api.model(
-        "DeleteApiKeyModel",
-        {"id": fields.String(required=True, description="API Key ID to delete")},
+@user_ns.route("/api/update_agent/<string:agent_id>")
+class UpdateAgent(Resource):
+    update_agent_model = api.model(
+        "UpdateAgentModel",
+        {
+            "name": fields.String(required=True, description="New name of the agent"),
+            "description": fields.String(
+                required=True, description="New description of the agent"
+            ),
+            "image": fields.String(
+                required=False, description="New image URL or identifier"
+            ),
+            "source": fields.String(required=True, description="Source ID"),
+            "chunks": fields.Integer(required=True, description="Chunks count"),
+            "retriever": fields.String(required=True, description="Retriever ID"),
+            "prompt_id": fields.String(required=True, description="Prompt ID"),
+            "tools": fields.List(
+                fields.String, required=False, description="List of tool identifiers"
+            ),
+            "agent_type": fields.String(required=True, description="Type of the agent"),
+            "status": fields.String(
+                required=True, description="Status of the agent (draft or published)"
+            ),
+        },
     )
 
-    @api.expect(delete_api_key_model)
-    @api.doc(description="Delete an API key by ID")
-    def post(self):
+    @api.expect(update_agent_model)
+    @api.doc(description="Update an existing agent")
+    def put(self, agent_id):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         data = request.get_json()
-        required_fields = ["id"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
+
+        if not ObjectId.is_valid(agent_id):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid agent ID format"}), 400
+            )
+        oid = ObjectId(agent_id)
 
         try:
-            result = api_key_collection.delete_one(
-                {"_id": ObjectId(data["id"]), "user": user}
-            )
-            if result.deleted_count == 0:
-                return {"success": False, "message": "API Key not found"}, 404
+            existing_agent = agents_collection.find_one({"_id": oid, "user": user})
         except Exception as err:
-            current_app.logger.error(f"Error deleting API key: {err}")
-            return {"success": False}, 400
+            return make_response(
+                current_app.logger.error(f"Error finding agent {agent_id}: {err}"),
+                jsonify({"success": False, "message": "Database error finding agent"}),
+                500,
+            )
 
-        return {"success": True}, 200
+        if not existing_agent:
+            return make_response(
+                jsonify(
+                    {"success": False, "message": "Agent not found or not authorized"}
+                ),
+                404,
+            )
+
+        update_fields = {}
+        allowed_fields = [
+            "name",
+            "description",
+            "image",
+            "source",
+            "chunks",
+            "retriever",
+            "prompt_id",
+            "tools",
+            "agent_type",
+            "status",
+        ]
+
+        for field in allowed_fields:
+            if field in data:
+                if field == "status":
+                    new_status = data.get("status")
+                    if new_status not in ["draft", "published"]:
+                        return make_response(
+                            jsonify(
+                                {"success": False, "message": "Invalid status value"}
+                            ),
+                            400,
+                        )
+                    update_fields[field] = new_status
+                elif field == "source":
+                    source_id = data.get("source")
+                    if source_id and ObjectId.is_valid(source_id):
+                        update_fields[field] = DBRef("sources", ObjectId(source_id))
+                    elif source_id:
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Invalid source ID format provided",
+                                }
+                            ),
+                            400,
+                        )
+                    else:
+                        update_fields[field] = ""
+                else:
+                    update_fields[field] = data[field]
+
+        if not update_fields:
+            return make_response(
+                jsonify({"success": False, "message": "No update data provided"}), 400
+            )
+
+        final_status = update_fields.get("status", existing_agent.get("status"))
+        if final_status == "published":
+            required_published_fields = [
+                "name",
+                "description",
+                "source",
+                "chunks",
+                "retriever",
+                "prompt_id",
+                "agent_type",
+            ]
+            missing_published_fields = []
+            for req_field in required_published_fields:
+                final_value = update_fields.get(
+                    req_field, existing_agent.get(req_field)
+                )
+                if req_field == "source" and final_value:
+                    if not isinstance(final_value, DBRef):
+                        missing_published_fields.append(req_field)
+
+            if missing_published_fields:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": f"Cannot publish agent. Missing or invalid required fields: {', '.join(missing_published_fields)}",
+                        }
+                    ),
+                    400,
+                )
+
+        update_fields["updatedAt"] = datetime.datetime.now(datetime.timezone.utc)
+
+        try:
+            result = agents_collection.update_one(
+                {"_id": oid, "user": user}, {"$set": update_fields}
+            )
+
+            if result.matched_count == 0:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Agent not found or update failed unexpectedly",
+                        }
+                    ),
+                    404,
+                )
+            if result.modified_count == 0 and result.matched_count == 1:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": True,
+                            "message": "Agent found, but no changes were applied.",
+                        }
+                    ),
+                    304,
+                )
+
+        except Exception as err:
+            current_app.logger.error(f"Error updating agent {agent_id}: {err}")
+            return make_response(
+                jsonify({"success": False, "message": "Database error during update"}),
+                500,
+            )
+
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "id": agent_id,
+                    "message": "Agent updated successfully",
+                }
+            ),
+            200,
+        )
+
+
+@user_ns.route("/api/delete_agent")
+class DeleteAgent(Resource):
+    @api.doc(params={"id": "ID of the agent"}, description="Delete an agent by ID")
+    def delete(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        try:
+            deleted_agent = agents_collection.find_one_and_delete(
+                {"_id": ObjectId(agent_id), "user": user}
+            )
+            if not deleted_agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Agent not found"}), 404
+                )
+            deleted_id = str(deleted_agent["_id"])
+
+        except Exception as err:
+            current_app.logger.error(f"Error deleting agent: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"id": deleted_id}), 200)
 
 
 @user_ns.route("/api/share")
@@ -1112,9 +1401,7 @@ class ShareConversation(Resource):
                 if "retriever" in data:
                     new_api_key_data["retriever"] = data["retriever"]
 
-                pre_existing_api_document = api_key_collection.find_one(
-                    new_api_key_data
-                )
+                pre_existing_api_document = agents_collection.find_one(new_api_key_data)
                 if pre_existing_api_document:
                     api_uuid = pre_existing_api_document["key"]
                     pre_existing = shared_conversations_collections.find_one(
@@ -1173,7 +1460,7 @@ class ShareConversation(Resource):
                     if "retriever" in data:
                         new_api_key_data["retriever"] = data["retriever"]
 
-                    api_key_collection.insert_one(new_api_key_data)
+                    agents_collection.insert_one(new_api_key_data)
                     shared_conversations_collections.insert_one(
                         {
                             "uuid": explicit_binary,
@@ -1331,9 +1618,9 @@ class GetMessageAnalytics(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id), "user": user}
-                )["key"]
+                agents_collection.find_one({"_id": ObjectId(api_key_id), "user": user})[
+                    "key"
+                ]
                 if api_key_id
                 else None
             )
@@ -1375,7 +1662,7 @@ class GetMessageAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-                
+
             pipeline = [
                 match_stage,
                 {"$unwind": "$queries"},
@@ -1455,9 +1742,9 @@ class GetTokenAnalytics(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id), "user": user}
-                )["key"]
+                agents_collection.find_one({"_id": ObjectId(api_key_id), "user": user})[
+                    "key"
+                ]
                 if api_key_id
                 else None
             )
@@ -1614,9 +1901,9 @@ class GetFeedbackAnalytics(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one(
-                    {"_id": ObjectId(api_key_id), "user": user}
-                )["key"]
+                agents_collection.find_one({"_id": ObjectId(api_key_id), "user": user})[
+                    "key"
+                ]
                 if api_key_id
                 else None
             )
@@ -1779,7 +2066,7 @@ class GetUserLogs(Resource):
 
         try:
             api_key = (
-                api_key_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
+                agents_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
                 if api_key_id
                 else None
             )
@@ -2493,10 +2780,10 @@ class StoreAttachment(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-        
+
         # Get single file instead of list
         file = request.files.get("file")
-        
+
         if not file or file.filename == "":
             return make_response(
                 jsonify({"status": "error", "message": "Missing file"}),
@@ -2504,46 +2791,43 @@ class StoreAttachment(Resource):
             )
 
         user = secure_filename(decoded_token.get("sub"))
-        
+
         try:
             attachment_id = ObjectId()
             original_filename = secure_filename(file.filename)
-            
+
             save_dir = os.path.join(
-                current_dir, 
+                current_dir,
                 settings.UPLOAD_FOLDER,
                 user,
-                "attachments", 
-                str(attachment_id)
+                "attachments",
+                str(attachment_id),
             )
             os.makedirs(save_dir, exist_ok=True)
-            
+
             file_path = os.path.join(save_dir, original_filename)
-            
-            
+
             file.save(file_path)
             file_info = {
                 "filename": original_filename,
-                "attachment_id": str(attachment_id)
+                "attachment_id": str(attachment_id),
             }
             current_app.logger.info(f"Saved file: {file_path}")
-            
+
             # Start async task to process single file
-            task = store_attachment.delay(
-                save_dir,
-                file_info,
-                user
-            )
-            
+            task = store_attachment.delay(save_dir, file_info, user)
+
             return make_response(
-                jsonify({
-                    "success": True,
-                    "task_id": task.id,
-                    "message": "File uploaded successfully. Processing started."
-                }),
-                200
+                jsonify(
+                    {
+                        "success": True,
+                        "task_id": task.id,
+                        "message": "File uploaded successfully. Processing started.",
+                    }
+                ),
+                200,
             )
-            
+
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}")
             return make_response(jsonify({"success": False, "error": str(err)}), 400)

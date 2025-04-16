@@ -10,6 +10,7 @@ from application.core.mongo_db import MongoDB
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 from application.retriever.base import BaseRetriever
+from bson.objectid import ObjectId
 
 
 class BaseAgent(ABC):
@@ -23,7 +24,7 @@ class BaseAgent(ABC):
         prompt: str = "",
         chat_history: Optional[List[Dict]] = None,
         decoded_token: Optional[Dict] = None,
-        attachments: Optional[List[Dict]]=None,
+        attachments: Optional[List[Dict]] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -57,6 +58,27 @@ class BaseAgent(ABC):
         self, query: str, retriever: BaseRetriever, log_context: LogContext
     ) -> Generator[Dict, None, None]:
         pass
+
+    def _get_tools(self, api_key: str = None) -> Dict[str, Dict]:
+        mongo = MongoDB.get_client()
+        db = mongo["docsgpt"]
+        agents_collection = db["agents"]
+        tools_collection = db["user_tools"]
+
+        agent_data = agents_collection.find_one({"key": api_key or self.user_api_key})
+        tool_ids = agent_data.get("tools", []) if agent_data else []
+
+        tools = (
+            tools_collection.find(
+                {"_id": {"$in": [ObjectId(tool_id) for tool_id in tool_ids]}}
+            )
+            if tool_ids
+            else []
+        )
+        tools = list(tools)
+        tools_by_id = {str(tool["_id"]): tool for tool in tools} if tools else {}
+
+        return tools_by_id
 
     def _get_user_tools(self, user="local"):
         mongo = MongoDB.get_client()
@@ -243,9 +265,11 @@ class BaseAgent(ABC):
         tools_dict: Dict,
         messages: List[Dict],
         log_context: Optional[LogContext] = None,
-        attachments: Optional[List[Dict]] = None
+        attachments: Optional[List[Dict]] = None,
     ):
-        resp = self.llm_handler.handle_response(self, resp, tools_dict, messages, attachments)
+        resp = self.llm_handler.handle_response(
+            self, resp, tools_dict, messages, attachments
+        )
         if log_context:
             data = build_stack_data(self.llm_handler)
             log_context.stacks.append({"component": "llm_handler", "data": data})

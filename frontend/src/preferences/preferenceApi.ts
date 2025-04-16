@@ -1,6 +1,7 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
 import { Doc, GetDocsResponse } from '../models/misc';
+import { GetConversationsResult, ConversationSummary } from './types';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
 export async function getDocs(token: string | null): Promise<Doc[] | null> {
@@ -49,23 +50,37 @@ export async function getDocsWithPagination(
   }
 }
 
-export async function getConversations(token: string | null): Promise<{
-  data: { name: string; id: string }[] | null;
-  loading: boolean;
-}> {
+export async function getConversations(
+  token: string | null,
+): Promise<GetConversationsResult> {
   try {
     const response = await conversationService.getConversations(token);
-    const data = await response.json();
 
-    const conversations: { name: string; id: string }[] = [];
+    if (!response.ok) {
+      console.error('Error fetching conversations:', response.statusText);
+      return { data: null, loading: false };
+    }
 
-    data.forEach((conversation: object) => {
-      conversations.push(conversation as { name: string; id: string });
-    });
+    const rawData: unknown = await response.json();
+    if (!Array.isArray(rawData)) {
+      console.error(
+        'Invalid data format received from API: Expected an array.',
+        rawData,
+      );
+      return { data: null, loading: false };
+    }
 
+    const conversations: ConversationSummary[] = rawData.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      agent_id: item.agent_id ?? null,
+    }));
     return { data: conversations, loading: false };
   } catch (error) {
-    console.log(error);
+    console.error(
+      'An unexpected error occurred while fetching conversations:',
+      error,
+    );
     return { data: null, loading: false };
   }
 }
