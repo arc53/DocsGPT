@@ -1157,6 +1157,7 @@ class UpdateAgent(Resource):
             existing_agent = agents_collection.find_one({"_id": oid, "user": user})
         except Exception as err:
             return make_response(
+                current_app.logger.error(f"Error finding agent {agent_id}: {err}"),
                 jsonify({"success": False, "message": "Database error finding agent"}),
                 500,
             )
@@ -1204,7 +1205,7 @@ class UpdateAgent(Resource):
                             jsonify(
                                 {
                                     "success": False,
-                                    "message": f"Invalid source ID format provided",
+                                    "message": "Invalid source ID format provided",
                                 }
                             ),
                             400,
