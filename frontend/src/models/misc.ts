@@ -21,6 +21,12 @@ export type GetDocsResponse = {
   nextCursor: string;
 };
 
+export type Prompt = {
+  name: string;
+  id: string;
+  type: string;
+};
+
 export type PromptProps = {
   prompts: { name: string; id: string; type: string }[];
   selectedPrompt: { name: string; id: string; type: string };

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
@@ -9,13 +9,14 @@ import Dropdown from '../components/Dropdown';
 import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import { ActiveState, Doc } from '../models/misc';
+import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
+  selectSelectedAgent,
   selectSourceDocs,
   selectToken,
   setSelectedAgent,
-  selectSelectedAgent,
 } from '../preferences/preferenceSlice';
+import PromptsModal from '../preferences/PromptsModal';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
 import { Agent } from './types';
@@ -62,6 +63,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
 
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const toolAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -423,7 +425,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   contentSize="text-sm"
                 />
               </div>
-              <button className="w-20 flex-shrink-0 basis-full rounded-3xl border-2 border-solid border-violets-are-blue px-5 py-[11px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white sm:basis-auto">
+              <button
+                className="w-20 flex-shrink-0 basis-full rounded-3xl border-2 border-solid border-violets-are-blue px-5 py-[11px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white sm:basis-auto"
+                onClick={() => setAddPromptModal('ACTIVE')}
+              >
                 Add
               </button>
             </div>
@@ -510,6 +515,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         modalState={agentDetails}
         setModalState={setAgentDetails}
       />
+      <AddPromptModal
+        prompts={prompts}
+        setPrompts={setPrompts}
+        isOpen={addPromptModal}
+        onClose={() => setAddPromptModal('INACTIVE')}
+        onSelect={(name: string, id: string, type: string) => {
+          setAgent({ ...agent, prompt_id: id });
+        }}
+      />
     </div>
   );
 }
@@ -517,7 +531,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 function AgentPreviewArea() {
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white dark:border-[#7E7E7E] dark:bg-[#222327] max-[1024px]:min-h-[48rem]">
+    <div className="h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white dark:border-[#7E7E7E] dark:bg-[#222327] max-[1180px]:h-[48rem]">
       {selectedAgent?.id ? (
         <div className="flex h-full w-full flex-col justify-end overflow-auto rounded-[30px]">
           <AgentPreview />
@@ -531,5 +545,70 @@ function AgentPreviewArea() {
         </div>
       )}
     </div>
+  );
+}
+
+function AddPromptModal({
+  prompts,
+  setPrompts,
+  isOpen,
+  onClose,
+  onSelect,
+}: {
+  prompts: Prompt[];
+  setPrompts?: React.Dispatch<React.SetStateAction<Prompt[]>>;
+  isOpen: ActiveState;
+  onClose: () => void;
+  onSelect?: (name: string, id: string, type: string) => void;
+}) {
+  const token = useSelector(selectToken);
+
+  const [newPromptName, setNewPromptName] = useState('');
+  const [newPromptContent, setNewPromptContent] = useState('');
+
+  const handleAddPrompt = async () => {
+    try {
+      const response = await userService.createPrompt(
+        {
+          name: newPromptName,
+          content: newPromptContent,
+        },
+        token,
+      );
+      if (!response.ok) {
+        throw new Error('Failed to add prompt');
+      }
+      const newPrompt = await response.json();
+      if (setPrompts) {
+        setPrompts([
+          ...prompts,
+          { name: newPromptName, id: newPrompt.id, type: 'private' },
+        ]);
+      }
+      onClose();
+      setNewPromptName('');
+      setNewPromptContent('');
+      onSelect?.(newPromptName, newPrompt.id, newPromptContent);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+  return (
+    <PromptsModal
+      modalState={isOpen}
+      setModalState={onClose}
+      type="ADD"
+      existingPrompts={prompts}
+      newPromptName={newPromptName}
+      setNewPromptName={setNewPromptName}
+      newPromptContent={newPromptContent}
+      setNewPromptContent={setNewPromptContent}
+      editPromptName={''}
+      setEditPromptName={() => {}}
+      editPromptContent={''}
+      setEditPromptContent={() => {}}
+      currentPromptEdit={{ id: '', name: '', type: '' }}
+      handleAddPrompt={handleAddPrompt}
+    />
   );
 }
