@@ -2494,7 +2494,6 @@ class StoreAttachment(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         
-        # Get single file instead of list
         file = request.files.get("file")
         
         if not file or file.filename == "":
@@ -2508,29 +2507,18 @@ class StoreAttachment(Resource):
         try:
             attachment_id = ObjectId()
             original_filename = secure_filename(file.filename)
+            relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
             
-            save_dir = os.path.join(
-                current_dir, 
-                settings.UPLOAD_FOLDER,
-                user,
-                "attachments", 
-                str(attachment_id)
-            )
-            os.makedirs(save_dir, exist_ok=True)
+            file_content = file.read()
             
-            file_path = os.path.join(save_dir, original_filename)
-            
-            
-            file.save(file_path)
             file_info = {
                 "filename": original_filename,
-                "attachment_id": str(attachment_id)
+                "attachment_id": str(attachment_id),
+                "path": relative_path,
+                "file_content": file_content
             }
-            current_app.logger.info(f"Saved file: {file_path}")
             
-            # Start async task to process single file
             task = store_attachment.delay(
-                save_dir,
                 file_info,
                 user
             )
@@ -2543,7 +2531,6 @@ class StoreAttachment(Resource):
                 }),
                 200
             )
-            
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}")
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
