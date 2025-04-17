@@ -6,6 +6,7 @@ import logging
 
 from application.core.settings import settings
 from application.llm.base import BaseLLM
+from application.storage.storage_creator import StorageCreator
 
 
 class OpenAILLM(BaseLLM):
@@ -20,6 +21,7 @@ class OpenAILLM(BaseLLM):
             self.client = OpenAI(api_key=api_key)
         self.api_key = api_key
         self.user_api_key = user_api_key
+        self.storage = StorageCreator.create_storage(getattr(settings, "STORAGE_TYPE", "local"))
 
     def _clean_messages_openai(self, messages):
         cleaned_messages = []
@@ -250,19 +252,13 @@ class OpenAILLM(BaseLLM):
         if not file_path:
             raise ValueError("No file path provided in attachment")
 
-        if not os.path.isabs(file_path):
-            current_dir = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-            file_path = os.path.join(current_dir, "application", file_path)
-
-        if not os.path.exists(file_path):
+        try:
+            with self.storage.get_file(file_path) as image_file:
+                return base64.b64encode(image_file.read()).decode('utf-8')
+        except FileNotFoundError:
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        with open(file_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
-
-    def _upload_file_to_openai(self, attachment): ##pdfs
+    def _upload_file_to_openai(self, attachment):
         """
         Upload a file to OpenAI and return the file_id.
 
@@ -275,34 +271,28 @@ class OpenAILLM(BaseLLM):
         Returns:
             str: OpenAI file_id for the uploaded file.
         """
-        import os
         import logging
 
         if 'openai_file_id' in attachment:
             return attachment['openai_file_id']
 
         file_path = attachment.get('path')
-        if not file_path:
-            raise ValueError("No file path provided in attachment")
 
-        if not os.path.isabs(file_path):
-            current_dir = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-            file_path = os.path.join(current_dir,"application", file_path)
-
-        if not os.path.exists(file_path):
+        if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
-
         try:
-            with open(file_path, 'rb') as file:
-                response = self.client.files.create(
-                    file=file,
-                    purpose="assistants"
-                )
+            # Use storage's process_file method to handle the file appropriately
+            def upload_to_openai(file_path, **kwargs):
+                with open(file_path, 'rb') as file:
+                    logging.info(f"Uploading file to OpenAI: {file_path}")
+                    response = self.client.files.create(
+                        file=file,
+                        purpose="assistants"
+                    )
+                    return response.id
 
-            file_id = response.id
+            file_id = self.storage.process_file(file_path, upload_to_openai)
 
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
