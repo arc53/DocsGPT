@@ -149,7 +149,7 @@ class OpenAILLM(BaseLLM):
     def get_supported_attachment_types(self):
         """
         Return a list of MIME types supported by OpenAI for file uploads.
-        
+
         Returns:
             list: List of supported MIME types
         """
@@ -161,35 +161,35 @@ class OpenAILLM(BaseLLM):
             'image/webp',
             'image/gif'
         ]
-    
+
     def prepare_messages_with_attachments(self, messages, attachments=None):
         """
         Process attachments using OpenAI's file API for more efficient handling.
-        
+
         Args:
             messages (list): List of message dictionaries.
             attachments (list): List of attachment dictionaries with content and metadata.
-            
+
         Returns:
             list: Messages formatted with file references for OpenAI API.
         """
         if not attachments:
             return messages
-        
+
         prepared_messages = messages.copy()
-        
+
         # Find the user message to attach file_id to the last one
         user_message_index = None
         for i in range(len(prepared_messages) - 1, -1, -1):
             if prepared_messages[i].get("role") == "user":
                 user_message_index = i
                 break
-        
+
         if user_message_index is None:
             user_message = {"role": "user", "content": []}
             prepared_messages.append(user_message)
             user_message_index = len(prepared_messages) - 1
-        
+
         if isinstance(prepared_messages[user_message_index].get("content"), str):
             text_content = prepared_messages[user_message_index]["content"]
             prepared_messages[user_message_index]["content"] = [
@@ -197,14 +197,10 @@ class OpenAILLM(BaseLLM):
             ]
         elif not isinstance(prepared_messages[user_message_index].get("content"), list):
             prepared_messages[user_message_index]["content"] = []
-        
+
         for attachment in attachments:
             mime_type = attachment.get('mime_type')
-            if not mime_type:
-                file_path = attachment.get('path')
-                if file_path:
-                    mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
-            
+
             if mime_type and mime_type.startswith('image/'):
                 try:
                     base64_image = self._get_base64_image(attachment)
@@ -218,14 +214,14 @@ class OpenAILLM(BaseLLM):
                     logging.error(f"Error processing image attachment: {e}")
                     if 'content' in attachment:
                         prepared_messages[user_message_index]["content"].append({
-                            "type": "text", 
+                            "type": "text",
                             "text": f"[Image could not be processed: {attachment.get('path', 'unknown')}]"
                         })
             # Handle PDFs using the file API
             elif mime_type == 'application/pdf':
                 try:
                     file_id = self._upload_file_to_openai(attachment)
-                    
+
                     prepared_messages[user_message_index]["content"].append({
                         "type": "file",
                         "file": {"file_id": file_id}
@@ -234,80 +230,80 @@ class OpenAILLM(BaseLLM):
                     logging.error(f"Error uploading PDF to OpenAI: {e}")
                     if 'content' in attachment:
                         prepared_messages[user_message_index]["content"].append({
-                            "type": "text", 
+                            "type": "text",
                             "text": f"File content:\n\n{attachment['content']}"
                         })
-        
+
         return prepared_messages
 
     def _get_base64_image(self, attachment):
         """
         Convert an image file to base64 encoding.
-        
+
         Args:
             attachment (dict): Attachment dictionary with path and metadata.
-            
+
         Returns:
             str: Base64-encoded image data.
         """
         file_path = attachment.get('path')
         if not file_path:
             raise ValueError("No file path provided in attachment")
-        
+
         if not os.path.isabs(file_path):
             current_dir = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
             file_path = os.path.join(current_dir, "application", file_path)
-        
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
-        
+
         with open(file_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
     def _upload_file_to_openai(self, attachment): ##pdfs
         """
         Upload a file to OpenAI and return the file_id.
-        
+
         Args:
             attachment (dict): Attachment dictionary with path and metadata.
                 Expected keys:
                 - path: Path to the file
                 - id: Optional MongoDB ID for caching
-                
+
         Returns:
             str: OpenAI file_id for the uploaded file.
         """
         import os
         import logging
-        
+
         if 'openai_file_id' in attachment:
             return attachment['openai_file_id']
-        
+
         file_path = attachment.get('path')
         if not file_path:
             raise ValueError("No file path provided in attachment")
-        
+
         if not os.path.isabs(file_path):
             current_dir = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
             file_path = os.path.join(current_dir,"application", file_path)
-        
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        
+
         try:
             with open(file_path, 'rb') as file:
                 response = self.client.files.create(
                     file=file,
                     purpose="assistants"
                 )
-            
+
             file_id = response.id
-            
+
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
             db = mongo["docsgpt"]
@@ -317,7 +313,7 @@ class OpenAILLM(BaseLLM):
                     {"_id": attachment['_id']},
                     {"$set": {"openai_file_id": file_id}}
                 )
-            
+
             return file_id
         except Exception as e:
             logging.error(f"Error uploading file to OpenAI: {e}")
@@ -327,7 +323,7 @@ class OpenAILLM(BaseLLM):
 class AzureOpenAILLM(OpenAILLM):
 
     def __init__(
-        self, api_key, user_api_key, *args, **kwargs 
+        self, api_key, user_api_key, *args, **kwargs
     ):
 
         super().__init__(api_key)
