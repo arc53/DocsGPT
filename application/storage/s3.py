@@ -98,23 +98,23 @@ class S3Storage(BaseStorage):
             path: Path to the file
             processor_func: Function that processes the file
             **kwargs: Additional arguments to pass to the processor function
-
+        
         Returns:
             The result of the processor function
         """
         import tempfile
         import logging
-
+        
         if not self.file_exists(path):
             raise FileNotFoundError(f"File not found in S3: {path}")
-
+        
         with tempfile.NamedTemporaryFile(suffix=os.path.splitext(path)[1], delete=True) as temp_file:
             try:
                 # Download the file from S3 to the temporary file
                 self.s3.download_fileobj(self.bucket_name, path, temp_file)
                 temp_file.flush()
-                result = processor_func(file_path=temp_file.name, **kwargs)
-                return result
+                
+                return processor_func(local_path=temp_file.name, **kwargs)
             except Exception as e:
                 logging.error(f"Error processing S3 file {path}: {e}", exc_info=True)
                 raise

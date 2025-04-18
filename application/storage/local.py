@@ -100,4 +100,4 @@ class LocalStorage(BaseStorage):
         if not os.path.exists(full_path):
             raise FileNotFoundError(f"File not found: {full_path}")
 
-        return processor_func(file_path=full_path, **kwargs)
+        return processor_func(local_path=full_path, **kwargs)

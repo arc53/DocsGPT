@@ -1,7 +1,5 @@
 import json
 import base64
-import os
-import mimetypes
 import logging
 
 from application.core.settings import settings
@@ -78,6 +76,8 @@ class OpenAILLM(BaseLLM):
                             elif "type" in item and item["type"] == "text" and "text" in item:
                                 content_parts.append(item)
                             elif "type" in item and item["type"] == "file" and "file" in item:
+                                content_parts.append(item)
+                            elif "type" in item and item["type"] == "image_url" and "image_url" in item:
                                 content_parts.append(item)
                             cleaned_messages.append({"role": role, "content": content_parts})
                         else:
@@ -223,7 +223,6 @@ class OpenAILLM(BaseLLM):
             elif mime_type == 'application/pdf':
                 try:
                     file_id = self._upload_file_to_openai(attachment)
-
                     prepared_messages[user_message_index]["content"].append({
                         "type": "file",
                         "file": {"file_id": file_id}
@@ -282,17 +281,13 @@ class OpenAILLM(BaseLLM):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         try:
-            # Use storage's process_file method to handle the file appropriately
-            def upload_to_openai(file_path, **kwargs):
-                with open(file_path, 'rb') as file:
-                    logging.info(f"Uploading file to OpenAI: {file_path}")
-                    response = self.client.files.create(
-                        file=file,
-                        purpose="assistants"
-                    )
-                    return response.id
-
-            file_id = self.storage.process_file(file_path, upload_to_openai)
+            file_id = self.storage.process_file(
+                file_path,
+                lambda local_path, **kwargs: self.client.files.create(
+                    file=open(local_path, 'rb'),
+                    purpose="assistants"
+                ).id
+            )
 
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
