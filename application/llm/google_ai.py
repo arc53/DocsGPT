@@ -1,11 +1,11 @@
 from google import genai
 from google.genai import types
-import os
 import logging
-import mimetypes
 import json
 
 from application.llm.base import BaseLLM
+from application.storage.storage_creator import StorageCreator
+from application.core.settings import settings
 
 
 class GoogleLLM(BaseLLM):
@@ -14,6 +14,7 @@ class GoogleLLM(BaseLLM):
         self.api_key = api_key
         self.user_api_key = user_api_key
         self.client = genai.Client(api_key=self.api_key)
+        self.storage = StorageCreator.create_storage(getattr(settings, "STORAGE_TYPE", "local"))
 
     def get_supported_attachment_types(self):
         """
@@ -109,19 +110,14 @@ class GoogleLLM(BaseLLM):
         if not file_path:
             raise ValueError("No file path provided in attachment")
 
-        if not os.path.isabs(file_path):
-            current_dir = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-            file_path = os.path.join(current_dir, "application", file_path)
-
-        if not os.path.exists(file_path):
+        if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         try:
-            response = self.client.files.upload(file=file_path)
-
-            file_uri = response.uri
+            file_uri = self.storage.process_file(
+                file_path,
+                lambda local_path, **kwargs: self.client.files.upload(file=local_path).uri
+            )
 
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
