@@ -12,13 +12,14 @@ import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
+import Agents from './agents';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
 
   if (isAuthLoading) {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="flex h-screen items-center justify-center">
         <Spinner />
       </div>
     );
@@ -31,7 +32,7 @@ function MainLayout() {
   const [navOpen, setNavOpen] = useState(!isMobile);
 
   return (
-    <div className="dark:bg-raisin-black relative h-screen overflow-auto">
+    <div className="relative h-screen overflow-auto dark:bg-raisin-black">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <div
         className={`h-[calc(100dvh-64px)] md:h-screen ${
@@ -52,7 +53,7 @@ export default function App() {
     return <div />;
   }
   return (
-    <div className="h-full relative overflow-auto">
+    <div className="relative h-full overflow-auto">
       <Routes>
         <Route
           element={
@@ -64,6 +65,7 @@ export default function App() {
           <Route index element={<Conversation />} />
           <Route path="/about" element={<About />} />
           <Route path="/settings/*" element={<Setting />} />
+          <Route path="/agents/*" element={<Agents />} />
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/*" element={<PageNotFound />} />

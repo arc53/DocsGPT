@@ -61,5 +61,7 @@ export interface RetrievalPayload {
   token_limit: number;
   isNoneDoc: boolean;
   index?: number;
+  agent_id?: string;
   attachments?: string[];
+  save_conversation?: boolean;
 }
