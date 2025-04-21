@@ -23,6 +23,7 @@ interface ConversationMessagesProps {
   handleFeedback?: (query: Query, feedback: FEEDBACK, index: number) => void;
   queries: Query[];
   status: Status;
+  showHeroOnEmpty?: boolean;
 }
 
 export default function ConversationMessages({
@@ -31,6 +32,7 @@ export default function ConversationMessages({
   queries,
   status,
   handleFeedback,
+  showHeroOnEmpty = true,
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
   const { t } = useTranslation();
@@ -141,7 +143,7 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex justify-center w-full overflow-y-auto h-screen sm:pt-12"
+      className="flex justify-center w-full overflow-y-auto h-full sm:pt-12"
     >
       {queries.length > 0 && !hasScrolledToLast && (
         <button
@@ -161,7 +163,6 @@ export default function ConversationMessages({
         {queries.length > 0 ? (
           queries.map((query, index) => (
             <Fragment key={index}>
-              
               <ConversationBubble
                 className={'first:mt-5'}
                 key={`${index}QUESTION`}
@@ -170,14 +171,13 @@ export default function ConversationMessages({
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
                 questionNumber={index}
                 sources={query.sources}
-                attachments={query.attachments}
               />
               {prepResponseView(query, index)}
             </Fragment>
           ))
-        ) : (
+        ) : showHeroOnEmpty ? (
           <Hero handleQuestion={handleQuestion} />
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -27,7 +27,7 @@ db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
-api_key_collection = db["api_keys"]
+agents_collection = db["agents"]
 user_logs_collection = db["user_logs"]
 attachments_collection = db["attachments"]
 
@@ -86,19 +86,42 @@ def run_async_chain(chain, question, chat_history):
     return result
 
 
-def get_data_from_api_key(api_key):
-    data = api_key_collection.find_one({"key": api_key})
-    # # Raise custom exception if the API key is not found
-    if data is None:
-        raise Exception("Invalid API Key, please generate new key", 401)
+def get_agent_key(agent_id, user_id):
+    if not agent_id:
+        return None
 
-    if "source" in data and isinstance(data["source"], DBRef):
-        source_doc = db.dereference(data["source"])
+    try:
+        agent = agents_collection.find_one({"_id": ObjectId(agent_id)})
+        if agent is None:
+            raise Exception("Agent not found", 404)
+
+        if agent.get("user") == user_id:
+            agents_collection.update_one(
+                {"_id": ObjectId(agent_id)},
+                {"$set": {"lastUsedAt": datetime.datetime.now(datetime.timezone.utc)}},
+            )
+            return str(agent["key"])
+
+        raise Exception("Unauthorized access to the agent", 403)
+
+    except Exception as e:
+        logger.error(f"Error in get_agent_key: {str(e)}")
+        raise
+
+
+def get_data_from_api_key(api_key):
+    data = agents_collection.find_one({"key": api_key})
+    if not data:
+        raise Exception("Invalid API Key, please generate a new key", 401)
+
+    source = data.get("source")
+    if isinstance(source, DBRef):
+        source_doc = db.dereference(source)
         data["source"] = str(source_doc["_id"])
-        if "retriever" in source_doc:
-            data["retriever"] = source_doc["retriever"]
+        data["retriever"] = source_doc.get("retriever", data.get("retriever"))
     else:
         data["source"] = {}
+
     return data
 
 
@@ -128,7 +151,8 @@ def save_conversation(
     llm,
     decoded_token,
     index=None,
-    api_key=None
+    api_key=None,
+    agent_id=None,
 ):
     current_time = datetime.datetime.now(datetime.timezone.utc)
     if conversation_id is not None and index is not None:
@@ -202,7 +226,9 @@ def save_conversation(
             ],
         }
         if api_key:
-            api_key_doc = api_key_collection.find_one({"key": api_key})
+            if agent_id:
+                conversation_data["agent_id"] = agent_id
+            api_key_doc = agents_collection.find_one({"key": api_key})
             if api_key_doc:
                 conversation_data["api_key"] = api_key_doc["key"]
         conversation_id = conversations_collection.insert_one(
@@ -234,6 +260,7 @@ def complete_stream(
     index=None,
     should_save_conversation=True,
     attachments=None,
+    agent_id=None,
 ):
     try:
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
@@ -241,7 +268,9 @@ def complete_stream(
 
         if attachments:
             attachment_ids = [attachment["id"] for attachment in attachments]
-            logger.info(f"Processing request with {len(attachments)} attachments: {attachment_ids}")
+            logger.info(
+                f"Processing request with {len(attachments)} attachments: {attachment_ids}"
+            )
 
         answer = agent.gen(query=question, retriever=retriever)
 
@@ -294,7 +323,8 @@ def complete_stream(
                 llm,
                 decoded_token,
                 index,
-                api_key=user_api_key
+                api_key=user_api_key,
+                agent_id=agent_id,
             )
         else:
             conversation_id = None
@@ -366,7 +396,9 @@ class Stream(Resource):
                 required=False, description="Index of the query to update"
             ),
             "save_conversation": fields.Boolean(
-                required=False, default=True, description="Whether to save the conversation"
+                required=False,
+                default=True,
+                description="Whether to save the conversation",
             ),
             "attachments": fields.List(
                 fields.String, required=False, description="List of attachment IDs"
@@ -400,6 +432,14 @@ class Stream(Resource):
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
+            agent_id = data.get("agent_id", None)
+            agent_type = settings.AGENT_NAME
+            agent_key = get_agent_key(agent_id, request.decoded_token.get("sub"))
+
+            if agent_key:
+                data.update({"api_key": agent_key})
+            else:
+                agent_id = None
 
             if "api_key" in data:
                 data_key = get_data_from_api_key(data["api_key"])
@@ -408,6 +448,7 @@ class Stream(Resource):
                 source = {"active_docs": data_key.get("source")}
                 retriever_name = data_key.get("retriever", retriever_name)
                 user_api_key = data["api_key"]
+                agent_type = data_key.get("agent_type", agent_type)
                 decoded_token = {"sub": data_key.get("user")}
 
             elif "active_docs" in data:
@@ -423,8 +464,10 @@ class Stream(Resource):
 
             if not decoded_token:
                 return make_response({"error": "Unauthorized"}, 401)
-            
-            attachments = get_attachments_content(attachment_ids, decoded_token.get("sub"))
+
+            attachments = get_attachments_content(
+                attachment_ids, decoded_token.get("sub")
+            )
 
             logger.info(
                 f"/stream - request_data: {data}, source: {source}, attachments: {len(attachments)}",
@@ -436,7 +479,7 @@ class Stream(Resource):
                 chunks = 0
 
             agent = AgentCreator.create_agent(
-                settings.AGENT_NAME,
+                agent_type,
                 endpoint="stream",
                 llm_name=settings.LLM_NAME,
                 gpt_model=gpt_model,
@@ -471,6 +514,7 @@ class Stream(Resource):
                     isNoneDoc=data.get("isNoneDoc"),
                     index=index,
                     should_save_conversation=save_conv,
+                    agent_id=agent_id,
                 ),
                 mimetype="text/event-stream",
             )
@@ -552,6 +596,7 @@ class Answer(Resource):
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
+            agent_type = settings.AGENT_NAME
 
             if "api_key" in data:
                 data_key = get_data_from_api_key(data["api_key"])
@@ -560,6 +605,7 @@ class Answer(Resource):
                 source = {"active_docs": data_key.get("source")}
                 retriever_name = data_key.get("retriever", retriever_name)
                 user_api_key = data["api_key"]
+                agent_type = data_key.get("agent_type", agent_type)
                 decoded_token = {"sub": data_key.get("user")}
 
             elif "active_docs" in data:
@@ -584,7 +630,7 @@ class Answer(Resource):
             )
 
             agent = AgentCreator.create_agent(
-                settings.AGENT_NAME,
+                agent_type,
                 endpoint="api/answer",
                 llm_name=settings.LLM_NAME,
                 gpt_model=gpt_model,
@@ -611,6 +657,7 @@ class Answer(Resource):
             source_log_docs = []
             tool_calls = []
             stream_ended = False
+            thought = ""
 
             for line in complete_stream(
                 question=question,
@@ -633,6 +680,8 @@ class Answer(Resource):
                         source_log_docs = event["source"]
                     elif event["type"] == "tool_calls":
                         tool_calls = event["tool_calls"]
+                    elif event["type"] == "thought":
+                        thought = event["thought"]
                     elif event["type"] == "error":
                         logger.error(f"Error from stream: {event['error']}")
                         return bad_request(500, event["error"])
@@ -664,6 +713,7 @@ class Answer(Resource):
                     conversation_id,
                     question,
                     response_full,
+                    thought,
                     source_log_docs,
                     tool_calls,
                     llm,
@@ -811,33 +861,27 @@ class Search(Resource):
 def get_attachments_content(attachment_ids, user):
     """
     Retrieve content from attachment documents based on their IDs.
-    
+
     Args:
         attachment_ids (list): List of attachment document IDs
         user (str): User identifier to verify ownership
-        
+
     Returns:
         list: List of dictionaries containing attachment content and metadata
     """
     if not attachment_ids:
         return []
-    
+
     attachments = []
     for attachment_id in attachment_ids:
         try:
-            attachment_doc = attachments_collection.find_one({
-                "_id": ObjectId(attachment_id),
-                "user": user
-            })
-            
+            attachment_doc = attachments_collection.find_one(
+                {"_id": ObjectId(attachment_id), "user": user}
+            )
+
             if attachment_doc:
-                attachments.append({
-                    "id": str(attachment_doc["_id"]),
-                    "content": attachment_doc["content"],
-                    "token_count": attachment_doc.get("token_count", 0),
-                    "path": attachment_doc.get("path", "")
-                })
+                attachments.append(attachment_doc)
         except Exception as e:
             logger.error(f"Error retrieving attachment {attachment_id}: {e}")
-    
+
     return attachments

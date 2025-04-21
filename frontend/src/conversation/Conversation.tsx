@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useDropzone } from 'react-dropzone';
+
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import newChatIcon from '../assets/openNewChat.svg';
 import ShareIcon from '../assets/share.svg';
+import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
+import { ActiveState } from '../models/misc';
 import {
   selectConversationId,
+  selectSelectedAgent,
   selectToken,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import Upload from '../upload/Upload';
 import { handleSendFeedback } from './conversationHandlers';
+import ConversationMessages from './ConversationMessages';
 import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
@@ -24,27 +30,28 @@ import {
   updateConversationId,
   updateQuery,
 } from './conversationSlice';
-import Upload from '../upload/Upload';
-import { ActiveState } from '../models/misc';
-import ConversationMessages from './ConversationMessages';
-import MessageInput from '../components/MessageInput';
 
 export default function Conversation() {
+  const { t } = useTranslation();
+  const { isMobile } = useMediaQuery();
+  const dispatch = useDispatch<AppDispatch>();
+
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
-  const dispatch = useDispatch<AppDispatch>();
-  const [input, setInput] = useState('');
-  const fetchStream = useRef<any>(null);
-  const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
-  const { t } = useTranslation();
-  const { isMobile } = useMediaQuery();
+  const selectedAgent = useSelector(selectSelectedAgent);
+
+  const [input, setInput] = useState<string>('');
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [files, setFiles] = useState<File[]>([]);
+  const [lastQueryReturnedErr, setLastQueryReturnedErr] =
+    useState<boolean>(false);
+  const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
+
+  const fetchStream = useRef<any>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setUploadModalState('ACTIVE');
@@ -83,35 +90,36 @@ export default function Conversation() {
     },
   });
 
-  useEffect(() => {
-    if (queries.length) {
-      queries[queries.length - 1].error && setLastQueryReturnedErr(true);
-      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
-    }
-  }, [queries[queries.length - 1]]);
+  const handleFetchAnswer = useCallback(
+    ({ question, index }: { question: string; index?: number }) => {
+      fetchStream.current = dispatch(fetchAnswer({ question, indx: index }));
+    },
+    [dispatch, selectedAgent],
+  );
 
-  const handleQuestion = ({
-    question,
-    isRetry = false,
-    updated = null,
-    indx = undefined,
-  }: {
-    question: string;
-    isRetry?: boolean;
-    updated?: boolean | null;
-    indx?: number;
-  }) => {
-    if (updated === true) {
-      !isRetry &&
-        dispatch(resendQuery({ index: indx as number, prompt: question }));
-      fetchStream.current = dispatch(fetchAnswer({ question, indx }));
-    } else {
-      question = question.trim();
-      if (question === '') return;
-      !isRetry && dispatch(addQuery({ prompt: question }));
-      fetchStream.current = dispatch(fetchAnswer({ question }));
-    }
-  };
+  const handleQuestion = useCallback(
+    ({
+      question,
+      isRetry = false,
+      index = undefined,
+    }: {
+      question: string;
+      isRetry?: boolean;
+      index?: number;
+    }) => {
+      const trimmedQuestion = question.trim();
+      if (trimmedQuestion === '') return;
+
+      if (index !== undefined) {
+        if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
+        handleFetchAnswer({ question: trimmedQuestion, index });
+      } else {
+        if (!isRetry) dispatch(addQuery({ prompt: trimmedQuestion }));
+        handleFetchAnswer({ question: trimmedQuestion, index });
+      }
+    },
+    [dispatch, handleFetchAnswer],
+  );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
     const prevFeedback = query.feedback;
@@ -143,10 +151,9 @@ export default function Conversation() {
     indx?: number,
   ) => {
     if (updated === true) {
-      handleQuestion({ question: updatedQuestion as string, updated, indx });
+      handleQuestion({ question: updatedQuestion as string, index: indx });
     } else if (input && status !== 'loading') {
       if (lastQueryReturnedErr) {
-        // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
@@ -160,13 +167,14 @@ export default function Conversation() {
           isRetry: true,
         });
       } else {
-        handleQuestion({ 
+        handleQuestion({
           question: input,
         });
       }
       setInput('');
     }
   };
+
   const resetConversation = () => {
     dispatch(setConversation([]));
     dispatch(
@@ -175,22 +183,29 @@ export default function Conversation() {
       }),
     );
   };
+
   const newChat = () => {
     if (queries && queries.length > 0) resetConversation();
   };
 
+  useEffect(() => {
+    if (queries.length) {
+      queries[queries.length - 1].error && setLastQueryReturnedErr(true);
+      queries[queries.length - 1].response && setLastQueryReturnedErr(false);
+    }
+  }, [queries[queries.length - 1]]);
   return (
-    <div className="flex flex-col gap-1 h-full justify-end">
+    <div className="flex h-full flex-col justify-end gap-1">
       {conversationId && queries.length > 0 && (
-        <div className="absolute top-4 right-20">
-          <div className="flex mt-2 items-center gap-4">
+        <div className="absolute right-20 top-4">
+          <div className="mt-2 flex items-center gap-4">
             {isMobile && queries.length > 0 && (
               <button
                 title="Open New Chat"
                 onClick={() => {
                   newChat();
                 }}
-                className="hover:bg-bright-gray dark:hover:bg-[#28292E] rounded-full p-2"
+                className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
               >
                 <img
                   className="h-5 w-5 filter dark:invert"
@@ -205,7 +220,7 @@ export default function Conversation() {
               onClick={() => {
                 setShareModalState(true);
               }}
-              className="hover:bg-bright-gray dark:hover:bg-[#28292E] rounded-full p-2"
+              className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
             >
               <img
                 className="h-5 w-5 filter dark:invert"
@@ -233,7 +248,7 @@ export default function Conversation() {
         status={status}
       />
 
-      <div className="flex flex-col items-end self-center rounded-2xl bg-opacity-0 z-3 w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1300px] h-auto py-1">
+      <div className="z-3 flex h-auto w-full max-w-[1300px] flex-col items-end self-center rounded-2xl bg-opacity-0 py-1 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
         <div
           {...getRootProps()}
           className="flex w-full items-center rounded-[40px]"
@@ -247,20 +262,22 @@ export default function Conversation() {
             onChange={(e) => setInput(e.target.value)}
             onSubmit={handleQuestionSubmission}
             loading={status === 'loading'}
+            showSourceButton={selectedAgent ? false : true}
+            showToolButton={selectedAgent ? false : true}
           />
         </div>
 
-        <p className="text-gray-4000 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-sonic-silver md:inline md:w-full">
+        <p className="hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
       {handleDragActive && (
-        <div className="pointer-events-none fixed top-0 left-0 z-30 flex flex-col size-full items-center justify-center bg-opacity-50 bg-white dark:bg-gray-alpha">
+        <div className="pointer-events-none fixed left-0 top-0 z-30 flex size-full flex-col items-center justify-center bg-white bg-opacity-50 dark:bg-gray-alpha">
           <img className="filter dark:invert" src={DragFileUpload} />
           <span className="px-2 text-2xl font-bold text-outer-space dark:text-silver">
             {t('modals.uploadDoc.drag.title')}
           </span>
-          <span className="p-2 text-s w-48 text-center text-outer-space dark:text-silver">
+          <span className="text-s w-48 p-2 text-center text-outer-space dark:text-silver">
             {t('modals.uploadDoc.drag.description')}
           </span>
         </div>

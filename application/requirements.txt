@@ -15,7 +15,7 @@ Flask==3.1.0
 faiss-cpu==1.9.0.post1
 flask-restx==1.3.0
 google-genai==1.3.0
-google-generativeai==0.8.3
+google-generativeai==0.8.5
 gTTS==2.5.4
 gunicorn==23.0.0
 html2text==2024.2.26
@@ -41,7 +41,7 @@ lxml==5.3.1
 markupsafe==3.0.2
 marshmallow==3.26.1
 mpmath==1.3.0
-multidict==6.1.0
+multidict==6.3.2
 mypy-extensions==1.0.0
 networkx==3.4.2
 numpy==2.2.1

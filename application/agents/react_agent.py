@@ -30,7 +30,10 @@ class ReActAgent(BaseAgent):
     ) -> Generator[Dict, None, None]:
         retrieved_data = self._retriever_search(retriever, query, log_context)
 
-        tools_dict = self._get_user_tools(self.user)
+        if self.user_api_key:
+            tools_dict = self._get_tools(self.user_api_key)
+        else:
+            tools_dict = self._get_user_tools(self.user)
         self._prepare_tools(tools_dict)
 
         docs_together = "\n".join([doc["text"] for doc in retrieved_data])
