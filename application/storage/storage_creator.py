@@ -4,6 +4,7 @@ from typing import Dict, Type
 from application.storage.base import BaseStorage
 from application.storage.local import LocalStorage
 from application.storage.s3 import S3Storage
+from application.core.settings import settings
 
 
 class StorageCreator:
@@ -11,6 +12,16 @@ class StorageCreator:
         "local": LocalStorage,
         "s3": S3Storage,
     }
+    
+    _instance = None
+    
+    @classmethod
+    def get_storage(cls) -> BaseStorage:
+        if cls._instance is None:
+            storage_type = getattr(settings, "STORAGE_TYPE", "local")
+            cls._instance = cls.create_storage(storage_type)
+        
+        return cls._instance
     
     @classmethod
     def create_storage(cls, type_name: str, *args, **kwargs) -> BaseStorage:
