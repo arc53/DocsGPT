@@ -4,6 +4,7 @@ import math
 import os
 import shutil
 import uuid
+import tempfile
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -21,6 +22,7 @@ from application.extensions import api
 from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
+from application.storage.storage_creator import StorageCreator
 
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
@@ -413,54 +415,50 @@ class UploadFile(Resource):
 
         user = secure_filename(decoded_token.get("sub"))
         job_name = secure_filename(request.form["name"])
+        storage = StorageCreator.get_storage()
+        
         try:
-            save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
-            os.makedirs(save_dir, exist_ok=True)
-
             if len(files) > 1:
-                temp_dir = os.path.join(save_dir, "temp")
-                os.makedirs(temp_dir, exist_ok=True)
-
-                for file in files:
-                    filename = secure_filename(file.filename)
-                    file.save(os.path.join(temp_dir, filename))
-                    print(f"Saved file: {filename}")
-                zip_path = shutil.make_archive(
-                    base_name=os.path.join(save_dir, job_name),
-                    format="zip",
-                    root_dir=temp_dir,
-                )
-                final_filename = os.path.basename(zip_path)
-                shutil.rmtree(temp_dir)
-                task = ingest.delay(
-                    settings.UPLOAD_FOLDER,
-                    [
-                        ".rst",
-                        ".md",
-                        ".pdf",
-                        ".txt",
-                        ".docx",
-                        ".csv",
-                        ".epub",
-                        ".html",
-                        ".mdx",
-                        ".json",
-                        ".xlsx",
-                        ".pptx",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                    ],
-                    job_name,
-                    final_filename,
-                    user,
-                )
+                temp_dir = tempfile.mkdtemp()
+                try:
+                    for file in files:
+                        filename = secure_filename(file.filename)
+                        file.save(os.path.join(temp_dir, filename))
+                    
+                    zip_path = os.path.join(temp_dir, f"{job_name}.zip")
+                    shutil.make_archive(
+                        base_name=os.path.join(temp_dir, job_name),
+                        format="zip",
+                        root_dir=temp_dir,
+                        base_dir="."
+                    )
+                    
+                    final_filename = f"{job_name}.zip"
+                    relative_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}/{final_filename}"
+                    
+                    with open(zip_path, 'rb') as zip_file:
+                        storage.save_file(zip_file, relative_path)
+                    
+                    task = ingest.delay(
+                        relative_path,
+                        [
+                            ".rst", ".md", ".pdf", ".txt", ".docx", ".csv", 
+                            ".epub", ".html", ".mdx", ".json", ".xlsx", 
+                            ".pptx", ".png", ".jpg", ".jpeg",
+                        ],
+                        job_name,
+                        final_filename,
+                        user,
+                    )
+                finally:
+                    shutil.rmtree(temp_dir)
             else:
                 file = files[0]
                 final_filename = secure_filename(file.filename)
-                file_path = os.path.join(save_dir, final_filename)
-                file.save(file_path)
-
+                relative_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}/{final_filename}"
+                
+                storage.save_file(file, relative_path)
+                
                 task = ingest.delay(
                     settings.UPLOAD_FOLDER,
                     [
