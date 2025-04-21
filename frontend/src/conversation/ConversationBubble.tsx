@@ -403,6 +403,15 @@ const ConversationBubble = forwardRef<
                     const match = /language-(\w+)/.exec(className || '');
                     const language = match ? match[1] : '';
 
+                    if (language === 'mermaid') {
+                      return (
+                        <MermaidRenderer
+                          isDarkTheme={isDarkTheme}
+                          code={String(children)}
+                        />
+                      );
+                    }
+
                     return match ? (
                       <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
                         <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
@@ -791,15 +800,6 @@ function Thought({
                   const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
                   const language = match ? match[1] : '';
-
-                  if (language === 'mermaid') {
-                    return (
-                      <MermaidRenderer
-                        isDarkTheme={isDarkTheme}
-                        code={String(children)}
-                      />
-                    );
-                  }
 
                   return match ? (
                     <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">

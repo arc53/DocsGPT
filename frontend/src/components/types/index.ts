@@ -22,3 +22,8 @@ export type InputProps = {
     e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
   ) => void;
 };
+
+export type MermaidRendererProps = {
+  code: string;
+  isDarkTheme: boolean;
+};

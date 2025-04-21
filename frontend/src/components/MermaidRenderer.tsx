@@ -3,11 +3,7 @@ import mermaid from 'mermaid';
 import CopyButton from './CopyButton';
 import { useSelector } from 'react-redux';
 import { selectStatus } from '../conversation/conversationSlice';
-
-interface MermaidRendererProps {
-  code: string;
-  isDarkTheme: boolean;
-}
+import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   code,
