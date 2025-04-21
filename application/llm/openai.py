@@ -19,7 +19,7 @@ class OpenAILLM(BaseLLM):
             self.client = OpenAI(api_key=api_key)
         self.api_key = api_key
         self.user_api_key = user_api_key
-        self.storage = StorageCreator.create_storage(getattr(settings, "STORAGE_TYPE", "local"))
+        self.storage = StorageCreator.get_storage()
 
     def _clean_messages_openai(self, messages):
         cleaned_messages = []

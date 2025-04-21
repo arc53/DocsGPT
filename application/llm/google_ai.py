@@ -5,7 +5,6 @@ import json
 
 from application.llm.base import BaseLLM
 from application.storage.storage_creator import StorageCreator
-from application.core.settings import settings
 
 
 class GoogleLLM(BaseLLM):
@@ -14,7 +13,7 @@ class GoogleLLM(BaseLLM):
         self.api_key = api_key
         self.user_api_key = user_api_key
         self.client = genai.Client(api_key=self.api_key)
-        self.storage = StorageCreator.create_storage(getattr(settings, "STORAGE_TYPE", "local"))
+        self.storage = StorageCreator.get_storage()
 
     def get_supported_attachment_types(self):
         """
