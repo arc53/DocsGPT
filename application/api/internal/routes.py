@@ -1,5 +1,6 @@
 import os
 import datetime
+import logging
 from flask import Blueprint, request, send_from_directory
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
@@ -46,7 +47,7 @@ def upload_index_files():
     sync_frequency = secure_filename(request.form["sync_frequency"]) if "sync_frequency" in request.form else None
 
     storage = StorageCreator.create_storage(settings.STORAGE_TYPE)
-    
+
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
             print("No file part")
@@ -60,13 +61,18 @@ def upload_index_files():
         file_pkl = request.files["file_pkl"]
         if file_pkl.filename == "":
             return {"status": "no file name"}
-        
+
         # Save index files
         storage_path_faiss = f"indexes/{str(id)}/index.faiss"
         storage_path_pkl = f"indexes/{str(id)}/index.pkl"
-        
-        storage.save_file(file_faiss, storage_path_faiss)
-        storage.save_file(file_pkl, storage_path_pkl)
+
+        try:
+            storage.save_file(file_faiss, storage_path_faiss)
+            storage.save_file(file_pkl, storage_path_pkl)
+            logging.info(f"Successfully saved FAISS index files for ID {id}")
+        except Exception as e:
+            logging.error(f"Error saving FAISS index files: {e}")
+            return {"status": "error", "message": str(e)}
 
     existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
     if existing_entry:
