@@ -6,7 +6,7 @@ from bson.objectid import ObjectId
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.storage.storage_creator import StorageCreator
+
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
@@ -45,8 +45,7 @@ def upload_index_files():
     remote_data = request.form["remote_data"] if "remote_data" in request.form else None
     sync_frequency = secure_filename(request.form["sync_frequency"]) if "sync_frequency" in request.form else None
 
-    storage = StorageCreator.create_storage(settings.STORAGE_TYPE)
-    
+    save_dir = os.path.join(current_dir, "indexes", str(id))
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
             print("No file part")
@@ -60,13 +59,12 @@ def upload_index_files():
         file_pkl = request.files["file_pkl"]
         if file_pkl.filename == "":
             return {"status": "no file name"}
-        
-        # Save index files
-        storage_path_faiss = f"indexes/{str(id)}/index.faiss"
-        storage_path_pkl = f"indexes/{str(id)}/index.pkl"
-        
-        storage.save_file(file_faiss, storage_path_faiss)
-        storage.save_file(file_pkl, storage_path_pkl)
+        # saves index files
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        file_faiss.save(os.path.join(save_dir, "index.faiss"))
+        file_pkl.save(os.path.join(save_dir, "index.pkl"))
 
     existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
     if existing_entry:
@@ -84,7 +82,6 @@ def upload_index_files():
                     "retriever": retriever,
                     "remote_data": remote_data,
                     "sync_frequency": sync_frequency,
-                    "storage_type": settings.STORAGE_TYPE,
                 }
             },
         )
@@ -102,7 +99,6 @@ def upload_index_files():
                 "retriever": retriever,
                 "remote_data": remote_data,
                 "sync_frequency": sync_frequency,
-                "storage_type": settings.STORAGE_TYPE,
             }
         )
     return {"status": "ok"}
