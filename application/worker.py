@@ -89,12 +89,9 @@ def download_file(url, params, dest_path):
 def upload_index(full_path, file_data):
     try:
         if settings.VECTOR_STORE == "faiss":
-            faiss_path = os.path.join(full_path, "index.faiss")
-            pkl_path = os.path.join(full_path, "index.pkl")
-
             files = {
-                "file_faiss": open(faiss_path, "rb"),
-                "file_pkl": open(pkl_path, "rb"),
+                "file_faiss": open(full_path + "/index.faiss", "rb"),
+                "file_pkl": open(full_path + "/index.pkl", "rb"),
             }
             response = requests.post(
                 urljoin(settings.API_URL, "/api/upload_index"), files=files, data=file_data
@@ -107,11 +104,8 @@ def upload_index(full_path, file_data):
     except requests.RequestException as e:
         logging.error(f"Error uploading index: {e}")
         raise
-    except FileNotFoundError as e:
-        logging.error(f"File not found: {e}")
-        raise
     finally:
-        if settings.VECTOR_STORE == "faiss" and 'files' in locals():
+        if settings.VECTOR_STORE == "faiss":
             for file in files.values():
                 file.close()
 
@@ -143,23 +137,23 @@ def ingest_worker(
     storage = StorageCreator.create_storage(settings.STORAGE_TYPE)
     temp_dir = tempfile.mkdtemp()
     full_path = os.path.join(temp_dir, name_job)
-
+    
     if not os.path.exists(full_path):
         os.makedirs(full_path)
 
     logging.info(f"Ingest file: {directory}/{user}/{name_job}/{filename}", extra={"user": user, "job": name_job})
     file_data = {"name": name_job, "file": filename, "user": user}
-
+    
     try:
         file_path = f"{directory}/{user}/{name_job}/{filename}"
-
+        
         try:
             file_obj = storage.get_file(file_path)
-
+            
             local_file_path = os.path.join(full_path, filename)
             with open(local_file_path, 'wb') as f:
                 shutil.copyfileobj(file_obj, f)
-
+    
             # check if file is .zip and extract it
             if filename.endswith(".zip"):
                 extract_zip_recursive(
@@ -194,7 +188,7 @@ def ingest_worker(
 
         vector_dir = os.path.join(temp_dir, "vector_store")
         os.makedirs(vector_dir, exist_ok=True)
-
+        
         embed_and_store_documents(docs, vector_dir, str(id), self)
         tokens = count_tokens_docs(docs)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -209,11 +203,11 @@ def ingest_worker(
             "id": str(id),
             "type": "local",
         })
-
+        
         mongo = MongoDB.get_client()
         db = mongo["docsgpt"]
         sources_collection = db["sources"]
-
+        
         sources_collection.insert_one({
             "_id": id,
             "name": name_job,
@@ -234,7 +228,7 @@ def ingest_worker(
             "user": user,
             "limited": False,
         }
-
+    
     finally:
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)

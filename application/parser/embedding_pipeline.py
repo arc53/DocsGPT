@@ -42,18 +42,17 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
 
     # Initialize vector store
     if settings.VECTOR_STORE == "faiss":
-
         docs_init = [docs.pop(0)]
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
             docs_init=docs_init,
-            source_id=str(source_id),
+            source_id=folder_name,
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     else:
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
-            source_id=str(source_id),
+            source_id=source_id,
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
         store.delete_index()
@@ -83,6 +82,5 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
 
     # Save the vector store
     if settings.VECTOR_STORE == "faiss":
-        # For FAISS, save to the temporary folder first
         store.save_local(folder_name)
     logging.info("Vector store saved successfully.")
