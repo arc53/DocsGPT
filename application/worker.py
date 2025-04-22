@@ -133,62 +133,91 @@ def ingest_worker(
     limit = None
     exclude = True
     sample = False
+    
+    storage = StorageCreator.get_storage()
+    
     full_path = os.path.join(directory, user, name_job)
-
+    source_file_path = os.path.join(full_path, filename)
+    
     logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": name_job})
-    file_data = {"name": name_job, "file": filename, "user": user}
+    
+    # Create temporary working directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Download file from storage to temp directory
+            temp_file_path = os.path.join(temp_dir, filename)
+            file_data = storage.get_file(source_file_path)
+            
+            with open(temp_file_path, 'wb') as f:
+                f.write(file_data.read())
+            
+            self.update_state(state="PROGRESS", meta={"current": 1})
 
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
-    download_file(urljoin(settings.API_URL, "/api/download"), file_data, os.path.join(full_path, filename))
+            # Handle zip files
+            if filename.endswith('.zip'):
+                logging.info(f"Extracting zip file: {filename}")
+                extract_zip_recursive(
+                    temp_file_path,
+                    temp_dir,
+                    current_depth=0,
+                    max_depth=RECURSION_DEPTH
+                )
 
-    # check if file is .zip and extract it
-    if filename.endswith(".zip"):
-        extract_zip_recursive(
-            os.path.join(full_path, filename), full_path, 0, RECURSION_DEPTH
-        )
+            if sample:
+                logging.info(f"Sample mode enabled. Using {limit} documents.")
 
-    self.update_state(state="PROGRESS", meta={"current": 1})
+            reader = SimpleDirectoryReader(
+                input_dir=temp_dir,
+                input_files=input_files,
+                recursive=recursive,
+                required_exts=formats,
+                exclude_hidden=exclude,
+                file_metadata=metadata_from_filename,
+            )
+            raw_docs = reader.load_data()
 
-    raw_docs = SimpleDirectoryReader(
-        input_dir=full_path,
-        input_files=input_files,
-        recursive=recursive,
-        required_exts=formats,
-        num_files_limit=limit,
-        exclude_hidden=exclude,
-        file_metadata=metadata_from_filename,
-    ).load_data()
+            chunker = Chunker(
+                chunking_strategy="classic_chunk",
+                max_tokens=MAX_TOKENS,
+                min_tokens=MIN_TOKENS,
+                duplicate_headers=False
+            )
+            raw_docs = chunker.chunk(documents=raw_docs)
+            
+            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            
+            id = ObjectId()
+            
+            vector_store_path = os.path.join(temp_dir, 'vector_store')
+            os.makedirs(vector_store_path, exist_ok=True)
+            
+            embed_and_store_documents(docs, vector_store_path, id, self)
+            
+            tokens = count_tokens_docs(docs)
+            
+            self.update_state(state="PROGRESS", meta={"current": 100})
 
-    chunker = Chunker(
-        chunking_strategy="classic_chunk",
-        max_tokens=MAX_TOKENS,
-        min_tokens=MIN_TOKENS,
-        duplicate_headers=False
-    )
-    raw_docs = chunker.chunk(documents=raw_docs)
+            if sample:
+               for i in range(min(5, len(raw_docs))):
+                    logging.info(f"Sample document {i}: {raw_docs[i]}")
+            file_data = {
+                "name": name_job,
+                "file": filename,
+                "user": user,
+                "tokens": tokens,
+                "retriever": retriever,
+                "id": str(id),
+                "type": "local",
+            }
 
-    docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
-    id = ObjectId()
 
-    embed_and_store_documents(docs, full_path, id, self)
-    tokens = count_tokens_docs(docs)
-    self.update_state(state="PROGRESS", meta={"current": 100})
+            upload_index(vector_store_path, file_data)
 
-    if sample:
-        for i in range(min(5, len(raw_docs))):
-            logging.info(f"Sample document {i}: {raw_docs[i]}")
-
-    file_data.update({
-        "tokens": tokens,
-        "retriever": retriever,
-        "id": str(id),
-        "type": "local",
-    })
-    upload_index(full_path, file_data)
-
-    # delete local
-    shutil.rmtree(full_path)
+        except Exception as e:
+            logging.error(f"Error in ingest_worker: {e}", exc_info=True)
+            raise
 
     return {
         "directory": directory,
