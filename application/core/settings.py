@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
+    STORAGE_TYPE: str = "local"  # local or s3 
+
 
     JWT_SECRET_KEY: str = ""
 

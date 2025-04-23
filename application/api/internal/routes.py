@@ -3,10 +3,13 @@ import datetime
 from flask import Blueprint, request, send_from_directory
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
-
+import logging
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.storage_creator import StorageCreator
 
+
+logger = logging.getLogger(__name__)
 mongo = MongoDB.get_client()
 db = mongo["docsgpt"]
 conversations_collection = db["conversations"]
@@ -45,26 +48,26 @@ def upload_index_files():
     remote_data = request.form["remote_data"] if "remote_data" in request.form else None
     sync_frequency = secure_filename(request.form["sync_frequency"]) if "sync_frequency" in request.form else None
 
-    save_dir = os.path.join(current_dir, "indexes", str(id))
+    storage = StorageCreator.get_storage()
+    index_base_path = f"indexes/{id}"
+    
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
-            print("No file part")
+            logger.error("No file_faiss part")
             return {"status": "no file"}
         file_faiss = request.files["file_faiss"]
         if file_faiss.filename == "":
             return {"status": "no file name"}
         if "file_pkl" not in request.files:
-            print("No file part")
+            logger.error("No file_pkl part")
             return {"status": "no file"}
         file_pkl = request.files["file_pkl"]
         if file_pkl.filename == "":
             return {"status": "no file name"}
-        # saves index files
-
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        file_faiss.save(os.path.join(save_dir, "index.faiss"))
-        file_pkl.save(os.path.join(save_dir, "index.pkl"))
+        
+        # Save index files to storage
+        storage.save_file(file_faiss, f"{index_base_path}/index.faiss")
+        storage.save_file(file_pkl, f"{index_base_path}/index.pkl")
 
     existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
     if existing_entry:

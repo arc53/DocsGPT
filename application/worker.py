@@ -3,15 +3,22 @@ import os
 import shutil
 import string
 import zipfile
+import io
+import datetime
+import mimetypes
+import requests
+import tempfile
+
 from collections import Counter
 from urllib.parse import urljoin
 
-import requests
+from application.storage.storage_creator import StorageCreator
+from application.utils import num_tokens_from_string
+from application.core.settings import settings
+from application.parser.file.bulk import SimpleDirectoryReader
 from bson.objectid import ObjectId
 
 from application.core.mongo_db import MongoDB
-from application.core.settings import settings
-from application.parser.file.bulk import SimpleDirectoryReader
 from application.parser.embedding_pipeline import embed_and_store_documents
 from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
@@ -126,62 +133,91 @@ def ingest_worker(
     limit = None
     exclude = True
     sample = False
+    
+    storage = StorageCreator.get_storage()
+    
     full_path = os.path.join(directory, user, name_job)
-
+    source_file_path = os.path.join(full_path, filename)
+    
     logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": name_job})
-    file_data = {"name": name_job, "file": filename, "user": user}
+    
+    # Create temporary working directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Download file from storage to temp directory
+            temp_file_path = os.path.join(temp_dir, filename)
+            file_data = storage.get_file(source_file_path)
+            
+            with open(temp_file_path, 'wb') as f:
+                f.write(file_data.read())
+            
+            self.update_state(state="PROGRESS", meta={"current": 1})
 
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
-    download_file(urljoin(settings.API_URL, "/api/download"), file_data, os.path.join(full_path, filename))
+            # Handle zip files
+            if filename.endswith('.zip'):
+                logging.info(f"Extracting zip file: {filename}")
+                extract_zip_recursive(
+                    temp_file_path,
+                    temp_dir,
+                    current_depth=0,
+                    max_depth=RECURSION_DEPTH
+                )
 
-    # check if file is .zip and extract it
-    if filename.endswith(".zip"):
-        extract_zip_recursive(
-            os.path.join(full_path, filename), full_path, 0, RECURSION_DEPTH
-        )
+            if sample:
+                logging.info(f"Sample mode enabled. Using {limit} documents.")
 
-    self.update_state(state="PROGRESS", meta={"current": 1})
+            reader = SimpleDirectoryReader(
+                input_dir=temp_dir,
+                input_files=input_files,
+                recursive=recursive,
+                required_exts=formats,
+                exclude_hidden=exclude,
+                file_metadata=metadata_from_filename,
+            )
+            raw_docs = reader.load_data()
 
-    raw_docs = SimpleDirectoryReader(
-        input_dir=full_path,
-        input_files=input_files,
-        recursive=recursive,
-        required_exts=formats,
-        num_files_limit=limit,
-        exclude_hidden=exclude,
-        file_metadata=metadata_from_filename,
-    ).load_data()
+            chunker = Chunker(
+                chunking_strategy="classic_chunk",
+                max_tokens=MAX_TOKENS,
+                min_tokens=MIN_TOKENS,
+                duplicate_headers=False
+            )
+            raw_docs = chunker.chunk(documents=raw_docs)
+            
+            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            
+            id = ObjectId()
+            
+            vector_store_path = os.path.join(temp_dir, 'vector_store')
+            os.makedirs(vector_store_path, exist_ok=True)
+            
+            embed_and_store_documents(docs, vector_store_path, id, self)
+            
+            tokens = count_tokens_docs(docs)
+            
+            self.update_state(state="PROGRESS", meta={"current": 100})
 
-    chunker = Chunker(
-        chunking_strategy="classic_chunk",
-        max_tokens=MAX_TOKENS,
-        min_tokens=MIN_TOKENS,
-        duplicate_headers=False
-    )
-    raw_docs = chunker.chunk(documents=raw_docs)
+            if sample:
+               for i in range(min(5, len(raw_docs))):
+                    logging.info(f"Sample document {i}: {raw_docs[i]}")
+            file_data = {
+                "name": name_job,
+                "file": filename,
+                "user": user,
+                "tokens": tokens,
+                "retriever": retriever,
+                "id": str(id),
+                "type": "local",
+            }
 
-    docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
-    id = ObjectId()
 
-    embed_and_store_documents(docs, full_path, id, self)
-    tokens = count_tokens_docs(docs)
-    self.update_state(state="PROGRESS", meta={"current": 100})
+            upload_index(vector_store_path, file_data)
 
-    if sample:
-        for i in range(min(5, len(raw_docs))):
-            logging.info(f"Sample document {i}: {raw_docs[i]}")
-
-    file_data.update({
-        "tokens": tokens,
-        "retriever": retriever,
-        "id": str(id),
-        "type": "local",
-    })
-    upload_index(full_path, file_data)
-
-    # delete local
-    shutil.rmtree(full_path)
+        except Exception as e:
+            logging.error(f"Error in ingest_worker: {e}", exc_info=True)
+            raise
 
     return {
         "directory": directory,
@@ -203,7 +239,7 @@ def remote_worker(
     sync_frequency="never",
     operation_mode="upload",
     doc_id=None,
-):  
+):
     full_path = os.path.join(directory, user, name_job)
     if not os.path.exists(full_path):
         os.makedirs(full_path)
@@ -313,84 +349,79 @@ def sync_worker(self, frequency):
         for key in ["total_sync_count", "sync_success", "sync_failure"]
     }
 
-def attachment_worker(self, directory, file_info, user):
+
+def attachment_worker(self, file_info, user):
     """
     Process and store a single attachment without vectorization.
-    
-    Args:
-        self: Reference to the instance of the task.
-        directory (str): Base directory for storing files.
-        file_info (dict): Dictionary with folder and filename info.
-        user (str): User identifier.
-        
-    Returns:
-        dict: Information about processed attachment.
     """
-    import datetime
-    import os
-    import mimetypes
-    from application.utils import num_tokens_from_string
-    
+
     mongo = MongoDB.get_client()
     db = mongo["docsgpt"]
     attachments_collection = db["attachments"]
-    
+
     filename = file_info["filename"]
     attachment_id = file_info["attachment_id"]
-    
-    logging.info(f"Processing attachment: {attachment_id}/{filename}", extra={"user": user})
-    
-    self.update_state(state="PROGRESS", meta={"current": 10})
-    
-    file_path = os.path.join(directory, filename)
-    
-    if not os.path.exists(file_path):
-        logging.warning(f"File not found: {file_path}", extra={"user": user})
-        raise FileNotFoundError(f"File not found: {file_path}")
-    
+    relative_path = file_info["path"]
+    file_content = file_info["file_content"]
+
     try:
-        reader = SimpleDirectoryReader(
-            input_files=[file_path]
-        )
-        documents = reader.load_data()
-        
-        self.update_state(state="PROGRESS", meta={"current": 50})
-        
-        if documents:
+        self.update_state(state="PROGRESS", meta={"current": 10})
+        storage_type = getattr(settings, "STORAGE_TYPE", "local")
+        storage = StorageCreator.create_storage(storage_type)
+        self.update_state(state="PROGRESS", meta={"current": 30, "status": "Processing content"})
+
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1]) as temp_file:
+            temp_file.write(file_content)
+            temp_file.flush()
+            reader = SimpleDirectoryReader(
+                input_files=[temp_file.name],
+                exclude_hidden=True,
+                errors="ignore"
+            )
+            documents = reader.load_data()
+
+            if not documents:
+                logging.warning(f"No content extracted from file: {filename}")
+                raise ValueError(f"Failed to extract content from file: {filename}")
+
             content = documents[0].text
             token_count = num_tokens_from_string(content)
-            
-            file_path_relative = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{attachment_id}/{filename}"
-            
-            mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
-            
+
+            self.update_state(state="PROGRESS", meta={"current": 60, "status": "Saving file"})
+            file_obj = io.BytesIO(file_content)
+
+            metadata = storage.save_file(file_obj, relative_path)
+
+            mime_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+
+            self.update_state(state="PROGRESS", meta={"current": 80, "status": "Storing in database"})
+
             doc_id = ObjectId(attachment_id)
             attachments_collection.insert_one({
                 "_id": doc_id,
                 "user": user,
-                "path": file_path_relative,
+                "path": relative_path,
                 "content": content,
                 "token_count": token_count,
                 "mime_type": mime_type,
                 "date": datetime.datetime.now(),
+                "metadata": metadata
             })
-            
-            logging.info(f"Stored attachment with ID: {attachment_id}", 
+
+            logging.info(f"Stored attachment with ID: {attachment_id}",
                         extra={"user": user})
-            
-            self.update_state(state="PROGRESS", meta={"current": 100})
-            
+
+            self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
+
             return {
                 "filename": filename,
-                "path": file_path_relative,
+                "path": relative_path,
                 "token_count": token_count,
                 "attachment_id": attachment_id,
-                "mime_type": mime_type
+                "mime_type": mime_type,
+                "metadata": metadata
             }
-        else:
-            logging.warning("No content was extracted from the file", 
-                           extra={"user": user})
-            raise ValueError("No content was extracted from the file")
+
     except Exception as e:
         logging.error(f"Error processing file {filename}: {e}", extra={"user": user}, exc_info=True)
         raise

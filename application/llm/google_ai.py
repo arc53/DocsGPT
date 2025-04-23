@@ -1,11 +1,10 @@
 from google import genai
 from google.genai import types
-import os
 import logging
-import mimetypes
 import json
 
 from application.llm.base import BaseLLM
+from application.storage.storage_creator import StorageCreator
 
 
 class GoogleLLM(BaseLLM):
@@ -14,11 +13,12 @@ class GoogleLLM(BaseLLM):
         self.api_key = api_key
         self.user_api_key = user_api_key
         self.client = genai.Client(api_key=self.api_key)
+        self.storage = StorageCreator.get_storage()
 
     def get_supported_attachment_types(self):
         """
         Return a list of MIME types supported by Google Gemini for file uploads.
-        
+
         Returns:
             list: List of supported MIME types
         """
@@ -30,35 +30,35 @@ class GoogleLLM(BaseLLM):
             'image/webp',
             'image/gif'
         ]
-    
+
     def prepare_messages_with_attachments(self, messages, attachments=None):
         """
         Process attachments using Google AI's file API for more efficient handling.
-        
+
         Args:
             messages (list): List of message dictionaries.
             attachments (list): List of attachment dictionaries with content and metadata.
-            
+
         Returns:
             list: Messages formatted with file references for Google AI API.
         """
         if not attachments:
             return messages
-        
+
         prepared_messages = messages.copy()
-        
+
         # Find the user message to attach files to the last one
         user_message_index = None
         for i in range(len(prepared_messages) - 1, -1, -1):
             if prepared_messages[i].get("role") == "user":
                 user_message_index = i
                 break
-        
+
         if user_message_index is None:
             user_message = {"role": "user", "content": []}
             prepared_messages.append(user_message)
             user_message_index = len(prepared_messages) - 1
-        
+
         if isinstance(prepared_messages[user_message_index].get("content"), str):
             text_content = prepared_messages[user_message_index]["content"]
             prepared_messages[user_message_index]["content"] = [
@@ -66,15 +66,11 @@ class GoogleLLM(BaseLLM):
             ]
         elif not isinstance(prepared_messages[user_message_index].get("content"), list):
             prepared_messages[user_message_index]["content"] = []
-        
+
         files = []
         for attachment in attachments:
             mime_type = attachment.get('mime_type')
-            if not mime_type:
-                file_path = attachment.get('path')
-                if file_path:
-                    mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
-            
+
             if mime_type in self.get_supported_attachment_types():
                 try:
                     file_uri = self._upload_file_to_google(attachment)
@@ -84,53 +80,44 @@ class GoogleLLM(BaseLLM):
                     logging.error(f"GoogleLLM: Error uploading file: {e}")
                     if 'content' in attachment:
                         prepared_messages[user_message_index]["content"].append({
-                            "type": "text", 
+                            "type": "text",
                             "text": f"[File could not be processed: {attachment.get('path', 'unknown')}]"
                         })
-        
+
         if files:
             logging.info(f"GoogleLLM: Adding {len(files)} files to message")
             prepared_messages[user_message_index]["content"].append({
                 "files": files
             })
-        
+
         return prepared_messages
 
     def _upload_file_to_google(self, attachment):
         """
         Upload a file to Google AI and return the file URI.
-        
+
         Args:
             attachment (dict): Attachment dictionary with path and metadata.
-                
+
         Returns:
             str: Google AI file URI for the uploaded file.
         """
         if 'google_file_uri' in attachment:
             return attachment['google_file_uri']
-        
+
         file_path = attachment.get('path')
         if not file_path:
             raise ValueError("No file path provided in attachment")
-        
-        if not os.path.isabs(file_path):
-            current_dir = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-            file_path = os.path.join(current_dir, "application", file_path)
-        
-        if not os.path.exists(file_path):
+
+        if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
-        
-        mime_type = attachment.get('mime_type')
-        if not mime_type:
-            mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
-        
+
         try:
-            response = self.client.files.upload(file=file_path)
-            
-            file_uri = response.uri
-            
+            file_uri = self.storage.process_file(
+                file_path,
+                lambda local_path, **kwargs: self.client.files.upload(file=local_path).uri
+            )
+
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
             db = mongo["docsgpt"]
@@ -140,7 +127,7 @@ class GoogleLLM(BaseLLM):
                     {"_id": attachment['_id']},
                     {"$set": {"google_file_uri": file_uri}}
                 )
-            
+
             return file_uri
         except Exception as e:
             logging.error(f"Error uploading file to Google AI: {e}")
@@ -289,7 +276,7 @@ class GoogleLLM(BaseLLM):
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
-        
+
         # Check if we have both tools and file attachments
         has_attachments = False
         for message in messages:
@@ -299,16 +286,16 @@ class GoogleLLM(BaseLLM):
                     break
             if has_attachments:
                 break
-        
+
         logging.info(f"GoogleLLM: Starting stream generation. Model: {model}, Messages: {json.dumps(messages, default=str)}, Has attachments: {has_attachments}")
-        
+
         response = client.models.generate_content_stream(
             model=model,
             contents=messages,
             config=config,
         )
-        
-        
+
+
         for chunk in response:
             if hasattr(chunk, "candidates") and chunk.candidates:
                 for candidate in chunk.candidates:
