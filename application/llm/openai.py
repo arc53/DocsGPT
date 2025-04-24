@@ -291,7 +291,7 @@ class OpenAILLM(BaseLLM):
 
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
-            db = mongo["docsgpt"]
+            db = mongo[settings.MONGO_DB_NAME]
             attachments_collection = db["attachments"]
             if '_id' in attachment:
                 attachments_collection.update_one(

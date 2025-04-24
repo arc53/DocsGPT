@@ -5,6 +5,7 @@ import json
 
 from application.llm.base import BaseLLM
 from application.storage.storage_creator import StorageCreator
+from application.core.settings import settings
 
 
 class GoogleLLM(BaseLLM):
@@ -120,7 +121,7 @@ class GoogleLLM(BaseLLM):
 
             from application.core.mongo_db import MongoDB
             mongo = MongoDB.get_client()
-            db = mongo["docsgpt"]
+            db = mongo[settings.MONGO_DB_NAME]
             attachments_collection = db["attachments"]
             if '_id' in attachment:
                 attachments_collection.update_one(

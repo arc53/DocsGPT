@@ -2,10 +2,11 @@ import sys
 from datetime import datetime
 
 from application.core.mongo_db import MongoDB
+from application.core.settings import settings
 from application.utils import num_tokens_from_object_or_list, num_tokens_from_string
 
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 usage_collection = db["token_usage"]
 
 

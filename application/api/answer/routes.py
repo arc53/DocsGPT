@@ -23,7 +23,7 @@ from application.utils import check_required_fields, limit_chat_history
 logger = logging.getLogger(__name__)
 
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]

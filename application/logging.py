@@ -7,6 +7,7 @@ import uuid
 from typing import Any, Callable, Dict, Generator, List
 
 from application.core.mongo_db import MongoDB
+from application.core.settings import settings
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -131,7 +132,7 @@ def _log_to_mongodb(
 ) -> None:
     try:
         mongo = MongoDB.get_client()
-        db = mongo["docsgpt"]
+        db = mongo[settings.MONGO_DB_NAME]
         user_logs_collection = db["stack_logs"]
 
         log_entry = {

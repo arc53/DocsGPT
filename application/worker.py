@@ -26,7 +26,7 @@ from application.parser.chunking import Chunker
 from application.utils import count_tokens_docs
 
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 sources_collection = db["sources"]
 
 # Constants
@@ -356,7 +356,7 @@ def attachment_worker(self, file_info, user):
     """
 
     mongo = MongoDB.get_client()
-    db = mongo["docsgpt"]
+    db = mongo[settings.MONGO_DB_NAME]
     attachments_collection = db["attachments"]
 
     filename = file_info["filename"]

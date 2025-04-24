@@ -11,7 +11,7 @@ from application.storage.storage_creator import StorageCreator
 
 logger = logging.getLogger(__name__)
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 
