@@ -1,6 +1,6 @@
 aiohttp>=3,<4
 certifi==2024.7.4
-h11==0.14.0
+h11==0.16.0
 httpcore==1.0.5
 httpx==0.27.0
 idna==3.7
