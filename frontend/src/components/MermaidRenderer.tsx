@@ -24,6 +24,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       startOnLoad: false,
       theme: isDarkTheme ? 'dark' : 'default',
       securityLevel: 'loose',
+      suppressErrorRendering: true
     });
     const renderDiagram = async (): Promise<void> => {
       try {
@@ -32,10 +33,12 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
         // Render the diagram
         const { svg } = await mermaid.render(id, code);
+        if (containerRef.current) {
+          containerRef.current.innerHTML = svg;
+        }
         setSvgContent(svg);
         setError(null);
       } catch (err) {
-        console.error('Mermaid rendering error:', err);
         setError(
           `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`,
         );
@@ -272,7 +275,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             className={`p-4 bg-white dark:bg-eerie-black flex justify-center items-center ${
               showCode ? 'md:w-1/2' : 'w-full'
             }`}
-            dangerouslySetInnerHTML={{ __html: svgContent }}
           />
 
           {/* Show the code when button is clicked */}
