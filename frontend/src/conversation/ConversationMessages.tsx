@@ -38,9 +38,9 @@ export default function ConversationMessages({
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
-  const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
+  const atLast = useRef(true);
   const [eventInterrupt, setEventInterrupt] = useState(false);
-
+  
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') {
       setEventInterrupt(true);
@@ -64,7 +64,8 @@ export default function ConversationMessages({
     const el = conversationRef.current;
     if (!el) return;
     const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
-    setHasScrolledToLast(isBottom);
+
+    atLast.current = isBottom
   };
 
   useEffect(() => {
@@ -145,7 +146,7 @@ export default function ConversationMessages({
       onTouchMove={handleUserInterruption}
       className="flex justify-center w-full overflow-y-auto h-full sm:pt-12"
     >
-      {queries.length > 0 && !hasScrolledToLast && (
+      {queries.length > 0 && !atLast.current && (
         <button
           onClick={scrollIntoView}
           aria-label="scroll to bottom"
