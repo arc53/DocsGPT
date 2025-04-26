@@ -9,7 +9,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   code,
   isDarkTheme,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const diagramId = useRef(`mermaid-${crypto.randomUUID()}`);
   const status = useSelector(selectStatus);
   const [svgContent, setSvgContent] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -19,28 +19,31 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
   useEffect(() => {
     if (status === 'loading' || !code) return;
-    // Initialize mermaid with the current theme
+
     mermaid.initialize({
-      startOnLoad: false,
+      startOnLoad: true,
       theme: isDarkTheme ? 'dark' : 'default',
       securityLevel: 'loose',
       suppressErrorRendering: true
     });
+
     const renderDiagram = async (): Promise<void> => {
       try {
-        // Generate unique ID
-        const id = `mermaid-${crypto.randomUUID()}`;
-
-        // Render the diagram
-        const { svg } = await mermaid.render(id, code);
-        if (containerRef.current) {
-          containerRef.current.innerHTML = svg;
+        const element = document.getElementById(diagramId.current);
+        if (element) {
+          element.removeAttribute('data-processed');
+          element.innerHTML = code;
+          mermaid.contentLoaded();
+          
+          const svgElement = element.querySelector('svg');
+          if (svgElement) {
+            setSvgContent(svgElement.outerHTML);
+          }
+          setError(null);
         }
-        setSvgContent(svg);
-        setError(null);
       } catch (err) {
         setError(
-          `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`
         );
         setSvgContent('');
       }
@@ -269,15 +272,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         </div>
       ) : (
         <div className="flex flex-col md:flex-row">
-          {/* Show the diagram */}
-          <div
-            ref={containerRef}
-            className={`p-4 bg-white dark:bg-eerie-black flex justify-center items-center ${
-              showCode ? 'md:w-1/2' : 'w-full'
-            }`}
-          />
+          <div className={`p-4 bg-white dark:bg-eerie-black flex justify-center items-center ${
+            showCode ? 'md:w-1/2' : 'w-full'
+          }`}>
+            <div className="mermaid" id={diagramId.current}>
+              {code}
+            </div>
+          </div>
 
-          {/* Show the code when button is clicked */}
           {showCode && (
             <pre className="p-4 whitespace-pre-wrap overflow-auto bg-white dark:bg-eerie-black text-just-black dark:text-chinese-white border-t md:border-t-0 md:border-l border-light-silver dark:border-raisin-black md:w-1/2">
               {code}
