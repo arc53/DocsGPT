@@ -155,9 +155,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const data = await response.json();
     if (data.id) setAgent((prev) => ({ ...prev, id: data.id }));
     if (data.key) setAgent((prev) => ({ ...prev, key: data.key }));
-    if (effectiveMode === 'new') {
-      setAgentDetails('ACTIVE');
+    if (effectiveMode === 'new' || effectiveMode === 'draft') {
       setEffectiveMode('edit');
+      setAgent((prev) => ({ ...prev, status: 'published' }));
+      setAgentDetails('ACTIVE');
     }
   };
 
@@ -408,7 +409,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     agent.prompt_id
                       ? prompts.filter(
                           (prompt) => prompt.id === agent.prompt_id,
-                        )[0].name || null
+                        )[0]?.name || null
                       : null
                   }
                   onSelect={(option: { label: string; value: string }) =>
@@ -532,7 +533,7 @@ function AgentPreviewArea() {
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
     <div className="h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white dark:border-[#7E7E7E] dark:bg-[#222327] max-[1180px]:h-[48rem]">
-      {selectedAgent?.id ? (
+      {selectedAgent?.status === 'published' ? (
         <div className="flex h-full w-full flex-col justify-end overflow-auto rounded-[30px]">
           <AgentPreview />
         </div>
@@ -540,7 +541,7 @@ function AgentPreviewArea() {
         <div className="flex h-full w-full flex-col items-center justify-center gap-2">
           <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
           <p className="text-xs text-[#18181B] dark:text-[#949494]">
-            Published agents can be previewd here
+            Published agents can be previewed here
           </p>
         </div>
       )}

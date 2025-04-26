@@ -4,6 +4,7 @@ import math
 import os
 import shutil
 import uuid
+import secrets
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -14,7 +15,12 @@ from werkzeug.utils import secure_filename
 
 from application.agents.tools.tool_manager import ToolManager
 
-from application.api.user.tasks import ingest, ingest_remote, store_attachment
+from application.api.user.tasks import (
+    ingest,
+    ingest_remote,
+    store_attachment,
+    process_agent_webhook,
+)
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
@@ -1327,6 +1333,88 @@ class DeleteAgent(Resource):
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": deleted_id}), 200)
+
+
+@user_ns.route("/api/agent_webhook")
+class AgentWebhook(Resource):
+    @api.doc(
+        params={"id": "ID of the agent"},
+        description="Generate webhook URL for the agent",
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        try:
+            agent = agents_collection.find_one(
+                {"_id": ObjectId(agent_id), "user": user}
+            )
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Agent not found"}), 404
+                )
+
+            webhook_token = agent.get("incoming_webhook_token")
+            if not webhook_token:
+                webhook_token = secrets.token_urlsafe(32)
+                agents_collection.update_one(
+                    {"_id": ObjectId(agent_id), "user": user},
+                    {"$set": {"incoming_webhook_token": webhook_token}},
+                )
+            base_url = settings.API_URL.rstrip("/")
+            full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
+
+        except Exception as err:
+            current_app.logger.error(f"Error generating webhook URL: {err}")
+            return make_response(
+                jsonify({"success": False, "message": "Error generating webhook URL"}),
+                400,
+            )
+        return make_response(
+            jsonify({"success": True, "webhook_url": full_webhook_url}), 200
+        )
+
+
+@user_ns.route(f"/api/webhooks/agents/<string:webhook_token>")
+class AgentWebhookListener(Resource):
+    @api.doc(description="Webhook listener for agent events")
+    def post(self, webhook_token):
+        agent = agents_collection.find_one(
+            {"incoming_webhook_token": webhook_token}, {"_id": 1}
+        )
+        if not agent:
+            return make_response(
+                jsonify({"success": False, "message": "Agent not found"}), 404
+            )
+        data = request.get_json()
+        if not data:
+            return make_response(
+                jsonify({"success": False, "message": "No data provided"}), 400
+            )
+
+        agent_id_str = str(agent["_id"])
+        current_app.logger.info(
+            f"Incoming webhook received for agent {agent_id_str}. Enqueuing task."
+        )
+
+        try:
+            task = process_agent_webhook.delay(
+                agent_id=agent_id_str,
+                payload=data,
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error processing webhook: {err}")
+            return make_response(
+                jsonify({"success": False, "message": "Error processing webhook"}), 400
+            )
+        return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
 @user_ns.route("/api/share")

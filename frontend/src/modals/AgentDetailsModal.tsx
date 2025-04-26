@@ -1,7 +1,12 @@
+import { useState } from 'react';
+import { useSelector } from 'react-redux';
+
 import { Agent } from '../agents/types';
 import { ActiveState } from '../models/misc';
 import WrapperModal from './WrapperModal';
-import { useNavigate } from 'react-router-dom';
+import userService from '../api/services/userService';
+import { selectToken } from '../preferences/preferenceSlice';
+import Spinner from '../components/Spinner';
 
 type AgentDetailsModalProps = {
   agent: Agent;
@@ -16,13 +21,41 @@ export default function AgentDetailsModal({
   modalState,
   setModalState,
 }: AgentDetailsModalProps) {
-  const navigate = useNavigate();
+  const token = useSelector(selectToken);
+
+  const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  const [loadingStates, setLoadingStates] = useState({
+    publicLink: false,
+    apiKey: false,
+    webhook: false,
+  });
+
+  const setLoading = (
+    key: 'publicLink' | 'apiKey' | 'webhook',
+    state: boolean,
+  ) => {
+    setLoadingStates((prev) => ({ ...prev, [key]: state }));
+  };
+
+  const handleGenerateWebhook = async () => {
+    setLoading('webhook', true);
+    const response = await userService.getAgentWebhook(agent.id ?? '', token);
+    if (!response.ok) {
+      setLoading('webhook', false);
+      return;
+    }
+    const data = await response.json();
+    setWebhookUrl(data.webhook_url);
+    setLoading('webhook', false);
+  };
+
   if (modalState !== 'ACTIVE') return null;
   return (
     <WrapperModal
       className="sm:w-[512px]"
       close={() => {
-        // if (mode === 'new') navigate('/agents');
         setModalState('INACTIVE');
       }}
     >
@@ -57,9 +90,23 @@ export default function AgentDetailsModal({
             <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
               Webhooks
             </h2>
-            <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
-              Generate
-            </button>
+            {webhookUrl ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
+                  {webhookUrl}
+                </span>
+                <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
+                  Copy
+                </button>
+              </div>
+            ) : (
+              <button
+                className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                onClick={handleGenerateWebhook}
+              >
+                {loadingStates.webhook ? <Spinner /> : 'Generate'}
+              </button>
+            )}
           </div>
         </div>
       </div>

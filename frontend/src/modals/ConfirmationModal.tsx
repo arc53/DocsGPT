@@ -40,19 +40,23 @@ export default function ConfirmationModal({
         >
           <div className="relative">
             <div>
-              <p className="font-base mb-1 w-[90%] text-lg break-words text-jet dark:text-bright-gray">
+              <p className="font-base mb-1 w-[90%] break-words text-lg text-jet dark:text-bright-gray">
                 {message}
               </p>
               <div>
                 <div className="mt-6 flex flex-row-reverse gap-1">
                   <button
-                    onClick={handleSubmit}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSubmit();
+                    }}
                     className={submitButtonClasses}
                   >
                     {submitLabel}
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setModalState('INACTIVE');
                       handleCancel && handleCancel();
                     }}
