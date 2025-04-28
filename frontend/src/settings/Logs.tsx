@@ -181,8 +181,7 @@ function Log({
         </p>
         <div className="my-px w-fit">
           <CopyButton
-            text={JSON.stringify(filteredLog)}
-            colorLight="transparent"
+            textToCopy={JSON.stringify(filteredLog)}
             showText={true}
           />
         </div>

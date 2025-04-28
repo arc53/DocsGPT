@@ -1,7 +1,13 @@
 from datetime import timedelta
 
 from application.celery_init import celery
-from application.worker import ingest_worker, remote_worker, sync_worker, attachment_worker
+from application.worker import (
+    agent_webhook_worker,
+    attachment_worker,
+    ingest_worker,
+    remote_worker,
+    sync_worker,
+)
 
 
 @celery.task(bind=True)
@@ -25,6 +31,12 @@ def schedule_syncs(self, frequency):
 @celery.task(bind=True)
 def store_attachment(self, file_info, user):
     resp = attachment_worker(self, file_info, user)
+    return resp
+
+
+@celery.task(bind=True)
+def process_agent_webhook(self, agent_id, payload):
+    resp = agent_webhook_worker(self, agent_id, payload)
     return resp
 
 

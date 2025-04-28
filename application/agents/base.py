@@ -256,7 +256,7 @@ class BaseAgent(ABC):
             model=self.gpt_model, messages=messages, tools=self.tools
         )
         if log_context:
-            data = build_stack_data(self.llm)
+            data = build_stack_data(self.llm, exclude_attributes=["client"])
             log_context.stacks.append({"component": "llm", "data": data})
         return resp
 
@@ -272,6 +272,6 @@ class BaseAgent(ABC):
             self, resp, tools_dict, messages, attachments
         )
         if log_context:
-            data = build_stack_data(self.llm_handler)
+            data = build_stack_data(self.llm_handler, exclude_attributes=["tool_calls"])
             log_context.stacks.append({"component": "llm_handler", "data": data})
         return resp

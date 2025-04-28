@@ -141,6 +141,7 @@ export default function AgentPreview() {
             loading={status === 'loading'}
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}
+            autoFocus={false}
           />
           <p className="w-full self-center bg-transparent pt-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline">
             This is a preview of the agent. You can publish it to start using it
