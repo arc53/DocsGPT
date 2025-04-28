@@ -1442,7 +1442,7 @@ def require_agent(func):
     return wrapper
 
 
-@user_ns.route(f"/api/webhooks/agents/<string:webhook_token>")
+@user_ns.route("/api/webhooks/agents/<string:webhook_token>")
 class AgentWebhookListener(Resource):
     method_decorators = [require_agent]
 
