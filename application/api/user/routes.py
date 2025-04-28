@@ -29,7 +29,7 @@ from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
@@ -419,81 +419,85 @@ class UploadFile(Resource):
 
         user = secure_filename(decoded_token.get("sub"))
         job_name = secure_filename(request.form["name"])
+        
         try:
-            save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
-            os.makedirs(save_dir, exist_ok=True)
-
+            from application.storage.storage_creator import StorageCreator
+            storage = StorageCreator.get_storage()
+            
+            base_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}"
+            
             if len(files) > 1:
-                temp_dir = os.path.join(save_dir, "temp")
-                os.makedirs(temp_dir, exist_ok=True)
-
+                temp_files = []
                 for file in files:
                     filename = secure_filename(file.filename)
-                    file.save(os.path.join(temp_dir, filename))
+                    temp_path = f"{base_path}/temp/{filename}"
+                    storage.save_file(file, temp_path)
+                    temp_files.append(temp_path)
                     print(f"Saved file: {filename}")
-                zip_path = shutil.make_archive(
-                    base_name=os.path.join(save_dir, job_name),
-                    format="zip",
-                    root_dir=temp_dir,
-                )
-                final_filename = os.path.basename(zip_path)
-                shutil.rmtree(temp_dir)
+                
+                zip_filename = f"{job_name}.zip"
+                zip_path = f"{base_path}/{zip_filename}"
+                
+                def create_zip_archive(temp_paths, **kwargs):
+                    import tempfile
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        for path in temp_paths:
+                            file_data = storage.get_file(path)
+                            with open(os.path.join(temp_dir, os.path.basename(path)), 'wb') as f:
+                                f.write(file_data.read())
+                        
+                        # Create zip archive
+                        zip_temp = shutil.make_archive(
+                            base_name=os.path.join(temp_dir, job_name),
+                            format="zip",
+                            root_dir=temp_dir
+                        )
+                        
+                        return zip_temp
+                
+                zip_temp_path = create_zip_archive(temp_files)
+                with open(zip_temp_path, 'rb') as zip_file:
+                    storage.save_file(zip_file, zip_path)
+                
+                # Clean up temp files
+                for temp_path in temp_files:
+                    storage.delete_file(temp_path)
+                
                 task = ingest.delay(
                     settings.UPLOAD_FOLDER,
                     [
-                        ".rst",
-                        ".md",
-                        ".pdf",
-                        ".txt",
-                        ".docx",
-                        ".csv",
-                        ".epub",
-                        ".html",
-                        ".mdx",
-                        ".json",
-                        ".xlsx",
-                        ".pptx",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
+                        ".rst", ".md", ".pdf", ".txt", ".docx", ".csv", ".epub",
+                        ".html", ".mdx", ".json", ".xlsx", ".pptx", ".png",
+                        ".jpg", ".jpeg",
                     ],
                     job_name,
-                    final_filename,
+                    zip_filename,
                     user,
                 )
             else:
+                # For single file
                 file = files[0]
-                final_filename = secure_filename(file.filename)
-                file_path = os.path.join(save_dir, final_filename)
-                file.save(file_path)
-
+                filename = secure_filename(file.filename)
+                file_path = f"{base_path}/{filename}"
+                
+                storage.save_file(file, file_path)
+                
                 task = ingest.delay(
                     settings.UPLOAD_FOLDER,
                     [
-                        ".rst",
-                        ".md",
-                        ".pdf",
-                        ".txt",
-                        ".docx",
-                        ".csv",
-                        ".epub",
-                        ".html",
-                        ".mdx",
-                        ".json",
-                        ".xlsx",
-                        ".pptx",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
+                        ".rst", ".md", ".pdf", ".txt", ".docx", ".csv", ".epub",
+                        ".html", ".mdx", ".json", ".xlsx", ".pptx", ".png",
+                        ".jpg", ".jpeg",
                     ],
                     job_name,
-                    final_filename,
+                    filename,
                     user,
                 )
 
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}")
             return make_response(jsonify({"success": False}), 400)
+            
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -2868,10 +2872,9 @@ class StoreAttachment(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
-        # Get single file instead of list
+        
         file = request.files.get("file")
-
+        
         if not file or file.filename == "":
             return make_response(
                 jsonify({"status": "error", "message": "Missing file"}),
@@ -2879,43 +2882,35 @@ class StoreAttachment(Resource):
             )
 
         user = secure_filename(decoded_token.get("sub"))
-
+        
         try:
             attachment_id = ObjectId()
             original_filename = secure_filename(file.filename)
-
-            save_dir = os.path.join(
-                current_dir,
-                settings.UPLOAD_FOLDER,
-                user,
-                "attachments",
-                str(attachment_id),
-            )
-            os.makedirs(save_dir, exist_ok=True)
-
-            file_path = os.path.join(save_dir, original_filename)
-
-            file.save(file_path)
+            relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
+            
+            file_content = file.read()
+            
             file_info = {
                 "filename": original_filename,
                 "attachment_id": str(attachment_id),
+                "path": relative_path,
+                "file_content": file_content
             }
-            current_app.logger.info(f"Saved file: {file_path}")
-
-            # Start async task to process single file
-            task = store_attachment.delay(save_dir, file_info, user)
-
-            return make_response(
-                jsonify(
-                    {
-                        "success": True,
-                        "task_id": task.id,
-                        "message": "File uploaded successfully. Processing started.",
-                    }
-                ),
-                200,
+            
+            task = store_attachment.delay(
+                file_info,
+                user
             )
-
+            
+            return make_response(
+                jsonify({
+                    "success": True,
+                    "task_id": task.id,
+                    "message": "File uploaded successfully. Processing started."
+                }),
+                200
+            )
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}")
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
+

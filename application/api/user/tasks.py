@@ -29,8 +29,8 @@ def schedule_syncs(self, frequency):
 
 
 @celery.task(bind=True)
-def store_attachment(self, directory, saved_files, user):
-    resp = attachment_worker(self, directory, saved_files, user)
+def store_attachment(self, file_info, user):
+    resp = attachment_worker(self, file_info, user)
     return resp
 
 
