@@ -138,6 +138,7 @@ function AgentsList() {
               <AgentCard
                 key={agent.id}
                 agent={agent}
+                agents={userAgents}
                 setUserAgents={setUserAgents}
               />
             ))
@@ -160,9 +161,11 @@ function AgentsList() {
 
 function AgentCard({
   agent,
+  agents,
   setUserAgents,
 }: {
   agent: Agent;
+  agents: Agent[];
   setUserAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
 }) {
   const navigate = useNavigate();
@@ -225,6 +228,7 @@ function AgentCard({
     setUserAgents((prevAgents) =>
       prevAgents.filter((prevAgent) => prevAgent.id !== data.id),
     );
+    dispatch(setAgents(agents.filter((prevAgent) => prevAgent.id !== data.id)));
   };
   return (
     <div

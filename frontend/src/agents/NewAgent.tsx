@@ -11,10 +11,7 @@ import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
-  selectSelectedAgent,
-  selectSourceDocs,
-  selectToken,
-  setSelectedAgent,
+    selectSelectedAgent, selectSourceDocs, selectToken, setSelectedAgent
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 import { UserToolType } from '../settings/types';
@@ -287,9 +284,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
             <button
-              className="hover:bg-vi</button>olets-are-blue rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+              className="group flex items-center gap-2 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               onClick={() => navigate(`/agents/logs/${agent.id}`)}
             >
+              <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
               Logs
             </button>
           )}

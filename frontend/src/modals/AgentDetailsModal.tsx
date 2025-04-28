@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import { Agent } from '../agents/types';
-import { ActiveState } from '../models/misc';
-import WrapperModal from './WrapperModal';
 import userService from '../api/services/userService';
-import { selectToken } from '../preferences/preferenceSlice';
+import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
+import { ActiveState } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
+import WrapperModal from './WrapperModal';
 
 type AgentDetailsModalProps = {
   agent: Agent;
@@ -87,24 +88,32 @@ export default function AgentDetailsModal({
             )}
           </div>
           <div className="flex flex-col gap-3">
-            <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
-              Webhooks
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+                Webhook URL
+              </h2>
+              {webhookUrl && (
+                <div className="mb-1">
+                  <CopyButton textToCopy={webhookUrl} padding="p-1" />
+                </div>
+              )}
+            </div>
             {webhookUrl ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
+              <div className="flex flex-col flex-wrap items-start gap-2">
+                <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
                   {webhookUrl}
-                </span>
-                <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
-                  Copy
-                </button>
+                </p>
               </div>
             ) : (
               <button
-                className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="hover:bg-vi</button>olets-are-blue flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
                 onClick={handleGenerateWebhook}
               >
-                {loadingStates.webhook ? <Spinner /> : 'Generate'}
+                {loadingStates.webhook ? (
+                  <Spinner size="small" color="#976af3" />
+                ) : (
+                  'Generate'
+                )}
               </button>
             )}
           </div>

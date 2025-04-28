@@ -29,6 +29,8 @@ def build_stack_data(
     exclude_attributes: List[str] = None,
     custom_data: Dict = None,
 ) -> Dict:
+    if obj is None:
+        raise ValueError("The 'obj' parameter cannot be None")
     data = {}
     if include_attributes is None:
         include_attributes = []
@@ -56,8 +58,8 @@ def build_stack_data(
                         data[attr_name] = [str(item) for item in attr_value]
                 elif isinstance(attr_value, dict):
                     data[attr_name] = {k: str(v) for k, v in attr_value.items()}
-                else:
-                    data[attr_name] = str(attr_value)
+        except AttributeError as e:
+            logging.warning(f"AttributeError while accessing {attr_name}: {e}")
         except AttributeError:
             pass
     if custom_data:

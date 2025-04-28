@@ -1,11 +1,5 @@
 import {
-  BarElement,
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LinearScale,
-  Title,
-  Tooltip,
+    BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip
 } from 'chart.js';
 import { useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
@@ -71,7 +65,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     string,
     { positive: number; negative: number }
   > | null>(null);
-  const [agent, setAgent] = useState<Agent>();
   const [messagesFilter, setMessagesFilter] = useState<{
     label: string;
     value: string;
@@ -97,21 +90,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingMessages, setLoadingMessages] = useLoaderState(true);
   const [loadingTokens, setLoadingTokens] = useLoaderState(true);
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
-  const [loadingAgent, setLoadingAgent] = useLoaderState(true);
-
-  const fetchAgent = async (agentId: string) => {
-    setLoadingAgent(true);
-    try {
-      const response = await userService.getAgent(agentId ?? '', token);
-      if (!response.ok) throw new Error('Failed to fetch Chatbots');
-      const agent = await response.json();
-      setAgent(agent);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingAgent(false);
-    }
-  };
 
   const fetchMessagesData = async (agent_id?: string, filter?: string) => {
     setLoadingMessages(true);
@@ -174,27 +152,22 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   };
 
   useEffect(() => {
-    if (agentId) fetchAgent(agentId);
-  }, []);
-
-  useEffect(() => {
-    const id = agent?.id;
+    const id = agentId;
     const filter = messagesFilter;
     fetchMessagesData(id, filter?.value);
-  }, [agent, messagesFilter]);
+  }, [agentId, messagesFilter]);
 
   useEffect(() => {
-    const id = agent?.id;
+    const id = agentId;
     const filter = tokenUsageFilter;
     fetchTokenData(id, filter?.value);
-  }, [agent, tokenUsageFilter]);
+  }, [agentId, tokenUsageFilter]);
 
   useEffect(() => {
-    const id = agent?.id;
+    const id = agentId;
     const filter = feedbackFilter;
     fetchFeedbackData(id, filter?.value);
-  }, [agent, feedbackFilter]);
-
+  }, [agentId, feedbackFilter]);
   return (
     <div className="mt-12">
       {/* Messages Analytics */}

@@ -5,10 +5,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import {
-  oneLight,
-  vscDarkPlus,
-} from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import { oneLight, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -29,10 +26,7 @@ import CopyButton from '../components/CopyButton';
 import Sidebar from '../components/Sidebar';
 import SpeakButton from '../components/TextToSpeechButton';
 import { useDarkTheme, useOutsideAlerter } from '../hooks';
-import {
-  selectChunks,
-  selectSelectedDocs,
-} from '../preferences/preferenceSlice';
+import { selectChunks, selectSelectedDocs } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import { ToolCallsType } from './types';
@@ -377,7 +371,7 @@ const ConversationBubble = forwardRef<
                             {language}
                           </span>
                           <CopyButton
-                            text={String(children).replace(/\n$/, '')}
+                            textToCopy={String(children).replace(/\n$/, '')}
                           />
                         </div>
                         <SyntaxHighlighter
@@ -462,7 +456,7 @@ const ConversationBubble = forwardRef<
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
             >
               <div>
-                <CopyButton text={message} />
+                <CopyButton textToCopy={message} />
               </div>
             </div>
             <div
@@ -671,7 +665,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         Arguments
                       </span>{' '}
                       <CopyButton
-                        text={JSON.stringify(toolCall.arguments, null, 2)}
+                        textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
                       />
                     </p>
                     <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
@@ -689,7 +683,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         Response
                       </span>{' '}
                       <CopyButton
-                        text={JSON.stringify(toolCall.result, null, 2)}
+                        textToCopy={JSON.stringify(toolCall.result, null, 2)}
                       />
                     </p>
                     <p className="p-2 font-mono text-sm dark:tex dark:bg-[#222327] rounded-b-2xl break-words">
@@ -766,7 +760,7 @@ function Thought({
                           {language}
                         </span>
                         <CopyButton
-                          text={String(children).replace(/\n$/, '')}
+                          textToCopy={String(children).replace(/\n$/, '')}
                         />
                       </div>
                       <SyntaxHighlighter

@@ -179,6 +179,7 @@ def run_agent_logic(agent_config, input_data):
             "tool_calls": tool_calls,
             "thought": thought,
         }
+        logging.info(f"Agent response: {result}")
         return result
     except Exception as e:
         logging.error(f"Error in run_agent_logic: {e}", exc_info=True)
