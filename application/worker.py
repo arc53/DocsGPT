@@ -547,9 +547,7 @@ def agent_webhook_worker(self, agent_id, payload):
         agent_config = agents_collection.find_one({"_id": agent_oid})
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
-        input_data = payload.get("query", "")
-        if input_data is None or not isinstance(input_data, str):
-            input_data = json.dumps(payload)
+        input_data = json.dumps(payload)
     except Exception as e:
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
