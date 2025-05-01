@@ -68,40 +68,35 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     };
   }, [showDownloadMenu]);
 
-  // Function to download as SVG
   const downloadSvg = (): void => {
-    if (!svgContent) return;
-
-    // Add XML declaration and ensure proper namespaces
-    let enhancedSvg = svgContent;
-    if (!enhancedSvg.includes('xmlns=')) {
-      enhancedSvg = enhancedSvg.replace(
-        '<svg',
-        '<svg xmlns="http://www.w3.org/2000/svg"',
-      );
+    const element = document.getElementById(diagramId.current);
+    if (!element) return;
+    const svgElement = element.querySelector('svg');
+    if (!svgElement) return;
+    
+    const svgClone = svgElement.cloneNode(true) as SVGElement;
+    
+    if (!svgClone.hasAttribute('xmlns')) {
+      svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     }
-
-    // Add explicit width and height if missing
-    const parser = new DOMParser();
-    const svgDoc = parser.parseFromString(enhancedSvg, 'image/svg+xml');
-    const svgElement = svgDoc.documentElement;
-
-    if (
-      !svgElement.hasAttribute('width') &&
-      svgElement.hasAttribute('viewBox')
-    ) {
-      const viewBox = svgElement.getAttribute('viewBox')?.split(' ') || [];
+    
+    if (!svgClone.hasAttribute('width') || !svgClone.hasAttribute('height')) {
+      const viewBox = svgClone.getAttribute('viewBox')?.split(' ') || [];
       if (viewBox.length === 4) {
-        svgElement.setAttribute('width', viewBox[2]);
-        svgElement.setAttribute('height', viewBox[3]);
+        svgClone.setAttribute('width', viewBox[2]);
+        svgClone.setAttribute('height', viewBox[3]);
       }
     }
-
+    
     const serializer = new XMLSerializer();
-    const finalSvgString = serializer.serializeToString(svgDoc);
-
-    const blob = new Blob([finalSvgString], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
+    const svgString = serializer.serializeToString(svgClone);
+    
+    const svgBlob = new Blob(
+      [`<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n${svgString}`], 
+      { type: 'image/svg+xml' }
+    );
+    
+    const url = URL.createObjectURL(svgBlob);
     const link = document.createElement('a');
     link.href = url;
     link.download = 'diagram.svg';
@@ -111,74 +106,76 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Function to download as PNG
   const downloadPng = (): void => {
-    if (!svgContent) return;
-
-    // Parse the SVG
-    const parser = new DOMParser();
-    const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
-    const svgElement = svgDoc.documentElement;
-
-    // Ensure SVG has dimensions
-    let width = parseInt(svgElement.getAttribute('width') || '0');
-    let height = parseInt(svgElement.getAttribute('height') || '0');
-
-    // If dimensions are missing, try to get from viewBox
+    const element = document.getElementById(diagramId.current);
+    if (!element) return;
+    
+    const svgElement = element.querySelector('svg');
+    if (!svgElement) return;
+    
+    const svgClone = svgElement.cloneNode(true) as SVGElement;
+    
+    if (!svgClone.hasAttribute('xmlns')) {
+      svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    
+    let width = parseInt(svgClone.getAttribute('width') || '0');
+    let height = parseInt(svgClone.getAttribute('height') || '0');
+    
     if (!width || !height) {
-      const viewBox = svgElement.getAttribute('viewBox')?.split(' ') || [];
+      const viewBox = svgClone.getAttribute('viewBox')?.split(' ') || [];
       if (viewBox.length === 4) {
         width = parseInt(viewBox[2]);
         height = parseInt(viewBox[3]);
-        svgElement.setAttribute('width', width.toString());
-        svgElement.setAttribute('height', height.toString());
+        svgClone.setAttribute('width', width.toString());
+        svgClone.setAttribute('height', height.toString());
       } else {
         width = 800;
         height = 600;
-        svgElement.setAttribute('width', width.toString());
-        svgElement.setAttribute('height', height.toString());
+        svgClone.setAttribute('width', width.toString());
+        svgClone.setAttribute('height', height.toString());
       }
     }
-
+    
     const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(svgDoc);
-
-    // Create an Image object
+    const svgString = serializer.serializeToString(svgClone);
+    const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
+    const dataUrl = `data:image/svg+xml;base64,${svgBase64}`;
+    
     const img = new Image();
-
-    img.onload = function (): void {
-      // Create a canvas with proper dimensions
+    img.crossOrigin = 'anonymous';
+    
+    img.onload = function(): void {
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-
+      
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         console.error('Could not get canvas context');
         return;
       }
-
-      // Fill with white background
-      ctx.fillStyle = '#ffffff';
+      
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw the image
+      
       ctx.drawImage(img, 0, 0, width, height);
-
-      // Convert to PNG and download
-      const pngUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = 'diagram.png';
-      link.href = pngUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      
+      try {
+        const pngUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = 'diagram.png';
+        link.href = pngUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (e) {
+        console.error('Failed to create PNG:', e);
+        // Fallback to SVG download if PNG fails
+        downloadSvg();
+      }
     };
-
-    // Set the image source to the SVG
-    const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(svgBlob);
-    img.src = url;
+    
+    img.src = dataUrl;
   };
 
   const downloadMmd = (): void => {
@@ -210,7 +207,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         </span>
         <div className="flex items-center gap-2">
           <CopyButton text={String(code).replace(/\n$/, '')} />
-
+  
           {showDiagramOptions && (
             <div className="relative" ref={downloadMenuRef}>
               <button
@@ -241,7 +238,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               )}
             </div>
           )}
-
+  
           {showDiagramOptions && (
             <button
               onClick={() => setShowCode(!showCode)}
@@ -257,7 +254,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           )}
         </div>
       </div>
-
+  
       {status === 'loading' ? (
         <div className="p-4 bg-white dark:bg-eerie-black flex justify-center items-center">
           <div className="text-sm text-gray-500 dark:text-gray-400">
@@ -279,7 +276,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               {code}
             </div>
           </div>
-
+  
           {showCode && (
             <pre className="p-4 whitespace-pre-wrap overflow-auto bg-white dark:bg-eerie-black text-just-black dark:text-chinese-white border-t md:border-t-0 md:border-l border-light-silver dark:border-raisin-black md:w-1/2">
               {code}
