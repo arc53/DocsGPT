@@ -49,10 +49,10 @@
 - [x] Manually updating chunks in the app UI (Feb 2025)
 - [x] Devcontainer for easy development (Feb 2025)
 - [x] ReACT agent (March 2025)
-- [ ] Chatbots menu re-design to handle tools, agent types, and more (April 2025)
-- [ ] New input box in the conversation menu (April 2025)
-- [ ] Anthropic Tool compatibility (April 2025)
-- [ ] Add triggerable actions / tools (webhook) (April 2025)
+- [x] Chatbots menu re-design to handle tools, agent types, and more (April 2025)
+- [x] New input box in the conversation menu (April 2025)
+- [x] Add triggerable actions / tools (webhook) (April 2025)
+- [ ] Anthropic Tool compatibility (May 2025)
 - [ ] Add OAuth 2.0 authentication for tools and sources
 - [ ] Agent scheduling
 
