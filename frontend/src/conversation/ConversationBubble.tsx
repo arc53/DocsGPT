@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, useRef, useState } from 'react';
+import { forwardRef, Fragment, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
@@ -193,6 +193,33 @@ const ConversationBubble = forwardRef<
 
       return inlineProcessedContent;
     };
+    const processMarkdownContent = (content: string) => {
+      const processedContent = preprocessLaTeX(content);
+      
+      const contentSegments: Array<{type: 'text' | 'mermaid', content: string}> = [];
+      
+      let lastIndex = 0;
+      const regex = /```mermaid\n([\s\S]*?)```/g;
+      let match;
+      
+      while ((match = regex.exec(processedContent)) !== null) {
+        const textBefore = processedContent.substring(lastIndex, match.index);
+        if (textBefore) {
+          contentSegments.push({ type: 'text', content: textBefore });
+        }
+        
+        contentSegments.push({ type: 'mermaid', content: match[1].trim() });
+        
+        lastIndex = match.index + match[0].length;
+      }
+      
+      const textAfter = processedContent.substring(lastIndex);
+      if (textAfter) {
+        contentSegments.push({ type: 'text', content: textAfter });
+      }
+      
+      return contentSegments;
+    };
     bubble = (
       <div
         ref={ref}
@@ -361,107 +388,118 @@ const ConversationBubble = forwardRef<
                   : 'flex-col rounded-3xl'
               }`}
             >
-              <ReactMarkdown
-                className="fade-in whitespace-pre-wrap break-words leading-normal"
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-                components={{
-                  code(props) {
-                    const { children, className, node, ref, ...rest } = props;
-                    const match = /language-(\w+)/.exec(className || '');
-                    const language = match ? match[1] : '';
-
-                    if (language === 'mermaid') {
-                      return (
-                        <MermaidRenderer
-                          isDarkTheme={isDarkTheme}
-                          code={String(children)}
-                        />
-                      );
-                    }
-
-                    return match ? (
-                      <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
-                        <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
-                          <span className="text-xs font-medium text-just-black dark:text-chinese-white">
-                            {language}
-                          </span>
-                          <CopyButton
-                            text={String(children).replace(/\n$/, '')}
-                          />
-                        </div>
-                        <SyntaxHighlighter
-                          {...rest}
-                          PreTag="div"
-                          language={language}
-                          style={isDarkTheme ? vscDarkPlus : oneLight}
-                          className="!mt-0"
-                          customStyle={{
-                            margin: 0,
-                            borderRadius: 0,
-                            scrollbarWidth: 'thin',
-                          }}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      </div>
-                    ) : (
-                      <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
-                        {children}
-                      </code>
-                    );
-                  },
-                  ul({ children }) {
-                    return (
-                      <ul
-                        className={`list-inside list-disc whitespace-normal pl-4 ${classes.list}`}
-                      >
-                        {children}
-                      </ul>
-                    );
-                  },
-                  ol({ children }) {
-                    return (
-                      <ol
-                        className={`list-inside list-decimal whitespace-normal pl-4 ${classes.list}`}
-                      >
-                        {children}
-                      </ol>
-                    );
-                  },
-                  table({ children }) {
-                    return (
-                      <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
-                        <table className="w-full text-left text-gray-700 dark:text-bright-gray">
-                          {children}
-                        </table>
-                      </div>
-                    );
-                  },
-                  thead({ children }) {
-                    return (
-                      <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
-                        {children}
-                      </thead>
-                    );
-                  },
-                  tr({ children }) {
-                    return (
-                      <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
-                        {children}
-                      </tr>
-                    );
-                  },
-                  th({ children }) {
-                    return <th className="px-6 py-3">{children}</th>;
-                  },
-                  td({ children }) {
-                    return <td className="px-6 py-3">{children}</td>;
-                  },
-                }}
-              >
-                {preprocessLaTeX(message)}
-              </ReactMarkdown>
+              {(() => {
+                const contentSegments = processMarkdownContent(message);
+                return (
+                  <>
+                    {contentSegments.map((segment, index) => (
+                      <Fragment key={index}>
+                        {segment.type === 'text' ? (
+                          <ReactMarkdown
+                            className="fade-in whitespace-pre-wrap break-words leading-normal"
+                            remarkPlugins={[remarkGfm, remarkMath]}
+                            rehypePlugins={[rehypeKatex]}
+                            components={{
+                              code(props) {
+                                const { children, className, node, ref, ...rest } = props;
+                                const match = /language-(\w+)/.exec(className || '');
+                                const language = match ? match[1] : '';
+                                
+                                return match ? (
+                                  <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
+                                    <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
+                                      <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+                                        {language}
+                                      </span>
+                                      <CopyButton
+                                        text={String(children).replace(/\n$/, '')}
+                                      />
+                                    </div>
+                                    <SyntaxHighlighter
+                                      {...rest}
+                                      PreTag="div"
+                                      language={language}
+                                      style={isDarkTheme ? vscDarkPlus : oneLight}
+                                      className="!mt-0"
+                                      customStyle={{
+                                        margin: 0,
+                                        borderRadius: 0,
+                                        scrollbarWidth: 'thin',
+                                      }}
+                                    >
+                                      {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                  </div>
+                                ) : (
+                                  <code className="whitespace-pre-line rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal dark:bg-independence dark:text-bright-gray">
+                                    {children}
+                                  </code>
+                                );
+                              },
+                              ul({ children }) {
+                                return (
+                                  <ul
+                                    className={`list-inside list-disc whitespace-normal pl-4 ${classes.list}`}
+                                  >
+                                    {children}
+                                  </ul>
+                                );
+                              },
+                              ol({ children }) {
+                                return (
+                                  <ol
+                                    className={`list-inside list-decimal whitespace-normal pl-4 ${classes.list}`}
+                                  >
+                                    {children}
+                                  </ol>
+                                );
+                              },
+                              table({ children }) {
+                                return (
+                                  <div className="relative overflow-x-auto rounded-lg border border-silver/40 dark:border-silver/40">
+                                    <table className="w-full text-left text-gray-700 dark:text-bright-gray">
+                                      {children}
+                                    </table>
+                                  </div>
+                                );
+                              },
+                              thead({ children }) {
+                                return (
+                                  <thead className="text-xs uppercase text-gray-900 dark:text-bright-gray bg-gray-50 dark:bg-[#26272E]/50">
+                                    {children}
+                                  </thead>
+                                );
+                              },
+                              tr({ children }) {
+                                return (
+                                  <tr className="border-b border-gray-200 dark:border-silver/40 odd:bg-white dark:odd:bg-[#26272E] even:bg-gray-50 dark:even:bg-[#26272E]/50">
+                                    {children}
+                                  </tr>
+                                );
+                              },
+                              th({ children }) {
+                                return <th className="px-6 py-3">{children}</th>;
+                              },
+                              td({ children }) {
+                                return <td className="px-6 py-3">{children}</td>;
+                              },
+                            }}
+                          >
+                            {segment.content}
+                          </ReactMarkdown>
+                        ) : (
+                          <div className="my-4 w-full" style={{ minWidth: '100%' }}>
+                            <MermaidRenderer
+                              isDarkTheme={isDarkTheme}
+                              code={segment.content}
+                            />
+                          </div>
+                        )}
+                      </Fragment>
+                    ))}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
