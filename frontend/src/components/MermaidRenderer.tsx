@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import CopyButton from './CopyButton';
-import { useSelector } from 'react-redux';
-import { selectStatus } from '../conversation/conversationSlice';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneLight, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
@@ -10,47 +10,90 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   isDarkTheme,
 }) => {
   const diagramId = useRef(`mermaid-${crypto.randomUUID()}`);
-  const status = useSelector(selectStatus);
+  // const status = useSelector(selectStatus);
+  const [localStatus, setLocalStatus] = useState<'loading' | 'idle'>('loading');
   const [svgContent, setSvgContent] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoverPosition, setHoverPosition] = useState<{ x: number, y: number } | null>(null);
+  const [isHovering, setIsHovering] = useState<boolean>(false);
+  
+  const handleMouseMove = (event: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    
+    setHoverPosition({ x, y });
+  };
+  
+  const handleMouseEnter = () => setIsHovering(true);
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+    setHoverPosition(null);
+  };
+  
+  const getTransformOrigin = () => {
+    if (!hoverPosition) return 'center center';
+    return `${hoverPosition.x * 100}% ${hoverPosition.y * 100}%`;
+  };
+  useEffect(() => {
+    if (!code) {
+      setLocalStatus('idle');
+      return;
+    }
+      setLocalStatus('loading');
+      
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: isDarkTheme ? 'dark' : 'default',
+        securityLevel: 'loose',
+        suppressErrorRendering: true,
+      });
+      
+      const renderDiagram = async (): Promise<void> => {
+        try {
+          const element = document.getElementById(diagramId.current);
+          if (element) {
+            element.removeAttribute('data-processed');
+            element.innerHTML = code;
+            mermaid.contentLoaded();
+            
+            const svgElement = element.querySelector('svg');
+            if (svgElement) {
+              svgElement.setAttribute('width', '100%');
+              svgElement.setAttribute('height', 'auto');
+              svgElement.style.maxWidth = '100%';
+              svgElement.style.width = '100%';
+              
+              svgElement.removeAttribute('viewBox');
+              
+              setSvgContent(svgElement.outerHTML);
+            }
+            setError(null);
+            setLocalStatus('idle');
+          }
+        } catch (err) {
+          setError(
+            `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`
+          );
+          setSvgContent('');
+          setLocalStatus('idle');
+        }
+      };
+      
+      renderDiagram();
+  
+  }, [code, isDarkTheme]);
 
   useEffect(() => {
-    if (status === 'loading' || !code) return;
-
-    mermaid.initialize({
-      startOnLoad: true,
-      theme: isDarkTheme ? 'dark' : 'default',
-      securityLevel: 'loose',
-      suppressErrorRendering: true
-    });
-
-    const renderDiagram = async (): Promise<void> => {
-      try {
-        const element = document.getElementById(diagramId.current);
-        if (element) {
-          element.removeAttribute('data-processed');
-          element.innerHTML = code;
-          mermaid.contentLoaded();
-          
-          const svgElement = element.querySelector('svg');
-          if (svgElement) {
-            setSvgContent(svgElement.outerHTML);
-          }
-          setError(null);
-        }
-      } catch (err) {
-        setError(
-          `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`
-        );
-        setSvgContent('');
-      }
-    };
-
-    renderDiagram();
-  }, [code, isDarkTheme, status]);
+    setZoomLevel(1);
+  }, [code]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -67,6 +110,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showDownloadMenu]);
+
 
   const downloadSvg = (): void => {
     const element = document.getElementById(diagramId.current);
@@ -189,25 +233,26 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
-
+  
+ 
   const downloadOptions = [
     { label: 'Download as SVG', action: downloadSvg },
     { label: 'Download as PNG', action: downloadPng },
     { label: 'Download as MMD', action: downloadMmd },
   ];
 
-  const showDiagramOptions = status !== 'loading' && !error;
-  const errorRender = status !== 'loading' && error;
+  const showDiagramOptions = localStatus !== 'loading' && !error;
+  const errorRender = localStatus !== 'loading' && error;
 
   return (
-    <div className="group relative rounded-lg overflow-hidden border border-light-silver dark:border-raisin-black">
+    <div className="group relative rounded-lg border border-light-silver dark:border-raisin-black w-full">
       <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
         <span className="text-xs font-medium text-just-black dark:text-chinese-white">
           mermaid
         </span>
         <div className="flex items-center gap-2">
           <CopyButton text={String(code).replace(/\n$/, '')} />
-  
+          
           {showDiagramOptions && (
             <div className="relative" ref={downloadMenuRef}>
               <button
@@ -255,34 +300,72 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         </div>
       </div>
   
-      {status === 'loading' ? (
+      {localStatus === 'loading' ? (
         <div className="p-4 bg-white dark:bg-eerie-black flex justify-center items-center">
           <div className="text-sm text-gray-500 dark:text-gray-400">
             Loading diagram...
           </div>
         </div>
-      ) : errorRender ? (
+      ) :  errorRender ? (
         <div className="border-2 border-red-400 dark:border-red-700 rounded m-2">
           <div className="bg-red-100 dark:bg-red-900/30 px-4 py-2 text-red-800 dark:text-red-300 text-sm whitespace-normal break-words overflow-auto">
             {error}
           </div>
         </div>
       ) : (
-        <div className="flex flex-col md:flex-row">
-          <div className={`p-4 bg-white dark:bg-eerie-black flex justify-center items-center ${
-            showCode ? 'md:w-1/2' : 'w-full'
-          }`}>
-            <div className="mermaid" id={diagramId.current}>
+        <>
+          <div 
+            ref={containerRef}
+            className="no-scrollbar p-4 bg-white dark:bg-eerie-black flex justify-center items-center w-full"
+            style={{ 
+              overflow: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              width: '100%'
+            }}
+            onMouseMove={handleMouseMove}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+          >
+            <div 
+              className="mermaid select-none w-full" 
+              id={diagramId.current}
+              style={{ 
+                transform: isHovering ? `scale(${2})` : `scale(1)`,
+                transformOrigin: getTransformOrigin(),
+                transition: 'transform 0.2s ease',
+                cursor: 'default',
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'center'
+              }}
+            >
               {code}
             </div>
           </div>
   
           {showCode && (
-            <pre className="p-4 whitespace-pre-wrap overflow-auto bg-white dark:bg-eerie-black text-just-black dark:text-chinese-white border-t md:border-t-0 md:border-l border-light-silver dark:border-raisin-black md:w-1/2">
-              {code}
-            </pre>
+            <div className="border-t border-light-silver dark:border-raisin-black">
+              <div className="p-2 bg-platinum dark:bg-eerie-black-2">
+                <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+                  Mermaid Code
+                </span>
+              </div>
+              <SyntaxHighlighter
+                language="mermaid"
+                style={isDarkTheme ? vscDarkPlus : oneLight}
+                customStyle={{
+                  margin: 0,
+                  borderRadius: 0,
+                  scrollbarWidth: 'thin',
+                  maxHeight: '300px'
+                }}
+              >
+                {code}
+              </SyntaxHighlighter>
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import ArrowDown from '../assets/arrow-down.svg';
@@ -47,25 +47,30 @@ export default function ConversationMessages({
     }
   };
 
+  // Remove Mermaid tracking code that was here
+
   const scrollIntoView = () => {
     if (!conversationRef?.current || eventInterrupt) return;
 
-    if (status === 'idle' || !queries[queries.length - 1]?.response) {
-      conversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: conversationRef.current.scrollHeight,
-      });
-    } else {
-      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
-    }
+    setTimeout(() => {
+      if (!conversationRef?.current) return;
+      
+      if (status === 'idle' || !queries[queries.length - 1]?.response) {
+        conversationRef.current.scrollTo({
+          behavior: 'smooth',
+          top: conversationRef.current.scrollHeight,
+        });
+      } else {
+        conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+      }
+    }, 100); // Small timeout to allow images to render
   };
 
   const checkScroll = () => {
     const el = conversationRef.current;
     if (!el) return;
     const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
-
-    atLast.current = isBottom
+    atLast.current = isBottom;
   };
 
   useEffect(() => {
