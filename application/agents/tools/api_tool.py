@@ -25,8 +25,8 @@ class APITool(Tool):
     def _make_api_call(self, url, method, headers, query_params, body):
         if query_params:
             url = f"{url}?{requests.compat.urlencode(query_params)}"
-        if isinstance(body, dict):
-            body = json.dumps(body)
+        # if isinstance(body, dict):
+        #     body = json.dumps(body)
         try:
             print(f"Making API call: {method} {url} with body: {body}")
             if body == "{}":
