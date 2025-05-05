@@ -4,19 +4,18 @@ import CopyButton from './CopyButton';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { MermaidRendererProps } from './types';
+import { useSelector } from 'react-redux';
+import { selectStatus } from '../conversation/conversationSlice';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   code,
   isDarkTheme,
 }) => {
   const diagramId = useRef(`mermaid-${crypto.randomUUID()}`);
-  // const status = useSelector(selectStatus);
-  const [localStatus, setLocalStatus] = useState<'loading' | 'idle'>('loading');
-  const [svgContent, setSvgContent] = useState<string>('');
+  const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false);
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverPosition, setHoverPosition] = useState<{ x: number, y: number } | null>(null);
@@ -43,11 +42,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     return `${hoverPosition.x * 100}% ${hoverPosition.y * 100}%`;
   };
   useEffect(() => {
-    if (!code) {
-      setLocalStatus('idle');
-      return;
-    }
-      setLocalStatus('loading');
+    if (status === 'loading' || !code) return;
       
       mermaid.initialize({
         startOnLoad: true,
@@ -58,10 +53,11 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       
       const renderDiagram = async (): Promise<void> => {
         try {
+          await mermaid.parse(code); //throws syntax errors
+          
           const element = document.getElementById(diagramId.current);
           if (element) {
             element.removeAttribute('data-processed');
-            element.innerHTML = code;
             mermaid.contentLoaded();
             
             const svgElement = element.querySelector('svg');
@@ -73,27 +69,22 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               
               svgElement.removeAttribute('viewBox');
               
-              setSvgContent(svgElement.outerHTML);
             }
             setError(null);
-            setLocalStatus('idle');
           }
         } catch (err) {
+          
           setError(
             `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`
           );
-          setSvgContent('');
-          setLocalStatus('idle');
         }
       };
       
       renderDiagram();
+      
   
   }, [code, isDarkTheme]);
 
-  useEffect(() => {
-    setZoomLevel(1);
-  }, [code]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -241,11 +232,13 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     { label: 'Download as MMD', action: downloadMmd },
   ];
 
-  const showDiagramOptions = localStatus !== 'loading' && !error;
-  const errorRender = localStatus !== 'loading' && error;
+  const showDiagramOptions = status !== 'loading' && !error;
+  const errorRender = status !== 'loading' && error;
+
+
 
   return (
-    <div className="group relative rounded-lg border border-light-silver dark:border-raisin-black w-full">
+    <div className="group relative rounded-lg border border-light-silver dark:border-raisin-black bg-white dark:bg-eerie-black  w-inherit">
       <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
         <span className="text-xs font-medium text-just-black dark:text-chinese-white">
           mermaid
@@ -300,7 +293,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         </div>
       </div>
   
-      {localStatus === 'loading' ? (
+      {status === 'loading' ? (
         <div className="p-4 bg-white dark:bg-eerie-black flex justify-center items-center">
           <div className="text-sm text-gray-500 dark:text-gray-400">
             Loading diagram...
@@ -316,22 +309,23 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         <>
           <div 
             ref={containerRef}
-            className="no-scrollbar p-4 bg-white dark:bg-eerie-black flex justify-center items-center w-full"
+            className=" no-scrollbar p-4 block w-full bg-white dark:bg-eerie-black "
             style={{ 
               overflow: 'auto',
               scrollbarWidth: 'none',
               msOverflowStyle: 'none',
-              width: '100%'
+              width: '100%',
+              
             }}
             onMouseMove={handleMouseMove}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            <div 
+            <pre 
               className="mermaid select-none w-full" 
               id={diagramId.current}
               style={{ 
-                transform: isHovering ? `scale(${2})` : `scale(1)`,
+                transform: isHovering ? `scale(2)` : `scale(1)`,
                 transformOrigin: getTransformOrigin(),
                 transition: 'transform 0.2s ease',
                 cursor: 'default',
@@ -341,7 +335,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               }}
             >
               {code}
-            </div>
+            </pre>
           </div>
   
           {showCode && (
