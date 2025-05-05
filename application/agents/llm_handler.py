@@ -1,5 +1,6 @@
 import json
 import logging
+import logging
 from abc import ABC, abstractmethod
 
 from application.logging import build_stack_data
@@ -137,6 +138,7 @@ class OpenAILLMHandler(LLMHandler):
 
                         messages = self.prepare_messages_with_attachments(agent, messages, attachments)
                     except Exception as e:
+                        logging.error(f"Error executing tool: {str(e)}", exc_info=True)
                         messages.append(
                             {
                                 "role": "tool",
@@ -229,6 +231,7 @@ class OpenAILLMHandler(LLMHandler):
                                     )
 
                                 except Exception as e:
+                                    logging.error(f"Error executing tool: {str(e)}", exc_info=True)
                                     messages.append(
                                         {
                                             "role": "assistant",

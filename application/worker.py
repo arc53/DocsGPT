@@ -75,7 +75,7 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
             zip_ref.extractall(extract_to)
         os.remove(zip_path)  # Remove the zip file after extracting
     except Exception as e:
-        logging.error(f"Error extracting zip file {zip_path}: {e}")
+        logging.error(f"Error extracting zip file {zip_path}: {e}", exc_info=True)
         return
 
     # Check for nested zip files and extract them
@@ -403,7 +403,7 @@ def sync(
             doc_id,
         )
     except Exception as e:
-        logging.error(f"Error during sync: {e}")
+        logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
     return {"status": "success"}
 

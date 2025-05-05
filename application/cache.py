@@ -61,14 +61,14 @@ def gen_cache(func):
                 if cached_response:
                     return cached_response.decode("utf-8")
             except Exception as e:
-                logger.error(f"Error getting cached response: {e}")
+                logger.error(f"Error getting cached response: {e}", exc_info=True)
 
         result = func(self, model, messages, stream, tools, *args, **kwargs)
         if redis_client and isinstance(result, str):
             try:
                 redis_client.set(cache_key, result, ex=1800)
             except Exception as e:
-                logger.error(f"Error setting cache: {e}")
+                logger.error(f"Error setting cache: {e}", exc_info=True)
 
         return result
 
@@ -100,7 +100,7 @@ def stream_cache(func):
                         time.sleep(0.03)  # Simulate streaming delay
                     return
             except Exception as e:
-                logger.error(f"Error getting cached stream: {e}")
+                logger.error(f"Error getting cached stream: {e}", exc_info=True)
 
         stream_cache_data = []
         for chunk in func(self, model, messages, stream, tools, *args, **kwargs):
@@ -112,6 +112,6 @@ def stream_cache(func):
                 redis_client.set(cache_key, json.dumps(stream_cache_data), ex=1800)
                 logger.info(f"Stream cache saved for key: {cache_key}")
             except Exception as e:
-                logger.error(f"Error setting stream cache: {e}")
+                logger.error(f"Error setting stream cache: {e}", exc_info=True)
 
     return wrapper

@@ -213,7 +213,7 @@ class OpenAILLM(BaseLLM):
                         }
                     })
                 except Exception as e:
-                    logging.error(f"Error processing image attachment: {e}")
+                    logging.error(f"Error processing image attachment: {e}", exc_info=True)
                     if 'content' in attachment:
                         prepared_messages[user_message_index]["content"].append({
                             "type": "text",
@@ -228,7 +228,7 @@ class OpenAILLM(BaseLLM):
                         "file": {"file_id": file_id}
                     })
                 except Exception as e:
-                    logging.error(f"Error uploading PDF to OpenAI: {e}")
+                    logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
                     if 'content' in attachment:
                         prepared_messages[user_message_index]["content"].append({
                             "type": "text",
@@ -301,7 +301,7 @@ class OpenAILLM(BaseLLM):
 
             return file_id
         except Exception as e:
-            logging.error(f"Error uploading file to OpenAI: {e}")
+            logging.error(f"Error uploading file to OpenAI: {e}", exc_info=True)
             raise
 
 

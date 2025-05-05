@@ -78,7 +78,7 @@ class GoogleLLM(BaseLLM):
                     logging.info(f"GoogleLLM: Successfully uploaded file, got URI: {file_uri}")
                     files.append({"file_uri": file_uri, "mime_type": mime_type})
                 except Exception as e:
-                    logging.error(f"GoogleLLM: Error uploading file: {e}")
+                    logging.error(f"GoogleLLM: Error uploading file: {e}", exc_info=True)
                     if 'content' in attachment:
                         prepared_messages[user_message_index]["content"].append({
                             "type": "text",
@@ -131,7 +131,7 @@ class GoogleLLM(BaseLLM):
 
             return file_uri
         except Exception as e:
-            logging.error(f"Error uploading file to Google AI: {e}")
+            logging.error(f"Error uploading file to Google AI: {e}", exc_info=True)
             raise
 
     def _clean_messages_google(self, messages):
