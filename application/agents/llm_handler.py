@@ -1,6 +1,5 @@
 import json
 import logging
-import logging
 from abc import ABC, abstractmethod
 
 from application.logging import build_stack_data
