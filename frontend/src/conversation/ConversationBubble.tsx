@@ -490,7 +490,6 @@ const ConversationBubble = forwardRef<
                         ) : (
                           <div className="my-4 w-full" style={{ minWidth: '100%' }}>
                             <MermaidRenderer
-                              isDarkTheme={isDarkTheme}
                               code={segment.content}
                             />
                           </div>

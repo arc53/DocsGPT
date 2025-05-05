@@ -6,11 +6,12 @@ import { oneLight, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/
 import { MermaidRendererProps } from './types';
 import { useSelector } from 'react-redux';
 import { selectStatus } from '../conversation/conversationSlice';
+import { useDarkTheme } from '../hooks';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   code,
-  isDarkTheme,
 }) => {
+  const [isDarkTheme] = useDarkTheme();
   const diagramId = useRef(`mermaid-${crypto.randomUUID()}`);
   const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
