@@ -360,7 +360,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     sourceDocs?.map((doc: Doc) => ({
                       id: doc.id || doc.retriever || doc.name,
                       label: doc.name,
-                      icon: SourceIcon,
+                      icon: <img src={SourceIcon} alt="" />,
                     })) || []
                   }
                   selectedIds={selectedSourceIds}
