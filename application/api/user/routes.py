@@ -2755,7 +2755,7 @@ class GetChunks(Resource):
             )
 
         except Exception as e:
-            current_app.logger.error(f"Error getting chunks: {e}", exc_info=True, exc_info=True)
+            current_app.logger.error(f"Error getting chunks: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
