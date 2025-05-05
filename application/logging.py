@@ -151,4 +151,4 @@ def _log_to_mongodb(
         logging.debug(f"Logged activity to MongoDB: {activity_id}")
 
     except Exception as e:
-        logging.error(f"Failed to log to MongoDB: {e}")
+        logging.error(f"Failed to log to MongoDB: {e}", exc_info=True)

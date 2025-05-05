@@ -2755,7 +2755,7 @@ class GetChunks(Resource):
             )
 
         except Exception as e:
-            current_app.logger.error(f"Error getting chunks: {e}")
+            current_app.logger.error(f"Error getting chunks: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2809,7 +2809,7 @@ class AddChunk(Resource):
                 201,
             )
         except Exception as e:
-            current_app.logger.error(f"Error adding chunk: {e}")
+            current_app.logger.error(f"Error adding chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2849,7 +2849,7 @@ class DeleteChunk(Resource):
                     404,
                 )
         except Exception as e:
-            current_app.logger.error(f"Error deleting chunk: {e}")
+            current_app.logger.error(f"Error deleting chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2931,7 +2931,7 @@ class UpdateChunk(Resource):
                 200,
             )
         except Exception as e:
-            current_app.logger.error(f"Error updating chunk: {e}")
+            current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 

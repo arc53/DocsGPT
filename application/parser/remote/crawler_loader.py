@@ -1,3 +1,4 @@
+import logging
 import requests
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
@@ -42,7 +43,7 @@ class CrawlerLoader(BaseRemote):
                         )
                     )
             except Exception as e:
-                print(f"Error processing URL {current_url}: {e}")
+                logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)
                 continue
 
             # Parse the HTML content to extract all links
