@@ -40,7 +40,7 @@ export default function ConversationMessages({
   const conversationRef = useRef<HTMLDivElement>(null);
   const atLast = useRef(true);
   const [eventInterrupt, setEventInterrupt] = useState(false);
-  
+
   const handleUserInterruption = () => {
     if (!eventInterrupt && status === 'loading') {
       setEventInterrupt(true);
@@ -54,7 +54,7 @@ export default function ConversationMessages({
 
     setTimeout(() => {
       if (!conversationRef?.current) return;
-      
+
       if (status === 'idle' || !queries[queries.length - 1]?.response) {
         conversationRef.current.scrollTo({
           behavior: 'smooth',
@@ -93,6 +93,7 @@ export default function ConversationMessages({
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
     if (query.thought || query.response) {
+      const isCurrentlyStreaming = status === 'loading' && index === queries.length - 1;
       responseView = (
         <ConversationBubble
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
@@ -103,6 +104,7 @@ export default function ConversationMessages({
           sources={query.sources}
           toolCalls={query.tool_calls}
           feedback={query.feedback}
+          isStreaming={isCurrentlyStreaming}
           handleFeedback={
             handleFeedback
               ? (feedback) => handleFeedback(query, feedback, index)

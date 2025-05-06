@@ -53,6 +53,7 @@ const ConversationBubble = forwardRef<
     toolCalls?: ToolCallsType[];
     retryBtn?: React.ReactElement;
     questionNumber?: number;
+    isStreaming?: boolean;
     handleUpdatedQuestionSubmission?: (
       updatedquestion?: string,
       updated?: boolean,
@@ -71,6 +72,7 @@ const ConversationBubble = forwardRef<
     toolCalls,
     retryBtn,
     questionNumber,
+    isStreaming,
     handleUpdatedQuestionSubmission,
   },
   ref,
@@ -195,29 +197,29 @@ const ConversationBubble = forwardRef<
     };
     const processMarkdownContent = (content: string) => {
       const processedContent = preprocessLaTeX(content);
-      
+
       const contentSegments: Array<{type: 'text' | 'mermaid', content: string}> = [];
-      
+
       let lastIndex = 0;
       const regex = /```mermaid\n([\s\S]*?)```/g;
       let match;
-      
+
       while ((match = regex.exec(processedContent)) !== null) {
         const textBefore = processedContent.substring(lastIndex, match.index);
         if (textBefore) {
           contentSegments.push({ type: 'text', content: textBefore });
         }
-        
+
         contentSegments.push({ type: 'mermaid', content: match[1].trim() });
-        
+
         lastIndex = match.index + match[0].length;
       }
-      
+
       const textAfter = processedContent.substring(lastIndex);
       if (textAfter) {
         contentSegments.push({ type: 'text', content: textAfter });
       }
-      
+
       return contentSegments;
     };
     bubble = (
@@ -404,7 +406,7 @@ const ConversationBubble = forwardRef<
                                 const { children, className, node, ref, ...rest } = props;
                                 const match = /language-(\w+)/.exec(className || '');
                                 const language = match ? match[1] : '';
-                                
+
                                 return match ? (
                                   <div className="group relative rounded-[14px] overflow-hidden border border-light-silver dark:border-raisin-black">
                                     <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
@@ -491,6 +493,7 @@ const ConversationBubble = forwardRef<
                           <div className="my-4 w-full" style={{ minWidth: '100%' }}>
                             <MermaidRenderer
                               code={segment.content}
+                              isLoading={isStreaming}
                             />
                           </div>
                         )}
@@ -505,7 +508,7 @@ const ConversationBubble = forwardRef<
         {message && (
           <div className="my-2 ml-2 flex justify-start">
             <div
-              className={`relative mr-2  block items-center justify-center lg:invisible 
+              className={`relative mr-2  block items-center justify-center lg:invisible
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
             >
               <div>
@@ -513,7 +516,7 @@ const ConversationBubble = forwardRef<
               </div>
             </div>
             <div
-              className={`relative mr-2 block items-center justify-center lg:invisible 
+              className={`relative mr-2 block items-center justify-center lg:invisible
             ${type !== 'ERROR' ? 'group-hover:lg:visible' : 'hidden'}`}
             >
               <div>
@@ -544,7 +547,7 @@ const ConversationBubble = forwardRef<
                       }`}
                     >
                       <Like
-                        className={`cursor-pointer 
+                        className={`cursor-pointer
                   ${
                     isLikeClicked || feedback === 'LIKE'
                       ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
