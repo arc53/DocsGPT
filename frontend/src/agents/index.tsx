@@ -1,28 +1,30 @@
-import React, { SyntheticEvent, useEffect, useRef, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import Copy from '../assets/copy-linear.svg';
 import Edit from '../assets/edit.svg';
 import Monitoring from '../assets/monitoring.svg';
+import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
 import Robot from '../assets/robot.svg';
 import ThreeDots from '../assets/three-dots.svg';
+import UnPin from '../assets/unpin.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import Spinner from '../components/Spinner';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import {
-  selectToken,
-  setSelectedAgent,
-  setAgents,
   selectAgents,
   selectSelectedAgent,
+  selectToken,
+  setAgents,
+  setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import AgentLogs from './AgentLogs';
 import NewAgent from './NewAgent';
 import { Agent } from './types';
-import Spinner from '../components/Spinner';
 
 export default function Agents() {
   return (
@@ -42,7 +44,6 @@ function AgentsList() {
   const agents = useSelector(selectAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [userAgents, setUserAgents] = useState<Agent[]>(agents || []);
   const [loading, setLoading] = useState<boolean>(true);
 
   const getAgents = async () => {
@@ -51,7 +52,6 @@ function AgentsList() {
       const response = await userService.getAgents(token);
       if (!response.ok) throw new Error('Failed to fetch agents');
       const data = await response.json();
-      setUserAgents(data);
       dispatch(setAgents(data));
       setLoading(false);
     } catch (error) {
@@ -133,14 +133,9 @@ function AgentsList() {
             <div className="flex h-72 w-full items-center justify-center">
               <Spinner />
             </div>
-          ) : userAgents.length > 0 ? (
-            userAgents.map((agent) => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                agents={userAgents}
-                setUserAgents={setUserAgents}
-              />
+          ) : agents && agents.length > 0 ? (
+            agents.map((agent) => (
+              <AgentCard key={agent.id} agent={agent} agents={agents} />
             ))
           ) : (
             <div className="flex h-72 w-full flex-col items-center justify-center gap-3 text-base text-[#18181B] dark:text-[#E0E0E0]">
@@ -159,15 +154,7 @@ function AgentsList() {
   );
 }
 
-function AgentCard({
-  agent,
-  agents,
-  setUserAgents,
-}: {
-  agent: Agent;
-  agents: Agent[];
-  setUserAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
-}) {
+function AgentCard({ agent, agents }: { agent: Agent; agents: Agent[] }) {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
@@ -177,6 +164,21 @@ function AgentCard({
     useState<ActiveState>('INACTIVE');
 
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const togglePin = async () => {
+    try {
+      const response = await userService.togglePinAgent(agent.id ?? '', token);
+      if (!response.ok) throw new Error('Failed to pin agent');
+      const updatedAgents = agents.map((prevAgent) => {
+        if (prevAgent.id === agent.id)
+          return { ...prevAgent, pinned: !prevAgent.pinned };
+        return prevAgent;
+      });
+      dispatch(setAgents(updatedAgents));
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
 
   const menuOptions: MenuOption[] = [
     {
@@ -202,6 +204,17 @@ function AgentCard({
       iconHeight: 14,
     },
     {
+      icon: agent.pinned ? UnPin : Pin,
+      label: agent.pinned ? 'Unpin' : 'Pin agent',
+      onClick: (e: SyntheticEvent) => {
+        e.stopPropagation();
+        togglePin();
+      },
+      variant: 'primary',
+      iconWidth: 18,
+      iconHeight: 18,
+    },
+    {
       icon: Trash,
       label: 'Delete',
       onClick: (e: SyntheticEvent) => {
@@ -209,8 +222,8 @@ function AgentCard({
         setDeleteConfirmation('ACTIVE');
       },
       variant: 'danger',
-      iconWidth: 12,
-      iconHeight: 12,
+      iconWidth: 13,
+      iconHeight: 13,
     },
   ];
 
@@ -225,9 +238,6 @@ function AgentCard({
     const response = await userService.deleteAgent(agentId, token);
     if (!response.ok) throw new Error('Failed to delete agent');
     const data = await response.json();
-    setUserAgents((prevAgents) =>
-      prevAgents.filter((prevAgent) => prevAgent.id !== data.id),
-    );
     dispatch(setAgents(agents.filter((prevAgent) => prevAgent.id !== data.id)));
   };
   return (
@@ -244,7 +254,7 @@ function AgentCard({
           e.stopPropagation();
           setIsMenuOpen(true);
         }}
-        className="absolute right-4 top-4 z-50 cursor-pointer"
+        className="absolute right-4 top-4 z-10 cursor-pointer"
       >
         <img src={ThreeDots} alt={'use-agent'} className="h-[19px] w-[19px]" />
         <ContextMenu

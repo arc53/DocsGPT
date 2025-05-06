@@ -11,6 +11,8 @@ export type Agent = {
   agent_type: string;
   status: string;
   key?: string;
+  incoming_webhook_token?: string;
+  pinned?: boolean;
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;

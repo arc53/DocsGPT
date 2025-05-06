@@ -13,12 +13,14 @@ import Expand from './assets/expand.svg';
 import Github from './assets/github.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
+import Pin from './assets/pin.svg';
 import Robot from './assets/robot.svg';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
 import Spinner from './assets/spinner.svg';
 import Twitter from './assets/TwitterX.svg';
+import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
 import {
   handleAbort,
@@ -35,16 +37,16 @@ import JWTModal from './modals/JWTModal';
 import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
 import {
+  selectAgents,
   selectConversationId,
   selectConversations,
   selectModalStateDeleteConv,
   selectSelectedAgent,
   selectToken,
+  setAgents,
   setConversations,
   setModalStateDeleteConv,
   setSelectedAgent,
-  setAgents,
-  selectAgents,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
 
@@ -80,24 +82,35 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   async function fetchRecentAgents() {
     try {
-      let recentAgents: Agent[] = [];
+      const response = await userService.getPinnedAgents(token);
+      if (!response.ok) throw new Error('Failed to fetch pinned agents');
+      const pinnedAgents: Agent[] = await response.json();
+      if (pinnedAgents.length >= 3) {
+        setRecentAgents(pinnedAgents);
+        return;
+      }
+      let tempAgents: Agent[] = [];
       if (!agents) {
         const response = await userService.getAgents(token);
         if (!response.ok) throw new Error('Failed to fetch agents');
         const data: Agent[] = await response.json();
         dispatch(setAgents(data));
-        recentAgents = data;
-      } else recentAgents = agents;
-      setRecentAgents(
-        recentAgents
-          .filter((agent: Agent) => agent.status === 'published')
-          .sort(
-            (a: Agent, b: Agent) =>
-              new Date(b.last_used_at ?? 0).getTime() -
-              new Date(a.last_used_at ?? 0).getTime(),
-          )
-          .slice(0, 3),
-      );
+        tempAgents = data;
+      } else tempAgents = agents;
+      const additionalAgents = tempAgents
+        .filter(
+          (agent: Agent) =>
+            agent.status === 'published' &&
+            !pinnedAgents.some((pinned) => pinned.id === agent.id),
+        )
+        .sort(
+          (a: Agent, b: Agent) =>
+            new Date(b.last_used_at ?? 0).getTime() -
+            new Date(a.last_used_at ?? 0).getTime(),
+        )
+        .slice(0, 3 - pinnedAgents.length);
+      setRecentAgents([...pinnedAgents, ...additionalAgents]);
+      console.log(additionalAgents);
     } catch (error) {
       console.error('Failed to fetch recent agents: ', error);
     }
@@ -116,7 +129,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }
 
   useEffect(() => {
-    if (token) fetchRecentAgents();
+    fetchRecentAgents();
   }, [agents, token, dispatch]);
 
   useEffect(() => {
@@ -150,6 +163,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     dispatch(setSelectedAgent(agent));
     if (isMobile) setNavOpen(!navOpen);
     navigate('/');
+  };
+
+  const handleTogglePin = (agent: Agent) => {
+    userService.togglePinAgent(agent.id ?? '', token).then((response) => {
+      if (response.ok) {
+        const updatedAgents = agents?.map((a) =>
+          a.id === agent.id ? { ...a, pinned: !a.pinned } : a,
+        );
+        dispatch(setAgents(updatedAgents));
+      }
+    });
   };
 
   const handleConversationClick = (index: string) => {
@@ -336,23 +360,39 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+                      className={`mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
                         agent.id === selectedAgent?.id && !conversationId
                           ? 'bg-bright-gray dark:bg-dark-charcoal'
                           : ''
                       }`}
                       onClick={() => handleAgentClick(agent)}
                     >
-                      <div className="flex w-6 justify-center">
-                        <img
-                          src={agent.image ?? Robot}
-                          alt="agent-logo"
-                          className="h-6 w-6 rounded-full"
-                        />
+                      <div className="flex items-center gap-2">
+                        <div className="flex w-6 justify-center">
+                          <img
+                            src={agent.image ?? Robot}
+                            alt="agent-logo"
+                            className="h-6 w-6 rounded-full"
+                          />
+                        </div>
+                        <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
+                          {agent.name}
+                        </p>
                       </div>
-                      <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
-                        {agent.name}
-                      </p>
+                      <div className="flex items-center px-3">
+                        <button
+                          className="rounded-full hover:opacity-75"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTogglePin(agent);
+                          }}
+                        >
+                          <img
+                            src={agent.pinned ? UnPin : Pin}
+                            className="h-4 w-4"
+                          ></img>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
