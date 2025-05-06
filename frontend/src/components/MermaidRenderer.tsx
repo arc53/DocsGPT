@@ -22,6 +22,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverPosition, setHoverPosition] = useState<{ x: number, y: number } | null>(null);
   const [isHovering, setIsHovering] = useState<boolean>(false);
+  const [zoomFactor, setZoomFactor] = useState<number>(2); 
 
   const handleMouseMove = (event: React.MouseEvent) => {
     if (!containerRef.current) return;
@@ -39,54 +40,69 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     setHoverPosition(null);
   };
 
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (!isHovering) return;
+
+    if (event.key === '+' || event.key === '=') {
+      setZoomFactor(prev => Math.min(6, prev + 0.5)); // Cap at 6x
+      event.preventDefault();
+    }
+    else if (event.key === '-') {
+      setZoomFactor(prev => Math.max(1, prev - 0.5)); // Minimum 1x
+      event.preventDefault();
+    }
+  };
+
+  const handleWheel = (event: React.WheelEvent) => {
+    if (!isHovering) return;
+
+    if ( event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+
+      if (event.deltaY < 0) {
+        setZoomFactor(prev => Math.min(6, prev + 0.25));
+      } else {
+        setZoomFactor(prev => Math.max(1, prev - 0.25));
+      }
+    }
+  };
+
   const getTransformOrigin = () => {
     if (!hoverPosition) return 'center center';
     return `${hoverPosition.x * 100}% ${hoverPosition.y * 100}%`;
   };
-  useEffect(() => {
-    if ((isLoading !== undefined ? isLoading : status === 'loading') || !code) return;
 
+  useEffect(() => {
+    const renderDiagram = async () => {
       mermaid.initialize({
         startOnLoad: true,
         theme: isDarkTheme ? 'dark' : 'default',
         securityLevel: 'loose',
         suppressErrorRendering: true,
       });
-
-      const renderDiagram = async (): Promise<void> => {
+  
+      const isCurrentlyLoading = isLoading !== undefined ? isLoading : status === 'loading';
+      if (!isCurrentlyLoading && code) {
         try {
-          await mermaid.parse(code); //throws syntax errors
-
           const element = document.getElementById(diagramId.current);
           if (element) {
             element.removeAttribute('data-processed');
+            await mermaid.parse(code); //syntax check
             mermaid.contentLoaded();
-
-            const svgElement = element.querySelector('svg');
-            if (svgElement) {
-              svgElement.setAttribute('width', '100%');
-              svgElement.setAttribute('height', 'auto');
-              svgElement.style.maxWidth = '100%';
-              svgElement.style.width = '100%';
-
-              svgElement.removeAttribute('viewBox');
-
-            }
-            setError(null);
           }
         } catch (err) {
-
-          setError(
-            `Failed to render Mermaid diagram: ${err instanceof Error ? err.message : String(err)}`
-          );
+          console.error('Error rendering mermaid diagram:', err);
+          setError(`Failed to render diagram: ${err instanceof Error ? err.message : String(err)}`);
         }
-      };
+      }
+    };
 
-      renderDiagram();
-
-
+    renderDiagram();
   }, [code, isDarkTheme, isLoading]);
 
+
+ 
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -238,8 +254,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const showDiagramOptions = !isCurrentlyLoading && !error;
   const errorRender = !isCurrentlyLoading && error;
 
-
-
   return (
     <div className="group relative rounded-lg border border-light-silver dark:border-raisin-black bg-white dark:bg-eerie-black  w-inherit">
       <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
@@ -302,7 +316,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             Loading diagram...
           </div>
         </div>
-      ) :  errorRender ? (
+      ) : errorRender ? (
         <div className="border-2 border-red-400 dark:border-red-700 rounded m-2">
           <div className="bg-red-100 dark:bg-red-900/30 px-4 py-2 text-red-800 dark:text-red-300 text-sm whitespace-normal break-words overflow-auto">
             {error}
@@ -312,7 +326,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         <>
           <div
             ref={containerRef}
-            className=" no-scrollbar p-4 block w-full bg-white dark:bg-eerie-black "
+            className=" no-scrollbar p-4 block w-full bg-white dark:bg-eerie-black relative"
             style={{
               overflow: 'auto',
               scrollbarWidth: 'none',
@@ -323,12 +337,46 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             onMouseMove={handleMouseMove}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
+            onKeyDown={handleKeyDown}
+            onWheel={handleWheel}
+            tabIndex={0}
+            
           >
+            {isHovering && (
+              <>
+              <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded z-10 flex items-center gap-2">
+                <button
+                  onClick={() => setZoomFactor(prev => Math.max(1, prev - 0.5))}
+                  className="hover:bg-gray-600 px-1 rounded"
+                  title="Decrease zoom"
+                >
+                  -
+                </button>
+                <span
+                  className="cursor-pointer hover:underline"
+                  onClick={() => {
+                    setZoomFactor(2);
+                  }}
+                  title="Reset zoom"
+                >
+                  {zoomFactor.toFixed(1)}x
+                </span>
+                <button
+                  onClick={() => setZoomFactor(prev => Math.min(6, prev + 0.5))}
+                  className="hover:bg-gray-600 px-1 rounded"
+                  title="Increase zoom"
+                >
+                  +
+                </button>
+              </div>
+              </>
+            )}
             <pre
               className="mermaid select-none w-full"
               id={diagramId.current}
+              key={`mermaid-${diagramId.current}`}
               style={{
-                transform: isHovering ? `scale(2)` : `scale(1)`,
+                transform: isHovering ? `scale(${zoomFactor})` : `scale(1)`,
                 transformOrigin: getTransformOrigin(),
                 transition: 'transform 0.2s ease',
                 cursor: 'default',
