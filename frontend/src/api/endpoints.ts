@@ -13,6 +13,7 @@ const endpoints = {
     CREATE_AGENT: '/api/create_agent',
     UPDATE_AGENT: (agent_id: string) => `/api/update_agent/${agent_id}`,
     DELETE_AGENT: (id: string) => `/api/delete_agent?id=${id}`,
+    AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',

@@ -36,15 +36,7 @@ type MessageInputProps = {
   loading: boolean;
   showSourceButton?: boolean;
   showToolButton?: boolean;
-};
-
-type UploadState = {
-  taskId: string;
-  fileName: string;
-  progress: number;
-  attachment_id?: string;
-  token_count?: number;
-  status: 'uploading' | 'processing' | 'completed' | 'failed';
+  autoFocus?: boolean;
 };
 
 export default function MessageInput({
@@ -54,6 +46,7 @@ export default function MessageInput({
   loading,
   showSourceButton = true,
   showToolButton = true,
+  autoFocus = true,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
@@ -235,7 +228,7 @@ export default function MessageInput({
   };
 
   useEffect(() => {
-    inputRef.current?.focus();
+    if (autoFocus) inputRef.current?.focus();
     handleInput();
   }, []);
 

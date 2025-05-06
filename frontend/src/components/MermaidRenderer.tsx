@@ -261,7 +261,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           mermaid
         </span>
         <div className="flex items-center gap-2">
-          <CopyButton text={String(code).replace(/\n$/, '')} />
+          <CopyButton textToCopy={String(code).replace(/\n$/, '')} />
 
           {showDiagramOptions && (
             <div className="relative" ref={downloadMenuRef}>

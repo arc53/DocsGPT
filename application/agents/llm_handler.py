@@ -15,95 +15,86 @@ class LLMHandler(ABC):
     @abstractmethod
     def handle_response(self, agent, resp, tools_dict, messages, attachments=None, **kwargs):
         pass
-    
+
     def prepare_messages_with_attachments(self, agent, messages, attachments=None):
         """
         Prepare messages with attachment content if available.
-        
+
         Args:
             agent: The current agent instance.
             messages (list): List of message dictionaries.
             attachments (list): List of attachment dictionaries with content.
-            
+
         Returns:
             list: Messages with attachment context added to the system prompt.
         """
         if not attachments:
             return messages
-        
+
         logger.info(f"Preparing messages with {len(attachments)} attachments")
-        
+
         supported_types = agent.llm.get_supported_attachment_types()
-        
+
         supported_attachments = []
         unsupported_attachments = []
-        
+
         for attachment in attachments:
             mime_type = attachment.get('mime_type')
-            if not mime_type:
-                import mimetypes
-                file_path = attachment.get('path')
-                if file_path:
-                    mime_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
-                else:
-                    unsupported_attachments.append(attachment)
-                    continue
-            
             if mime_type in supported_types:
                 supported_attachments.append(attachment)
             else:
                 unsupported_attachments.append(attachment)
-        
+
         # Process supported attachments with the LLM's custom method
         prepared_messages = messages
         if supported_attachments:
             logger.info(f"Processing {len(supported_attachments)} supported attachments with {agent.llm.__class__.__name__}'s method")
             prepared_messages = agent.llm.prepare_messages_with_attachments(messages, supported_attachments)
-        
+
         # Process unsupported attachments with the default method
         if unsupported_attachments:
             logger.info(f"Processing {len(unsupported_attachments)} unsupported attachments with default method")
             prepared_messages = self._append_attachment_content_to_system(prepared_messages, unsupported_attachments)
-            
+
         return prepared_messages
-    
+
     def _append_attachment_content_to_system(self, messages, attachments):
         """
         Default method to append attachment content to the system prompt.
-        
+
         Args:
             messages (list): List of message dictionaries.
             attachments (list): List of attachment dictionaries with content.
-            
+
         Returns:
             list: Messages with attachment context added to the system prompt.
         """
         prepared_messages = messages.copy()
-        
+
         attachment_texts = []
         for attachment in attachments:
             logger.info(f"Adding attachment {attachment.get('id')} to context")
             if 'content' in attachment:
                 attachment_texts.append(f"Attached file content:\n\n{attachment['content']}")
-        
+
         if attachment_texts:
             combined_attachment_text = "\n\n".join(attachment_texts)
-            
+
             system_found = False
             for i in range(len(prepared_messages)):
                 if prepared_messages[i].get("role") == "system":
                     prepared_messages[i]["content"] += f"\n\n{combined_attachment_text}"
                     system_found = True
                     break
-            
+
             if not system_found:
                 prepared_messages.insert(0, {"role": "system", "content": combined_attachment_text})
-        
+
         return prepared_messages
 
 class OpenAILLMHandler(LLMHandler):
     def handle_response(self, agent, resp, tools_dict, messages, attachments=None, stream: bool = True):
-        
+
         messages = self.prepare_messages_with_attachments(agent, messages, attachments)
         logger.info(f"Messages with attachments: {messages}")
         if not stream:
@@ -146,6 +137,7 @@ class OpenAILLMHandler(LLMHandler):
 
                         messages = self.prepare_messages_with_attachments(agent, messages, attachments)
                     except Exception as e:
+                        logging.error(f"Error executing tool: {str(e)}", exc_info=True)
                         messages.append(
                             {
                                 "role": "tool",
@@ -167,7 +159,7 @@ class OpenAILLMHandler(LLMHandler):
                     if isinstance(chunk, str) and len(chunk) > 0:
                         yield chunk
                         continue
-                    elif hasattr(chunk, "delta"): 
+                    elif hasattr(chunk, "delta"):
                         chunk_delta = chunk.delta
 
                         if (
@@ -238,6 +230,7 @@ class OpenAILLMHandler(LLMHandler):
                                     )
 
                                 except Exception as e:
+                                    logging.error(f"Error executing tool: {str(e)}", exc_info=True)
                                     messages.append(
                                         {
                                             "role": "assistant",
@@ -258,7 +251,7 @@ class OpenAILLMHandler(LLMHandler):
                             return resp
                     elif isinstance(chunk, str) and len(chunk) == 0:
                             continue
-                
+
                 logger.info(f"Regenerating with messages: {messages}")
                 resp = agent.llm.gen_stream(
                     model=agent.gpt_model, messages=messages, tools=agent.tools
@@ -269,9 +262,9 @@ class OpenAILLMHandler(LLMHandler):
 class GoogleLLMHandler(LLMHandler):
     def handle_response(self, agent, resp, tools_dict, messages, attachments=None, stream: bool = True):
         from google.genai import types
-        
+
         messages = self.prepare_messages_with_attachments(agent, messages, attachments)
-        
+
         while True:
             if not stream:
                 response = agent.llm.gen(

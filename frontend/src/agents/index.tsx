@@ -12,7 +12,13 @@ import ThreeDots from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
-import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
+import {
+  selectToken,
+  setSelectedAgent,
+  setAgents,
+  selectAgents,
+  selectSelectedAgent,
+} from '../preferences/preferenceSlice';
 import AgentLogs from './AgentLogs';
 import NewAgent from './NewAgent';
 import { Agent } from './types';
@@ -31,9 +37,12 @@ export default function Agents() {
 
 function AgentsList() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
+  const agents = useSelector(selectAgents);
+  const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [userAgents, setUserAgents] = useState<Agent[]>([]);
+  const [userAgents, setUserAgents] = useState<Agent[]>(agents || []);
   const [loading, setLoading] = useState<boolean>(true);
 
   const getAgents = async () => {
@@ -43,6 +52,7 @@ function AgentsList() {
       if (!response.ok) throw new Error('Failed to fetch agents');
       const data = await response.json();
       setUserAgents(data);
+      dispatch(setAgents(data));
       setLoading(false);
     } catch (error) {
       console.error('Error:', error);
@@ -52,6 +62,7 @@ function AgentsList() {
 
   useEffect(() => {
     getAgents();
+    if (selectedAgent) dispatch(setSelectedAgent(null));
   }, [token]);
   return (
     <div className="p-4 md:p-12">
@@ -62,6 +73,7 @@ function AgentsList() {
         Discover and create custom versions of DocsGPT that combine
         instructions, extra knowledge, and any combination of skills.
       </p>
+      {/* Premade agents section */}
       {/* <div className="mt-6">
         <h2 className="text-[18px] font-semibold text-[#18181B] dark:text-[#E0E0E0]">
           Premade by DocsGPT
@@ -126,6 +138,7 @@ function AgentsList() {
               <AgentCard
                 key={agent.id}
                 agent={agent}
+                agents={userAgents}
                 setUserAgents={setUserAgents}
               />
             ))
@@ -148,9 +161,11 @@ function AgentsList() {
 
 function AgentCard({
   agent,
+  agents,
   setUserAgents,
 }: {
   agent: Agent;
+  agents: Agent[];
   setUserAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
 }) {
   const navigate = useNavigate();
@@ -200,8 +215,10 @@ function AgentCard({
   ];
 
   const handleClick = () => {
-    dispatch(setSelectedAgent(agent));
-    navigate(`/`);
+    if (agent.status === 'published') {
+      dispatch(setSelectedAgent(agent));
+      navigate(`/`);
+    }
   };
 
   const handleDelete = async (agentId: string) => {
@@ -211,11 +228,15 @@ function AgentCard({
     setUserAgents((prevAgents) =>
       prevAgents.filter((prevAgent) => prevAgent.id !== data.id),
     );
+    dispatch(setAgents(agents.filter((prevAgent) => prevAgent.id !== data.id)));
   };
   return (
     <div
-      className="relative flex h-44 w-48 cursor-pointer flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 dark:bg-[#383838]"
-      onClick={(e) => handleClick()}
+      className={`relative flex h-44 w-48 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] dark:bg-[#383838] hover:dark:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        handleClick();
+      }}
     >
       <div
         ref={menuRef}

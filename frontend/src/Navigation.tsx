@@ -44,6 +44,7 @@ import {
   setModalStateDeleteConv,
   setSelectedAgent,
   setAgents,
+  selectAgents,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
 
@@ -63,6 +64,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
+  const agents = useSelector(selectAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile } = useMediaQuery();
@@ -76,6 +78,31 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const navRef = useRef(null);
 
+  async function fetchRecentAgents() {
+    try {
+      let recentAgents: Agent[] = [];
+      if (!agents) {
+        const response = await userService.getAgents(token);
+        if (!response.ok) throw new Error('Failed to fetch agents');
+        const data: Agent[] = await response.json();
+        dispatch(setAgents(data));
+        recentAgents = data;
+      } else recentAgents = agents;
+      setRecentAgents(
+        recentAgents
+          .filter((agent: Agent) => agent.status === 'published')
+          .sort(
+            (a: Agent, b: Agent) =>
+              new Date(b.last_used_at ?? 0).getTime() -
+              new Date(a.last_used_at ?? 0).getTime(),
+          )
+          .slice(0, 3),
+      );
+    } catch (error) {
+      console.error('Failed to fetch recent agents: ', error);
+    }
+  }
+
   async function fetchConversations() {
     dispatch(setConversations({ ...conversations, loading: true }));
     return await getConversations(token)
@@ -88,25 +115,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       });
   }
 
-  async function getAgents() {
-    const response = await userService.getAgents(token);
-    if (!response.ok) throw new Error('Failed to fetch agents');
-    const data: Agent[] = await response.json();
-    dispatch(setAgents(data));
-    setRecentAgents(
-      data
-        .filter((agent: Agent) => agent.status === 'published')
-        .sort(
-          (a: Agent, b: Agent) =>
-            new Date(b.last_used_at ?? 0).getTime() -
-            new Date(a.last_used_at ?? 0).getTime(),
-        )
-        .slice(0, 3),
-    );
-  }
+  useEffect(() => {
+    if (token) fetchRecentAgents();
+  }, [agents, token, dispatch]);
 
   useEffect(() => {
-    if (recentAgents.length === 0) getAgents();
     if (!conversations?.data) fetchConversations();
     if (queries.length === 0) resetConversation();
   }, [conversations?.data, dispatch]);

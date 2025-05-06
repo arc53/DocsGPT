@@ -38,9 +38,12 @@ export default function Hero({
                 <button
                   key={key}
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className="w-full rounded-[66px] border bg-transparent px-6 py-[14px] text-left transition-colors
+                  className={`
+                    w-full rounded-[66px] border bg-transparent px-6 py-[14px] text-left transition-colors
                     border-dark-gray text-just-black hover:bg-cultured
-                    dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green"
+                    dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green
+                    ${key >= 2 ? 'hidden md:block' : ''} // Show only 2 buttons on mobile
+                  `}
                 >
                   <p className="mb-2 font-semibold text-black-1000 dark:text-bright-gray">
                     {demo.header}

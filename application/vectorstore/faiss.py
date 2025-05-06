@@ -1,17 +1,19 @@
 import os
+import tempfile
 
 from langchain_community.vectorstores import FAISS
 
 from application.core.settings import settings
 from application.parser.schema.base import Document
 from application.vectorstore.base import BaseVectorStore
+from application.storage.storage_creator import StorageCreator
 
 
 def get_vectorstore(path: str) -> str:
     if path:
-        vectorstore = os.path.join("application", "indexes", path)
+        vectorstore = f"indexes/{path}"
     else:
-        vectorstore = os.path.join("application")
+        vectorstore = "indexes"
     return vectorstore
 
 
@@ -21,16 +23,36 @@ class FaissStore(BaseVectorStore):
         self.source_id = source_id
         self.path = get_vectorstore(source_id)
         self.embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
+        self.storage = StorageCreator.get_storage()
 
         try:
             if docs_init:
                 self.docsearch = FAISS.from_documents(docs_init, self.embeddings)
             else:
-                self.docsearch = FAISS.load_local(
-                    self.path, self.embeddings, allow_dangerous_deserialization=True
-                )
-        except Exception:
-            raise
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    faiss_path = f"{self.path}/index.faiss"
+                    pkl_path = f"{self.path}/index.pkl"
+                    
+                    if not self.storage.file_exists(faiss_path) or not self.storage.file_exists(pkl_path):
+                        raise FileNotFoundError(f"Index files not found in storage at {self.path}")
+                    
+                    faiss_file = self.storage.get_file(faiss_path)
+                    pkl_file = self.storage.get_file(pkl_path)
+                    
+                    local_faiss_path = os.path.join(temp_dir, "index.faiss")
+                    local_pkl_path = os.path.join(temp_dir, "index.pkl")
+                    
+                    with open(local_faiss_path, 'wb') as f:
+                        f.write(faiss_file.read())
+                    
+                    with open(local_pkl_path, 'wb') as f:
+                        f.write(pkl_file.read())
+                    
+                    self.docsearch = FAISS.load_local(
+                        temp_dir, self.embeddings, allow_dangerous_deserialization=True
+                    )
+        except Exception as e:
+            raise Exception(f"Error loading FAISS index: {str(e)}")
 
         self.assert_embedding_dimensions(self.embeddings)
 

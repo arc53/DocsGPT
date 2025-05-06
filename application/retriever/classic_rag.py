@@ -1,3 +1,4 @@
+import logging
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
@@ -72,7 +73,7 @@ class ClassicRAG(BaseRetriever):
             print(f"Rephrased query: {rephrased_query}")
             return rephrased_query if rephrased_query else self.original_question
         except Exception as e:
-            print(f"Error rephrasing query: {e}")
+            logging.error(f"Error rephrasing query: {e}", exc_info=True)
             return self.original_question
 
     def _get_data(self):

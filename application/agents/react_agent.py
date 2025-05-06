@@ -82,6 +82,10 @@ class ReActAgent(BaseAgent):
                 if isinstance(line, str):
                     self.observations.append(line)
 
+        log_context.stacks.append(
+            {"component": "agent", "data": {"tool_calls": self.tool_calls.copy()}}
+        )
+
         yield {"sources": retrieved_data}
         yield {"tool_calls": self.tool_calls.copy()}
 

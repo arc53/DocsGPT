@@ -2,8 +2,10 @@ import datetime
 import json
 import math
 import os
+import secrets
 import shutil
 import uuid
+from functools import wraps
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -14,7 +16,12 @@ from werkzeug.utils import secure_filename
 
 from application.agents.tools.tool_manager import ToolManager
 
-from application.api.user.tasks import ingest, ingest_remote, store_attachment
+from application.api.user.tasks import (
+    ingest,
+    ingest_remote,
+    process_agent_webhook,
+    store_attachment,
+)
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
@@ -23,7 +30,7 @@ from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
@@ -103,7 +110,7 @@ class DeleteConversation(Resource):
                 {"_id": ObjectId(conversation_id), "user": decoded_token["sub"]}
             )
         except Exception as err:
-            current_app.logger.error(f"Error deleting conversation: {err}")
+            current_app.logger.error(f"Error deleting conversation: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -121,7 +128,7 @@ class DeleteAllConversations(Resource):
         try:
             conversations_collection.delete_many({"user": user_id})
         except Exception as err:
-            current_app.logger.error(f"Error deleting all conversations: {err}")
+            current_app.logger.error(f"Error deleting all conversations: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -159,7 +166,7 @@ class GetConversations(Resource):
                 for conversation in conversations
             ]
         except Exception as err:
-            current_app.logger.error(f"Error retrieving conversations: {err}")
+            current_app.logger.error(f"Error retrieving conversations: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_conversations), 200)
 
@@ -187,7 +194,7 @@ class GetSingleConversation(Resource):
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
         except Exception as err:
-            current_app.logger.error(f"Error retrieving conversation: {err}")
+            current_app.logger.error(f"Error retrieving conversation: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         data = {
@@ -229,7 +236,7 @@ class UpdateConversationName(Resource):
                 {"$set": {"name": data["name"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating conversation name: {err}")
+            current_app.logger.error(f"Error updating conversation name: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -307,7 +314,7 @@ class SubmitFeedback(Resource):
                 )
 
         except Exception as err:
-            current_app.logger.error(f"Error submitting feedback: {err}")
+            current_app.logger.error(f"Error submitting feedback: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -331,7 +338,7 @@ class DeleteByIds(Resource):
             if result:
                 return make_response(jsonify({"success": True}), 200)
         except Exception as err:
-            current_app.logger.error(f"Error deleting indexes: {err}")
+            current_app.logger.error(f"Error deleting indexes: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": False}), 400)
@@ -370,7 +377,7 @@ class DeleteOldIndexes(Resource):
         except FileNotFoundError:
             pass
         except Exception as err:
-            current_app.logger.error(f"Error deleting old indexes: {err}")
+            current_app.logger.error(f"Error deleting old indexes: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         sources_collection.delete_one({"_id": ObjectId(source_id)})
@@ -413,53 +420,105 @@ class UploadFile(Resource):
 
         user = secure_filename(decoded_token.get("sub"))
         job_name = secure_filename(request.form["name"])
+
         try:
-            save_dir = os.path.join(current_dir, settings.UPLOAD_FOLDER, user, job_name)
-            os.makedirs(save_dir, exist_ok=True)
+            from application.storage.storage_creator import StorageCreator
+
+            storage = StorageCreator.get_storage()
+
+            base_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}"
 
             if len(files) > 1:
-                temp_dir = os.path.join(save_dir, "temp")
-                os.makedirs(temp_dir, exist_ok=True)
-
+                temp_files = []
                 for file in files:
                     filename = secure_filename(file.filename)
-                    file.save(os.path.join(temp_dir, filename))
+                    temp_path = f"{base_path}/temp/{filename}"
+                    storage.save_file(file, temp_path)
+                    temp_files.append(temp_path)
                     print(f"Saved file: {filename}")
-                zip_path = shutil.make_archive(
-                    base_name=os.path.join(save_dir, job_name),
-                    format="zip",
-                    root_dir=temp_dir,
-                )
-                final_filename = os.path.basename(zip_path)
-                shutil.rmtree(temp_dir)
-                task = ingest.delay(
-                    settings.UPLOAD_FOLDER,
-                    [
-                        ".rst",
-                        ".md",
-                        ".pdf",
-                        ".txt",
-                        ".docx",
-                        ".csv",
-                        ".epub",
-                        ".html",
-                        ".mdx",
-                        ".json",
-                        ".xlsx",
-                        ".pptx",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                    ],
-                    job_name,
-                    final_filename,
-                    user,
-                )
-            else:
+
+                zip_filename = f"{job_name}.zip"
+                zip_path = f"{base_path}/{zip_filename}"
+                zip_temp_path = None
+
+                def create_zip_archive(temp_paths, job_name, storage):
+                    import tempfile
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip_file:
+                        zip_output_path = temp_zip_file.name
+
+                    with tempfile.TemporaryDirectory() as stage_dir:
+                        for path in temp_paths:
+                            try:
+                                file_data = storage.get_file(path)
+                                with open(os.path.join(stage_dir, os.path.basename(path)), "wb") as f:
+                                    f.write(file_data.read())
+                            except Exception as e:
+                                current_app.logger.error(f"Error processing file {path} for zipping: {e}", exc_info=True)
+                                if os.path.exists(zip_output_path):
+                                    os.remove(zip_output_path)
+                                raise
+                        try:
+                            shutil.make_archive(
+                                base_name=zip_output_path.replace(".zip", ""),
+                                format="zip",
+                                root_dir=stage_dir,
+                            )
+                        except Exception as e:
+                            current_app.logger.error(f"Error creating zip archive: {e}", exc_info=True)
+                            if os.path.exists(zip_output_path):
+                                os.remove(zip_output_path)
+                            raise
+
+                    return zip_output_path
+
+                try:
+                    zip_temp_path = create_zip_archive(temp_files, job_name, storage)
+                    with open(zip_temp_path, "rb") as zip_file:
+                        storage.save_file(zip_file, zip_path)
+
+                    task = ingest.delay(
+                        settings.UPLOAD_FOLDER,
+                        [
+                            ".rst",
+                            ".md",
+                            ".pdf",
+                            ".txt",
+                            ".docx",
+                            ".csv",
+                            ".epub",
+                            ".html",
+                            ".mdx",
+                            ".json",
+                            ".xlsx",
+                            ".pptx",
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                        ],
+                        job_name,
+                        zip_filename,
+                        user,
+                    )
+                finally:
+                    # Clean up temporary files
+                    for temp_path in temp_files:
+                        try:
+                            storage.delete_file(temp_path)
+                        except Exception as e:
+                            current_app.logger.error(f"Error deleting temporary file {temp_path}: {e}", exc_info=True)
+
+                    # Clean up the zip file if it was created
+                    if zip_temp_path and os.path.exists(zip_temp_path):
+                        os.remove(zip_temp_path)
+
+            else: # Keep this else block for single file upload
+                # For single file
                 file = files[0]
-                final_filename = secure_filename(file.filename)
-                file_path = os.path.join(save_dir, final_filename)
-                file.save(file_path)
+                filename = secure_filename(file.filename)
+                file_path = f"{base_path}/{filename}"
+
+                storage.save_file(file, file_path)
 
                 task = ingest.delay(
                     settings.UPLOAD_FOLDER,
@@ -481,13 +540,14 @@ class UploadFile(Resource):
                         ".jpeg",
                     ],
                     job_name,
-                    final_filename,
+                    filename, # Corrected variable for single-file case
                     user,
                 )
 
         except Exception as err:
-            current_app.logger.error(f"Error uploading file: {err}")
+            current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
+
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -538,7 +598,7 @@ class UploadRemote(Resource):
                 loader=data["source"],
             )
         except Exception as err:
-            current_app.logger.error(f"Error uploading remote source: {err}")
+            current_app.logger.error(f"Error uploading remote source: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
@@ -571,7 +631,7 @@ class TaskStatus(Resource):
             ):
                 task_meta = str(task_meta)  # Convert to a string representation
         except Exception as err:
-            current_app.logger.error(f"Error getting task status: {err}")
+            current_app.logger.error(f"Error getting task status: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"status": task.status, "result": task_meta}), 200)
@@ -650,7 +710,7 @@ class PaginatedSources(Resource):
             return make_response(jsonify(response), 200)
 
         except Exception as err:
-            current_app.logger.error(f"Error retrieving paginated sources: {err}")
+            current_app.logger.error(f"Error retrieving paginated sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -714,7 +774,7 @@ class CombinedJson(Resource):
                 )
 
         except Exception as err:
-            current_app.logger.error(f"Error retrieving sources: {err}")
+            current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(data), 200)
@@ -741,7 +801,7 @@ class CheckDocs(Resource):
             if os.path.exists(vectorstore) or data["docs"] == "default":
                 return {"status": "exists"}, 200
         except Exception as err:
-            current_app.logger.error(f"Error checking document: {err}")
+            current_app.logger.error(f"Error checking document: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"status": "not found"}), 404)
@@ -783,7 +843,7 @@ class CreatePrompt(Resource):
             )
             new_id = str(resp.inserted_id)
         except Exception as err:
-            current_app.logger.error(f"Error creating prompt: {err}")
+            current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id}), 200)
@@ -814,7 +874,7 @@ class GetPrompts(Resource):
                     }
                 )
         except Exception as err:
-            current_app.logger.error(f"Error retrieving prompts: {err}")
+            current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(list_prompts), 200)
@@ -862,7 +922,7 @@ class GetSinglePrompt(Resource):
                 {"_id": ObjectId(prompt_id), "user": user}
             )
         except Exception as err:
-            current_app.logger.error(f"Error retrieving prompt: {err}")
+            current_app.logger.error(f"Error retrieving prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"content": prompt["content"]}), 200)
@@ -891,7 +951,7 @@ class DeletePrompt(Resource):
         try:
             prompts_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
         except Exception as err:
-            current_app.logger.error(f"Error deleting prompt: {err}")
+            current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -929,7 +989,7 @@ class UpdatePrompt(Resource):
                 {"$set": {"name": data["name"], "content": data["content"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating prompt: {err}")
+            current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -958,12 +1018,8 @@ class GetAgent(Resource):
             data = {
                 "id": str(agent["_id"]),
                 "name": agent["name"],
-                "description": agent["description"],
-                "source": (
-                    str(db.dereference(agent["source"])["_id"])
-                    if "source" in agent and isinstance(agent["source"], DBRef)
-                    else ""
-                ),
+                "description": agent.get("description", ""),
+                "source": (str(source_doc["_id"]) if isinstance(agent.get("source"), DBRef) and (source_doc := db.dereference(agent.get("source"))) else ""),
                 "chunks": agent["chunks"],
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent["prompt_id"],
@@ -976,7 +1032,7 @@ class GetAgent(Resource):
                 "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
             }
         except Exception as err:
-            current_app.logger.error(f"Error retrieving agent: {err}")
+            current_app.logger.error(f"Error retrieving agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify(data), 200)
@@ -996,12 +1052,8 @@ class GetAgents(Resource):
                 {
                     "id": str(agent["_id"]),
                     "name": agent["name"],
-                    "description": agent["description"],
-                    "source": (
-                        str(db.dereference(agent["source"])["_id"])
-                        if "source" in agent and isinstance(agent["source"], DBRef)
-                        else ""
-                    ),
+                    "description": agent.get("description", ""),
+                    "source": (str(source_doc["_id"]) if isinstance(agent.get("source"), DBRef) and (source_doc := db.dereference(agent.get("source"))) else ""),
                     "chunks": agent["chunks"],
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent["prompt_id"],
@@ -1017,7 +1069,7 @@ class GetAgents(Resource):
                 if "source" in agent or "retriever" in agent
             ]
         except Exception as err:
-            current_app.logger.error(f"Error retrieving agents: {err}")
+            current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_agents), 200)
 
@@ -1106,7 +1158,7 @@ class CreateAgent(Resource):
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
         except Exception as err:
-            current_app.logger.error(f"Error creating agent: {err}")
+            current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id, "key": key}), 201)
@@ -1157,7 +1209,7 @@ class UpdateAgent(Resource):
             existing_agent = agents_collection.find_one({"_id": oid, "user": user})
         except Exception as err:
             return make_response(
-                current_app.logger.error(f"Error finding agent {agent_id}: {err}"),
+                current_app.logger.error(f"Error finding agent {agent_id}: {err}", exc_info=True),
                 jsonify({"success": False, "message": "Database error finding agent"}),
                 500,
             )
@@ -1280,7 +1332,7 @@ class UpdateAgent(Resource):
                 )
 
         except Exception as err:
-            current_app.logger.error(f"Error updating agent {agent_id}: {err}")
+            current_app.logger.error(f"Error updating agent {agent_id}: {err}", exc_info=True)
             return make_response(
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
@@ -1323,10 +1375,141 @@ class DeleteAgent(Resource):
             deleted_id = str(deleted_agent["_id"])
 
         except Exception as err:
-            current_app.logger.error(f"Error deleting agent: {err}")
+            current_app.logger.error(f"Error deleting agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": deleted_id}), 200)
+
+
+@user_ns.route("/api/agent_webhook")
+class AgentWebhook(Resource):
+    @api.doc(
+        params={"id": "ID of the agent"},
+        description="Generate webhook URL for the agent",
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        try:
+            agent = agents_collection.find_one(
+                {"_id": ObjectId(agent_id), "user": user}
+            )
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Agent not found"}), 404
+                )
+
+            webhook_token = agent.get("incoming_webhook_token")
+            if not webhook_token:
+                webhook_token = secrets.token_urlsafe(32)
+                agents_collection.update_one(
+                    {"_id": ObjectId(agent_id), "user": user},
+                    {"$set": {"incoming_webhook_token": webhook_token}},
+                )
+            base_url = settings.API_URL.rstrip("/")
+            full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
+
+        except Exception as err:
+            current_app.logger.error(f"Error generating webhook URL: {err}", exc_info=True)
+            return make_response(
+                jsonify({"success": False, "message": "Error generating webhook URL"}),
+                400,
+            )
+        return make_response(
+            jsonify({"success": True, "webhook_url": full_webhook_url}), 200
+        )
+
+
+def require_agent(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        webhook_token = kwargs.get("webhook_token")
+        if not webhook_token:
+            return make_response(
+                jsonify({"success": False, "message": "Webhook token missing"}), 400
+            )
+
+        agent = agents_collection.find_one(
+            {"incoming_webhook_token": webhook_token}, {"_id": 1}
+        )
+        if not agent:
+            current_app.logger.warning(
+                f"Webhook attempt with invalid token: {webhook_token}"
+            )
+            return make_response(
+                jsonify({"success": False, "message": "Agent not found"}), 404
+            )
+
+        kwargs["agent"] = agent
+        kwargs["agent_id_str"] = str(agent["_id"])
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+@user_ns.route("/api/webhooks/agents/<string:webhook_token>")
+class AgentWebhookListener(Resource):
+    method_decorators = [require_agent]
+
+    def _enqueue_webhook_task(self, agent_id_str, payload, source_method):
+        if not payload:
+            current_app.logger.warning(
+                f"Webhook ({source_method}) received for agent {agent_id_str} with empty payload."
+            )
+
+        current_app.logger.info(
+            f"Incoming {source_method} webhook for agent {agent_id_str}. Enqueuing task with payload: {payload}"
+        )
+
+        try:
+            task = process_agent_webhook.delay(
+                agent_id=agent_id_str,
+                payload=payload,
+            )
+            current_app.logger.info(
+                f"Task {task.id} enqueued for agent {agent_id_str} ({source_method})."
+            )
+            return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error enqueuing webhook task ({source_method}) for agent {agent_id_str}: {err}",
+                exc_info=True,
+            )
+            return make_response(
+                jsonify({"success": False, "message": "Error processing webhook"}), 500
+            )
+
+    @api.doc(
+        description="Webhook listener for agent events (POST). Expects JSON payload, which is used to trigger processing.",
+    )
+    def post(self, webhook_token, agent, agent_id_str):
+        payload = request.get_json()
+        if payload is None:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Invalid or missing JSON data in request body",
+                    }
+                ),
+                400,
+            )
+        return self._enqueue_webhook_task(agent_id_str, payload, source_method="POST")
+
+    @api.doc(
+        description="Webhook listener for agent events (GET). Uses URL query parameters as payload to trigger processing.",
+    )
+    def get(self, webhook_token, agent, agent_id_str):
+        payload = request.args.to_dict(flat=True)
+        return self._enqueue_webhook_task(agent_id_str, payload, source_method="GET")
 
 
 @user_ns.route("/api/share")
@@ -1524,7 +1707,7 @@ class ShareConversation(Resource):
                     201,
                 )
         except Exception as err:
-            current_app.logger.error(f"Error sharing conversation: {err}")
+            current_app.logger.error(f"Error sharing conversation: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -1580,7 +1763,7 @@ class GetPubliclySharedConversations(Resource):
                 res["api_key"] = shared["api_key"]
             return make_response(jsonify(res), 200)
         except Exception as err:
-            current_app.logger.error(f"Error getting shared conversation: {err}")
+            current_app.logger.error(f"Error getting shared conversation: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -1625,7 +1808,7 @@ class GetMessageAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}")
+            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         end_date = datetime.datetime.now(datetime.timezone.utc)
@@ -1700,7 +1883,7 @@ class GetMessageAnalytics(Resource):
                 daily_messages[entry["_id"]] = entry["count"]
 
         except Exception as err:
-            current_app.logger.error(f"Error getting message analytics: {err}")
+            current_app.logger.error(f"Error getting message analytics: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(
@@ -1749,7 +1932,7 @@ class GetTokenAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}")
+            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         end_date = datetime.datetime.now(datetime.timezone.utc)
@@ -1859,7 +2042,7 @@ class GetTokenAnalytics(Resource):
                     daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
 
         except Exception as err:
-            current_app.logger.error(f"Error getting token analytics: {err}")
+            current_app.logger.error(f"Error getting token analytics: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(
@@ -1908,7 +2091,7 @@ class GetFeedbackAnalytics(Resource):
                 else None
             )
         except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}")
+            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         end_date = datetime.datetime.now(datetime.timezone.utc)
@@ -2024,7 +2207,7 @@ class GetFeedbackAnalytics(Resource):
                 }
 
         except Exception as err:
-            current_app.logger.error(f"Error getting feedback analytics: {err}")
+            current_app.logger.error(f"Error getting feedback analytics: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(
@@ -2071,7 +2254,7 @@ class GetUserLogs(Resource):
                 else None
             )
         except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}")
+            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         query = {"user": user}
@@ -2160,7 +2343,7 @@ class ManageSync(Resource):
                 update_data,
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating sync frequency: {err}")
+            current_app.logger.error(f"Error updating sync frequency: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2196,7 +2379,7 @@ class TextToSpeech(Resource):
                 200,
             )
         except Exception as err:
-            current_app.logger.error(f"Error synthesizing audio: {err}")
+            current_app.logger.error(f"Error synthesizing audio: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -2221,7 +2404,7 @@ class AvailableTools(Resource):
                     }
                 )
         except Exception as err:
-            current_app.logger.error(f"Error getting available tools: {err}")
+            current_app.logger.error(f"Error getting available tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
@@ -2243,7 +2426,7 @@ class GetTools(Resource):
                 tool.pop("_id")
                 user_tools.append(tool)
         except Exception as err:
-            current_app.logger.error(f"Error getting user tools: {err}")
+            current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "tools": user_tools}), 200)
@@ -2319,7 +2502,7 @@ class CreateTool(Resource):
             resp = user_tools_collection.insert_one(new_tool)
             new_id = str(resp.inserted_id)
         except Exception as err:
-            current_app.logger.error(f"Error creating tool: {err}")
+            current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"id": new_id}), 200)
@@ -2388,7 +2571,7 @@ class UpdateTool(Resource):
                 {"$set": update_data},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool: {err}")
+            current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2425,7 +2608,7 @@ class UpdateToolConfig(Resource):
                 {"$set": {"config": data["config"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool config: {err}")
+            current_app.logger.error(f"Error updating tool config: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2464,7 +2647,7 @@ class UpdateToolActions(Resource):
                 {"$set": {"actions": data["actions"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool actions: {err}")
+            current_app.logger.error(f"Error updating tool actions: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2501,7 +2684,7 @@ class UpdateToolStatus(Resource):
                 {"$set": {"status": data["status"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool status: {err}")
+            current_app.logger.error(f"Error updating tool status: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2534,7 +2717,7 @@ class DeleteTool(Resource):
             if result.deleted_count == 0:
                 return {"success": False, "message": "Tool not found"}, 404
         except Exception as err:
-            current_app.logger.error(f"Error deleting tool: {err}")
+            current_app.logger.error(f"Error deleting tool: {err}", exc_info=True)
             return {"success": False}, 400
 
         return {"success": True}, 200
@@ -2585,7 +2768,7 @@ class GetChunks(Resource):
             )
 
         except Exception as e:
-            current_app.logger.error(f"Error getting chunks: {e}")
+            current_app.logger.error(f"Error getting chunks: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2639,7 +2822,7 @@ class AddChunk(Resource):
                 201,
             )
         except Exception as e:
-            current_app.logger.error(f"Error adding chunk: {e}")
+            current_app.logger.error(f"Error adding chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2679,7 +2862,7 @@ class DeleteChunk(Resource):
                     404,
                 )
         except Exception as e:
-            current_app.logger.error(f"Error deleting chunk: {e}")
+            current_app.logger.error(f"Error deleting chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2761,7 +2944,7 @@ class UpdateChunk(Resource):
                 200,
             )
         except Exception as e:
-            current_app.logger.error(f"Error updating chunk: {e}")
+            current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
 
 
@@ -2781,7 +2964,6 @@ class StoreAttachment(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
 
-        # Get single file instead of list
         file = request.files.get("file")
 
         if not file or file.filename == "":
@@ -2795,27 +2977,18 @@ class StoreAttachment(Resource):
         try:
             attachment_id = ObjectId()
             original_filename = secure_filename(file.filename)
+            relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
 
-            save_dir = os.path.join(
-                current_dir,
-                settings.UPLOAD_FOLDER,
-                user,
-                "attachments",
-                str(attachment_id),
-            )
-            os.makedirs(save_dir, exist_ok=True)
+            file_content = file.read()
 
-            file_path = os.path.join(save_dir, original_filename)
-
-            file.save(file_path)
             file_info = {
                 "filename": original_filename,
                 "attachment_id": str(attachment_id),
+                "path": relative_path,
+                "file_content": file_content,
             }
-            current_app.logger.info(f"Saved file: {file_path}")
 
-            # Start async task to process single file
-            task = store_attachment.delay(save_dir, file_info, user)
+            task = store_attachment.delay(file_info, user)
 
             return make_response(
                 jsonify(
@@ -2827,7 +3000,6 @@ class StoreAttachment(Resource):
                 ),
                 200,
             )
-
         except Exception as err:
-            current_app.logger.error(f"Error storing attachment: {err}")
+            current_app.logger.error(f"Error storing attachment: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": str(err)}), 400)

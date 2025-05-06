@@ -10,6 +10,7 @@ from application.core.mongo_db import MongoDB
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 from application.retriever.base import BaseRetriever
+from application.core.settings import settings
 from bson.objectid import ObjectId
 
 
@@ -61,7 +62,7 @@ class BaseAgent(ABC):
 
     def _get_tools(self, api_key: str = None) -> Dict[str, Dict]:
         mongo = MongoDB.get_client()
-        db = mongo["docsgpt"]
+        db = mongo[settings.MONGO_DB_NAME]
         agents_collection = db["agents"]
         tools_collection = db["user_tools"]
 
@@ -82,7 +83,7 @@ class BaseAgent(ABC):
 
     def _get_user_tools(self, user="local"):
         mongo = MongoDB.get_client()
-        db = mongo["docsgpt"]
+        db = mongo[settings.MONGO_DB_NAME]
         user_tools_collection = db["user_tools"]
         user_tools = user_tools_collection.find({"user": user, "status": True})
         user_tools = list(user_tools)
@@ -255,7 +256,7 @@ class BaseAgent(ABC):
             model=self.gpt_model, messages=messages, tools=self.tools
         )
         if log_context:
-            data = build_stack_data(self.llm)
+            data = build_stack_data(self.llm, exclude_attributes=["client"])
             log_context.stacks.append({"component": "llm", "data": data})
         return resp
 
@@ -271,6 +272,6 @@ class BaseAgent(ABC):
             self, resp, tools_dict, messages, attachments
         )
         if log_context:
-            data = build_stack_data(self.llm_handler)
+            data = build_stack_data(self.llm_handler, exclude_attributes=["tool_calls"])
             log_context.stacks.append({"component": "llm_handler", "data": data})
         return resp

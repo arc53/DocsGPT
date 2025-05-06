@@ -23,7 +23,7 @@ from application.utils import check_required_fields, limit_chat_history
 logger = logging.getLogger(__name__)
 
 mongo = MongoDB.get_client()
-db = mongo["docsgpt"]
+db = mongo[settings.MONGO_DB_NAME]
 conversations_collection = db["conversations"]
 sources_collection = db["sources"]
 prompts_collection = db["prompts"]
@@ -105,7 +105,7 @@ def get_agent_key(agent_id, user_id):
         raise Exception("Unauthorized access to the agent", 403)
 
     except Exception as e:
-        logger.error(f"Error in get_agent_key: {str(e)}")
+        logger.error(f"Error in get_agent_key: {str(e)}", exc_info=True)
         raise
 
 
@@ -351,8 +351,7 @@ def complete_stream(
         data = json.dumps({"type": "end"})
         yield f"data: {data}\n\n"
     except Exception as e:
-        logger.error(f"Error in stream: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in stream: {str(e)}", exc_info=True)
         data = json.dumps(
             {
                 "type": "error",
@@ -882,6 +881,6 @@ def get_attachments_content(attachment_ids, user):
             if attachment_doc:
                 attachments.append(attachment_doc)
         except Exception as e:
-            logger.error(f"Error retrieving attachment {attachment_id}: {e}")
+            logger.error(f"Error retrieving attachment {attachment_id}: {e}", exc_info=True)
 
     return attachments
