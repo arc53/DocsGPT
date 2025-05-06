@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, useCallback } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import ArrowDown from '../assets/arrow-down.svg';
@@ -38,7 +38,7 @@ export default function ConversationMessages({
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
-  const atLast = useRef(true);
+  const [atLast,setAtLast] = useState(true);
   const [eventInterrupt, setEventInterrupt] = useState(false);
 
   const handleUserInterruption = () => {
@@ -47,12 +47,11 @@ export default function ConversationMessages({
     }
   };
 
-  // Remove Mermaid tracking code that was here
 
   const scrollIntoView = () => {
     if (!conversationRef?.current || eventInterrupt) return;
 
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       if (!conversationRef?.current) return;
 
       if (status === 'idle' || !queries[queries.length - 1]?.response) {
@@ -63,14 +62,14 @@ export default function ConversationMessages({
       } else {
         conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
       }
-    }, 100); // Small timeout to allow images to render
+    });
   };
 
   const checkScroll = () => {
     const el = conversationRef.current;
     if (!el) return;
     const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
-    atLast.current = isBottom;
+    setAtLast(isBottom);
   };
 
   useEffect(() => {
@@ -151,9 +150,9 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex justify-center w-full overflow-y-auto h-full sm:pt-12"
+      className="flex justify-center w-full overflow-y-auto h-full sm:pt-12 will-change-scroll"
     >
-      {queries.length > 0 && !atLast.current && (
+      {queries.length > 0 && !atLast && (
         <button
           onClick={scrollIntoView}
           aria-label="scroll to bottom"
