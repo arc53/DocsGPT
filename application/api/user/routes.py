@@ -439,59 +439,80 @@ class UploadFile(Resource):
 
                 zip_filename = f"{job_name}.zip"
                 zip_path = f"{base_path}/{zip_filename}"
+                zip_temp_path = None
 
-                def create_zip_archive(temp_paths, **kwargs):
+                def create_zip_archive(temp_paths, job_name, storage):
                     import tempfile
 
-                    with tempfile.TemporaryDirectory() as temp_dir:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip_file:
+                        zip_output_path = temp_zip_file.name
+
+                    with tempfile.TemporaryDirectory() as stage_dir:
                         for path in temp_paths:
-                            file_data = storage.get_file(path)
-                            with open(
-                                os.path.join(temp_dir, os.path.basename(path)), "wb"
-                            ) as f:
-                                f.write(file_data.read())
+                            try:
+                                file_data = storage.get_file(path)
+                                with open(os.path.join(stage_dir, os.path.basename(path)), "wb") as f:
+                                    f.write(file_data.read())
+                            except Exception as e:
+                                current_app.logger.error(f"Error processing file {path} for zipping: {e}", exc_info=True)
+                                if os.path.exists(zip_output_path):
+                                    os.remove(zip_output_path)
+                                raise
+                        try:
+                            shutil.make_archive(
+                                base_name=zip_output_path.replace(".zip", ""),
+                                format="zip",
+                                root_dir=stage_dir,
+                            )
+                        except Exception as e:
+                            current_app.logger.error(f"Error creating zip archive: {e}", exc_info=True)
+                            if os.path.exists(zip_output_path):
+                                os.remove(zip_output_path)
+                            raise
 
-                        # Create zip archive
-                        zip_temp = shutil.make_archive(
-                            base_name=os.path.join(temp_dir, job_name),
-                            format="zip",
-                            root_dir=temp_dir,
-                        )
+                    return zip_output_path
 
-                        return zip_temp
+                try:
+                    zip_temp_path = create_zip_archive(temp_files, job_name, storage)
+                    with open(zip_temp_path, "rb") as zip_file:
+                        storage.save_file(zip_file, zip_path)
 
-                zip_temp_path = create_zip_archive(temp_files)
-                with open(zip_temp_path, "rb") as zip_file:
-                    storage.save_file(zip_file, zip_path)
+                    task = ingest.delay(
+                        settings.UPLOAD_FOLDER,
+                        [
+                            ".rst",
+                            ".md",
+                            ".pdf",
+                            ".txt",
+                            ".docx",
+                            ".csv",
+                            ".epub",
+                            ".html",
+                            ".mdx",
+                            ".json",
+                            ".xlsx",
+                            ".pptx",
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                        ],
+                        job_name,
+                        zip_filename,
+                        user,
+                    )
+                finally:
+                    # Clean up temporary files
+                    for temp_path in temp_files:
+                        try:
+                            storage.delete_file(temp_path)
+                        except Exception as e:
+                            current_app.logger.error(f"Error deleting temporary file {temp_path}: {e}", exc_info=True)
 
-                # Clean up temp files
-                for temp_path in temp_files:
-                    storage.delete_file(temp_path)
+                    # Clean up the zip file if it was created
+                    if zip_temp_path and os.path.exists(zip_temp_path):
+                        os.remove(zip_temp_path)
 
-                task = ingest.delay(
-                    settings.UPLOAD_FOLDER,
-                    [
-                        ".rst",
-                        ".md",
-                        ".pdf",
-                        ".txt",
-                        ".docx",
-                        ".csv",
-                        ".epub",
-                        ".html",
-                        ".mdx",
-                        ".json",
-                        ".xlsx",
-                        ".pptx",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                    ],
-                    job_name,
-                    zip_filename,
-                    user,
-                )
-            else:
+            else: # Keep this else block for single file upload
                 # For single file
                 file = files[0]
                 filename = secure_filename(file.filename)
@@ -519,7 +540,7 @@ class UploadFile(Resource):
                         ".jpeg",
                     ],
                     job_name,
-                    filename,
+                    filename, # Corrected variable for single-file case
                     user,
                 )
 
