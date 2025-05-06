@@ -997,12 +997,8 @@ class GetAgent(Resource):
             data = {
                 "id": str(agent["_id"]),
                 "name": agent["name"],
-                "description": agent["description"],
-                "source": (
-                    str(db.dereference(agent["source"])["_id"])
-                    if "source" in agent and isinstance(agent["source"], DBRef)
-                    else ""
-                ),
+                "description": agent.get("description", ""),
+                "source": (str(source_doc["_id"]) if isinstance(agent.get("source"), DBRef) and (source_doc := db.dereference(agent.get("source"))) else ""),
                 "chunks": agent["chunks"],
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent["prompt_id"],
@@ -1035,12 +1031,8 @@ class GetAgents(Resource):
                 {
                     "id": str(agent["_id"]),
                     "name": agent["name"],
-                    "description": agent["description"],
-                    "source": (
-                        str(db.dereference(agent["source"])["_id"])
-                        if "source" in agent and isinstance(agent["source"], DBRef)
-                        else ""
-                    ),
+                    "description": agent.get("description", ""),
+                    "source": (str(source_doc["_id"]) if isinstance(agent.get("source"), DBRef) and (source_doc := db.dereference(agent.get("source"))) else ""),
                     "chunks": agent["chunks"],
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent["prompt_id"],
