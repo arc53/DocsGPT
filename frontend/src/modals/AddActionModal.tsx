@@ -43,11 +43,11 @@ export default function AddActionModal({
       className="sm:w-[512px]"
     >
       <div>
-        <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
+        <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
           New Action
         </h2>
-        <div className="mt-6 relative px-3">
-          <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
+        <div className="relative mt-6 px-3">
+          <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
             Action Name
           </span>
           <Input
@@ -63,7 +63,7 @@ export default function AddActionModal({
             placeholder={'Enter name'}
           />
           <p
-            className={`mt-2 ml-1 text-xs italic ${
+            className={`ml-1 mt-2 text-xs italic ${
               functionNameError ? 'text-red-500' : 'text-gray-500'
             }`}
           >

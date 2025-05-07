@@ -3,7 +3,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Copy from '../assets/copy-linear.svg';
 import Edit from '../assets/edit.svg';
 import Monitoring from '../assets/monitoring.svg';
 import Trash from '../assets/red-trash.svg';

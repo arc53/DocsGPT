@@ -35,12 +35,12 @@ export default function ChunkModal({
       <div
         className={`${
           modalState === 'ACTIVE' ? 'visible' : 'hidden'
-        } fixed top-0 left-0 z-30  h-screen w-screen  bg-gray-alpha flex items-center justify-center`}
+        } fixed left-0 top-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha`}
       >
-        <article className="flex w-11/12 sm:w-[620px] flex-col gap-4 rounded-2xl bg-white shadow-lg dark:bg-[#26272E]">
+        <article className="flex w-11/12 flex-col gap-4 rounded-2xl bg-white shadow-lg dark:bg-[#26272E] sm:w-[620px]">
           <div className="relative">
             <button
-              className="absolute top-3 right-4 m-2 w-3"
+              className="absolute right-4 top-3 m-2 w-3"
               onClick={() => {
                 setModalState('INACTIVE');
               }}
@@ -48,11 +48,11 @@ export default function ChunkModal({
               <img className="filter dark:invert" src={Exit} />
             </button>
             <div className="p-6">
-              <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
+              <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
                 Add Chunk
               </h2>
-              <div className="mt-6 relative px-3">
-                <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
+              <div className="relative mt-6 px-3">
+                <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
                   Title
                 </span>
                 <Input
@@ -64,14 +64,14 @@ export default function ChunkModal({
                   labelBgClassName="bg-white dark:bg-charleston-green-2"
                 ></Input>
               </div>
-              <div className="mt-6 relative px-3">
-                <div className="pt-3 pb-1 border border-silver dark:border-silver/40 rounded-lg">
-                  <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver rounded-lg">
+              <div className="relative mt-6 px-3">
+                <div className="rounded-lg border border-silver pb-1 pt-3 dark:border-silver/40">
+                  <span className="absolute -top-2 left-5 rounded-lg bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
                     Body text
                   </span>
                   <textarea
                     id="chunk-body-text"
-                    className="h-60 w-full px-3 outline-none  dark:bg-transparent dark:text-white"
+                    className="h-60 w-full px-3 outline-none dark:bg-transparent dark:text-white"
                     value={chunkText}
                     onChange={(e) => setChunkText(e.target.value)}
                     aria-label="Prompt Text"
@@ -107,12 +107,12 @@ export default function ChunkModal({
       <div
         className={`${
           modalState === 'ACTIVE' ? 'visible' : 'hidden'
-        } fixed top-0 left-0 z-30  h-screen w-screen  bg-gray-alpha flex items-center justify-center`}
+        } fixed left-0 top-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha`}
       >
-        <article className="flex w-11/12 sm:w-[620px] flex-col gap-4 rounded-2xl bg-white shadow-lg dark:bg-[#26272E]">
+        <article className="flex w-11/12 flex-col gap-4 rounded-2xl bg-white shadow-lg dark:bg-[#26272E] sm:w-[620px]">
           <div className="relative">
             <button
-              className="absolute top-3 right-4 m-2 w-3"
+              className="absolute right-4 top-3 m-2 w-3"
               onClick={() => {
                 setModalState('INACTIVE');
               }}
@@ -120,10 +120,10 @@ export default function ChunkModal({
               <img className="filter dark:invert" src={Exit} />
             </button>
             <div className="p-6">
-              <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
+              <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
                 Edit Chunk
               </h2>
-              <div className="mt-6 relative px-3">
+              <div className="relative mt-6 px-3">
                 <Input
                   type="text"
                   value={title}
@@ -133,23 +133,23 @@ export default function ChunkModal({
                   labelBgClassName="bg-white dark:bg-charleston-green-2"
                 ></Input>
               </div>
-              <div className="mt-6 relative px-3">
-                <div className="pt-3 pb-1 border border-silver dark:border-silver/40 rounded-lg">
-                  <span className="absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver rounded-lg">
+              <div className="relative mt-6 px-3">
+                <div className="rounded-lg border border-silver pb-1 pt-3 dark:border-silver/40">
+                  <span className="absolute -top-2 left-5 rounded-lg bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
                     Body text
                   </span>
                   <textarea
                     id="chunk-body-text"
-                    className="h-60 w-full px-3 outline-none  dark:bg-transparent dark:text-white"
+                    className="h-60 w-full px-3 outline-none dark:bg-transparent dark:text-white"
                     value={chunkText}
                     onChange={(e) => setChunkText(e.target.value)}
                     aria-label="Prompt Text"
                   ></textarea>
                 </div>
               </div>
-              <div className="mt-8 w-full px-3 flex items-center justify-between">
+              <div className="mt-8 flex w-full items-center justify-between px-3">
                 <button
-                  className="rounded-full px-5 py-2 border border-solid border-red-500 text-red-500 hover:bg-red-500 hover:text-white text-nowrap text-sm"
+                  className="text-nowrap rounded-full border border-solid border-red-500 px-5 py-2 text-sm text-red-500 hover:bg-red-500 hover:text-white"
                   onClick={() => {
                     setDeleteModal('ACTIVE');
                   }}

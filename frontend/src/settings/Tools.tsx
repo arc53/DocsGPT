@@ -101,8 +101,8 @@ export default function Tools() {
         />
       ) : (
         <div className="mt-8">
-          <div className="flex flex-col relative">
-            <div className="my-3 flex justify-between items-center gap-1">
+          <div className="relative flex flex-col">
+            <div className="my-3 flex items-center justify-between gap-1">
               <div className="p-1">
                 <label htmlFor="tool-search-input" className="sr-only">
                   {t('settings.tools.searchPlaceholder')}
@@ -119,7 +119,7 @@ export default function Tools() {
                 />
               </div>
               <button
-                className="rounded-full w-[108px] h-[30px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
+                className="flex h-[30px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
@@ -127,23 +127,23 @@ export default function Tools() {
                 {t('settings.tools.addTool')}
               </button>
             </div>
-            <div className="border-b border-light-silver dark:border-dim-gray mb-8 mt-5" />
+            <div className="mb-8 mt-5 border-b border-light-silver dark:border-dim-gray" />
             {loading ? (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="mt-24 h-32 col-span-2 lg:col-span-3 flex items-center justify-center">
+              <div className="grid grid-cols-2 gap-6 lg:grid-cols-3">
+                <div className="col-span-2 mt-24 flex h-32 items-center justify-center lg:col-span-3">
                   <Spinner />
                 </div>
               </div>
             ) : (
-              <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
+              <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
                 {userTools.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center w-full py-12">
+                  <div className="flex w-full flex-col items-center justify-center py-12">
                     <img
                       src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
                       alt="No tools found"
-                      className="h-32 w-32 mx-auto mb-6"
+                      className="mx-auto mb-6 h-32 w-32"
                     />
-                    <p className="text-gray-500 dark:text-gray-400 text-center text-lg">
+                    <p className="text-center text-lg text-gray-500 dark:text-gray-400">
                       {t('settings.tools.noToolsFound')}
                     </p>
                   </div>
@@ -157,14 +157,14 @@ export default function Tools() {
                     .map((tool, index) => (
                       <div
                         key={index}
-                        className="h-52 w-[300px] p-6 border rounded-2xl border-light-gainsboro dark:border-arsenic bg-white-3000 dark:bg-transparent flex flex-col justify-between relative"
+                        className="relative flex h-52 w-[300px] flex-col justify-between rounded-2xl border border-light-gainsboro bg-white-3000 p-6 dark:border-arsenic dark:bg-transparent"
                       >
                         <button
                           onClick={() => handleSettingsClick(tool)}
                           aria-label={t('settings.tools.configureToolAria', {
                             toolName: tool.displayName,
                           })}
-                          className="absolute top-4 right-4"
+                          className="absolute right-4 top-4"
                         >
                           <img
                             src={CogwheelIcon}
@@ -173,7 +173,7 @@ export default function Tools() {
                           />
                         </button>
                         <div className="w-full">
-                          <div className="px-1 w-full flex items-center">
+                          <div className="flex w-full items-center px-1">
                             <img
                               src={`/toolIcons/tool_${tool.name}.svg`}
                               alt={`${tool.displayName} icon`}
@@ -183,11 +183,11 @@ export default function Tools() {
                           <div className="mt-[9px]">
                             <p
                               title={tool.displayName}
-                              className="px-1 text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray leading-relaxed capitalize truncate"
+                              className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-raisin-black-light dark:text-bright-gray"
                             >
                               {tool.displayName}
                             </p>
-                            <p className="mt-1 px-1 h-24 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light leading-relaxed">
+                            <p className="mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed text-old-silver dark:text-sonic-silver-light">
                               {tool.description}
                             </p>
                           </div>

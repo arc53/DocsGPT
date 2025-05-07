@@ -88,7 +88,7 @@ export default function General() {
       {' '}
       <div className="flex flex-col gap-4">
         {' '}
-        <label className="font-medium text-base text-jet dark:text-bright-gray">
+        <label className="text-base font-medium text-jet dark:text-bright-gray">
           {t('settings.general.selectTheme')}
         </label>
         <Dropdown
@@ -106,7 +106,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="font-medium text-base text-jet dark:text-bright-gray">
+        <label className="text-base font-medium text-jet dark:text-bright-gray">
           {t('settings.general.selectLanguage')}
         </label>
         <Dropdown
@@ -124,7 +124,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="font-medium text-base text-jet dark:text-bright-gray">
+        <label className="text-base font-medium text-jet dark:text-bright-gray">
           {t('settings.general.chunks')}
         </label>
         <Dropdown
@@ -137,7 +137,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="font-medium text-base text-jet dark:text-bright-gray">
+        <label className="text-base font-medium text-jet dark:text-bright-gray">
           {t('settings.general.convHistory')}
         </label>
         <Dropdown
@@ -171,11 +171,11 @@ export default function General() {
           setPrompts={setPrompts}
         />
       </div>
-      <hr className="border-t w-[calc(min(665px,100%))] my-4 border-silver dark:border-silver/40" />
+      <hr className="my-4 w-[calc(min(665px,100%))] border-t border-silver dark:border-silver/40" />
       <div className="flex flex-col gap-2">
         <button
           title={t('settings.general.deleteAllLabel')}
-          className="flex font-medium text-sm w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid border-rosso-corsa bg-transparent px-5 py-3 text-rosso-corsa transition-colors hover:bg-rosso-corsa hover:text-white hover:font-bold tracking-[0.015em] hover:tracking-normal"
+          className="flex w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid border-rosso-corsa bg-transparent px-5 py-3 text-sm font-medium tracking-[0.015em] text-rosso-corsa transition-colors hover:bg-rosso-corsa hover:font-bold hover:tracking-normal hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}

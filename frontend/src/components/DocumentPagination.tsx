@@ -52,31 +52,31 @@ const Pagination: React.FC<PaginationProps> = ({
   };
 
   return (
-    <div className="flex items-center text-xs justify-end gap-4 mt-2 p-2 border-gray-200">
+    <div className="mt-2 flex items-center justify-end gap-4 border-gray-200 p-2 text-xs">
       {/* Rows per page dropdown */}
-      <div className="flex items-center gap-2 relative">
+      <div className="relative flex items-center gap-2">
         <span className="text-gray-900 dark:text-gray-50">
           {t('pagination.rowsPerPage')}:
         </span>
         <div className="relative">
           <button
             onClick={toggleDropdown}
-            className="px-3 py-1 border rounded dark:bg-dark-charcoal dark:text-light-gray hover:bg-gray-200 dark:hover:bg-neutral-700"
+            className="rounded border px-3 py-1 hover:bg-gray-200 dark:bg-dark-charcoal dark:text-light-gray dark:hover:bg-neutral-700"
           >
             {rowsPerPage}
           </button>
           <div
-            className={`absolute z-50 right-0 mt-1 w-28 transform  bg-white dark:bg-dark-charcoal shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${
+            className={`absolute right-0 z-50 mt-1 w-28 transform bg-white shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out dark:bg-dark-charcoal ${
               isDropdownOpen
-                ? 'scale-100 opacity-100 block'
-                : 'scale-95 opacity-0 hidden'
+                ? 'block scale-100 opacity-100'
+                : 'hidden scale-95 opacity-0'
             }`}
           >
             {rowsPerPageOptions.map((option) => (
               <div
                 key={option}
                 onClick={() => handleSelectRowsPerPage(option)}
-                className={`cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 dark:hover:bg-neutral-700  ${
+                className={`cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 dark:hover:bg-neutral-700 ${
                   rowsPerPage === option
                     ? 'bg-gray-100 dark:bg-neutral-700 dark:text-light-gray'
                     : 'bg-white dark:bg-dark-charcoal dark:text-light-gray'
@@ -97,45 +97,45 @@ const Pagination: React.FC<PaginationProps> = ({
         <button
           onClick={handleFirstPage}
           disabled={currentPage === 1}
-          className="px-2 py-1 border rounded disabled:opacity-50"
+          className="rounded border px-2 py-1 disabled:opacity-50"
         >
           <img
             src={DoubleArrowLeft}
             alt={t('pagination.firstPage')}
-            className="dark:invert dark:sepia dark:brightness-200"
+            className="dark:brightness-200 dark:invert dark:sepia"
           />
         </button>
         <button
           onClick={handlePreviousPage}
           disabled={currentPage === 1}
-          className="px-2 py-1 border rounded disabled:opacity-50"
+          className="rounded border px-2 py-1 disabled:opacity-50"
         >
           <img
             src={SingleArrowLeft}
             alt={t('pagination.previousPage')}
-            className="dark:invert dark:sepia dark:brightness-200"
+            className="dark:brightness-200 dark:invert dark:sepia"
           />
         </button>
         <button
           onClick={handleNextPage}
           disabled={currentPage === totalPages}
-          className="px-2 py-1 border rounded disabled:opacity-50"
+          className="rounded border px-2 py-1 disabled:opacity-50"
         >
           <img
             src={SingleArrowRight}
             alt={t('pagination.nextPage')}
-            className="dark:invert dark:sepia dark:brightness-200"
+            className="dark:brightness-200 dark:invert dark:sepia"
           />
         </button>
         <button
           onClick={handleLastPage}
           disabled={currentPage === totalPages}
-          className="px-2 py-1 border rounded disabled:opacity-50"
+          className="rounded border px-2 py-1 disabled:opacity-50"
         >
           <img
             src={DoubleArrowRight}
             alt={t('pagination.lastPage')}
-            className="dark:invert dark:sepia dark:brightness-200"
+            className="dark:brightness-200 dark:invert dark:sepia"
           />
         </button>
       </div>

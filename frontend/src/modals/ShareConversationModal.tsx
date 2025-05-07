@@ -136,7 +136,7 @@ export const ShareConversationModal = ({
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">
-          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 border-silver dark:border-silver/40 py-3 px-4 text-eerie-black dark:text-white">
+          <span className="no-scrollbar w-full overflow-x-auto whitespace-nowrap rounded-full border-2 border-silver px-4 py-3 text-eerie-black dark:border-silver/40 dark:text-white">
             {`${domain}/share/${identifier ?? '....'}`}
           </span>
           {status === 'fetched' ? (

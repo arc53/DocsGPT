@@ -46,14 +46,14 @@ export default function WrapperModal({
   }, [close]);
 
   return (
-    <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
+    <div className="fixed left-0 top-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
       <div
         ref={modalRef}
-        className={`relative w-11/12 sm:w-[512px] p-8 rounded-2xl bg-white dark:bg-[#26272E] ${className}`}
+        className={`relative w-11/12 rounded-2xl bg-white p-8 dark:bg-[#26272E] sm:w-[512px] ${className}`}
       >
         {!isPerformingTask && (
           <button
-            className="absolute top-3 right-4 m-2 w-3 z-50"
+            className="absolute right-4 top-3 z-50 m-2 w-3"
             onClick={close}
           >
             <img className="filter dark:invert" src={Exit} alt="Close" />

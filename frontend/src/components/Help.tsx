@@ -36,20 +36,20 @@ const Help = () => {
       <button
         ref={buttonRef}
         onClick={toggleDropdown}
-        className="my-auto mx-4 w-full flex items-center h-9 gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
+        className="mx-4 my-auto flex h-9 w-full items-center gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
       >
         <img src={Info} alt="info" className="ml-2 w-5 filter dark:invert" />
         {t('help')}
       </button>
       {isOpen && (
         <div
-          className={`absolute translate-x-4 -translate-y-28 z-10 w-48 shadow-lg bg-white dark:bg-[#444654] rounded-xl`}
+          className={`absolute z-10 w-48 -translate-y-28 translate-x-4 rounded-xl bg-white shadow-lg dark:bg-[#444654]`}
         >
           <a
             href="https://docs.docsgpt.cloud/"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-start gap-4 px-4 py-2 text-black dark:text-white hover:bg-bright-gray dark:hover:bg-[#545561] rounded-t-xl"
+            className="flex items-start gap-4 rounded-t-xl px-4 py-2 text-black hover:bg-bright-gray dark:text-white dark:hover:bg-[#545561]"
           >
             <img
               src={PageIcon}
@@ -61,12 +61,12 @@ const Help = () => {
           </a>
           <a
             href="mailto:support@docsgpt.cloud"
-            className="flex items-start gap-4 px-4 py-2 text-black dark:text-white hover:bg-bright-gray dark:hover:bg-[#545561] rounded-b-xl"
+            className="flex items-start gap-4 rounded-b-xl px-4 py-2 text-black hover:bg-bright-gray dark:text-white dark:hover:bg-[#545561]"
           >
             <img
               src={EmailIcon}
               alt="Email Us"
-              className="filter dark:invert p-0.5"
+              className="p-0.5 filter dark:invert"
               width={20}
             />
             {t('emailUs')}

@@ -69,8 +69,8 @@ function Upload({
                 : 'grid-rows-[0fr] opacity-0'
             }`}
           >
-            <div className="overflow-hidden flex flex-col gap-4">
-              <hr className="my-4 border-[#C4C4C4]/40 border-[1px]" />
+            <div className="flex flex-col gap-4 overflow-hidden">
+              <hr className="my-4 border-[1px] border-[#C4C4C4]/40" />
               <div className="flex flex-col gap-4">
                 {advancedFields.map((field: FormField) => renderField(field))}
               </div>
@@ -212,11 +212,11 @@ function Upload({
 
   function ProgressBar({ progressPercent }: { progressPercent: number }) {
     return (
-      <div className="flex items-center justify-center h-full w-full my-8">
-        <div className="relative w-32 h-32 rounded-full">
+      <div className="my-8 flex h-full w-full items-center justify-center">
+        <div className="relative h-32 w-32 rounded-full">
           <div className="absolute inset-0 rounded-full shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset] dark:shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset]"></div>
           <div
-            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'shadow-xl shadow-lime-300/50 dark:shadow-lime-300/50 bg-gradient-to-r from-white to-gray-400 dark:bg-gradient-to-br dark:from-gray-500 dark:to-gray-300' : 'shadow-[0_4px_0_#7D54D1] dark:shadow-[0_4px_0_#7D54D1]'}`}
+            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'bg-gradient-to-r from-white to-gray-400 shadow-xl shadow-lime-300/50 dark:bg-gradient-to-br dark:from-gray-500 dark:to-gray-300 dark:shadow-lime-300/50' : 'shadow-[0_4px_0_#7D54D1] dark:shadow-[0_4px_0_#7D54D1]'}`}
             style={{
               animation: `${progressPercent === 100 ? 'none' : 'rotate 2s linear infinite'}`,
             }}
@@ -270,13 +270,13 @@ function Upload({
                 setProgress(undefined);
                 setModalState('INACTIVE');
               }}
-              className="cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D1] text-white hover:bg-[#6F3FD1] shadow-lg"
+              className="h-[42px] cursor-pointer rounded-3xl bg-[#7D54D1] px-[28px] py-[6px] text-sm text-white shadow-lg hover:bg-[#6F3FD1]"
             >
               {t('modals.uploadDoc.start')}
             </button>
           ) : (
             <button
-              className="ml-2 cursor-pointer rounded-3xl text-sm h-[42px] px-[28px] py-[6px] bg-[#7D54D14D] text-white shadow-lg"
+              className="ml-2 h-[42px] cursor-pointer rounded-3xl bg-[#7D54D14D] px-[28px] py-[6px] text-sm text-white shadow-lg"
               disabled
             >
               {t('modals.uploadDoc.wait')}
@@ -570,33 +570,33 @@ function Upload({
     view = <TrainingProgress></TrainingProgress>;
   } else {
     view = (
-      <div className="flex flex-col gap-4 w-full">
-        <p className="text-2xl text-jet dark:text-bright-gray text-center font-semibold">
+      <div className="flex w-full flex-col gap-4">
+        <p className="text-center text-2xl font-semibold text-jet dark:text-bright-gray">
           {t('modals.uploadDoc.label')}
         </p>
         {!activeTab && (
           <div>
-            <p className="dark text-gray-6000 dark:text-bright-gray text-sm text-center font-medium">
+            <p className="dark text-center text-sm font-medium text-gray-6000 dark:text-bright-gray">
               {t('modals.uploadDoc.select')}
             </p>
-            <div className="w-full gap-4 h-full p-4 flex flex-col md:flex-row md:gap-4 justify-center items-center">
+            <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-4 md:flex-row md:gap-4">
               <button
                 onClick={() => setActiveTab('file')}
-                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
+                className="flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:border-purple-30 hover:opacity-100 hover:shadow-lg hover:shadow-purple-30/30 dark:bg-transparent dark:text-[#c3c3c3] md:h-52 md:w-52"
               >
                 <img
                   src={FileUpload}
-                  className="w-12 h-12 mr-2 dark:filter dark:invert dark:brightness-50"
+                  className="mr-2 h-12 w-12 dark:brightness-50 dark:invert dark:filter"
                 />
                 {t('modals.uploadDoc.file')}
               </button>
               <button
                 onClick={() => setActiveTab('remote')}
-                className="opacity-85 hover:opacity-100 rounded-3xl text-sm font-medium border flex flex-col items-center justify-center hover:shadow-purple-30/30 hover:shadow-lg p-8 gap-4 bg-transparent text-[#777777] dark:bg-transparent dark:text-[#c3c3c3] hover:border-purple-30 border-[#D7D7D7] h-40 w-40 md:w-52 md:h-52"
+                className="flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:border-purple-30 hover:opacity-100 hover:shadow-lg hover:shadow-purple-30/30 dark:bg-transparent dark:text-[#c3c3c3] md:h-52 md:w-52"
               >
                 <img
                   src={WebsiteCollect}
-                  className="w-14 h-14 mr-2 dark:filter dark:invert dark:brightness-50"
+                  className="mr-2 h-14 w-14 dark:brightness-50 dark:invert dark:filter"
                 />
                 {t('modals.uploadDoc.remote')}
               </button>
@@ -617,7 +617,7 @@ function Upload({
               required={true}
             />
             <div className="my-2" {...getRootProps()}>
-              <span className="rounded-3xl bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver border border-[#7F7F82]">
+              <span className="rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}
               </span>
@@ -633,7 +633,7 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-gray-6000 truncate overflow-hidden text-ellipsis"
+                    className="overflow-hidden truncate text-ellipsis text-gray-6000"
                     title={file.name}
                   >
                     {file.name}
@@ -681,7 +681,7 @@ function Upload({
             ) && (
               <button
                 onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                className="text-purple-30 text-sm font-normal pl-0 py-2 bg-transparent hover:cursor-pointer text-left"
+                className="bg-transparent py-2 pl-0 text-left text-sm font-normal text-purple-30 hover:cursor-pointer"
               >
                 {showAdvancedOptions
                   ? t('modals.uploadDoc.hideAdvanced')
@@ -694,7 +694,7 @@ function Upload({
           {activeTab && (
             <button
               onClick={() => setActiveTab(null)}
-              className="rounded-3xl bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver text-[14px]"
+              className="rounded-3xl bg-transparent px-4 py-2 text-[14px] font-medium text-purple-30 hover:cursor-pointer dark:text-silver"
             >
               {t('modals.uploadDoc.back')}
             </button>
@@ -709,7 +709,7 @@ function Upload({
                 }
               }}
               disabled={isUploadDisabled()}
-              className={`rounded-3xl px-4 py-2 font-medium text-[14px] ${
+              className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
                   : 'cursor-pointer bg-purple-30 text-white hover:bg-violets-are-blue'

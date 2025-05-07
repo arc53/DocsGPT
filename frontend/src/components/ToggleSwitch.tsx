@@ -46,9 +46,9 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
 
   return (
     <label
-      className={`cursor-pointer select-none flex flex-row items-center ${
+      className={`flex cursor-pointer select-none flex-row items-center ${
         labelPosition === 'right' ? 'flex-row-reverse' : ''
-      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+      } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${className}`}
     >
       {label && (
         <span
@@ -75,7 +75,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
           }`}
         ></div>
         <div
-          className={`absolute ${toggle} flex items-center justify-center rounded-full transition bg-white opacity-80 ${
+          className={`absolute ${toggle} flex items-center justify-center rounded-full bg-white opacity-80 transition ${
             checked ? `${translate} bg-silver` : ''
           }`}
         ></div>

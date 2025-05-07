@@ -15,7 +15,7 @@ export default function ShareButton({ conversationId }: ShareButtonProps) {
         onClick={() => {
           setShareModalState(true);
         }}
-        className="absolute top-4 right-20 z-20 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
+        className="absolute right-20 top-4 z-20 rounded-full hover:bg-bright-gray dark:hover:bg-[#28292E]"
       >
         <img
           className="m-2 h-5 w-5 filter dark:invert"
