@@ -11,7 +11,10 @@ import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
-    selectSelectedAgent, selectSourceDocs, selectToken, setSelectedAgent
+  selectSelectedAgent,
+  selectSourceDocs,
+  selectToken,
+  setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 import { UserToolType } from '../settings/types';
@@ -603,9 +606,9 @@ function AddPromptModal({
       newPromptContent={newPromptContent}
       setNewPromptContent={setNewPromptContent}
       editPromptName={''}
-      setEditPromptName={() => {}}
+      setEditPromptName={() => undefined}
       editPromptContent={''}
-      setEditPromptContent={() => {}}
+      setEditPromptContent={() => undefined}
       currentPromptEdit={{ id: '', name: '', type: '' }}
       handleAddPrompt={handleAddPrompt}
     />

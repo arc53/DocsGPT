@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useDispatch } from 'react-redux';
 
 import Input from '../components/Input';
 import { ActiveState } from '../models/misc';
@@ -19,13 +18,17 @@ export default function JWTModal({
   if (modalState !== 'ACTIVE') return null;
 
   return (
-    <WrapperModal className="p-4" isPerformingTask={true} close={() => {}}>
+    <WrapperModal
+      className="p-4"
+      isPerformingTask={true}
+      close={() => undefined}
+    >
       <div className="mb-6">
         <span className="text-lg text-jet dark:text-bright-gray">
           Add JWT Token
         </span>
       </div>
-      <div className="relative mt-5 mb-4">
+      <div className="relative mb-4 mt-5">
         <Input
           name="JWT Token"
           type="text"
