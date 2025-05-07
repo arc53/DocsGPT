@@ -2978,7 +2978,7 @@ class StoreAttachment(Resource):
 
         try:
             attachment_id = ObjectId()
-            original_filename = secure_filename(file.filename)
+            original_filename = secure_filename(os.path.basename(file.filename))
             relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
             
             metadata = storage.save_file(file, relative_path)
