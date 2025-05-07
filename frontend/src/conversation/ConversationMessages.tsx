@@ -38,7 +38,7 @@ export default function ConversationMessages({
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
-  const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
+  const [atLast,setAtLast] = useState(true);
   const [eventInterrupt, setEventInterrupt] = useState(false);
 
   const handleUserInterruption = () => {
@@ -47,24 +47,29 @@ export default function ConversationMessages({
     }
   };
 
+
   const scrollIntoView = () => {
     if (!conversationRef?.current || eventInterrupt) return;
 
-    if (status === 'idle' || !queries[queries.length - 1]?.response) {
-      conversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: conversationRef.current.scrollHeight,
-      });
-    } else {
-      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
-    }
+    requestAnimationFrame(() => {
+      if (!conversationRef?.current) return;
+
+      if (status === 'idle' || !queries[queries.length - 1]?.response) {
+        conversationRef.current.scrollTo({
+          behavior: 'smooth',
+          top: conversationRef.current.scrollHeight,
+        });
+      } else {
+        conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+      }
+    });
   };
 
   const checkScroll = () => {
     const el = conversationRef.current;
     if (!el) return;
     const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
-    setHasScrolledToLast(isBottom);
+    setAtLast(isBottom);
   };
 
   useEffect(() => {
@@ -87,6 +92,7 @@ export default function ConversationMessages({
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
     if (query.thought || query.response) {
+      const isCurrentlyStreaming = status === 'loading' && index === queries.length - 1;
       responseView = (
         <ConversationBubble
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
@@ -97,6 +103,7 @@ export default function ConversationMessages({
           sources={query.sources}
           toolCalls={query.tool_calls}
           feedback={query.feedback}
+          isStreaming={isCurrentlyStreaming}
           handleFeedback={
             handleFeedback
               ? (feedback) => handleFeedback(query, feedback, index)
@@ -143,9 +150,9 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex justify-center w-full overflow-y-auto h-full sm:pt-12"
+      className="flex justify-center w-full overflow-y-auto h-full sm:pt-12 will-change-scroll"
     >
-      {queries.length > 0 && !hasScrolledToLast && (
+      {queries.length > 0 && !atLast && (
         <button
           onClick={scrollIntoView}
           aria-label="scroll to bottom"
