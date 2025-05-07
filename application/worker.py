@@ -1,5 +1,4 @@
 import datetime
-import io
 import json
 import logging
 import mimetypes
