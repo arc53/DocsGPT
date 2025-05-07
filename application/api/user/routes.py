@@ -28,6 +28,8 @@ from application.extensions import api
 from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
+from application.storage.storage_creator import StorageCreator
+storage = StorageCreator.get_storage()
 
 mongo = MongoDB.get_client()
 db = mongo[settings.MONGO_DB_NAME]
@@ -2978,14 +2980,14 @@ class StoreAttachment(Resource):
             attachment_id = ObjectId()
             original_filename = secure_filename(file.filename)
             relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
-
-            file_content = file.read()
-
+            
+            metadata = storage.save_file(file, relative_path)
+            
             file_info = {
                 "filename": original_filename,
                 "attachment_id": str(attachment_id),
                 "path": relative_path,
-                "file_content": file_content,
+                "metadata": metadata
             }
 
             task = store_attachment.delay(file_info, user)

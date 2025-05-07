@@ -445,76 +445,61 @@ def attachment_worker(self, file_info, user):
     filename = file_info["filename"]
     attachment_id = file_info["attachment_id"]
     relative_path = file_info["path"]
-    file_content = file_info["file_content"]
+    metadata = file_info.get("metadata", {})
 
     try:
         self.update_state(state="PROGRESS", meta={"current": 10})
-        storage_type = getattr(settings, "STORAGE_TYPE", "local")
-        storage = StorageCreator.create_storage(storage_type)
+        storage = StorageCreator.get_storage()
+        
         self.update_state(
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
         )
 
-        with tempfile.NamedTemporaryFile(
-            suffix=os.path.splitext(filename)[1]
-        ) as temp_file:
-            temp_file.write(file_content)
-            temp_file.flush()
-            reader = SimpleDirectoryReader(
-                input_files=[temp_file.name], exclude_hidden=True, errors="ignore"
-            )
-            documents = reader.load_data()
+        content = storage.process_file(
+            relative_path,
+            lambda local_path, **kwargs: SimpleDirectoryReader(
+                input_files=[local_path], exclude_hidden=True, errors="ignore"
+            ).load_data()[0].text
+        )
+            
+        token_count = num_tokens_from_string(content)
 
-            if not documents:
-                logging.warning(f"No content extracted from file: {filename}")
-                raise ValueError(f"Failed to extract content from file: {filename}")
+        self.update_state(
+            state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
+        )
 
-            content = documents[0].text
-            token_count = num_tokens_from_string(content)
+        mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-            self.update_state(
-                state="PROGRESS", meta={"current": 60, "status": "Saving file"}
-            )
-            file_obj = io.BytesIO(file_content)
-
-            metadata = storage.save_file(file_obj, relative_path)
-
-            mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-
-            self.update_state(
-                state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
-            )
-
-            doc_id = ObjectId(attachment_id)
-            attachments_collection.insert_one(
-                {
-                    "_id": doc_id,
-                    "user": user,
-                    "path": relative_path,
-                    "content": content,
-                    "token_count": token_count,
-                    "mime_type": mime_type,
-                    "date": datetime.datetime.now(),
-                    "metadata": metadata,
-                }
-            )
-
-            logging.info(
-                f"Stored attachment with ID: {attachment_id}", extra={"user": user}
-            )
-
-            self.update_state(
-                state="PROGRESS", meta={"current": 100, "status": "Complete"}
-            )
-
-            return {
-                "filename": filename,
+        doc_id = ObjectId(attachment_id)
+        attachments_collection.insert_one(
+            {
+                "_id": doc_id,
+                "user": user,
                 "path": relative_path,
+                "content": content,
                 "token_count": token_count,
-                "attachment_id": attachment_id,
                 "mime_type": mime_type,
+                "date": datetime.datetime.now(),
                 "metadata": metadata,
             }
+        )
+
+        logging.info(
+            f"Stored attachment with ID: {attachment_id}", extra={"user": user}
+        )
+
+        self.update_state(
+            state="PROGRESS", meta={"current": 100, "status": "Complete"}
+        )
+
+        return {
+            "filename": filename,
+            "path": relative_path,
+            "token_count": token_count,
+            "attachment_id": attachment_id,
+            "mime_type": mime_type,
+            "metadata": metadata,
+        }
 
     except Exception as e:
         logging.error(
