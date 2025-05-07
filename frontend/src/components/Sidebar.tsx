@@ -45,7 +45,7 @@ export default function Sidebar({
             <img className="filter dark:invert" src={Exit} />
           </button>
         </div>
-        <div className="flex h-full flex-col items-center gap-2 py-4 px-6 text-center">
+        <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
           {children}
         </div>
       </div>

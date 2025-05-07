@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import CopyButton from './CopyButton';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import {
+  oneLight,
+  vscDarkPlus,
+} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { MermaidRendererProps } from './types';
 import { useSelector } from 'react-redux';
 import { selectStatus } from '../conversation/conversationSlice';
@@ -20,9 +23,12 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [hoverPosition, setHoverPosition] = useState<{ x: number, y: number } | null>(null);
+  const [hoverPosition, setHoverPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [isHovering, setIsHovering] = useState<boolean>(false);
-  const [zoomFactor, setZoomFactor] = useState<number>(2); 
+  const [zoomFactor, setZoomFactor] = useState<number>(2);
 
   const handleMouseMove = (event: React.MouseEvent) => {
     if (!containerRef.current) return;
@@ -40,16 +46,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     setHoverPosition(null);
   };
 
-
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (!isHovering) return;
 
     if (event.key === '+' || event.key === '=') {
-      setZoomFactor(prev => Math.min(6, prev + 0.5)); // Cap at 6x
+      setZoomFactor((prev) => Math.min(6, prev + 0.5)); // Cap at 6x
       event.preventDefault();
-    }
-    else if (event.key === '-') {
-      setZoomFactor(prev => Math.max(1, prev - 0.5)); // Minimum 1x
+    } else if (event.key === '-') {
+      setZoomFactor((prev) => Math.max(1, prev - 0.5)); // Minimum 1x
       event.preventDefault();
     }
   };
@@ -57,13 +61,13 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const handleWheel = (event: React.WheelEvent) => {
     if (!isHovering) return;
 
-    if ( event.ctrlKey || event.metaKey) {
+    if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
 
       if (event.deltaY < 0) {
-        setZoomFactor(prev => Math.min(6, prev + 0.25));
+        setZoomFactor((prev) => Math.min(6, prev + 0.25));
       } else {
-        setZoomFactor(prev => Math.max(1, prev - 0.25));
+        setZoomFactor((prev) => Math.max(1, prev - 0.25));
       }
     }
   };
@@ -81,8 +85,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         securityLevel: 'loose',
         suppressErrorRendering: true,
       });
-  
-      const isCurrentlyLoading = isLoading !== undefined ? isLoading : status === 'loading';
+
+      const isCurrentlyLoading =
+        isLoading !== undefined ? isLoading : status === 'loading';
       if (!isCurrentlyLoading && code) {
         try {
           const element = document.getElementById(diagramId.current);
@@ -93,16 +98,15 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           }
         } catch (err) {
           console.error('Error rendering mermaid diagram:', err);
-          setError(`Failed to render diagram: ${err instanceof Error ? err.message : String(err)}`);
+          setError(
+            `Failed to render diagram: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
     };
 
     renderDiagram();
   }, [code, isDarkTheme, isLoading]);
-
-
- 
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -119,7 +123,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showDownloadMenu]);
-
 
   const downloadSvg = (): void => {
     const element = document.getElementById(diagramId.current);
@@ -146,7 +149,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
     const svgBlob = new Blob(
       [`<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n${svgString}`],
-      { type: 'image/svg+xml' }
+      { type: 'image/svg+xml' },
     );
 
     const url = URL.createObjectURL(svgBlob);
@@ -198,7 +201,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
-    img.onload = function(): void {
+    img.onload = function (): void {
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -243,20 +246,20 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     URL.revokeObjectURL(url);
   };
 
-
   const downloadOptions = [
     { label: 'Download as SVG', action: downloadSvg },
     { label: 'Download as PNG', action: downloadPng },
     { label: 'Download as MMD', action: downloadMmd },
   ];
 
-  const isCurrentlyLoading = isLoading !== undefined ? isLoading : status === 'loading';
+  const isCurrentlyLoading =
+    isLoading !== undefined ? isLoading : status === 'loading';
   const showDiagramOptions = !isCurrentlyLoading && !error;
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="group relative rounded-lg border border-light-silver dark:border-raisin-black bg-white dark:bg-eerie-black  w-inherit">
-      <div className="flex justify-between items-center px-2 py-1 bg-platinum dark:bg-eerie-black-2">
+    <div className="w-inherit group relative rounded-lg border border-light-silver bg-white dark:border-raisin-black dark:bg-eerie-black">
+      <div className="flex items-center justify-between bg-platinum px-2 py-1 dark:bg-eerie-black-2">
         <span className="text-xs font-medium text-just-black dark:text-chinese-white">
           mermaid
         </span>
@@ -267,13 +270,13 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             <div className="relative" ref={downloadMenuRef}>
               <button
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded flex items-center h-full"
+                className="flex h-full items-center rounded bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
                 title="Download options"
               >
                 Download <span className="ml-1">▼</span>
               </button>
               {showDownloadMenu && (
-                <div className="absolute right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-10 w-40">
+                <div className="absolute right-0 z-10 mt-1 w-40 rounded border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
                   <ul>
                     {downloadOptions.map((option, index) => (
                       <li key={index}>
@@ -282,7 +285,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                             option.action();
                             setShowDownloadMenu(false);
                           }}
-                          className="text-xs px-4 py-2 w-full text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                          className="w-full px-4 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
                         >
                           {option.label}
                         </button>
@@ -297,7 +300,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           {showDiagramOptions && (
             <button
               onClick={() => setShowCode(!showCode)}
-              className={`text-xs px-2 py-1 rounded flex items-center h-full ${
+              className={`flex h-full items-center rounded px-2 py-1 text-xs ${
                 showCode
                   ? 'bg-blue-200 dark:bg-blue-800'
                   : 'bg-gray-100 dark:bg-gray-700'
@@ -311,14 +314,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       </div>
 
       {isCurrentlyLoading ? (
-        <div className="p-4 bg-white dark:bg-eerie-black flex justify-center items-center">
+        <div className="flex items-center justify-center bg-white p-4 dark:bg-eerie-black">
           <div className="text-sm text-gray-500 dark:text-gray-400">
             Loading diagram...
           </div>
         </div>
       ) : errorRender ? (
-        <div className="border-2 border-red-400 dark:border-red-700 rounded m-2">
-          <div className="bg-red-100 dark:bg-red-900/30 px-4 py-2 text-red-800 dark:text-red-300 text-sm whitespace-normal break-words overflow-auto">
+        <div className="m-2 rounded border-2 border-red-400 dark:border-red-700">
+          <div className="overflow-auto whitespace-normal break-words bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
             {error}
           </div>
         </div>
@@ -326,13 +329,12 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         <>
           <div
             ref={containerRef}
-            className=" no-scrollbar p-4 block w-full bg-white dark:bg-eerie-black relative"
+            className="no-scrollbar relative block w-full bg-white p-4 dark:bg-eerie-black"
             style={{
               overflow: 'auto',
               scrollbarWidth: 'none',
               msOverflowStyle: 'none',
               width: '100%',
-
             }}
             onMouseMove={handleMouseMove}
             onMouseEnter={handleMouseEnter}
@@ -340,39 +342,42 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             onKeyDown={handleKeyDown}
             onWheel={handleWheel}
             tabIndex={0}
-            
           >
             {isHovering && (
               <>
-              <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded z-10 flex items-center gap-2">
-                <button
-                  onClick={() => setZoomFactor(prev => Math.max(1, prev - 0.5))}
-                  className="hover:bg-gray-600 px-1 rounded"
-                  title="Decrease zoom"
-                >
-                  -
-                </button>
-                <span
-                  className="cursor-pointer hover:underline"
-                  onClick={() => {
-                    setZoomFactor(2);
-                  }}
-                  title="Reset zoom"
-                >
-                  {zoomFactor.toFixed(1)}x
-                </span>
-                <button
-                  onClick={() => setZoomFactor(prev => Math.min(6, prev + 0.5))}
-                  className="hover:bg-gray-600 px-1 rounded"
-                  title="Increase zoom"
-                >
-                  +
-                </button>
-              </div>
+                <div className="absolute right-2 top-2 z-10 flex items-center gap-2 rounded bg-black/70 px-2 py-1 text-xs text-white">
+                  <button
+                    onClick={() =>
+                      setZoomFactor((prev) => Math.max(1, prev - 0.5))
+                    }
+                    className="rounded px-1 hover:bg-gray-600"
+                    title="Decrease zoom"
+                  >
+                    -
+                  </button>
+                  <span
+                    className="cursor-pointer hover:underline"
+                    onClick={() => {
+                      setZoomFactor(2);
+                    }}
+                    title="Reset zoom"
+                  >
+                    {zoomFactor.toFixed(1)}x
+                  </span>
+                  <button
+                    onClick={() =>
+                      setZoomFactor((prev) => Math.min(6, prev + 0.5))
+                    }
+                    className="rounded px-1 hover:bg-gray-600"
+                    title="Increase zoom"
+                  >
+                    +
+                  </button>
+                </div>
               </>
             )}
             <pre
-              className="mermaid select-none w-full"
+              className="mermaid w-full select-none"
               id={diagramId.current}
               key={`mermaid-${diagramId.current}`}
               style={{
@@ -382,7 +387,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                 cursor: 'default',
                 width: '100%',
                 display: 'flex',
-                justifyContent: 'center'
+                justifyContent: 'center',
               }}
             >
               {code}
@@ -391,7 +396,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
           {showCode && (
             <div className="border-t border-light-silver dark:border-raisin-black">
-              <div className="p-2 bg-platinum dark:bg-eerie-black-2">
+              <div className="bg-platinum p-2 dark:bg-eerie-black-2">
                 <span className="text-xs font-medium text-just-black dark:text-chinese-white">
                   Mermaid Code
                 </span>
@@ -403,7 +408,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                   margin: 0,
                   borderRadius: 0,
                   scrollbarWidth: 'thin',
-                  maxHeight: '300px'
+                  maxHeight: '300px',
                 }}
               >
                 {code}

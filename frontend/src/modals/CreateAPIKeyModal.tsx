@@ -80,7 +80,7 @@ export default function CreateAPIKeyModal({
           {t('modals.createAPIKey.label')}
         </span>
       </div>
-      <div className="relative mt-5 mb-4">
+      <div className="relative mb-4 mt-5">
         <Input
           type="text"
           className="rounded-md"

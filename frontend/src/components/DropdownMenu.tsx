@@ -88,7 +88,7 @@ export default function DropdownMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className={`w-28 transform rounded-md bg-white dark:bg-dark-charcoal shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out ${className}`}
+        className={`w-28 transform rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out dark:bg-dark-charcoal ${className}`}
       >
         <div
           role="menu"

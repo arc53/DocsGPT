@@ -115,12 +115,12 @@ export default function ToolConfig({
   };
   return (
     <div className="mt-8 flex flex-col gap-4">
-      <div className="mb-4 flex items-center gap-3 text-eerie-black dark:text-bright-gray text-sm">
+      <div className="mb-4 flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
         <button
-          className="text-sm text-gray-400 dark:text-gray-500 border dark:border-0 dark:bg-[#28292D] dark:hover:bg-[#2E2F34] p-3 rounded-full"
+          className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
           onClick={handleGoBack}
         >
-          <img src={ArrowLeft} alt="left-arrow" className="w-3 h-3" />
+          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
         <p className="mt-px">Back to all tools</p>
       </div>
@@ -128,7 +128,7 @@ export default function ToolConfig({
         <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
           Type
         </p>
-        <p className="mt-1 text-base font-normal text-eerie-black dark:text-bright-gray font-sans">
+        <p className="mt-1 font-sans text-base font-normal text-eerie-black dark:text-bright-gray">
           {tool.name}
         </p>
       </div>
@@ -138,7 +138,7 @@ export default function ToolConfig({
             Authentication
           </p>
         )}
-        <div className="flex mt-4 flex-col sm:flex-row items-start sm:items-center gap-2">
+        <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
           {Object.keys(tool?.config).length !== 0 &&
             tool.name !== 'api_tool' && (
               <div className="relative w-96">
@@ -153,13 +153,13 @@ export default function ToolConfig({
             )}
           <div className="flex items-center gap-2">
             <button
-              className="rounded-full px-5 py-[10px] bg-purple-30 text-white hover:bg-violets-are-blue text-nowrap text-sm"
+              className="text-nowrap rounded-full bg-purple-30 px-5 py-[10px] text-sm text-white hover:bg-violets-are-blue"
               onClick={handleSaveChanges}
             >
               Save changes
             </button>
             <button
-              className="rounded-full px-5 py-[10px] border border-solid border-red-500 text-red-500 hover:bg-red-500 hover:text-white text-nowrap text-sm"
+              className="text-nowrap rounded-full border border-solid border-red-500 px-5 py-[10px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
               onClick={handleDelete}
             >
               Delete
@@ -168,8 +168,8 @@ export default function ToolConfig({
         </div>
       </div>
       <div className="flex flex-col gap-4">
-        <div className="mx-1 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%] "></div>
-        <div className="w-full flex flex-row items-center justify-between gap-2">
+        <div className="mx-1 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
+        <div className="flex w-full flex-row items-center justify-between gap-2">
           <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
             Actions
           </p>
@@ -177,7 +177,7 @@ export default function ToolConfig({
             onClick={() => {
               setActionModalState('ACTIVE');
             }}
-            className="border border-solid border-violets-are-blue text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white rounded-full text-sm px-5 py-1"
+            className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
           >
             Add action
           </button>
@@ -191,9 +191,9 @@ export default function ToolConfig({
                 return (
                   <div
                     key={actionIndex}
-                    className="w-full border border-silver dark:border-silver/40 rounded-xl"
+                    className="w-full rounded-xl border border-silver dark:border-silver/40"
                   >
-                    <div className="h-10 bg-[#F9F9F9] dark:bg-[#28292D] rounded-t-xl border-b border-silver dark:border-silver/40 flex items-center justify-between px-5 flex-wrap">
+                    <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
                       <p className="font-semibold text-eerie-black dark:text-bright-gray">
                         {action.name}
                       </p>
@@ -214,10 +214,10 @@ export default function ToolConfig({
                         id={`actionToggle-${actionIndex}`}
                       />
                     </div>
-                    <div className="mt-5 relative">
+                    <div className="relative mt-5">
                       <Input
                         type="text"
-                        className="w-[97%] ml-5"
+                        className="ml-5 w-[97%]"
                         placeholder="Enter description"
                         value={action.description}
                         onChange={(e) => {
@@ -285,7 +285,7 @@ export default function ToolConfig({
                                     <input
                                       key={uniqueKey}
                                       value={param[1].description}
-                                      className="bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm"
+                                      className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
                                       onChange={(e) => {
                                         setTool({
                                           ...tool,
@@ -321,7 +321,7 @@ export default function ToolConfig({
                                       value={param[1].value}
                                       key={uniqueKey}
                                       disabled={param[1].filled_by_llm}
-                                      className={`bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
+                                      className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
                                       onChange={(e) => {
                                         setTool({
                                           ...tool,
@@ -424,9 +424,9 @@ function APIToolConfig({
             return (
               <div
                 key={actionIndex}
-                className="w-full border border-silver dark:border-silver/40 rounded-xl"
+                className="w-full rounded-xl border border-silver dark:border-silver/40"
               >
-                <div className="h-10 bg-[#F9F9F9] dark:bg-[#28292D] rounded-t-xl border-b border-silver dark:border-silver/40 flex items-center justify-between px-5 flex-wrap">
+                <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
                   <p className="font-semibold text-eerie-black dark:text-bright-gray">
                     {action.name}
                   </p>
@@ -439,7 +439,7 @@ function APIToolConfig({
                 </div>
                 <div className="mt-8 px-5">
                   <div className="relative w-full">
-                    <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
                       URL
                     </span>
                     <Input
@@ -471,7 +471,7 @@ function APIToolConfig({
                 </div>
                 <div className="mt-4 px-5 py-2">
                   <div className="relative w-full">
-                    <span className="absolute left-5 -top-2 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
                       Method
                     </span>
                     <Dropdown
@@ -508,7 +508,7 @@ function APIToolConfig({
                 </div>
                 <div className="mt-4 px-5 py-2">
                   <div className="relative w-full">
-                    <span className="z-10 absolute left-5 -top-2 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
                       Description
                     </span>
                     <Input
@@ -713,7 +713,7 @@ function APIActionTable({
                   <div className="flex flex-row items-center justify-between gap-2">
                     <input
                       value={newPropertyKey}
-                      className="min-w-[130.5px] w-full flex items-start bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm"
+                      className="flex w-full min-w-[130.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -724,26 +724,26 @@ function APIActionTable({
                     <div className="mt-1">
                       <button
                         onClick={handleRenameProperty}
-                        className="mr-1 w-5 h-5"
+                        className="mr-1 h-5 w-5"
                       >
                         <img
                           src={CircleCheck}
                           alt="check"
-                          className="w-5 h-5"
+                          className="h-5 w-5"
                         />
                       </button>
                       <button
                         onClick={handleRenamePropertyCancel}
-                        className="w-5 h-5"
+                        className="h-5 w-5"
                       >
-                        <img src={CircleX} alt="cancel" className="w-5 h-5" />
+                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
                 ) : (
                   <input
                     value={key}
-                    className="min-w-[175.5px] w-full flex items-start bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm"
+                    className="flex w-full min-w-[175.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
@@ -772,7 +772,7 @@ function APIActionTable({
               <td className="w-10">
                 <input
                   value={param.description}
-                  className="bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm"
+                  className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
                   onChange={(e) =>
                     handlePropertyChange(
                       section,
@@ -790,7 +790,7 @@ function APIActionTable({
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
-                  className={`bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm ${param.filled_by_llm ? 'opacity-50' : ''}`}
+                  className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param.filled_by_llm ? 'opacity-50' : ''}`}
                 ></input>
               </td>
               <td
@@ -804,9 +804,9 @@ function APIActionTable({
               >
                 <button
                   onClick={() => handlePorpertyDelete(section, key)}
-                  className="w-4 h-4 opacity-60 hover:opacity-100"
+                  className="h-4 w-4 opacity-60 hover:opacity-100"
                 >
-                  <img src={Trash} alt="delete" className="w-4 h-4"></img>
+                  <img src={Trash} alt="delete" className="h-4 w-4"></img>
                 </button>
               </td>
             </tr>
@@ -824,20 +824,20 @@ function APIActionTable({
                   }
                 }}
                 placeholder="New property key"
-                className="min-w-[130.5px] w-full flex items-start bg-transparent border border-silver dark:border-silver/40 outline-none px-2 py-1 rounded-lg text-sm"
+                className="flex w-full min-w-[130.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
               />
             </td>
             <td colSpan={4} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="bg-purple-30 text-white hover:bg-violets-are-blue rounded-full px-5 py-[4px] mr-1 text-sm"
+                className="mr-1 rounded-full bg-purple-30 px-5 py-[4px] text-sm text-white hover:bg-violets-are-blue"
               >
                 {' '}
                 Add{' '}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
-                className="border border-solid border-red-500 text-red-500 hover:bg-red-500 hover:text-white rounded-full px-5 py-[4px] text-sm"
+                className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
                 {' '}
                 Cancel{' '}
@@ -857,7 +857,7 @@ function APIActionTable({
             <td colSpan={5}>
               <button
                 onClick={() => handleAddPropertyStart(section)}
-                className="flex items-start rounded-full px-5 py-[4px] border border-solid  text-violets-are-blue border-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white text-nowrap text-sm"
+                className="flex items-start text-nowrap rounded-full border border-solid border-violets-are-blue px-5 py-[4px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               >
                 Add New Field
               </button>

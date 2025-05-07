@@ -38,7 +38,7 @@ export default function ConversationMessages({
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
-  const [atLast,setAtLast] = useState(true);
+  const [atLast, setAtLast] = useState(true);
   const [eventInterrupt, setEventInterrupt] = useState(false);
 
   const handleUserInterruption = () => {
@@ -46,7 +46,6 @@ export default function ConversationMessages({
       setEventInterrupt(true);
     }
   };
-
 
   const scrollIntoView = () => {
     if (!conversationRef?.current || eventInterrupt) return;
@@ -60,7 +59,8 @@ export default function ConversationMessages({
           top: conversationRef.current.scrollHeight,
         });
       } else {
-        conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+        conversationRef.current.scrollTop =
+          conversationRef.current.scrollHeight;
       }
     });
   };
@@ -92,7 +92,8 @@ export default function ConversationMessages({
   const prepResponseView = (query: Query, index: number) => {
     let responseView;
     if (query.thought || query.response) {
-      const isCurrentlyStreaming = status === 'loading' && index === queries.length - 1;
+      const isCurrentlyStreaming =
+        status === 'loading' && index === queries.length - 1;
       responseView = (
         <ConversationBubble
           className={`${index === queries.length - 1 ? 'mb-32' : 'mb-7'}`}
@@ -114,7 +115,7 @@ export default function ConversationMessages({
     } else if (query.error) {
       const retryBtn = (
         <button
-          className="flex items-center justify-center gap-3 self-center rounded-full py-3 px-5 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
+          className="flex items-center justify-center gap-3 self-center rounded-full px-5 py-3 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed dark:text-bright-gray"
           disabled={status === 'loading'}
           onClick={() => {
             handleQuestion({
@@ -150,7 +151,7 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserInterruption}
       onTouchMove={handleUserInterruption}
-      className="flex justify-center w-full overflow-y-auto h-full sm:pt-12 will-change-scroll"
+      className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-12"
     >
       {queries.length > 0 && !atLast && (
         <button
@@ -161,12 +162,12 @@ export default function ConversationMessages({
           <img
             src={ArrowDown}
             alt="arrow down"
-            className="h-4 w-4 opacity-50 md:h-5 md:w-5 filter dark:invert"
+            className="h-4 w-4 opacity-50 filter dark:invert md:h-5 md:w-5"
           />
         </button>
       )}
 
-      <div className="w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1300px] px-2">
+      <div className="w-full max-w-[1300px] px-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
         {queries.length > 0 ? (
           queries.map((query, index) => (
             <Fragment key={index}>

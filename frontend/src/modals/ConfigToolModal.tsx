@@ -51,10 +51,10 @@ export default function ConfigToolModal({
   return (
     <WrapperModal close={() => setModalState('INACTIVE')}>
       <div>
-        <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
+        <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
           {t('modals.configTool.title')}
         </h2>
-        <p className="mt-5 text-sm text-gray-600 dark:text-gray-400 px-3">
+        <p className="mt-5 px-3 text-sm text-gray-600 dark:text-gray-400">
           {t('modals.configTool.type')}:{' '}
           <span className="font-semibold">{tool?.name}</span>
         </p>

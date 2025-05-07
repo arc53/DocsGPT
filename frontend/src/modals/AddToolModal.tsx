@@ -100,26 +100,26 @@ export default function AddToolModal({
       {modalState === 'ACTIVE' && (
         <WrapperComponent
           close={() => setModalState('INACTIVE')}
-          className="max-w-[950px] w-[90vw] md:w-[85vw] lg:w-[75vw] h-[85vh]"
+          className="h-[85vh] w-[90vw] max-w-[950px] md:w-[85vw] lg:w-[75vw]"
         >
-          <div className="flex flex-col h-full">
+          <div className="flex h-full flex-col">
             <div>
-              <h2 className="font-semibold text-xl text-jet dark:text-bright-gray px-3">
+              <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
                 {t('settings.tools.selectToolSetup')}
               </h2>
               <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
                 {loading ? (
-                  <div className="h-full flex items-center justify-center">
+                  <div className="flex h-full items-center justify-center">
                     <Spinner />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr pb-2">
+                  <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
                     {availableTools.map((tool, index) => (
                       <div
                         role="button"
                         tabIndex={0}
                         key={index}
-                        className="h-52 w-full p-6 border rounded-2xl border-light-gainsboro dark:border-arsenic bg-white-3000 dark:bg-gunmetal flex flex-col justify-between cursor-pointer hover:border-[#9d9d9d] hover:dark:border-[#717179]"
+                        className="flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border border-light-gainsboro bg-white-3000 p-6 hover:border-[#9d9d9d] dark:border-arsenic dark:bg-gunmetal hover:dark:border-[#717179]"
                         onClick={() => {
                           setSelectedTool(tool);
                           handleAddTool(tool);
@@ -132,7 +132,7 @@ export default function AddToolModal({
                         }}
                       >
                         <div className="w-full">
-                          <div className="px-1 w-full flex items-center justify-between">
+                          <div className="flex w-full items-center justify-between px-1">
                             <img
                               src={`/toolIcons/tool_${tool.name}.svg`}
                               className="h-6 w-6"
@@ -142,11 +142,11 @@ export default function AddToolModal({
                           <div className="mt-[9px]">
                             <p
                               title={tool.displayName}
-                              className="px-1 text-[13px] font-semibold text-raisin-black-light dark:text-bright-gray leading-relaxed capitalize truncate"
+                              className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-raisin-black-light dark:text-bright-gray"
                             >
                               {tool.displayName}
                             </p>
-                            <p className="mt-1 px-1 h-24 overflow-auto text-[12px] text-old-silver dark:text-sonic-silver-light leading-relaxed">
+                            <p className="mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed text-old-silver dark:text-sonic-silver-light">
                               {tool.description}
                             </p>
                           </div>

@@ -285,14 +285,14 @@ export default function Documents({
       }}
     />
   ) : (
-    <div className="flex flex-col mt-8 w-full max-w-full overflow-hidden">
-      <div className="flex flex-col relative flex-grow">
+    <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
+      <div className="relative flex flex-grow flex-col">
         <div className="mb-6">
           <h2 className="text-base font-medium text-sonic-silver">
             {t('settings.documents.title')}
           </h2>
         </div>
-        <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <div className="w-full sm:w-auto">
             <label htmlFor="document-search-input" className="sr-only">
               {t('settings.documents.searchPlaceholder')}
@@ -312,7 +312,7 @@ export default function Documents({
             />
           </div>
           <button
-            className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
+            className="flex h-[32px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
             title={t('settings.documents.addNew')}
             onClick={() => {
               setIsOnboarding(false);
@@ -323,27 +323,27 @@ export default function Documents({
           </button>
         </div>
         <div className="relative w-full">
-          <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
-            <div className="overflow-x-auto table-scroll">
+          <div className="overflow-hidden rounded-md border border-gray-300 dark:border-silver/40">
+            <div className="table-scroll overflow-x-auto">
               <table className="w-full table-auto">
                 <thead>
                   <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[45%]">
+                    <th className="w-[45%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
                       {t('settings.documents.name')}
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[30%]">
-                      <div className="flex justify-start items-center">
+                    <th className="w-[30%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
+                      <div className="flex items-center justify-start">
                         {t('settings.documents.date')}
                         <img
-                          className="cursor-pointer ml-2"
+                          className="ml-2 cursor-pointer"
                           onClick={() => refreshDocs('date')}
                           src={caretSort}
                           alt="sort"
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[15%]">
-                      <div className="flex justify-start items-center">
+                    <th className="w-[15%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
+                      <div className="flex items-center justify-start">
                         <span className="hidden sm:inline">
                           {t('settings.documents.tokenUsage')}
                         </span>
@@ -351,14 +351,14 @@ export default function Documents({
                           {t('settings.documents.tokenUsage')}
                         </span>
                         <img
-                          className="cursor-pointer ml-2"
+                          className="ml-2 cursor-pointer"
                           onClick={() => refreshDocs('tokens')}
                           src={caretSort}
                           alt="sort"
                         />
                       </div>
                     </th>
-                    <th className="py-3 px-4 sr-only w-[10%]">
+                    <th className="sr-only w-[10%] px-4 py-3">
                       {t('settings.documents.actions')}
                     </th>
                   </tr>
@@ -370,7 +370,7 @@ export default function Documents({
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
+                        className="bg-transparent py-4 text-center text-gray-700 dark:text-neutral-200"
                       >
                         {t('settings.documents.noData')}
                       </td>
@@ -382,26 +382,26 @@ export default function Documents({
                       return (
                         <tr key={docId} className="group transition-colors">
                           <td
-                            className="py-4 px-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0] min-w-48 max-w-0 truncate group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            className="min-w-48 max-w-0 truncate px-4 py-4 text-sm font-semibold text-gray-700 group-hover:bg-gray-50 dark:text-[#E0E0E0] dark:group-hover:bg-gray-800/50"
                             title={document.name}
                           >
                             {document.name}
                           </td>
-                          <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-700 group-hover:bg-gray-50 dark:text-[#E0E0E0] dark:group-hover:bg-gray-800/50">
                             {document.date ? formatDate(document.date) : ''}
                           </td>
-                          <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] whitespace-nowrap group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50">
+                          <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-700 group-hover:bg-gray-50 dark:text-[#E0E0E0] dark:group-hover:bg-gray-800/50">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}
                           </td>
                           <td
-                            className="py-4 px-4 text-right group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
+                            className="px-4 py-4 text-right group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div
                               ref={getMenuRef(docId)}
-                              className="flex items-center justify-end gap-3 relative"
+                              className="relative flex items-center justify-end gap-3"
                             >
                               {document.syncFrequency && (
                                 <DropdownMenu
@@ -432,7 +432,7 @@ export default function Documents({
                               )}
                               <button
                                 onClick={(e) => handleMenuClick(e, docId)}
-                                className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
                                 aria-label="Open menu"
                                 data-testid={`menu-button-${docId}`}
                               >
@@ -633,19 +633,19 @@ function DocumentChunks({
     fetchChunks();
   }, [page, perPage]);
   return (
-    <div className="flex flex-col mt-8">
-      <div className="mb-3 flex items-center gap-3 text-eerie-black dark:text-bright-gray text-sm">
+    <div className="mt-8 flex flex-col">
+      <div className="mb-3 flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
         <button
-          className="text-sm text-gray-400 dark:text-gray-500 border dark:border-0 dark:bg-[#28292D] dark:hover:bg-[#2E2F34] p-3 rounded-full"
+          className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
           onClick={handleGoBack}
         >
-          <img src={ArrowLeft} alt="left-arrow" className="w-3 h-3" />
+          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
         <p className="mt-px">Back to all documents</p>
       </div>
-      <div className="my-3 flex justify-between items-center gap-1">
-        <div className="w-full sm:w-auto flex items-center gap-2 text-eerie-black dark:text-bright-gray">
-          <p className="font-semibold text-2xl hidden sm:flex">{`${totalChunks} Chunks`}</p>
+      <div className="my-3 flex items-center justify-between gap-1">
+        <div className="flex w-full items-center gap-2 text-eerie-black dark:text-bright-gray sm:w-auto">
+          <p className="hidden text-2xl font-semibold sm:flex">{`${totalChunks} Chunks`}</p>
           <label htmlFor="chunk-search-input" className="sr-only">
             {t('settings.documents.searchPlaceholder')}
           </label>
@@ -663,7 +663,7 @@ function DocumentChunks({
           />
         </div>
         <button
-          className="rounded-full w-[108px] h-[32px] text-sm bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
+          className="flex h-[32px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
           title={t('settings.documents.addNew')}
           onClick={() => setAddModal('ACTIVE')}
         >
@@ -671,24 +671,24 @@ function DocumentChunks({
         </button>
       </div>
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="h-32 flex items-center justify-center mt-24 col-span-2 lg:col-span-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="col-span-2 mt-24 flex h-32 items-center justify-center lg:col-span-3">
             <Spinner />
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {paginatedChunks.filter((chunk) => {
             if (!chunk.metadata?.title) return true;
             return chunk.metadata.title
               .toLowerCase()
               .includes(searchTerm.toLowerCase());
           }).length === 0 ? (
-            <div className="mt-24 col-span-2 lg:col-span-3 text-center text-gray-500 dark:text-gray-400">
+            <div className="col-span-2 mt-24 text-center text-gray-500 dark:text-gray-400 lg:col-span-3">
               <img
                 src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
                 alt="No tools found"
-                className="h-24 w-24 mx-auto mb-2"
+                className="mx-auto mb-2 h-24 w-24"
               />
               No chunks found
             </div>
@@ -703,10 +703,10 @@ function DocumentChunks({
               .map((chunk, index) => (
                 <div
                   key={index}
-                  className="relative h-56 w-full p-6 border rounded-2xl border-silver dark:border-silver/40 flex flex-col justify-between"
+                  className="relative flex h-56 w-full flex-col justify-between rounded-2xl border border-silver p-6 dark:border-silver/40"
                 >
                   <div className="w-full">
-                    <div className="w-full flex items-center justify-between">
+                    <div className="flex w-full items-center justify-between">
                       <button
                         aria-label={'edit'}
                         onClick={() => {
@@ -715,7 +715,7 @@ function DocumentChunks({
                             chunk: chunk,
                           });
                         }}
-                        className="absolute top-3 right-3 h-4 w-4 cursor-pointer"
+                        className="absolute right-3 top-3 h-4 w-4 cursor-pointer"
                       >
                         <img
                           alt={'edit'}
@@ -725,10 +725,10 @@ function DocumentChunks({
                       </button>
                     </div>
                     <div className="mt-[9px]">
-                      <p className="h-12 text-sm font-semibold text-eerie-black dark:text-[#EEEEEE] leading-relaxed break-words ellipsis-text">
+                      <p className="ellipsis-text h-12 break-words text-sm font-semibold leading-relaxed text-eerie-black dark:text-[#EEEEEE]">
                         {chunk.metadata?.title ?? 'Untitled'}
                       </p>
-                      <p className="mt-1 pr-1 h-[110px] overflow-y-auto text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed break-words">
+                      <p className="mt-1 h-[110px] overflow-y-auto break-words pr-1 text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
                         {chunk.text}
                       </p>
                     </div>
@@ -745,7 +745,7 @@ function DocumentChunks({
             .toLowerCase()
             .includes(searchTerm.toLowerCase());
         }).length !== 0 && (
-          <div className="mt-10 w-full flex items-center justify-center">
+          <div className="mt-10 flex w-full items-center justify-center">
             <Pagination
               currentPage={page}
               totalPages={Math.ceil(totalChunks / perPage)}

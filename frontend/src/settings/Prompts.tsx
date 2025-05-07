@@ -145,7 +145,7 @@ export default function Prompts({
           <p className="font-medium dark:text-bright-gray">
             {t('settings.general.prompt')}
           </p>
-          <div className="flex flex-row justify-start items-baseline gap-6">
+          <div className="flex flex-row items-baseline justify-start gap-6">
             <Dropdown
               options={prompts}
               selectedValue={selectedPrompt.name}
@@ -174,7 +174,7 @@ export default function Prompts({
             />
 
             <button
-              className="rounded-3xl w-20 h-10 text-sm border border-solid border-violets-are-blue text-violets-are-blue transition-colors hover:text-white hover:bg-violets-are-blue"
+              className="h-10 w-20 rounded-3xl border border-solid border-violets-are-blue text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               onClick={() => {
                 setModalType('ADD');
                 setModalState('ACTIVE');
