@@ -272,11 +272,11 @@ export default function MessageInput({
                       dispatch(removeAttachment(attachment.id));
                     }
                   }}
-                  aria-label="Remove attachment"
+                  aria-label={t('conversation.attachments.remove')}
                 >
                   <img
                     src={ExitIcon}
-                    alt="Remove"
+                    alt={t('conversation.attachments.remove')}
                     className="h-2.5 w-2.5 filter dark:invert"
                   />
                 </button>
@@ -394,7 +394,7 @@ export default function MessageInput({
                   className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
                 />
                 <span className="xs:text-[12px] text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
-                  Attach
+                  {t('conversation.attachments.attach')}
                 </span>
                 <input
                   type="file"

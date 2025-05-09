@@ -241,6 +241,11 @@
       "link": "Source link",
       "view_more": "{{count}} more sources"
     },
+    "attachments": {
+      "attach": "Attach",
+      "remove": "Remove attachment",
+      "uploadFailed": "Upload failed"
+    },
     "retry": "Retry"
   }
 }
