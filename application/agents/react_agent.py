@@ -87,6 +87,10 @@ class ReActAgent(BaseAgent):
         )
 
         yield {"sources": retrieved_data}
+        # clean tool_call_data only send first 50 characters of tool_call['result']
+        for tool_call in self.tool_calls:
+            if len(str(tool_call["result"])) > 50:
+                tool_call["result"] = str(tool_call["result"])[:50] + "..."
         yield {"tool_calls": self.tool_calls.copy()}
 
         final_answer = self._create_final_answer(query, self.observations, log_context)
