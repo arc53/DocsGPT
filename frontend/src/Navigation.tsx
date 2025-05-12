@@ -110,7 +110,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         )
         .slice(0, 3 - pinnedAgents.length);
       setRecentAgents([...pinnedAgents, ...additionalAgents]);
-      console.log(additionalAgents);
     } catch (error) {
       console.error('Failed to fetch recent agents: ', error);
     }
@@ -181,22 +180,37 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .getConversation(index, token)
       .then((response) => response.json())
       .then((data) => {
-        navigate('/');
+        if (data.agent_id) {
+          if (data.is_shared_usage) {
+            userService
+              .getSharedAgent(data.shared_token, token)
+              .then((response) => {
+                if (response.ok) {
+                  response.json().then((agent: Agent) => {
+                    navigate(`/agents/shared/${agent.shared_token}`);
+                  });
+                }
+              });
+          } else {
+            userService.getAgent(data.agent_id, token).then((response) => {
+              if (response.ok) {
+                response.json().then((agent: Agent) => {
+                  navigate('/');
+                  dispatch(setSelectedAgent(agent));
+                });
+              }
+            });
+          }
+        } else {
+          navigate('/');
+          dispatch(setSelectedAgent(null));
+        }
         dispatch(setConversation(data.queries));
         dispatch(
           updateConversationId({
             query: { conversationId: index },
           }),
         );
-        if (data.agent_id) {
-          userService.getAgent(data.agent_id, token).then((response) => {
-            if (response.ok) {
-              response.json().then((agent: Agent) => {
-                dispatch(setSelectedAgent(agent));
-              });
-            }
-          });
-        } else dispatch(setSelectedAgent(null));
       });
   };
 

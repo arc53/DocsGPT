@@ -41,6 +41,12 @@ shared_conversations_collections = db["shared_conversations"]
 user_logs_collection = db["user_logs"]
 user_tools_collection = db["user_tools"]
 
+agents_collection.create_index(
+    [("shared", 1)],
+    name="shared_index",
+    background=True,
+)
+
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
 api.add_namespace(user_ns)
@@ -166,6 +172,8 @@ class GetConversations(Resource):
                     "id": str(conversation["_id"]),
                     "name": conversation["name"],
                     "agent_id": conversation.get("agent_id", None),
+                    "is_shared_usage": conversation.get("is_shared_usage", False),
+                    "shared_token": conversation.get("shared_token", None),
                 }
                 for conversation in conversations
             ]
@@ -208,6 +216,8 @@ class GetSingleConversation(Resource):
         data = {
             "queries": conversation["queries"],
             "agent_id": conversation.get("agent_id"),
+            "is_shared_usage": conversation.get("is_shared_usage", False),
+            "shared_token": conversation.get("shared_token", None),
         }
         return make_response(jsonify(data), 200)
 
@@ -1034,6 +1044,9 @@ class GetAgent(Resource):
                     else ""
                 ),
                 "pinned": agent.get("pinned", False),
+                "shared": agent.get("shared_publicly", False),
+                "shared_metadata": agent.get("shared_metadata", {}),
+                "shared_token": agent.get("shared_token", ""),
             }
         except Exception as err:
             current_app.logger.error(f"Error retrieving agent: {err}", exc_info=True)
@@ -1077,6 +1090,9 @@ class GetAgents(Resource):
                         else ""
                     ),
                     "pinned": agent.get("pinned", False),
+                    "shared": agent.get("shared_publicly", False),
+                    "shared_metadata": agent.get("shared_metadata", {}),
+                    "shared_token": agent.get("shared_token", ""),
                 }
                 for agent in agents
                 if "source" in agent or "retriever" in agent
@@ -1476,6 +1492,195 @@ class PinAgent(Resource):
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/shared_agent")
+class SharedAgent(Resource):
+    @api.doc(
+        params={
+            "token": "Shared token of the agent",
+        },
+        description="Get a shared agent by token or ID",
+    )
+    def get(self):
+        shared_token = request.args.get("token")
+
+        if not shared_token:
+            return make_response(
+                jsonify({"success": False, "message": "Token or ID is required"}), 400
+            )
+
+        try:
+            query = {}
+            query["shared_publicly"] = True
+            query["shared_token"] = shared_token
+
+            shared_agent = agents_collection.find_one(query)
+            if not shared_agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Shared agent not found"}),
+                    404,
+                )
+
+            data = {
+                "id": str(shared_agent["_id"]),
+                "user": shared_agent.get("user", ""),
+                "name": shared_agent.get("name", ""),
+                "description": shared_agent.get("description", ""),
+                "tools": shared_agent.get("tools", []),
+                "agent_type": shared_agent.get("agent_type", ""),
+                "status": shared_agent.get("status", ""),
+                "created_at": shared_agent.get("createdAt", ""),
+                "updated_at": shared_agent.get("updatedAt", ""),
+                "shared": shared_agent.get("shared_publicly", False),
+                "shared_token": shared_agent.get("shared_token", ""),
+                "shared_metadata": shared_agent.get("shared_metadata", {}),
+            }
+
+            if data["tools"]:
+                enriched_tools = []
+                for tool in data["tools"]:
+                    tool_data = user_tools_collection.find_one({"_id": ObjectId(tool)})
+                    if tool_data:
+                        enriched_tools.append(tool_data.get("displayName", ""))
+                data["tools"] = enriched_tools
+
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving shared agent: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify(data), 200)
+
+
+@user_ns.route("/api/shared_agents")
+class SharedAgents(Resource):
+    @api.doc(description="Get shared agents")
+    def get(self):
+        try:
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False}), 401)
+            user = decoded_token.get("sub")
+            shared_agents = agents_collection.find(
+                {"shared_publicly": True, "user": {"$ne": user}}
+            )
+            list_shared_agents = [
+                {
+                    "id": str(shared_agent["_id"]),
+                    "name": shared_agent.get("name", ""),
+                    "description": shared_agent.get("description", ""),
+                    "tools": shared_agent.get("tools", []),
+                    "agent_type": shared_agent.get("agent_type", ""),
+                    "status": shared_agent.get("status", ""),
+                    "created_at": shared_agent.get("createdAt", ""),
+                    "updated_at": shared_agent.get("updatedAt", ""),
+                    "shared": shared_agent.get("shared_publicly", False),
+                    "shared_token": shared_agent.get("shared_token", ""),
+                    "shared_metadata": shared_agent.get("shared_metadata", {}),
+                }
+                for shared_agent in shared_agents
+            ]
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving shared agents: {err}")
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_shared_agents), 200)
+
+
+@user_ns.route("/api/share_agent")
+class ShareAgent(Resource):
+    @api.expect(
+        api.model(
+            "ShareAgentModel",
+            {
+                "id": fields.String(required=True, description="ID of the agent"),
+                "shared": fields.Boolean(
+                    required=True, description="Share or unshare the agent"
+                ),
+                "username": fields.String(
+                    required=False, description="Name of the user"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Share or unshare an agent")
+    def put(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+
+        user = decoded_token.get("sub")
+
+        data = request.get_json()
+        if not data:
+            return make_response(
+                jsonify({"success": False, "message": "Missing JSON body"}), 400
+            )
+
+        agent_id = data.get("id")
+        shared = data.get("shared")
+        username = data.get("username", "")
+
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        if shared is None:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Shared parameter is required and must be true or false",
+                    }
+                ),
+                400,
+            )
+
+        try:
+            try:
+                agent_oid = ObjectId(agent_id)
+            except Exception:
+                return make_response(
+                    jsonify({"success": False, "message": "Invalid agent ID"}), 400
+                )
+
+            agent = agents_collection.find_one({"_id": agent_oid, "user": user})
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Agent not found"}), 404
+                )
+
+            if shared:
+                shared_metadata = {
+                    "shared_by": username,
+                    "shared_at": datetime.datetime.now(datetime.timezone.utc),
+                }
+                shared_token = secrets.token_urlsafe(32)
+                agents_collection.update_one(
+                    {"_id": agent_oid, "user": user},
+                    {
+                        "$set": {
+                            "shared_publicly": shared,
+                            "shared_metadata": shared_metadata,
+                            "shared_token": shared_token,
+                        }
+                    },
+                )
+            else:
+                agents_collection.update_one(
+                    {"_id": agent_oid, "user": user},
+                    {"$set": {"shared_publicly": shared, "shared_token": None}},
+                    {"$unset": {"shared_metadata": ""}},
+                )
+
+        except Exception as err:
+            current_app.logger.error(f"Error sharing/unsharing agent: {err}")
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        shared_token = shared_token if shared else None
+        return make_response(
+            jsonify({"success": True, "shared_token": shared_token}), 200
+        )
 
 
 @user_ns.route("/api/agent_webhook")

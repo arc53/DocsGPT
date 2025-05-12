@@ -13,6 +13,9 @@ export type Agent = {
   key?: string;
   incoming_webhook_token?: string;
   pinned?: boolean;
+  shared?: boolean;
+  shared_token?: string;
+  shared_metadata?: any;
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;

@@ -35,6 +35,12 @@ const userService = {
     apiClient.get(endpoints.USER.PINNED_AGENTS, token),
   togglePinAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.TOGGLE_PIN_AGENT(id), {}, token),
+  getSharedAgent: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.SHARED_AGENT(id), token),
+  getSharedAgents: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.SHARED_AGENTS, token),
+  shareAgent: (data: any, token: string | null): Promise<any> =>
+    apiClient.put(endpoints.USER.SHARE_AGENT, data, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_WEBHOOK(id), token),
   getPrompts: (token: string | null): Promise<any> =>
