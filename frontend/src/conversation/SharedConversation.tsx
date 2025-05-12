@@ -160,7 +160,8 @@ export const SharedConversation = () => {
               onChange={(e) => setInput(e.target.value)}
               onSubmit={() => handleQuestionSubmission()}
               loading={status === 'loading'}
-              isShared={true}
+              showSourceButton={false}
+              showToolButton={false}
             />
           ) : (
             <button

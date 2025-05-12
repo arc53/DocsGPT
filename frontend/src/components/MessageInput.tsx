@@ -34,7 +34,8 @@ type MessageInputProps = {
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   loading: boolean;
-  isShared?: boolean;
+  showSourceButton?: boolean;
+  showToolButton?: boolean;
   autoFocus?: boolean;
 };
 
@@ -43,7 +44,8 @@ export default function MessageInput({
   onChange,
   onSubmit,
   loading,
-  isShared = false,
+  showSourceButton = true,
+  showToolButton = true,
   autoFocus = true,
 }: MessageInputProps) {
   const { t } = useTranslation();
@@ -343,8 +345,8 @@ export default function MessageInput({
         </div>
 
         <div className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2">
-          {!isShared && (
-            <div className="flex flex-grow flex-wrap gap-1 sm:gap-2">
+          <div className="flex flex-grow flex-wrap gap-1 sm:gap-2">
+            {showSourceButton && (
               <button
                 ref={sourceButtonRef}
                 className="xs:px-3 xs:py-1.5 flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C] sm:max-w-[150px]"
@@ -371,7 +373,9 @@ export default function MessageInput({
                   </span>
                 )}
               </button>
+            )}
 
+            {showToolButton && (
               <button
                 ref={toolButtonRef}
                 className="xs:px-3 xs:py-1.5 xs:max-w-[150px] flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C]"
@@ -386,26 +390,24 @@ export default function MessageInput({
                   {t('settings.tools.label')}
                 </span>
               </button>
-
-              <label className="xs:px-3 xs:py-1.5 flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C]">
-                <img
-                  src={ClipIcon}
-                  alt="Attach"
-                  className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
-                />
-                <span className="xs:text-[12px] text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
-                  {t('conversation.attachments.attach')}
-                </span>
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileAttachment}
-                />
-              </label>
-
-              {/* Additional badges can be added here in the future */}
-            </div>
-          )}
+            )}
+            <label className="xs:px-3 xs:py-1.5 flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C]">
+              <img
+                src={ClipIcon}
+                alt="Attach"
+                className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
+              />
+              <span className="xs:text-[12px] text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
+                {t('conversation.attachments.attach')}
+              </span>
+              <input
+                type="file"
+                className="hidden"
+                onChange={handleFileAttachment}
+              />
+            </label>
+            {/* Additional badges can be added here in the future */}
+          </div>
 
           <button
             onClick={loading ? undefined : handleSubmit}
