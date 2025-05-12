@@ -17,12 +17,16 @@ type LogsProps = {
 
 export default function Logs({ agentId, tableHeader }: LogsProps) {
   const token = useSelector(selectToken);
-  const [logs, setLogs] = useState<LogData[]>([]);
+  const [logsByPage, setLogsByPage] = useState<Record<number, LogData[]>>({});
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingLogs, setLoadingLogs] = useLoaderState(true);
 
+  const logs = Object.values(logsByPage).flat();
+
   const fetchLogs = async () => {
+    if (logsByPage[page] && logsByPage[page].length > 0) return;
+
     setLoadingLogs(true);
     try {
       const response = await userService.getLogs(
@@ -34,9 +38,13 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         token,
       );
       if (!response.ok) throw new Error('Failed to fetch logs');
-      const olderLogs = await response.json();
-      setLogs((prevLogs) => [...prevLogs, ...olderLogs.logs]);
-      setHasMore(olderLogs.has_more);
+      const data = await response.json();
+
+      setLogsByPage((prev) => ({
+        ...prev,
+        [page]: data.logs,
+      }));
+      setHasMore(data.has_more);
     } catch (error) {
       console.error(error);
     } finally {
