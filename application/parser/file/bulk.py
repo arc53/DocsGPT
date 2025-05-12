@@ -158,7 +158,7 @@ class SimpleDirectoryReader(BaseReader):
                     data = f.read()
             # Prepare metadata for this file
             if self.file_metadata is not None:
-                file_metadata = self.file_metadata(str(input_file))
+                file_metadata = self.file_metadata(input_file.name)
             else:
                 # Provide a default empty metadata
                 file_metadata = {'title': '', 'store': ''}

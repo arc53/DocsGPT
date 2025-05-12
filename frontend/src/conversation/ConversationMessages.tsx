@@ -64,14 +64,19 @@ export default function ConversationMessages({
   const scrollConversationToBottom = useCallback(() => {
     if (!conversationRef.current || userInterruptedScroll) return;
 
-    if (status === 'idle' || !queries[queries.length - 1]?.response) {
-      conversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: conversationRef.current.scrollHeight,
-      });
-    } else {
-      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
-    }
+    requestAnimationFrame(() => {
+      if (!conversationRef?.current) return;
+
+      if (status === 'idle' || !queries[queries.length - 1]?.response) {
+        conversationRef.current.scrollTo({
+          behavior: 'smooth',
+          top: conversationRef.current.scrollHeight,
+        });
+      } else {
+        conversationRef.current.scrollTop =
+          conversationRef.current.scrollHeight;
+      }
+    });
   }, [userInterruptedScroll, status, queries]);
 
   const checkScrollPosition = useCallback(() => {
@@ -127,6 +132,8 @@ export default function ConversationMessages({
       : DEFAULT_BUBBLE_MARGIN;
 
     if (query.thought || query.response) {
+      const isCurrentlyStreaming =
+        status === 'loading' && index === queries.length - 1;
       return (
         <ConversationBubble
           className={bubbleMargin}
@@ -137,6 +144,7 @@ export default function ConversationMessages({
           sources={query.sources}
           toolCalls={query.tool_calls}
           feedback={query.feedback}
+          isStreaming={isCurrentlyStreaming}
           handleFeedback={
             handleFeedback
               ? (feedback) => handleFeedback(query, feedback, index)
@@ -195,7 +203,7 @@ export default function ConversationMessages({
         >
           <img
             src={ArrowDown}
-            alt=""
+            alt="arrow down"
             className="h-4 w-4 opacity-50 filter dark:invert md:h-5 md:w-5"
           />
         </button>

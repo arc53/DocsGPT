@@ -41,7 +41,7 @@ function AddPrompt({
           labelBgClassName="bg-white dark:bg-[#26272E]"
           borderVariant="thin"
         />
-        <div className="relative top-[7px] left-3">
+        <div className="relative left-3 top-[7px]">
           <span className="bg-white px-1 text-xs text-silver dark:bg-[#26272E] dark:text-silver">
             {t('modals.prompts.promptText')}
           </span>
@@ -113,7 +113,7 @@ function EditPrompt({
             labelBgClassName="bg-white dark:bg-charleston-green-2"
             borderVariant="thin"
           />
-          <div className="relative top-[7px] left-3">
+          <div className="relative left-3 top-[7px]">
             <span className="bg-white px-1 text-xs text-silver dark:bg-charleston-green-2 dark:text-silver">
               {t('modals.prompts.promptText')}
             </span>
@@ -131,7 +131,7 @@ function EditPrompt({
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">
           <button
-            className={`rounded-3xl bg-purple-30 disabled:hover:bg-purple-30  hover:bg-violets-are-blue px-5 py-2 text-sm text-white transition-all ${
+            className={`rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue disabled:hover:bg-purple-30 ${
               currentPromptEdit.type === 'public'
                 ? 'cursor-not-allowed opacity-50'
                 : ''
@@ -247,7 +247,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="sm:w-[512px] mt-24"
+      className="mt-24 sm:w-[512px]"
     >
       {view}
     </WrapperModal>

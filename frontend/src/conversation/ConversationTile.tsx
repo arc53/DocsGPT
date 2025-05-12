@@ -192,7 +192,7 @@ export default function ConversationTile({
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`my-auto mx-4 mt-4 flex h-9 cursor-pointer items-center justify-between pl-4 gap-4 rounded-3xl hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+        className={`mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
           conversationId === conversation.id || isOpen || isHovered || isEdit
             ? 'bg-bright-gray dark:bg-dark-charcoal'
             : ''

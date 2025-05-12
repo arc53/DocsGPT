@@ -176,10 +176,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   };
 
   const handleConversationClick = (index: string) => {
+    dispatch(setSelectedAgent(null));
     conversationService
       .getConversation(index, token)
       .then((response) => response.json())
       .then((data) => {
+        dispatch(setConversation(data.queries));
+        dispatch(
+          updateConversationId({
+            query: { conversationId: index },
+          }),
+        );
         if (data.agent_id) {
           if (data.is_shared_usage) {
             userService
@@ -205,12 +212,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           navigate('/');
           dispatch(setSelectedAgent(null));
         }
-        dispatch(setConversation(data.queries));
-        dispatch(
-          updateConversationId({
-            query: { conversationId: index },
-          }),
-        );
       });
   };
 

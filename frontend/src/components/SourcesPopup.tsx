@@ -32,8 +32,13 @@ export default function SourcesPopup({
   const { t } = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0, maxHeight: 0, showAbove: false });
-  
+  const [popupPosition, setPopupPosition] = useState({
+    top: 0,
+    left: 0,
+    maxHeight: 0,
+    showAbove: false,
+  });
+
   const embeddingsName =
     import.meta.env.VITE_EMBEDDINGS_NAME ||
     'huggingface_sentence-transformers/all-mpnet-base-v2';
@@ -41,16 +46,16 @@ export default function SourcesPopup({
   const options = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
 
-  const filteredOptions = options?.filter(option => 
-    option.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredOptions = options?.filter((option) =>
+    option.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   useLayoutEffect(() => {
     if (!isOpen || !anchorRef.current) return;
-    
+
     const updatePosition = () => {
       if (!anchorRef.current) return;
-      
+
       const rect = anchorRef.current.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
@@ -60,17 +65,17 @@ export default function SourcesPopup({
       const maxHeight = showAbove ? spaceAbove - 16 : spaceBelow - 16;
       const left = Math.min(
         rect.left,
-        viewportWidth - Math.min(480, viewportWidth * 0.95) - 10
+        viewportWidth - Math.min(480, viewportWidth * 0.95) - 10,
       );
-      
+
       setPopupPosition({
         top: showAbove ? rect.top - 8 : rect.bottom + 8,
         left,
         maxHeight: Math.min(600, maxHeight),
-        showAbove
+        showAbove,
       });
     };
-    
+
     updatePosition();
     window.addEventListener('resize', updatePosition);
     return () => window.removeEventListener('resize', updatePosition);
@@ -111,10 +116,12 @@ export default function SourcesPopup({
   return (
     <div
       ref={popupRef}
-      className="fixed z-50 bg-lotion dark:bg-charleston-green-2 rounded-xl shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033] flex flex-col"
+      className="fixed z-50 flex flex-col rounded-xl bg-lotion shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033] dark:bg-charleston-green-2"
       style={{
         top: popupPosition.showAbove ? popupPosition.top : undefined,
-        bottom: popupPosition.showAbove ? undefined : window.innerHeight - popupPosition.top,
+        bottom: popupPosition.showAbove
+          ? undefined
+          : window.innerHeight - popupPosition.top,
         left: popupPosition.left,
         maxWidth: Math.min(480, window.innerWidth * 0.95),
         width: '100%',
@@ -122,12 +129,12 @@ export default function SourcesPopup({
         transform: popupPosition.showAbove ? 'translateY(-100%)' : 'none',
       }}
     >
-      <div className="flex flex-col h-full">
-        <div className="px-4 md:px-6 py-4 flex-shrink-0">
-          <h2 className="text-lg font-bold text-[#141414] dark:text-bright-gray mb-4 dark:text-[20px]">
+      <div className="flex h-full flex-col">
+        <div className="flex-shrink-0 px-4 py-4 md:px-6">
+          <h2 className="mb-4 text-lg font-bold text-[#141414] dark:text-[20px] dark:text-bright-gray">
             {t('conversation.sources.text')}
           </h2>
-          
+
           <Input
             id="source-search"
             name="source-search"
@@ -141,7 +148,7 @@ export default function SourcesPopup({
           />
         </div>
 
-        <div className="flex-grow overflow-y-auto mx-4 border border-[#D9D9D9] dark:border-dim-gray rounded-md [&::-webkit-scrollbar-thumb]:bg-[#888] [&::-webkit-scrollbar-thumb]:hover:bg-[#555] [&::-webkit-scrollbar-track]:bg-[#E2E8F0] dark:[&::-webkit-scrollbar-track]:bg-[#2C2E3C]">
+        <div className="mx-4 flex-grow overflow-y-auto rounded-md border border-[#D9D9D9] dark:border-dim-gray [&::-webkit-scrollbar-thumb]:bg-[#888] [&::-webkit-scrollbar-thumb]:hover:bg-[#555] [&::-webkit-scrollbar-track]:bg-[#E2E8F0] dark:[&::-webkit-scrollbar-track]:bg-[#2C2E3C]">
           {options ? (
             <>
               {filteredOptions?.map((option: any, index: number) => {
@@ -149,7 +156,7 @@ export default function SourcesPopup({
                   return (
                     <div
                       key={index}
-                      className="flex cursor-pointer items-center p-3 hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors border-b border-[#D9D9D9] dark:border-dim-gray border-opacity-80 dark:text-[14px]"
+                      className="flex cursor-pointer items-center border-b border-[#D9D9D9] border-opacity-80 p-3 transition-colors hover:bg-gray-100 dark:border-dim-gray dark:text-[14px] dark:hover:bg-[#2C2E3C]"
                       onClick={() => {
                         dispatch(setSelectedDocs(option));
                         handlePostDocumentSelect(option);
@@ -159,23 +166,26 @@ export default function SourcesPopup({
                       <img
                         src={SourceIcon}
                         alt="Source"
-                        width={14} height={14}
+                        width={14}
+                        height={14}
                         className="mr-3 flex-shrink-0"
                       />
-                      <span className="text-[#5D5D5D] dark:text-bright-gray font-medium flex-grow overflow-hidden overflow-ellipsis whitespace-nowrap mr-3">
+                      <span className="mr-3 flex-grow overflow-hidden overflow-ellipsis whitespace-nowrap font-medium text-[#5D5D5D] dark:text-bright-gray">
                         {option.name}
                       </span>
-                      <div className={`w-4 h-4 border flex-shrink-0 flex items-center justify-center p-[0.5px] dark:border-[#757783] border-[#C6C6C6]`}>
-                        {selectedDocs && 
-                          (option.id ? 
-                            selectedDocs.id === option.id :  // For documents with MongoDB IDs
-                            selectedDocs.date === option.date) &&  // For preloaded sources
-                          <img
-                            src={CheckIcon}
-                            alt="Selected"
-                            className="h-3 w-3"
-                          />
-                        }
+                      <div
+                        className={`flex h-4 w-4 flex-shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                      >
+                        {selectedDocs &&
+                          (option.id
+                            ? selectedDocs.id === option.id // For documents with MongoDB IDs
+                            : selectedDocs.date === option.date) && ( // For preloaded sources
+                            <img
+                              src={CheckIcon}
+                              alt="Selected"
+                              className="h-3 w-3"
+                            />
+                          )}
                       </div>
                     </div>
                   );
@@ -183,14 +193,22 @@ export default function SourcesPopup({
                 return null;
               })}
               <div
-                className="flex cursor-pointer items-center p-3 hover:bg-gray-100 dark:hover:bg-[#2C2E3C] transition-colors border-b border-[#D9D9D9] dark:border-dim-gray border-opacity-80 dark:text-[14px]"
+                className="flex cursor-pointer items-center border-b border-[#D9D9D9] border-opacity-80 p-3 transition-colors hover:bg-gray-100 dark:border-dim-gray dark:text-[14px] dark:hover:bg-[#2C2E3C]"
                 onClick={handleEmptyDocumentSelect}
               >
-                <img width={14} height={14} src={SourceIcon} alt="Source" className="mr-3 flex-shrink-0" />
-                <span className="text-[#5D5D5D] dark:text-bright-gray font-medium flex-grow mr-3">
+                <img
+                  width={14}
+                  height={14}
+                  src={SourceIcon}
+                  alt="Source"
+                  className="mr-3 flex-shrink-0"
+                />
+                <span className="mr-3 flex-grow font-medium text-[#5D5D5D] dark:text-bright-gray">
                   {t('none')}
                 </span>
-                <div className={`w-4 h-4 border flex-shrink-0 flex items-center justify-center p-[0.5px] dark:border-[#757783] border-[#C6C6C6]`}>
+                <div
+                  className={`flex h-4 w-4 flex-shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                >
                   {selectedDocs === null && (
                     <img src={CheckIcon} alt="Selected" className="h-3 w-3" />
                   )}
@@ -198,27 +216,27 @@ export default function SourcesPopup({
               </div>
             </>
           ) : (
-            <div className="p-4 text-center text-gray-500 dark:text-bright-gray dark:text-[14px]">
+            <div className="p-4 text-center text-gray-500 dark:text-[14px] dark:text-bright-gray">
               {t('noSourcesAvailable')}
             </div>
           )}
         </div>
 
-        <div className="px-4 md:px-6 py-4 opacity-75 hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
-          <a 
-            href="/settings/documents" 
-            className="text-violets-are-blue text-base font-medium inline-flex items-center gap-2"
+        <div className="flex-shrink-0 px-4 py-4 opacity-75 transition-opacity duration-200 hover:opacity-100 md:px-6">
+          <a
+            href="/settings/documents"
+            className="inline-flex items-center gap-2 text-base font-medium text-violets-are-blue"
             onClick={onClose}
           >
             Go to Documents
-            <img src={RedirectIcon} alt="Redirect" className="w-3 h-3" />
+            <img src={RedirectIcon} alt="Redirect" className="h-3 w-3" />
           </a>
         </div>
 
-        <div className="px-4 md:px-6 py-3 flex justify-start flex-shrink-0">
+        <div className="flex flex-shrink-0 justify-start px-4 py-3 md:px-6">
           <button
             onClick={handleUploadClick}
-            className="py-2 px-4 rounded-full border text-violets-are-blue hover:bg-violets-are-blue border-violets-are-blue hover:text-white transition-colors duration-200 text-[14px] font-medium w-auto"
+            className="w-auto rounded-full border border-violets-are-blue px-4 py-2 text-[14px] font-medium text-violets-are-blue transition-colors duration-200 hover:bg-violets-are-blue hover:text-white"
           >
             Upload new
           </button>

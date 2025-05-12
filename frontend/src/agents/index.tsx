@@ -3,7 +3,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Copy from '../assets/copy-linear.svg';
 import Edit from '../assets/edit.svg';
 import Monitoring from '../assets/monitoring.svg';
 import Pin from '../assets/pin.svg';
@@ -205,7 +204,7 @@ function AgentSection({
           </button>
         )}
       </div>
-      <div className="flex w-full flex-wrap gap-4">
+      <div className="grid w-full grid-cols-2 gap-2 md:flex md:flex-wrap md:gap-4">
         {loading ? (
           <div className="flex h-72 w-full items-center justify-center">
             <Spinner />
@@ -355,7 +354,7 @@ function AgentCard({
   };
   return (
     <div
-      className={`relative flex h-44 w-48 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] dark:bg-[#383838] hover:dark:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`relative flex h-44 w-full flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] dark:bg-[#383838] hover:dark:bg-[#383838]/80 md:w-48 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();

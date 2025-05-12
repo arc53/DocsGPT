@@ -101,18 +101,18 @@ export default function APIKeys() {
   }, []);
 
   return (
-    <div className="flex flex-col w-full mt-8 max-w-full overflow-hidden">
-      <div className="flex flex-col relative flex-grow">
+    <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
+      <div className="relative flex flex-grow flex-col">
         <div className="mb-6">
           <h2 className="text-base font-medium text-sonic-silver">
             {t('settings.apiKeys.description')}
           </h2>
         </div>
 
-        <div className="mb-6 flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3">
+        <div className="mb-6 flex flex-col items-start justify-end gap-3 sm:flex-row sm:items-center">
           <button
             onClick={() => setCreateModal(true)}
-            className="rounded-full text-sm w-[108px] h-[30px] bg-purple-30 text-white hover:bg-violets-are-blue flex items-center justify-center"
+            className="flex h-[30px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
             title={t('settings.apiKeys.createNew')}
           >
             {t('settings.apiKeys.createNew')}
@@ -120,18 +120,18 @@ export default function APIKeys() {
         </div>
 
         <div className="relative w-full">
-          <div className="border rounded-md border-gray-300 dark:border-silver/40 overflow-hidden">
-            <div className="overflow-x-auto table-scroll">
+          <div className="overflow-hidden rounded-md border border-gray-300 dark:border-silver/40">
+            <div className="table-scroll overflow-x-auto">
               <table className="w-full table-auto">
                 <thead>
                   <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[35%]">
+                    <th className="w-[35%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
                       {t('settings.apiKeys.name')}
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[35%]">
+                    <th className="w-[35%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
                       {t('settings.apiKeys.sourceDoc')}
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-sonic-silver w-[25%]">
+                    <th className="w-[25%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
                       <span className="hidden sm:inline">
                         {t('settings.apiKeys.key')}
                       </span>
@@ -139,7 +139,7 @@ export default function APIKeys() {
                         {t('settings.apiKeys.key')}
                       </span>
                     </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0] w-[5%]">
+                    <th className="w-[5%] px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-[#E0E0E0]">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
@@ -151,7 +151,7 @@ export default function APIKeys() {
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-4 text-center text-gray-700 dark:text-neutral-200 bg-transparent"
+                        className="bg-transparent py-4 text-center text-gray-700 dark:text-neutral-200"
                       >
                         {t('settings.apiKeys.noData')}
                       </td>
@@ -163,22 +163,22 @@ export default function APIKeys() {
                         key={element.id}
                         className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                       >
-                        <td className="py-4 px-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0">
+                        <td className="w-[35%] min-w-48 max-w-0 px-4 py-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0]">
                           <div className="truncate" title={element.name}>
                             {element.name}
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-sm text-gray-700 dark:text-[#E0E0E0] w-[35%] min-w-48 max-w-0">
+                        <td className="w-[35%] min-w-48 max-w-0 px-4 py-4 text-sm text-gray-700 dark:text-[#E0E0E0]">
                           <div className="truncate" title={element.source}>
                             {element.source}
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-sm font-mono text-gray-700 dark:text-[#E0E0E0] w-[25%]">
+                        <td className="w-[25%] px-4 py-4 font-mono text-sm text-gray-700 dark:text-[#E0E0E0]">
                           <div className="truncate" title={element.key}>
                             {element.key}
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-right w-[5%]">
+                        <td className="w-[5%] px-4 py-4 text-right">
                           <div className="flex justify-end">
                             <button
                               onClick={() =>
@@ -187,7 +187,7 @@ export default function APIKeys() {
                                   name: element.name,
                                 })
                               }
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+                              className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
                               <img
                                 src={Trash}

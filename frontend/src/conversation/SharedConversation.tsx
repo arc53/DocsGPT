@@ -132,8 +132,8 @@ export const SharedConversation = () => {
           content="Shared conversations with DocsGPT"
         />
       </Helmet>
-      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black ">
-        <div className="border-b p-2 dark:border-b-silver w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1200px]">
+      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
+        <div className="w-full max-w-[1200px] border-b p-2 dark:border-b-silver md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
             {title}
           </h1>
@@ -153,7 +153,7 @@ export const SharedConversation = () => {
           queries={queries}
           status={status}
         />
-        <div className="flex flex-col items-center gap-4 pb-2 w-full md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12 max-w-[1200px]">
+        <div className="flex w-full max-w-[1200px] flex-col items-center gap-4 pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           {apiKey ? (
             <MessageInput
               value={input}
@@ -164,13 +164,13 @@ export const SharedConversation = () => {
           ) : (
             <button
               onClick={() => navigate('/')}
-              className="w-fit rounded-full bg-purple-30 py-3 px-5 text-white shadow-xl transition-colors duration-200 hover:bg-violets-are-blue mb-14 sm:mb-0"
+              className="mb-14 w-fit rounded-full bg-purple-30 px-5 py-3 text-white shadow-xl transition-colors duration-200 hover:bg-violets-are-blue sm:mb-0"
             >
               {t('sharedConv.button')}
             </button>
           )}
 
-          <p className="text-gray-4000 hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs dark:text-sonic-silver md:inline md:w-full">
+          <p className="hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline md:w-full">
             {t('sharedConv.meta')}
           </p>
         </div>

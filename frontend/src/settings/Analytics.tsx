@@ -1,12 +1,17 @@
 import {
-    BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Legend,
+  LinearScale,
+  Title,
+  Tooltip,
 } from 'chart.js';
 import { useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { Agent } from '../agents/types';
 import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';

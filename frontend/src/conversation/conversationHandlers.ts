@@ -15,7 +15,7 @@ export function handleFetchAnswer(
   token_limit: number,
   agentId?: string,
   attachments?: string[],
-  save_conversation: boolean = true,
+  save_conversation = true,
 ): Promise<
   | {
       result: any;
@@ -103,7 +103,7 @@ export function handleFetchAnswerSteaming(
   indx?: number,
   agentId?: string,
   attachments?: string[],
-  save_conversation: boolean = true,
+  save_conversation = true,
 ): Promise<Answer> {
   history = history.map((item) => {
     return {

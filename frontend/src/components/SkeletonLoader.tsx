@@ -42,17 +42,17 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     <>
       {[...Array(4)].map((_, idx) => (
         <tr key={idx} className="animate-pulse">
-          <td className="py-4 px-4 w-[45%]">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full"></div>
+          <td className="w-[45%] px-4 py-4">
+            <div className="h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
-          <td className="py-4 px-4 w-[20%]">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full"></div>
+          <td className="w-[20%] px-4 py-4">
+            <div className="h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
-          <td className="py-4 px-4 w-[25%]">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full"></div>
+          <td className="w-[25%] px-4 py-4">
+            <div className="h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
-          <td className="py-4 px-4 w-[10%]">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full"></div>
+          <td className="w-[10%] px-4 py-4">
+            <div className="h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
         </tr>
       ))}
@@ -64,16 +64,16 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(4)].map((_, idx) => (
         <tr key={idx} className="animate-pulse">
           <td className="p-2">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-3/4 mx-auto"></div>
+            <div className="mx-auto h-4 w-3/4 rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
           <td className="p-2">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full mx-auto"></div>
+            <div className="mx-auto h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
           <td className="p-2">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full mx-auto"></div>
+            <div className="mx-auto h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
           <td className="p-2">
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-8 mx-auto"></div>
+            <div className="mx-auto h-4 w-8 rounded bg-gray-300 dark:bg-gray-600"></div>
           </td>
         </tr>
       ))}
@@ -82,10 +82,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
 
   const renderDropdown = () => (
     <div className="animate-pulse">
-      <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24 mb-2"></div>
-      <div className="w-[360px] h-14 bg-gray-300 dark:bg-gray-600 rounded-3xl flex items-center justify-between px-4">
-        <div className="h-3 bg-gray-400 dark:bg-gray-700 rounded w-24"></div>
-        <div className="h-3 w-3 bg-gray-400 dark:bg-gray-700 rounded"></div>
+      <div className="mb-2 h-4 w-24 rounded bg-gray-300 dark:bg-gray-600"></div>
+      <div className="flex h-14 w-[360px] items-center justify-between rounded-3xl bg-gray-300 px-4 dark:bg-gray-600">
+        <div className="h-3 w-24 rounded bg-gray-400 dark:bg-gray-700"></div>
+        <div className="h-3 w-3 rounded bg-gray-400 dark:bg-gray-700"></div>
       </div>
     </div>
   );
@@ -95,14 +95,14 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(8)].map((_, idx) => (
         <div
           key={idx}
-          className="w-full flex items-start p-2 hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal"
+          className="flex w-full items-start p-2 hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal"
         >
-          <div className="w-full flex items-center gap-2">
-            <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-lg"></div>
-            <div className="w-full flex flex-row items-center gap-2">
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[30%] lg:w-52"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[16%] lg:w-28"></div>
-              <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded-lg w-[40%] lg:w-64"></div>
+          <div className="flex w-full items-center gap-2">
+            <div className="h-3 w-3 rounded-lg bg-gray-300 dark:bg-gray-600"></div>
+            <div className="flex w-full flex-row items-center gap-2">
+              <div className="h-3 w-[30%] rounded-lg bg-gray-300 dark:bg-gray-600 lg:w-52"></div>
+              <div className="h-3 w-[16%] rounded-lg bg-gray-300 dark:bg-gray-600 lg:w-28"></div>
+              <div className="h-3 w-[40%] rounded-lg bg-gray-300 dark:bg-gray-600 lg:w-64"></div>
             </div>
           </div>
         </div>
@@ -117,32 +117,32 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           key={idx}
           className={`p-6 ${
             skeletonCount === 1 ? 'w-full' : 'w-60'
-          } dark:bg-raisin-black rounded-3xl animate-pulse`}
+          } animate-pulse rounded-3xl dark:bg-raisin-black`}
         >
           <div className="space-y-4">
             <div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-5/6"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-1/2"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-full"></div>
+              <div className="mb-2 h-4 w-3/4 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-5/6 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-1/2 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-3/4 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
             </div>
-            <div className="border-t border-gray-400 dark:border-gray-700 my-4"></div>
+            <div className="my-4 border-t border-gray-400 dark:border-gray-700"></div>
             <div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-2/3"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-1/4"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-full"></div>
+              <div className="mb-2 h-4 w-2/3 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-1/4 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
             </div>
-            <div className="border-t border-gray-400 dark:border-gray-700 my-4"></div>
+            <div className="my-4 border-t border-gray-400 dark:border-gray-700"></div>
             <div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-5/6"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-1/3"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-2/3"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded mb-2 w-full"></div>
+              <div className="mb-2 h-4 w-5/6 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-1/3 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-2/3 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="mb-2 h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
             </div>
-            <div className="border-t border-gray-400 dark:border-gray-700 my-4"></div>
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-3/4 mb-2"></div>
-            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-5/6 mb-2"></div>
+            <div className="my-4 border-t border-gray-400 dark:border-gray-700"></div>
+            <div className="mb-2 h-4 w-3/4 rounded bg-gray-300 dark:bg-gray-600"></div>
+            <div className="mb-2 h-4 w-5/6 rounded bg-gray-300 dark:bg-gray-600"></div>
           </div>
         </div>
       ))}
@@ -154,27 +154,27 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(skeletonCount)].map((_, idx) => (
         <div
           key={idx}
-          className="p-6 w-full dark:bg-raisin-black rounded-3xl animate-pulse"
+          className="w-full animate-pulse rounded-3xl p-6 dark:bg-raisin-black"
         >
           <div className="space-y-6">
             <div className="space-y-2">
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/3 mb-4"></div>
-              <div className="grid grid-cols-6 gap-2 items-end">
-                <div className="h-32 bg-gray-300 dark:bg-gray-600 rounded"></div>
-                <div className="h-24 bg-gray-300 dark:bg-gray-600 rounded"></div>
-                <div className="h-40 bg-gray-300 dark:bg-gray-600 rounded"></div>
-                <div className="h-28 bg-gray-300 dark:bg-gray-600 rounded"></div>
-                <div className="h-36 bg-gray-300 dark:bg-gray-600 rounded"></div>
-                <div className="h-20 bg-gray-300 dark:bg-gray-600 rounded"></div>
+              <div className="mb-4 h-4 w-1/3 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="grid grid-cols-6 items-end gap-2">
+                <div className="h-32 rounded bg-gray-300 dark:bg-gray-600"></div>
+                <div className="h-24 rounded bg-gray-300 dark:bg-gray-600"></div>
+                <div className="h-40 rounded bg-gray-300 dark:bg-gray-600"></div>
+                <div className="h-28 rounded bg-gray-300 dark:bg-gray-600"></div>
+                <div className="h-36 rounded bg-gray-300 dark:bg-gray-600"></div>
+                <div className="h-20 rounded bg-gray-300 dark:bg-gray-600"></div>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/4 mb-4"></div>
-              <div className="h-32 bg-gray-300 dark:bg-gray-600 rounded"></div>
+              <div className="mb-4 h-4 w-1/4 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="h-32 rounded bg-gray-300 dark:bg-gray-600"></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full"></div>
-              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-full"></div>
+              <div className="h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="h-4 w-full rounded bg-gray-300 dark:bg-gray-600"></div>
             </div>
           </div>
         </div>

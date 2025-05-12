@@ -9,7 +9,6 @@ export interface Message {
   type: MESSAGE_TYPE;
 }
 
-
 export interface Attachment {
   id?: string;
   fileName: string;

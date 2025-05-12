@@ -28,6 +28,9 @@ from application.extensions import api
 from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
+from application.storage.storage_creator import StorageCreator
+
+storage = StorageCreator.get_storage()
 
 mongo = MongoDB.get_client()
 db = mongo[settings.MONGO_DB_NAME]
@@ -461,59 +464,93 @@ class UploadFile(Resource):
 
                 zip_filename = f"{job_name}.zip"
                 zip_path = f"{base_path}/{zip_filename}"
+                zip_temp_path = None
 
-                def create_zip_archive(temp_paths, **kwargs):
+                def create_zip_archive(temp_paths, job_name, storage):
                     import tempfile
 
-                    with tempfile.TemporaryDirectory() as temp_dir:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".zip"
+                    ) as temp_zip_file:
+                        zip_output_path = temp_zip_file.name
+
+                    with tempfile.TemporaryDirectory() as stage_dir:
                         for path in temp_paths:
-                            file_data = storage.get_file(path)
-                            with open(
-                                os.path.join(temp_dir, os.path.basename(path)), "wb"
-                            ) as f:
-                                f.write(file_data.read())
+                            try:
+                                file_data = storage.get_file(path)
+                                with open(
+                                    os.path.join(stage_dir, os.path.basename(path)),
+                                    "wb",
+                                ) as f:
+                                    f.write(file_data.read())
+                            except Exception as e:
+                                current_app.logger.error(
+                                    f"Error processing file {path} for zipping: {e}",
+                                    exc_info=True,
+                                )
+                                if os.path.exists(zip_output_path):
+                                    os.remove(zip_output_path)
+                                raise
+                        try:
+                            shutil.make_archive(
+                                base_name=zip_output_path.replace(".zip", ""),
+                                format="zip",
+                                root_dir=stage_dir,
+                            )
+                        except Exception as e:
+                            current_app.logger.error(
+                                f"Error creating zip archive: {e}", exc_info=True
+                            )
+                            if os.path.exists(zip_output_path):
+                                os.remove(zip_output_path)
+                            raise
 
-                        # Create zip archive
-                        zip_temp = shutil.make_archive(
-                            base_name=os.path.join(temp_dir, job_name),
-                            format="zip",
-                            root_dir=temp_dir,
-                        )
+                    return zip_output_path
 
-                        return zip_temp
+                try:
+                    zip_temp_path = create_zip_archive(temp_files, job_name, storage)
+                    with open(zip_temp_path, "rb") as zip_file:
+                        storage.save_file(zip_file, zip_path)
 
-                zip_temp_path = create_zip_archive(temp_files)
-                with open(zip_temp_path, "rb") as zip_file:
-                    storage.save_file(zip_file, zip_path)
+                    task = ingest.delay(
+                        settings.UPLOAD_FOLDER,
+                        [
+                            ".rst",
+                            ".md",
+                            ".pdf",
+                            ".txt",
+                            ".docx",
+                            ".csv",
+                            ".epub",
+                            ".html",
+                            ".mdx",
+                            ".json",
+                            ".xlsx",
+                            ".pptx",
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                        ],
+                        job_name,
+                        zip_filename,
+                        user,
+                    )
+                finally:
+                    # Clean up temporary files
+                    for temp_path in temp_files:
+                        try:
+                            storage.delete_file(temp_path)
+                        except Exception as e:
+                            current_app.logger.error(
+                                f"Error deleting temporary file {temp_path}: {e}",
+                                exc_info=True,
+                            )
 
-                # Clean up temp files
-                for temp_path in temp_files:
-                    storage.delete_file(temp_path)
+                    # Clean up the zip file if it was created
+                    if zip_temp_path and os.path.exists(zip_temp_path):
+                        os.remove(zip_temp_path)
 
-                task = ingest.delay(
-                    settings.UPLOAD_FOLDER,
-                    [
-                        ".rst",
-                        ".md",
-                        ".pdf",
-                        ".txt",
-                        ".docx",
-                        ".csv",
-                        ".epub",
-                        ".html",
-                        ".mdx",
-                        ".json",
-                        ".xlsx",
-                        ".pptx",
-                        ".png",
-                        ".jpg",
-                        ".jpeg",
-                    ],
-                    job_name,
-                    zip_filename,
-                    user,
-                )
-            else:
+            else:  # Keep this else block for single file upload
                 # For single file
                 file = files[0]
                 filename = secure_filename(file.filename)
@@ -541,7 +578,7 @@ class UploadFile(Resource):
                         ".jpeg",
                     ],
                     job_name,
-                    filename,
+                    filename,  # Corrected variable for single-file case
                     user,
                 )
 
@@ -1022,14 +1059,15 @@ class GetAgent(Resource):
                 return make_response(jsonify({"status": "Not found"}), 404)
             data = {
                 "id": str(agent["_id"]),
-                "name": agent.get("name", ""),
+                "name": agent["name"],
                 "description": agent.get("description", ""),
                 "source": (
-                    str(db.dereference(agent["source"])["_id"])
-                    if "source" in agent and isinstance(agent["source"], DBRef)
+                    str(source_doc["_id"])
+                    if isinstance(agent.get("source"), DBRef)
+                    and (source_doc := db.dereference(agent.get("source")))
                     else ""
                 ),
-                "chunks": agent.get("chunks", ""),
+                "chunks": agent["chunks"],
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent.get("prompt_id", ""),
                 "tools": agent.get("tools", []),
@@ -1068,14 +1106,15 @@ class GetAgents(Resource):
             list_agents = [
                 {
                     "id": str(agent["_id"]),
-                    "name": agent.get("name", ""),
+                    "name": agent["name"],
                     "description": agent.get("description", ""),
                     "source": (
-                        str(db.dereference(agent["source"])["_id"])
-                        if "source" in agent and isinstance(agent["source"], DBRef)
+                        str(source_doc["_id"])
+                        if isinstance(agent.get("source"), DBRef)
+                        and (source_doc := db.dereference(agent.get("source")))
                         else ""
                     ),
-                    "chunks": agent.get("chunks", ""),
+                    "chunks": agent["chunks"],
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
@@ -3300,16 +3339,16 @@ class StoreAttachment(Resource):
 
         try:
             attachment_id = ObjectId()
-            original_filename = secure_filename(file.filename)
+            original_filename = secure_filename(os.path.basename(file.filename))
             relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
 
-            file_content = file.read()
+            metadata = storage.save_file(file, relative_path)
 
             file_info = {
                 "filename": original_filename,
                 "attachment_id": str(attachment_id),
                 "path": relative_path,
-                "file_content": file_content,
+                "metadata": metadata,
             }
 
             task = store_attachment.delay(file_info, user)

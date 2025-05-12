@@ -19,18 +19,18 @@ export default function Hero({
   }>;
 
   return (
-    <div className="flex h-full w-full flex-col text-black-1000 dark:text-bright-gray items-center justify-between">
+    <div className="flex h-full w-full flex-col items-center justify-between text-black-1000 dark:text-bright-gray">
       {/* Header Section */}
-      <div className="flex flex-col items-center justify-center flex-grow pt-8 md:pt-0">
-        <div className="flex items-center mb-4">
+      <div className="flex flex-grow flex-col items-center justify-center pt-8 md:pt-0">
+        <div className="mb-4 flex items-center">
           <span className="text-4xl font-semibold">DocsGPT</span>
           <img className="mb-1 inline w-14" src={DocsGPT3} alt="docsgpt" />
         </div>
       </div>
 
       {/* Demo Buttons Section */}
-      <div className="w-full max-w-full mb-8 md:mb-16">
-        <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 text-xs">
+      <div className="mb-8 w-full max-w-full md:mb-16">
+        <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-1 md:gap-4 lg:grid-cols-2">
           {demos?.map(
             (demo: { header: string; query: string }, key: number) =>
               demo.header &&
@@ -38,17 +38,12 @@ export default function Hero({
                 <button
                   key={key}
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`
-                    w-full rounded-[66px] border bg-transparent px-6 py-[14px] text-left transition-colors
-                    border-dark-gray text-just-black hover:bg-cultured
-                    dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green
-                    ${key >= 2 ? 'hidden md:block' : ''} // Show only 2 buttons on mobile
-                  `}
+                  className={`w-full rounded-[66px] border border-dark-gray bg-transparent px-6 py-[14px] text-left text-just-black transition-colors hover:bg-cultured dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green ${key >= 2 ? 'hidden md:block' : ''} // Show only 2 buttons on mobile`}
                 >
                   <p className="mb-2 font-semibold text-black-1000 dark:text-bright-gray">
                     {demo.header}
                   </p>
-                  <span className="text-gray-700 dark:text-gray-300 opacity-60 line-clamp-2">
+                  <span className="line-clamp-2 text-gray-700 opacity-60 dark:text-gray-300">
                     {demo.query}
                   </span>
                 </button>
