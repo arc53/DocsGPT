@@ -375,7 +375,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+                      className={`group mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
                         agent.id === selectedAgent?.id && !conversationId
                           ? 'bg-bright-gray dark:bg-dark-charcoal'
                           : ''
@@ -387,14 +387,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                           <img
                             src={agent.image ?? Robot}
                             alt="agent-logo"
-                            className="h-6 w-6 rounded-full"
+                            className="h-6 w-6"
                           />
                         </div>
                         <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
                           {agent.name}
                         </p>
                       </div>
-                      <div className="flex items-center px-3">
+                      <div
+                        className={`${isMobile ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
+                      >
                         <button
                           className="rounded-full hover:opacity-75"
                           onClick={(e) => {

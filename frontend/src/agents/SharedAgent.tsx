@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
@@ -16,18 +17,14 @@ import {
   resendQuery,
   selectQueries,
   selectStatus,
-  updateConversationId,
 } from '../conversation/conversationSlice';
 import { useDarkTheme } from '../hooks';
-import {
-  selectToken,
-  setConversations,
-  setSelectedAgent,
-} from '../preferences/preferenceSlice';
+import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { Agent } from './types';
 
 export default function SharedAgent() {
+  const { t } = useTranslation();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
   const [isDarkTheme] = useDarkTheme();
@@ -158,8 +155,18 @@ export default function SharedAgent() {
       </div>
     );
   return (
-    <div className="h-full w-full pt-10">
-      <div className="flex h-full w-full flex-col items-center justify-between">
+    <div className="relative h-full w-full">
+      <div className="absolute left-4 top-5 hidden items-center gap-3 sm:flex">
+        <img
+          src={sharedAgent.image ?? Robot}
+          alt="agent-logo"
+          className="h-6 w-6"
+        />
+        <h2 className="text-lg font-semibold text-[#212121] dark:text-[#E0E0E0]">
+          {sharedAgent.name}
+        </h2>
+      </div>
+      <div className="flex h-full w-full flex-col items-center justify-between sm:pt-12">
         <div className="flex w-full flex-col items-center overflow-y-auto">
           <ConversationMessages
             handleQuestion={handleQuestion}
@@ -184,9 +191,8 @@ export default function SharedAgent() {
             showToolButton={sharedAgent ? false : true}
             autoFocus={false}
           />
-          <p className="w-full self-center bg-transparent pt-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline">
-            This is a preview of the agent. You can publish it to start using it
-            in conversations.
+          <p className="hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline md:w-full">
+            {t('tagline')}
           </p>
         </div>
       </div>
@@ -196,28 +202,28 @@ export default function SharedAgent() {
 
 function SharedAgentCard({ agent }: { agent: Agent }) {
   return (
-    <div className="flex max-w-[720px] flex-col rounded-3xl border border-dark-gray p-6 shadow-md dark:border-grey">
+    <div className="flex w-full max-w-[720px] flex-col rounded-3xl border border-dark-gray p-6 shadow-sm dark:border-grey sm:w-fit sm:min-w-[480px]">
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
           <img src={Robot} className="h-full w-full object-contain" />
         </div>
         <div className="flex max-h-[92px] w-[80%] flex-col gap-px">
-          <h2 className="text-lg font-semibold text-[#212121] dark:text-[#E0E0E0]">
+          <h2 className="text-base font-semibold text-[#212121] dark:text-[#E0E0E0] sm:text-lg">
             {agent.name}
           </h2>
-          <p className="overflow-y-auto text-wrap break-all text-sm text-[#71717A] dark:text-[#949494]">
+          <p className="overflow-y-auto text-wrap break-all text-xs text-[#71717A] dark:text-[#949494] sm:text-sm">
             {agent.description}
           </p>
         </div>
       </div>
       <div className="mt-4 flex items-center gap-8">
         {agent.shared_metadata?.shared_by && (
-          <p className="text-sm font-light text-[#212121] dark:text-[#E0E0E0]">
+          <p className="text-xs font-light text-[#212121] dark:text-[#E0E0E0] sm:text-sm">
             by {agent.shared_metadata.shared_by}
           </p>
         )}
         {agent.shared_metadata?.shared_at && (
-          <p className="text-sm font-light text-[#71717A] dark:text-[#949494]">
+          <p className="text-xs font-light text-[#71717A] dark:text-[#949494] sm:text-sm">
             Shared on{' '}
             {new Date(agent.shared_metadata.shared_at).toLocaleString('en-US', {
               month: 'long',
@@ -230,24 +236,28 @@ function SharedAgentCard({ agent }: { agent: Agent }) {
           </p>
         )}
       </div>
-      <div className="mt-8">
-        <p className="font-semibold text-[#212121] dark:text-[#E0E0E0]">
-          Connected Tools
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {agent.tools.map((tool, index) => (
-            <span
-              key={index}
-              className="rounded-full bg-[#E0E0E0] px-3 py-1 text-xs font-light text-[#212121] dark:bg-[#4B5563] dark:text-[#E0E0E0]"
-            >
-              {tool}
-            </span>
-          ))}
+      {agent.tools.length > 0 && (
+        <div className="mt-8">
+          <p className="text-sm font-semibold text-[#212121] dark:text-[#E0E0E0] sm:text-base">
+            Connected Tools
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {agent.tools.map((tool, index) => (
+              <span
+                key={index}
+                className="flex items-center gap-1 rounded-full bg-bright-gray px-3 py-1 text-xs font-light text-[#212121] dark:bg-dark-charcoal dark:text-[#E0E0E0]"
+              >
+                <img
+                  src={`/toolIcons/tool_${tool}.svg`}
+                  alt={`${tool} icon`}
+                  className="h-3 w-3"
+                />{' '}
+                {tool}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
-      {/* <button className="mt-8 w-full rounded-xl bg-gradient-to-b from-violets-are-blue to-[#6e45c2] px-4 py-2 text-sm text-white shadow-lg transition duration-300 ease-in-out hover:shadow-xl">
-        Start using
-      </button> */}
+      )}
     </div>
   );
 }

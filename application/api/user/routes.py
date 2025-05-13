@@ -1581,7 +1581,7 @@ class SharedAgent(Resource):
                 for tool in data["tools"]:
                     tool_data = user_tools_collection.find_one({"_id": ObjectId(tool)})
                     if tool_data:
-                        enriched_tools.append(tool_data.get("displayName", ""))
+                        enriched_tools.append(tool_data.get("name", ""))
                 data["tools"] = enriched_tools
 
         except Exception as err:
