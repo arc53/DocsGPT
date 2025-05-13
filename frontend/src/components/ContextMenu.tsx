@@ -104,8 +104,8 @@ export default function ContextMenu({
             }}
             className={`flex items-center justify-start gap-4 p-3 transition-colors duration-200 ease-in-out ${index === 0 ? 'rounded-t-xl' : ''} ${index === options.length - 1 ? 'rounded-b-xl' : ''} ${
               option.variant === 'danger'
-                ? 'text-rosso-corsa hover:bg-bright-gray dark:text-red-2000 dark:hover:bg-charcoal-grey'
-                : 'text-eerie-black hover:bg-bright-gray dark:text-bright-gray dark:hover:bg-charcoal-grey'
+                ? 'text-rosso-corsa hover:bg-bright-gray dark:text-red-2000 dark:hover:bg-charcoal-grey/20'
+                : 'text-eerie-black hover:bg-bright-gray dark:text-bright-gray dark:hover:bg-charcoal-grey/20'
             } `}
           >
             {option.icon && (
@@ -115,7 +115,7 @@ export default function ContextMenu({
                   height={option.iconHeight || 16}
                   src={option.icon}
                   alt={option.label}
-                  className={`cursor-pointer hover:opacity-75 ${option.iconClassName || ''}`}
+                  className={`cursor-pointer ${option.iconClassName || ''}`}
                 />
               </div>
             )}

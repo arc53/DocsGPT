@@ -4,10 +4,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
+import Spinner from '../components/Spinner';
 import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
-import Spinner from '../components/Spinner';
 import { Agent } from './types';
 
 export default function AgentLogs() {
@@ -54,11 +54,16 @@ export default function AgentLogs() {
         </h1>
       </div>
       <div className="mt-6 flex flex-col gap-3 px-4">
-        <h2 className="text-sm font-semibold text-black dark:text-[#E0E0E0]">
-          Agent Name
-        </h2>
         {agent && (
-          <p className="text-[#28292E] dark:text-[#E0E0E0]">{agent.name}</p>
+          <div className="flex flex-col gap-1">
+            <p className="text-[#28292E] dark:text-[#E0E0E0]">{agent.name}</p>
+            <p className="text-xs text-[#28292E] dark:text-[#E0E0E0]/40">
+              {agent.last_used_at
+                ? 'Last used at ' +
+                  new Date(agent.last_used_at).toLocaleString()
+                : 'No usage history'}
+            </p>
+          </div>
         )}
       </div>
       {loadingAgent ? (
@@ -74,7 +79,7 @@ export default function AgentLogs() {
           <Spinner />
         </div>
       ) : (
-        agent && <Logs agentId={agentId} tableHeader="Agent endpoint logs" />
+        agent && <Logs agentId={agent.id} tableHeader="Agent endpoint logs" />
       )}
     </div>
   );
