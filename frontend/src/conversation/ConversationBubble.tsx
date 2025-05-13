@@ -339,7 +339,7 @@ const ConversationBubble = forwardRef<
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
-                          <p className="max-h-[164px] overflow-y-auto break-words rounded-md text-sm">
+                          <p className="line-clamp-6 max-h-[164px] overflow-hidden text-ellipsis break-words rounded-md text-sm">
                             {source.text}
                           </p>
                         </div>
@@ -663,7 +663,7 @@ function AllSources(sources: AllSourcesProps) {
         {sources.sources.map((source, index) => (
           <div
             key={index}
-            className="min-h-32 w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]"
+            className="w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]"
           >
             <span className="flex flex-row">
               <p
@@ -683,7 +683,7 @@ function AllSources(sources: AllSourcesProps) {
                 ></img>
               ) : null}
             </span>
-            <p className="mt-3 max-h-16 overflow-y-auto break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
+            <p className="mt-3 line-clamp-4 break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
               {source.text}
             </p>
           </div>
