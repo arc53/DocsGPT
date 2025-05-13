@@ -39,7 +39,6 @@ export default function Conversation() {
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [input, setInput] = useState<string>('');
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [files, setFiles] = useState<File[]>([]);
@@ -143,19 +142,19 @@ export default function Conversation() {
   };
 
   const handleQuestionSubmission = (
-    updatedQuestion?: string,
+    question?: string,
     updated?: boolean,
     indx?: number,
   ) => {
     if (updated === true) {
-      handleQuestion({ question: updatedQuestion as string, index: indx });
-    } else if (input && status !== 'loading') {
+      handleQuestion({ question: question as string, index: indx });
+    } else if (question && status !== 'loading') {
       if (lastQueryReturnedErr) {
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: input,
+              prompt: question,
             },
           }),
         );
@@ -165,10 +164,9 @@ export default function Conversation() {
         });
       } else {
         handleQuestion({
-          question: input,
+          question,
         });
       }
-      setInput('');
     }
   };
 
@@ -207,9 +205,9 @@ export default function Conversation() {
           </label>
           <input {...getInputProps()} id="file-upload" />
           <MessageInput
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onSubmit={handleQuestionSubmission}
+            onSubmit={(text) => {
+              handleQuestionSubmission(text);
+            }}
             loading={status === 'loading'}
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}
