@@ -4,11 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import DragFileUpload from '../assets/DragFileUpload.svg';
-import newChatIcon from '../assets/openNewChat.svg';
-import ShareIcon from '../assets/share.svg';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
-import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { ActiveState } from '../models/misc';
 import {
   selectConversationId,
@@ -184,10 +181,6 @@ export default function Conversation() {
     );
   };
 
-  const newChat = () => {
-    if (queries && queries.length > 0) resetConversation();
-  };
-
   useEffect(() => {
     if (queries.length) {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
@@ -196,50 +189,6 @@ export default function Conversation() {
   }, [queries[queries.length - 1]]);
   return (
     <div className="flex h-full flex-col justify-end gap-1">
-      {conversationId && queries.length > 0 && (
-        <div className="absolute right-20 top-4">
-          <div className="mt-2 flex items-center gap-4">
-            {isMobile && queries.length > 0 && (
-              <button
-                title="Open New Chat"
-                onClick={() => {
-                  newChat();
-                }}
-                className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
-              >
-                <img
-                  className="h-5 w-5 filter dark:invert"
-                  alt="NewChat"
-                  src={newChatIcon}
-                />
-              </button>
-            )}
-
-            <button
-              title="Share"
-              onClick={() => {
-                setShareModalState(true);
-              }}
-              className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
-            >
-              <img
-                className="h-5 w-5 filter dark:invert"
-                alt="share"
-                src={ShareIcon}
-              />
-            </button>
-          </div>
-          {isShareModalOpen && (
-            <ShareConversationModal
-              close={() => {
-                setShareModalState(false);
-              }}
-              conversationId={conversationId}
-            />
-          )}
-        </div>
-      )}
-
       <ConversationMessages
         handleQuestion={handleQuestion}
         handleQuestionSubmission={handleQuestionSubmission}

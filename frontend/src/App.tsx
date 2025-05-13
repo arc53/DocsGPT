@@ -13,6 +13,7 @@ import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
 import Agents from './agents';
+import ActionButtons from './components/ActionButtons';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
@@ -34,6 +35,7 @@ function MainLayout() {
   return (
     <div className="relative h-screen overflow-auto dark:bg-raisin-black">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
+      <ActionButtons showNewChat={true} showShare={true} />
       <div
         className={`h-[calc(100dvh-64px)] md:h-screen ${
           !isMobile
