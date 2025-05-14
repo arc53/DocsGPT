@@ -1222,6 +1222,10 @@ class CreateAgent(Resource):
                 "lastUsedAt": None,
                 "key": key,
             }
+            if new_agent["chunks"] == "":
+                new_agent["chunks"] = "0"
+            if new_agent["source"] == "" and new_agent["retriever"] == "":
+                new_agent["retriever"] = "classic"
 
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
@@ -1334,6 +1338,33 @@ class UpdateAgent(Resource):
                         )
                     else:
                         update_fields[field] = ""
+                elif field == "chunks":
+                    chunks_value = data.get("chunks")
+                    if chunks_value == "":
+                        update_fields[field] = "0"
+                    else:
+                        try:
+                            if int(chunks_value) < 0:
+                                return make_response(
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "message": "Chunks value must be a positive integer",
+                                        }
+                                    ),
+                                    400,
+                                )
+                            update_fields[field] = chunks_value
+                        except ValueError:
+                            return make_response(
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": "Invalid chunks value provided",
+                                    }
+                                ),
+                                400,
+                            )
                 else:
                     update_fields[field] = data[field]
 
