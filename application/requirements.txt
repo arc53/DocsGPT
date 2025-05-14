@@ -49,7 +49,7 @@ pathable==0.4.4
 pillow==11.1.0
 portalocker==3.1.1
 prance==23.6.21.0
-primp==0.14.0
+primp==0.15.0
 prompt-toolkit==3.0.51
 protobuf==5.29.3
 psycopg2-binary==2.9.10
