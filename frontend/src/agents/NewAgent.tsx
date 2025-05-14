@@ -102,12 +102,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const isPublishable = () => {
     return (
-      agent.name &&
-      agent.description &&
-      (agent.source || agent.retriever) &&
-      agent.chunks &&
-      agent.prompt_id &&
-      agent.agent_type
+      agent.name && agent.description && agent.prompt_id && agent.agent_type
     );
   };
 
