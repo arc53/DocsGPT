@@ -1,4 +1,5 @@
-const baseURL = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+export const baseURL =
+  import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
 const defaultHeaders = {
   'Content-Type': 'application/json',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import { Agent } from '../agents/types';
@@ -8,6 +8,8 @@ import Spinner from '../components/Spinner';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import WrapperModal from './WrapperModal';
+
+const baseURL = import.meta.env.VITE_BASE_URL;
 
 type AgentDetailsModalProps = {
   agent: Agent;
@@ -24,7 +26,9 @@ export default function AgentDetailsModal({
 }: AgentDetailsModalProps) {
   const token = useSelector(selectToken);
 
-  const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [sharedToken, setSharedToken] = useState<string | null>(
+    agent.shared_token ?? null,
+  );
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
   const [loadingStates, setLoadingStates] = useState({
@@ -40,6 +44,21 @@ export default function AgentDetailsModal({
     setLoadingStates((prev) => ({ ...prev, [key]: state }));
   };
 
+  const handleGeneratePublicLink = async () => {
+    setLoading('publicLink', true);
+    const response = await userService.shareAgent(
+      { id: agent.id ?? '', shared: true },
+      token,
+    );
+    if (!response.ok) {
+      setLoading('publicLink', false);
+      return;
+    }
+    const data = await response.json();
+    setSharedToken(data.shared_token);
+    setLoading('publicLink', false);
+  };
+
   const handleGenerateWebhook = async () => {
     setLoading('webhook', true);
     const response = await userService.getAgentWebhook(agent.id ?? '', token);
@@ -51,6 +70,11 @@ export default function AgentDetailsModal({
     setWebhookUrl(data.webhook_url);
     setLoading('webhook', false);
   };
+
+  useEffect(() => {
+    setSharedToken(agent.shared_token ?? null);
+    setApiKey(agent.key ?? null);
+  }, [agent]);
 
   if (modalState !== 'ACTIVE') return null;
   return (
@@ -66,20 +90,45 @@ export default function AgentDetailsModal({
         </h2>
         <div className="mt-8 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
-            <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
-              Public link
-            </h2>
-            <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
-              Generate
-            </button>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+                Public Link
+              </h2>
+              {sharedToken && (
+                <div className="mb-1">
+                  <CopyButton
+                    textToCopy={`${baseURL}/agents/shared/${sharedToken}`}
+                    padding="p-1"
+                  />
+                </div>
+              )}
+            </div>
+            {sharedToken ? (
+              <div className="flex flex-col flex-wrap items-start gap-2">
+                <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
+                  {`${baseURL}/agents/shared/${sharedToken}`}
+                </p>
+              </div>
+            ) : (
+              <button
+                className="hover:bg-vi</button>olets-are-blue flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                onClick={handleGeneratePublicLink}
+              >
+                {loadingStates.publicLink ? (
+                  <Spinner size="small" color="#976af3" />
+                ) : (
+                  'Generate'
+                )}
+              </button>
+            )}
           </div>
           <div className="flex flex-col gap-3">
             <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
               API Key
             </h2>
-            {agent.key ? (
+            {apiKey ? (
               <span className="font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                {agent.key}
+                {apiKey}
               </span>
             ) : (
               <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">

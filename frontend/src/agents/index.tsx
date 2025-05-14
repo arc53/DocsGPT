@@ -1,27 +1,35 @@
-import React, { SyntheticEvent, useEffect, useRef, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import Edit from '../assets/edit.svg';
 import Monitoring from '../assets/monitoring.svg';
+import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
 import Robot from '../assets/robot.svg';
+import Link from '../assets/link-gray.svg';
 import ThreeDots from '../assets/three-dots.svg';
+import UnPin from '../assets/unpin.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import Spinner from '../components/Spinner';
+import {
+  setConversation,
+  updateConversationId,
+} from '../conversation/conversationSlice';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import {
-  selectToken,
-  setSelectedAgent,
-  setAgents,
   selectAgents,
   selectSelectedAgent,
+  selectToken,
+  setAgents,
+  setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import AgentLogs from './AgentLogs';
 import NewAgent from './NewAgent';
+import SharedAgent from './SharedAgent';
 import { Agent } from './types';
-import Spinner from '../components/Spinner';
 
 export default function Agents() {
   return (
@@ -30,9 +38,25 @@ export default function Agents() {
       <Route path="/new" element={<NewAgent mode="new" />} />
       <Route path="/edit/:agentId" element={<NewAgent mode="edit" />} />
       <Route path="/logs/:agentId" element={<AgentLogs />} />
+      <Route path="/shared/:agentId" element={<SharedAgent />} />
     </Routes>
   );
 }
+
+const sectionConfig = {
+  user: {
+    title: 'By me',
+    description: 'Agents created or published by you',
+    showNewAgentButton: true,
+    emptyStateDescription: 'You don’t have any created agents yet',
+  },
+  shared: {
+    title: 'Shared with me',
+    description: 'Agents imported by using a public link',
+    showNewAgentButton: false,
+    emptyStateDescription: 'No shared agents found',
+  },
+};
 
 function AgentsList() {
   const navigate = useNavigate();
@@ -41,26 +65,47 @@ function AgentsList() {
   const agents = useSelector(selectAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [userAgents, setUserAgents] = useState<Agent[]>(agents || []);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [sharedAgents, setSharedAgents] = useState<Agent[]>([]);
+  const [loadingUserAgents, setLoadingUserAgents] = useState<boolean>(true);
+  const [loadingSharedAgents, setLoadingSharedAgents] = useState<boolean>(true);
 
   const getAgents = async () => {
     try {
-      setLoading(true);
+      setLoadingUserAgents(true);
       const response = await userService.getAgents(token);
       if (!response.ok) throw new Error('Failed to fetch agents');
       const data = await response.json();
-      setUserAgents(data);
       dispatch(setAgents(data));
-      setLoading(false);
+      setLoadingUserAgents(false);
     } catch (error) {
       console.error('Error:', error);
-      setLoading(false);
+      setLoadingUserAgents(false);
+    }
+  };
+
+  const getSharedAgents = async () => {
+    try {
+      setLoadingSharedAgents(true);
+      const response = await userService.getSharedAgents(token);
+      if (!response.ok) throw new Error('Failed to fetch shared agents');
+      const data = await response.json();
+      setSharedAgents(data);
+      setLoadingSharedAgents(false);
+    } catch (error) {
+      console.error('Error:', error);
+      setLoadingSharedAgents(false);
     }
   };
 
   useEffect(() => {
     getAgents();
+    getSharedAgents();
+    dispatch(setConversation([]));
+    dispatch(
+      updateConversationId({
+        query: { conversationId: null },
+      }),
+    );
     if (selectedAgent) dispatch(setSelectedAgent(null));
   }, [token]);
   return (
@@ -70,7 +115,7 @@ function AgentsList() {
       </h1>
       <p className="mt-5 text-[15px] text-[#71717A] dark:text-[#949494]">
         Discover and create custom versions of DocsGPT that combine
-        instructions, extra knowledge, and any combination of skills.
+        instructions, extra knowledge, and any combination of skills
       </p>
       {/* Premade agents section */}
       {/* <div className="mt-6">
@@ -115,44 +160,77 @@ function AgentsList() {
           ))}
         </div>
       </div> */}
-      <div className="mt-8 flex flex-col gap-4">
-        <div className="flex w-full items-center justify-between">
+      <AgentSection
+        agents={agents ?? []}
+        loading={loadingUserAgents}
+        section="user"
+      />
+      <AgentSection
+        agents={sharedAgents ?? []}
+        loading={loadingSharedAgents}
+        section="shared"
+      />
+    </div>
+  );
+}
+
+function AgentSection({
+  agents,
+  loading,
+  section,
+}: {
+  agents: Agent[];
+  loading: boolean;
+  section: keyof typeof sectionConfig;
+}) {
+  const navigate = useNavigate();
+  return (
+    <div className="mt-8 flex flex-col gap-4">
+      <div className="flex w-full items-center justify-between">
+        <div className="flex flex-col gap-2">
           <h2 className="text-[18px] font-semibold text-[#18181B] dark:text-[#E0E0E0]">
-            Created by You
+            {sectionConfig[section].title}
           </h2>
+          <p className="text-[13px] text-[#71717A]">
+            {sectionConfig[section].description}
+          </p>
+        </div>
+        {sectionConfig[section].showNewAgentButton && (
           <button
             className="rounded-full bg-purple-30 px-4 py-2 text-sm text-white hover:bg-violets-are-blue"
             onClick={() => navigate('/agents/new')}
           >
             New Agent
           </button>
-        </div>
-        <div className="grid w-full grid-cols-2 gap-2 md:flex md:flex-wrap md:gap-4">
-          {loading ? (
-            <div className="flex h-72 w-full items-center justify-center">
-              <Spinner />
-            </div>
-          ) : userAgents.length > 0 ? (
-            userAgents.map((agent) => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                agents={userAgents}
-                setUserAgents={setUserAgents}
-              />
-            ))
-          ) : (
-            <div className="flex h-72 w-full flex-col items-center justify-center gap-3 text-base text-[#18181B] dark:text-[#E0E0E0]">
-              <p>You don’t have any created agents yet </p>
+        )}
+      </div>
+      <div className="grid w-full grid-cols-2 gap-2 md:flex md:flex-wrap md:gap-4">
+        {loading ? (
+          <div className="flex h-72 w-full items-center justify-center">
+            <Spinner />
+          </div>
+        ) : agents && agents.length > 0 ? (
+          agents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              agents={agents}
+              section={section}
+            />
+          ))
+        ) : (
+          <div className="flex h-72 w-full flex-col items-center justify-center gap-3 text-base text-[#18181B] dark:text-[#E0E0E0]">
+            <p>{sectionConfig[section].emptyStateDescription}</p>
+            {sectionConfig[section].showNewAgentButton && (
               <button
                 className="ml-2 rounded-full bg-purple-30 px-4 py-2 text-sm text-white hover:bg-violets-are-blue"
                 onClick={() => navigate('/agents/new')}
               >
                 New Agent
               </button>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -161,11 +239,11 @@ function AgentsList() {
 function AgentCard({
   agent,
   agents,
-  setUserAgents,
+  section,
 }: {
   agent: Agent;
   agents: Agent[];
-  setUserAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
+  section: keyof typeof sectionConfig;
 }) {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -177,46 +255,94 @@ function AgentCard({
 
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const menuOptions: MenuOption[] = [
-    {
-      icon: Monitoring,
-      label: 'Logs',
-      onClick: (e: SyntheticEvent) => {
-        e.stopPropagation();
-        navigate(`/agents/logs/${agent.id}`);
+  const togglePin = async () => {
+    try {
+      const response = await userService.togglePinAgent(agent.id ?? '', token);
+      if (!response.ok) throw new Error('Failed to pin agent');
+      const updatedAgents = agents.map((prevAgent) => {
+        if (prevAgent.id === agent.id)
+          return { ...prevAgent, pinned: !prevAgent.pinned };
+        return prevAgent;
+      });
+      dispatch(setAgents(updatedAgents));
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const menuOptionsConfig: Record<string, MenuOption[]> = {
+    user: [
+      {
+        icon: Monitoring,
+        label: 'Logs',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          navigate(`/agents/logs/${agent.id}`);
+        },
+        variant: 'primary',
+        iconWidth: 14,
+        iconHeight: 14,
       },
-      variant: 'primary',
-      iconWidth: 14,
-      iconHeight: 14,
-    },
-    {
-      icon: Edit,
-      label: 'Edit',
-      onClick: (e: SyntheticEvent) => {
-        e.stopPropagation();
-        navigate(`/agents/edit/${agent.id}`);
+      {
+        icon: Edit,
+        label: 'Edit',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          navigate(`/agents/edit/${agent.id}`);
+        },
+        variant: 'primary',
+        iconWidth: 14,
+        iconHeight: 14,
       },
-      variant: 'primary',
-      iconWidth: 14,
-      iconHeight: 14,
-    },
-    {
-      icon: Trash,
-      label: 'Delete',
-      onClick: (e: SyntheticEvent) => {
-        e.stopPropagation();
-        setDeleteConfirmation('ACTIVE');
+      {
+        icon: agent.pinned ? UnPin : Pin,
+        label: agent.pinned ? 'Unpin' : 'Pin agent',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          togglePin();
+        },
+        variant: 'primary',
+        iconWidth: 18,
+        iconHeight: 18,
       },
-      variant: 'danger',
-      iconWidth: 12,
-      iconHeight: 12,
-    },
-  ];
+      {
+        icon: Trash,
+        label: 'Delete',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          setDeleteConfirmation('ACTIVE');
+        },
+        variant: 'danger',
+        iconWidth: 13,
+        iconHeight: 13,
+      },
+    ],
+    shared: [
+      {
+        icon: Link,
+        label: 'Open',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          navigate(`/agents/shared/${agent.shared_token}`);
+        },
+        variant: 'primary',
+        iconWidth: 14,
+        iconHeight: 14,
+      },
+    ],
+  };
+
+  const menuOptions = menuOptionsConfig[section] || [];
 
   const handleClick = () => {
-    if (agent.status === 'published') {
-      dispatch(setSelectedAgent(agent));
-      navigate(`/`);
+    if (section === 'user') {
+      if (agent.status === 'published') {
+        dispatch(setSelectedAgent(agent));
+        navigate(`/`);
+      }
+    }
+    if (section === 'shared') {
+      navigate(`/agents/shared/${agent.shared_token}`);
     }
   };
 
@@ -224,9 +350,6 @@ function AgentCard({
     const response = await userService.deleteAgent(agentId, token);
     if (!response.ok) throw new Error('Failed to delete agent');
     const data = await response.json();
-    setUserAgents((prevAgents) =>
-      prevAgents.filter((prevAgent) => prevAgent.id !== data.id),
-    );
     dispatch(setAgents(agents.filter((prevAgent) => prevAgent.id !== data.id)));
   };
   return (
@@ -243,7 +366,7 @@ function AgentCard({
           e.stopPropagation();
           setIsMenuOpen(true);
         }}
-        className="absolute right-4 top-4 z-50 cursor-pointer"
+        className="absolute right-4 top-4 z-10 cursor-pointer"
       >
         <img src={ThreeDots} alt={'use-agent'} className="h-[19px] w-[19px]" />
         <ContextMenu
