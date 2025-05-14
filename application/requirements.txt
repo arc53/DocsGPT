@@ -13,7 +13,6 @@ Flask==3.1.1
 faiss-cpu==1.9.0.post1
 flask-restx==1.3.0
 google-genai==1.3.0
-google-generativeai==0.8.5
 gTTS==2.5.4
 gunicorn==23.0.0
 javalang==0.13.0
@@ -49,7 +48,6 @@ pathable==0.4.4
 pillow==11.1.0
 portalocker==3.1.1
 prance==23.6.21.0
-primp==0.14.0
 prompt-toolkit==3.0.51
 protobuf==5.29.3
 psycopg2-binary==2.9.10
