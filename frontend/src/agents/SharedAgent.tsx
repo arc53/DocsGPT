@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import Clock from '../assets/clock.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import Robot from '../assets/robot.svg';
@@ -223,17 +224,23 @@ function SharedAgentCard({ agent }: { agent: Agent }) {
           </p>
         )}
         {agent.shared_metadata?.shared_at && (
-          <p className="text-xs font-light text-[#71717A] dark:text-[#949494] sm:text-sm">
-            Shared on{' '}
-            {new Date(agent.shared_metadata.shared_at).toLocaleString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: true,
-            })}
-          </p>
+          <div className="flex items-center gap-[6px]">
+            <img src={Clock} />
+            <p className="text-xs font-light text-[#71717A] dark:text-[#949494] sm:text-sm">
+              Shared on{' '}
+              {new Date(agent.shared_metadata.shared_at).toLocaleString(
+                'en-US',
+                {
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                },
+              )}
+            </p>
+          </div>
         )}
       </div>
       {agent.tools.length > 0 && (
