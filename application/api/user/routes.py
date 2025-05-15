@@ -29,6 +29,7 @@ from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 from application.storage.storage_creator import StorageCreator
+
 storage = StorageCreator.get_storage()
 
 mongo = MongoDB.get_client()
@@ -42,6 +43,12 @@ token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
 user_logs_collection = db["user_logs"]
 user_tools_collection = db["user_tools"]
+
+agents_collection.create_index(
+    [("shared", 1)],
+    name="shared_index",
+    background=True,
+)
 
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
@@ -112,7 +119,9 @@ class DeleteConversation(Resource):
                 {"_id": ObjectId(conversation_id), "user": decoded_token["sub"]}
             )
         except Exception as err:
-            current_app.logger.error(f"Error deleting conversation: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error deleting conversation: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -130,7 +139,9 @@ class DeleteAllConversations(Resource):
         try:
             conversations_collection.delete_many({"user": user_id})
         except Exception as err:
-            current_app.logger.error(f"Error deleting all conversations: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error deleting all conversations: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -164,11 +175,15 @@ class GetConversations(Resource):
                     "id": str(conversation["_id"]),
                     "name": conversation["name"],
                     "agent_id": conversation.get("agent_id", None),
+                    "is_shared_usage": conversation.get("is_shared_usage", False),
+                    "shared_token": conversation.get("shared_token", None),
                 }
                 for conversation in conversations
             ]
         except Exception as err:
-            current_app.logger.error(f"Error retrieving conversations: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error retrieving conversations: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_conversations), 200)
 
@@ -196,12 +211,16 @@ class GetSingleConversation(Resource):
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
         except Exception as err:
-            current_app.logger.error(f"Error retrieving conversation: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error retrieving conversation: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         data = {
             "queries": conversation["queries"],
             "agent_id": conversation.get("agent_id"),
+            "is_shared_usage": conversation.get("is_shared_usage", False),
+            "shared_token": conversation.get("shared_token", None),
         }
         return make_response(jsonify(data), 200)
 
@@ -238,7 +257,9 @@ class UpdateConversationName(Resource):
                 {"$set": {"name": data["name"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating conversation name: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating conversation name: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -379,7 +400,9 @@ class DeleteOldIndexes(Resource):
         except FileNotFoundError:
             pass
         except Exception as err:
-            current_app.logger.error(f"Error deleting old indexes: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error deleting old indexes: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         sources_collection.delete_one({"_id": ObjectId(source_id)})
@@ -446,17 +469,25 @@ class UploadFile(Resource):
                 def create_zip_archive(temp_paths, job_name, storage):
                     import tempfile
 
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip_file:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".zip"
+                    ) as temp_zip_file:
                         zip_output_path = temp_zip_file.name
 
                     with tempfile.TemporaryDirectory() as stage_dir:
                         for path in temp_paths:
                             try:
                                 file_data = storage.get_file(path)
-                                with open(os.path.join(stage_dir, os.path.basename(path)), "wb") as f:
+                                with open(
+                                    os.path.join(stage_dir, os.path.basename(path)),
+                                    "wb",
+                                ) as f:
                                     f.write(file_data.read())
                             except Exception as e:
-                                current_app.logger.error(f"Error processing file {path} for zipping: {e}", exc_info=True)
+                                current_app.logger.error(
+                                    f"Error processing file {path} for zipping: {e}",
+                                    exc_info=True,
+                                )
                                 if os.path.exists(zip_output_path):
                                     os.remove(zip_output_path)
                                 raise
@@ -467,7 +498,9 @@ class UploadFile(Resource):
                                 root_dir=stage_dir,
                             )
                         except Exception as e:
-                            current_app.logger.error(f"Error creating zip archive: {e}", exc_info=True)
+                            current_app.logger.error(
+                                f"Error creating zip archive: {e}", exc_info=True
+                            )
                             if os.path.exists(zip_output_path):
                                 os.remove(zip_output_path)
                             raise
@@ -508,13 +541,16 @@ class UploadFile(Resource):
                         try:
                             storage.delete_file(temp_path)
                         except Exception as e:
-                            current_app.logger.error(f"Error deleting temporary file {temp_path}: {e}", exc_info=True)
+                            current_app.logger.error(
+                                f"Error deleting temporary file {temp_path}: {e}",
+                                exc_info=True,
+                            )
 
                     # Clean up the zip file if it was created
                     if zip_temp_path and os.path.exists(zip_temp_path):
                         os.remove(zip_temp_path)
 
-            else: # Keep this else block for single file upload
+            else:  # Keep this else block for single file upload
                 # For single file
                 file = files[0]
                 filename = secure_filename(file.filename)
@@ -542,7 +578,7 @@ class UploadFile(Resource):
                         ".jpeg",
                     ],
                     job_name,
-                    filename, # Corrected variable for single-file case
+                    filename,  # Corrected variable for single-file case
                     user,
                 )
 
@@ -600,7 +636,9 @@ class UploadRemote(Resource):
                 loader=data["source"],
             )
         except Exception as err:
-            current_app.logger.error(f"Error uploading remote source: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error uploading remote source: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
@@ -712,7 +750,9 @@ class PaginatedSources(Resource):
             return make_response(jsonify(response), 200)
 
         except Exception as err:
-            current_app.logger.error(f"Error retrieving paginated sources: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error retrieving paginated sources: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -1021,17 +1061,30 @@ class GetAgent(Resource):
                 "id": str(agent["_id"]),
                 "name": agent["name"],
                 "description": agent.get("description", ""),
-                "source": (str(source_doc["_id"]) if isinstance(agent.get("source"), DBRef) and (source_doc := db.dereference(agent.get("source"))) else ""),
+                "source": (
+                    str(source_doc["_id"])
+                    if isinstance(agent.get("source"), DBRef)
+                    and (source_doc := db.dereference(agent.get("source")))
+                    else ""
+                ),
                 "chunks": agent["chunks"],
                 "retriever": agent.get("retriever", ""),
-                "prompt_id": agent["prompt_id"],
+                "prompt_id": agent.get("prompt_id", ""),
                 "tools": agent.get("tools", []),
-                "agent_type": agent["agent_type"],
-                "status": agent["status"],
-                "createdAt": agent["createdAt"],
-                "updatedAt": agent["updatedAt"],
-                "lastUsedAt": agent["lastUsedAt"],
-                "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
+                "agent_type": agent.get("agent_type", ""),
+                "status": agent.get("status", ""),
+                "created_at": agent.get("createdAt", ""),
+                "updated_at": agent.get("updatedAt", ""),
+                "last_used_at": agent.get("lastUsedAt", ""),
+                "key": (
+                    f"{agent['key'][:4]}...{agent['key'][-4:]}"
+                    if "key" in agent
+                    else ""
+                ),
+                "pinned": agent.get("pinned", False),
+                "shared": agent.get("shared_publicly", False),
+                "shared_metadata": agent.get("shared_metadata", {}),
+                "shared_token": agent.get("shared_token", ""),
             }
         except Exception as err:
             current_app.logger.error(f"Error retrieving agent: {err}", exc_info=True)
@@ -1055,17 +1108,30 @@ class GetAgents(Resource):
                     "id": str(agent["_id"]),
                     "name": agent["name"],
                     "description": agent.get("description", ""),
-                    "source": (str(source_doc["_id"]) if isinstance(agent.get("source"), DBRef) and (source_doc := db.dereference(agent.get("source"))) else ""),
+                    "source": (
+                        str(source_doc["_id"])
+                        if isinstance(agent.get("source"), DBRef)
+                        and (source_doc := db.dereference(agent.get("source")))
+                        else ""
+                    ),
                     "chunks": agent["chunks"],
                     "retriever": agent.get("retriever", ""),
-                    "prompt_id": agent["prompt_id"],
+                    "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
-                    "agent_type": agent["agent_type"],
-                    "status": agent["status"],
-                    "created_at": agent["createdAt"],
-                    "updated_at": agent["updatedAt"],
-                    "last_used_at": agent["lastUsedAt"],
-                    "key": f"{agent['key'][:4]}...{agent['key'][-4:]}",
+                    "agent_type": agent.get("agent_type", ""),
+                    "status": agent.get("status", ""),
+                    "created_at": agent.get("createdAt", ""),
+                    "updated_at": agent.get("updatedAt", ""),
+                    "last_used_at": agent.get("lastUsedAt", ""),
+                    "key": (
+                        f"{agent['key'][:4]}...{agent['key'][-4:]}"
+                        if "key" in agent
+                        else ""
+                    ),
+                    "pinned": agent.get("pinned", False),
+                    "shared": agent.get("shared_publicly", False),
+                    "shared_metadata": agent.get("shared_metadata", {}),
+                    "shared_token": agent.get("shared_token", ""),
                 }
                 for agent in agents
                 if "source" in agent or "retriever" in agent
@@ -1156,6 +1222,10 @@ class CreateAgent(Resource):
                 "lastUsedAt": None,
                 "key": key,
             }
+            if new_agent["chunks"] == "":
+                new_agent["chunks"] = "0"
+            if new_agent["source"] == "" and new_agent["retriever"] == "":
+                new_agent["retriever"] = "classic"
 
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
@@ -1211,7 +1281,9 @@ class UpdateAgent(Resource):
             existing_agent = agents_collection.find_one({"_id": oid, "user": user})
         except Exception as err:
             return make_response(
-                current_app.logger.error(f"Error finding agent {agent_id}: {err}", exc_info=True),
+                current_app.logger.error(
+                    f"Error finding agent {agent_id}: {err}", exc_info=True
+                ),
                 jsonify({"success": False, "message": "Database error finding agent"}),
                 500,
             )
@@ -1266,6 +1338,33 @@ class UpdateAgent(Resource):
                         )
                     else:
                         update_fields[field] = ""
+                elif field == "chunks":
+                    chunks_value = data.get("chunks")
+                    if chunks_value == "":
+                        update_fields[field] = "0"
+                    else:
+                        try:
+                            if int(chunks_value) < 0:
+                                return make_response(
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "message": "Chunks value must be a positive integer",
+                                        }
+                                    ),
+                                    400,
+                                )
+                            update_fields[field] = chunks_value
+                        except ValueError:
+                            return make_response(
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": "Invalid chunks value provided",
+                                    }
+                                ),
+                                400,
+                            )
                 else:
                     update_fields[field] = data[field]
 
@@ -1334,7 +1433,9 @@ class UpdateAgent(Resource):
                 )
 
         except Exception as err:
-            current_app.logger.error(f"Error updating agent {agent_id}: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating agent {agent_id}: {err}", exc_info=True
+            )
             return make_response(
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
@@ -1383,6 +1484,275 @@ class DeleteAgent(Resource):
         return make_response(jsonify({"id": deleted_id}), 200)
 
 
+@user_ns.route("/api/pinned_agents")
+class PinnedAgents(Resource):
+    @api.doc(description="Get pinned agents for the user")
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            pinned_agents = agents_collection.find({"user": user, "pinned": True})
+            list_pinned_agents = [
+                {
+                    "id": str(agent["_id"]),
+                    "name": agent.get("name", ""),
+                    "description": agent.get("description", ""),
+                    "source": (
+                        str(db.dereference(agent["source"])["_id"])
+                        if "source" in agent and isinstance(agent["source"], DBRef)
+                        else ""
+                    ),
+                    "chunks": agent.get("chunks", ""),
+                    "retriever": agent.get("retriever", ""),
+                    "prompt_id": agent.get("prompt_id", ""),
+                    "tools": agent.get("tools", []),
+                    "agent_type": agent.get("agent_type", ""),
+                    "status": agent.get("status", ""),
+                    "created_at": agent.get("createdAt", ""),
+                    "updated_at": agent.get("updatedAt", ""),
+                    "last_used_at": agent.get("lastUsedAt", ""),
+                    "key": (
+                        f"{agent['key'][:4]}...{agent['key'][-4:]}"
+                        if "key" in agent
+                        else ""
+                    ),
+                    "pinned": agent.get("pinned", False),
+                }
+                for agent in pinned_agents
+                if "source" in agent or "retriever" in agent
+            ]
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving pinned agents: {err}")
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_pinned_agents), 200)
+
+
+@user_ns.route("/api/pin_agent")
+class PinAgent(Resource):
+    @api.doc(params={"id": "ID of the agent"}, description="Pin or unpin an agent")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        try:
+            agent = agents_collection.find_one(
+                {"_id": ObjectId(agent_id), "user": user}
+            )
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Agent not found"}), 404
+                )
+
+            pinned_status = not agent.get("pinned", False)
+            agents_collection.update_one(
+                {"_id": ObjectId(agent_id), "user": user},
+                {"$set": {"pinned": pinned_status}},
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error pinning/unpinning agent: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify({"success": True}), 200)
+
+
+@user_ns.route("/api/shared_agent")
+class SharedAgent(Resource):
+    @api.doc(
+        params={
+            "token": "Shared token of the agent",
+        },
+        description="Get a shared agent by token or ID",
+    )
+    def get(self):
+        shared_token = request.args.get("token")
+
+        if not shared_token:
+            return make_response(
+                jsonify({"success": False, "message": "Token or ID is required"}), 400
+            )
+
+        try:
+            query = {}
+            query["shared_publicly"] = True
+            query["shared_token"] = shared_token
+
+            shared_agent = agents_collection.find_one(query)
+            if not shared_agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Shared agent not found"}),
+                    404,
+                )
+
+            data = {
+                "id": str(shared_agent["_id"]),
+                "user": shared_agent.get("user", ""),
+                "name": shared_agent.get("name", ""),
+                "description": shared_agent.get("description", ""),
+                "tools": shared_agent.get("tools", []),
+                "agent_type": shared_agent.get("agent_type", ""),
+                "status": shared_agent.get("status", ""),
+                "created_at": shared_agent.get("createdAt", ""),
+                "updated_at": shared_agent.get("updatedAt", ""),
+                "shared": shared_agent.get("shared_publicly", False),
+                "shared_token": shared_agent.get("shared_token", ""),
+                "shared_metadata": shared_agent.get("shared_metadata", {}),
+            }
+
+            if data["tools"]:
+                enriched_tools = []
+                for tool in data["tools"]:
+                    tool_data = user_tools_collection.find_one({"_id": ObjectId(tool)})
+                    if tool_data:
+                        enriched_tools.append(tool_data.get("name", ""))
+                data["tools"] = enriched_tools
+
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving shared agent: {err}")
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(jsonify(data), 200)
+
+
+@user_ns.route("/api/shared_agents")
+class SharedAgents(Resource):
+    @api.doc(description="Get shared agents")
+    def get(self):
+        try:
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False}), 401)
+            user = decoded_token.get("sub")
+            shared_agents = agents_collection.find(
+                {"shared_publicly": True, "user": {"$ne": user}}
+            )
+            list_shared_agents = [
+                {
+                    "id": str(shared_agent["_id"]),
+                    "name": shared_agent.get("name", ""),
+                    "description": shared_agent.get("description", ""),
+                    "tools": shared_agent.get("tools", []),
+                    "agent_type": shared_agent.get("agent_type", ""),
+                    "status": shared_agent.get("status", ""),
+                    "created_at": shared_agent.get("createdAt", ""),
+                    "updated_at": shared_agent.get("updatedAt", ""),
+                    "shared": shared_agent.get("shared_publicly", False),
+                    "shared_token": shared_agent.get("shared_token", ""),
+                    "shared_metadata": shared_agent.get("shared_metadata", {}),
+                }
+                for shared_agent in shared_agents
+            ]
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving shared agents: {err}")
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_shared_agents), 200)
+
+
+@user_ns.route("/api/share_agent")
+class ShareAgent(Resource):
+    @api.expect(
+        api.model(
+            "ShareAgentModel",
+            {
+                "id": fields.String(required=True, description="ID of the agent"),
+                "shared": fields.Boolean(
+                    required=True, description="Share or unshare the agent"
+                ),
+                "username": fields.String(
+                    required=False, description="Name of the user"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Share or unshare an agent")
+    def put(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+
+        user = decoded_token.get("sub")
+
+        data = request.get_json()
+        if not data:
+            return make_response(
+                jsonify({"success": False, "message": "Missing JSON body"}), 400
+            )
+
+        agent_id = data.get("id")
+        shared = data.get("shared")
+        username = data.get("username", "")
+
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+
+        if shared is None:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Shared parameter is required and must be true or false",
+                    }
+                ),
+                400,
+            )
+
+        try:
+            try:
+                agent_oid = ObjectId(agent_id)
+            except Exception:
+                return make_response(
+                    jsonify({"success": False, "message": "Invalid agent ID"}), 400
+                )
+
+            agent = agents_collection.find_one({"_id": agent_oid, "user": user})
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Agent not found"}), 404
+                )
+
+            if shared:
+                shared_metadata = {
+                    "shared_by": username,
+                    "shared_at": datetime.datetime.now(datetime.timezone.utc),
+                }
+                shared_token = secrets.token_urlsafe(32)
+                agents_collection.update_one(
+                    {"_id": agent_oid, "user": user},
+                    {
+                        "$set": {
+                            "shared_publicly": shared,
+                            "shared_metadata": shared_metadata,
+                            "shared_token": shared_token,
+                        }
+                    },
+                )
+            else:
+                agents_collection.update_one(
+                    {"_id": agent_oid, "user": user},
+                    {"$set": {"shared_publicly": shared, "shared_token": None}},
+                    {"$unset": {"shared_metadata": ""}},
+                )
+
+        except Exception as err:
+            current_app.logger.error(f"Error sharing/unsharing agent: {err}")
+            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+        shared_token = shared_token if shared else None
+        return make_response(
+            jsonify({"success": True, "shared_token": shared_token}), 200
+        )
+
+
 @user_ns.route("/api/agent_webhook")
 class AgentWebhook(Resource):
     @api.doc(
@@ -1420,7 +1790,9 @@ class AgentWebhook(Resource):
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
 
         except Exception as err:
-            current_app.logger.error(f"Error generating webhook URL: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error generating webhook URL: {err}", exc_info=True
+            )
             return make_response(
                 jsonify({"success": False, "message": "Error generating webhook URL"}),
                 400,
@@ -1709,7 +2081,9 @@ class ShareConversation(Resource):
                     201,
                 )
         except Exception as err:
-            current_app.logger.error(f"Error sharing conversation: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error sharing conversation: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -1765,7 +2139,9 @@ class GetPubliclySharedConversations(Resource):
                 res["api_key"] = shared["api_key"]
             return make_response(jsonify(res), 200)
         except Exception as err:
-            current_app.logger.error(f"Error getting shared conversation: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error getting shared conversation: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
 
@@ -1885,7 +2261,9 @@ class GetMessageAnalytics(Resource):
                 daily_messages[entry["_id"]] = entry["count"]
 
         except Exception as err:
-            current_app.logger.error(f"Error getting message analytics: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error getting message analytics: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(
@@ -2044,7 +2422,9 @@ class GetTokenAnalytics(Resource):
                     daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
 
         except Exception as err:
-            current_app.logger.error(f"Error getting token analytics: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error getting token analytics: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(
@@ -2209,7 +2589,9 @@ class GetFeedbackAnalytics(Resource):
                 }
 
         except Exception as err:
-            current_app.logger.error(f"Error getting feedback analytics: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error getting feedback analytics: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(
@@ -2345,7 +2727,9 @@ class ManageSync(Resource):
                 update_data,
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating sync frequency: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating sync frequency: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2406,7 +2790,9 @@ class AvailableTools(Resource):
                     }
                 )
         except Exception as err:
-            current_app.logger.error(f"Error getting available tools: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error getting available tools: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
@@ -2610,7 +2996,9 @@ class UpdateToolConfig(Resource):
                 {"$set": {"config": data["config"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool config: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating tool config: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2649,7 +3037,9 @@ class UpdateToolActions(Resource):
                 {"$set": {"actions": data["actions"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool actions: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating tool actions: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2686,7 +3076,9 @@ class UpdateToolStatus(Resource):
                 {"$set": {"status": data["status"]}},
             )
         except Exception as err:
-            current_app.logger.error(f"Error updating tool status: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error updating tool status: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
 
         return make_response(jsonify({"success": True}), 200)
@@ -2980,14 +3372,14 @@ class StoreAttachment(Resource):
             attachment_id = ObjectId()
             original_filename = secure_filename(os.path.basename(file.filename))
             relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
-            
+
             metadata = storage.save_file(file, relative_path)
-            
+
             file_info = {
                 "filename": original_filename,
                 "attachment_id": str(attachment_id),
                 "path": relative_path,
-                "metadata": metadata
+                "metadata": metadata,
             }
 
             task = store_attachment.delay(file_info, user)

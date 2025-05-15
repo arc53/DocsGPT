@@ -285,9 +285,7 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
     ) {
       const { index, query } = action.payload;
-      if (!state.queries[index].tool_calls) {
-        state.queries[index].tool_calls = query?.tool_calls;
-      }
+      state.queries[index].tool_calls = query?.tool_calls ?? [];
     },
     updateQuery(
       state,

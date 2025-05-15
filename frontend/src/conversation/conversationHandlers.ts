@@ -142,6 +142,7 @@ export function handleFetchAnswerSteaming(
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
+        let buffer = '';
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let counterrr = 0;
@@ -157,22 +158,24 @@ export function handleFetchAnswerSteaming(
           counterrr += 1;
 
           const chunk = decoder.decode(value);
+          buffer += chunk;
 
-          const lines = chunk.split('\n');
+          const events = buffer.split('\n\n');
+          buffer = events.pop() ?? '';
 
-          for (let line of lines) {
-            if (line.trim() == '') {
-              continue;
+          for (const event of events) {
+            if (event.trim().startsWith('data:')) {
+              const dataLine: string = event
+                .split('\n')
+                .map((line: string) => line.replace(/^data:\s?/, ''))
+                .join('');
+
+              const messageEvent = new MessageEvent('message', {
+                data: dataLine.trim(),
+              });
+
+              onEvent(messageEvent);
             }
-            if (line.startsWith('data:')) {
-              line = line.substring(5);
-            }
-
-            const messageEvent: MessageEvent = new MessageEvent('message', {
-              data: line,
-            });
-
-            onEvent(messageEvent); // handle each message
           }
 
           reader.read().then(processStream).catch(reject);
