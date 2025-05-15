@@ -12,6 +12,7 @@ services:
       - backend
 
   backend:
+    user: root
     build: ../application
     environment:
       - API_KEY=$API_KEY
@@ -27,13 +28,14 @@ services:
       - "7091:7091"
     volumes:
       - ../application/indexes:/app/application/indexes
-      - ../application/inputs:/app/application/inputs
+      - ../application/inputs:/app/inputs
       - ../application/vectors:/app/application/vectors
     depends_on:
       - redis
       - mongo
 
   worker:
+    user: root
     build: ../application
     command: celery -A application.app.celery worker -l INFO -B
     environment:
@@ -45,6 +47,10 @@ services:
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
+    volumes:
+      - ../application/indexes:/app/application/indexes
+      - ../application/inputs:/app/inputs
+      - ../application/vectors:/app/application/vectors
     depends_on:
       - redis
       - mongo
