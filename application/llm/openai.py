@@ -16,7 +16,7 @@ class OpenAILLM(BaseLLM):
         if isinstance(settings.OPENAI_BASE_URL, str) and settings.OPENAI_BASE_URL.strip():
             self.client = OpenAI(api_key=api_key, base_url=settings.OPENAI_BASE_URL)
         else:
-            DEFAULT_OPENAI_API_BASE = f"https://api.openai.com/v1"
+            DEFAULT_OPENAI_API_BASE = "https://api.openai.com/v1"
             self.client = OpenAI(api_key=api_key, base_url=DEFAULT_OPENAI_API_BASE)
         self.api_key = api_key
         self.user_api_key = user_api_key
