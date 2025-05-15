@@ -472,6 +472,7 @@ class Stream(Resource):
                     decoded_token = request.decoded_token
                 else:
                     decoded_token = {"sub": data_key.get("user")}
+                    is_shared_usage = False
 
             elif "active_docs" in data:
                 source = {"active_docs": data["active_docs"]}
@@ -524,7 +525,8 @@ class Stream(Resource):
                 user_api_key=user_api_key,
                 decoded_token=decoded_token,
             )
-
+            is_shared_usage_val = data.get("is_shared_usage", False)
+            is_shared_token_val = data.get("shared_token", None)
             return Response(
                 complete_stream(
                     question=question,
@@ -537,8 +539,8 @@ class Stream(Resource):
                     index=index,
                     should_save_conversation=save_conv,
                     agent_id=agent_id,
-                    is_shared_usage=is_shared_usage,
-                    shared_token=shared_token,
+                    is_shared_usage=is_shared_usage_val,
+                    shared_token=is_shared_token_val,
                 ),
                 mimetype="text/event-stream",
             )
