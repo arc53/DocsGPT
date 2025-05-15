@@ -37,10 +37,10 @@ function MainLayout() {
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <ActionButtons showNewChat={true} showShare={true} />
       <div
-        className={`h-[calc(100dvh-64px)] md:h-screen ${
+        className={`h-[calc(100dvh-64px)] overflow-auto lg:h-screen ${
           !isMobile
-            ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
-            : 'ml-0 md:ml-16'
+            ? `ml-0 ${!navOpen ? 'lg:mx-auto' : 'lg:ml-72'}`
+            : 'ml-0 lg:ml-16'
         }`}
       >
         <Outlet />
@@ -48,7 +48,6 @@ function MainLayout() {
     </div>
   );
 }
-
 export default function App() {
   const [, , componentMounted] = useDarkTheme();
   if (!componentMounted) {

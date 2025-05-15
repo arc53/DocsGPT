@@ -219,7 +219,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   return (
     <>
       {!navOpen && (
-        <div className="duration-25 absolute left-3 top-3 z-20 hidden transition-all md:block">
+        <div className="duration-25 absolute left-3 top-3 z-20 hidden transition-all lg:block">
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
@@ -496,10 +496,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black md:hidden">
+      <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black lg:hidden">
         <div className="ml-6 flex h-full items-center gap-6">
           <button
-            className="h-6 w-6 md:hidden"
+            className="h-6 w-6 lg:hidden"
             onClick={() => setNavOpen(true)}
           >
             <img
