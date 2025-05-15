@@ -1,9 +1,6 @@
 from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
 from application.vectorstore.document_class import Document
-import elasticsearch
-
-
 
 
 class ElasticsearchStore(BaseVectorStore):
@@ -26,8 +23,7 @@ class ElasticsearchStore(BaseVectorStore):
             else:
                 raise ValueError("Please provide either elasticsearch_url or cloud_id.")
 
-            
-
+            import elasticsearch
             ElasticsearchStore._es_connection = elasticsearch.Elasticsearch(**connection_params)
             
         self.docsearch = ElasticsearchStore._es_connection
@@ -155,8 +151,6 @@ class ElasticsearchStore(BaseVectorStore):
         **kwargs,
         ):
         
-        from elasticsearch.helpers import BulkIndexError, bulk
-
         bulk_kwargs = bulk_kwargs or {}
         import uuid
         embeddings = []
@@ -189,6 +183,7 @@ class ElasticsearchStore(BaseVectorStore):
 
 
         if len(requests) > 0:
+            from elasticsearch.helpers import BulkIndexError, bulk
             try:
                 success, failed = bulk(
                     self._es_connection,
