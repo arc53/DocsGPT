@@ -33,7 +33,7 @@ function MainLayout() {
   const [navOpen, setNavOpen] = useState(!isMobile);
 
   return (
-    <div className="relative h-screen overflow-auto dark:bg-raisin-black">
+    <div className="relative h-screen overflow-hidden dark:bg-raisin-black">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <ActionButtons showNewChat={true} showShare={true} />
       <div
@@ -54,7 +54,7 @@ export default function App() {
     return <div />;
   }
   return (
-    <div className="relative h-full overflow-auto">
+    <div className="relative h-full overflow-hidden">
       <Routes>
         <Route
           element={
