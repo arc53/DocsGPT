@@ -240,7 +240,7 @@ serve_local_ollama() {
     echo "LLM_NAME=openai" >> .env
     echo "MODEL_NAME=$model_name" >> .env
     echo "VITE_API_STREAMING=true" >> .env
-    echo "OPENAI_BASE_URL=http://host.docker.internal:11434/v1" >> .env
+    echo "OPENAI_BASE_URL=http://ollama:11434/v1" >> .env
     echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> .env
     echo -e "${GREEN}.env file configured for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]')${NC}${GREEN}).${NC}"
     echo -e "${YELLOW}Note: MODEL_NAME is set to '${BOLD}$model_name${NC}${YELLOW}'. You can change it later in the .env file.${NC}"
