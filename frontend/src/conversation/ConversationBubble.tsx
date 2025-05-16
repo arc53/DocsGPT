@@ -680,27 +680,27 @@ function AllSources(sources: AllSourcesProps) {
                 isExternalSource && source.link && handleCardClick(source.link)
               }
             >
-              {isExternalSource && (
-                <div className="absolute right-2.5 top-2.5">
+              <p
+                title={source.title}
+                className={`ellipsis-text break-words text-left text-sm font-semibold ${
+                  isExternalSource
+                    ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
+                    : ''
+                }`}
+              >
+                {`${index + 1}. ${source.title}`}
+                {isExternalSource && (
                   <img
                     src={Link}
                     alt="External Link"
-                    className="h-2.5 w-2.5 object-fill opacity-60 hover:opacity-100 dark:invert"
+                    className={`ml-1 inline h-3 w-3 object-fill dark:invert ${
+                      isExternalSource
+                        ? 'group-hover/card:contrast-[50%] group-hover/card:hue-rotate-[235deg] group-hover/card:invert-[31%] group-hover/card:saturate-[752%] group-hover/card:sepia-[80%] group-hover/card:filter'
+                        : ''
+                    }`}
                   />
-                </div>
-              )}
-              <span className="flex flex-row">
-                <p
-                  title={source.title}
-                  className={`ellipsis-text break-words text-left text-sm font-semibold ${
-                    isExternalSource
-                      ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
-                      : ''
-                  }`}
-                >
-                  {`${index + 1}. ${source.title}`}
-                </p>
-              </span>
+                )}
+              </p>
               <p className="mt-3 line-clamp-4 break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
                 {source.text}
               </p>
