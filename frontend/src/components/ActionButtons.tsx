@@ -18,6 +18,8 @@ interface ActionButtonsProps {
   showShare?: boolean;
 }
 
+import { useNavigate } from 'react-router-dom';
+
 export default function ActionButtons({
   className = '',
   showNewChat = true,
@@ -27,6 +29,7 @@ export default function ActionButtons({
   const dispatch = useDispatch<AppDispatch>();
   const conversationId = useSelector(selectConversationId);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
+  const navigate = useNavigate();
 
   const newChat = () => {
     dispatch(setConversation([]));
@@ -35,8 +38,8 @@ export default function ActionButtons({
         query: { conversationId: null },
       }),
     );
+    navigate('/');
   };
-
   return (
     <div className="fixed right-4 top-4 z-10">
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
