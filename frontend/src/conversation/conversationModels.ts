@@ -43,7 +43,7 @@ export interface Query {
   conversationId?: string | null;
   title?: string | null;
   thought?: string;
-  sources?: { title: string; text: string; source: string }[];
+  sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
   error?: string;
   attachments?: { fileName: string; id: string }[];

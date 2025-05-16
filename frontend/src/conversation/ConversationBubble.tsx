@@ -49,7 +49,7 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     thought?: string;
-    sources?: { title: string; text: string; source: string }[];
+    sources?: { title: string; text: string; link: string }[];
     toolCalls?: ToolCallsType[];
     retryBtn?: React.ReactElement;
     questionNumber?: number;
@@ -233,7 +233,7 @@ const ConversationBubble = forwardRef<
         {DisableSourceFE ||
         type === 'ERROR' ||
         sources?.length === 0 ||
-        sources?.some((source) => source.source === 'None') ? null : !sources &&
+        sources?.some((source) => source.link === 'None') ? null : !sources &&
           chunks !== '0' &&
           selectedDocs ? (
           <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
@@ -300,14 +300,14 @@ const ConversationBubble = forwardRef<
                         </p>
                         <div
                           className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
-                            source.source && source.source !== 'local'
+                            source.link && source.link !== 'local'
                               ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
                               : ''
                           }`}
                           onClick={() =>
-                            source.source && source.source !== 'local'
+                            source.link && source.link !== 'local'
                               ? window.open(
-                                  source.source,
+                                  source.link,
                                   '_blank',
                                   'noopener, noreferrer',
                                 )
@@ -322,13 +322,13 @@ const ConversationBubble = forwardRef<
                           <p
                             className="mt-[2px] truncate text-xs"
                             title={
-                              source.source && source.source !== 'local'
-                                ? source.source
+                              source.link && source.link !== 'local'
+                                ? source.link
                                 : source.title
                             }
                           >
-                            {source.source && source.source !== 'local'
-                              ? source.source
+                            {source.link && source.link !== 'local'
+                              ? source.link
                               : source.title}
                           </p>
                         </div>
