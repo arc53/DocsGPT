@@ -649,50 +649,68 @@ const ConversationBubble = forwardRef<
 });
 
 type AllSourcesProps = {
-  sources: { title: string; text: string; source: string }[];
+  sources: { title: string; text: string; link?: string }[];
 };
 
 function AllSources(sources: AllSourcesProps) {
+  const { t } = useTranslation();
+
+  const handleCardClick = (link: string) => {
+    if (link && link !== 'local') {
+      window.open(link, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <div className="h-full w-full">
       <div className="w-full">
-        <p className="text-left text-xl">{`${sources.sources.length} Sources`}</p>
+        <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
         <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
       </div>
       <div className="mt-6 flex h-[90%] w-60 flex-col items-center gap-4 overflow-y-auto sm:w-80">
-        {sources.sources.map((source, index) => (
-          <div
-            key={index}
-            className="w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]"
-          >
-            <span className="flex flex-row">
-              <p
-                title={source.title}
-                className="ellipsis-text break-words text-left text-sm font-semibold"
-              >
-                {`${index + 1}. ${source.title}`}
+        {sources.sources.map((source, index) => {
+          const isExternalSource = source.link && source.link !== 'local';
+          return (
+            <div
+              key={index}
+              className={`group/card relative w-full rounded-[20px] bg-gray-1000 p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
+                isExternalSource ? 'cursor-pointer' : ''
+              }`}
+              onClick={() =>
+                isExternalSource && source.link && handleCardClick(source.link)
+              }
+            >
+              {isExternalSource && (
+                <div className="absolute right-2.5 top-2.5">
+                  <img
+                    src={Link}
+                    alt="External Link"
+                    className="h-2.5 w-2.5 object-fill opacity-60 hover:opacity-100 dark:invert"
+                  />
+                </div>
+              )}
+              <span className="flex flex-row">
+                <p
+                  title={source.title}
+                  className={`ellipsis-text break-words text-left text-sm font-semibold ${
+                    isExternalSource
+                      ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
+                      : ''
+                  }`}
+                >
+                  {`${index + 1}. ${source.title}`}
+                </p>
+              </span>
+              <p className="mt-3 line-clamp-4 break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
+                {source.text}
               </p>
-              {source.source && source.source !== 'local' ? (
-                <img
-                  src={Link}
-                  alt={'Link'}
-                  className="h-3 w-3 cursor-pointer object-fill"
-                  onClick={() =>
-                    window.open(source.source, '_blank', 'noopener, noreferrer')
-                  }
-                ></img>
-              ) : null}
-            </span>
-            <p className="mt-3 line-clamp-4 break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
-              {source.text}
-            </p>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
-
 export default ConversationBubble;
 
 function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
