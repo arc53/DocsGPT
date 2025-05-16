@@ -38,7 +38,7 @@ export default function ActionButtons({
   };
 
   return (
-    <div className="absolute right-4 top-4 z-20">
+    <div className="fixed right-4 top-4 z-10">
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
           <button
