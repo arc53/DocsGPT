@@ -4,11 +4,11 @@ import { Route, Routes, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import Edit from '../assets/edit.svg';
+import Link from '../assets/link-gray.svg';
 import Monitoring from '../assets/monitoring.svg';
 import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
 import Robot from '../assets/robot.svg';
-import Link from '../assets/link-gray.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
@@ -22,9 +22,11 @@ import { ActiveState } from '../models/misc';
 import {
   selectAgents,
   selectSelectedAgent,
+  selectSharedAgents,
   selectToken,
   setAgents,
   setSelectedAgent,
+  setSharedAgents,
 } from '../preferences/preferenceSlice';
 import AgentLogs from './AgentLogs';
 import NewAgent from './NewAgent';
@@ -59,13 +61,12 @@ const sectionConfig = {
 };
 
 function AgentsList() {
-  const navigate = useNavigate();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const agents = useSelector(selectAgents);
+  const sharedAgents = useSelector(selectSharedAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [sharedAgents, setSharedAgents] = useState<Agent[]>([]);
   const [loadingUserAgents, setLoadingUserAgents] = useState<boolean>(true);
   const [loadingSharedAgents, setLoadingSharedAgents] = useState<boolean>(true);
 
@@ -89,7 +90,7 @@ function AgentsList() {
       const response = await userService.getSharedAgents(token);
       if (!response.ok) throw new Error('Failed to fetch shared agents');
       const data = await response.json();
-      setSharedAgents(data);
+      dispatch(setSharedAgents(data));
       setLoadingSharedAgents(false);
     } catch (error) {
       console.error('Error:', error);
@@ -162,11 +163,17 @@ function AgentsList() {
       </div> */}
       <AgentSection
         agents={agents ?? []}
+        updateAgents={(updatedAgents) => {
+          dispatch(setAgents(updatedAgents));
+        }}
         loading={loadingUserAgents}
         section="user"
       />
       <AgentSection
         agents={sharedAgents ?? []}
+        updateAgents={(updatedAgents) => {
+          dispatch(setSharedAgents(updatedAgents));
+        }}
         loading={loadingSharedAgents}
         section="shared"
       />
@@ -176,10 +183,12 @@ function AgentsList() {
 
 function AgentSection({
   agents,
+  updateAgents,
   loading,
   section,
 }: {
   agents: Agent[];
+  updateAgents?: (agents: Agent[]) => void;
   loading: boolean;
   section: keyof typeof sectionConfig;
 }) {
@@ -204,20 +213,23 @@ function AgentSection({
           </button>
         )}
       </div>
-      <div className="grid w-full grid-cols-2 gap-2 md:flex md:flex-wrap md:gap-4">
+      <div>
         {loading ? (
           <div className="flex h-72 w-full items-center justify-center">
             <Spinner />
           </div>
         ) : agents && agents.length > 0 ? (
-          agents.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              agents={agents}
-              section={section}
-            />
-          ))
+          <div className="grid grid-cols-1 gap-4 sm:flex sm:flex-wrap">
+            {agents.map((agent, idx) => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                agents={agents}
+                updateAgents={updateAgents}
+                section={section}
+              />
+            ))}
+          </div>
         ) : (
           <div className="flex h-72 w-full flex-col items-center justify-center gap-3 text-base text-[#18181B] dark:text-[#E0E0E0]">
             <p>{sectionConfig[section].emptyStateDescription}</p>
@@ -239,10 +251,12 @@ function AgentSection({
 function AgentCard({
   agent,
   agents,
+  updateAgents,
   section,
 }: {
   agent: Agent;
   agents: Agent[];
+  updateAgents?: (agents: Agent[]) => void;
   section: keyof typeof sectionConfig;
 }) {
   const navigate = useNavigate();
@@ -264,7 +278,20 @@ function AgentCard({
           return { ...prevAgent, pinned: !prevAgent.pinned };
         return prevAgent;
       });
-      dispatch(setAgents(updatedAgents));
+      updateAgents?.(updatedAgents);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const handleHideSharedAgent = async () => {
+    try {
+      const response = await userService.hideSharedAgent(agent.id ?? '', token);
+      if (!response.ok) throw new Error('Failed to hide shared agent');
+      const updatedAgents = agents.filter(
+        (prevAgent) => prevAgent.id !== agent.id,
+      );
+      updateAgents?.(updatedAgents);
     } catch (error) {
       console.error('Error:', error);
     }
@@ -326,8 +353,30 @@ function AgentCard({
           navigate(`/agents/shared/${agent.shared_token}`);
         },
         variant: 'primary',
-        iconWidth: 14,
-        iconHeight: 14,
+        iconWidth: 12,
+        iconHeight: 12,
+      },
+      {
+        icon: agent.pinned ? UnPin : Pin,
+        label: agent.pinned ? 'Unpin' : 'Pin agent',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          togglePin();
+        },
+        variant: 'primary',
+        iconWidth: 18,
+        iconHeight: 18,
+      },
+      {
+        icon: Trash,
+        label: 'Remove',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          handleHideSharedAgent();
+        },
+        variant: 'danger',
+        iconWidth: 13,
+        iconHeight: 13,
       },
     ],
   };
