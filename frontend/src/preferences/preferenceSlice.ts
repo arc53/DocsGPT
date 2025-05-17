@@ -25,6 +25,7 @@ export interface Preference {
   modalState: ActiveState;
   paginatedDocuments: Doc[] | null;
   agents: Agent[] | null;
+  sharedAgents: Agent[] | null;
   selectedAgent: Agent | null;
 }
 
@@ -51,6 +52,7 @@ const initialState: Preference = {
   modalState: 'INACTIVE',
   paginatedDocuments: null,
   agents: null,
+  sharedAgents: null,
   selectedAgent: null,
 };
 
@@ -91,6 +93,9 @@ export const prefSlice = createSlice({
     setAgents: (state, action) => {
       state.agents = action.payload;
     },
+    setSharedAgents: (state, action) => {
+      state.sharedAgents = action.payload;
+    },
     setSelectedAgent: (state, action) => {
       state.selectedAgent = action.payload;
     },
@@ -109,6 +114,7 @@ export const {
   setModalStateDeleteConv,
   setPaginatedDocuments,
   setAgents,
+  setSharedAgents,
   setSelectedAgent,
 } = prefSlice.actions;
 export default prefSlice.reducer;
@@ -185,5 +191,7 @@ export const selectTokenLimit = (state: RootState) =>
 export const selectPaginatedDocuments = (state: RootState) =>
   state.preference.paginatedDocuments;
 export const selectAgents = (state: RootState) => state.preference.agents;
+export const selectSharedAgents = (state: RootState) =>
+  state.preference.sharedAgents;
 export const selectSelectedAgent = (state: RootState) =>
   state.preference.selectedAgent;

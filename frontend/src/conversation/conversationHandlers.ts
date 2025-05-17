@@ -150,10 +150,7 @@ export function handleFetchAnswerSteaming(
           done,
           value,
         }: ReadableStreamReadResult<Uint8Array>) => {
-          if (done) {
-            console.log(counterrr);
-            return;
-          }
+          if (done) return;
 
           counterrr += 1;
 
@@ -163,7 +160,7 @@ export function handleFetchAnswerSteaming(
           const events = buffer.split('\n\n');
           buffer = events.pop() ?? '';
 
-          for (let event of events) {
+          for (const event of events) {
             if (event.trim().startsWith('data:')) {
               const dataLine: string = event
                 .split('\n')
