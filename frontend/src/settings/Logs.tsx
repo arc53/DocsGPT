@@ -17,12 +17,16 @@ type LogsProps = {
 
 export default function Logs({ agentId, tableHeader }: LogsProps) {
   const token = useSelector(selectToken);
-  const [logs, setLogs] = useState<LogData[]>([]);
+  const [logsByPage, setLogsByPage] = useState<Record<number, LogData[]>>({});
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingLogs, setLoadingLogs] = useLoaderState(true);
 
+  const logs = Object.values(logsByPage).flat();
+
   const fetchLogs = async () => {
+    if (logsByPage[page] && logsByPage[page].length > 0) return;
+
     setLoadingLogs(true);
     try {
       const response = await userService.getLogs(
@@ -34,9 +38,13 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         token,
       );
       if (!response.ok) throw new Error('Failed to fetch logs');
-      const olderLogs = await response.json();
-      setLogs((prevLogs) => [...prevLogs, ...olderLogs.logs]);
-      setHasMore(olderLogs.has_more);
+      const data = await response.json();
+
+      setLogsByPage((prev) => ({
+        ...prev,
+        [page]: data.logs,
+      }));
+      setHasMore(data.has_more);
     } catch (error) {
       console.error(error);
     } finally {
@@ -73,16 +81,11 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
   const [openLogId, setOpenLogId] = useState<string | null>(null);
 
   const handleLogToggle = (logId: string) => {
-    if (openLogId && openLogId !== logId) {
-      // If a different log is being opened, close the current one
-      const currentOpenLog = document.getElementById(
-        openLogId,
-      ) as HTMLDetailsElement;
-      if (currentOpenLog) {
-        currentOpenLog.open = false;
-      }
+    if (openLogId === logId) {
+      setOpenLogId(null);
+    } else {
+      setOpenLogId(logId);
     }
-    setOpenLogId(logId);
   };
 
   const firstObserver = useCallback((node: HTMLDivElement | null) => {
@@ -116,16 +119,27 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="flex h-[51vh] flex-grow flex-col items-start gap-2 overflow-y-auto bg-transparent p-4">
+      <div className="relative flex h-[51vh] flex-grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
         {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
               <div ref={firstObserver} key={index} className="w-full">
-                <Log log={log} onToggle={handleLogToggle} />
+                <Log
+                  log={log}
+                  isOpen={openLogId === log.id}
+                  onToggle={handleLogToggle}
+                />
               </div>
             );
           } else
-            return <Log key={index} log={log} onToggle={handleLogToggle} />;
+            return (
+              <Log
+                key={index}
+                log={log}
+                isOpen={openLogId === log.id}
+                onToggle={handleLogToggle}
+              />
+            );
         })}
         {loading && <SkeletonLoader component="logs" />}
       </div>
@@ -134,9 +148,11 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
 }
 function Log({
   log,
+  isOpen,
   onToggle,
 }: {
   log: LogData;
+  isOpen: boolean;
   onToggle: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -148,20 +164,17 @@ function Log({
   const { id, action, timestamp, ...filteredLog } = log;
 
   return (
-    <details
-      id={log.id}
-      className="group w-full rounded-xl bg-transparent hover:bg-[#F9F9F9] group-open:opacity-80 hover:dark:bg-dark-charcoal [&[open]]:border [&[open]]:border-[#d9d9d9] [&_summary::-webkit-details-marker]:hidden"
-      onToggle={(e) => {
-        if ((e.target as HTMLDetailsElement).open) {
-          onToggle(log.id);
-        }
-      }}
-    >
-      <summary className="flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-gray-900 group-open:rounded-t-xl group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B]">
+    <div className="group w-full rounded-xl bg-transparent hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal">
+      <div
+        onClick={() => onToggle(log.id)}
+        className={`flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-gray-900 ${
+          isOpen ? 'rounded-t-xl bg-[#F1F1F1] dark:bg-[#1B1B1B]' : ''
+        }`}
+      >
         <img
           src={ChevronRight}
           alt="Expand log entry"
-          className="mt-[3px] h-3 w-3 transition duration-300 group-open:rotate-90"
+          className={`mt-[3px] h-3 w-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
         />
         <span className="flex flex-row gap-2">
           <h2 className="text-xs text-black/60 dark:text-bright-gray">{`${log.timestamp}`}</h2>
@@ -174,18 +187,22 @@ function Log({
               : log.question}
           </h2>
         </span>
-      </summary>
-      <div className="px-4 py-3 group-open:rounded-b-xl group-open:bg-[#F1F1F1] dark:group-open:bg-[#1B1B1B]">
-        <p className="break-words px-2 text-xs leading-relaxed text-gray-700 dark:text-gray-400">
-          {JSON.stringify(filteredLog, null, 2)}
-        </p>
-        <div className="my-px w-fit">
-          <CopyButton
-            textToCopy={JSON.stringify(filteredLog)}
-            showText={true}
-          />
-        </div>
       </div>
-    </details>
+      {isOpen && (
+        <div className="rounded-b-xl bg-[#F1F1F1] px-4 py-3 dark:bg-[#1B1B1B]">
+          <div className="scrollbar-thin overflow-y-auto">
+            <pre className="whitespace-pre-wrap break-words px-2 font-mono text-xs leading-relaxed text-gray-700 dark:text-gray-400">
+              {JSON.stringify(filteredLog, null, 2)}
+            </pre>
+          </div>
+          <div className="my-px w-fit">
+            <CopyButton
+              textToCopy={JSON.stringify(filteredLog)}
+              showText={true}
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

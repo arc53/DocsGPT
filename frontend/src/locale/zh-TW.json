@@ -240,6 +240,11 @@
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源"
     },
+    "attachments": {
+      "attach": "附件",
+      "remove": "刪除附件",
+      "uploadFailed": "上傳失敗"
+    },
     "retry": "重試"
   }
 }

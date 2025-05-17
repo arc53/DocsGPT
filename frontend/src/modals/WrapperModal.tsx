@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import Exit from '../assets/exit.svg';
 
@@ -45,7 +46,7 @@ export default function WrapperModal({
     };
   }, [close]);
 
-  return (
+  const modalContent = (
     <div className="fixed left-0 top-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
       <div
         ref={modalRef}
@@ -63,4 +64,6 @@ export default function WrapperModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

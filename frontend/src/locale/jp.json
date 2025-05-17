@@ -238,7 +238,12 @@
       "title": "ソース",
       "text": "ソーステキスト",
       "link": "ソースリンク",
-      "view_more": "さらに{{count}}個のソースを表示"
+      "view_more": "さらに{{count}}個のソース"
+    },
+    "attachments": {
+      "attach": "添付",
+      "remove": "添付ファイルを削除",
+      "uploadFailed": "アップロード失敗"
     },
     "retry": "再試行"
   }

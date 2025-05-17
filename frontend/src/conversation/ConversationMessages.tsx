@@ -190,7 +190,7 @@ export default function ConversationMessages({
       ref={conversationRef}
       onWheel={handleUserScrollInterruption}
       onTouchMove={handleUserScrollInterruption}
-      className="flex h-full w-full justify-center overflow-y-auto sm:pt-12"
+      className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12"
     >
       {queries.length > 0 && !hasScrolledToLast && (
         <button

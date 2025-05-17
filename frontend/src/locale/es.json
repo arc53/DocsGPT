@@ -239,6 +239,11 @@
       "link": "Enlace fuente",
       "view_more": "Ver {{count}} más fuentes"
     },
+    "attachments": {
+      "attach": "Adjuntar",
+      "remove": "Eliminar adjunto",
+      "uploadFailed": "Error al subir"
+    },
     "retry": "Reintentar"
   }
 }

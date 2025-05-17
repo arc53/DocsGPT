@@ -13,6 +13,7 @@ import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
 import Agents from './agents';
+import ActionButtons from './components/ActionButtons';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
@@ -32,13 +33,14 @@ function MainLayout() {
   const [navOpen, setNavOpen] = useState(!isMobile);
 
   return (
-    <div className="relative h-screen overflow-auto dark:bg-raisin-black">
+    <div className="relative h-screen overflow-hidden dark:bg-raisin-black">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
+      <ActionButtons showNewChat={true} showShare={true} />
       <div
-        className={`h-[calc(100dvh-64px)] md:h-screen ${
+        className={`h-[calc(100dvh-64px)] overflow-auto lg:h-screen ${
           !isMobile
-            ? `ml-0 ${!navOpen ? 'md:mx-auto lg:mx-auto' : 'md:ml-72'}`
-            : 'ml-0 md:ml-16'
+            ? `ml-0 ${!navOpen ? 'lg:mx-auto' : 'lg:ml-72'}`
+            : 'ml-0 lg:ml-16'
         }`}
       >
         <Outlet />
@@ -46,14 +48,13 @@ function MainLayout() {
     </div>
   );
 }
-
 export default function App() {
   const [, , componentMounted] = useDarkTheme();
   if (!componentMounted) {
     return <div />;
   }
   return (
-    <div className="relative h-full overflow-auto">
+    <div className="relative h-full overflow-hidden">
       <Routes>
         <Route
           element={

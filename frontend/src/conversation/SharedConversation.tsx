@@ -35,7 +35,6 @@ export const SharedConversation = () => {
   const apiKey = useSelector(selectClientAPIKey);
   const status = useSelector(selectStatus);
 
-  const [input, setInput] = useState('');
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
@@ -76,15 +75,15 @@ export const SharedConversation = () => {
         });
   };
 
-  const handleQuestionSubmission = () => {
-    if (input && status !== 'loading') {
+  const handleQuestionSubmission = (question?: string) => {
+    if (question && status !== 'loading') {
       if (lastQueryReturnedErr) {
         // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: input,
+              prompt: question,
             },
           }),
         );
@@ -93,9 +92,8 @@ export const SharedConversation = () => {
           isRetry: true,
         });
       } else {
-        handleQuestion({ question: input });
+        handleQuestion({ question });
       }
-      setInput('');
     }
   };
 
@@ -156,10 +154,12 @@ export const SharedConversation = () => {
         <div className="flex w-full max-w-[1200px] flex-col items-center gap-4 pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           {apiKey ? (
             <MessageInput
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onSubmit={() => handleQuestionSubmission()}
+              onSubmit={(text) => {
+                handleQuestionSubmission(text);
+              }}
               loading={status === 'loading'}
+              showSourceButton={false}
+              showToolButton={false}
             />
           ) : (
             <button

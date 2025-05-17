@@ -72,7 +72,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
               dispatch(
                 sharedConversationSlice.actions.raiseError({
-                  index: state.conversation.queries.length - 1,
+                  index: state.sharedConversation.queries.length - 1,
                   message: data.error,
                 }),
               );

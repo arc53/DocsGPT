@@ -49,7 +49,7 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     thought?: string;
-    sources?: { title: string; text: string; source: string }[];
+    sources?: { title: string; text: string; link: string }[];
     toolCalls?: ToolCallsType[];
     retryBtn?: React.ReactElement;
     questionNumber?: number;
@@ -233,7 +233,7 @@ const ConversationBubble = forwardRef<
         {DisableSourceFE ||
         type === 'ERROR' ||
         sources?.length === 0 ||
-        sources?.some((source) => source.source === 'None') ? null : !sources &&
+        sources?.some((source) => source.link === 'None') ? null : !sources &&
           chunks !== '0' &&
           selectedDocs ? (
           <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
@@ -300,14 +300,14 @@ const ConversationBubble = forwardRef<
                         </p>
                         <div
                           className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
-                            source.source && source.source !== 'local'
+                            source.link && source.link !== 'local'
                               ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
                               : ''
                           }`}
                           onClick={() =>
-                            source.source && source.source !== 'local'
+                            source.link && source.link !== 'local'
                               ? window.open(
-                                  source.source,
+                                  source.link,
                                   '_blank',
                                   'noopener, noreferrer',
                                 )
@@ -322,13 +322,13 @@ const ConversationBubble = forwardRef<
                           <p
                             className="mt-[2px] truncate text-xs"
                             title={
-                              source.source && source.source !== 'local'
-                                ? source.source
+                              source.link && source.link !== 'local'
+                                ? source.link
                                 : source.title
                             }
                           >
-                            {source.source && source.source !== 'local'
-                              ? source.source
+                            {source.link && source.link !== 'local'
+                              ? source.link
                               : source.title}
                           </p>
                         </div>
@@ -339,7 +339,7 @@ const ConversationBubble = forwardRef<
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
-                          <p className="max-h-[164px] overflow-y-auto break-words rounded-md text-sm">
+                          <p className="line-clamp-6 max-h-[164px] overflow-hidden text-ellipsis break-words rounded-md text-sm">
                             {source.text}
                           </p>
                         </div>
@@ -649,50 +649,68 @@ const ConversationBubble = forwardRef<
 });
 
 type AllSourcesProps = {
-  sources: { title: string; text: string; source: string }[];
+  sources: { title: string; text: string; link?: string }[];
 };
 
 function AllSources(sources: AllSourcesProps) {
+  const { t } = useTranslation();
+
+  const handleCardClick = (link: string) => {
+    if (link && link !== 'local') {
+      window.open(link, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <div className="h-full w-full">
       <div className="w-full">
-        <p className="text-left text-xl">{`${sources.sources.length} Sources`}</p>
+        <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
         <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
       </div>
       <div className="mt-6 flex h-[90%] w-60 flex-col items-center gap-4 overflow-y-auto sm:w-80">
-        {sources.sources.map((source, index) => (
-          <div
-            key={index}
-            className="min-h-32 w-full rounded-[20px] bg-gray-1000 p-4 dark:bg-[#28292E]"
-          >
-            <span className="flex flex-row">
+        {sources.sources.map((source, index) => {
+          const isExternalSource = source.link && source.link !== 'local';
+          return (
+            <div
+              key={index}
+              className={`group/card relative w-full rounded-[20px] bg-gray-1000 p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
+                isExternalSource ? 'cursor-pointer' : ''
+              }`}
+              onClick={() =>
+                isExternalSource && source.link && handleCardClick(source.link)
+              }
+            >
               <p
                 title={source.title}
-                className="ellipsis-text break-words text-left text-sm font-semibold"
+                className={`ellipsis-text break-words text-left text-sm font-semibold ${
+                  isExternalSource
+                    ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
+                    : ''
+                }`}
               >
                 {`${index + 1}. ${source.title}`}
+                {isExternalSource && (
+                  <img
+                    src={Link}
+                    alt="External Link"
+                    className={`ml-1 inline h-3 w-3 object-fill dark:invert ${
+                      isExternalSource
+                        ? 'group-hover/card:contrast-[50%] group-hover/card:hue-rotate-[235deg] group-hover/card:invert-[31%] group-hover/card:saturate-[752%] group-hover/card:sepia-[80%] group-hover/card:filter'
+                        : ''
+                    }`}
+                  />
+                )}
               </p>
-              {source.source && source.source !== 'local' ? (
-                <img
-                  src={Link}
-                  alt={'Link'}
-                  className="h-3 w-3 cursor-pointer object-fill"
-                  onClick={() =>
-                    window.open(source.source, '_blank', 'noopener, noreferrer')
-                  }
-                ></img>
-              ) : null}
-            </span>
-            <p className="mt-3 max-h-16 overflow-y-auto break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
-              {source.text}
-            </p>
-          </div>
-        ))}
+              <p className="mt-3 line-clamp-4 break-words rounded-md text-left text-xs text-black dark:text-chinese-silver">
+                {source.text}
+              </p>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
-
 export default ConversationBubble;
 
 function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
