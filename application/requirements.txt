@@ -56,7 +56,7 @@ pydantic==2.10.6
 pydantic-core==2.27.2
 pydantic-settings==2.7.1
 pymongo==4.11.3
-pypdf==5.2.0
+pypdf==5.5.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-jose==3.4.0
