@@ -1,6 +1,6 @@
 anthropic==0.49.0
-boto3==1.35.97
-beautifulsoup4==4.12.3
+boto3==1.38.18
+beautifulsoup4==4.13.4
 celery==5.4.0
 dataclasses-json==0.6.7
 docx2txt==0.8
@@ -56,7 +56,7 @@ pydantic==2.10.6
 pydantic-core==2.27.2
 pydantic-settings==2.7.1
 pymongo==4.11.3
-pypdf==5.2.0
+pypdf==5.5.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-jose==3.4.0
