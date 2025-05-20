@@ -458,26 +458,27 @@ export const SearchBar = ({
     React.useEffect(() => {
         if (!input) {
             setResults([]);
+            setLoading(false);
             return;
         }
         setLoading(true);
         if (debounceTimeout.current) {
             clearTimeout(debounceTimeout.current);
         }
-
+    
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
-
+    
         debounceTimeout.current = setTimeout(() => {
             getSearchResults(input, apiKey, apiHost, abortController.signal)
                 .then((data) => setResults(data))
                 .catch((err) => !abortController.signal.aborted && console.log(err))
                 .finally(() => setLoading(false));
         }, 500);
-
+    
         return () => {
             abortController.abort();
             clearTimeout(debounceTimeout.current ?? undefined);
