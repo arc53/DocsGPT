@@ -46,7 +46,8 @@ const themes = {
 
 const GlobalStyle = createGlobalStyle`
   .highlight {
-    color:#007EE6;
+    color: ${props => props.theme.name === 'dark' ? '#4B9EFF' : '#0066CC'};
+    font-weight: 500;
   }
 `;
 
@@ -285,8 +286,8 @@ const Toolkit = styled.kbd`
 `
 const Loader = styled.div`
   margin: 2rem auto;
-  border: 4px solid ${props => props.theme.secondary.text};
-  border-top: 4px solid ${props => props.theme.primary.bg};
+  border: 4px solid ${props => props.theme.name === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'};
+  border-top: 4px solid ${props => props.theme.name === 'dark' ? '#FFFFFF' : props.theme.primary.bg};
   border-radius: 50%;
   width: 12px;
   height: 12px;
@@ -370,8 +371,9 @@ const TextField = styled.input`
     }
 
     &::placeholder {
-        color: #8F8F8F !important;
+        color: ${props => props.theme.name === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)'} !important;
         opacity: 100%; /* Force opacity to ensure placeholder is visible */
+        font-weight: 500;
     }
 `
 
@@ -456,34 +458,34 @@ export const SearchBar = ({
     }, []);
 
     React.useEffect(() => {
-        if (!input) {
-            setResults([]);
-            setLoading(false);
-            return;
-        }
-        setLoading(true);
-        if (debounceTimeout.current) {
-            clearTimeout(debounceTimeout.current);
-        }
-    
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-    
-        debounceTimeout.current = setTimeout(() => {
-            getSearchResults(input, apiKey, apiHost, abortController.signal)
-                .then((data) => setResults(data))
-                .catch((err) => !abortController.signal.aborted && console.log(err))
-                .finally(() => setLoading(false));
-        }, 500);
-    
-        return () => {
-            abortController.abort();
-            clearTimeout(debounceTimeout.current ?? undefined);
-        };
-    }, [input])
+    if (!input) {
+        setResults([]);
+        setLoading(false);
+        return;
+    }
+    setLoading(true);
+    if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+    }
+
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    debounceTimeout.current = setTimeout(() => {
+        getSearchResults(input, apiKey, apiHost, abortController.signal)
+            .then((data) => setResults(data))
+            .catch((err) => !abortController.signal.aborted && console.log(err))
+            .finally(() => setLoading(false));
+    }, 500);
+
+    return () => {
+        abortController.abort();
+        clearTimeout(debounceTimeout.current ?? undefined);
+    };
+}, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
