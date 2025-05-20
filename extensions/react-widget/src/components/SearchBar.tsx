@@ -4,7 +4,6 @@ import { WidgetCore } from './DocsGPTWidget';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI';
 import { Result } from '@/types';
-import MarkdownIt from 'markdown-it';
 import { getOS, processMarkdownString } from '../utils/helper';
 import DOMPurify from 'dompurify';
 import {
@@ -117,8 +116,8 @@ const SearchResults = styled.div`
     color: ${props => props.theme.primary.text};
     
     box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(82px);
+    -webkit-backdrop-filter: blur(82px);
     border-radius: 10px;
     
     box-sizing: border-box;
@@ -215,57 +214,6 @@ const ContentSegment = styled.div`
     text-overflow: ellipsis;
 `
 
-const Markdown = styled.div`
-line-height:18px;
-font-size: 11px;
-white-space: pre-wrap;
- pre {
-      padding: 8px;
-      width: 90%;
-      font-size: 11px;
-      border-radius: 6px;
-      overflow-x: auto;
-      background-color: #1B1C1F;
-      color: #fff ;
-    }
-
-    h1,h2 {
-      font-size: 14px;
-      font-weight: 600;
-      color: ${(props) => props.theme.text};
-      opacity: 0.8;
-    }
-
-
-    h3 {
-      font-size: 12px;
-    }
-
-    p {
-      margin: 0px;
-      line-height: 1.35rem;
-      font-size: 11px;
-    }
-
-    code:not(pre code) {
-      border-radius: 6px;
-      padding: 2px 2px;
-      margin: 2px;
-      font-size: 9px;
-      display: inline;
-      background-color: #646464;
-      color: #fff ;
-    }
-    img{
-        max-width: 50%;
-    }
-    code {
-      overflow-x: auto;
-    }
-    a{
-        color: #007ee6;
-    }
-`
 const Toolkit = styled.kbd`
     position: absolute;
     right: 4px;
@@ -327,20 +275,16 @@ const AskAIButton = styled.button`
     font-size: 16px;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-    border: 1px solid ${props => props.theme.name === 'dark' ? 
-        'rgba(255, 255, 255, 0.2)' : 
-        'rgba(0, 0, 0, 0.1)'};
     background-color: ${props => props.theme.name === 'dark' ? 
         'rgba(255, 255, 255, 0.05)' : 
-        'rgba(0, 0, 0, 0.03)'}; // Very subtle background for light theme
+        'rgba(0, 0, 0, 0.03)'};
 
     &:hover {
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
         background-color: ${props => props.theme.name === 'dark' ? 
             'rgba(255, 255, 255, 0.1)' : 
-            'rgba(0, 0, 0, 0.06)'}; // Subtle hover effect for light theme
+            'rgba(0, 0, 0, 0.06)'}; 
     }
 `;
 
