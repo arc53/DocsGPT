@@ -42,6 +42,7 @@ const preloadedState: { preference: Preference } = {
     modalState: 'INACTIVE',
     paginatedDocuments: null,
     agents: null,
+    sharedAgents: null,
     selectedAgent: null,
   },
 };

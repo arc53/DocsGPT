@@ -42,6 +42,7 @@ import {
   selectConversations,
   selectModalStateDeleteConv,
   selectSelectedAgent,
+  selectSharedAgents,
   selectToken,
   setAgents,
   setConversations,
@@ -67,6 +68,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const conversationId = useSelector(selectConversationId);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const agents = useSelector(selectAgents);
+  const sharedAgents = useSelector(selectSharedAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile } = useMediaQuery();
@@ -129,7 +131,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   useEffect(() => {
     fetchRecentAgents();
-  }, [agents, token, dispatch]);
+  }, [agents, sharedAgents, token, dispatch]);
 
   useEffect(() => {
     if (!conversations?.data) fetchConversations();
@@ -179,8 +181,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     dispatch(setSelectedAgent(null));
     conversationService
       .getConversation(index, token)
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) {
+          navigate('/');
+          dispatch(setSelectedAgent(null));
+          return null;
+        }
+        return response.json();
+      })
       .then((data) => {
+        if (!data) return;
         dispatch(setConversation(data.queries));
         dispatch(
           updateConversationId({
@@ -192,20 +202,30 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             userService
               .getSharedAgent(data.shared_token, token)
               .then((response) => {
-                if (response.ok) {
-                  response.json().then((agent: Agent) => {
-                    navigate(`/agents/shared/${agent.shared_token}`);
-                  });
+                if (!response.ok) {
+                  navigate('/');
+                  dispatch(setSelectedAgent(null));
+                  return;
                 }
+                response.json().then((agent: Agent) => {
+                  navigate(`/agents/shared/${agent.shared_token}`);
+                });
               });
           } else {
             userService.getAgent(data.agent_id, token).then((response) => {
-              if (response.ok) {
-                response.json().then((agent: Agent) => {
-                  navigate('/');
-                  dispatch(setSelectedAgent(agent));
-                });
+              if (!response.ok) {
+                navigate('/');
+                dispatch(setSelectedAgent(null));
+                return;
               }
+              response.json().then((agent: Agent) => {
+                if (agent.shared_token)
+                  navigate(`/agents/shared/${agent.shared_token}`);
+                else {
+                  dispatch(setSelectedAgent(agent));
+                  navigate('/');
+                }
+              });
             });
           }
         } else {

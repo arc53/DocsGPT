@@ -25,10 +25,10 @@ from application.api.user.tasks import (
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.extensions import api
+from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
 from application.utils import check_required_fields, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
-from application.storage.storage_creator import StorageCreator
 
 storage = StorageCreator.get_storage()
 
@@ -41,6 +41,7 @@ feedback_collection = db["feedback"]
 agents_collection = db["agents"]
 token_usage_collection = db["token_usage"]
 shared_conversations_collections = db["shared_conversations"]
+users_collection = db["users"]
 user_logs_collection = db["user_logs"]
 user_tools_collection = db["user_tools"]
 
@@ -83,6 +84,33 @@ def generate_date_range(start_date, end_date):
     }
 
 
+def ensure_user_doc(user_id):
+    user_doc = users_collection.find_one({"user_id": user_id})
+
+    if not user_doc:
+        user_doc = {
+            "user_id": user_id,
+            "agent_preferences": {"pinned": [], "hidden_shared": []},
+        }
+        users_collection.insert_one(user_doc)
+        return user_doc
+    updated = False
+    preferences = user_doc.get("agent_preferences", {})
+
+    if "pinned" not in preferences:
+        preferences["pinned"] = []
+        updated = True
+    if "hidden_shared" not in preferences:
+        preferences["hidden_shared"] = []
+        updated = True
+    if updated:
+        users_collection.update_one(
+            {"user_id": user_id}, {"$set": {"agent_preferences": preferences}}
+        )
+        user_doc["agent_preferences"] = preferences
+    return user_doc
+
+
 def get_vector_store(source_id):
     """
     Get the Vector Store
@@ -113,7 +141,6 @@ class DeleteConversation(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             conversations_collection.delete_one(
                 {"_id": ObjectId(conversation_id), "user": decoded_token["sub"]}
@@ -203,7 +230,6 @@ class GetSingleConversation(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             conversation = conversations_collection.find_one(
                 {"_id": ObjectId(conversation_id), "user": decoded_token.get("sub")}
@@ -215,7 +241,6 @@ class GetSingleConversation(Resource):
                 f"Error retrieving conversation: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         data = {
             "queries": conversation["queries"],
             "agent_id": conversation.get("agent_id"),
@@ -250,7 +275,6 @@ class UpdateConversationName(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             conversations_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": decoded_token.get("sub")},
@@ -261,7 +285,6 @@ class UpdateConversationName(Resource):
                 f"Error updating conversation name: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -299,10 +322,10 @@ class SubmitFeedback(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             if data["feedback"] is None:
                 # Remove feedback and feedback_timestamp if feedback is null
+
                 conversations_collection.update_one(
                     {
                         "_id": ObjectId(data["conversation_id"]),
@@ -318,6 +341,7 @@ class SubmitFeedback(Resource):
                 )
             else:
                 # Set feedback and feedback_timestamp if feedback has a value
+
                 conversations_collection.update_one(
                     {
                         "_id": ObjectId(data["conversation_id"]),
@@ -335,11 +359,9 @@ class SubmitFeedback(Resource):
                         }
                     },
                 )
-
         except Exception as err:
             current_app.logger.error(f"Error submitting feedback: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -355,7 +377,6 @@ class DeleteByIds(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
-
         try:
             result = sources_collection.delete_index(ids=ids)
             if result:
@@ -363,7 +384,6 @@ class DeleteByIds(Resource):
         except Exception as err:
             current_app.logger.error(f"Error deleting indexes: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": False}), 400)
 
 
@@ -382,7 +402,6 @@ class DeleteOldIndexes(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
-
         doc = sources_collection.find_one(
             {"_id": ObjectId(source_id), "user": decoded_token.get("sub")}
         )
@@ -396,7 +415,6 @@ class DeleteOldIndexes(Resource):
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
                 )
                 vectorstore.delete_index()
-
         except FileNotFoundError:
             pass
         except Exception as err:
@@ -404,7 +422,6 @@ class DeleteOldIndexes(Resource):
                 f"Error deleting old indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
@@ -442,7 +459,6 @@ class UploadFile(Resource):
                 ),
                 400,
             )
-
         user = secure_filename(decoded_token.get("sub"))
         job_name = secure_filename(request.form["name"])
 
@@ -461,7 +477,6 @@ class UploadFile(Resource):
                     storage.save_file(file, temp_path)
                     temp_files.append(temp_path)
                     print(f"Saved file: {filename}")
-
                 zip_filename = f"{job_name}.zip"
                 zip_path = f"{base_path}/{zip_filename}"
                 zip_temp_path = None
@@ -473,7 +488,6 @@ class UploadFile(Resource):
                         delete=False, suffix=".zip"
                     ) as temp_zip_file:
                         zip_output_path = temp_zip_file.name
-
                     with tempfile.TemporaryDirectory() as stage_dir:
                         for path in temp_paths:
                             try:
@@ -504,14 +518,12 @@ class UploadFile(Resource):
                             if os.path.exists(zip_output_path):
                                 os.remove(zip_output_path)
                             raise
-
                     return zip_output_path
 
                 try:
                     zip_temp_path = create_zip_archive(temp_files, job_name, storage)
                     with open(zip_temp_path, "rb") as zip_file:
                         storage.save_file(zip_file, zip_path)
-
                     task = ingest.delay(
                         settings.UPLOAD_FOLDER,
                         [
@@ -537,6 +549,7 @@ class UploadFile(Resource):
                     )
                 finally:
                     # Clean up temporary files
+
                     for temp_path in temp_files:
                         try:
                             storage.delete_file(temp_path)
@@ -545,13 +558,13 @@ class UploadFile(Resource):
                                 f"Error deleting temporary file {temp_path}: {e}",
                                 exc_info=True,
                             )
-
                     # Clean up the zip file if it was created
+
                     if zip_temp_path and os.path.exists(zip_temp_path):
                         os.remove(zip_temp_path)
-
             else:  # Keep this else block for single file upload
                 # For single file
+
                 file = files[0]
                 filename = secure_filename(file.filename)
                 file_path = f"{base_path}/{filename}"
@@ -581,11 +594,9 @@ class UploadFile(Resource):
                     filename,  # Corrected variable for single-file case
                     user,
                 )
-
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -617,7 +628,6 @@ class UploadRemote(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             config = json.loads(data["data"])
             source_data = None
@@ -628,7 +638,6 @@ class UploadRemote(Resource):
                 source_data = config.get("url")
             elif data["source"] == "reddit":
                 source_data = config
-
             task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
@@ -640,7 +649,6 @@ class UploadRemote(Resource):
                 f"Error uploading remote source: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -659,7 +667,6 @@ class TaskStatus(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Task ID is required"}), 400
             )
-
         try:
             from application.celery_init import celery
 
@@ -673,7 +680,6 @@ class TaskStatus(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting task status: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"status": task.status, "result": task_meta}), 200)
 
 
@@ -699,18 +705,19 @@ class PaginatedSources(Resource):
         page = int(request.args.get("page", 1))  # Default to 1
         rows_per_page = int(request.args.get("rows", 10))  # Default to 10
         # add .strip() to remove leading and trailing whitespaces
+
         search_term = request.args.get(
             "search", ""
         ).strip()  # add search for filter documents
 
         # Prepare query for filtering
+
         query = {"user": user}
         if search_term:
             query["name"] = {
                 "$regex": search_term,
                 "$options": "i",  # using case-insensitive search
             }
-
         total_documents = sources_collection.count_documents(query)
         total_pages = max(1, math.ceil(total_documents / rows_per_page))
         page = min(
@@ -740,7 +747,6 @@ class PaginatedSources(Resource):
                     "syncFrequency": doc.get("sync_frequency", ""),
                 }
                 paginated_docs.append(doc_data)
-
             response = {
                 "total": total_documents,
                 "totalPages": total_pages,
@@ -748,7 +754,6 @@ class PaginatedSources(Resource):
                 "paginated": paginated_docs,
             }
             return make_response(jsonify(response), 200)
-
         except Exception as err:
             current_app.logger.error(
                 f"Error retrieving paginated sources: {err}", exc_info=True
@@ -789,7 +794,6 @@ class CombinedJson(Resource):
                         "syncFrequency": index.get("sync_frequency", ""),
                     }
                 )
-
             if "duckduck_search" in settings.RETRIEVERS_ENABLED:
                 data.append(
                     {
@@ -801,7 +805,6 @@ class CombinedJson(Resource):
                         "retriever": "duckduck_search",
                     }
                 )
-
             if "brave_search" in settings.RETRIEVERS_ENABLED:
                 data.append(
                     {
@@ -814,11 +817,9 @@ class CombinedJson(Resource):
                         "retriever": "brave_search",
                     }
                 )
-
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify(data), 200)
 
 
@@ -837,7 +838,6 @@ class CheckDocs(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             vectorstore = "vectors/" + secure_filename(data["docs"])
             if os.path.exists(vectorstore) or data["docs"] == "default":
@@ -845,7 +845,6 @@ class CheckDocs(Resource):
         except Exception as err:
             current_app.logger.error(f"Error checking document: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"status": "not found"}), 404)
 
 
@@ -872,7 +871,6 @@ class CreatePrompt(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         user = decoded_token.get("sub")
         try:
 
@@ -887,7 +885,6 @@ class CreatePrompt(Resource):
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"id": new_id}), 200)
 
 
@@ -918,7 +915,6 @@ class GetPrompts(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify(list_prompts), 200)
 
 
@@ -935,7 +931,6 @@ class GetSinglePrompt(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             if prompt_id == "default":
                 with open(
@@ -944,7 +939,6 @@ class GetSinglePrompt(Resource):
                 ) as f:
                     chat_combine_template = f.read()
                 return make_response(jsonify({"content": chat_combine_template}), 200)
-
             elif prompt_id == "creative":
                 with open(
                     os.path.join(current_dir, "prompts", "chat_combine_creative.txt"),
@@ -952,21 +946,18 @@ class GetSinglePrompt(Resource):
                 ) as f:
                     chat_reduce_creative = f.read()
                 return make_response(jsonify({"content": chat_reduce_creative}), 200)
-
             elif prompt_id == "strict":
                 with open(
                     os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
                 ) as f:
                     chat_reduce_strict = f.read()
                 return make_response(jsonify({"content": chat_reduce_strict}), 200)
-
             prompt = prompts_collection.find_one(
                 {"_id": ObjectId(prompt_id), "user": user}
             )
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"content": prompt["content"]}), 200)
 
 
@@ -989,13 +980,11 @@ class DeletePrompt(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             prompts_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -1024,7 +1013,6 @@ class UpdatePrompt(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             prompts_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
@@ -1033,7 +1021,6 @@ class UpdatePrompt(Resource):
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -1050,7 +1037,6 @@ class GetAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             agent = agents_collection.find_one(
                 {"_id": ObjectId(agent_id), "user": user}
@@ -1089,7 +1075,6 @@ class GetAgent(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify(data), 200)
 
 
@@ -1102,6 +1087,9 @@ class GetAgents(Resource):
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         try:
+            user_doc = ensure_user_doc(user)
+            pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
+
             agents = agents_collection.find({"user": user})
             list_agents = [
                 {
@@ -1128,7 +1116,7 @@ class GetAgents(Resource):
                         if "key" in agent
                         else ""
                     ),
-                    "pinned": agent.get("pinned", False),
+                    "pinned": str(agent["_id"]) in pinned_ids,
                     "shared": agent.get("shared_publicly", False),
                     "shared_metadata": agent.get("shared_metadata", {}),
                     "shared_token": agent.get("shared_token", ""),
@@ -1181,7 +1169,6 @@ class CreateAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid status"}), 400
             )
-
         required_fields = []
         if data.get("status") == "published":
             required_fields = [
@@ -1198,7 +1185,6 @@ class CreateAgent(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             key = str(uuid.uuid4())
             new_agent = {
@@ -1226,13 +1212,11 @@ class CreateAgent(Resource):
                 new_agent["chunks"] = "0"
             if new_agent["source"] == "" and new_agent["retriever"] == "":
                 new_agent["retriever"] = "classic"
-
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"id": new_id, "key": key}), 201)
 
 
@@ -1287,7 +1271,6 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Database error finding agent"}),
                 500,
             )
-
         if not existing_agent:
             return make_response(
                 jsonify(
@@ -1295,7 +1278,6 @@ class UpdateAgent(Resource):
                 ),
                 404,
             )
-
         update_fields = {}
         allowed_fields = [
             "name",
@@ -1367,12 +1349,10 @@ class UpdateAgent(Resource):
                             )
                 else:
                     update_fields[field] = data[field]
-
         if not update_fields:
             return make_response(
                 jsonify({"success": False, "message": "No update data provided"}), 400
             )
-
         final_status = update_fields.get("status", existing_agent.get("status"))
         if final_status == "published":
             required_published_fields = [
@@ -1392,7 +1372,6 @@ class UpdateAgent(Resource):
                 if req_field == "source" and final_value:
                     if not isinstance(final_value, DBRef):
                         missing_published_fields.append(req_field)
-
             if missing_published_fields:
                 return make_response(
                     jsonify(
@@ -1403,7 +1382,6 @@ class UpdateAgent(Resource):
                     ),
                     400,
                 )
-
         update_fields["updatedAt"] = datetime.datetime.now(datetime.timezone.utc)
 
         try:
@@ -1431,7 +1409,6 @@ class UpdateAgent(Resource):
                     ),
                     304,
                 )
-
         except Exception as err:
             current_app.logger.error(
                 f"Error updating agent {agent_id}: {err}", exc_info=True
@@ -1440,7 +1417,6 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
             )
-
         return make_response(
             jsonify(
                 {
@@ -1466,7 +1442,6 @@ class DeleteAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             deleted_agent = agents_collection.find_one_and_delete(
                 {"_id": ObjectId(agent_id), "user": user}
@@ -1476,11 +1451,9 @@ class DeleteAgent(Resource):
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
             deleted_id = str(deleted_agent["_id"])
-
         except Exception as err:
             current_app.logger.error(f"Error deleting agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"id": deleted_id}), 200)
 
 
@@ -1491,9 +1464,35 @@ class PinnedAgents(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
+        user_id = decoded_token.get("sub")
+
         try:
-            pinned_agents = agents_collection.find({"user": user, "pinned": True})
+            user_doc = ensure_user_doc(user_id)
+            pinned_ids = user_doc.get("agent_preferences", {}).get("pinned", [])
+            hidden_ids = set(
+                user_doc.get("agent_preferences", {}).get("hidden_shared", [])
+            )
+
+            if not pinned_ids:
+                return make_response(jsonify([]), 200)
+            pinned_object_ids = [ObjectId(agent_id) for agent_id in pinned_ids]
+            pinned_agents_cursor = agents_collection.find(
+                {"_id": {"$in": pinned_object_ids}}
+            )
+            pinned_agents = list(pinned_agents_cursor)
+
+            existing_agents = pinned_agents
+            existing_ids = {str(agent["_id"]) for agent in existing_agents}
+
+            stale_ids = [
+                agent_id for agent_id in pinned_ids if agent_id not in existing_ids
+            ]
+            if stale_ids:
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$pullAll": {"agent_preferences.pinned": stale_ids}},
+                )
+
             list_pinned_agents = [
                 {
                     "id": str(agent["_id"]),
@@ -1518,10 +1517,11 @@ class PinnedAgents(Resource):
                         if "key" in agent
                         else ""
                     ),
-                    "pinned": agent.get("pinned", False),
+                    "pinned": True,
                 }
                 for agent in pinned_agents
-                if "source" in agent or "retriever" in agent
+                if ("source" in agent or "retriever" in agent)
+                and str(agent["_id"]) not in hidden_ids
             ]
         except Exception as err:
             current_app.logger.error(f"Error retrieving pinned agents: {err}")
@@ -1536,32 +1536,89 @@ class PinAgent(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
+        user_id = decoded_token.get("sub")
         agent_id = request.args.get("id")
+
         if not agent_id:
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
-            agent = agents_collection.find_one(
-                {"_id": ObjectId(agent_id), "user": user}
-            )
+            agent = agents_collection.find_one({"_id": ObjectId(agent_id)})
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
+            user_doc = ensure_user_doc(user_id)
+            pinned_list = user_doc.get("agent_preferences", {}).get("pinned", [])
 
-            pinned_status = not agent.get("pinned", False)
-            agents_collection.update_one(
-                {"_id": ObjectId(agent_id), "user": user},
-                {"$set": {"pinned": pinned_status}},
-            )
+            if agent_id in pinned_list:
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$pull": {"agent_preferences.pinned": agent_id}},
+                )
+                action = "unpinned"
+            else:
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$addToSet": {"agent_preferences.pinned": agent_id}},
+                )
+                action = "pinned"
         except Exception as err:
             current_app.logger.error(f"Error pinning/unpinning agent: {err}")
-            return make_response(jsonify({"success": False}), 400)
+            return make_response(
+                jsonify({"success": False, "message": "Server error"}), 500
+            )
+        return make_response(jsonify({"success": True, "action": action}), 200)
 
-        return make_response(jsonify({"success": True}), 200)
+
+@user_ns.route("/api/hide_shared_agent")
+class HideSharedAgent(Resource):
+    @api.doc(
+        params={"id": "ID of the shared agent"},
+        description="Hide or unhide a shared agent for the current user",
+    )
+    def delete(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user_id = decoded_token.get("sub")
+        agent_id = request.args.get("id")
+
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+        try:
+            agent = agents_collection.find_one(
+                {"_id": ObjectId(agent_id), "shared_publicly": True}
+            )
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Shared agent not found"}),
+                    404,
+                )
+            user_doc = ensure_user_doc(user_id)
+            hidden_list = user_doc.get("agent_preferences", {}).get("hidden_shared", [])
+
+            if agent_id in hidden_list:
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$pull": {"agent_preferences.hidden_shared": agent_id}},
+                )
+                action = "unhidden"
+            else:
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$addToSet": {"agent_preferences.hidden_shared": agent_id}},
+                )
+                action = "hidden"
+        except Exception as err:
+            current_app.logger.error(f"Error hiding/unhiding shared agent: {err}")
+            return make_response(
+                jsonify({"success": False, "message": "Server error"}), 500
+            )
+        return make_response(jsonify({"success": True, "action": action}), 200)
 
 
 @user_ns.route("/api/shared_agent")
@@ -1579,7 +1636,6 @@ class SharedAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Token or ID is required"}), 400
             )
-
         try:
             query = {}
             query["shared_publicly"] = True
@@ -1591,7 +1647,6 @@ class SharedAgent(Resource):
                     jsonify({"success": False, "message": "Shared agent not found"}),
                     404,
                 )
-
             data = {
                 "id": str(shared_agent["_id"]),
                 "user": shared_agent.get("user", ""),
@@ -1614,11 +1669,9 @@ class SharedAgent(Resource):
                     if tool_data:
                         enriched_tools.append(tool_data.get("name", ""))
                 data["tools"] = enriched_tools
-
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify(data), 200)
 
 
@@ -1630,30 +1683,55 @@ class SharedAgents(Resource):
             decoded_token = request.decoded_token
             if not decoded_token:
                 return make_response(jsonify({"success": False}), 401)
-            user = decoded_token.get("sub")
-            shared_agents = agents_collection.find(
-                {"shared_publicly": True, "user": {"$ne": user}}
+            user_id = decoded_token.get("sub")
+
+            user_doc = ensure_user_doc(user_id)
+            pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
+            hidden_ids = user_doc.get("agent_preferences", {}).get("hidden_shared", [])
+            hidden_object_ids = [ObjectId(id) for id in hidden_ids]
+
+            shared_agents_cursor = agents_collection.find(
+                {"shared_publicly": True, "user": {"$ne": user_id}}
             )
+            shared_agents = list(shared_agents_cursor)
+
+            shared_ids_set = {agent["_id"] for agent in shared_agents}
+            hidden_ids_set = set(hidden_object_ids)
+
+            stale_hidden_ids = [
+                str(id) for id in hidden_ids_set if id not in shared_ids_set
+            ]
+            if stale_hidden_ids:
+                users_collection.update_one(
+                    {"user_id": user_id},
+                    {"$pullAll": {"agent_preferences.hidden_shared": stale_hidden_ids}},
+                )
+            visible_shared_agents = [
+                agent for agent in shared_agents if agent["_id"] not in hidden_ids_set
+            ]
+
             list_shared_agents = [
                 {
-                    "id": str(shared_agent["_id"]),
-                    "name": shared_agent.get("name", ""),
-                    "description": shared_agent.get("description", ""),
-                    "tools": shared_agent.get("tools", []),
-                    "agent_type": shared_agent.get("agent_type", ""),
-                    "status": shared_agent.get("status", ""),
-                    "created_at": shared_agent.get("createdAt", ""),
-                    "updated_at": shared_agent.get("updatedAt", ""),
-                    "shared": shared_agent.get("shared_publicly", False),
-                    "shared_token": shared_agent.get("shared_token", ""),
-                    "shared_metadata": shared_agent.get("shared_metadata", {}),
+                    "id": str(agent["_id"]),
+                    "name": agent.get("name", ""),
+                    "description": agent.get("description", ""),
+                    "tools": agent.get("tools", []),
+                    "agent_type": agent.get("agent_type", ""),
+                    "status": agent.get("status", ""),
+                    "created_at": agent.get("createdAt", ""),
+                    "updated_at": agent.get("updatedAt", ""),
+                    "pinned": str(agent["_id"]) in pinned_ids,
+                    "shared": agent.get("shared_publicly", False),
+                    "shared_token": agent.get("shared_token", ""),
+                    "shared_metadata": agent.get("shared_metadata", {}),
                 }
-                for shared_agent in shared_agents
+                for agent in visible_shared_agents
             ]
+
+            return make_response(jsonify(list_shared_agents), 200)
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agents: {err}")
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(list_shared_agents), 200)
 
 
 @user_ns.route("/api/share_agent")
@@ -1677,7 +1755,6 @@ class ShareAgent(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         user = decoded_token.get("sub")
 
         data = request.get_json()
@@ -1685,7 +1762,6 @@ class ShareAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing JSON body"}), 400
             )
-
         agent_id = data.get("id")
         shared = data.get("shared")
         username = data.get("username", "")
@@ -1694,7 +1770,6 @@ class ShareAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         if shared is None:
             return make_response(
                 jsonify(
@@ -1705,7 +1780,6 @@ class ShareAgent(Resource):
                 ),
                 400,
             )
-
         try:
             try:
                 agent_oid = ObjectId(agent_id)
@@ -1713,13 +1787,11 @@ class ShareAgent(Resource):
                 return make_response(
                     jsonify({"success": False, "message": "Invalid agent ID"}), 400
                 )
-
             agent = agents_collection.find_one({"_id": agent_oid, "user": user})
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
-
             if shared:
                 shared_metadata = {
                     "shared_by": username,
@@ -1742,11 +1814,9 @@ class ShareAgent(Resource):
                     {"$set": {"shared_publicly": shared, "shared_token": None}},
                     {"$unset": {"shared_metadata": ""}},
                 )
-
         except Exception as err:
             current_app.logger.error(f"Error sharing/unsharing agent: {err}")
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
-
         shared_token = shared_token if shared else None
         return make_response(
             jsonify({"success": True, "shared_token": shared_token}), 200
@@ -1769,7 +1839,6 @@ class AgentWebhook(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             agent = agents_collection.find_one(
                 {"_id": ObjectId(agent_id), "user": user}
@@ -1778,7 +1847,6 @@ class AgentWebhook(Resource):
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
-
             webhook_token = agent.get("incoming_webhook_token")
             if not webhook_token:
                 webhook_token = secrets.token_urlsafe(32)
@@ -1788,7 +1856,6 @@ class AgentWebhook(Resource):
                 )
             base_url = settings.API_URL.rstrip("/")
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
-
         except Exception as err:
             current_app.logger.error(
                 f"Error generating webhook URL: {err}", exc_info=True
@@ -1810,7 +1877,6 @@ def require_agent(func):
             return make_response(
                 jsonify({"success": False, "message": "Webhook token missing"}), 400
             )
-
         agent = agents_collection.find_one(
             {"incoming_webhook_token": webhook_token}, {"_id": 1}
         )
@@ -1821,7 +1887,6 @@ def require_agent(func):
             return make_response(
                 jsonify({"success": False, "message": "Agent not found"}), 404
             )
-
         kwargs["agent"] = agent
         kwargs["agent_id_str"] = str(agent["_id"])
         return func(*args, **kwargs)
@@ -1838,7 +1903,6 @@ class AgentWebhookListener(Resource):
             current_app.logger.warning(
                 f"Webhook ({source_method}) received for agent {agent_id_str} with empty payload."
             )
-
         current_app.logger.info(
             f"Incoming {source_method} webhook for agent {agent_id_str}. Enqueuing task with payload: {payload}"
         )
@@ -1912,7 +1976,6 @@ class ShareConversation(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         is_promptable = request.args.get("isPromptable", type=inputs.boolean)
         if is_promptable is None:
             return make_response(
@@ -1934,7 +1997,6 @@ class ShareConversation(Resource):
                     ),
                     404,
                 )
-
             current_n_queries = len(conversation["queries"])
             explicit_binary = Binary.from_uuid(
                 uuid.uuid4(), UuidRepresentation.STANDARD
@@ -1957,7 +2019,6 @@ class ShareConversation(Resource):
                     )
                 if "retriever" in data:
                     new_api_key_data["retriever"] = data["retriever"]
-
                 pre_existing_api_document = agents_collection.find_one(new_api_key_data)
                 if pre_existing_api_document:
                     api_uuid = pre_existing_api_document["key"]
@@ -2016,7 +2077,6 @@ class ShareConversation(Resource):
                         )
                     if "retriever" in data:
                         new_api_key_data["retriever"] = data["retriever"]
-
                     agents_collection.insert_one(new_api_key_data)
                     shared_conversations_collections.insert_one(
                         {
@@ -2040,7 +2100,6 @@ class ShareConversation(Resource):
                         ),
                         201,
                     )
-
             pre_existing = shared_conversations_collections.find_one(
                 {
                     "conversation_id": DBRef(
@@ -2188,7 +2247,6 @@ class GetMessageAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -2214,7 +2272,6 @@ class GetMessageAnalytics(Resource):
                 hour=23, minute=59, second=59, microsecond=999999
             )
             group_format = "%Y-%m-%d"
-
         try:
             match_stage = {
                 "$match": {
@@ -2223,7 +2280,6 @@ class GetMessageAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-
             pipeline = [
                 match_stage,
                 {"$unwind": "$queries"},
@@ -2254,18 +2310,15 @@ class GetMessageAnalytics(Resource):
                 intervals = generate_hourly_range(start_date, end_date)
             else:
                 intervals = generate_date_range(start_date, end_date)
-
             daily_messages = {interval: 0 for interval in intervals}
 
             for entry in message_data:
                 daily_messages[entry["_id"]] = entry["count"]
-
         except Exception as err:
             current_app.logger.error(
                 f"Error getting message analytics: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(
             jsonify({"success": True, "messages": daily_messages}), 200
         )
@@ -2314,7 +2367,6 @@ class GetTokenAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -2385,7 +2437,6 @@ class GetTokenAnalytics(Resource):
                     },
                 }
             }
-
         try:
             match_stage = {
                 "$match": {
@@ -2395,7 +2446,6 @@ class GetTokenAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-
             token_usage_data = token_usage_collection.aggregate(
                 [
                     match_stage,
@@ -2410,7 +2460,6 @@ class GetTokenAnalytics(Resource):
                 intervals = generate_hourly_range(start_date, end_date)
             else:
                 intervals = generate_date_range(start_date, end_date)
-
             daily_token_usage = {interval: 0 for interval in intervals}
 
             for entry in token_usage_data:
@@ -2420,13 +2469,11 @@ class GetTokenAnalytics(Resource):
                     daily_token_usage[entry["_id"]["hour"]] = entry["total_tokens"]
                 else:
                     daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
-
         except Exception as err:
             current_app.logger.error(
                 f"Error getting token analytics: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(
             jsonify({"success": True, "token_usage": daily_token_usage}), 200
         )
@@ -2475,7 +2522,6 @@ class GetFeedbackAnalytics(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         end_date = datetime.datetime.now(datetime.timezone.utc)
 
         if filter_option == "last_hour":
@@ -2519,7 +2565,6 @@ class GetFeedbackAnalytics(Resource):
                     "date": "$queries.feedback_timestamp",
                 }
             }
-
         try:
             match_stage = {
                 "$match": {
@@ -2532,7 +2577,6 @@ class GetFeedbackAnalytics(Resource):
             }
             if api_key:
                 match_stage["$match"]["api_key"] = api_key
-
             pipeline = [
                 match_stage,
                 {"$unwind": "$queries"},
@@ -2577,7 +2621,6 @@ class GetFeedbackAnalytics(Resource):
                 intervals = generate_hourly_range(start_date, end_date)
             else:
                 intervals = generate_date_range(start_date, end_date)
-
             daily_feedback = {
                 interval: {"positive": 0, "negative": 0} for interval in intervals
             }
@@ -2587,13 +2630,11 @@ class GetFeedbackAnalytics(Resource):
                     "positive": entry["positive"],
                     "negative": entry["negative"],
                 }
-
         except Exception as err:
             current_app.logger.error(
                 f"Error getting feedback analytics: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(
             jsonify({"success": True, "feedback": daily_feedback}), 200
         )
@@ -2640,11 +2681,9 @@ class GetUserLogs(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         query = {"user": user}
         if api_key:
             query = {"api_key": api_key}
-
         items_cursor = (
             user_logs_collection.find(query)
             .sort("timestamp", -1)
@@ -2708,7 +2747,6 @@ class ManageSync(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         source_id = data["source_id"]
         sync_frequency = data["sync_frequency"]
 
@@ -2716,7 +2754,6 @@ class ManageSync(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid frequency"}), 400
             )
-
         update_data = {"$set": {"sync_frequency": sync_frequency}}
         try:
             sources_collection.update_one(
@@ -2731,7 +2768,6 @@ class ManageSync(Resource):
                 f"Error updating sync frequency: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -2794,7 +2830,6 @@ class AvailableTools(Resource):
                 f"Error getting available tools: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
 
 
@@ -2816,7 +2851,6 @@ class GetTools(Resource):
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True, "tools": user_tools}), 200)
 
 
@@ -2865,7 +2899,6 @@ class CreateTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         transformed_actions = []
         for action in data["actions"]:
             action["active"] = True
@@ -2892,7 +2925,6 @@ class CreateTool(Resource):
         except Exception as err:
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"id": new_id}), 200)
 
 
@@ -2925,7 +2957,6 @@ class UpdateTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             update_data = {}
             if "name" in data:
@@ -2953,7 +2984,6 @@ class UpdateTool(Resource):
                 update_data["config"] = data["config"]
             if "status" in data:
                 update_data["status"] = data["status"]
-
             user_tools_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": update_data},
@@ -2961,7 +2991,6 @@ class UpdateTool(Resource):
         except Exception as err:
             current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -2989,7 +3018,6 @@ class UpdateToolConfig(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             user_tools_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
@@ -3000,7 +3028,6 @@ class UpdateToolConfig(Resource):
                 f"Error updating tool config: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -3030,7 +3057,6 @@ class UpdateToolActions(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             user_tools_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
@@ -3041,7 +3067,6 @@ class UpdateToolActions(Resource):
                 f"Error updating tool actions: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -3069,7 +3094,6 @@ class UpdateToolStatus(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             user_tools_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
@@ -3080,7 +3104,6 @@ class UpdateToolStatus(Resource):
                 f"Error updating tool status: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -3103,7 +3126,6 @@ class DeleteTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         try:
             result = user_tools_collection.delete_one(
                 {"_id": ObjectId(data["id"]), "user": user}
@@ -3113,7 +3135,6 @@ class DeleteTool(Resource):
         except Exception as err:
             current_app.logger.error(f"Error deleting tool: {err}", exc_info=True)
             return {"success": False}, 400
-
         return {"success": True}, 200
 
 
@@ -3134,13 +3155,11 @@ class GetChunks(Resource):
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-
         doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
-
         try:
             store = get_vector_store(doc_id)
             chunks = store.get_chunks()
@@ -3160,7 +3179,6 @@ class GetChunks(Resource):
                 ),
                 200,
             )
-
         except Exception as e:
             current_app.logger.error(f"Error getting chunks: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -3194,20 +3212,17 @@ class AddChunk(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         doc_id = data.get("id")
         text = data.get("text")
         metadata = data.get("metadata", {})
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-
         doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
-
         try:
             store = get_vector_store(doc_id)
             chunk_id = store.add_chunk(text, metadata)
@@ -3236,13 +3251,11 @@ class DeleteChunk(Resource):
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-
         doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
-
         try:
             store = get_vector_store(doc_id)
             deleted = store.delete_chunk(chunk_id)
@@ -3293,7 +3306,6 @@ class UpdateChunk(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-
         doc_id = data.get("id")
         chunk_id = data.get("chunk_id")
         text = data.get("text")
@@ -3301,26 +3313,22 @@ class UpdateChunk(Resource):
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-
         doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
-
         try:
             store = get_vector_store(doc_id)
             chunks = store.get_chunks()
             existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
             if not existing_chunk:
                 return make_response(jsonify({"error": "Chunk not found"}), 404)
-
             deleted = store.delete_chunk(chunk_id)
             if not deleted:
                 return make_response(
                     jsonify({"error": "Failed to delete existing chunk"}), 500
                 )
-
             new_text = text if text is not None else existing_chunk["text"]
             new_metadata = (
                 metadata if metadata is not None else existing_chunk["metadata"]
@@ -3357,7 +3365,6 @@ class StoreAttachment(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         file = request.files.get("file")
 
         if not file or file.filename == "":
@@ -3365,7 +3372,6 @@ class StoreAttachment(Resource):
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
-
         user = secure_filename(decoded_token.get("sub"))
 
         try:

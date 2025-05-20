@@ -181,7 +181,7 @@ export default function SharedAgent() {
             }
           />
         </div>
-        <div className="flex w-[95%] max-w-[1500px] flex-col items-center gap-4 pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+        <div className="flex w-[95%] max-w-[1500px] flex-col items-center pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           <MessageInput
             value={input}
             onChange={(e) => setInput(e.target.value)}
