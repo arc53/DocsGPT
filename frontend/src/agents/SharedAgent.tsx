@@ -91,22 +91,18 @@ export default function SharedAgent() {
   );
 
   const handleQuestionSubmission = (
-    updatedQuestion?: string,
+    question?: string,
     updated?: boolean,
     indx?: number,
   ) => {
-    if (
-      updated === true &&
-      updatedQuestion !== undefined &&
-      indx !== undefined
-    ) {
+    if (updated === true && question !== undefined && indx !== undefined) {
       handleQuestion({
-        question: updatedQuestion,
+        question,
         index: indx,
         isRetry: false,
       });
-    } else if (input.trim() && status !== 'loading') {
-      const currentInput = input.trim();
+    } else if (question && status !== 'loading') {
+      const currentInput = question.trim();
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
@@ -183,9 +179,7 @@ export default function SharedAgent() {
         </div>
         <div className="flex w-[95%] max-w-[1500px] flex-col items-center pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           <MessageInput
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onSubmit={() => handleQuestionSubmission()}
+            onSubmit={(text) => handleQuestionSubmission(text)}
             loading={status === 'loading'}
             showSourceButton={sharedAgent ? false : true}
             showToolButton={sharedAgent ? false : true}

@@ -238,7 +238,12 @@
       "title": "来源",
       "text": "来源文本",
       "link": "来源链接",
-      "view_more": "更多{{count}}个来源"
+      "view_more": "还有{{count}}个来源"
+    },
+    "attachments": {
+      "attach": "附件",
+      "remove": "删除附件",
+      "uploadFailed": "上传失败"
     },
     "retry": "重试"
   }

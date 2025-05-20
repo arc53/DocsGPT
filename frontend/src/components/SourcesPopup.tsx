@@ -81,12 +81,6 @@ export default function SourcesPopup({
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen, anchorRef]);
 
-  const handleEmptyDocumentSelect = () => {
-    dispatch(setSelectedDocs(null));
-    handlePostDocumentSelect(null);
-    onClose();
-  };
-
   const handleClickOutside = (event: MouseEvent) => {
     if (
       popupRef.current &&
@@ -153,14 +147,24 @@ export default function SourcesPopup({
             <>
               {filteredOptions?.map((option: any, index: number) => {
                 if (option.model === embeddingsName) {
+                  const isSelected =
+                    selectedDocs &&
+                    (option.id
+                      ? selectedDocs.id === option.id
+                      : selectedDocs.date === option.date);
+
                   return (
                     <div
                       key={index}
                       className="flex cursor-pointer items-center border-b border-[#D9D9D9] border-opacity-80 p-3 transition-colors hover:bg-gray-100 dark:border-dim-gray dark:text-[14px] dark:hover:bg-[#2C2E3C]"
                       onClick={() => {
-                        dispatch(setSelectedDocs(option));
-                        handlePostDocumentSelect(option);
-                        onClose();
+                        if (isSelected) {
+                          dispatch(setSelectedDocs(null));
+                          handlePostDocumentSelect(null);
+                        } else {
+                          dispatch(setSelectedDocs(option));
+                          handlePostDocumentSelect(option);
+                        }
                       }}
                     >
                       <img
@@ -176,44 +180,19 @@ export default function SourcesPopup({
                       <div
                         className={`flex h-4 w-4 flex-shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
                       >
-                        {selectedDocs &&
-                          (option.id
-                            ? selectedDocs.id === option.id // For documents with MongoDB IDs
-                            : selectedDocs.date === option.date) && ( // For preloaded sources
-                            <img
-                              src={CheckIcon}
-                              alt="Selected"
-                              className="h-3 w-3"
-                            />
-                          )}
+                        {isSelected && (
+                          <img
+                            src={CheckIcon}
+                            alt="Selected"
+                            className="h-3 w-3"
+                          />
+                        )}
                       </div>
                     </div>
                   );
                 }
                 return null;
               })}
-              <div
-                className="flex cursor-pointer items-center border-b border-[#D9D9D9] border-opacity-80 p-3 transition-colors hover:bg-gray-100 dark:border-dim-gray dark:text-[14px] dark:hover:bg-[#2C2E3C]"
-                onClick={handleEmptyDocumentSelect}
-              >
-                <img
-                  width={14}
-                  height={14}
-                  src={SourceIcon}
-                  alt="Source"
-                  className="mr-3 flex-shrink-0"
-                />
-                <span className="mr-3 flex-grow font-medium text-[#5D5D5D] dark:text-bright-gray">
-                  {t('none')}
-                </span>
-                <div
-                  className={`flex h-4 w-4 flex-shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
-                >
-                  {selectedDocs === null && (
-                    <img src={CheckIcon} alt="Selected" className="h-3 w-3" />
-                  )}
-                </div>
-              </div>
             </>
           ) : (
             <div className="p-4 text-center text-gray-500 dark:text-[14px] dark:text-bright-gray">

@@ -4,11 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import DragFileUpload from '../assets/DragFileUpload.svg';
-import newChatIcon from '../assets/openNewChat.svg';
-import ShareIcon from '../assets/share.svg';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
-import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { ActiveState } from '../models/misc';
 import {
   selectConversationId,
@@ -42,7 +39,6 @@ export default function Conversation() {
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [input, setInput] = useState<string>('');
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [files, setFiles] = useState<File[]>([]);
@@ -146,19 +142,19 @@ export default function Conversation() {
   };
 
   const handleQuestionSubmission = (
-    updatedQuestion?: string,
+    question?: string,
     updated?: boolean,
     indx?: number,
   ) => {
     if (updated === true) {
-      handleQuestion({ question: updatedQuestion as string, index: indx });
-    } else if (input && status !== 'loading') {
+      handleQuestion({ question: question as string, index: indx });
+    } else if (question && status !== 'loading') {
       if (lastQueryReturnedErr) {
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: input,
+              prompt: question,
             },
           }),
         );
@@ -168,10 +164,9 @@ export default function Conversation() {
         });
       } else {
         handleQuestion({
-          question: input,
+          question,
         });
       }
-      setInput('');
     }
   };
 
@@ -184,10 +179,6 @@ export default function Conversation() {
     );
   };
 
-  const newChat = () => {
-    if (queries && queries.length > 0) resetConversation();
-  };
-
   useEffect(() => {
     if (queries.length) {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
@@ -196,50 +187,6 @@ export default function Conversation() {
   }, [queries[queries.length - 1]]);
   return (
     <div className="flex h-full flex-col justify-end gap-1">
-      {conversationId && queries.length > 0 && (
-        <div className="absolute right-20 top-4">
-          <div className="mt-2 flex items-center gap-4">
-            {isMobile && queries.length > 0 && (
-              <button
-                title="Open New Chat"
-                onClick={() => {
-                  newChat();
-                }}
-                className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
-              >
-                <img
-                  className="h-5 w-5 filter dark:invert"
-                  alt="NewChat"
-                  src={newChatIcon}
-                />
-              </button>
-            )}
-
-            <button
-              title="Share"
-              onClick={() => {
-                setShareModalState(true);
-              }}
-              className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
-            >
-              <img
-                className="h-5 w-5 filter dark:invert"
-                alt="share"
-                src={ShareIcon}
-              />
-            </button>
-          </div>
-          {isShareModalOpen && (
-            <ShareConversationModal
-              close={() => {
-                setShareModalState(false);
-              }}
-              conversationId={conversationId}
-            />
-          )}
-        </div>
-      )}
-
       <ConversationMessages
         handleQuestion={handleQuestion}
         handleQuestionSubmission={handleQuestionSubmission}
@@ -258,9 +205,9 @@ export default function Conversation() {
           </label>
           <input {...getInputProps()} id="file-upload" />
           <MessageInput
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onSubmit={handleQuestionSubmission}
+            onSubmit={(text) => {
+              handleQuestionSubmission(text);
+            }}
             loading={status === 'loading'}
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}

@@ -30,9 +30,7 @@ import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 
 type MessageInputProps = {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  onSubmit: () => void;
+  onSubmit: (text: string) => void;
   loading: boolean;
   showSourceButton?: boolean;
   showToolButton?: boolean;
@@ -40,8 +38,6 @@ type MessageInputProps = {
 };
 
 export default function MessageInput({
-  value,
-  onChange,
   onSubmit,
   loading,
   showSourceButton = true,
@@ -50,6 +46,7 @@ export default function MessageInput({
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
+  const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sourceButtonRef = useRef<HTMLButtonElement>(null);
   const toolButtonRef = useRef<HTMLButtonElement>(null);
@@ -232,6 +229,11 @@ export default function MessageInput({
     handleInput();
   }, []);
 
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setValue(e.target.value);
+    handleInput();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -248,7 +250,10 @@ export default function MessageInput({
   };
 
   const handleSubmit = () => {
-    onSubmit();
+    if (value.trim() && !loading) {
+      onSubmit(value);
+      setValue('');
+    }
   };
   return (
     <div className="mx-2 flex w-full flex-col">
@@ -274,11 +279,11 @@ export default function MessageInput({
                       dispatch(removeAttachment(attachment.id));
                     }
                   }}
-                  aria-label="Remove attachment"
+                  aria-label={t('conversation.attachments.remove')}
                 >
                   <img
                     src={ExitIcon}
-                    alt="Remove"
+                    alt={t('conversation.attachments.remove')}
                     className="h-2.5 w-2.5 filter dark:invert"
                   />
                 </button>
@@ -334,7 +339,7 @@ export default function MessageInput({
             id="message-input"
             ref={inputRef}
             value={value}
-            onChange={onChange}
+            onChange={handleChange}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
             className="inputbox-style no-scrollbar w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-t-[23px] bg-lotion px-4 py-3 text-base leading-tight opacity-100 focus:outline-none dark:bg-transparent dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 sm:px-6 sm:py-5"
@@ -398,7 +403,7 @@ export default function MessageInput({
                 className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
               />
               <span className="xs:text-[12px] text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
-                Attach
+                {t('conversation.attachments.attach')}
               </span>
               <input
                 type="file"
@@ -406,7 +411,6 @@ export default function MessageInput({
                 onChange={handleFileAttachment}
               />
             </label>
-
             {/* Additional badges can be added here in the future */}
           </div>
 
