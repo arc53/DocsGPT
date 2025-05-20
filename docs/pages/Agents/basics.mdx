@@ -1,0 +1,109 @@
+---
+title: Understanding DocsGPT Agents
+description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
+---
+
+import { Callout } from 'nextra/components';
+import Image from 'next/image'; // Assuming you might want to embed images later, like the ones you uploaded.
+
+# Understanding DocsGPT Agents 🤖
+
+DocsGPT Agents are advanced, configurable AI entities designed to go beyond simple question-answering. They act as specialized assistants or workers that combine instructions (prompts), knowledge (document sources), and capabilities (tools) to perform a wide range of tasks, automate workflows, and provide tailored interactions.
+
+Think of an Agent as a pre-configured version of DocsGPT, fine-tuned for a specific purpose, such as classifying documents, responding to new form submissions, or validating emails.
+
+## Why Use Agents?
+
+* **Personalization:** Create AI assistants that behave and respond according to specific roles or personas.
+* **Task Specialization:** Design agents focused on particular tasks, like customer support, data extraction, or content generation.
+* **Knowledge Integration:** Equip agents with specific document sources, making them experts in particular domains.
+* **Tool Utilization:** Grant agents access to various tools, allowing them to interact with external services, fetch live data, or perform actions.
+* **Automation:** Automate repetitive tasks by defining an agent's behavior and integrating it via webhooks or other means.
+* **Shareability:** Share your custom-configured agents with others or use agents shared with you.
+
+Agents provide a more structured and powerful way to leverage LLMs compared to a standard chat interface, as they come with a pre-defined context, instruction set, and set of capabilities.
+
+## Core Components of an Agent
+
+When you create or configure an agent, you'll work with these key components:  
+
+**Meta:**
+    * **Agent Name:** A user-friendly name to identify the agent (e.g., "Support Ticket Classifier," "Product Spec Expert").
+    * **Describe your agent:** A brief description for you or users to understand the agent's purpose.
+
+**Source:**
+    * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
+    * **Chunks per query:** A numerical value determining how many relevant text chunks from the selected source are sent to the LLM with each query. This helps manage context length and relevance.
+
+**Prompt:**
+The main set of instructions or system [prompt](/Guides/Customising-prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
+
+**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
+
+**Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks.
+
+## Understanding Agent Types
+
+DocsGPT allows for different "types" of agents, each with a distinct way of processing information and generating responses. The code for these agent types can be found in the `application/agents/` directory.
+
+### 1. Classic Agent (`classic_agent.py`)
+
+**How it works:** The Classic Agent follows a traditional Retrieval Augmented Generation (RAG) approach.
+    1.  **Retrieve:** When a query is made, it first searches the selected Source documents for relevant information.
+    2.  **Augment:** This retrieved data is then added to the context, along with the main Prompt and the user's query.
+    3.  **Generate:** The LLM generates a response based on this augmented context. It can also utilize any configured tools if the LLM decides they are necessary.
+
+**Best for:**
+    * Direct question-answering over a specific set of documents.
+    * Tasks where the primary goal is to extract and synthesize information from the provided sources.
+    * Simpler tool integrations where the decision to use a tool is straightforward.
+
+### 2. ReAct Agent (`react_agent.py`)
+
+**How it works:** The ReAct Agent employs a more sophisticated "Reason and Act" framework. This involves a multi-step process:
+    1.  **Plan (Thought):** Based on the query, its prompt, and available tools/sources, the LLM first generates a plan or a sequence of thoughts on how to approach the problem. You might see this output as a "thought" process during generation.
+    2.  **Act:** The agent then executes actions based on this plan. This might involve querying its sources, using a tool, or performing internal reasoning.
+    3.  **Observe:** It gathers observations from the results of its actions (e.g., data from a tool, snippets from documents).
+    4.  **Repeat (if necessary):** Steps 2 and 3 can be repeated as the agent refines its approach or gathers more information.
+    5.  **Conclude:** Finally, it generates the final answer based on the initial query and all accumulated observations.
+
+**Best for:**
+    * More complex tasks that require multi-step reasoning or problem-solving.
+    * Scenarios where the agent needs to dynamically decide which tools to use and in what order, based on intermediate results.
+    * Interactive tasks where the agent needs to "think" through a problem.
+
+<Callout type="info">
+Developers looking to introduce new agent architectures can explore the `application/agents/` directory. `classic_agent.py` and `react_agent.py` serve as excellent starting points, demonstrating how to inherit from `BaseAgent` and structure agent logic.
+</Callout>
+
+## Navigating and Managing Agents in DocsGPT
+
+You can easily access and manage your agents through the DocsGPT user interface. Recently used agents appear at the top of the left sidebar for quick access. Below these, the "Manage Agents" button will take you to the main Agents page.
+
+### Creating a New Agent
+
+1.  Navigate to the "Agents" page.
+2.  Click the **"New Agent"** button.
+3.  You will be presented with the "New Agent" configuration screen:
+
+<Image
+  src="/new-agent.png"
+  alt="API Tool configuration example for phone validation"
+  width={800}
+  height={450}
+  style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
+
+4.  Fill in the fields as described in the "Core Components of an Agent" section.
+5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active.
+
+## Interacting with and Editing Agents
+
+Once an agent is created, you can:
+
+* **Chat with it:** Select the agent to start an interaction.
+* **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing.
+* **Edit an Agent:**
+    * Modify any of its configuration settings (name, description, source, prompt, tools, type).
+    * **Generate a Public Link:** From the edit screen, you can create a shareable public link that allows others to import and use your agent.
+    * **Get a Webhook URL:** You can also obtain a Webhook URL for the agent. This allows external applications or services to trigger the agent and receive responses programmatically, enabling powerful integrations and automations.
