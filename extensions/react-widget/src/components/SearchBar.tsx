@@ -4,19 +4,19 @@ import { WidgetCore } from './DocsGPTWidget';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI';
 import { Result } from '@/types';
-import MarkdownIt from 'markdown-it';
 import { getOS, processMarkdownString } from '../utils/helper';
 import DOMPurify from 'dompurify';
-import { 
-    CodeIcon, 
+import {
+    CodeIcon,
     TextAlignLeftIcon,
     HeadingIcon,
-    ReaderIcon, 
-    ListBulletIcon, 
-    QuoteIcon 
+    ReaderIcon,
+    ListBulletIcon,
+    QuoteIcon
 } from '@radix-ui/react-icons';
 const themes = {
     dark: {
+        name: 'dark',
         bg: '#202124',
         text: '#EDEDED',
         primary: {
@@ -29,6 +29,7 @@ const themes = {
         }
     },
     light: {
+        name: 'light',
         bg: '#EAEAEA',
         text: '#171717',
         primary: {
@@ -44,15 +45,16 @@ const themes = {
 
 const GlobalStyle = createGlobalStyle`
   .highlight {
-    color:#007EE6;
+    color: ${props => props.theme.name === 'dark' ? '#4B9EFF' : '#0066CC'};
+    font-weight: 500;
   }
 `;
 
 const loadGeistFont = () => {
-  const link = document.createElement('link');
-  link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap'; 
-  link.rel = 'stylesheet';
-  document.head.appendChild(link);
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
 };
 
 const Main = styled.div`
@@ -81,12 +83,27 @@ const Container = styled.div`
     position: relative;
     display: inline-block;
 `
+const SearchOverlay = styled.div`
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #0000001A;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 99;
+`;
+
+
 const SearchResults = styled.div`
     position: fixed;
     display: flex;
     flex-direction: column;
-    background-color: ${props => props.theme.primary.bg};
-    border: 1px solid ${props => props.theme.bg};
+    background-color: ${props => props.theme.name === 'dark' ? 
+        'rgba(0, 0, 0, 0.15)' : 
+        'rgba(255, 255, 255, 0.4)'};
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 15px;
     padding: 8px 0px 8px 0px;
     width: 792px;
@@ -97,8 +114,12 @@ const SearchResults = styled.div`
     top: 50%;
     transform: translate(-50%, -50%);
     color: ${props => props.theme.primary.text};
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(16px);
+    
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    backdrop-filter: blur(82px);
+    -webkit-backdrop-filter: blur(82px);
+    border-radius: 10px;
+    
     box-sizing: border-box;
 
     @media only screen and (max-width: 768px) {
@@ -142,6 +163,33 @@ const ContentWrapper = styled.div`
     flex-direction: column;
     gap: 12px; 
 `;
+
+
+
+const ResultWrapper = styled.div`
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 16px;
+    cursor: pointer;
+    background-color: transparent;
+    font-family: 'Geist', sans-serif;
+    border-radius: 8px;
+
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }
+`;
+
 const Content = styled.div`
     display: flex;
     margin-left: 8px;
@@ -151,9 +199,10 @@ const Content = styled.div`
     font-size: 15px;
     color: ${props => props.theme.primary.text};
     line-height: 1.6;
-    border-left: 2px solid #585858;
+    border-left: 2px solid ${props => props.theme.primary.text}CC;
     overflow: hidden;
-`
+    
+`;
 const ContentSegment = styled.div`
     display: flex;
     align-items: flex-start;
@@ -165,80 +214,6 @@ const ContentSegment = styled.div`
     text-overflow: ellipsis;
 `
 
-const ResultWrapper = styled.div`
-    display: flex;
-    align-items: flex-start;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 16px;
-    cursor: pointer;
-    background-color: ${props => props.theme.primary.bg};
-    font-family: 'Geist', sans-serif;
-    transition: background-color 0.2s;
-    border-radius: 8px;
-
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    word-break: break-word;
-    white-space: normal;
-    overflow: hidden;
-    text-overflow: ellipsis;
-
-    &:hover {
-        background-color: ${props => props.theme.bg};
-    }
-`
-const Markdown = styled.div`
-line-height:18px;
-font-size: 11px;
-white-space: pre-wrap;
- pre {
-      padding: 8px;
-      width: 90%;
-      font-size: 11px;
-      border-radius: 6px;
-      overflow-x: auto;
-      background-color: #1B1C1F;
-      color: #fff ;
-    }
-
-    h1,h2 {
-      font-size: 14px;
-      font-weight: 600;
-      color: ${(props) => props.theme.text};
-      opacity: 0.8;
-    }
-
-
-    h3 {
-      font-size: 12px;
-    }
-
-    p {
-      margin: 0px;
-      line-height: 1.35rem;
-      font-size: 11px;
-    }
-
-    code:not(pre code) {
-      border-radius: 6px;
-      padding: 2px 2px;
-      margin: 2px;
-      font-size: 9px;
-      display: inline;
-      background-color: #646464;
-      color: #fff ;
-    }
-    img{
-        max-width: 50%;
-    }
-    code {
-      overflow-x: auto;
-    }
-    a{
-        color: #007ee6;
-    }
-`
 const Toolkit = styled.kbd`
     position: absolute;
     right: 4px;
@@ -259,8 +234,8 @@ const Toolkit = styled.kbd`
 `
 const Loader = styled.div`
   margin: 2rem auto;
-  border: 4px solid ${props => props.theme.secondary.text};
-  border-top: 4px solid ${props => props.theme.primary.bg};
+  border: 4px solid ${props => props.theme.name === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'};
+  border-top: 4px solid ${props => props.theme.name === 'dark' ? '#FFFFFF' : props.theme.primary.bg};
   border-radius: 50%;
   width: 12px;
   height: 12px;
@@ -280,7 +255,8 @@ const NoResults = styled.div`
   margin-top: 2rem;
   text-align: center;
   font-size: 14px;
-  color: #888;
+  color: ${props => props.theme.name === 'dark' ? '#E0E0E0' : '#505050'};
+  font-weight: 500;
 `;
 const AskAIButton = styled.button`
     display: flex;
@@ -293,25 +269,35 @@ const AskAIButton = styled.button`
     height: 50px;
     padding: 8px 24px;
     border: none;
-    border-radius: 6px;
-    background-color: ${props => props.theme.bg};
+    border-radius: 8px;
     color: ${props => props.theme.text}; 
     cursor: pointer;
-    transition: background-color 0.2s, box-shadow 0.2s;
     font-size: 16px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background-color: ${props => props.theme.name === 'dark' ? 
+        'rgba(255, 255, 255, 0.05)' : 
+        'rgba(0, 0, 0, 0.03)'};
 
     &:hover {
-        opacity: 0.8;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        background-color: ${props => props.theme.name === 'dark' ? 
+            'rgba(255, 255, 255, 0.1)' : 
+            'rgba(0, 0, 0, 0.06)'}; 
     }
-`
+`;
+
 const SearchHeader = styled.div`
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid ${props => props.theme.bg};
-`
+    border-bottom: 1px solid ${props => props.theme.name === 'dark' ? '#FFFFFF24' : 'rgba(0, 0, 0, 0.14)'};
+`;
+
+
 
 const TextField = styled.input`
     width: calc(100% - 32px);
@@ -327,7 +313,15 @@ const TextField = styled.input`
     &:focus {
         border-color: none;
     }
+
+    &::placeholder {
+        color: ${props => props.theme.name === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)'} !important;
+        opacity: 100%; /* Force opacity to ensure placeholder is visible */
+        font-weight: 500;
+    }
 `
+
+
 
 const EscapeInstruction = styled.kbd`
     display: flex;
@@ -337,17 +331,21 @@ const EscapeInstruction = styled.kbd`
     padding: 4px 8px;
     border-radius: 4px;
     background-color: transparent;
-    border: 1px solid ${props => props.theme.secondary.text};
-    color: ${props => props.theme.text};
+    border: 1px solid ${props => props.theme.name === 'dark' ? 
+        'rgba(237, 237, 237, 0.6)' : 
+        'rgba(23, 23, 23, 0.6)'};
+    color: ${props => props.theme.name === 'dark' ? '#EDEDED' : '#171717'};
     font-size: 12px;
     font-family: 'Geist', sans-serif;
     white-space: nowrap;
     cursor: pointer;
     width: fit-content;
-    &:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-    }
-`
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+`;
+
+
 export const SearchBar = ({
     apiKey = "74039c6d-bff7-44ce-ae55-2973cbf13837",
     apiHost = "https://gptcloud.arc53.com",
@@ -367,7 +365,7 @@ export const SearchBar = ({
     const abortControllerRef = React.useRef<AbortController | null>(null);
     const browserOS = getOS();
     const isTouch = 'ontouchstart' in window;
-    
+
     const getKeyboardInstruction = () => {
         if (isResultVisible) return "Enter";
         return browserOS === 'mac' ? '⌘ + K' : 'Ctrl + K';
@@ -394,7 +392,7 @@ export const SearchBar = ({
             }
         };
 
-     
+
         document.addEventListener('mousedown', handleClickOutside);
         document.addEventListener('keydown', handleKeyDown);
         return () => {
@@ -404,33 +402,34 @@ export const SearchBar = ({
     }, []);
 
     React.useEffect(() => {
-        if (!input) {
-            setResults([]);
-            return;
-        }
-        setLoading(true);
-        if (debounceTimeout.current) {
-            clearTimeout(debounceTimeout.current);
-        }
+    if (!input) {
+        setResults([]);
+        setLoading(false);
+        return;
+    }
+    setLoading(true);
+    if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+    }
 
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
-        debounceTimeout.current = setTimeout(() => {
-            getSearchResults(input, apiKey, apiHost, abortController.signal)
-                .then((data) => setResults(data))
-                .catch((err) => !abortController.signal.aborted && console.log(err))
-                .finally(() => setLoading(false));
-        }, 500);
+    debounceTimeout.current = setTimeout(() => {
+        getSearchResults(input, apiKey, apiHost, abortController.signal)
+            .then((data) => setResults(data))
+            .catch((err) => !abortController.signal.aborted && console.log(err))
+            .finally(() => setLoading(false));
+    }, 500);
 
-        return () => {
-            abortController.abort();
-            clearTimeout(debounceTimeout.current ?? undefined);
-        };
-    }, [input])
+    return () => {
+        abortController.abort();
+        clearTimeout(debounceTimeout.current ?? undefined);
+    };
+}, [input])
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
@@ -462,6 +461,8 @@ export const SearchBar = ({
                     </SearchButton>
                     {
                         isResultVisible && (
+                            <>
+                            <SearchOverlay onClick={() => setIsResultVisible(false)} />
                             <SearchResults>
                                 <SearchHeader>
                                     <TextField
@@ -477,8 +478,8 @@ export const SearchBar = ({
                                     </EscapeInstruction>
                                 </SearchHeader>
                                 <AskAIButton onClick={openWidget}>
-                                    <img 
-                                        src="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png" 
+                                    <img
+                                        src="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
                                         alt="DocsGPT"
                                         width={24}
                                         height={24}
@@ -539,6 +540,7 @@ export const SearchBar = ({
                                     )}
                                 </SearchResultsScroll>
                             </SearchResults>
+                            </>
                         )
                     }
                     {
