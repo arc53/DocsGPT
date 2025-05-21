@@ -1,0 +1,153 @@
+---
+title: 🗝️ Generic API Tool
+description: Learn how to configure and use the API Tool in DocsGPT to connect with any RESTful API without writing custom code.
+---
+
+import { Callout } from 'nextra/components';
+import Image from 'next/image';
+
+# Using the Generic API Tool
+
+The API Tool provides a no-code/low-code solution to make DocsGPT interact with third-party or internal RESTful APIs. It acts as a bridge, allowing the Large Language Model (LLM) to leverage external services based on your chat interactions.
+ This guide will walk you through its capabilities, configuration, and best practices.
+
+## Introduction to the Generic API Tool
+
+**When to Use It:**
+    * Ideal for quickly integrating existing APIs where the interaction involves standard HTTP requests (GET, POST, PUT, DELETE).
+    * Suitable for fetching data to enrich answers (e.g., current weather, stock prices, product details).
+    * Useful for triggering simple actions in other systems (e.g., sending a notification, creating a basic task).
+
+**Contrast with Custom Python Tools:**
+    * **API Tool:** Best for straightforward API calls. Configuration is done through the DocsGPT UI.
+    * **Custom Python Tools:** Preferable when you need complex logic before or after the API call, handle non-standard authentication (like complex OAuth flows), manage multi-step API interactions, or require intricate data processing not easily managed by the LLM alone. See [Creating a Custom Tool](/Tools/creating-a-tool) for more.
+
+## Capabilities of the API Tool
+
+**Supported HTTP Methods:** You can configure actions using standard HTTP methods such as:
+    * `GET`: To retrieve data.
+    * `POST`: To submit data to create a new resource.
+    * `PUT`: To update an existing resource.
+    * `DELETE`: To remove a resource.
+
+**Request Configuration:**
+    * **Headers:** Define static or dynamic HTTP headers for authentication (e.g., API keys), content type specification, etc.
+    * **Query Parameters:** Specify URL query parameters, which can be static or dynamically filled by the LLM based on user input.
+    * **Request Body:** Define the structure of the request body (e.g., JSON), with fields that can be static or dynamically populated by the LLM.
+
+**Response Handling:**
+    * The API Tool executes the request and receives the raw response from the API (typically JSON or plain text).
+    * This raw response is then passed back to the LLM.
+    * The LLM uses this response, along with the context of your query and the description of the API tool action, to formulate an answer or decide on follow-up actions. The API tool itself doesn't deeply parse or transform the response beyond basic content type detection (e.g., loading JSON into a parsable object).
+
+## Configuring an API as a Tool
+
+You can configure the API Tool through the DocsGPT user interface, found in **Settings -> Tools**. When you add or modify an API Tool, you'll define specific actions that DocsGPT can perform.
+
+<Callout type="info">
+  The configuration involves defining how DocsGPT should call an API endpoint. Each configured API call essentially becomes a distinct "action" the LLM can choose to use.
+</Callout>
+
+Below is an example of how you might configure an API action, inspired by setting up a phone number validation service:
+
+<Image
+  src="/toolIcons/api-tool-example.png"
+  alt="API Tool configuration example for phone validation"
+  width={800}
+  height={450}
+  style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
+_Figure 1: Example configuration for an API Tool action to validate phone numbers._
+
+**Defining an API Endpoint/Action:**
+
+When you configure a new API action, you'll fill in the following fields:
+
+-   **`Name`:** A user-friendly name for this specific API action (e.g., "Phone-check" as in the image, or more specific like "ValidateUSPhoneNumber"). This helps in managing your tools.
+-   **`Description`:** This is a **critical field**. Provide a clear and concise description of what the API action does, what kind of input it expects (implicitly), and what kind of output it provides. The LLM uses this description to understand when and how to use this action.
+-   **`URL`:** The full endpoint URL for the API request.
+-   **`HTTP Method`:** Select the appropriate HTTP method (e.g., GET, POST) from a dropdown.
+-   **`Headers`:** You can add custom HTTP headers as key-value pairs (Name, Value). Indicate if the value should be `Filled by LLM` or is static. If filled by LLM, provide a `Description` for the LLM.
+
+-   **`Query Parameters`:** For `GET` requests or when parameters are sent in the URL.
+    * **`Name`:** The name of the query parameter (e.g., `api_key`, `phone`).
+    * **`Type`:** The data type of the parameter (e.g., `string`).
+    * **`Filled by LLM` (Checkbox):**
+        - **Unchecked (Static):** The `Value` you provide will be used for every call (e.g., for an `api_key` that doesn't change).
+        - **Checked (Dynamic):** The LLM will extract the appropriate value from the user's chat query based on the `Description` you provide for this parameter. The `Value` field is typically left empty or contains a placeholder if `Filled by LLM` is checked.
+    * `Description`: Context for the LLM if the parameter is to be filled dynamically, or for your own reference if static.
+    * `Value`: The static value if not filled by LLM.
+
+-   **`Request Body`:** Used to send data (commonly JSON) to the API. Similar to Query Parameters, you define fields with `Name`, `Type`, whether it's `Filled by LLM`, a `Description` for dynamic fields, and a static `Value` if applicable.
+
+**Response Handling Guidance for the LLM:**
+
+While the API Tool configuration UI doesn't have explicit fields for defining response parsing rules (like JSONPath extractors), you significantly influence how the LLM handles the response through:
+    * **Tool Action `Description`:** Clearly state what kind of information the API returns (e.g., "This API returns a JSON object with 'status' and 'location' fields for the phone number."). This helps the LLM know what to look for in the API's output.
+    * **Prompt Engineering:** For more complex scenarios, you might need to adjust your global or agent-specific prompts to guide DocsGPT on how to interpret and present information from API tool responses. See [Customising Prompts](/Guides/Customising-prompts).
+
+## Using the Configured API Tool in Chat
+
+Once an API action is configured and enabled, DocsGPT's LLM can decide to use it based on your natural language queries.
+
+**Example (based on the phone validation tool in Figure 1):**
+
+1.  **User Query:** "Hey DocsGPT, can you check if +14155555555 is a valid phone number?"
+
+2.  **DocsGPT (LLM Orchestration):**
+    * The LLM analyzes the query.
+    * It matches the intent ("check if ... is a valid phone number") with the description of the "Phone-check" API action.
+    * It identifies `+14155555555` as the value for the `phone` parameter (which was marked as `Filled by LLM` with the description "Phone number to check").
+    * DocsGPT constructs the GET API request.
+3.  **API Tool Execution:**
+    * The API Tool makes the HTTP GET request.
+    * The external API (AbstractAPI) processes the request and returns a JSON response, e.g.:
+        ```json
+        {
+          "phone": "+14155555555",
+          "valid": true,
+          "format": {
+            "international": "+1 415-555-5555",
+            "national": "(415) 555-5555"
+          },
+          "country": {
+            "code": "US",
+            "name": "United States",
+            "prefix": "+1"
+          },
+          "location": "California",
+          "type": "Landline"
+        }
+        ```
+
+4.  **DocsGPT Response Formulation:**
+    * The API Tool passes this JSON response back to the LLM.
+    * The LLM, guided by the tool's description and the user's original query, extracts relevant information and formulates a user-friendly answer.
+    * **DocsGPT Chat Response:** "Yes, +14155555555 appears to be a valid landline phone number in California, United States."
+
+## Advanced Tips and Best Practices
+
+**Clear Description is the Key:** The LLM relies heavily on the `Description` field of the API action and its parameters. Make them unambiguous and action-oriented. Clearly state what the tool does and what kind of input it expects (even if implicitly through parameter descriptions). 
+
+**Iterative Testing:** After configuring an API tool, test it with various phrasings of user queries to ensure the LLM triggers it correctly and interprets the response as expected.
+  
+**Error Handling:**
+    * If an API call fails, the API Tool will return an error message and status code from the `requests` library or the API itself. The LLM may relay this error or try to explain it.
+    * Check DocsGPT's backend logs for more detailed error information if you encounter issues.
+  
+**Security Considerations:**
+    * **API Keys:** Be mindful of API keys and other sensitive credentials. The example image shows an API key directly in the configuration. For production or shared environments avoid exposing configurations with sensitive keys.
+    * **Rate Limits:** Be aware of the rate limits of the APIs you are integrating. Frequent calls from DocsGPT could exceed these limits.
+    * **Data Privacy:** Consider the data privacy implications of sending user query data to third-party APIs.
+-   **Idempotency:** For tools that modify data (POST, PUT, DELETE), be aware of whether the API operations are idempotent to avoid unintended consequences from repeated calls if the LLM retries an action.
+
+## Limitations
+
+While powerful, the Generic API Tool has some limitations:
+
+-   **Complex Authentication:** Advanced authentication flows like OAuth 2.0 (especially 3-legged OAuth requiring user redirection) or custom signature-based authentication often require custom Python tools.
+-   **Multi-Step API Interactions:** If a task requires multiple API calls that depend on each other (e.g., fetch a list, then for each item, fetch details), this kind of complex chaining and logic is better handled by a custom Python tool.
+-   **Complex Data Transformations:** If the API response needs significant transformation or processing before being useful to the LLM, a custom Python tool offers more flexibility.
+-   **Real-time Streaming (SSE, WebSockets):** The tool is designed for request-response interactions, not for maintaining persistent streaming connections.
+
+For scenarios that exceed these limitations, developing a [Custom Python Tool](/Tools/creating-a-tool) is the recommended approach.
