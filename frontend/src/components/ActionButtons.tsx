@@ -41,7 +41,7 @@ export default function ActionButtons({
     navigate('/');
   };
   return (
-    <div className="fixed right-4 top-4 z-10">
+    <div className="fixed right-4 top-0 z-10 flex h-16 flex-col justify-center">
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
           <button
