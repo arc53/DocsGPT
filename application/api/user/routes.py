@@ -2870,6 +2870,9 @@ class CreateTool(Resource):
                 "config": fields.Raw(
                     required=True, description="Configuration of the tool"
                 ),
+                "customName": fields.String(
+                    required=False, description="Custom name for the tool"
+                ),
                 "actions": fields.List(
                     fields.Raw,
                     required=True,
@@ -2916,6 +2919,7 @@ class CreateTool(Resource):
                 "name": data["name"],
                 "displayName": data["displayName"],
                 "description": data["description"],
+                "customName": data.get("customName", ""),
                 "actions": transformed_actions,
                 "config": data["config"],
                 "status": data["status"],
@@ -2937,6 +2941,7 @@ class UpdateTool(Resource):
                 "id": fields.String(required=True, description="Tool ID"),
                 "name": fields.String(description="Name of the tool"),
                 "displayName": fields.String(description="Display name for the tool"),
+                "customName": fields.String(description="Custom name for the tool"),
                 "description": fields.String(description="Tool description"),
                 "config": fields.Raw(description="Configuration of the tool"),
                 "actions": fields.List(
@@ -2963,6 +2968,8 @@ class UpdateTool(Resource):
                 update_data["name"] = data["name"]
             if "displayName" in data:
                 update_data["displayName"] = data["displayName"]
+            if "customName" in data:
+                update_data["customName"] = data["customName"]
             if "description" in data:
                 update_data["description"] = data["description"]
             if "actions" in data:
