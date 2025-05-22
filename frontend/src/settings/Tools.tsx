@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import CogwheelIcon from '../assets/cogwheel.svg';
+import ThreeDotsIcon from '../assets/three-dots.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import Input from '../components/Input';
@@ -15,6 +15,10 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
+import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import Edit from '../assets/edit.svg';
+import Trash from '../assets/red-trash.svg';
+import ConfirmationModal from '../modals/ConfirmationModal';
 
 export default function Tools() {
   const { t } = useTranslation();
@@ -29,6 +33,57 @@ export default function Tools() {
     UserToolType | APIToolType | null
   >(null);
   const [loading, setLoading] = React.useState(false);
+  const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
+  const menuRefs = React.useRef<{
+    [key: string]: React.RefObject<HTMLDivElement>;
+  }>({});
+  const [deleteModalState, setDeleteModalState] =
+    React.useState<ActiveState>('INACTIVE');
+  const [toolToDelete, setToolToDelete] = React.useState<UserToolType | null>(
+    null,
+  );
+
+  React.useEffect(() => {
+    userTools.forEach((tool) => {
+      if (!menuRefs.current[tool.id]) {
+        menuRefs.current[tool.id] = React.createRef();
+      }
+    });
+  }, [userTools]);
+
+  const handleDeleteTool = (tool: UserToolType) => {
+    setToolToDelete(tool);
+    setDeleteModalState('ACTIVE');
+  };
+
+  const confirmDeleteTool = () => {
+    if (toolToDelete) {
+      userService.deleteTool({ id: toolToDelete.id }, token).then(() => {
+        getUserTools();
+        setDeleteModalState('INACTIVE');
+        setToolToDelete(null);
+      });
+    }
+  };
+
+  const getMenuOptions = (tool: UserToolType): MenuOption[] => [
+    {
+      icon: Edit,
+      label: t('settings.tools.edit'),
+      onClick: () => handleSettingsClick(tool),
+      variant: 'primary',
+      iconWidth: 14,
+      iconHeight: 14,
+    },
+    {
+      icon: Trash,
+      label: t('settings.tools.delete'),
+      onClick: () => handleDeleteTool(tool),
+      variant: 'danger',
+      iconWidth: 18,
+      iconHeight: 18,
+    },
+  ];
 
   const getUserTools = () => {
     setLoading(true);
@@ -157,21 +212,34 @@ export default function Tools() {
                     .map((tool, index) => (
                       <div
                         key={index}
-                        className="relative flex h-52 w-[300px] flex-col justify-between rounded-2xl border border-light-gainsboro bg-white-3000 p-6 dark:border-arsenic dark:bg-transparent"
+                        className="relative flex h-52 w-[300px] flex-col justify-between rounded-2xl bg-[#F5F5F5] p-6 hover:bg-[#ECECEC] dark:bg-[#383838] dark:hover:bg-[#303030]"
                       >
-                        <button
-                          onClick={() => handleSettingsClick(tool)}
-                          aria-label={t('settings.tools.configureToolAria', {
-                            toolName: tool.displayName,
-                          })}
-                          className="absolute right-4 top-4"
+                        <div
+                          ref={menuRefs.current[tool.id]}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenuId(
+                              activeMenuId === tool.id ? null : tool.id,
+                            );
+                          }}
+                          className="absolute right-4 top-4 z-10 cursor-pointer"
                         >
                           <img
-                            src={CogwheelIcon}
+                            src={ThreeDotsIcon}
                             alt={t('settings.tools.settingsIconAlt')}
                             className="h-[19px] w-[19px]"
                           />
-                        </button>
+                          <ContextMenu
+                            isOpen={activeMenuId === tool.id}
+                            setIsOpen={(isOpen) => {
+                              setActiveMenuId(isOpen ? tool.id : null);
+                            }}
+                            options={getMenuOptions(tool)}
+                            anchorRef={menuRefs.current[tool.id]}
+                            position="top-right"
+                            offset={{ x: 0, y: 0 }}
+                          />
+                        </div>
                         <div className="w-full">
                           <div className="flex w-full items-center px-1">
                             <img
@@ -217,6 +285,16 @@ export default function Tools() {
             setModalState={setAddToolModalState}
             getUserTools={getUserTools}
             onToolAdded={handleToolAdded}
+          />
+          <ConfirmationModal
+            message={t('settings.tools.deleteWarning', {
+              toolName: toolToDelete?.displayName || '',
+            })}
+            modalState={deleteModalState}
+            setModalState={setDeleteModalState}
+            handleSubmit={confirmDeleteTool}
+            submitLabel={t('settings.tools.delete')}
+            variant="danger"
           />
         </div>
       )}

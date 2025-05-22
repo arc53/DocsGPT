@@ -41,6 +41,7 @@ export type UserToolType = {
   id: string;
   name: string;
   displayName: string;
+  customName?: string;
   description: string;
   status: boolean;
   config: {
@@ -81,6 +82,7 @@ export type APIToolType = {
   id: string;
   name: string;
   displayName: string;
+  customName?: string;
   description: string;
   status: boolean;
   config: { actions: { [key: string]: APIActionType } };

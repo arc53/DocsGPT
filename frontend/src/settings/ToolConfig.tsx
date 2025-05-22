@@ -28,6 +28,9 @@ export default function ToolConfig({
   const [authKey, setAuthKey] = React.useState<string>(
     'token' in tool.config ? tool.config.token : '',
   );
+  const [customName, setCustomName] = React.useState<string>(
+    tool.customName || '',
+  );
   const [actionModalState, setActionModalState] =
     React.useState<ActiveState>('INACTIVE');
   const { t } = useTranslation();
@@ -66,6 +69,7 @@ export default function ToolConfig({
           id: tool.id,
           name: tool.name,
           displayName: tool.displayName,
+          customName: customName,
           description: tool.description,
           config: tool.name === 'api_tool' ? tool.config : { token: authKey },
           actions: 'actions' in tool ? tool.actions : [],
@@ -131,6 +135,21 @@ export default function ToolConfig({
         <p className="mt-1 font-sans text-base font-normal text-eerie-black dark:text-bright-gray">
           {tool.name}
         </p>
+      </div>
+      {/* Custom name section */}
+      <div className="mt-1">
+        <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
+          Custom Name
+        </p>
+        <div className="relative mt-4 w-96">
+          <Input
+            type="text"
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            borderVariant="thin"
+            placeholder="Enter a custom name (optional)"
+          />
+        </div>
       </div>
       <div className="mt-1">
         {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (

@@ -119,7 +119,10 @@
       "settingsIconAlt": "Settings icon",
       "configureToolAria": "Configure {toolName}",
       "toggleToolAria": "Toggle {toolName}",
-      "manageTools": "Go to Tools"
+      "manageTools": "Go to Tools",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteWarning": "Are you sure you want to delete {toolName}?"
     }
   },
   "modals": {
