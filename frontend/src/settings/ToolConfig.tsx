@@ -119,29 +119,29 @@ export default function ToolConfig({
   };
   return (
     <div className="mt-8 flex flex-col gap-4">
-      <div className="mb-4 flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
+          <button
+            className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            onClick={handleGoBack}
+          >
+            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+          </button>
+          <p className="mt-px">Back to all tools</p>
+        </div>
         <button
-          className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
-          onClick={handleGoBack}
+          className="text-nowrap rounded-full bg-purple-30 px-3 py-1 text-xs text-white hover:bg-violets-are-blue sm:px-4 sm:py-2"
+          onClick={handleSaveChanges}
         >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+          Save
         </button>
-        <p className="mt-px">Back to all tools</p>
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
-          Type
-        </p>
-        <p className="mt-1 font-sans text-base font-normal text-eerie-black dark:text-bright-gray">
-          {tool.name}
-        </p>
       </div>
       {/* Custom name section */}
       <div className="mt-1">
         <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
           Custom Name
         </p>
-        <div className="relative mt-4 w-96">
+        <div className="relative mt-4 w-full max-w-96">
           <Input
             type="text"
             value={customName}
@@ -160,7 +160,7 @@ export default function ToolConfig({
         <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
           {Object.keys(tool?.config).length !== 0 &&
             tool.name !== 'api_tool' && (
-              <div className="relative w-96">
+              <div className="relative w-full max-w-96">
                 <Input
                   type="text"
                   value={authKey}
@@ -170,20 +170,6 @@ export default function ToolConfig({
                 />
               </div>
             )}
-          <div className="flex items-center gap-2">
-            <button
-              className="text-nowrap rounded-full bg-purple-30 px-5 py-[10px] text-sm text-white hover:bg-violets-are-blue"
-              onClick={handleSaveChanges}
-            >
-              Save changes
-            </button>
-            <button
-              className="text-nowrap rounded-full border border-solid border-red-500 px-5 py-[10px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
-              onClick={handleDelete}
-            >
-              Delete
-            </button>
-          </div>
         </div>
       </div>
       <div className="flex flex-col gap-4">
@@ -192,14 +178,16 @@ export default function ToolConfig({
           <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
             Actions
           </p>
-          <button
-            onClick={() => {
-              setActionModalState('ACTIVE');
-            }}
-            className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
-          >
-            Add action
-          </button>
+          {tool.name === 'api_tool' && (
+            <button
+              onClick={() => {
+                setActionModalState('ACTIVE');
+              }}
+              className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+            >
+              Add action
+            </button>
+          )}
         </div>
         {tool.name === 'api_tool' ? (
           <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
@@ -233,10 +221,10 @@ export default function ToolConfig({
                         id={`actionToggle-${actionIndex}`}
                       />
                     </div>
-                    <div className="relative mt-5">
+                    <div className="relative mt-5 w-full px-5">
                       <Input
                         type="text"
-                        className="ml-5 w-[97%]"
+                        className="w-full"
                         placeholder="Enter description"
                         value={action.description}
                         onChange={(e) => {
