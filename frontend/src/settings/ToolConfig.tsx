@@ -10,6 +10,7 @@ import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
 import AddActionModal from '../modals/AddActionModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType, APIToolType, UserToolType } from './types';
@@ -118,7 +119,7 @@ export default function ToolConfig({
     });
   };
   return (
-    <div className="mt-8 flex flex-col gap-4">
+    <div className="scrollbar-thin mt-8 flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
           <button
@@ -130,7 +131,7 @@ export default function ToolConfig({
           <p className="mt-px">Back to all tools</p>
         </div>
         <button
-          className="text-nowrap rounded-full bg-purple-30 px-3 py-1 text-xs text-white hover:bg-violets-are-blue sm:px-4 sm:py-2"
+          className="text-nowrap rounded-full bg-purple-30 px-3 py-2 text-xs text-white hover:bg-violets-are-blue sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
         >
           Save
@@ -178,19 +179,19 @@ export default function ToolConfig({
           <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
             Actions
           </p>
-          {tool.name === 'api_tool' && (
-            <button
-              onClick={() => {
-                setActionModalState('ACTIVE');
-              }}
-              className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
-            >
-              Add action
-            </button>
-          )}
         </div>
         {tool.name === 'api_tool' ? (
-          <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+          <>
+            <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setActionModalState('ACTIVE')}
+                className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+              >
+                Add action
+              </button>
+            </div>
+          </>
         ) : (
           <div className="flex flex-col gap-12">
             {'actions' in tool &&
@@ -388,6 +389,34 @@ function APIToolConfig({
   setTool: (tool: APIToolType) => void;
 }) {
   const [apiTool, setApiTool] = React.useState<APIToolType>(tool);
+  const { t } = useTranslation();
+  const [actionToDelete, setActionToDelete] = React.useState<string | null>(
+    null,
+  );
+  const [deleteModalState, setDeleteModalState] =
+    React.useState<ActiveState>('INACTIVE');
+
+  const handleDeleteActionClick = (actionName: string) => {
+    setActionToDelete(actionName);
+    setDeleteModalState('ACTIVE');
+  };
+  const handleConfirmedDelete = () => {
+    if (actionToDelete) {
+      setApiTool((prevApiTool) => {
+        const { [actionToDelete]: deletedAction, ...remainingActions } =
+          prevApiTool.config.actions;
+        return {
+          ...prevApiTool,
+          config: {
+            ...prevApiTool.config,
+            actions: remainingActions,
+          },
+        };
+      });
+      setActionToDelete(null);
+      setDeleteModalState('INACTIVE');
+    }
+  };
 
   const handleActionChange = (
     actionName: string,
@@ -424,19 +453,31 @@ function APIToolConfig({
     setTool(apiTool);
   }, [apiTool]);
   return (
-    <div className="flex flex-col gap-16">
+    <div className="scrollbar-thin flex flex-col gap-16">
+      {/* Actions list */}
       {apiTool.config.actions &&
         Object.entries(apiTool.config.actions).map(
-          ([actionName, action], actionIndex) => {
-            return (
-              <div
-                key={actionIndex}
-                className="w-full rounded-xl border border-silver dark:border-silver/40"
-              >
-                <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
-                  <p className="font-semibold text-eerie-black dark:text-bright-gray">
-                    {action.name}
-                  </p>
+          ([actionName, action], actionIndex) => (
+            <div
+              key={actionIndex}
+              className="w-full rounded-xl border border-silver dark:border-silver/40"
+            >
+              <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
+                <p className="font-semibold text-eerie-black dark:text-bright-gray">
+                  {action.name}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDeleteActionClick(actionName)}
+                    className="mr-2 flex h-6 w-6 items-center justify-center rounded-full"
+                    title={t('convTile.delete')}
+                  >
+                    <img
+                      src={Trash}
+                      alt="delete"
+                      className="h-4 w-4 opacity-40 transition-opacity hover:opacity-100"
+                    />
+                  </button>
                   <ToggleSwitch
                     checked={action.active}
                     onChange={() => handleActionToggle(actionName)}
@@ -444,117 +485,136 @@ function APIToolConfig({
                     id={`actionToggle-${actionIndex}`}
                   />
                 </div>
-                <div className="mt-8 px-5">
-                  <div className="relative w-full">
-                    <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                      URL
-                    </span>
-                    <Input
-                      type="text"
-                      value={action.url}
-                      onChange={(e) => {
-                        setApiTool((prevApiTool) => {
-                          const updatedActions = {
-                            ...prevApiTool.config.actions,
-                          };
-                          const updatedAction = {
-                            ...updatedActions[actionName],
-                          };
-                          updatedAction.url = e.target.value;
-                          updatedActions[actionName] = updatedAction;
-                          return {
-                            ...prevApiTool,
-                            config: {
-                              ...prevApiTool.config,
-                              actions: updatedActions,
-                            },
-                          };
-                        });
-                      }}
-                      borderVariant="thin"
-                      placeholder="Enter url"
-                    ></Input>
-                  </div>
+              </div>
+              <div className="mt-8 px-5">
+                <div className="relative w-full">
+                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    URL
+                  </span>
+                  <Input
+                    type="text"
+                    value={action.url}
+                    onChange={(e) => {
+                      setApiTool((prevApiTool) => {
+                        const updatedActions = {
+                          ...prevApiTool.config.actions,
+                        };
+                        const updatedAction = {
+                          ...updatedActions[actionName],
+                        };
+                        updatedAction.url = e.target.value;
+                        updatedActions[actionName] = updatedAction;
+                        return {
+                          ...prevApiTool,
+                          config: {
+                            ...prevApiTool.config,
+                            actions: updatedActions,
+                          },
+                        };
+                      });
+                    }}
+                    borderVariant="thin"
+                    placeholder="Enter url"
+                  ></Input>
                 </div>
-                <div className="mt-4 px-5 py-2">
-                  <div className="relative w-full">
-                    <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                      Method
-                    </span>
-                    <Dropdown
-                      options={['GET', 'POST', 'PUT', 'DELETE']}
-                      selectedValue={action.method}
-                      onSelect={(value: string) => {
-                        setApiTool((prevApiTool) => {
-                          const updatedActions = {
-                            ...prevApiTool.config.actions,
-                          };
-                          const updatedAction = {
-                            ...updatedActions[actionName],
-                          };
-                          updatedAction.method = value as
-                            | 'GET'
-                            | 'POST'
-                            | 'PUT'
-                            | 'DELETE';
-                          updatedActions[actionName] = updatedAction;
-                          return {
-                            ...prevApiTool,
-                            config: {
-                              ...prevApiTool.config,
-                              actions: updatedActions,
-                            },
-                          };
-                        });
-                      }}
-                      size="w-56"
-                      rounded="3xl"
-                      border="border"
-                    />
-                  </div>
-                </div>
-                <div className="mt-4 px-5 py-2">
-                  <div className="relative w-full">
-                    <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                      Description
-                    </span>
-                    <Input
-                      type="text"
-                      value={action.description}
-                      onChange={(e) => {
-                        setApiTool((prevApiTool) => {
-                          const updatedActions = {
-                            ...prevApiTool.config.actions,
-                          };
-                          const updatedAction = {
-                            ...updatedActions[actionName],
-                          };
-                          updatedAction.description = e.target.value;
-                          updatedActions[actionName] = updatedAction;
-                          return {
-                            ...prevApiTool,
-                            config: {
-                              ...prevApiTool.config,
-                              actions: updatedActions,
-                            },
-                          };
-                        });
-                      }}
-                      borderVariant="thin"
-                      placeholder="Enter description"
-                    ></Input>
-                  </div>
-                </div>
-                <div className="mt-4 px-5 py-2">
-                  <APIActionTable
-                    apiAction={action}
-                    handleActionChange={handleActionChange}
+              </div>
+              <div className="mt-4 px-5 py-2">
+                <div className="relative w-full">
+                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    Method
+                  </span>
+                  <Dropdown
+                    options={['GET', 'POST', 'PUT', 'DELETE']}
+                    selectedValue={action.method}
+                    onSelect={(value: string) => {
+                      setApiTool((prevApiTool) => {
+                        const updatedActions = {
+                          ...prevApiTool.config.actions,
+                        };
+                        const updatedAction = {
+                          ...updatedActions[actionName],
+                        };
+                        updatedAction.method = value as
+                          | 'GET'
+                          | 'POST'
+                          | 'PUT'
+                          | 'DELETE';
+                        updatedActions[actionName] = updatedAction;
+                        return {
+                          ...prevApiTool,
+                          config: {
+                            ...prevApiTool.config,
+                            actions: updatedActions,
+                          },
+                        };
+                      });
+                    }}
+                    size="w-56"
+                    rounded="3xl"
+                    border="border"
                   />
                 </div>
               </div>
-            );
-          },
+              <div className="mt-4 px-5 py-2">
+                <div className="relative w-full">
+                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                    Description
+                  </span>
+                  <Input
+                    type="text"
+                    value={action.description}
+                    onChange={(e) => {
+                      setApiTool((prevApiTool) => {
+                        const updatedActions = {
+                          ...prevApiTool.config.actions,
+                        };
+                        const updatedAction = {
+                          ...updatedActions[actionName],
+                        };
+                        updatedAction.description = e.target.value;
+                        updatedActions[actionName] = updatedAction;
+                        return {
+                          ...prevApiTool,
+                          config: {
+                            ...prevApiTool.config,
+                            actions: updatedActions,
+                          },
+                        };
+                      });
+                    }}
+                    borderVariant="thin"
+                    placeholder="Enter description"
+                  ></Input>
+                </div>
+              </div>
+              <div className="mt-4 px-5 py-2">
+                <APIActionTable
+                  apiAction={action}
+                  handleActionChange={handleActionChange}
+                />
+              </div>
+            </div>
+          ),
         )}
+
+      {/* Confirmation Modal */}
+      {deleteModalState === 'ACTIVE' && actionToDelete && (
+        <ConfirmationModal
+          message={t('settings.tools.deleteActionWarning', {
+            name: actionToDelete,
+            defaultValue: `Are you sure you want to delete the action "${actionToDelete}"?`,
+          })}
+          modalState={deleteModalState}
+          setModalState={setDeleteModalState}
+          handleSubmit={handleConfirmedDelete}
+          handleCancel={() => {
+            setDeleteModalState('INACTIVE');
+            setActionToDelete(null);
+          }}
+          submitLabel={t('convTile.delete')}
+          variant="danger"
+        />
+      )}
     </div>
   );
 }
@@ -883,7 +943,7 @@ function APIActionTable({
     );
   };
   return (
-    <div className="flex flex-col gap-6">
+    <div className="scrollbar-thin flex flex-col gap-6">
       <div>
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
           Headers
