@@ -25,6 +25,7 @@ export default function ConfigToolModal({
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [authKey, setAuthKey] = React.useState<string>('');
+  const [customName, setCustomName] = React.useState<string>('');
 
   const handleAddTool = (tool: AvailableToolType) => {
     userService
@@ -34,6 +35,7 @@ export default function ConfigToolModal({
           displayName: tool.displayName,
           description: tool.description,
           config: { token: authKey },
+          customName: customName,
           actions: tool.actions,
           status: true,
         },
@@ -58,6 +60,16 @@ export default function ConfigToolModal({
           {t('modals.configTool.type')}:{' '}
           <span className="font-semibold">{tool?.name}</span>
         </p>
+        <div className="mt-6 px-3">
+          <Input
+            type="text"
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            borderVariant="thin"
+            placeholder="Enter custom name (optional)"
+            labelBgClassName="bg-white dark:bg-charleston-green-2"
+          />
+        </div>
         <div className="mt-6 px-3">
           <Input
             type="text"

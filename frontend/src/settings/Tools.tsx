@@ -80,8 +80,8 @@ export default function Tools() {
       label: t('settings.tools.delete'),
       onClick: () => handleDeleteTool(tool),
       variant: 'danger',
-      iconWidth: 18,
-      iconHeight: 18,
+      iconWidth: 12,
+      iconHeight: 12,
     },
   ];
 
@@ -205,7 +205,7 @@ export default function Tools() {
                 ) : (
                   userTools
                     .filter((tool) =>
-                      tool.displayName
+                      (tool.customName || tool.displayName)
                         .toLowerCase()
                         .includes(searchTerm.toLowerCase()),
                     )
@@ -250,10 +250,10 @@ export default function Tools() {
                           </div>
                           <div className="mt-[9px]">
                             <p
-                              title={tool.displayName}
+                              title={tool.customName || tool.displayName}
                               className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-raisin-black-light dark:text-bright-gray"
                             >
-                              {tool.displayName}
+                              {tool.customName || tool.displayName}
                             </p>
                             <p className="mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed text-old-silver dark:text-sonic-silver-light">
                               {tool.description}
@@ -269,7 +269,7 @@ export default function Tools() {
                             size="small"
                             id={`toolToggle-${index}`}
                             ariaLabel={t('settings.tools.toggleToolAria', {
-                              toolName: tool.displayName,
+                              toolName: tool.customName || tool.displayName,
                             })}
                           />
                         </div>
