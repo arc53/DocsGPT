@@ -32,12 +32,7 @@ export default function ConfirmationModal({
   return (
     <>
       {modalState === 'ACTIVE' && (
-        <WrapperModal
-          close={() => {
-            setModalState('INACTIVE');
-            handleCancel && handleCancel();
-          }}
-        >
+        <WrapperModal close={() => setModalState('INACTIVE')}>
           <div className="relative">
             <div>
               <p className="font-base mb-1 w-[90%] break-words text-lg text-jet dark:text-bright-gray">
