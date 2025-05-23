@@ -47,9 +47,6 @@ export default function AddActionModal({
           New Action
         </h2>
         <div className="relative mt-6 px-3">
-          <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
-            Action Name
-          </span>
           <Input
             type="text"
             value={actionName}
@@ -60,7 +57,8 @@ export default function AddActionModal({
             }}
             borderVariant="thin"
             labelBgClassName="bg-white dark:bg-charleston-green-2"
-            placeholder={'Enter name'}
+            placeholder="Action Name"
+            required={true}
           />
           <p
             className={`ml-1 mt-2 text-xs italic ${

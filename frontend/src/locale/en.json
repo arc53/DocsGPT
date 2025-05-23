@@ -117,9 +117,15 @@
       "noToolsFound": "No tools found",
       "selectToolSetup": "Select a tool to set up",
       "settingsIconAlt": "Settings icon",
-      "configureToolAria": "Configure {toolName}",
-      "toggleToolAria": "Toggle {toolName}",
-      "manageTools": "Go to Tools"
+      "configureToolAria": "Configure {{toolName}}",
+      "toggleToolAria": "Toggle {{toolName}}",
+      "manageTools": "Go to Tools",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
+      "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
+      "leaveWithoutSaving": "Leave without Saving",
+      "saveAndLeave": "Save and Leave"
     }
   },
   "modals": {

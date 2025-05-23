@@ -201,7 +201,7 @@ export default function ToolsPopup({
                       />
                       <div className="overflow-hidden">
                         <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-xs font-medium text-gray-900 dark:text-white">
-                          {tool.displayName}
+                          {tool.customName || tool.displayName}
                         </p>
                       </div>
                     </div>
