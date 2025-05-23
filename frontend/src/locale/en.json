@@ -122,7 +122,10 @@
       "manageTools": "Go to Tools",
       "edit": "Edit",
       "delete": "Delete",
-      "deleteWarning": "Are you sure you want to delete {toolName}?"
+      "deleteWarning": "Are you sure you want to delete {toolName}?",
+      "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
+      "leaveWithoutSaving": "Leave without Saving",
+      "saveAndLeave": "Save and Leave"
     }
   },
   "modals": {

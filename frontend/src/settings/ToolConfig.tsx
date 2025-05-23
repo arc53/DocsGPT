@@ -15,6 +15,7 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType, APIToolType, UserToolType } from './types';
 import { useTranslation } from 'react-i18next';
+import { areObjectsEqual } from '../utils/objectUtils';
 
 export default function ToolConfig({
   tool,
@@ -34,7 +35,35 @@ export default function ToolConfig({
   );
   const [actionModalState, setActionModalState] =
     React.useState<ActiveState>('INACTIVE');
+  const [initialState, setInitialState] = React.useState({
+    customName: tool.customName || '',
+    authKey: 'token' in tool.config ? tool.config.token : '',
+    config: tool.config,
+    actions: 'actions' in tool ? tool.actions : [],
+  });
+  const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
+  const [showUnsavedModal, setShowUnsavedModal] = React.useState(false);
   const { t } = useTranslation();
+
+  const handleBackClick = () => {
+    if (hasUnsavedChanges) {
+      setShowUnsavedModal(true);
+    } else {
+      handleGoBack();
+    }
+  };
+
+  React.useEffect(() => {
+    const currentState = {
+      customName,
+      authKey,
+      config: tool.config,
+      actions: 'actions' in tool ? tool.actions : [],
+    };
+
+    setHasUnsavedChanges(!areObjectsEqual(initialState, currentState));
+  }, [customName, authKey, tool]);
+
   const handleCheckboxChange = (actionIndex: number, property: string) => {
     setTool({
       ...tool,
@@ -79,6 +108,14 @@ export default function ToolConfig({
         token,
       )
       .then(() => {
+        // Update initialState to match current state
+        setInitialState({
+          customName,
+          authKey,
+          config: tool.config,
+          actions: 'actions' in tool ? tool.actions : [],
+        });
+        setHasUnsavedChanges(false);
         handleGoBack();
       });
   };
@@ -124,7 +161,7 @@ export default function ToolConfig({
         <div className="flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
           <button
             className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
-            onClick={handleGoBack}
+            onClick={handleBackClick}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
@@ -376,6 +413,51 @@ export default function ToolConfig({
           setModalState={setActionModalState}
           handleSubmit={handleAddNewAction}
         />
+        {showUnsavedModal && (
+          <ConfirmationModal
+            message={t('settings.tools.unsavedChanges', {
+              defaultValue:
+                'You have unsaved changes that will be lost if you leave without saving.',
+            })}
+            modalState="ACTIVE"
+            setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
+            submitLabel={t('settings.tools.leaveWithoutSaving', {
+              defaultValue: 'Leave without Saving',
+            })}
+            handleSubmit={() => {
+              setShowUnsavedModal(false);
+              handleGoBack();
+            }}
+            cancelLabel={t('settings.tools.saveAndLeave', {
+              defaultValue: 'Save and Leave',
+            })}
+            handleCancel={() => {
+              // First save changes, then go back
+              userService
+                .updateTool(
+                  {
+                    id: tool.id,
+                    name: tool.name,
+                    displayName: tool.displayName,
+                    customName: customName,
+                    description: tool.description,
+                    config:
+                      tool.name === 'api_tool'
+                        ? tool.config
+                        : { token: authKey },
+                    actions: 'actions' in tool ? tool.actions : [],
+                    status: tool.status,
+                  },
+                  token,
+                )
+                .then(() => {
+                  setShowUnsavedModal(false);
+                  handleGoBack();
+                });
+            }}
+            variant="danger"
+          />
+        )}
       </div>
     </div>
   );
