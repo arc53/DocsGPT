@@ -97,7 +97,7 @@ export default function AgentDetailsModal({
               {sharedToken && (
                 <div className="mb-1">
                   <CopyButton
-                    textToCopy={`${baseURL}/agents/shared/${sharedToken}`}
+                    textToCopy={`${baseURL}/shared/agent/${sharedToken}`}
                     padding="p-1"
                   />
                 </div>
@@ -106,7 +106,7 @@ export default function AgentDetailsModal({
             {sharedToken ? (
               <div className="flex flex-col flex-wrap items-start gap-2">
                 <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                  {`${baseURL}/agents/shared/${sharedToken}`}
+                  {`${baseURL}/shared/agent/${sharedToken}`}
                 </p>
               </div>
             ) : (
