@@ -421,18 +421,10 @@ export default function ToolConfig({
             })}
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
-            submitLabel={t('settings.tools.leaveWithoutSaving', {
-              defaultValue: 'Leave without Saving',
-            })}
-            handleSubmit={() => {
-              setShowUnsavedModal(false);
-              handleGoBack();
-            }}
-            cancelLabel={t('settings.tools.saveAndLeave', {
+            submitLabel={t('settings.tools.saveAndLeave', {
               defaultValue: 'Save and Leave',
             })}
-            handleCancel={() => {
-              // First save changes, then go back
+            handleSubmit={() => {
               userService
                 .updateTool(
                   {
@@ -455,7 +447,13 @@ export default function ToolConfig({
                   handleGoBack();
                 });
             }}
-            variant="danger"
+            cancelLabel={t('settings.tools.leaveWithoutSaving', {
+              defaultValue: 'Leave without Saving',
+            })}
+            handleCancel={() => {
+              setShowUnsavedModal(false);
+              handleGoBack();
+            }}
           />
         )}
       </div>
