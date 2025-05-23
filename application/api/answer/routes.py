@@ -439,7 +439,7 @@ class Stream(Resource):
         try:
             question = data["question"]
             history = limit_chat_history(
-                json.loads(data.get("history", [])), gpt_model=gpt_model
+                json.loads(data.get("history", "[]")), gpt_model=gpt_model
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
@@ -451,8 +451,10 @@ class Stream(Resource):
             retriever_name = data.get("retriever", "classic")
             agent_id = data.get("agent_id", None)
             agent_type = settings.AGENT_NAME
+            decoded_token = getattr(request, "decoded_token", None)
+            user_sub = decoded_token.get("sub") if decoded_token else None
             agent_key, is_shared_usage, shared_token = get_agent_key(
-                agent_id, request.decoded_token.get("sub")
+                agent_id, user_sub
             )
 
             if agent_key:
