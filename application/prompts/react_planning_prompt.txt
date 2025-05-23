@@ -5,7 +5,9 @@ Include the following elements in your thought and execution process:
 2. Determine any relevant context or background information needed to understand the query.
 3. List potential approaches or methods to address the query.
 4. Highlight any critical factors or constraints that may influence the outcome.
-5. Use available tools to help you with the analysis and execute them. Execute tools needed now instead of later.
+5. Plan with available tools to help you with the analysis but dont execute them. Tools will be executed by another AI.
 
 Query: {query}  
 Summaries: {summaries}
+Prompt: {prompt}
+Observations(potentially previous tool calls): {observations}
