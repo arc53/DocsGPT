@@ -288,7 +288,8 @@ export default function Tools() {
           />
           <ConfirmationModal
             message={t('settings.tools.deleteWarning', {
-              toolName: toolToDelete?.displayName || '',
+              toolName:
+                toolToDelete?.customName || toolToDelete?.displayName || '',
             })}
             modalState={deleteModalState}
             setModalState={setDeleteModalState}
