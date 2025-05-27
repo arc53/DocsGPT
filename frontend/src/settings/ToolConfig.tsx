@@ -181,7 +181,7 @@ export default function ToolConfig({
       {/* Custom name section */}
       <div className="mt-1">
         <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
-          Custom Name
+          {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
           <Input
@@ -189,14 +189,14 @@ export default function ToolConfig({
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
             borderVariant="thin"
-            placeholder="Enter a custom name (optional)"
+            placeholder={t('settings.tools.customNamePlaceholder')}
           />
         </div>
       </div>
       <div className="mt-1">
         {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (
           <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
-            Authentication
+            {t('settings.tools.authentication')}
           </p>
         )}
         <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
@@ -218,7 +218,7 @@ export default function ToolConfig({
         <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
         <div className="flex w-full flex-row items-center justify-between gap-2">
           <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
-            Actions
+            {t('settings.tools.actions')}
           </p>
           {tool.name === 'api_tool' &&
             (!tool.config.actions ||
@@ -227,7 +227,7 @@ export default function ToolConfig({
                 onClick={() => setActionModalState('ACTIVE')}
                 className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               >
-                Add action
+                {t('settings.tools.addAction')}
               </button>
             )}
         </div>
@@ -244,7 +244,7 @@ export default function ToolConfig({
                   className="mx-auto mb-4 h-24 w-24"
                 />
                 <p className="text-center text-gray-500 dark:text-gray-400">
-                  No actions found
+                  {t('settings.tools.noActionsFound')}
                 </p>
               </div>
             )}
@@ -432,7 +432,7 @@ export default function ToolConfig({
                   className="mx-auto mb-4 h-24 w-24"
                 />
                 <p className="text-center text-gray-500 dark:text-gray-400">
-                  No actions found
+                  {t('settings.tools.noActionsFound')}
                 </p>
               </div>
             )}
@@ -445,15 +445,10 @@ export default function ToolConfig({
         />
         {showUnsavedModal && (
           <ConfirmationModal
-            message={t('settings.tools.unsavedChanges', {
-              defaultValue:
-                'You have unsaved changes that will be lost if you leave without saving.',
-            })}
+            message={t('settings.tools.unsavedChanges')}
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
-            submitLabel={t('settings.tools.saveAndLeave', {
-              defaultValue: 'Save and Leave',
-            })}
+            submitLabel={t('settings.tools.saveAndLeave')}
             handleSubmit={() => {
               userService
                 .updateTool(
@@ -477,9 +472,7 @@ export default function ToolConfig({
                   handleGoBack();
                 });
             }}
-            cancelLabel={t('settings.tools.leaveWithoutSaving', {
-              defaultValue: 'Leave without Saving',
-            })}
+            cancelLabel={t('settings.tools.leaveWithoutSaving')}
             handleCancel={() => {
               setShowUnsavedModal(false);
               handleGoBack();
@@ -597,36 +590,31 @@ function APIToolConfig({
                 </div>
               </div>
               <div className="mt-8 px-5">
-                <div className="relative w-full">
-                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                    URL
-                  </span>
-                  <Input
-                    type="text"
-                    value={action.url}
-                    onChange={(e) => {
-                      setApiTool((prevApiTool) => {
-                        const updatedActions = {
-                          ...prevApiTool.config.actions,
-                        };
-                        const updatedAction = {
-                          ...updatedActions[actionName],
-                        };
-                        updatedAction.url = e.target.value;
-                        updatedActions[actionName] = updatedAction;
-                        return {
-                          ...prevApiTool,
-                          config: {
-                            ...prevApiTool.config,
-                            actions: updatedActions,
-                          },
-                        };
-                      });
-                    }}
-                    borderVariant="thin"
-                    placeholder="Enter url"
-                  ></Input>
-                </div>
+                <Input
+                  type="text"
+                  value={action.url}
+                  onChange={(e) => {
+                    setApiTool((prevApiTool) => {
+                      const updatedActions = {
+                        ...prevApiTool.config.actions,
+                      };
+                      const updatedAction = {
+                        ...updatedActions[actionName],
+                      };
+                      updatedAction.url = e.target.value;
+                      updatedActions[actionName] = updatedAction;
+                      return {
+                        ...prevApiTool,
+                        config: {
+                          ...prevApiTool.config,
+                          actions: updatedActions,
+                        },
+                      };
+                    });
+                  }}
+                  borderVariant="thin"
+                  placeholder={t('settings.tools.urlPlaceholder')}
+                />
               </div>
               <div className="mt-4 px-5 py-2">
                 <div className="relative w-full">
@@ -666,36 +654,31 @@ function APIToolConfig({
                 </div>
               </div>
               <div className="mt-4 px-5 py-2">
-                <div className="relative w-full">
-                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                    Description
-                  </span>
-                  <Input
-                    type="text"
-                    value={action.description}
-                    onChange={(e) => {
-                      setApiTool((prevApiTool) => {
-                        const updatedActions = {
-                          ...prevApiTool.config.actions,
-                        };
-                        const updatedAction = {
-                          ...updatedActions[actionName],
-                        };
-                        updatedAction.description = e.target.value;
-                        updatedActions[actionName] = updatedAction;
-                        return {
-                          ...prevApiTool,
-                          config: {
-                            ...prevApiTool.config,
-                            actions: updatedActions,
-                          },
-                        };
-                      });
-                    }}
-                    borderVariant="thin"
-                    placeholder="Enter description"
-                  ></Input>
-                </div>
+                <Input
+                  type="text"
+                  value={action.description}
+                  onChange={(e) => {
+                    setApiTool((prevApiTool) => {
+                      const updatedActions = {
+                        ...prevApiTool.config.actions,
+                      };
+                      const updatedAction = {
+                        ...updatedActions[actionName],
+                      };
+                      updatedAction.description = e.target.value;
+                      updatedActions[actionName] = updatedAction;
+                      return {
+                        ...prevApiTool,
+                        config: {
+                          ...prevApiTool.config,
+                          actions: updatedActions,
+                        },
+                      };
+                    });
+                  }}
+                  borderVariant="thin"
+                  placeholder={t('settings.tools.descriptionPlaceholder')}
+                />
               </div>
               <div className="mt-4 px-5 py-2">
                 <APIActionTable
@@ -712,7 +695,6 @@ function APIToolConfig({
         <ConfirmationModal
           message={t('settings.tools.deleteActionWarning', {
             name: actionToDelete,
-            defaultValue: `Are you sure you want to delete the action "${actionToDelete}"?`,
           })}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
@@ -739,6 +721,8 @@ function APIActionTable({
     updatedAction: APIActionType,
   ) => void;
 }) {
+  const { t } = useTranslation();
+
   const [action, setAction] = React.useState<APIActionType>(apiAction);
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
   const [addingPropertySection, setAddingPropertySection] = React.useState<
@@ -1056,16 +1040,26 @@ function APIActionTable({
     <div className="scrollbar-thin flex flex-col gap-6">
       <div>
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
-          Headers
+          {t('settings.tools.headers')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Filled by LLM</th>
-              <th>Description</th>
-              <th>Value</th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.name')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.type')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.filledByLLM')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.description')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.value')}
+              </th>
               <th
                 style={{
                   width: '50px',
@@ -1081,16 +1075,26 @@ function APIActionTable({
       </div>
       <div>
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
-          Query Parameters
+          {t('settings.tools.queryParameters')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Filled by LLM</th>
-              <th>Description</th>
-              <th>Value</th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.name')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.type')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.filledByLLM')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.description')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.value')}
+              </th>
               <th
                 style={{
                   width: '50px',
@@ -1106,16 +1110,26 @@ function APIActionTable({
       </div>
       <div className="mb-6">
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
-          Body
+          {t('settings.tools.body')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Filled by LLM</th>
-              <th>Description</th>
-              <th>Value</th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.name')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.type')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.filledByLLM')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.description')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.value')}
+              </th>
               <th
                 style={{
                   width: '50px',
