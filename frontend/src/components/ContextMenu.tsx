@@ -90,7 +90,7 @@ export default function ContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className="flex w-32 flex-col rounded-xl bg-lotion text-sm shadow-xl dark:bg-charleston-green-2 md:w-36"
+        className="flex flex-col rounded-xl bg-lotion text-sm shadow-xl dark:bg-charleston-green-2"
         style={{ minWidth: '144px' }}
       >
         {options.map((option, index) => (
@@ -109,7 +109,7 @@ export default function ContextMenu({
             } `}
           >
             {option.icon && (
-              <div className="flex w-4 justify-center">
+              <div className="flex w-4 min-w-4 flex-shrink-0 justify-center">
                 <img
                   width={option.iconWidth || 16}
                   height={option.iconHeight || 16}
@@ -119,7 +119,7 @@ export default function ContextMenu({
                 />
               </div>
             )}
-            <span>{option.label}</span>
+            <span className="hyphens-auto break-words">{option.label}</span>
           </button>
         ))}
       </div>
