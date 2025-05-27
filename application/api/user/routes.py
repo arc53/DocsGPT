@@ -1500,7 +1500,10 @@ class PinnedAgents(Resource):
                     "description": agent.get("description", ""),
                     "source": (
                         str(db.dereference(agent["source"])["_id"])
-                        if "source" in agent and isinstance(agent["source"], DBRef)
+                        if "source" in agent
+                        and agent["source"]
+                        and isinstance(agent["source"], DBRef)
+                        and db.dereference(agent["source"]) is not None
                         else ""
                     ),
                     "chunks": agent.get("chunks", ""),
