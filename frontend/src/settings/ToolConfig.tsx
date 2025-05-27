@@ -16,6 +16,9 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType, APIToolType, UserToolType } from './types';
 import { useTranslation } from 'react-i18next';
 import { areObjectsEqual } from '../utils/objectUtils';
+import { useDarkTheme } from '../hooks';
+import NoFilesIcon from '../assets/no-files.svg';
+import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 
 export default function ToolConfig({
   tool,
@@ -44,6 +47,7 @@ export default function ToolConfig({
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = React.useState(false);
   const { t } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
 
   const handleBackClick = () => {
     if (hasUnsavedChanges) {
@@ -211,201 +215,227 @@ export default function ToolConfig({
         </div>
       </div>
       <div className="flex flex-col gap-4">
-        <div className="mx-1 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
+        <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
         <div className="flex w-full flex-row items-center justify-between gap-2">
           <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
             Actions
           </p>
-        </div>
-        {tool.name === 'api_tool' ? (
-          <>
-            <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
-            <div className="mt-4 flex justify-end">
+          {tool.name === 'api_tool' &&
+            (!tool.config.actions ||
+              Object.keys(tool.config.actions).length === 0) && (
               <button
                 onClick={() => setActionModalState('ACTIVE')}
                 className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               >
                 Add action
               </button>
-            </div>
+            )}
+        </div>
+        {tool.name === 'api_tool' ? (
+          <>
+            {tool.config.actions &&
+            Object.keys(tool.config.actions).length > 0 ? (
+              <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8">
+                <img
+                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                  alt="No actions found"
+                  className="mx-auto mb-4 h-24 w-24"
+                />
+                <p className="text-center text-gray-500 dark:text-gray-400">
+                  No actions found
+                </p>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col gap-12">
-            {'actions' in tool &&
-              tool.actions.map((action, actionIndex) => {
-                return (
-                  <div
-                    key={actionIndex}
-                    className="w-full rounded-xl border border-silver dark:border-silver/40"
-                  >
-                    <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
-                      <p className="font-semibold text-eerie-black dark:text-bright-gray">
-                        {action.name}
-                      </p>
-                      <ToggleSwitch
-                        checked={action.active}
-                        onChange={(checked) => {
-                          setTool({
-                            ...tool,
-                            actions: tool.actions.map((act, index) => {
-                              if (index === actionIndex) {
-                                return { ...act, active: checked };
-                              }
-                              return act;
-                            }),
-                          });
-                        }}
-                        size="small"
-                        id={`actionToggle-${actionIndex}`}
-                      />
-                    </div>
-                    <div className="relative mt-5 w-full px-5">
-                      <Input
-                        type="text"
-                        className="w-full"
-                        placeholder="Enter description"
-                        value={action.description}
-                        onChange={(e) => {
-                          setTool({
-                            ...tool,
-                            actions: tool.actions.map((act, index) => {
-                              if (index === actionIndex) {
-                                return {
-                                  ...act,
-                                  description: e.target.value,
-                                };
-                              }
-                              return act;
-                            }),
-                          });
-                        }}
-                        borderVariant="thin"
-                      />
-                    </div>
-                    <div className="px-5 py-4">
-                      <table className="table-default">
-                        <thead>
-                          <tr>
-                            <th>Field Name</th>
-                            <th>Field Type</th>
-                            <th>Filled by LLM</th>
-                            <th>FIeld description</th>
-                            <th>Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(action.parameters?.properties).map(
-                            (param, index) => {
-                              const uniqueKey = `${actionIndex}-${param[0]}`;
-                              return (
-                                <tr
-                                  key={index}
-                                  className="text-nowrap font-normal"
-                                >
-                                  <td>{param[0]}</td>
-                                  <td>{param[1].type}</td>
-                                  <td>
-                                    <label
-                                      htmlFor={uniqueKey}
-                                      className="ml-[10px] flex cursor-pointer items-start gap-4"
-                                    >
-                                      <div className="flex items-center">
-                                        &#8203;
-                                        <input
-                                          checked={param[1].filled_by_llm}
-                                          id={uniqueKey}
-                                          type="checkbox"
-                                          className="size-4 rounded border-gray-300 bg-transparent"
-                                          onChange={() =>
-                                            handleCheckboxChange(
-                                              actionIndex,
-                                              param[0],
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                    </label>
-                                  </td>
-                                  <td className="w-10">
-                                    <input
-                                      key={uniqueKey}
-                                      value={param[1].description}
-                                      className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
-                                      onChange={(e) => {
-                                        setTool({
-                                          ...tool,
-                                          actions: tool.actions.map(
-                                            (act, index) => {
-                                              if (index === actionIndex) {
-                                                return {
-                                                  ...act,
-                                                  parameters: {
-                                                    ...act.parameters,
-                                                    properties: {
-                                                      ...act.parameters
-                                                        .properties,
-                                                      [param[0]]: {
-                                                        ...act.parameters
-                                                          .properties[param[0]],
-                                                        description:
-                                                          e.target.value,
-                                                      },
-                                                    },
-                                                  },
-                                                };
-                                              }
-                                              return act;
-                                            },
-                                          ),
-                                        });
-                                      }}
-                                    ></input>
-                                  </td>
-                                  <td>
-                                    <input
-                                      value={param[1].value}
-                                      key={uniqueKey}
-                                      disabled={param[1].filled_by_llm}
-                                      className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
-                                      onChange={(e) => {
-                                        setTool({
-                                          ...tool,
-                                          actions: tool.actions.map(
-                                            (act, index) => {
-                                              if (index === actionIndex) {
-                                                return {
-                                                  ...act,
-                                                  parameters: {
-                                                    ...act.parameters,
-                                                    properties: {
-                                                      ...act.parameters
-                                                        .properties,
-                                                      [param[0]]: {
-                                                        ...act.parameters
-                                                          .properties[param[0]],
-                                                        value: e.target.value,
-                                                      },
-                                                    },
-                                                  },
-                                                };
-                                              }
-                                              return act;
-                                            },
-                                          ),
-                                        });
-                                      }}
-                                    ></input>
-                                  </td>
-                                </tr>
-                              );
-                            },
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+            {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
+              tool.actions.map((action, actionIndex) => (
+                <div
+                  key={actionIndex}
+                  className="w-full rounded-xl border border-silver dark:border-silver/40"
+                >
+                  <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
+                    <p className="font-semibold text-eerie-black dark:text-bright-gray">
+                      {action.name}
+                    </p>
+                    <ToggleSwitch
+                      checked={action.active}
+                      onChange={(checked) => {
+                        setTool({
+                          ...tool,
+                          actions: tool.actions.map((act, index) => {
+                            if (index === actionIndex) {
+                              return { ...act, active: checked };
+                            }
+                            return act;
+                          }),
+                        });
+                      }}
+                      size="small"
+                      id={`actionToggle-${actionIndex}`}
+                    />
                   </div>
-                );
-              })}
+                  <div className="relative mt-5 w-full px-5">
+                    <Input
+                      type="text"
+                      className="w-full"
+                      placeholder="Enter description"
+                      value={action.description}
+                      onChange={(e) => {
+                        setTool({
+                          ...tool,
+                          actions: tool.actions.map((act, index) => {
+                            if (index === actionIndex) {
+                              return {
+                                ...act,
+                                description: e.target.value,
+                              };
+                            }
+                            return act;
+                          }),
+                        });
+                      }}
+                      borderVariant="thin"
+                    />
+                  </div>
+                  <div className="px-5 py-4">
+                    <table className="table-default">
+                      <thead>
+                        <tr>
+                          <th>Field Name</th>
+                          <th>Field Type</th>
+                          <th>Filled by LLM</th>
+                          <th>FIeld description</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(action.parameters?.properties).map(
+                          (param, index) => {
+                            const uniqueKey = `${actionIndex}-${param[0]}`;
+                            return (
+                              <tr
+                                key={index}
+                                className="text-nowrap font-normal"
+                              >
+                                <td>{param[0]}</td>
+                                <td>{param[1].type}</td>
+                                <td>
+                                  <label
+                                    htmlFor={uniqueKey}
+                                    className="ml-[10px] flex cursor-pointer items-start gap-4"
+                                  >
+                                    <div className="flex items-center">
+                                      &#8203;
+                                      <input
+                                        checked={param[1].filled_by_llm}
+                                        id={uniqueKey}
+                                        type="checkbox"
+                                        className="size-4 rounded border-gray-300 bg-transparent"
+                                        onChange={() =>
+                                          handleCheckboxChange(
+                                            actionIndex,
+                                            param[0],
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </label>
+                                </td>
+                                <td className="w-10">
+                                  <input
+                                    key={uniqueKey}
+                                    value={param[1].description}
+                                    className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                                    onChange={(e) => {
+                                      setTool({
+                                        ...tool,
+                                        actions: tool.actions.map(
+                                          (act, index) => {
+                                            if (index === actionIndex) {
+                                              return {
+                                                ...act,
+                                                parameters: {
+                                                  ...act.parameters,
+                                                  properties: {
+                                                    ...act.parameters
+                                                      .properties,
+                                                    [param[0]]: {
+                                                      ...act.parameters
+                                                        .properties[param[0]],
+                                                      description:
+                                                        e.target.value,
+                                                    },
+                                                  },
+                                                },
+                                              };
+                                            }
+                                            return act;
+                                          },
+                                        ),
+                                      });
+                                    }}
+                                  ></input>
+                                </td>
+                                <td>
+                                  <input
+                                    value={param[1].value}
+                                    key={uniqueKey}
+                                    disabled={param[1].filled_by_llm}
+                                    className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
+                                    onChange={(e) => {
+                                      setTool({
+                                        ...tool,
+                                        actions: tool.actions.map(
+                                          (act, index) => {
+                                            if (index === actionIndex) {
+                                              return {
+                                                ...act,
+                                                parameters: {
+                                                  ...act.parameters,
+                                                  properties: {
+                                                    ...act.parameters
+                                                      .properties,
+                                                    [param[0]]: {
+                                                      ...act.parameters
+                                                        .properties[param[0]],
+                                                      value: e.target.value,
+                                                    },
+                                                  },
+                                                },
+                                              };
+                                            }
+                                            return act;
+                                          },
+                                        ),
+                                      });
+                                    }}
+                                  ></input>
+                                </td>
+                              </tr>
+                            );
+                          },
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8">
+                <img
+                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                  alt="No actions found"
+                  className="mx-auto mb-4 h-24 w-24"
+                />
+                <p className="text-center text-gray-500 dark:text-gray-400">
+                  No actions found
+                </p>
+              </div>
+            )}
           </div>
         )}
         <AddActionModal
