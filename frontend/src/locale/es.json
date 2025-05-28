@@ -71,7 +71,11 @@
       },
       "actions": "Acciones",
       "view": "Ver",
-      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?"
+      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?",
+      "backToAll": "Volver a todos los documentos",
+      "chunks": "Fragmentos",
+      "noChunks": "No se encontraron fragmentos",
+      "noChunksAlt": "No se encontraron fragmentos"
     },
     "apiKeys": {
       "label": "Chatbots",

@@ -11,6 +11,7 @@
   "help": "Help",
   "emailUs": "Email us",
   "documentation": "Documentation",
+  "manageAgents": "Manage Agents",
   "demo": [
     {
       "header": "Learn about DocsGPT",
@@ -72,7 +73,11 @@
       },
       "actions": "Actions",
       "view": "View",
-      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?"
+      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
+      "backToAll": "Back to all documents",
+      "chunks": "Chunks",
+      "noChunks": "No chunks found",
+      "noChunksAlt": "No chunks found"
     },
     "apiKeys": {
       "label": "Chatbots",

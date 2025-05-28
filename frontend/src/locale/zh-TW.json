@@ -72,7 +72,11 @@
       },
       "actions": "操作",
       "view": "查看",
-      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？"
+      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
+      "backToAll": "返回所有文件",
+      "chunks": "文本塊",
+      "noChunks": "未找到文本塊",
+      "noChunksAlt": "未找到文本塊"
     },
     "apiKeys": {
       "label": "聊天機器人",
