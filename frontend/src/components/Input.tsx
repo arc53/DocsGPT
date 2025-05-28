@@ -60,7 +60,11 @@ const Input = ({
       {placeholder && (
         <label
           htmlFor={id}
-          className={`absolute select-none ${hasValue ? '-top-2.5 left-3 text-xs' : ''} px-2 transition-all peer-placeholder-shown:left-3 peer-placeholder-shown:top-2.5 peer-placeholder-shown:${textSizeStyles[textSize]} pointer-events-none cursor-none text-gray-4000 peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName}`}
+          className={`absolute select-none ${
+            hasValue ? '-top-2.5 left-3 text-xs' : ''
+          } px-2 transition-all peer-placeholder-shown:left-3 peer-placeholder-shown:top-2.5 peer-placeholder-shown:${
+            textSizeStyles[textSize]
+          } pointer-events-none cursor-none text-gray-4000 peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
         >
           {placeholder}
           {required && (

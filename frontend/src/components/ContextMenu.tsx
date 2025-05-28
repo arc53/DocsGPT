@@ -30,7 +30,17 @@ export default function ContextMenu({
   offset = { x: 0, y: 8 },
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-
+  useEffect(() => {
+    if (isOpen && menuRef.current) {
+      const positionStyle = getMenuPosition();
+      if (menuRef.current) {
+        Object.assign(menuRef.current.style, {
+          top: positionStyle.top,
+          left: positionStyle.left,
+        });
+      }
+    }
+  }, [isOpen]);
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -61,18 +71,43 @@ export default function ContextMenu({
     let top = rect.bottom + scrollY + offset.y;
     let left = rect.right + scrollX + offset.x;
 
+    // Get menu dimensions (need ref to be available)
+    const menuWidth = menuRef.current?.offsetWidth || 144; // Default min-width
+    const menuHeight = menuRef.current?.offsetHeight || 0;
+
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Adjust position based on specified position
     switch (position) {
       case 'bottom-left':
         left = rect.left + scrollX - offset.x;
         break;
       case 'top-right':
-        top = rect.top + scrollY - offset.y;
+        top = rect.top + scrollY - offset.y - menuHeight;
         break;
       case 'top-left':
-        top = rect.top + scrollY - offset.y;
+        top = rect.top + scrollY - offset.y - menuHeight;
         left = rect.left + scrollX - offset.x;
         break;
       // bottom-right is default
+    }
+
+    if (left + menuWidth > viewportWidth) {
+      left = Math.max(5, viewportWidth - menuWidth - 5);
+    }
+
+    if (left < 5) {
+      left = 5;
+    }
+
+    if (top + menuHeight > viewportHeight + scrollY) {
+      top = rect.top + scrollY - menuHeight - offset.y;
+    }
+
+    if (top < scrollY + 5) {
+      top = rect.bottom + scrollY + offset.y;
     }
 
     return {
@@ -90,7 +125,7 @@ export default function ContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className="flex w-32 flex-col rounded-xl bg-lotion text-sm shadow-xl dark:bg-charleston-green-2 md:w-36"
+        className="flex flex-col rounded-xl bg-lotion text-sm shadow-xl dark:bg-charleston-green-2"
         style={{ minWidth: '144px' }}
       >
         {options.map((option, index) => (
@@ -109,7 +144,7 @@ export default function ContextMenu({
             } `}
           >
             {option.icon && (
-              <div className="flex w-4 justify-center">
+              <div className="flex w-4 min-w-4 flex-shrink-0 justify-center">
                 <img
                   width={option.iconWidth || 16}
                   height={option.iconHeight || 16}
@@ -119,7 +154,7 @@ export default function ContextMenu({
                 />
               </div>
             )}
-            <span>{option.label}</span>
+            <span className="hyphens-auto break-words">{option.label}</span>
           </button>
         ))}
       </div>

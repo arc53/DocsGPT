@@ -312,7 +312,7 @@ export default function Documents({
             />
           </div>
           <button
-            className="flex h-[32px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
+            className="flex h-[32px] min-w-[108px] items-center justify-center whitespace-normal rounded-full bg-purple-30 px-4 text-sm text-white hover:bg-violets-are-blue"
             title={t('settings.documents.addNew')}
             onClick={() => {
               setIsOnboarding(false);
@@ -641,11 +641,11 @@ function DocumentChunks({
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-        <p className="mt-px">Back to all documents</p>
+        <p className="mt-px">{t('settings.documents.backToAll')}</p>
       </div>
       <div className="my-3 flex items-center justify-between gap-1">
         <div className="flex w-full items-center gap-2 text-eerie-black dark:text-bright-gray sm:w-auto">
-          <p className="hidden text-2xl font-semibold sm:flex">{`${totalChunks} Chunks`}</p>
+          <p className="hidden text-2xl font-semibold sm:flex">{`${totalChunks} ${t('settings.documents.chunks')}`}</p>
           <label htmlFor="chunk-search-input" className="sr-only">
             {t('settings.documents.searchPlaceholder')}
           </label>
@@ -663,7 +663,7 @@ function DocumentChunks({
           />
         </div>
         <button
-          className="flex h-[32px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
+          className="flex h-[32px] min-w-[108px] items-center justify-center whitespace-normal rounded-full bg-purple-30 px-4 text-sm text-white hover:bg-violets-are-blue"
           title={t('settings.documents.addNew')}
           onClick={() => setAddModal('ACTIVE')}
         >
@@ -687,10 +687,10 @@ function DocumentChunks({
             <div className="col-span-2 mt-24 text-center text-gray-500 dark:text-gray-400 lg:col-span-3">
               <img
                 src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                alt="No tools found"
+                alt={t('settings.documents.noChunksAlt')}
                 className="mx-auto mb-2 h-24 w-24"
               />
-              No chunks found
+              {t('settings.documents.noChunks')}
             </div>
           ) : (
             paginatedChunks
