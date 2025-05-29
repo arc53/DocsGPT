@@ -35,8 +35,8 @@ export function useOutsideAlerter<T extends HTMLElement>(
 
 export function useMediaQuery() {
   const mobileQuery = '(max-width: 768px)';
-  const tabletQuery = '(max-width: 1024px)'; // Tablet breakpoint at 1024px
-  const desktopQuery = '(min-width: 1025px)'; // Desktop starts after tablet
+  const tabletQuery = '(max-width: 1023px)';
+  const desktopQuery = '(min-width: 1024px)';
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);

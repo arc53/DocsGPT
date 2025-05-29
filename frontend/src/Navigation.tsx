@@ -197,6 +197,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             query: { conversationId: index },
           }),
         );
+        if (isMobile || isTablet) {
+          setNavOpen(false);
+        }
         if (data.agent_id) {
           if (data.is_shared_usage) {
             userService
@@ -511,8 +514,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
             <NavLink
               onClick={() => {
-                if (isMobile) {
-                  setNavOpen(!navOpen);
+                if (isMobile || isTablet) {
+                  setNavOpen(false);
                 }
                 resetConversation();
               }}
