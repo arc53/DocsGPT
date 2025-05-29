@@ -17,26 +17,31 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
           </p>
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-8">
-        {agent.shared_metadata?.shared_by && (
-          <p className="text-xs font-light text-[#212121] dark:text-[#E0E0E0] sm:text-sm">
-            by {agent.shared_metadata.shared_by}
-          </p>
-        )}
-        {agent.shared_metadata?.shared_at && (
-          <p className="text-xs font-light text-[#71717A] dark:text-[#949494] sm:text-sm">
-            Shared on{' '}
-            {new Date(agent.shared_metadata.shared_at).toLocaleString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: true,
-            })}
-          </p>
-        )}
-      </div>
+      {agent.shared_metadata && (
+        <div className="mt-4 flex items-center gap-8">
+          {agent.shared_metadata?.shared_by && (
+            <p className="text-xs font-light text-[#212121] dark:text-[#E0E0E0] sm:text-sm">
+              by {agent.shared_metadata.shared_by}
+            </p>
+          )}
+          {agent.shared_metadata?.shared_at && (
+            <p className="text-xs font-light text-[#71717A] dark:text-[#949494] sm:text-sm">
+              Shared on{' '}
+              {new Date(agent.shared_metadata.shared_at).toLocaleString(
+                'en-US',
+                {
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                },
+              )}
+            </p>
+          )}
+        </div>
+      )}
       {agent.tool_details && agent.tool_details.length > 0 && (
         <div className="mt-8">
           <p className="text-sm font-semibold text-[#212121] dark:text-[#E0E0E0] sm:text-base">
