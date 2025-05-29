@@ -71,7 +71,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const sharedAgents = useSelector(selectSharedAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const { isMobile } = useMediaQuery();
+  const { isMobile, isTablet } = useMediaQuery();
   const [isDarkTheme] = useDarkTheme();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
 
@@ -162,7 +162,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const handleAgentClick = (agent: Agent) => {
     resetConversation();
     dispatch(setSelectedAgent(agent));
-    if (isMobile) setNavOpen(!navOpen);
+    if (isMobile || isTablet) setNavOpen(!navOpen);
     navigate('/');
   };
 
@@ -271,8 +271,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }
 
   useEffect(() => {
-    setNavOpen(!isMobile);
-  }, [isMobile]);
+    setNavOpen(!(isMobile || isTablet));
+  }, [isMobile, isTablet]);
 
   useDefaultDocument();
   return (
@@ -352,7 +352,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <NavLink
           to={'/'}
           onClick={() => {
-            if (isMobile) {
+            if (isMobile || isTablet) {
               setNavOpen(!navOpen);
             }
             resetConversation();
@@ -415,7 +415,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         </p>
                       </div>
                       <div
-                        className={`${isMobile ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
+                        className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
                       >
                         <button
                           className="rounded-full hover:opacity-75"
@@ -437,6 +437,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
                   onClick={() => {
                     dispatch(setSelectedAgent(null));
+                    if (isMobile || isTablet) {
+                      setNavOpen(false);
+                    }
                     navigate('/agents');
                   }}
                 >
@@ -448,7 +451,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     />
                   </div>
                   <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
-                    Manage Agents
+                    {t('manageAgents')}
                   </p>
                 </div>
               </div>
@@ -456,7 +459,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           ) : (
             <div
               className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
-              onClick={() => navigate('/agents')}
+              onClick={() => {
+                if (isMobile || isTablet) {
+                  setNavOpen(false);
+                }
+                dispatch(setSelectedAgent(null));
+                navigate('/agents');
+              }}
             >
               <div className="flex w-6 justify-center">
                 <img
@@ -466,7 +475,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 />
               </div>
               <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
-                Manage Agents
+                {t('manageAgents')}
               </p>
             </div>
           )}
