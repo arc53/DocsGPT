@@ -113,6 +113,20 @@ def ensure_user_doc(user_id):
     return user_doc
 
 
+def resolve_tool_details(tool_ids):
+    tools = user_tools_collection.find(
+        {"_id": {"$in": [ObjectId(tid) for tid in tool_ids]}}
+    )
+    return [
+        {
+            "id": str(tool["_id"]),
+            "name": tool.get("name", ""),
+            "display_name": tool.get("displayName", tool.get("name", "")),
+        }
+        for tool in tools
+    ]
+
+
 def get_vector_store(source_id):
     """
     Get the Vector Store
@@ -1059,6 +1073,7 @@ class GetAgent(Resource):
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent.get("prompt_id", ""),
                 "tools": agent.get("tools", []),
+                "tool_details": resolve_tool_details(agent.get("tools", [])),
                 "agent_type": agent.get("agent_type", ""),
                 "status": agent.get("status", ""),
                 "created_at": agent.get("createdAt", ""),
@@ -1108,6 +1123,7 @@ class GetAgents(Resource):
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
+                    "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "created_at": agent.get("createdAt", ""),
@@ -1511,6 +1527,7 @@ class PinnedAgents(Resource):
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
+                    "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "created_at": agent.get("createdAt", ""),
@@ -1660,6 +1677,7 @@ class SharedAgent(Resource):
                 "name": shared_agent.get("name", ""),
                 "description": shared_agent.get("description", ""),
                 "tools": shared_agent.get("tools", []),
+                "tool_details": resolve_tool_details(shared_agent.get("tools", [])),
                 "agent_type": shared_agent.get("agent_type", ""),
                 "status": shared_agent.get("status", ""),
                 "created_at": shared_agent.get("createdAt", ""),
@@ -1733,6 +1751,7 @@ class SharedAgents(Resource):
                     "name": agent.get("name", ""),
                     "description": agent.get("description", ""),
                     "tools": agent.get("tools", []),
+                    "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "created_at": agent.get("createdAt", ""),

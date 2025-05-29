@@ -37,23 +37,23 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
           </p>
         )}
       </div>
-      {agent.tools.length > 0 && (
+      {agent.tool_details && agent.tool_details.length > 0 && (
         <div className="mt-8">
           <p className="text-sm font-semibold text-[#212121] dark:text-[#E0E0E0] sm:text-base">
             Connected Tools
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            {agent.tools.map((tool, index) => (
+            {agent.tool_details.map((tool, index) => (
               <span
                 key={index}
                 className="flex items-center gap-1 rounded-full bg-bright-gray px-3 py-1 text-xs font-light text-[#212121] dark:bg-dark-charcoal dark:text-[#E0E0E0]"
               >
                 <img
-                  src={`/toolIcons/tool_${tool}.svg`}
-                  alt={`${tool} icon`}
+                  src={`/toolIcons/tool_${tool.name}.svg`}
+                  alt={`${tool.name} icon`}
                   className="h-3 w-3"
                 />{' '}
-                {tool}
+                {tool.name}
               </span>
             ))}
           </div>
