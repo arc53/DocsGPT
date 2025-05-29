@@ -239,6 +239,18 @@
       "promptText": "Prompt Text",
       "save": "Save",
       "nameExists": "Name already exists"
+    },
+    "chunk": {
+      "add": "Add Chunk",
+      "edit": "Edit Chunk",
+      "title": "Title",
+      "enterTitle": "Enter title",
+      "bodyText": "Body text",
+      "promptText": "Prompt Text",
+      "update": "Update",
+      "close": "Close",
+      "delete": "Delete",
+      "deleteConfirmation": "Are you sure you want to delete this chunk?"
     }
   },
   "sharedConv": {
