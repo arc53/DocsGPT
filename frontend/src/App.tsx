@@ -2,8 +2,6 @@ import './locale/i18n';
 
 import { useState } from 'react';
 import { Outlet, Route, Routes } from 'react-router-dom';
-
-import About from './About';
 import Spinner from './components/Spinner';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -64,7 +62,6 @@ export default function App() {
           }
         >
           <Route index element={<Conversation />} />
-          <Route path="/about" element={<About />} />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/agents/*" element={<Agents />} />
         </Route>
