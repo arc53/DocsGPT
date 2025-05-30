@@ -450,7 +450,7 @@ export default function Documents({
                                 options={getActionOptions(index, document)}
                                 anchorRef={getMenuRef(docId)}
                                 position="bottom-left"
-                                offset={{ x: 48, y: -24 }}
+                                offset={{ x: 48, y: 0 }}
                                 className="z-50"
                               />
                             </div>
