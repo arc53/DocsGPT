@@ -11,6 +11,7 @@
   "help": "Помощь",
   "emailUs": "Напишите нам",
   "documentation": "Документация",
+  "manageAgents": "Управление агентами",
   "demo": [
     {
       "header": "Узнайте о DocsGPT",
@@ -76,7 +77,9 @@
       "backToAll": "Вернуться ко всем документам",
       "chunks": "Фрагменты",
       "noChunks": "Фрагменты не найдены",
-      "noChunksAlt": "Фрагменты не найдены"
+      "noChunksAlt": "Фрагменты не найдены",
+      "goToDocuments": "Перейти к документам",
+      "uploadNew": "Загрузить новый"
     },
     "apiKeys": {
       "label": "API ключи",
@@ -137,23 +140,28 @@
       "addAction": "Добавить действие",
       "noActionsFound": "Действия не найдены",
       "url": "URL",
-      "urlPlaceholder": "Введите url",
+      "urlPlaceholder": "Введите URL",
       "method": "Метод",
       "description": "Описание",
       "descriptionPlaceholder": "Введите описание",
       "headers": "Заголовки",
       "queryParameters": "Параметры запроса",
-      "body": "Тело",
+      "body": "Тело запроса",
       "deleteActionWarning": "Вы уверены, что хотите удалить действие \"{{name}}\"?",
-      "backToTools": "Вернуться к инструментам",
+      "backToAllTools": "Вернуться ко всем инструментам",
       "save": "Сохранить",
-      "name": "Имя",
-      "type": "Тип",
-      "filledByLLM": "Заполнено LLM",
+      "fieldName": "Имя поля",
+      "fieldType": "Тип поля",
+      "filledByLLM": "Заполняется LLM",
+      "fieldDescription": "Описание поля",
       "value": "Значение",
       "addProperty": "Добавить свойство",
-      "propertyName": "Имя свойства",
-      "noProperties": "Нет свойств"
+      "propertyName": "Новый ключ свойства",
+      "add": "Добавить",
+      "cancel": "Отмена",
+      "addNew": "Добавить новое",
+      "name": "Имя",
+      "type": "Тип"
     }
   },
   "modals": {
@@ -238,6 +246,18 @@
       "promptText": "Текст подсказки",
       "save": "Сохранить",
       "nameExists": "Название уже существует"
+    },
+    "chunk": {
+      "add": "Добавить фрагмент",
+      "edit": "Редактировать фрагмент",
+      "title": "Заголовок",
+      "enterTitle": "Введите заголовок",
+      "bodyText": "Текст",
+      "promptText": "Текст подсказки",
+      "update": "Обновить",
+      "close": "Закрыть",
+      "delete": "Удалить",
+      "deleteConfirmation": "Вы уверены, что хотите удалить этот фрагмент?"
     }
   },
   "sharedConv": {
@@ -271,7 +291,7 @@
     },
     "sources": {
       "title": "Источники",
-      "text": "Текст источника",
+      "text": "Выберите ваши источники",
       "link": "Ссылка на источник",
       "view_more": "ещё {{count}} источников"
     },
