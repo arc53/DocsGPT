@@ -11,6 +11,7 @@
   "help": "ヘルプ",
   "emailUs": "メールを送る",
   "documentation": "ドキュメント",
+  "manageAgents": "エージェント管理",
   "demo": [
     {
       "header": "DocsGPTについて学ぶ",
@@ -76,7 +77,9 @@
       "backToAll": "すべてのドキュメントに戻る",
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
-      "noChunksAlt": "チャンクが見つかりません"
+      "noChunksAlt": "チャンクが見つかりません",
+      "goToDocuments": "ドキュメントへ移動",
+      "uploadNew": "新規アップロード"
     },
     "apiKeys": {
       "label": "チャットボット",
@@ -101,7 +104,6 @@
       },
       "messages": "メッセージ",
       "tokenUsage": "トークン使用量",
-      "feedback": "フィードバック",
       "filterPlaceholder": "フィルター",
       "none": "なし",
       "positiveFeedback": "肯定的なフィードバック",
@@ -146,15 +148,20 @@
       "queryParameters": "クエリパラメータ",
       "body": "ボディ",
       "deleteActionWarning": "アクション \"{{name}}\" を削除してもよろしいですか？",
-      "backToTools": "ツールに戻る",
+      "backToAllTools": "すべてのツールに戻る",
       "save": "保存",
-      "name": "名前",
-      "type": "タイプ",
+      "fieldName": "フィールド名",
+      "fieldType": "フィールドタイプ",
       "filledByLLM": "LLMによる入力",
+      "fieldDescription": "フィールドの説明",
       "value": "値",
       "addProperty": "プロパティを追加",
-      "propertyName": "プロパティ名",
-      "noProperties": "プロパティなし"
+      "propertyName": "新しいプロパティキー",
+      "add": "追加",
+      "cancel": "キャンセル",
+      "addNew": "新規追加",
+      "name": "名前",
+      "type": "タイプ"
     }
   },
   "modals": {
@@ -239,6 +246,18 @@
       "promptText": "プロンプトテキスト",
       "save": "保存",
       "nameExists": "名前が既に存在します"
+    },
+    "chunk": {
+      "add": "チャンクを追加",
+      "edit": "チャンクを編集",
+      "title": "タイトル",
+      "enterTitle": "タイトルを入力",
+      "bodyText": "本文",
+      "promptText": "プロンプトテキスト",
+      "update": "更新",
+      "close": "閉じる",
+      "delete": "削除",
+      "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
     }
   },
   "sharedConv": {

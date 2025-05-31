@@ -11,6 +11,7 @@
   "help": "幫助",
   "emailUs": "給我們發電郵",
   "documentation": "文件",
+  "manageAgents": "管理代理",
   "demo": [
     {
       "header": "了解 DocsGPT",
@@ -76,7 +77,9 @@
       "backToAll": "返回所有文件",
       "chunks": "文本塊",
       "noChunks": "未找到文本塊",
-      "noChunksAlt": "未找到文本塊"
+      "noChunksAlt": "未找到文本塊",
+      "goToDocuments": "前往文件",
+      "uploadNew": "上傳新文件"
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -145,15 +148,20 @@
       "queryParameters": "查詢參數",
       "body": "主體",
       "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
-      "backToTools": "返回工具",
+      "backToAllTools": "返回所有工具",
       "save": "儲存",
-      "name": "名稱",
-      "type": "類型",
-      "filledByLLM": "由LLM填寫",
+      "fieldName": "欄位名稱",
+      "fieldType": "欄位類型",
+      "filledByLLM": "由LLM填入",
+      "fieldDescription": "欄位描述",
       "value": "值",
       "addProperty": "新增屬性",
-      "propertyName": "屬性名稱",
-      "noProperties": "無屬性"
+      "propertyName": "新屬性鍵",
+      "add": "新增",
+      "cancel": "取消",
+      "addNew": "新增",
+      "name": "名稱",
+      "type": "類型"
     }
   },
   "modals": {
@@ -238,6 +246,18 @@
       "promptText": "提示文字",
       "save": "儲存",
       "nameExists": "名稱已存在"
+    },
+    "chunk": {
+      "add": "新增區塊",
+      "edit": "編輯區塊",
+      "title": "標題",
+      "enterTitle": "輸入標題",
+      "bodyText": "內文",
+      "promptText": "提示文字",
+      "update": "更新",
+      "close": "關閉",
+      "delete": "刪除",
+      "deleteConfirmation": "您確定要刪除此區塊嗎？"
     }
   },
   "sharedConv": {

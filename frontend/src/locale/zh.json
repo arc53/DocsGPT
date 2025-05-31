@@ -11,6 +11,7 @@
   "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
+  "manageAgents": "管理代理",
   "demo": [
     {
       "header": "了解 DocsGPT",
@@ -72,7 +73,13 @@
       },
       "actions": "操作",
       "view": "查看",
-      "deleteWarning": "您确定要删除 \"{{name}}\" 吗？"
+      "deleteWarning": "您确定要删除 \"{{name}}\" 吗？",
+      "backToAll": "返回所有文档",
+      "chunks": "文本块",
+      "noChunks": "未找到文本块",
+      "noChunksAlt": "未找到文本块",
+      "goToDocuments": "前往文档",
+      "uploadNew": "上传新文档"
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -141,15 +148,20 @@
       "queryParameters": "查询参数",
       "body": "请求体",
       "deleteActionWarning": "您确定要删除操作 \"{{name}}\" 吗？",
-      "backToTools": "返回工具",
+      "backToAllTools": "返回所有工具",
       "save": "保存",
-      "name": "名称",
-      "type": "类型",
+      "fieldName": "字段名称",
+      "fieldType": "字段类型",
       "filledByLLM": "由LLM填充",
+      "fieldDescription": "字段描述",
       "value": "值",
       "addProperty": "添加属性",
-      "propertyName": "属性名称",
-      "noProperties": "无属性"
+      "propertyName": "新属性键",
+      "add": "添加",
+      "cancel": "取消",
+      "addNew": "添加新的",
+      "name": "名称",
+      "type": "类型"
     }
   },
   "modals": {
@@ -234,6 +246,18 @@
       "promptText": "提示文本",
       "save": "保存",
       "nameExists": "名称已存在"
+    },
+    "chunk": {
+      "add": "添加块",
+      "edit": "编辑块",
+      "title": "标题",
+      "enterTitle": "输入标题",
+      "bodyText": "正文",
+      "promptText": "提示文本",
+      "update": "更新",
+      "close": "关闭",
+      "delete": "删除",
+      "deleteConfirmation": "您确定要删除此块吗？"
     }
   },
   "sharedConv": {

@@ -207,7 +207,7 @@ export default function SourcesPopup({
             className="inline-flex items-center gap-2 text-base font-medium text-violets-are-blue"
             onClick={onClose}
           >
-            Go to Documents
+            {t('settings.documents.goToDocuments')}
             <img src={RedirectIcon} alt="Redirect" className="h-3 w-3" />
           </a>
         </div>
@@ -217,7 +217,7 @@ export default function SourcesPopup({
             onClick={handleUploadClick}
             className="w-auto rounded-full border border-violets-are-blue px-4 py-2 text-[14px] font-medium text-violets-are-blue transition-colors duration-200 hover:bg-violets-are-blue hover:text-white"
           >
-            Upload new
+            {t('settings.documents.uploadNew')}
           </button>
         </div>
       </div>

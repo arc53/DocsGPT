@@ -51,7 +51,7 @@ function AddPrompt({
         </label>
         <textarea
           id="new-prompt-content"
-          className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+          className="h-56 w-full resize-none rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
           value={newPromptContent}
           onChange={(e) => setNewPromptContent(e.target.value)}
           aria-label="Prompt Text"
@@ -123,7 +123,7 @@ function EditPrompt({
           </label>
           <textarea
             id="edit-prompt-content"
-            className="h-56 w-full rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+            className="h-56 w-full resize-none rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
             aria-label="Prompt Text"

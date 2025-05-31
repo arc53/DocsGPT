@@ -169,13 +169,13 @@ export default function ToolConfig({
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-          <p className="mt-px">Back to all tools</p>
+          <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
         </div>
         <button
           className="text-nowrap rounded-full bg-purple-30 px-3 py-2 text-xs text-white hover:bg-violets-are-blue sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
         >
-          Save
+          {t('settings.tools.save')}
         </button>
       </div>
       {/* Custom name section */}
@@ -282,7 +282,7 @@ export default function ToolConfig({
                     <Input
                       type="text"
                       className="w-full"
-                      placeholder="Enter description"
+                      placeholder={t('settings.tools.descriptionPlaceholder')}
                       value={action.description}
                       onChange={(e) => {
                         setTool({
@@ -305,11 +305,11 @@ export default function ToolConfig({
                     <table className="table-default">
                       <thead>
                         <tr>
-                          <th>Field Name</th>
-                          <th>Field Type</th>
-                          <th>Filled by LLM</th>
-                          <th>FIeld description</th>
-                          <th>Value</th>
+                          <th>{t('settings.tools.fieldName')}</th>
+                          <th>{t('settings.tools.fieldType')}</th>
+                          <th>{t('settings.tools.filledByLLM')}</th>
+                          <th>{t('settings.tools.fieldDescription')}</th>
+                          <th>{t('settings.tools.value')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -619,7 +619,7 @@ function APIToolConfig({
               <div className="mt-4 px-5 py-2">
                 <div className="relative w-full">
                   <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                    Method
+                    {t('settings.tools.method')}
                   </span>
                   <Dropdown
                     options={['GET', 'POST', 'PUT', 'DELETE']}
@@ -984,7 +984,7 @@ function APIActionTable({
                     handleAddProperty();
                   }
                 }}
-                placeholder="New property key"
+                placeholder={t('settings.tools.propertyName')}
                 className="flex w-full min-w-[130.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
               />
             </td>
@@ -993,15 +993,13 @@ function APIActionTable({
                 onClick={handleAddProperty}
                 className="mr-1 rounded-full bg-purple-30 px-5 py-[4px] text-sm text-white hover:bg-violets-are-blue"
               >
-                {' '}
-                Add{' '}
+                {t('settings.tools.add')}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
                 className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
-                {' '}
-                Cancel{' '}
+                {t('settings.tools.cancel')}
               </button>
             </td>
             <td
@@ -1020,7 +1018,7 @@ function APIActionTable({
                 onClick={() => handleAddPropertyStart(section)}
                 className="flex items-start text-nowrap rounded-full border border-solid border-violets-are-blue px-5 py-[4px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               >
-                Add New Field
+                {t('settings.tools.addNew')}
               </button>
             </td>
             <td
