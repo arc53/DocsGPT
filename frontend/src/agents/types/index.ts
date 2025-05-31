@@ -1,3 +1,9 @@
+export type ToolSummary = {
+  id: string;
+  name: string;
+  display_name: string;
+};
+
 export type Agent = {
   id?: string;
   name: string;
@@ -8,6 +14,7 @@ export type Agent = {
   retriever: string;
   prompt_id: string;
   tools: string[];
+  tool_details?: ToolSummary[];
   agent_type: string;
   status: string;
   key?: string;

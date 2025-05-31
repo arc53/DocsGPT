@@ -4,6 +4,9 @@ import { useState } from 'react';
 import { Outlet, Route, Routes } from 'react-router-dom';
 
 import About from './About';
+import Agents from './agents';
+import SharedAgentGate from './agents/SharedAgentGate';
+import ActionButtons from './components/ActionButtons';
 import Spinner from './components/Spinner';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -12,8 +15,6 @@ import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
-import Agents from './agents';
-import ActionButtons from './components/ActionButtons';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/agents/*" element={<Agents />} />
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
+        <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
         <Route path="/*" element={<PageNotFound />} />
       </Routes>
     </div>

@@ -11,9 +11,9 @@ from application.storage.storage_creator import StorageCreator
 
 def get_vectorstore(path: str) -> str:
     if path:
-        vectorstore = f"indexes/{path}"
+        vectorstore = f"application/indexes/{path}"
     else:
-        vectorstore = "indexes"
+        vectorstore = "application/indexes"
     return vectorstore
 
 
@@ -32,22 +32,26 @@ class FaissStore(BaseVectorStore):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     faiss_path = f"{self.path}/index.faiss"
                     pkl_path = f"{self.path}/index.pkl"
-                    
-                    if not self.storage.file_exists(faiss_path) or not self.storage.file_exists(pkl_path):
-                        raise FileNotFoundError(f"Index files not found in storage at {self.path}")
-                    
+
+                    if not self.storage.file_exists(
+                        faiss_path
+                    ) or not self.storage.file_exists(pkl_path):
+                        raise FileNotFoundError(
+                            f"Index files not found in storage at {self.path}"
+                        )
+
                     faiss_file = self.storage.get_file(faiss_path)
                     pkl_file = self.storage.get_file(pkl_path)
-                    
+
                     local_faiss_path = os.path.join(temp_dir, "index.faiss")
                     local_pkl_path = os.path.join(temp_dir, "index.pkl")
-                    
-                    with open(local_faiss_path, 'wb') as f:
+
+                    with open(local_faiss_path, "wb") as f:
                         f.write(faiss_file.read())
-                    
-                    with open(local_pkl_path, 'wb') as f:
+
+                    with open(local_pkl_path, "wb") as f:
                         f.write(pkl_file.read())
-                    
+
                     self.docsearch = FAISS.load_local(
                         temp_dir, self.embeddings, allow_dangerous_deserialization=True
                     )

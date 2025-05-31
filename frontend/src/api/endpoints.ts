@@ -18,7 +18,7 @@ const endpoints = {
     SHARED_AGENT: (id: string) => `/api/shared_agent?token=${id}`,
     SHARED_AGENTS: '/api/shared_agents',
     SHARE_AGENT: `/api/share_agent`,
-    HIDE_SHARED_AGENT: (id: string) => `/api/hide_shared_agent?id=${id}`,
+    REMOVE_SHARED_AGENT: (id: string) => `/api/remove_shared_agent?id=${id}`,
     AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
