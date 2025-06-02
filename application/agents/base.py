@@ -2,16 +2,18 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, List, Optional
 
-from application.agents.llm_handler import get_llm_handler
+from bson.objectid import ObjectId
+
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
 
 from application.core.mongo_db import MongoDB
+from application.core.settings import settings
+
+from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 from application.retriever.base import BaseRetriever
-from application.core.settings import settings
-from bson.objectid import ObjectId
 
 
 class BaseAgent(ABC):
@@ -45,7 +47,9 @@ class BaseAgent(ABC):
             user_api_key=user_api_key,
             decoded_token=decoded_token,
         )
-        self.llm_handler = get_llm_handler(llm_name)
+        self.llm_handler = LLMHandlerCreator.create_handler(
+            llm_name if llm_name else "default"
+        )
         self.attachments = attachments or []
 
     @log_activity()
@@ -268,8 +272,8 @@ class BaseAgent(ABC):
         log_context: Optional[LogContext] = None,
         attachments: Optional[List[Dict]] = None,
     ):
-        resp = self.llm_handler.handle_response(
-            self, resp, tools_dict, messages, attachments
+        resp = self.llm_handler.process_message_flow(
+            self, resp, tools_dict, messages, attachments, True
         )
         if log_context:
             data = build_stack_data(self.llm_handler, exclude_attributes=["tool_calls"])
