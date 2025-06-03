@@ -59,6 +59,7 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
+    attachmentsMetadata?: { id: string; filename: string }[];
   }
 >(function ConversationBubble(
   {
@@ -74,6 +75,7 @@ const ConversationBubble = forwardRef<
     questionNumber,
     isStreaming,
     handleUpdatedQuestionSubmission,
+    attachmentsMetadata,
   },
   ref,
 ) {
@@ -225,11 +227,35 @@ const ConversationBubble = forwardRef<
 
       return contentSegments;
     };
+    const renderAttachments = () => {
+      if (!attachmentsMetadata || attachmentsMetadata.length === 0) return null;
+
+      return (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {attachmentsMetadata.map((attachment, index) => (
+            <div
+              key={index}
+              className="flex items-center rounded-[32px] border border-[#AAAAAA] bg-white px-3 py-1.5 text-[14px] text-[#5D5D5D] dark:border-purple-taupe dark:bg-[#1F2028] dark:text-bright-gray"
+            >
+              <img
+                src={Document}
+                alt="Attachment"
+                className="mr-2 h-[17px] w-[17px] object-fill"
+              />
+              <span className="max-w-[150px] truncate font-medium">
+                {attachment.filename}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    };
     bubble = (
       <div
         ref={ref}
         className={`flex flex-wrap self-start ${className} group flex-col dark:text-bright-gray`}
       >
+        {type === 'ANSWER' && renderAttachments()}
         {DisableSourceFE ||
         type === 'ERROR' ||
         sources?.length === 0 ||

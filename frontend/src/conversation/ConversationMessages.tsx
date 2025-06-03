@@ -145,6 +145,7 @@ export default function ConversationMessages({
           toolCalls={query.tool_calls}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}
+          attachmentsMetadata={query.attachments}
           handleFeedback={
             handleFeedback
               ? (feedback) => handleFeedback(query, feedback, index)
