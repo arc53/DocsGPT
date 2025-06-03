@@ -11,9 +11,9 @@ from application.storage.storage_creator import StorageCreator
 
 def get_vectorstore(path: str) -> str:
     if path:
-        vectorstore = f"application/indexes/{path}"
+        vectorstore = f"indexes/{path}"
     else:
-        vectorstore = "application/indexes"
+        vectorstore = "indexes"
     return vectorstore
 
 
