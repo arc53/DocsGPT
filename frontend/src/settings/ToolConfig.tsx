@@ -16,6 +16,9 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType, APIToolType, UserToolType } from './types';
 import { useTranslation } from 'react-i18next';
 import { areObjectsEqual } from '../utils/objectUtils';
+import { useDarkTheme } from '../hooks';
+import NoFilesIcon from '../assets/no-files.svg';
+import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 
 export default function ToolConfig({
   tool,
@@ -44,6 +47,7 @@ export default function ToolConfig({
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = React.useState(false);
   const { t } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
 
   const handleBackClick = () => {
     if (hasUnsavedChanges) {
@@ -165,19 +169,19 @@ export default function ToolConfig({
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-          <p className="mt-px">Back to all tools</p>
+          <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
         </div>
         <button
           className="text-nowrap rounded-full bg-purple-30 px-3 py-2 text-xs text-white hover:bg-violets-are-blue sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
         >
-          Save
+          {t('settings.tools.save')}
         </button>
       </div>
       {/* Custom name section */}
       <div className="mt-1">
         <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
-          Custom Name
+          {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
           <Input
@@ -185,14 +189,14 @@ export default function ToolConfig({
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
             borderVariant="thin"
-            placeholder="Enter a custom name (optional)"
+            placeholder={t('settings.tools.customNamePlaceholder')}
           />
         </div>
       </div>
       <div className="mt-1">
         {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (
           <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
-            Authentication
+            {t('settings.tools.authentication')}
           </p>
         )}
         <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
@@ -211,201 +215,227 @@ export default function ToolConfig({
         </div>
       </div>
       <div className="flex flex-col gap-4">
-        <div className="mx-1 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
+        <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
         <div className="flex w-full flex-row items-center justify-between gap-2">
           <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
-            Actions
+            {t('settings.tools.actions')}
           </p>
-        </div>
-        {tool.name === 'api_tool' ? (
-          <>
-            <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
-            <div className="mt-4 flex justify-end">
+          {tool.name === 'api_tool' &&
+            (!tool.config.actions ||
+              Object.keys(tool.config.actions).length === 0) && (
               <button
                 onClick={() => setActionModalState('ACTIVE')}
                 className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               >
-                Add action
+                {t('settings.tools.addAction')}
               </button>
-            </div>
+            )}
+        </div>
+        {tool.name === 'api_tool' ? (
+          <>
+            {tool.config.actions &&
+            Object.keys(tool.config.actions).length > 0 ? (
+              <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8">
+                <img
+                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                  alt="No actions found"
+                  className="mx-auto mb-4 h-24 w-24"
+                />
+                <p className="text-center text-gray-500 dark:text-gray-400">
+                  {t('settings.tools.noActionsFound')}
+                </p>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col gap-12">
-            {'actions' in tool &&
-              tool.actions.map((action, actionIndex) => {
-                return (
-                  <div
-                    key={actionIndex}
-                    className="w-full rounded-xl border border-silver dark:border-silver/40"
-                  >
-                    <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
-                      <p className="font-semibold text-eerie-black dark:text-bright-gray">
-                        {action.name}
-                      </p>
-                      <ToggleSwitch
-                        checked={action.active}
-                        onChange={(checked) => {
-                          setTool({
-                            ...tool,
-                            actions: tool.actions.map((act, index) => {
-                              if (index === actionIndex) {
-                                return { ...act, active: checked };
-                              }
-                              return act;
-                            }),
-                          });
-                        }}
-                        size="small"
-                        id={`actionToggle-${actionIndex}`}
-                      />
-                    </div>
-                    <div className="relative mt-5 w-full px-5">
-                      <Input
-                        type="text"
-                        className="w-full"
-                        placeholder="Enter description"
-                        value={action.description}
-                        onChange={(e) => {
-                          setTool({
-                            ...tool,
-                            actions: tool.actions.map((act, index) => {
-                              if (index === actionIndex) {
-                                return {
-                                  ...act,
-                                  description: e.target.value,
-                                };
-                              }
-                              return act;
-                            }),
-                          });
-                        }}
-                        borderVariant="thin"
-                      />
-                    </div>
-                    <div className="px-5 py-4">
-                      <table className="table-default">
-                        <thead>
-                          <tr>
-                            <th>Field Name</th>
-                            <th>Field Type</th>
-                            <th>Filled by LLM</th>
-                            <th>FIeld description</th>
-                            <th>Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(action.parameters?.properties).map(
-                            (param, index) => {
-                              const uniqueKey = `${actionIndex}-${param[0]}`;
-                              return (
-                                <tr
-                                  key={index}
-                                  className="text-nowrap font-normal"
-                                >
-                                  <td>{param[0]}</td>
-                                  <td>{param[1].type}</td>
-                                  <td>
-                                    <label
-                                      htmlFor={uniqueKey}
-                                      className="ml-[10px] flex cursor-pointer items-start gap-4"
-                                    >
-                                      <div className="flex items-center">
-                                        &#8203;
-                                        <input
-                                          checked={param[1].filled_by_llm}
-                                          id={uniqueKey}
-                                          type="checkbox"
-                                          className="size-4 rounded border-gray-300 bg-transparent"
-                                          onChange={() =>
-                                            handleCheckboxChange(
-                                              actionIndex,
-                                              param[0],
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                    </label>
-                                  </td>
-                                  <td className="w-10">
-                                    <input
-                                      key={uniqueKey}
-                                      value={param[1].description}
-                                      className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
-                                      onChange={(e) => {
-                                        setTool({
-                                          ...tool,
-                                          actions: tool.actions.map(
-                                            (act, index) => {
-                                              if (index === actionIndex) {
-                                                return {
-                                                  ...act,
-                                                  parameters: {
-                                                    ...act.parameters,
-                                                    properties: {
-                                                      ...act.parameters
-                                                        .properties,
-                                                      [param[0]]: {
-                                                        ...act.parameters
-                                                          .properties[param[0]],
-                                                        description:
-                                                          e.target.value,
-                                                      },
-                                                    },
-                                                  },
-                                                };
-                                              }
-                                              return act;
-                                            },
-                                          ),
-                                        });
-                                      }}
-                                    ></input>
-                                  </td>
-                                  <td>
-                                    <input
-                                      value={param[1].value}
-                                      key={uniqueKey}
-                                      disabled={param[1].filled_by_llm}
-                                      className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
-                                      onChange={(e) => {
-                                        setTool({
-                                          ...tool,
-                                          actions: tool.actions.map(
-                                            (act, index) => {
-                                              if (index === actionIndex) {
-                                                return {
-                                                  ...act,
-                                                  parameters: {
-                                                    ...act.parameters,
-                                                    properties: {
-                                                      ...act.parameters
-                                                        .properties,
-                                                      [param[0]]: {
-                                                        ...act.parameters
-                                                          .properties[param[0]],
-                                                        value: e.target.value,
-                                                      },
-                                                    },
-                                                  },
-                                                };
-                                              }
-                                              return act;
-                                            },
-                                          ),
-                                        });
-                                      }}
-                                    ></input>
-                                  </td>
-                                </tr>
-                              );
-                            },
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+            {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
+              tool.actions.map((action, actionIndex) => (
+                <div
+                  key={actionIndex}
+                  className="w-full rounded-xl border border-silver dark:border-silver/40"
+                >
+                  <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
+                    <p className="font-semibold text-eerie-black dark:text-bright-gray">
+                      {action.name}
+                    </p>
+                    <ToggleSwitch
+                      checked={action.active}
+                      onChange={(checked) => {
+                        setTool({
+                          ...tool,
+                          actions: tool.actions.map((act, index) => {
+                            if (index === actionIndex) {
+                              return { ...act, active: checked };
+                            }
+                            return act;
+                          }),
+                        });
+                      }}
+                      size="small"
+                      id={`actionToggle-${actionIndex}`}
+                    />
                   </div>
-                );
-              })}
+                  <div className="relative mt-5 w-full px-5">
+                    <Input
+                      type="text"
+                      className="w-full"
+                      placeholder={t('settings.tools.descriptionPlaceholder')}
+                      value={action.description}
+                      onChange={(e) => {
+                        setTool({
+                          ...tool,
+                          actions: tool.actions.map((act, index) => {
+                            if (index === actionIndex) {
+                              return {
+                                ...act,
+                                description: e.target.value,
+                              };
+                            }
+                            return act;
+                          }),
+                        });
+                      }}
+                      borderVariant="thin"
+                    />
+                  </div>
+                  <div className="px-5 py-4">
+                    <table className="table-default">
+                      <thead>
+                        <tr>
+                          <th>{t('settings.tools.fieldName')}</th>
+                          <th>{t('settings.tools.fieldType')}</th>
+                          <th>{t('settings.tools.filledByLLM')}</th>
+                          <th>{t('settings.tools.fieldDescription')}</th>
+                          <th>{t('settings.tools.value')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(action.parameters?.properties).map(
+                          (param, index) => {
+                            const uniqueKey = `${actionIndex}-${param[0]}`;
+                            return (
+                              <tr
+                                key={index}
+                                className="text-nowrap font-normal"
+                              >
+                                <td>{param[0]}</td>
+                                <td>{param[1].type}</td>
+                                <td>
+                                  <label
+                                    htmlFor={uniqueKey}
+                                    className="ml-[10px] flex cursor-pointer items-start gap-4"
+                                  >
+                                    <div className="flex items-center">
+                                      &#8203;
+                                      <input
+                                        checked={param[1].filled_by_llm}
+                                        id={uniqueKey}
+                                        type="checkbox"
+                                        className="size-4 rounded border-gray-300 bg-transparent"
+                                        onChange={() =>
+                                          handleCheckboxChange(
+                                            actionIndex,
+                                            param[0],
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </label>
+                                </td>
+                                <td className="w-10">
+                                  <input
+                                    key={uniqueKey}
+                                    value={param[1].description}
+                                    className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                                    onChange={(e) => {
+                                      setTool({
+                                        ...tool,
+                                        actions: tool.actions.map(
+                                          (act, index) => {
+                                            if (index === actionIndex) {
+                                              return {
+                                                ...act,
+                                                parameters: {
+                                                  ...act.parameters,
+                                                  properties: {
+                                                    ...act.parameters
+                                                      .properties,
+                                                    [param[0]]: {
+                                                      ...act.parameters
+                                                        .properties[param[0]],
+                                                      description:
+                                                        e.target.value,
+                                                    },
+                                                  },
+                                                },
+                                              };
+                                            }
+                                            return act;
+                                          },
+                                        ),
+                                      });
+                                    }}
+                                  ></input>
+                                </td>
+                                <td>
+                                  <input
+                                    value={param[1].value}
+                                    key={uniqueKey}
+                                    disabled={param[1].filled_by_llm}
+                                    className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
+                                    onChange={(e) => {
+                                      setTool({
+                                        ...tool,
+                                        actions: tool.actions.map(
+                                          (act, index) => {
+                                            if (index === actionIndex) {
+                                              return {
+                                                ...act,
+                                                parameters: {
+                                                  ...act.parameters,
+                                                  properties: {
+                                                    ...act.parameters
+                                                      .properties,
+                                                    [param[0]]: {
+                                                      ...act.parameters
+                                                        .properties[param[0]],
+                                                      value: e.target.value,
+                                                    },
+                                                  },
+                                                },
+                                              };
+                                            }
+                                            return act;
+                                          },
+                                        ),
+                                      });
+                                    }}
+                                  ></input>
+                                </td>
+                              </tr>
+                            );
+                          },
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8">
+                <img
+                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                  alt="No actions found"
+                  className="mx-auto mb-4 h-24 w-24"
+                />
+                <p className="text-center text-gray-500 dark:text-gray-400">
+                  {t('settings.tools.noActionsFound')}
+                </p>
+              </div>
+            )}
           </div>
         )}
         <AddActionModal
@@ -415,15 +445,10 @@ export default function ToolConfig({
         />
         {showUnsavedModal && (
           <ConfirmationModal
-            message={t('settings.tools.unsavedChanges', {
-              defaultValue:
-                'You have unsaved changes that will be lost if you leave without saving.',
-            })}
+            message={t('settings.tools.unsavedChanges')}
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
-            submitLabel={t('settings.tools.saveAndLeave', {
-              defaultValue: 'Save and Leave',
-            })}
+            submitLabel={t('settings.tools.saveAndLeave')}
             handleSubmit={() => {
               userService
                 .updateTool(
@@ -447,9 +472,7 @@ export default function ToolConfig({
                   handleGoBack();
                 });
             }}
-            cancelLabel={t('settings.tools.leaveWithoutSaving', {
-              defaultValue: 'Leave without Saving',
-            })}
+            cancelLabel={t('settings.tools.leaveWithoutSaving')}
             handleCancel={() => {
               setShowUnsavedModal(false);
               handleGoBack();
@@ -567,41 +590,36 @@ function APIToolConfig({
                 </div>
               </div>
               <div className="mt-8 px-5">
-                <div className="relative w-full">
-                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                    URL
-                  </span>
-                  <Input
-                    type="text"
-                    value={action.url}
-                    onChange={(e) => {
-                      setApiTool((prevApiTool) => {
-                        const updatedActions = {
-                          ...prevApiTool.config.actions,
-                        };
-                        const updatedAction = {
-                          ...updatedActions[actionName],
-                        };
-                        updatedAction.url = e.target.value;
-                        updatedActions[actionName] = updatedAction;
-                        return {
-                          ...prevApiTool,
-                          config: {
-                            ...prevApiTool.config,
-                            actions: updatedActions,
-                          },
-                        };
-                      });
-                    }}
-                    borderVariant="thin"
-                    placeholder="Enter url"
-                  ></Input>
-                </div>
+                <Input
+                  type="text"
+                  value={action.url}
+                  onChange={(e) => {
+                    setApiTool((prevApiTool) => {
+                      const updatedActions = {
+                        ...prevApiTool.config.actions,
+                      };
+                      const updatedAction = {
+                        ...updatedActions[actionName],
+                      };
+                      updatedAction.url = e.target.value;
+                      updatedActions[actionName] = updatedAction;
+                      return {
+                        ...prevApiTool,
+                        config: {
+                          ...prevApiTool.config,
+                          actions: updatedActions,
+                        },
+                      };
+                    });
+                  }}
+                  borderVariant="thin"
+                  placeholder={t('settings.tools.urlPlaceholder')}
+                />
               </div>
               <div className="mt-4 px-5 py-2">
                 <div className="relative w-full">
                   <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                    Method
+                    {t('settings.tools.method')}
                   </span>
                   <Dropdown
                     options={['GET', 'POST', 'PUT', 'DELETE']}
@@ -636,36 +654,31 @@ function APIToolConfig({
                 </div>
               </div>
               <div className="mt-4 px-5 py-2">
-                <div className="relative w-full">
-                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
-                    Description
-                  </span>
-                  <Input
-                    type="text"
-                    value={action.description}
-                    onChange={(e) => {
-                      setApiTool((prevApiTool) => {
-                        const updatedActions = {
-                          ...prevApiTool.config.actions,
-                        };
-                        const updatedAction = {
-                          ...updatedActions[actionName],
-                        };
-                        updatedAction.description = e.target.value;
-                        updatedActions[actionName] = updatedAction;
-                        return {
-                          ...prevApiTool,
-                          config: {
-                            ...prevApiTool.config,
-                            actions: updatedActions,
-                          },
-                        };
-                      });
-                    }}
-                    borderVariant="thin"
-                    placeholder="Enter description"
-                  ></Input>
-                </div>
+                <Input
+                  type="text"
+                  value={action.description}
+                  onChange={(e) => {
+                    setApiTool((prevApiTool) => {
+                      const updatedActions = {
+                        ...prevApiTool.config.actions,
+                      };
+                      const updatedAction = {
+                        ...updatedActions[actionName],
+                      };
+                      updatedAction.description = e.target.value;
+                      updatedActions[actionName] = updatedAction;
+                      return {
+                        ...prevApiTool,
+                        config: {
+                          ...prevApiTool.config,
+                          actions: updatedActions,
+                        },
+                      };
+                    });
+                  }}
+                  borderVariant="thin"
+                  placeholder={t('settings.tools.descriptionPlaceholder')}
+                />
               </div>
               <div className="mt-4 px-5 py-2">
                 <APIActionTable
@@ -682,7 +695,6 @@ function APIToolConfig({
         <ConfirmationModal
           message={t('settings.tools.deleteActionWarning', {
             name: actionToDelete,
-            defaultValue: `Are you sure you want to delete the action "${actionToDelete}"?`,
           })}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
@@ -709,6 +721,8 @@ function APIActionTable({
     updatedAction: APIActionType,
   ) => void;
 }) {
+  const { t } = useTranslation();
+
   const [action, setAction] = React.useState<APIActionType>(apiAction);
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
   const [addingPropertySection, setAddingPropertySection] = React.useState<
@@ -970,7 +984,7 @@ function APIActionTable({
                     handleAddProperty();
                   }
                 }}
-                placeholder="New property key"
+                placeholder={t('settings.tools.propertyName')}
                 className="flex w-full min-w-[130.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
               />
             </td>
@@ -979,15 +993,13 @@ function APIActionTable({
                 onClick={handleAddProperty}
                 className="mr-1 rounded-full bg-purple-30 px-5 py-[4px] text-sm text-white hover:bg-violets-are-blue"
               >
-                {' '}
-                Add{' '}
+                {t('settings.tools.add')}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
                 className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
-                {' '}
-                Cancel{' '}
+                {t('settings.tools.cancel')}
               </button>
             </td>
             <td
@@ -1006,7 +1018,7 @@ function APIActionTable({
                 onClick={() => handleAddPropertyStart(section)}
                 className="flex items-start text-nowrap rounded-full border border-solid border-violets-are-blue px-5 py-[4px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
               >
-                Add New Field
+                {t('settings.tools.addNew')}
               </button>
             </td>
             <td
@@ -1026,16 +1038,26 @@ function APIActionTable({
     <div className="scrollbar-thin flex flex-col gap-6">
       <div>
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
-          Headers
+          {t('settings.tools.headers')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Filled by LLM</th>
-              <th>Description</th>
-              <th>Value</th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.name')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.type')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.filledByLLM')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.description')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.value')}
+              </th>
               <th
                 style={{
                   width: '50px',
@@ -1051,16 +1073,26 @@ function APIActionTable({
       </div>
       <div>
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
-          Query Parameters
+          {t('settings.tools.queryParameters')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Filled by LLM</th>
-              <th>Description</th>
-              <th>Value</th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.name')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.type')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.filledByLLM')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.description')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.value')}
+              </th>
               <th
                 style={{
                   width: '50px',
@@ -1076,16 +1108,26 @@ function APIActionTable({
       </div>
       <div className="mb-6">
         <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
-          Body
+          {t('settings.tools.body')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Filled by LLM</th>
-              <th>Description</th>
-              <th>Value</th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.name')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.type')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.filledByLLM')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.description')}
+              </th>
+              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+                {t('settings.tools.value')}
+              </th>
               <th
                 style={{
                   width: '50px',

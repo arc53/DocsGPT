@@ -35,21 +35,21 @@ export function useOutsideAlerter<T extends HTMLElement>(
 
 export function useMediaQuery() {
   const mobileQuery = '(max-width: 768px)';
-  const darkModeQuery = '(prefers-color-scheme: dark)'; // Detect dark mode
-  const desktopQuery = '(min-width: 960px)';
+  const tabletQuery = '(max-width: 1023px)';
+  const desktopQuery = '(min-width: 1024px)';
   const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     const mobileMedia = window.matchMedia(mobileQuery);
+    const tabletMedia = window.matchMedia(tabletQuery);
     const desktopMedia = window.matchMedia(desktopQuery);
-    const darkModeMedia = window.matchMedia(darkModeQuery);
 
     const updateMediaQueries = () => {
       setIsMobile(mobileMedia.matches);
+      setIsTablet(tabletMedia.matches && !mobileMedia.matches); // Tablet but not mobile
       setIsDesktop(desktopMedia.matches);
-      setIsDarkMode(darkModeMedia.matches);
     };
 
     updateMediaQueries();
@@ -60,9 +60,9 @@ export function useMediaQuery() {
     return () => {
       window.removeEventListener('resize', listener);
     };
-  }, [mobileQuery, desktopQuery, darkModeQuery]);
+  }, [mobileQuery, tabletQuery, desktopQuery]);
 
-  return { isMobile, isDesktop, isDarkMode };
+  return { isMobile, isTablet, isDesktop };
 }
 
 export function useDarkTheme() {

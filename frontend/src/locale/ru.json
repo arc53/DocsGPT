@@ -11,6 +11,7 @@
   "help": "Помощь",
   "emailUs": "Напишите нам",
   "documentation": "Документация",
+  "manageAgents": "Управление агентами",
   "demo": [
     {
       "header": "Узнайте о DocsGPT",
@@ -72,7 +73,13 @@
       },
       "actions": "Действия",
       "view": "Просмотр",
-      "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?"
+      "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?",
+      "backToAll": "Вернуться ко всем документам",
+      "chunks": "Фрагменты",
+      "noChunks": "Фрагменты не найдены",
+      "noChunksAlt": "Фрагменты не найдены",
+      "goToDocuments": "Перейти к документам",
+      "uploadNew": "Загрузить новый"
     },
     "apiKeys": {
       "label": "API ключи",
@@ -116,9 +123,45 @@
       "addTool": "Добавить инструмент",
       "noToolsFound": "Инструменты не найдены",
       "selectToolSetup": "Выберите инструмент для настройки",
-      "settingsIconAlt": "Иконка настроек",
-      "configureToolAria": "Настроить {toolName}",
-      "toggleToolAria": "Переключить {toolName}"
+      "settingsIconAlt": "Значок настроек",
+      "configureToolAria": "Настроить {{toolName}}",
+      "toggleToolAria": "Переключить {{toolName}}",
+      "manageTools": "Перейти к инструментам",
+      "edit": "Редактировать",
+      "delete": "Удалить",
+      "deleteWarning": "Вы уверены, что хотите удалить инструмент \"{{toolName}}\"?",
+      "unsavedChanges": "У вас есть несохраненные изменения, которые будут потеряны, если вы уйдете без сохранения.",
+      "leaveWithoutSaving": "Уйти без сохранения",
+      "saveAndLeave": "Сохранить и уйти",
+      "customName": "Пользовательское имя",
+      "customNamePlaceholder": "Введите пользовательское имя (необязательно)",
+      "authentication": "Аутентификация",
+      "actions": "Действия",
+      "addAction": "Добавить действие",
+      "noActionsFound": "Действия не найдены",
+      "url": "URL",
+      "urlPlaceholder": "Введите URL",
+      "method": "Метод",
+      "description": "Описание",
+      "descriptionPlaceholder": "Введите описание",
+      "headers": "Заголовки",
+      "queryParameters": "Параметры запроса",
+      "body": "Тело запроса",
+      "deleteActionWarning": "Вы уверены, что хотите удалить действие \"{{name}}\"?",
+      "backToAllTools": "Вернуться ко всем инструментам",
+      "save": "Сохранить",
+      "fieldName": "Имя поля",
+      "fieldType": "Тип поля",
+      "filledByLLM": "Заполняется LLM",
+      "fieldDescription": "Описание поля",
+      "value": "Значение",
+      "addProperty": "Добавить свойство",
+      "propertyName": "Новый ключ свойства",
+      "add": "Добавить",
+      "cancel": "Отмена",
+      "addNew": "Добавить новое",
+      "name": "Имя",
+      "type": "Тип"
     }
   },
   "modals": {
@@ -203,6 +246,18 @@
       "promptText": "Текст подсказки",
       "save": "Сохранить",
       "nameExists": "Название уже существует"
+    },
+    "chunk": {
+      "add": "Добавить фрагмент",
+      "edit": "Редактировать фрагмент",
+      "title": "Заголовок",
+      "enterTitle": "Введите заголовок",
+      "bodyText": "Текст",
+      "promptText": "Текст подсказки",
+      "update": "Обновить",
+      "close": "Закрыть",
+      "delete": "Удалить",
+      "deleteConfirmation": "Вы уверены, что хотите удалить этот фрагмент?"
     }
   },
   "sharedConv": {
@@ -236,7 +291,7 @@
     },
     "sources": {
       "title": "Источники",
-      "text": "Текст источника",
+      "text": "Выберите ваши источники",
       "link": "Ссылка на источник",
       "view_more": "ещё {{count}} источников"
     },

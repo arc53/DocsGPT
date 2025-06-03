@@ -11,6 +11,7 @@
   "help": "Help",
   "emailUs": "Email us",
   "documentation": "Documentation",
+  "manageAgents": "Manage Agents",
   "demo": [
     {
       "header": "Learn about DocsGPT",
@@ -72,7 +73,13 @@
       },
       "actions": "Actions",
       "view": "View",
-      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?"
+      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
+      "backToAll": "Back to all documents",
+      "chunks": "Chunks",
+      "noChunks": "No chunks found",
+      "noChunksAlt": "No chunks found",
+      "goToDocuments": "Go to Documents",
+      "uploadNew": "Upload new"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -125,7 +132,36 @@
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
-      "saveAndLeave": "Save and Leave"
+      "saveAndLeave": "Save and Leave",
+      "customName": "Custom Name",
+      "customNamePlaceholder": "Enter a custom name (optional)",
+      "authentication": "Authentication",
+      "actions": "Actions",
+      "addAction": "Add action",
+      "noActionsFound": "No actions found",
+      "url": "URL",
+      "urlPlaceholder": "Enter URL",
+      "method": "Method",
+      "description": "Description",
+      "descriptionPlaceholder": "Enter description",
+      "headers": "Headers",
+      "queryParameters": "Query Parameters",
+      "body": "Body",
+      "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
+      "backToAllTools": "Back to all tools",
+      "save": "Save",
+      "fieldName": "Field Name",
+      "fieldType": "Field Type",
+      "filledByLLM": "Filled by LLM",
+      "fieldDescription": "Field description",
+      "value": "Value",
+      "addProperty": "Add property",
+      "propertyName": "New property key",
+      "add": "Add",
+      "cancel": "Cancel",
+      "addNew": "Add New",
+      "name": "Name",
+      "type": "Type"
     }
   },
   "modals": {
@@ -210,6 +246,18 @@
       "promptText": "Prompt Text",
       "save": "Save",
       "nameExists": "Name already exists"
+    },
+    "chunk": {
+      "add": "Add Chunk",
+      "edit": "Edit Chunk",
+      "title": "Title",
+      "enterTitle": "Enter title",
+      "bodyText": "Body text",
+      "promptText": "Prompt Text",
+      "update": "Update",
+      "close": "Close",
+      "delete": "Delete",
+      "deleteConfirmation": "Are you sure you want to delete this chunk?"
     }
   },
   "sharedConv": {

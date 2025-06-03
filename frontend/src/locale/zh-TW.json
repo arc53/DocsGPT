@@ -11,6 +11,7 @@
   "help": "幫助",
   "emailUs": "給我們發電郵",
   "documentation": "文件",
+  "manageAgents": "管理代理",
   "demo": [
     {
       "header": "了解 DocsGPT",
@@ -72,7 +73,13 @@
       },
       "actions": "操作",
       "view": "查看",
-      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？"
+      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
+      "backToAll": "返回所有文件",
+      "chunks": "文本塊",
+      "noChunks": "未找到文本塊",
+      "noChunksAlt": "未找到文本塊",
+      "goToDocuments": "前往文件",
+      "uploadNew": "上傳新文件"
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -112,13 +119,49 @@
     },
     "tools": {
       "label": "工具",
-      "searchPlaceholder": "搜尋...",
+      "searchPlaceholder": "搜尋工具...",
       "addTool": "新增工具",
       "noToolsFound": "找不到工具",
       "selectToolSetup": "選擇要設定的工具",
-      "settingsIconAlt": "設定圖標",
-      "configureToolAria": "配置 {toolName}",
-      "toggleToolAria": "切換 {toolName}"
+      "settingsIconAlt": "設定圖示",
+      "configureToolAria": "設定 {{toolName}}",
+      "toggleToolAria": "切換 {{toolName}}",
+      "manageTools": "前往工具",
+      "edit": "編輯",
+      "delete": "刪除",
+      "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
+      "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
+      "leaveWithoutSaving": "不儲存離開",
+      "saveAndLeave": "儲存並離開",
+      "customName": "自訂名稱",
+      "customNamePlaceholder": "輸入自訂名稱（選填）",
+      "authentication": "認證",
+      "actions": "操作",
+      "addAction": "新增操作",
+      "noActionsFound": "找不到操作",
+      "url": "URL",
+      "urlPlaceholder": "輸入url",
+      "method": "方法",
+      "description": "描述",
+      "descriptionPlaceholder": "輸入描述",
+      "headers": "標頭",
+      "queryParameters": "查詢參數",
+      "body": "主體",
+      "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
+      "backToAllTools": "返回所有工具",
+      "save": "儲存",
+      "fieldName": "欄位名稱",
+      "fieldType": "欄位類型",
+      "filledByLLM": "由LLM填入",
+      "fieldDescription": "欄位描述",
+      "value": "值",
+      "addProperty": "新增屬性",
+      "propertyName": "新屬性鍵",
+      "add": "新增",
+      "cancel": "取消",
+      "addNew": "新增",
+      "name": "名稱",
+      "type": "類型"
     }
   },
   "modals": {
@@ -203,6 +246,18 @@
       "promptText": "提示文字",
       "save": "儲存",
       "nameExists": "名稱已存在"
+    },
+    "chunk": {
+      "add": "新增區塊",
+      "edit": "編輯區塊",
+      "title": "標題",
+      "enterTitle": "輸入標題",
+      "bodyText": "內文",
+      "promptText": "提示文字",
+      "update": "更新",
+      "close": "關閉",
+      "delete": "刪除",
+      "deleteConfirmation": "您確定要刪除此區塊嗎？"
     }
   },
   "sharedConv": {

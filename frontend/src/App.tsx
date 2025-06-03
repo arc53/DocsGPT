@@ -30,8 +30,8 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 }
 
 function MainLayout() {
-  const { isMobile } = useMediaQuery();
-  const [navOpen, setNavOpen] = useState(!isMobile);
+  const { isMobile, isTablet } = useMediaQuery();
+  const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
 
   return (
     <div className="relative h-screen overflow-hidden dark:bg-raisin-black">
@@ -39,7 +39,7 @@ function MainLayout() {
       <ActionButtons showNewChat={true} showShare={true} />
       <div
         className={`h-[calc(100dvh-64px)] overflow-auto lg:h-screen ${
-          !isMobile
+          !(isMobile || isTablet)
             ? `ml-0 ${!navOpen ? 'lg:mx-auto' : 'lg:ml-72'}`
             : 'ml-0 lg:ml-16'
         }`}
@@ -65,7 +65,6 @@ export default function App() {
           }
         >
           <Route index element={<Conversation />} />
-          <Route path="/about" element={<About />} />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/agents/*" element={<Agents />} />
         </Route>

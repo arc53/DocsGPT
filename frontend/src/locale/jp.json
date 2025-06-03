@@ -11,6 +11,7 @@
   "help": "ヘルプ",
   "emailUs": "メールを送る",
   "documentation": "ドキュメント",
+  "manageAgents": "エージェント管理",
   "demo": [
     {
       "header": "DocsGPTについて学ぶ",
@@ -52,6 +53,7 @@
       "add": "追加"
     },
     "documents": {
+      "title": "この表には、利用可能なすべてのドキュメントとアップロードしたドキュメントが含まれています",
       "label": "ドキュメント",
       "name": "ドキュメント名",
       "date": "ベクトル日付",
@@ -71,7 +73,13 @@
       },
       "actions": "アクション",
       "view": "表示",
-      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？"
+      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？",
+      "backToAll": "すべてのドキュメントに戻る",
+      "chunks": "チャンク",
+      "noChunks": "チャンクが見つかりません",
+      "noChunksAlt": "チャンクが見つかりません",
+      "goToDocuments": "ドキュメントへ移動",
+      "uploadNew": "新規アップロード"
     },
     "apiKeys": {
       "label": "チャットボット",
@@ -96,7 +104,6 @@
       },
       "messages": "メッセージ",
       "tokenUsage": "トークン使用量",
-      "feedback": "フィードバック",
       "filterPlaceholder": "フィルター",
       "none": "なし",
       "positiveFeedback": "肯定的なフィードバック",
@@ -117,8 +124,44 @@
       "noToolsFound": "ツールが見つかりません",
       "selectToolSetup": "設定するツールを選択してください",
       "settingsIconAlt": "設定アイコン",
-      "configureToolAria": "{toolName} を設定",
-      "toggleToolAria": "{toolName} を切り替え"
+      "configureToolAria": "{{toolName}}を設定",
+      "toggleToolAria": "{{toolName}}を切り替え",
+      "manageTools": "ツールへ移動",
+      "edit": "編集",
+      "delete": "削除",
+      "deleteWarning": "ツール \"{{toolName}}\" を削除してもよろしいですか？",
+      "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
+      "leaveWithoutSaving": "保存せずに離れる",
+      "saveAndLeave": "保存して離れる",
+      "customName": "カスタム名",
+      "customNamePlaceholder": "カスタム名を入力（任意）",
+      "authentication": "認証",
+      "actions": "アクション",
+      "addAction": "アクションを追加",
+      "noActionsFound": "アクションが見つかりません",
+      "url": "URL",
+      "urlPlaceholder": "URLを入力",
+      "method": "メソッド",
+      "description": "説明",
+      "descriptionPlaceholder": "説明を入力",
+      "headers": "ヘッダー",
+      "queryParameters": "クエリパラメータ",
+      "body": "ボディ",
+      "deleteActionWarning": "アクション \"{{name}}\" を削除してもよろしいですか？",
+      "backToAllTools": "すべてのツールに戻る",
+      "save": "保存",
+      "fieldName": "フィールド名",
+      "fieldType": "フィールドタイプ",
+      "filledByLLM": "LLMによる入力",
+      "fieldDescription": "フィールドの説明",
+      "value": "値",
+      "addProperty": "プロパティを追加",
+      "propertyName": "新しいプロパティキー",
+      "add": "追加",
+      "cancel": "キャンセル",
+      "addNew": "新規追加",
+      "name": "名前",
+      "type": "タイプ"
     }
   },
   "modals": {
@@ -203,6 +246,18 @@
       "promptText": "プロンプトテキスト",
       "save": "保存",
       "nameExists": "名前が既に存在します"
+    },
+    "chunk": {
+      "add": "チャンクを追加",
+      "edit": "チャンクを編集",
+      "title": "タイトル",
+      "enterTitle": "タイトルを入力",
+      "bodyText": "本文",
+      "promptText": "プロンプトテキスト",
+      "update": "更新",
+      "close": "閉じる",
+      "delete": "削除",
+      "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
     }
   },
   "sharedConv": {

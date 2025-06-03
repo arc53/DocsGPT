@@ -11,6 +11,7 @@
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
   "documentation": "Documentación",
+  "manageAgents": "Administrar Agentes",
   "demo": [
     {
       "header": "Aprende sobre DocsGPT",
@@ -48,7 +49,8 @@
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "Predeterminado"
+      "default": "Predeterminado",
+      "addNew": "Añadir Nuevo"
     },
     "documents": {
       "title": "Esta tabla contiene todos los documentos que están disponibles para ti y los que has subido",
@@ -71,7 +73,13 @@
       },
       "actions": "Acciones",
       "view": "Ver",
-      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?"
+      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?",
+      "backToAll": "Volver a todos los documentos",
+      "chunks": "Fragmentos",
+      "noChunks": "No se encontraron fragmentos",
+      "noChunksAlt": "No se encontraron fragmentos",
+      "goToDocuments": "Ir a Documentos",
+      "uploadNew": "Subir nuevo"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -116,8 +124,44 @@
       "noToolsFound": "No se encontraron herramientas",
       "selectToolSetup": "Seleccione una herramienta para configurar",
       "settingsIconAlt": "Icono de configuración",
-      "configureToolAria": "Configurar {toolName}",
-      "toggleToolAria": "Alternar {toolName}"
+      "configureToolAria": "Configurar {{toolName}}",
+      "toggleToolAria": "Alternar {{toolName}}",
+      "manageTools": "Ir a Herramientas",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
+      "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
+      "leaveWithoutSaving": "Salir sin Guardar",
+      "saveAndLeave": "Guardar y Salir",
+      "customName": "Nombre Personalizado",
+      "customNamePlaceholder": "Ingresa un nombre personalizado (opcional)",
+      "authentication": "Autenticación",
+      "actions": "Acciones",
+      "addAction": "Agregar acción",
+      "noActionsFound": "No se encontraron acciones",
+      "url": "URL",
+      "urlPlaceholder": "Ingresa url",
+      "method": "Método",
+      "description": "Descripción",
+      "descriptionPlaceholder": "Ingresa descripción",
+      "headers": "Encabezados",
+      "queryParameters": "Parámetros de Consulta",
+      "body": "Cuerpo",
+      "deleteActionWarning": "¿Estás seguro de que deseas eliminar la acción \"{{name}}\"?",
+      "save": "Guardar",
+      "name": "Nombre",
+      "type": "Tipo",
+      "filledByLLM": "Completado por LLM",
+      "value": "Valor",
+      "addProperty": "Agregar propiedad",
+      "propertyName": "Nueva clave de propiedad",
+      "backToAllTools": "Volver a todas las herramientas",
+      "fieldName": "Nombre del campo",
+      "fieldType": "Tipo de campo",
+      "fieldDescription": "Descripción del campo",
+      "add": "Añadir",
+      "cancel": "Cancelar",
+      "addNew": "Añadir Nuevo"
     }
   },
   "modals": {
@@ -202,6 +246,18 @@
       "promptText": "Texto del Prompt",
       "save": "Guardar",
       "nameExists": "El nombre ya existe"
+    },
+    "chunk": {
+      "add": "Agregar Fragmento",
+      "edit": "Editar Fragmento",
+      "title": "Título",
+      "enterTitle": "Ingresar título",
+      "bodyText": "Texto del cuerpo",
+      "promptText": "Texto del prompt",
+      "update": "Actualizar",
+      "close": "Cerrar",
+      "delete": "Eliminar",
+      "deleteConfirmation": "¿Estás seguro de que deseas eliminar este fragmento?"
     }
   },
   "sharedConv": {
@@ -235,9 +291,9 @@
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Texto fuente",
       "link": "Enlace fuente",
-      "view_more": "Ver {{count}} más fuentes"
+      "view_more": "Ver {{count}} más fuentes",
+      "text": "Elegir tus fuentes"
     },
     "attachments": {
       "attach": "Adjuntar",
