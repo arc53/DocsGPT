@@ -15,6 +15,7 @@ from flask_restx import fields, inputs, Namespace, Resource
 from werkzeug.utils import secure_filename
 
 from application.agents.tools.tool_manager import ToolManager
+from pymongo import ReturnDocument
 
 from application.api.user.tasks import (
     ingest,
@@ -50,6 +51,7 @@ agents_collection.create_index(
     name="shared_index",
     background=True,
 )
+users_collection.create_index("user_id", unique=True)
 
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
@@ -85,30 +87,44 @@ def generate_date_range(start_date, end_date):
 
 
 def ensure_user_doc(user_id):
-    user_doc = users_collection.find_one({"user_id": user_id})
+    default_prefs = {
+        "pinned": [],
+        "shared_with_me": [],
+    }
 
-    if not user_doc:
-        user_doc = {
-            "user_id": user_id,
-            "agent_preferences": {"pinned": [], "hidden_shared": []},
-        }
-        users_collection.insert_one(user_doc)
-        return user_doc
-    updated = False
-    preferences = user_doc.get("agent_preferences", {})
+    user_doc = users_collection.find_one_and_update(
+        {"user_id": user_id},
+        {"$setOnInsert": {"agent_preferences": default_prefs}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
 
-    if "pinned" not in preferences:
-        preferences["pinned"] = []
-        updated = True
-    if "hidden_shared" not in preferences:
-        preferences["hidden_shared"] = []
-        updated = True
-    if updated:
-        users_collection.update_one(
-            {"user_id": user_id}, {"$set": {"agent_preferences": preferences}}
-        )
-        user_doc["agent_preferences"] = preferences
+    prefs = user_doc.get("agent_preferences", {})
+    updates = {}
+    if "pinned" not in prefs:
+        updates["agent_preferences.pinned"] = []
+    if "shared_with_me" not in prefs:
+        updates["agent_preferences.shared_with_me"] = []
+
+    if updates:
+        users_collection.update_one({"user_id": user_id}, {"$set": updates})
+        user_doc = users_collection.find_one({"user_id": user_id})
+
     return user_doc
+
+
+def resolve_tool_details(tool_ids):
+    tools = user_tools_collection.find(
+        {"_id": {"$in": [ObjectId(tid) for tid in tool_ids]}}
+    )
+    return [
+        {
+            "id": str(tool["_id"]),
+            "name": tool.get("name", ""),
+            "display_name": tool.get("displayName", tool.get("name", "")),
+        }
+        for tool in tools
+    ]
 
 
 def get_vector_store(source_id):
@@ -1057,6 +1073,7 @@ class GetAgent(Resource):
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent.get("prompt_id", ""),
                 "tools": agent.get("tools", []),
+                "tool_details": resolve_tool_details(agent.get("tools", [])),
                 "agent_type": agent.get("agent_type", ""),
                 "status": agent.get("status", ""),
                 "created_at": agent.get("createdAt", ""),
@@ -1106,6 +1123,7 @@ class GetAgents(Resource):
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
+                    "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "created_at": agent.get("createdAt", ""),
@@ -1464,26 +1482,25 @@ class PinnedAgents(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+
         user_id = decoded_token.get("sub")
 
         try:
             user_doc = ensure_user_doc(user_id)
             pinned_ids = user_doc.get("agent_preferences", {}).get("pinned", [])
-            hidden_ids = set(
-                user_doc.get("agent_preferences", {}).get("hidden_shared", [])
-            )
 
             if not pinned_ids:
                 return make_response(jsonify([]), 200)
+
             pinned_object_ids = [ObjectId(agent_id) for agent_id in pinned_ids]
+
             pinned_agents_cursor = agents_collection.find(
                 {"_id": {"$in": pinned_object_ids}}
             )
             pinned_agents = list(pinned_agents_cursor)
+            existing_ids = {str(agent["_id"]) for agent in pinned_agents}
 
-            existing_agents = pinned_agents
-            existing_ids = {str(agent["_id"]) for agent in existing_agents}
-
+            # Clean up any stale pinned IDs
             stale_ids = [
                 agent_id for agent_id in pinned_ids if agent_id not in existing_ids
             ]
@@ -1500,13 +1517,17 @@ class PinnedAgents(Resource):
                     "description": agent.get("description", ""),
                     "source": (
                         str(db.dereference(agent["source"])["_id"])
-                        if "source" in agent and isinstance(agent["source"], DBRef)
+                        if "source" in agent
+                        and agent["source"]
+                        and isinstance(agent["source"], DBRef)
+                        and db.dereference(agent["source"]) is not None
                         else ""
                     ),
                     "chunks": agent.get("chunks", ""),
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
+                    "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "created_at": agent.get("createdAt", ""),
@@ -1520,12 +1541,13 @@ class PinnedAgents(Resource):
                     "pinned": True,
                 }
                 for agent in pinned_agents
-                if ("source" in agent or "retriever" in agent)
-                and str(agent["_id"]) not in hidden_ids
+                if "source" in agent or "retriever" in agent
             ]
+
         except Exception as err:
             current_app.logger.error(f"Error retrieving pinned agents: {err}")
             return make_response(jsonify({"success": False}), 400)
+
         return make_response(jsonify(list_pinned_agents), 200)
 
 
@@ -1572,11 +1594,11 @@ class PinAgent(Resource):
         return make_response(jsonify({"success": True, "action": action}), 200)
 
 
-@user_ns.route("/api/hide_shared_agent")
-class HideSharedAgent(Resource):
+@user_ns.route("/api/remove_shared_agent")
+class RemoveSharedAgent(Resource):
     @api.doc(
         params={"id": "ID of the shared agent"},
-        description="Hide or unhide a shared agent for the current user",
+        description="Remove a shared agent from the current user's shared list",
     )
     def delete(self):
         decoded_token = request.decoded_token
@@ -1589,6 +1611,7 @@ class HideSharedAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
+
         try:
             agent = agents_collection.find_one(
                 {"_id": ObjectId(agent_id), "shared_publicly": True}
@@ -1598,27 +1621,25 @@ class HideSharedAgent(Resource):
                     jsonify({"success": False, "message": "Shared agent not found"}),
                     404,
                 )
-            user_doc = ensure_user_doc(user_id)
-            hidden_list = user_doc.get("agent_preferences", {}).get("hidden_shared", [])
 
-            if agent_id in hidden_list:
-                users_collection.update_one(
-                    {"user_id": user_id},
-                    {"$pull": {"agent_preferences.hidden_shared": agent_id}},
-                )
-                action = "unhidden"
-            else:
-                users_collection.update_one(
-                    {"user_id": user_id},
-                    {"$addToSet": {"agent_preferences.hidden_shared": agent_id}},
-                )
-                action = "hidden"
+            ensure_user_doc(user_id)
+            users_collection.update_one(
+                {"user_id": user_id},
+                {
+                    "$pull": {
+                        "agent_preferences.shared_with_me": agent_id,
+                        "agent_preferences.pinned": agent_id,
+                    }
+                },
+            )
+
+            return make_response(jsonify({"success": True, "action": "removed"}), 200)
+
         except Exception as err:
-            current_app.logger.error(f"Error hiding/unhiding shared agent: {err}")
+            current_app.logger.error(f"Error removing shared agent: {err}")
             return make_response(
                 jsonify({"success": False, "message": "Server error"}), 500
             )
-        return make_response(jsonify({"success": True, "action": action}), 200)
 
 
 @user_ns.route("/api/shared_agent")
@@ -1636,23 +1657,27 @@ class SharedAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Token or ID is required"}), 400
             )
-        try:
-            query = {}
-            query["shared_publicly"] = True
-            query["shared_token"] = shared_token
 
+        try:
+            query = {
+                "shared_publicly": True,
+                "shared_token": shared_token,
+            }
             shared_agent = agents_collection.find_one(query)
             if not shared_agent:
                 return make_response(
                     jsonify({"success": False, "message": "Shared agent not found"}),
                     404,
                 )
+
+            agent_id = str(shared_agent["_id"])
             data = {
-                "id": str(shared_agent["_id"]),
+                "id": agent_id,
                 "user": shared_agent.get("user", ""),
                 "name": shared_agent.get("name", ""),
                 "description": shared_agent.get("description", ""),
                 "tools": shared_agent.get("tools", []),
+                "tool_details": resolve_tool_details(shared_agent.get("tools", [])),
                 "agent_type": shared_agent.get("agent_type", ""),
                 "status": shared_agent.get("status", ""),
                 "created_at": shared_agent.get("createdAt", ""),
@@ -1669,15 +1694,29 @@ class SharedAgent(Resource):
                     if tool_data:
                         enriched_tools.append(tool_data.get("name", ""))
                 data["tools"] = enriched_tools
+
+            decoded_token = getattr(request, "decoded_token", None)
+            if decoded_token:
+                user_id = decoded_token.get("sub")
+                owner_id = shared_agent.get("user")
+
+                if user_id != owner_id:
+                    ensure_user_doc(user_id)
+                    users_collection.update_one(
+                        {"user_id": user_id},
+                        {"$addToSet": {"agent_preferences.shared_with_me": agent_id}},
+                    )
+
+            return make_response(jsonify(data), 200)
+
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(data), 200)
 
 
 @user_ns.route("/api/shared_agents")
 class SharedAgents(Resource):
-    @api.doc(description="Get shared agents")
+    @api.doc(description="Get shared agents explicitly shared with the user")
     def get(self):
         try:
             decoded_token = request.decoded_token
@@ -1686,29 +1725,25 @@ class SharedAgents(Resource):
             user_id = decoded_token.get("sub")
 
             user_doc = ensure_user_doc(user_id)
-            pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
-            hidden_ids = user_doc.get("agent_preferences", {}).get("hidden_shared", [])
-            hidden_object_ids = [ObjectId(id) for id in hidden_ids]
+            shared_with_ids = user_doc.get("agent_preferences", {}).get(
+                "shared_with_me", []
+            )
+            shared_object_ids = [ObjectId(id) for id in shared_with_ids]
 
             shared_agents_cursor = agents_collection.find(
-                {"shared_publicly": True, "user": {"$ne": user_id}}
+                {"_id": {"$in": shared_object_ids}, "shared_publicly": True}
             )
             shared_agents = list(shared_agents_cursor)
 
-            shared_ids_set = {agent["_id"] for agent in shared_agents}
-            hidden_ids_set = set(hidden_object_ids)
-
-            stale_hidden_ids = [
-                str(id) for id in hidden_ids_set if id not in shared_ids_set
-            ]
-            if stale_hidden_ids:
+            found_ids_set = {str(agent["_id"]) for agent in shared_agents}
+            stale_ids = [id for id in shared_with_ids if id not in found_ids_set]
+            if stale_ids:
                 users_collection.update_one(
                     {"user_id": user_id},
-                    {"$pullAll": {"agent_preferences.hidden_shared": stale_hidden_ids}},
+                    {"$pullAll": {"agent_preferences.shared_with_me": stale_ids}},
                 )
-            visible_shared_agents = [
-                agent for agent in shared_agents if agent["_id"] not in hidden_ids_set
-            ]
+
+            pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
 
             list_shared_agents = [
                 {
@@ -1716,6 +1751,7 @@ class SharedAgents(Resource):
                     "name": agent.get("name", ""),
                     "description": agent.get("description", ""),
                     "tools": agent.get("tools", []),
+                    "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "created_at": agent.get("createdAt", ""),
@@ -1725,10 +1761,11 @@ class SharedAgents(Resource):
                     "shared_token": agent.get("shared_token", ""),
                     "shared_metadata": agent.get("shared_metadata", {}),
                 }
-                for agent in visible_shared_agents
+                for agent in shared_agents
             ]
 
             return make_response(jsonify(list_shared_agents), 200)
+
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agents: {err}")
             return make_response(jsonify({"success": False}), 400)

@@ -286,7 +286,10 @@ function AgentCard({
 
   const handleHideSharedAgent = async () => {
     try {
-      const response = await userService.hideSharedAgent(agent.id ?? '', token);
+      const response = await userService.removeSharedAgent(
+        agent.id ?? '',
+        token,
+      );
       if (!response.ok) throw new Error('Failed to hide shared agent');
       const updatedAgents = agents.filter(
         (prevAgent) => prevAgent.id !== agent.id,
