@@ -24,7 +24,7 @@ jsonpatch==1.33
 jsonpointer==3.0.0
 kombu==5.4.2
 langchain==0.3.20
-langchain-community==0.3.19
+langchain-community==0.3.24
 langchain-core==0.3.59
 langchain-openai==0.3.16
 langchain-text-splitters==0.3.8
