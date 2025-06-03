@@ -3,7 +3,6 @@ import './locale/i18n';
 import { useState } from 'react';
 import { Outlet, Route, Routes } from 'react-router-dom';
 
-import About from './About';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
 import ActionButtons from './components/ActionButtons';
