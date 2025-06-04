@@ -12,7 +12,7 @@ import {
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-
+import DocumentationDark from '../assets/documentation-dark.svg';
 import ChevronDown from '../assets/chevron-down.svg';
 import Cloud from '../assets/cloud.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
@@ -108,40 +108,63 @@ const ConversationBubble = forwardRef<
         onMouseEnter={() => setIsQuestionHovered(true)}
         onMouseLeave={() => setIsQuestionHovered(false)}
       >
-        <div
-          ref={ref}
-          className={`flex flex-row-reverse justify-items-start ${className}`}
-        >
-          <Avatar
-            size="SMALL"
-            className="mt-2 flex-shrink-0 text-2xl"
-            avatar={
-              <img className="mr-1 rounded-full" width={30} src={UserIcon} />
-            }
-          />
-          {!isEditClicked && (
-            <>
-              <div className="mr-2 flex flex-col">
+        <div className="flex flex-col items-end">
+          {attachmentsMetadata && attachmentsMetadata.length > 0 && (
+            <div className="mb-2 mr-12 flex flex-wrap justify-end gap-2">
+              {attachmentsMetadata.map((attachment, index) => (
                 <div
-                  style={{
-                    wordBreak: 'break-word',
-                  }}
-                  className="ml-2 mr-2 flex max-w-full items-center whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue px-[19px] py-[14px] text-sm leading-normal text-white sm:text-base"
+                  key={index}
+                  className="flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray"
                 >
-                  {message}
+                  <div className="mr-2 items-center justify-center rounded-lg bg-purple-30 p-[5.5px]">
+                    <img
+                      src={DocumentationDark}
+                      alt="Attachment"
+                      className="h-[15px] w-[15px] object-fill"
+                    />
+                  </div>
+                  <span className="max-w-[150px] truncate font-normal">
+                    {attachment.filename}
+                  </span>
                 </div>
-              </div>
-              <button
-                onClick={() => {
-                  setIsEditClicked(true);
-                  setEditInputBox(message ?? '');
-                }}
-                className={`mt-3 flex h-fit flex-shrink-0 cursor-pointer items-center rounded-full p-2 hover:bg-light-silver dark:hover:bg-[#35363B] ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
-              >
-                <img src={Edit} alt="Edit" className="cursor-pointer" />
-              </button>
-            </>
+              ))}
+            </div>
           )}
+          <div
+            ref={ref}
+            className={`flex flex-row-reverse justify-items-start ${className}`}
+          >
+            <Avatar
+              size="SMALL"
+              className="mt-2 flex-shrink-0 text-2xl"
+              avatar={
+                <img className="mr-1 rounded-full" width={30} src={UserIcon} />
+              }
+            />
+            {!isEditClicked && (
+              <>
+                <div className="mr-2 flex flex-col">
+                  <div
+                    style={{
+                      wordBreak: 'break-word',
+                    }}
+                    className="ml-2 mr-2 flex max-w-full items-center whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue px-[19px] py-[14px] text-sm leading-normal text-white sm:text-base"
+                  >
+                    {message}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsEditClicked(true);
+                    setEditInputBox(message ?? '');
+                  }}
+                  className={`mt-3 flex h-fit flex-shrink-0 cursor-pointer items-center rounded-full p-2 hover:bg-light-silver dark:hover:bg-[#35363B] ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+                >
+                  <img src={Edit} alt="Edit" className="cursor-pointer" />
+                </button>
+              </>
+            )}
+          </div>
           {isEditClicked && (
             <div
               ref={editableQueryRef}
@@ -227,35 +250,11 @@ const ConversationBubble = forwardRef<
 
       return contentSegments;
     };
-    const renderAttachments = () => {
-      if (!attachmentsMetadata || attachmentsMetadata.length === 0) return null;
-
-      return (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {attachmentsMetadata.map((attachment, index) => (
-            <div
-              key={index}
-              className="flex items-center rounded-[32px] border border-[#AAAAAA] bg-white px-3 py-1.5 text-[14px] text-[#5D5D5D] dark:border-purple-taupe dark:bg-[#1F2028] dark:text-bright-gray"
-            >
-              <img
-                src={Document}
-                alt="Attachment"
-                className="mr-2 h-[17px] w-[17px] object-fill"
-              />
-              <span className="max-w-[150px] truncate font-medium">
-                {attachment.filename}
-              </span>
-            </div>
-          ))}
-        </div>
-      );
-    };
     bubble = (
       <div
         ref={ref}
         className={`flex flex-wrap self-start ${className} group flex-col dark:text-bright-gray`}
       >
-        {type === 'ANSWER' && renderAttachments()}
         {DisableSourceFE ||
         type === 'ERROR' ||
         sources?.length === 0 ||
