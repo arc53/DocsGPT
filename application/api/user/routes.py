@@ -257,7 +257,7 @@ class GetSingleConversation(Resource):
                             current_app.logger.error(
                                 f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
                             )
-                    query["attachments_metadata"] = attachment_details
+                    query["attachments"] = attachment_details
         except Exception as err:
             current_app.logger.error(
                 f"Error retrieving conversation: {err}", exc_info=True
