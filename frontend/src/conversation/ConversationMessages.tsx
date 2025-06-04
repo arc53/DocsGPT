@@ -145,7 +145,6 @@ export default function ConversationMessages({
           toolCalls={query.tool_calls}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}
-          attachmentsMetadata={query.attachments}
           handleFeedback={
             handleFeedback
               ? (feedback) => handleFeedback(query, feedback, index)
@@ -224,6 +223,7 @@ export default function ConversationMessages({
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
                 questionNumber={index}
                 sources={query.sources}
+                attachmentsMetadata={query.attachments}
               />
               {renderResponseView(query, index)}
             </Fragment>
