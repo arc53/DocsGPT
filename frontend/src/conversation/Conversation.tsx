@@ -109,7 +109,7 @@ export default function Conversation() {
       const trimmedQuestion = question.trim();
       if (trimmedQuestion === '') return;
 
-      const attachmentMetadata = attachments
+      const filesAttached = attachments
         .filter((a) => a.id && a.status === 'completed')
         .map((a) => ({ id: a.id as string, fileName: a.fileName }));
 
@@ -121,7 +121,7 @@ export default function Conversation() {
           dispatch(
             addQuery({
               prompt: trimmedQuestion,
-              attachments: attachmentMetadata,
+              attachments: filesAttached,
             }),
           );
         handleFetchAnswer({ question: trimmedQuestion, index });

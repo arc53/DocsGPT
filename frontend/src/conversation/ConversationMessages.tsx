@@ -223,7 +223,7 @@ export default function ConversationMessages({
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
                 questionNumber={index}
                 sources={query.sources}
-                attachmentsMetadata={query.attachments}
+                filesAttached={query.attachments}
               />
               {renderResponseView(query, index)}
             </Fragment>

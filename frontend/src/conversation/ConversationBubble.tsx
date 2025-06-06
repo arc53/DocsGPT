@@ -59,7 +59,7 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
-    attachmentsMetadata?: { id: string; fileName: string }[];
+    filesAttached?: { id: string; fileName: string }[];
   }
 >(function ConversationBubble(
   {
@@ -75,7 +75,7 @@ const ConversationBubble = forwardRef<
     questionNumber,
     isStreaming,
     handleUpdatedQuestionSubmission,
-    attachmentsMetadata,
+    filesAttached,
   },
   ref,
 ) {
@@ -109,9 +109,9 @@ const ConversationBubble = forwardRef<
         onMouseLeave={() => setIsQuestionHovered(false)}
       >
         <div className="flex flex-col items-end">
-          {attachmentsMetadata && attachmentsMetadata.length > 0 && (
+          {filesAttached && filesAttached.length > 0 && (
             <div className="mb-2 mr-12 flex flex-wrap justify-end gap-2">
-              {attachmentsMetadata.map((attachment, index) => (
+              {filesAttached.map((file, index) => (
                 <div
                   key={index}
                   className="flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray"
@@ -124,7 +124,7 @@ const ConversationBubble = forwardRef<
                     />
                   </div>
                   <span className="max-w-[150px] truncate font-normal">
-                    {attachment.fileName}
+                    {file.fileName}
                   </span>
                 </div>
               ))}
