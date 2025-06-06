@@ -164,6 +164,7 @@ def save_conversation(
     agent_id=None,
     is_shared_usage=False,
     shared_token=None,
+    attachment_ids=None,
 ):
     current_time = datetime.datetime.now(datetime.timezone.utc)
     if conversation_id is not None and index is not None:
@@ -177,6 +178,7 @@ def save_conversation(
                     f"queries.{index}.sources": source_log_docs,
                     f"queries.{index}.tool_calls": tool_calls,
                     f"queries.{index}.timestamp": current_time,
+                    f"queries.{index}.attachments": attachment_ids,
                 }
             },
         )
@@ -197,6 +199,7 @@ def save_conversation(
                         "sources": source_log_docs,
                         "tool_calls": tool_calls,
                         "timestamp": current_time,
+                        "attachments": attachment_ids,
                     }
                 }
             },
@@ -233,6 +236,7 @@ def save_conversation(
                     "sources": source_log_docs,
                     "tool_calls": tool_calls,
                     "timestamp": current_time,
+                    "attachments": attachment_ids,
                 }
             ],
         }
@@ -273,20 +277,13 @@ def complete_stream(
     isNoneDoc=False,
     index=None,
     should_save_conversation=True,
-    attachments=None,
+    attachment_ids=None,
     agent_id=None,
     is_shared_usage=False,
     shared_token=None,
 ):
     try:
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
-        attachment_ids = []
-
-        if attachments:
-            attachment_ids = [attachment["id"] for attachment in attachments]
-            logger.info(
-                f"Processing request with {len(attachments)} attachments: {attachment_ids}"
-            )
 
         answer = agent.gen(query=question, retriever=retriever)
 
@@ -340,6 +337,7 @@ def complete_stream(
                 decoded_token,
                 index,
                 api_key=user_api_key,
+                attachment_ids=attachment_ids,
                 agent_id=agent_id,
                 is_shared_usage=is_shared_usage,
                 shared_token=shared_token,
@@ -539,6 +537,7 @@ class Stream(Resource):
                     isNoneDoc=data.get("isNoneDoc"),
                     index=index,
                     should_save_conversation=save_conv,
+                    attachment_ids=attachment_ids,
                     agent_id=agent_id,
                     is_shared_usage=is_shared_usage,
                     shared_token=shared_token,

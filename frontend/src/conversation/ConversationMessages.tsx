@@ -223,6 +223,7 @@ export default function ConversationMessages({
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
                 questionNumber={index}
                 sources={query.sources}
+                filesAttached={query.attachments}
               />
               {renderResponseView(query, index)}
             </Fragment>
