@@ -16,7 +16,7 @@ class ClassicRAG(BaseRetriever):
         token_limit=150,
         gpt_model="docsgpt",
         user_api_key=None,
-        llm_name=settings.LLM_NAME,
+        llm_name=settings.LLM_PROVIDER,
         api_key=settings.API_KEY,
         decoded_token=None,
     ):
@@ -28,10 +28,10 @@ class ClassicRAG(BaseRetriever):
         self.token_limit = (
             token_limit
             if token_limit
-            < settings.MODEL_TOKEN_LIMITS.get(
+            < settings.LLM_TOKEN_LIMITS.get(
                 self.gpt_model, settings.DEFAULT_MAX_HISTORY
             )
-            else settings.MODEL_TOKEN_LIMITS.get(
+            else settings.LLM_TOKEN_LIMITS.get(
                 self.gpt_model, settings.DEFAULT_MAX_HISTORY
             )
         )

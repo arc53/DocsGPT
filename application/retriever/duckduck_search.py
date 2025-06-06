@@ -28,10 +28,10 @@ class DuckDuckSearch(BaseRetriever):
         self.token_limit = (
             token_limit
             if token_limit
-            < settings.MODEL_TOKEN_LIMITS.get(
+            < settings.LLM_TOKEN_LIMITS.get(
                 self.gpt_model, settings.DEFAULT_MAX_HISTORY
             )
-            else settings.MODEL_TOKEN_LIMITS.get(
+            else settings.LLM_TOKEN_LIMITS.get(
                 self.gpt_model, settings.DEFAULT_MAX_HISTORY
             )
         )
@@ -58,7 +58,7 @@ class DuckDuckSearch(BaseRetriever):
                     )
                 except IndexError:
                     pass
-        if settings.LLM_NAME == "llama.cpp":
+        if settings.LLM_PROVIDER == "llama.cpp":
             docs = [docs[0]]
 
         return docs
@@ -83,7 +83,7 @@ class DuckDuckSearch(BaseRetriever):
         messages_combine.append({"role": "user", "content": self.question})
 
         llm = LLMCreator.create_llm(
-            settings.LLM_NAME,
+            settings.LLM_PROVIDER,
             api_key=settings.API_KEY,
             user_api_key=self.user_api_key,
             decoded_token=self.decoded_token,

@@ -48,6 +48,7 @@ import {
   setConversations,
   setModalStateDeleteConv,
   setSelectedAgent,
+  setSharedAgents,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
 
@@ -169,73 +170,65 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const handleTogglePin = (agent: Agent) => {
     userService.togglePinAgent(agent.id ?? '', token).then((response) => {
       if (response.ok) {
-        const updatedAgents = agents?.map((a) =>
-          a.id === agent.id ? { ...a, pinned: !a.pinned } : a,
-        );
-        dispatch(setAgents(updatedAgents));
+        const updatePinnedStatus = (a: Agent) =>
+          a.id === agent.id ? { ...a, pinned: !a.pinned } : a;
+        dispatch(setAgents(agents?.map(updatePinnedStatus)));
+        dispatch(setSharedAgents(sharedAgents?.map(updatePinnedStatus)));
       }
     });
   };
 
-  const handleConversationClick = (index: string) => {
-    dispatch(setSelectedAgent(null));
-    conversationService
-      .getConversation(index, token)
-      .then((response) => {
-        if (!response.ok) {
-          navigate('/');
-          dispatch(setSelectedAgent(null));
-          return null;
-        }
-        return response.json();
-      })
-      .then((data) => {
-        if (!data) return;
-        dispatch(setConversation(data.queries));
-        dispatch(
-          updateConversationId({
-            query: { conversationId: index },
-          }),
+  const handleConversationClick = async (index: string) => {
+    try {
+      dispatch(setSelectedAgent(null));
+
+      const response = await conversationService.getConversation(index, token);
+      if (!response.ok) {
+        navigate('/');
+        return;
+      }
+
+      const data = await response.json();
+      if (!data) return;
+
+      dispatch(setConversation(data.queries));
+      dispatch(updateConversationId({ query: { conversationId: index } }));
+
+      if (!data.agent_id) {
+        navigate('/');
+        return;
+      }
+
+      let agent: Agent;
+      if (data.is_shared_usage) {
+        const sharedResponse = await userService.getSharedAgent(
+          data.shared_token,
+          token,
         );
-        if (isMobile || isTablet) {
-          setNavOpen(false);
-        }
-        if (data.agent_id) {
-          if (data.is_shared_usage) {
-            userService
-              .getSharedAgent(data.shared_token, token)
-              .then((response) => {
-                if (!response.ok) {
-                  navigate('/');
-                  dispatch(setSelectedAgent(null));
-                  return;
-                }
-                response.json().then((agent: Agent) => {
-                  navigate(`/agents/shared/${agent.shared_token}`);
-                });
-              });
-          } else {
-            userService.getAgent(data.agent_id, token).then((response) => {
-              if (!response.ok) {
-                navigate('/');
-                dispatch(setSelectedAgent(null));
-                return;
-              }
-              response.json().then((agent: Agent) => {
-                if (agent.shared_token)
-                  navigate(`/agents/shared/${agent.shared_token}`);
-                else {
-                  dispatch(setSelectedAgent(agent));
-                  navigate('/');
-                }
-              });
-            });
-          }
-        } else {
+        if (!sharedResponse.ok) {
           navigate('/');
-          dispatch(setSelectedAgent(null));
+          return;
         }
-      });
+        agent = await sharedResponse.json();
+        navigate(`/agents/shared/${agent.shared_token}`);
+      } else {
+        const agentResponse = await userService.getAgent(data.agent_id, token);
+        if (!agentResponse.ok) {
+          navigate('/');
+          return;
+        }
+        agent = await agentResponse.json();
+        if (agent.shared_token) {
+          navigate(`/agents/shared/${agent.shared_token}`);
+        } else {
+          await Promise.resolve(dispatch(setSelectedAgent(agent)));
+          navigate('/');
+        }
+      }
+    } catch (error) {
+      console.error('Error handling conversation click:', error);
+      navigate('/');
+    }
   };
 
   const resetConversation = () => {
