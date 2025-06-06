@@ -267,7 +267,7 @@ class GetSingleConversation(Resource):
                             if attachment:
                                 attachment_details.append({
                                     "id": str(attachment["_id"]),
-                                    "filename": attachment.get("filename", "Unknown file")
+                                    "fileName": attachment.get("filename", "Unknown file")
                                 })
                         except Exception as e:
                             current_app.logger.error(

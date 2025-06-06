@@ -46,7 +46,7 @@ export interface Query {
   sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
   error?: string;
-  attachments?: { id: string; filename: string }[];
+  attachments?: { id: string; fileName: string }[];
 }
 
 export interface RetrievalPayload {

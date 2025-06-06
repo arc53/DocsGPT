@@ -59,7 +59,7 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
-    attachmentsMetadata?: { id: string; filename: string }[];
+    attachmentsMetadata?: { id: string; fileName: string }[];
   }
 >(function ConversationBubble(
   {
@@ -124,7 +124,7 @@ const ConversationBubble = forwardRef<
                     />
                   </div>
                   <span className="max-w-[150px] truncate font-normal">
-                    {attachment.filename}
+                    {attachment.fileName}
                   </span>
                 </div>
               ))}

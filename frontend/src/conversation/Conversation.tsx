@@ -27,6 +27,7 @@ import {
   setConversation,
   updateConversationId,
   updateQuery,
+  selectAttachments,
 } from './conversationSlice';
 
 export default function Conversation() {
@@ -39,6 +40,7 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const attachments = useSelector(selectAttachments);
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -107,15 +109,25 @@ export default function Conversation() {
       const trimmedQuestion = question.trim();
       if (trimmedQuestion === '') return;
 
+      const attachmentMetadata = attachments
+        .filter((a) => a.id && a.status === 'completed')
+        .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
       } else {
-        if (!isRetry) dispatch(addQuery({ prompt: trimmedQuestion }));
+        if (!isRetry)
+          dispatch(
+            addQuery({
+              prompt: trimmedQuestion,
+              attachments: attachmentMetadata,
+            }),
+          );
         handleFetchAnswer({ question: trimmedQuestion, index });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, attachments],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
