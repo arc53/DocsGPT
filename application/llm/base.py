@@ -30,9 +30,9 @@ class BaseLLM(ABC):
             and self.fallback_model_name
         ):
             try:
-                from llm.llm_creator import LLMCreator
+                from application.llm.llm_creator import LLMCreator
 
-                self._fallback_llm = LLMCreator(
+                self._fallback_llm = LLMCreator.create_llm(
                     self.fallback_provider,
                     self.fallback_llm_api_key,
                     None,
