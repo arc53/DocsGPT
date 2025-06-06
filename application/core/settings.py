@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     )
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"]  # also brave_search
     AGENT_NAME: str = "classic"
+    FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
+    FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm
+    FALLBACK_LLM_API_KEY: Optional[str] = None  # api key for fallback llm
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"

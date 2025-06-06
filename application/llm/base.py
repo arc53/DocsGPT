@@ -72,7 +72,6 @@ class BaseLLM(ABC):
             logger.warning(
                 f"Falling back to {self.fallback_provider}/{self.fallback_model_name}. Error: {str(e)}"
             )
-            # Retry with fallback (without decorators for accurate token tracking)
 
             fallback_method = getattr(
                 self.fallback_llm, method_name.replace("_raw_", "")
