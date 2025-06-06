@@ -44,8 +44,8 @@ class ClassicRAG(BaseRetriever):
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
         )
-        self.question = self._rephrase_query()
         self.vectorstore = source["active_docs"] if "active_docs" in source else None
+        self.question = self._rephrase_query()
         self.decoded_token = decoded_token
 
     def _rephrase_query(self):
@@ -53,6 +53,8 @@ class ClassicRAG(BaseRetriever):
             not self.original_question
             or not self.chat_history
             or self.chat_history == []
+            or self.chunks == 0
+            or self.vectorstore is None
         ):
             return self.original_question
 
@@ -77,7 +79,7 @@ class ClassicRAG(BaseRetriever):
             return self.original_question
 
     def _get_data(self):
-        if self.chunks == 0:
+        if self.chunks == 0 or self.vectorstore is None:
             docs = []
         else:
             docsearch = VectorCreator.create_vectorstore(
