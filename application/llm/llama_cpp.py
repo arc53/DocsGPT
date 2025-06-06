@@ -2,6 +2,7 @@ from application.llm.base import BaseLLM
 from application.core.settings import settings
 import threading
 
+
 class LlamaSingleton:
     _instances = {}
     _lock = threading.Lock()  # Add a lock for thread synchronization
@@ -29,7 +30,7 @@ class LlamaCpp(BaseLLM):
         self,
         api_key=None,
         user_api_key=None,
-        llm_name=settings.MODEL_PATH,
+        llm_name=settings.LLM_PATH,
         *args,
         **kwargs,
     ):
@@ -42,14 +43,18 @@ class LlamaCpp(BaseLLM):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
-        result = LlamaSingleton.query_model(self.llama, prompt, max_tokens=150, echo=False)
+        result = LlamaSingleton.query_model(
+            self.llama, prompt, max_tokens=150, echo=False
+        )
         return result["choices"][0]["text"].split("### Answer \n")[-1]
 
     def _raw_gen_stream(self, baseself, model, messages, stream=True, **kwargs):
         context = messages[0]["content"]
         user_question = messages[-1]["content"]
         prompt = f"### Instruction \n {user_question} \n ### Context \n {context} \n ### Answer \n"
-        result = LlamaSingleton.query_model(self.llama, prompt, max_tokens=150, echo=False, stream=stream)
+        result = LlamaSingleton.query_model(
+            self.llama, prompt, max_tokens=150, echo=False, stream=stream
+        )
         for item in result:
             for choice in item["choices"]:
                 yield choice["text"]

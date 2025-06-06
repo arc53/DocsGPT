@@ -74,8 +74,8 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
         max_token_limit
         if max_token_limit
         and max_token_limit
-        < settings.MODEL_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
-        else settings.MODEL_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
+        < settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
+        else settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
     )
 
     if not history:
