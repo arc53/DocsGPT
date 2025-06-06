@@ -256,12 +256,21 @@ class BaseAgent(ABC):
         return retrieved_data
 
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
-        resp = self.llm.gen_stream(
-            model=self.gpt_model, messages=messages, tools=self.tools
-        )
+        gen_kwargs = {"model": self.gpt_model, "messages": messages}
+
+        if (
+            hasattr(self.llm, "_supports_tools")
+            and self.llm._supports_tools
+            and self.tools
+        ):
+            gen_kwargs["tools"] = self.tools
+
+        resp = self.llm.gen_stream(**gen_kwargs)
+
         if log_context:
             data = build_stack_data(self.llm, exclude_attributes=["client"])
             log_context.stacks.append({"component": "llm", "data": data})
+
         return resp
 
     def _llm_handler(
