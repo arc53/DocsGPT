@@ -3,6 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
+import SharedAgentCard from '../agents/SharedAgentCard';
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
@@ -193,6 +194,14 @@ export default function Conversation() {
         handleFeedback={handleFeedback}
         queries={queries}
         status={status}
+        showHeroOnEmpty={selectedAgent ? false : true}
+        headerContent={
+          selectedAgent ? (
+            <div className="flex w-full items-center justify-center py-4">
+              <SharedAgentCard agent={selectedAgent} />
+            </div>
+          ) : undefined
+        }
       />
 
       <div className="z-3 flex h-auto w-full max-w-[1300px] flex-col items-end self-center rounded-2xl bg-opacity-0 py-1 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
