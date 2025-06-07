@@ -2227,7 +2227,7 @@ class GetPubliclySharedConversations(Resource):
                     return make_response(
                         jsonify(
                             {
-                                "sucess": False,
+                                "success": False,
                                 "error": "might have broken url or the conversation does not exist",
                             }
                         ),
@@ -2236,11 +2236,30 @@ class GetPubliclySharedConversations(Resource):
                 conversation_queries = conversation["queries"][
                     : (shared["first_n_queries"])
                 ]
+                
+                for query in conversation_queries:
+                    if "attachments" in query and query["attachments"]:
+                        attachment_details = []
+                        for attachment_id in query["attachments"]:
+                            try:
+                                attachment = attachments_collection.find_one(
+                                    {"_id": ObjectId(attachment_id)}
+                                )
+                                if attachment:
+                                    attachment_details.append({
+                                        "id": str(attachment["_id"]),
+                                        "fileName": attachment.get("filename", "Unknown file")
+                                    })
+                            except Exception as e:
+                                current_app.logger.error(
+                                    f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
+                                )
+                        query["attachments"] = attachment_details
             else:
                 return make_response(
                     jsonify(
                         {
-                            "sucess": False,
+                            "success": False,
                             "error": "might have broken url or the conversation does not exist",
                         }
                     ),
