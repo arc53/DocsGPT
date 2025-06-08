@@ -62,6 +62,18 @@ class FaissStore(BaseVectorStore):
 
     def search(self, *args, **kwargs):
         return self.docsearch.similarity_search(*args, **kwargs)
+    
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        docs_and_distances = self.docsearch.similarity_search_with_score(query, k, *args, **kwargs)
+        
+        # Convert L2 distance to a normalized similarity score (0-1, higher is better)
+        docs_and_similarities = []
+        for doc, distance in docs_and_distances:
+            if distance < 0: distance = 0
+            similarity = 1 / (1 + distance)
+            docs_and_similarities.append((doc, similarity))
+            
+        return docs_and_similarities
 
     def add_texts(self, *args, **kwargs):
         return self.docsearch.add_texts(*args, **kwargs)

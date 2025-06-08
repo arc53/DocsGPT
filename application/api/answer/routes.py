@@ -446,7 +446,8 @@ class Stream(Resource):
             attachment_ids = data.get("attachments", [])
 
             index = data.get("index", None)
-            chunks = int(data.get("chunks", 2))
+            chunks_from_request = data.get("chunks", 2)
+            chunks = chunks_from_request if str(chunks_from_request) == 'Auto' else int(chunks_from_request)
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
             agent_id = data.get("agent_id", None)
@@ -620,7 +621,8 @@ class Answer(Resource):
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
-            chunks = int(data.get("chunks", 2))
+            chunks_from_request = data.get("chunks", 2)
+            chunks = chunks_from_request if str(chunks_from_request) == 'Auto' else int(chunks_from_request)
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
             agent_type = settings.AGENT_NAME
@@ -814,7 +816,8 @@ class Search(Resource):
 
         try:
             question = data["question"]
-            chunks = int(data.get("chunks", 2))
+            chunks_from_request = data.get("chunks", 2)
+            chunks = chunks_from_request if str(chunks_from_request) == 'Auto' else int(chunks_from_request)
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
 

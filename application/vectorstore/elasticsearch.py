@@ -108,6 +108,46 @@ class ElasticsearchStore(BaseVectorStore):
             
             doc_list.append(Document(page_content = hit['_source']['text'], metadata = hit['_source']['metadata']))
         return doc_list
+    
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
+        vector = embeddings.embed_query(query)
+        knn = {
+            "filter": [{"match": {"metadata.source_id.keyword": self.source_id}}],
+            "field": "vector",
+            "k": k,
+            "num_candidates": 100,
+            "query_vector": vector,
+        }
+        full_query = {
+            "knn": knn,
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "match": {
+                                "text": {
+                                    "query": question,
+                                }
+                            }
+                        }
+                    ],
+                    "filter": [{"match": {"metadata.source_id.keyword": self.source_id}}],
+                }
+            },
+            "rank": {"rrf": {}},
+        }
+        resp = self.docsearch.search(index=self.index_name, query=full_query['query'], size=k, knn=full_query['knn'])
+
+        docs_with_scores = []
+        for hit in resp['hits']['hits']:
+            score = hit['_score']
+            # Normalize the score. Elasticsearch returns a score of 1.0 + cosine similarity.
+            similarity = max(0, score - 1.0)
+            doc = Document(page_content=hit['_source']['text'], metadata=hit['_source']['metadata'])
+            docs_with_scores.append((doc, similarity))
+
+        return docs_with_scores
 
     def _create_index_if_not_exists(
             self, index_name, dims_length

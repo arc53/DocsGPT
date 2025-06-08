@@ -25,6 +25,16 @@ class MilvusStore(BaseVectorStore):
     def search(self, question, k=2, *args, **kwargs):
         expr = f"source_id == '{self._source_id}'"
         return self._docsearch.similarity_search(query=question, k=k, expr=expr, *args, **kwargs)
+    
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        expr = f"source_id == '{self._source_id}'"
+        docs_and_distances = self._docsearch.similarity_search_with_score(query, k, expr=expr, *args, **kwargs)
+        docs_with_scores = []
+        for doc, distance in docs_and_distances:
+            similarity = 1.0 - distance
+            docs_with_scores.append((doc, max(0, similarity)))
+        
+        return docs_with_scores
 
     def add_texts(self, texts: List[str], metadatas: Optional[List[dict]], *args, **kwargs):
         ids = [str(uuid4()) for _ in range(len(texts))]

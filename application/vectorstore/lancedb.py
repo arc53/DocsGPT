@@ -2,6 +2,8 @@ from typing import List, Optional
 import importlib
 from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
+from application.vectorstore.document_class import Document
+
 
 class LanceDBVectorStore(BaseVectorStore):
     """Class for LanceDB Vector Store integration."""
@@ -87,6 +89,23 @@ class LanceDBVectorStore(BaseVectorStore):
         results = self.docsearch.search(query_embedding).limit(k).to_list()
         return [(result["_distance"], result["text"], result["metadata"]) for result in results]
 
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        """Perform a similarity search with scores."""
+        self.ensure_table_exists()
+        query_embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key).embed_query(query)
+        results = self.docsearch.search(query_embedding).limit(k).to_list()
+
+        docs_with_scores = []
+        for result in results:
+            distance = result.get('_distance', float('inf'))
+            if distance < 0: distance = 0
+            # Convert L2 distance to a normalized similarity score
+            similarity = 1 / (1 + distance)
+            doc = Document(page_content=result['text'], metadata=result["metadata"])
+            docs_with_scores.append((doc, similarity))
+            
+        return docs_with_scores
+    
     def delete_index(self):
         """Delete the entire LanceDB index (table)."""
         if self.table:

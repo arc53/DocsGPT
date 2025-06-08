@@ -36,7 +36,7 @@ export default function General() {
     { label: '繁體中文（臺灣）', value: 'zhTW' },
     { label: 'Русский', value: 'ru' },
   ];
-  const chunks = ['0', '2', '4', '6', '8', '10'];
+  const chunks = ['Auto', '0', '2', '4', '6', '8', '10'];
   const token_limits = new Map([
     [0, t('settings.general.none')],
     [100, t('settings.general.low')],

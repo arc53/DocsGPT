@@ -62,6 +62,40 @@ class MongoDBVectorStore(BaseVectorStore):
             metadata = doc
             results.append(Document(text, metadata))
         return results
+    
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        query_vector = self._embedding.embed_query(query)
+
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "queryVector": query_vector,
+                    "path": self._embedding_key,
+                    "limit": k,
+                    "numCandidates": k * 10,
+                    "index": self._index_name,
+                    "filter": {"source_id": {"$eq": self._source_id}},
+                }
+            },
+            {
+                "$addFields": {
+                    "score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        cursor = self._collection.aggregate(pipeline)
+
+        results = []
+        for doc in cursor:
+            score = doc.pop("score", 0.0)
+            text = doc.pop(self._text_key)
+            doc.pop("_id")
+            doc.pop(self._embedding_key, None)
+            metadata = doc
+            doc = Document(page_content=text, metadata=metadata)
+            results.append((doc, score))
+        return results
 
     def _insert_texts(self, texts, metadatas):
         if not texts:

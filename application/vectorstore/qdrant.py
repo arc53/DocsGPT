@@ -35,6 +35,9 @@ class QdrantStore(BaseVectorStore):
 
     def search(self, *args, **kwargs):
         return self._docsearch.similarity_search(filter=self._filter, *args, **kwargs)
+    
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        return self._docsearch.similarity_search_with_score(query=query, k=k, filter=self._filter, *args, **kwargs)
 
     def add_texts(self, *args, **kwargs):
         return self._docsearch.add_texts(*args, **kwargs)

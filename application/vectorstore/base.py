@@ -58,6 +58,10 @@ class BaseVectorStore(ABC):
     def search(self, *args, **kwargs):
         pass
 
+    @abstractmethod
+    def search_with_scores(self, query: str, k: int, *args, **kwargs):
+        pass
+
     def is_azure_configured(self):
         return settings.OPENAI_API_BASE and settings.OPENAI_API_VERSION and settings.AZURE_DEPLOYMENT_NAME
 
