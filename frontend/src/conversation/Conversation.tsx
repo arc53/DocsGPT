@@ -27,8 +27,11 @@ import {
   setConversation,
   updateConversationId,
   updateQuery,
-  selectAttachments,
 } from './conversationSlice';
+import {
+  selectCompletedAttachments,
+  clearAttachments,
+} from '../upload/uploadSlice';
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -40,7 +43,7 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
-  const attachments = useSelector(selectAttachments);
+  const completedAttachments = useSelector(selectCompletedAttachments);
 
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -109,8 +112,8 @@ export default function Conversation() {
       const trimmedQuestion = question.trim();
       if (trimmedQuestion === '') return;
 
-      const filesAttached = attachments
-        .filter((a) => a.id && a.status === 'completed')
+      const filesAttached = completedAttachments
+        .filter((a) => a.id)
         .map((a) => ({ id: a.id as string, fileName: a.fileName }));
 
       if (index !== undefined) {
@@ -127,7 +130,7 @@ export default function Conversation() {
         handleFetchAnswer({ question: trimmedQuestion, index });
       }
     },
-    [dispatch, handleFetchAnswer, attachments],
+    [dispatch, handleFetchAnswer, completedAttachments],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
@@ -190,6 +193,7 @@ export default function Conversation() {
         query: { conversationId: null },
       }),
     );
+    dispatch(clearAttachments());
   };
 
   useEffect(() => {

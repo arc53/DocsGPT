@@ -284,6 +284,7 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
   signal: AbortSignal,
   apiKey: string,
   history: Array<any> = [],
+  attachments: string[] = [], // Add attachments parameter with default empty array
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   history = history.map((item) => {
@@ -300,6 +301,7 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
       history: JSON.stringify(history),
       api_key: apiKey,
       save_conversation: false,
+      attachments: attachments.length > 0 ? attachments : undefined, // Add attachments to payload
     };
     conversationService
       .answerStream(payload, null, signal)
@@ -355,6 +357,7 @@ export function handleFetchSharedAnswer(
   question: string,
   signal: AbortSignal,
   apiKey: string,
+  attachments?: string[],
 ): Promise<
   | {
       result: any;
@@ -370,15 +373,18 @@ export function handleFetchSharedAnswer(
       title: any;
     }
 > {
+  const payload = {
+    question: question,
+    api_key: apiKey,
+  };
+
+  // Add attachments to payload if they exist
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments;
+  }
+
   return conversationService
-    .answer(
-      {
-        question: question,
-        api_key: apiKey,
-      },
-      null,
-      signal,
-    )
+    .answer(payload, null, signal)
     .then((response) => {
       if (response.ok) {
         return response.json();

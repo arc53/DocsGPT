@@ -7,6 +7,7 @@ import {
   handleFetchSharedAnswer,
   handleFetchSharedAnswerStreaming,
 } from './conversationHandlers';
+import { selectCompletedAttachments } from '../upload/uploadSlice';
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
 interface SharedConversationsType {
@@ -29,6 +30,10 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
   async ({ question }, { dispatch, getState, signal }) => {
     const state = getState() as RootState;
 
+    const attachmentIds = selectCompletedAttachments(state)
+      .filter((a) => a.id)
+      .map((a) => a.id) as string[];
+
     if (state.preference && state.sharedConversation.apiKey) {
       if (API_STREAMING) {
         await handleFetchSharedAnswerStreaming(
@@ -36,7 +41,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
           signal,
           state.sharedConversation.apiKey,
           state.sharedConversation.queries,
-
+          attachmentIds,
           (event) => {
             const data = JSON.parse(event.data);
             // check if the 'end' event has been received
@@ -92,6 +97,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
           question,
           signal,
           state.sharedConversation.apiKey,
+          attachmentIds,
         );
         if (answer) {
           let sourcesPrepped = [];

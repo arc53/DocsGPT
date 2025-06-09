@@ -22,7 +22,6 @@ export interface ConversationState {
   queries: Query[];
   status: Status;
   conversationId: string | null;
-  attachments: Attachment[];
 }
 
 export interface Answer {

@@ -18,7 +18,7 @@ import {
   removeAttachment,
   selectAttachments,
   updateAttachment,
-} from '../conversation/conversationSlice';
+} from '../upload/uploadSlice';
 import { useDarkTheme } from '../hooks';
 import { ActiveState } from '../models/misc';
 import {
