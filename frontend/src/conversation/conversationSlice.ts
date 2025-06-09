@@ -3,7 +3,10 @@ import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
 import store from '../store';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import {
+  selectCompletedAttachments,
+  clearAttachments,
+} from '../upload/uploadSlice';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -41,6 +44,11 @@ export const fetchAnswer = createAsyncThunk<
     const attachmentIds = selectCompletedAttachments(state)
       .filter((a) => a.id)
       .map((a) => a.id) as string[];
+
+    if (attachmentIds.length > 0) {
+      dispatch(clearAttachments());
+    }
+
     const currentConversationId = state.conversation.conversationId;
     const conversationIdToSend = isPreview ? null : currentConversationId;
     const save_conversation = isPreview ? false : true;

@@ -7,7 +7,10 @@ import {
   handleFetchSharedAnswer,
   handleFetchSharedAnswerStreaming,
 } from './conversationHandlers';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import {
+  selectCompletedAttachments,
+  clearAttachments,
+} from '../upload/uploadSlice';
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
 interface SharedConversationsType {
@@ -33,6 +36,10 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
     const attachmentIds = selectCompletedAttachments(state)
       .filter((a) => a.id)
       .map((a) => a.id) as string[];
+
+    if (attachmentIds.length > 0) {
+      dispatch(clearAttachments());
+    }
 
     if (state.preference && state.sharedConversation.apiKey) {
       if (API_STREAMING) {

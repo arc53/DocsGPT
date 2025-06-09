@@ -48,7 +48,9 @@ export const uploadSlice = createSlice({
       );
     },
     clearAttachments: (state) => {
-      state.attachments = [];
+      state.attachments = state.attachments.filter(
+        (att) => att.status === 'uploading' || att.status === 'processing',
+      );
     },
   },
 });
