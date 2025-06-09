@@ -279,12 +279,12 @@ export function handleSendFeedback(
     });
 }
 
-export function handleFetchSharedAnswerStreaming( //for shared conversations
+export function handleFetchSharedAnswerStreaming(
   question: string,
   signal: AbortSignal,
   apiKey: string,
   history: Array<any> = [],
-  attachments: string[] = [], // Add attachments parameter with default empty array
+  attachments: string[] = [],
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   history = history.map((item) => {
@@ -301,7 +301,7 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
       history: JSON.stringify(history),
       api_key: apiKey,
       save_conversation: false,
-      attachments: attachments.length > 0 ? attachments : undefined, // Add attachments to payload
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
     conversationService
       .answerStream(payload, null, signal)
@@ -376,12 +376,9 @@ export function handleFetchSharedAnswer(
   const payload = {
     question: question,
     api_key: apiKey,
+    attachments:
+      attachments && attachments.length > 0 ? attachments : undefined,
   };
-
-  // Add attachments to payload if they exist
-  if (attachments && attachments.length > 0) {
-    payload.attachments = attachments;
-  }
 
   return conversationService
     .answer(payload, null, signal)

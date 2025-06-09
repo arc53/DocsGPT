@@ -107,13 +107,15 @@ const ConversationBubble = forwardRef<
       <div
         onMouseEnter={() => setIsQuestionHovered(true)}
         onMouseLeave={() => setIsQuestionHovered(false)}
+        className={className}
       >
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
-            <div className="mb-2 mr-12 flex flex-wrap justify-end gap-2">
+            <div className="mb-4 mr-12 flex flex-wrap justify-end gap-2">
               {filesAttached.map((file, index) => (
                 <div
                   key={index}
+                  title={file.fileName}
                   className="flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray"
                 >
                   <div className="mr-2 items-center justify-center rounded-lg bg-purple-30 p-[5.5px]">
@@ -132,7 +134,7 @@ const ConversationBubble = forwardRef<
           )}
           <div
             ref={ref}
-            className={`flex flex-row-reverse justify-items-start ${className}`}
+            className={`flex flex-row-reverse justify-items-start`}
           >
             <Avatar
               size="SMALL"

@@ -263,7 +263,7 @@ export default function MessageInput({
           {attachments.map((attachment, index) => (
             <div
               key={index}
-              className={`group relative flex items-center rounded-[24px] bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray sm:px-3 sm:py-1.5 sm:text-[14px] ${
+              className={`group relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray sm:px-3 sm:py-1.5 sm:text-[14px] ${
                 attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               }`}
               title={attachment.fileName}
@@ -280,13 +280,8 @@ export default function MessageInput({
                 {attachment.status === 'failed' && (
                   <img
                     src={AlertIcon}
-                    alt="Upload failed"
+                    alt="Failed"
                     className="h-[15px] w-[15px] object-fill"
-                    style={{
-                      filter:
-                        'invert(100%) sepia(0%) saturate(0%) hue-rotate(93deg) brightness(103%) contrast(103%)',
-                    }}
-                    title="Upload failed"
                   />
                 )}
 
