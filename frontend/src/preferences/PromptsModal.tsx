@@ -184,26 +184,51 @@ export default function PromptsModal({
   setEditPromptName: (name: string) => void;
   editPromptContent: string;
   setEditPromptContent: (content: string) => void;
-  currentPromptEdit: { name: string; id: string; type: string };
+  currentPromptEdit: {
+    name: string;
+    id: string;
+    type: string;
+    content?: string;
+  };
   handleAddPrompt?: () => void;
   handleEditPrompt?: (id: string, type: string) => void;
 }) {
   const [disableSave, setDisableSave] = React.useState(true);
-  const handlePrompNameChange = (edit: boolean, newName: string) => {
-    const nameExists = existingPrompts.find(
-      (prompt) => newName === prompt.name,
-    );
-
-    if (newName && !nameExists) {
-      setDisableSave(false);
-    } else {
-      setDisableSave(true);
-    }
-
+  const handlePromptNameChange = (edit: boolean, newName: string) => {
     if (edit) {
+      const nameExists = existingPrompts.find(
+        (prompt) =>
+          newName === prompt.name && prompt.id !== currentPromptEdit.id,
+      );
+      const nameValid = newName && !nameExists;
+      const contentChanged = editPromptContent !== currentPromptEdit.content;
+
+      setDisableSave(!(nameValid || contentChanged));
       setEditPromptName(newName);
     } else {
+      const nameExists = existingPrompts.find(
+        (prompt) => newName === prompt.name,
+      );
+      setDisableSave(!(newName && !nameExists));
       setNewPromptName(newName);
+    }
+  };
+
+  const handleContentChange = (edit: boolean, newContent: string) => {
+    if (edit) {
+      const contentChanged = newContent !== currentPromptEdit.content;
+      const nameValid =
+        editPromptName &&
+        !existingPrompts.find(
+          (prompt) =>
+            editPromptName === prompt.name &&
+            prompt.id !== currentPromptEdit.id,
+        );
+
+      setDisableSave(!(nameValid || contentChanged));
+      setEditPromptContent(newContent);
+    } else {
+      setNewPromptContent(newContent);
     }
   };
 
@@ -215,9 +240,9 @@ export default function PromptsModal({
         setModalState={setModalState}
         handleAddPrompt={handleAddPrompt}
         newPromptName={newPromptName}
-        setNewPromptName={handlePrompNameChange.bind(null, false)}
+        setNewPromptName={handlePromptNameChange.bind(null, false)}
         newPromptContent={newPromptContent}
-        setNewPromptContent={setNewPromptContent}
+        setNewPromptContent={handleContentChange.bind(null, false)}
         disableSave={disableSave}
       />
     );
@@ -227,9 +252,9 @@ export default function PromptsModal({
         setModalState={setModalState}
         handleEditPrompt={handleEditPrompt}
         editPromptName={editPromptName}
-        setEditPromptName={handlePrompNameChange.bind(null, true)}
+        setEditPromptName={handlePromptNameChange.bind(null, true)}
         editPromptContent={editPromptContent}
-        setEditPromptContent={setEditPromptContent}
+        setEditPromptContent={handleContentChange.bind(null, true)}
         currentPromptEdit={currentPromptEdit}
         disableSave={disableSave}
       />
