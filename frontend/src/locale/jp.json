@@ -245,7 +245,8 @@
       "promptName": "プロンプト名",
       "promptText": "プロンプトテキスト",
       "save": "保存",
-      "nameExists": "名前が既に存在します"
+      "nameExists": "名前が既に存在します",
+      "deleteConfirmation": "プロンプト「{{name}}」を削除してもよろしいですか？"
     },
     "chunk": {
       "add": "チャンクを追加",

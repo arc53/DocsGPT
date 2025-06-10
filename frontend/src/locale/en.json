@@ -245,7 +245,8 @@
       "promptName": "Prompt Name",
       "promptText": "Prompt Text",
       "save": "Save",
-      "nameExists": "Name already exists"
+      "nameExists": "Name already exists",
+      "deleteConfirmation": "Are you sure you want to delete the prompt '{{name}}'?"
     },
     "chunk": {
       "add": "Add Chunk",

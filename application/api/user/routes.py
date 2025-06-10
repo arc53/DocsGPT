@@ -45,6 +45,7 @@ shared_conversations_collections = db["shared_conversations"]
 users_collection = db["users"]
 user_logs_collection = db["user_logs"]
 user_tools_collection = db["user_tools"]
+attachments_collection = db["attachments"]
 
 agents_collection.create_index(
     [("shared", 1)],
@@ -252,13 +253,34 @@ class GetSingleConversation(Resource):
             )
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
+            
+            # Process queries to include attachment names
+            queries = conversation["queries"]
+            for query in queries:
+                if "attachments" in query and query["attachments"]:
+                    attachment_details = []
+                    for attachment_id in query["attachments"]:
+                        try:
+                            attachment = attachments_collection.find_one(
+                                {"_id": ObjectId(attachment_id)}
+                            )
+                            if attachment:
+                                attachment_details.append({
+                                    "id": str(attachment["_id"]),
+                                    "fileName": attachment.get("filename", "Unknown file")
+                                })
+                        except Exception as e:
+                            current_app.logger.error(
+                                f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
+                            )
+                    query["attachments"] = attachment_details
         except Exception as err:
             current_app.logger.error(
                 f"Error retrieving conversation: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
         data = {
-            "queries": conversation["queries"],
+            "queries": queries,
             "agent_id": conversation.get("agent_id"),
             "is_shared_usage": conversation.get("is_shared_usage", False),
             "shared_token": conversation.get("shared_token", None),
@@ -2205,7 +2227,7 @@ class GetPubliclySharedConversations(Resource):
                     return make_response(
                         jsonify(
                             {
-                                "sucess": False,
+                                "success": False,
                                 "error": "might have broken url or the conversation does not exist",
                             }
                         ),
@@ -2214,11 +2236,30 @@ class GetPubliclySharedConversations(Resource):
                 conversation_queries = conversation["queries"][
                     : (shared["first_n_queries"])
                 ]
+                
+                for query in conversation_queries:
+                    if "attachments" in query and query["attachments"]:
+                        attachment_details = []
+                        for attachment_id in query["attachments"]:
+                            try:
+                                attachment = attachments_collection.find_one(
+                                    {"_id": ObjectId(attachment_id)}
+                                )
+                                if attachment:
+                                    attachment_details.append({
+                                        "id": str(attachment["_id"]),
+                                        "fileName": attachment.get("filename", "Unknown file")
+                                    })
+                            except Exception as e:
+                                current_app.logger.error(
+                                    f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
+                                )
+                        query["attachments"] = attachment_details
             else:
                 return make_response(
                     jsonify(
                         {
-                            "sucess": False,
+                            "success": False,
                             "error": "might have broken url or the conversation does not exist",
                         }
                     ),

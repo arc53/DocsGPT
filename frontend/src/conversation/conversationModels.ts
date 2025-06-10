@@ -22,7 +22,6 @@ export interface ConversationState {
   queries: Query[];
   status: Status;
   conversationId: string | null;
-  attachments: Attachment[];
 }
 
 export interface Answer {
@@ -46,7 +45,7 @@ export interface Query {
   sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
   error?: string;
-  attachments?: { fileName: string; id: string }[];
+  attachments?: { id: string; fileName: string }[];
 }
 
 export interface RetrievalPayload {

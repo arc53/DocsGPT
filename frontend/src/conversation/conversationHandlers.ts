@@ -279,11 +279,12 @@ export function handleSendFeedback(
     });
 }
 
-export function handleFetchSharedAnswerStreaming( //for shared conversations
+export function handleFetchSharedAnswerStreaming(
   question: string,
   signal: AbortSignal,
   apiKey: string,
   history: Array<any> = [],
+  attachments: string[] = [],
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   history = history.map((item) => {
@@ -300,6 +301,7 @@ export function handleFetchSharedAnswerStreaming( //for shared conversations
       history: JSON.stringify(history),
       api_key: apiKey,
       save_conversation: false,
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
     conversationService
       .answerStream(payload, null, signal)
@@ -355,6 +357,7 @@ export function handleFetchSharedAnswer(
   question: string,
   signal: AbortSignal,
   apiKey: string,
+  attachments?: string[],
 ): Promise<
   | {
       result: any;
@@ -370,15 +373,15 @@ export function handleFetchSharedAnswer(
       title: any;
     }
 > {
+  const payload = {
+    question: question,
+    api_key: apiKey,
+    attachments:
+      attachments && attachments.length > 0 ? attachments : undefined,
+  };
+
   return conversationService
-    .answer(
-      {
-        question: question,
-        api_key: apiKey,
-      },
-      null,
-      signal,
-    )
+    .answer(payload, null, signal)
     .then((response) => {
       if (response.ok) {
         return response.json();

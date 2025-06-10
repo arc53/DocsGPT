@@ -475,6 +475,7 @@ def attachment_worker(self, file_info, user):
                 "_id": doc_id,
                 "user": user,
                 "path": relative_path,
+                "filename": filename,
                 "content": content,
                 "token_count": token_count,
                 "mime_type": mime_type,
