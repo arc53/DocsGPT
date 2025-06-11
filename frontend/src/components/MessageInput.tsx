@@ -9,6 +9,7 @@ import ClipIcon from '../assets/clip.svg';
 import ExitIcon from '../assets/exit.svg';
 import PaperPlane from '../assets/paper_plane.svg';
 import SourceIcon from '../assets/source.svg';
+import DocumentationDark from '../assets/documentation-dark.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
 import ToolIcon from '../assets/tool.svg';
@@ -17,7 +18,7 @@ import {
   removeAttachment,
   selectAttachments,
   updateAttachment,
-} from '../conversation/conversationSlice';
+} from '../upload/uploadSlice';
 import { useDarkTheme } from '../hooks';
 import { ActiveState } from '../models/misc';
 import {
@@ -262,71 +263,81 @@ export default function MessageInput({
           {attachments.map((attachment, index) => (
             <div
               key={index}
-              className={`group relative flex items-center rounded-[32px] border border-[#AAAAAA] bg-white px-2 py-1 text-[12px] text-[#5D5D5D] dark:border-purple-taupe dark:bg-[#1F2028] dark:text-bright-gray sm:px-3 sm:py-1.5 sm:text-[14px] ${
+              className={`group relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray sm:px-3 sm:py-1.5 sm:text-[14px] ${
                 attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               }`}
               title={attachment.fileName}
             >
+              <div className="mr-2 items-center justify-center rounded-lg bg-purple-30 p-[5.5px]">
+                {attachment.status === 'completed' && (
+                  <img
+                    src={DocumentationDark}
+                    alt="Attachment"
+                    className="h-[15px] w-[15px] object-fill"
+                  />
+                )}
+
+                {attachment.status === 'failed' && (
+                  <img
+                    src={AlertIcon}
+                    alt="Failed"
+                    className="h-[15px] w-[15px] object-fill"
+                  />
+                )}
+
+                {(attachment.status === 'uploading' ||
+                  attachment.status === 'processing') && (
+                  <div className="flex h-[15px] w-[15px] items-center justify-center">
+                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-0"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="transparent"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <circle
+                        className="text-[#ECECF1]"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                        strokeDasharray="62.83"
+                        strokeDashoffset={
+                          62.83 * (1 - attachment.progress / 100)
+                        }
+                        transform="rotate(-90 12 12)"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
               <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
                 {attachment.fileName}
               </span>
 
-              {attachment.status === 'completed' && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white p-1 opacity-0 transition-opacity hover:bg-white/95 focus:opacity-100 group-hover:opacity-100 dark:bg-[#1F2028] dark:hover:bg-[#1F2028]/95"
-                  onClick={() => {
-                    if (attachment.id) {
-                      dispatch(removeAttachment(attachment.id));
-                    }
-                  }}
-                  aria-label={t('conversation.attachments.remove')}
-                >
-                  <img
-                    src={ExitIcon}
-                    alt={t('conversation.attachments.remove')}
-                    className="h-2.5 w-2.5 filter dark:invert"
-                  />
-                </button>
-              )}
-
-              {attachment.status === 'failed' && (
+              <button
+                className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                onClick={() => {
+                  if (attachment.id) {
+                    dispatch(removeAttachment(attachment.id));
+                  } else if (attachment.taskId) {
+                    dispatch(removeAttachment(attachment.taskId));
+                  }
+                }}
+                aria-label={t('conversation.attachments.remove')}
+              >
                 <img
-                  src={AlertIcon}
-                  alt="Upload failed"
-                  className="ml-2 h-3.5 w-3.5"
-                  title="Upload failed"
+                  src={ExitIcon}
+                  alt={t('conversation.attachments.remove')}
+                  className="h-2.5 w-2.5 filter dark:invert"
                 />
-              )}
-
-              {(attachment.status === 'uploading' ||
-                attachment.status === 'processing') && (
-                <div className="relative ml-2 h-4 w-4">
-                  <svg className="h-4 w-4" viewBox="0 0 24 24">
-                    {/* Background circle */}
-                    <circle
-                      className="text-gray-200 dark:text-gray-700"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <circle
-                      className="text-blue-600 dark:text-blue-400"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                      strokeDasharray="62.83"
-                      strokeDashoffset={62.83 * (1 - attachment.progress / 100)}
-                      transform="rotate(-90 12 12)"
-                    />
-                  </svg>
-                </div>
-              )}
+              </button>
             </div>
           ))}
         </div>

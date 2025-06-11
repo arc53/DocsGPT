@@ -245,7 +245,8 @@
       "promptName": "提示名称",
       "promptText": "提示文本",
       "save": "保存",
-      "nameExists": "名称已存在"
+      "nameExists": "名称已存在",
+      "deleteConfirmation": "您确定要删除提示'{{name}}'吗？"
     },
     "chunk": {
       "add": "添加块",
