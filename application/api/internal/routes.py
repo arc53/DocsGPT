@@ -7,6 +7,7 @@ import logging
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.storage.storage_creator import StorageCreator
+from application.utils import safe_filename
 
 
 logger = logging.getLogger(__name__)
@@ -37,18 +38,18 @@ def upload_index_files():
     """Upload two files(index.faiss, index.pkl) to the user's folder."""
     if "user" not in request.form:
         return {"status": "no user"}
-    user = secure_filename(request.form["user"])
+    user = safe_filename(request.form["user"])
     if "name" not in request.form:
         return {"status": "no name"}
-    job_name = secure_filename(request.form["name"])
-    tokens = secure_filename(request.form["tokens"])
-    retriever = secure_filename(request.form["retriever"])
-    id = secure_filename(request.form["id"])
-    type = secure_filename(request.form["type"])
+    job_name = safe_filename(request.form["name"])
+    tokens = request.form["tokens"]
+    retriever = request.form["retriever"]
+    id = request.form["id"]
+    type = request.form["type"]
     remote_data = request.form["remote_data"] if "remote_data" in request.form else None
-    sync_frequency = secure_filename(request.form["sync_frequency"]) if "sync_frequency" in request.form else None
+    sync_frequency = request.form["sync_frequency"] if "sync_frequency" in request.form else None
     
-    original_file_path = request.form.get("original_file_path")
+    original_file_path = request.form.get("original_file_path")  # Already sanitized path
 
     storage = StorageCreator.get_storage()
     index_base_path = f"indexes/{id}"

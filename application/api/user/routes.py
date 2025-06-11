@@ -28,7 +28,7 @@ from application.core.settings import settings
 from application.extensions import api
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
-from application.utils import check_required_fields, validate_function_name
+from application.utils import check_required_fields, safe_filename, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 
 storage = StorageCreator.get_storage()
@@ -497,20 +497,17 @@ class UploadFile(Resource):
                 ),
                 400,
             )
-        user = secure_filename(decoded_token.get("sub"))
-        job_name = secure_filename(request.form["name"])
+        user = safe_filename(decoded_token.get("sub"))
+        job_name = safe_filename(request.form["name"])
 
         try:
-            from application.storage.storage_creator import StorageCreator
-
             storage = StorageCreator.get_storage()
-
             base_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}"
 
             if len(files) > 1:
                 temp_files = []
                 for file in files:
-                    filename = secure_filename(file.filename)
+                    filename = safe_filename(file.filename)
                     temp_path = f"{base_path}/temp/{filename}"
                     storage.save_file(file, temp_path)
                     temp_files.append(temp_path)
@@ -604,7 +601,7 @@ class UploadFile(Resource):
                 # For single file
 
                 file = files[0]
-                filename = secure_filename(file.filename)
+                filename = safe_filename(file.filename)
                 file_path = f"{base_path}/{filename}"
 
                 storage.save_file(file, file_path)
@@ -3457,7 +3454,8 @@ class StoreAttachment(Resource):
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
-        user = secure_filename(decoded_token.get("sub"))
+        # Apply safe_filename to user ID
+        user = safe_filename(decoded_token.get("sub"))
 
         try:
             attachment_id = ObjectId()
