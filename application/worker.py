@@ -290,6 +290,7 @@ def ingest_worker(
                 "retriever": retriever,
                 "id": str(id),
                 "type": "local",
+                "original_file_path": source_file_path,  # Pass the original file path
             }
 
             upload_index(vector_store_path, file_data)
