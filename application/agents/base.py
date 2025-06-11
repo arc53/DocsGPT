@@ -197,7 +197,9 @@ class BaseAgent(ABC):
         else:
             print(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
-        tool_call_data["result"] = result
+        tool_call_data["result"] = (
+            f"{str(result)[:50]}..." if len(str(result)) > 50 else result
+        )
 
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "completed"}}
         self.tool_calls.append(tool_call_data)
@@ -213,6 +215,7 @@ class BaseAgent(ABC):
                     if len(str(tool_call["result"])) > 50
                     else tool_call["result"]
                 ),
+                "status": "completed",
             }
             for tool_call in self.tool_calls
         ]

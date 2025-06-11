@@ -131,7 +131,7 @@ export default function ConversationMessages({
       ? LAST_BUBBLE_MARGIN
       : DEFAULT_BUBBLE_MARGIN;
 
-    if (query.thought || query.response) {
+    if (query.thought || query.response || query.tool_calls) {
       const isCurrentlyStreaming =
         status === 'loading' && index === queries.length - 1;
       return (

@@ -293,10 +293,11 @@ export const conversationSlice = createSlice({
       );
 
       if (existingIndex !== -1) {
-        Object.assign(
-          state.queries[index].tool_calls[existingIndex],
-          tool_call,
-        );
+        const existingCall = state.queries[index].tool_calls[existingIndex];
+        state.queries[index].tool_calls[existingIndex] = {
+          ...existingCall,
+          ...tool_call,
+        };
       } else state.queries[index].tool_calls.push(tool_call);
     },
     updateQuery(
