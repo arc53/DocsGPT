@@ -143,8 +143,8 @@ def run_agent_logic(agent_config, input_data):
         agent = AgentCreator.create_agent(
             agent_type,
             endpoint="webhook",
-            llm_name=settings.LLM_NAME,
-            gpt_model=settings.MODEL_NAME,
+            llm_name=settings.LLM_PROVIDER,
+            gpt_model=settings.LLM_NAME,
             api_key=settings.API_KEY,
             user_api_key=user_api_key,
             prompt=prompt,
@@ -159,7 +159,7 @@ def run_agent_logic(agent_config, input_data):
             prompt=prompt,
             chunks=chunks,
             token_limit=settings.DEFAULT_MAX_HISTORY,
-            gpt_model=settings.MODEL_NAME,
+            gpt_model=settings.LLM_NAME,
             user_api_key=user_api_key,
             decoded_token=decoded_token,
         )
@@ -449,7 +449,7 @@ def attachment_worker(self, file_info, user):
     try:
         self.update_state(state="PROGRESS", meta={"current": 10})
         storage = StorageCreator.get_storage()
-        
+
         self.update_state(
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
         )
@@ -458,9 +458,11 @@ def attachment_worker(self, file_info, user):
             relative_path,
             lambda local_path, **kwargs: SimpleDirectoryReader(
                 input_files=[local_path], exclude_hidden=True, errors="ignore"
-            ).load_data()[0].text
+            )
+            .load_data()[0]
+            .text,
         )
-            
+
         token_count = num_tokens_from_string(content)
 
         self.update_state(
@@ -488,9 +490,7 @@ def attachment_worker(self, file_info, user):
             f"Stored attachment with ID: {attachment_id}", extra={"user": user}
         )
 
-        self.update_state(
-            state="PROGRESS", meta={"current": 100, "status": "Complete"}
-        )
+        self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
 
         return {
             "filename": filename,

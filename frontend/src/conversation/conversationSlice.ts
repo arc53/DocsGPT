@@ -4,14 +4,21 @@ import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
 import store from '../store';
 import {
-  selectCompletedAttachments,
   clearAttachments,
+  selectCompletedAttachments,
 } from '../upload/uploadSlice';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
 } from './conversationHandlers';
-import { Answer, Query, Status, ConversationState } from './conversationModels';
+import {
+  Answer,
+  Attachment,
+  ConversationState,
+  Query,
+  Status,
+} from './conversationModels';
+import { ToolCallsType } from './types';
 
 const initialState: ConversationState = {
   queries: [],
@@ -112,11 +119,11 @@ export const fetchAnswer = createAsyncThunk<
                   query: { sources: data.source ?? [] },
                 }),
               );
-            } else if (data.type === 'tool_calls') {
+            } else if (data.type === 'tool_call') {
               dispatch(
-                updateToolCalls({
+                updateToolCall({
                   index: targetIndex,
-                  query: { tool_calls: data.tool_calls },
+                  tool_call: data.data as ToolCallsType,
                 }),
               );
             } else if (data.type === 'error') {
@@ -282,12 +289,24 @@ export const conversationSlice = createSlice({
         state.queries[index].sources!.push(query.sources![0]);
       }
     },
-    updateToolCalls(
-      state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
-    ) {
-      const { index, query } = action.payload;
-      state.queries[index].tool_calls = query?.tool_calls ?? [];
+    updateToolCall(state, action) {
+      const { index, tool_call } = action.payload;
+
+      if (!state.queries[index].tool_calls) {
+        state.queries[index].tool_calls = [];
+      }
+
+      const existingIndex = state.queries[index].tool_calls.findIndex(
+        (call) => call.call_id === tool_call.call_id,
+      );
+
+      if (existingIndex !== -1) {
+        const existingCall = state.queries[index].tool_calls[existingIndex];
+        state.queries[index].tool_calls[existingIndex] = {
+          ...existingCall,
+          ...tool_call,
+        };
+      } else state.queries[index].tool_calls.push(tool_call);
     },
     updateQuery(
       state,
@@ -347,7 +366,7 @@ export const {
   updateConversationId,
   updateThought,
   updateStreamingSource,
-  updateToolCalls,
+  updateToolCall,
   setConversation,
   setStatus,
   raiseError,

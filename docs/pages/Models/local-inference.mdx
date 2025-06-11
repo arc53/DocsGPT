@@ -15,8 +15,8 @@ Setting up a local inference engine with DocsGPT is configured through environme
 
 To connect to a local inference engine, you will generally need to configure these settings in your `.env` file:
 
-*   **`LLM_NAME`**:  Crucially set this to `openai`. This tells DocsGPT to use the OpenAI-compatible API format for communication, even though the LLM is local.
-*   **`MODEL_NAME`**:  Specify the model name as recognized by your local inference engine. This might be a model identifier or left as `None` if the engine doesn't require explicit model naming in the API request.
+*   **`LLM_PROVIDER`**:  Crucially set this to `openai`. This tells DocsGPT to use the OpenAI-compatible API format for communication, even though the LLM is local.
+*   **`LLM_NAME`**:  Specify the model name as recognized by your local inference engine. This might be a model identifier or left as `None` if the engine doesn't require explicit model naming in the API request.
 *   **`OPENAI_BASE_URL`**:  This is essential. Set this to the base URL of your local inference engine's API endpoint. This tells DocsGPT where to find your local LLM server.
 *   **`API_KEY`**:  Generally, for local inference engines, you can set `API_KEY=None` as authentication is usually not required in local setups.
 
@@ -24,16 +24,16 @@ To connect to a local inference engine, you will generally need to configure the
 
 DocsGPT is readily configurable to work with the following local inference engines, all communicating via the OpenAI API format. Here are example `OPENAI_BASE_URL` values for each, based on default setups:
 
-| Inference Engine              | `LLM_NAME` | `OPENAI_BASE_URL`          |
-| :---------------------------- | :--------- | :------------------------- |
-| LLaMa.cpp                     | `openai`   | `http://localhost:8000/v1`   |
-| Ollama                        | `openai`   | `http://localhost:11434/v1`  |
-| Text Generation Inference (TGI)| `openai`   | `http://localhost:8080/v1`   |
-| SGLang                        | `openai`   | `http://localhost:30000/v1`  |
-| vLLM                          | `openai`   | `http://localhost:8000/v1`   |
-| Aphrodite                     | `openai`   | `http://localhost:2242/v1`   |
-| FriendliAI                    | `openai`   | `http://localhost:8997/v1`   |
-| LMDeploy                      | `openai`   | `http://localhost:23333/v1` |
+| Inference Engine              | `LLM_PROVIDER` | `OPENAI_BASE_URL`          |
+| :---------------------------- | :------------- | :------------------------- |
+| LLaMa.cpp                     | `openai`       | `http://localhost:8000/v1`   |
+| Ollama                        | `openai`       | `http://localhost:11434/v1`  |
+| Text Generation Inference (TGI)| `openai`      | `http://localhost:8080/v1`   |
+| SGLang                        | `openai`       | `http://localhost:30000/v1`  |
+| vLLM                          | `openai`       | `http://localhost:8000/v1`   |
+| Aphrodite                     | `openai`       | `http://localhost:2242/v1`   |
+| FriendliAI                    | `openai`       | `http://localhost:8997/v1`   |
+| LMDeploy                      | `openai`       | `http://localhost:23333/v1` |
 
 **Important Note on `localhost` vs `host.docker.internal`:**
 

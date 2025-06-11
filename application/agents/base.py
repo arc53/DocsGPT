@@ -2,16 +2,18 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, List, Optional
 
-from application.agents.llm_handler import get_llm_handler
+from bson.objectid import ObjectId
+
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
 
 from application.core.mongo_db import MongoDB
+from application.core.settings import settings
+
+from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 from application.retriever.base import BaseRetriever
-from application.core.settings import settings
-from bson.objectid import ObjectId
 
 
 class BaseAgent(ABC):
@@ -45,7 +47,9 @@ class BaseAgent(ABC):
             user_api_key=user_api_key,
             decoded_token=decoded_token,
         )
-        self.llm_handler = get_llm_handler(llm_name)
+        self.llm_handler = LLMHandlerCreator.create_handler(
+            llm_name if llm_name else "default"
+        )
         self.attachments = attachments or []
 
     @log_activity()
@@ -132,6 +136,15 @@ class BaseAgent(ABC):
         parser = ToolActionParser(self.llm.__class__.__name__)
         tool_id, action_name, call_args = parser.parse_args(call)
 
+        call_id = getattr(call, "id", None) or str(uuid.uuid4())
+        tool_call_data = {
+            "tool_name": tools_dict[tool_id]["name"],
+            "call_id": call_id,
+            "action_name": f"{action_name}_{tool_id}",
+            "arguments": call_args,
+        }
+        yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
+
         tool_data = tools_dict[tool_id]
         action_data = (
             tool_data["config"]["actions"][action_name]
@@ -184,18 +197,28 @@ class BaseAgent(ABC):
         else:
             print(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
-        call_id = getattr(call, "id", None)
+        tool_call_data["result"] = (
+            f"{str(result)[:50]}..." if len(str(result)) > 50 else result
+        )
 
-        tool_call_data = {
-            "tool_name": tool_data["name"],
-            "call_id": call_id if call_id is not None else "None",
-            "action_name": f"{action_name}_{tool_id}",
-            "arguments": call_args,
-            "result": result,
-        }
+        yield {"type": "tool_call", "data": {**tool_call_data, "status": "completed"}}
         self.tool_calls.append(tool_call_data)
 
         return result, call_id
+
+    def _get_truncated_tool_calls(self):
+        return [
+            {
+                **tool_call,
+                "result": (
+                    f"{str(tool_call['result'])[:50]}..."
+                    if len(str(tool_call["result"])) > 50
+                    else tool_call["result"]
+                ),
+                "status": "completed",
+            }
+            for tool_call in self.tool_calls
+        ]
 
     def _build_messages(
         self,
@@ -252,9 +275,16 @@ class BaseAgent(ABC):
         return retrieved_data
 
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
-        resp = self.llm.gen_stream(
-            model=self.gpt_model, messages=messages, tools=self.tools
-        )
+        gen_kwargs = {"model": self.gpt_model, "messages": messages}
+
+        if (
+            hasattr(self.llm, "_supports_tools")
+            and self.llm._supports_tools
+            and self.tools
+        ):
+            gen_kwargs["tools"] = self.tools
+        resp = self.llm.gen_stream(**gen_kwargs)
+
         if log_context:
             data = build_stack_data(self.llm, exclude_attributes=["client"])
             log_context.stacks.append({"component": "llm", "data": data})
@@ -268,10 +298,30 @@ class BaseAgent(ABC):
         log_context: Optional[LogContext] = None,
         attachments: Optional[List[Dict]] = None,
     ):
-        resp = self.llm_handler.handle_response(
-            self, resp, tools_dict, messages, attachments
+        resp = self.llm_handler.process_message_flow(
+            self, resp, tools_dict, messages, attachments, True
         )
         if log_context:
             data = build_stack_data(self.llm_handler, exclude_attributes=["tool_calls"])
             log_context.stacks.append({"component": "llm_handler", "data": data})
         return resp
+
+    def _handle_response(self, response, tools_dict, messages, log_context):
+        if isinstance(response, str):
+            yield {"answer": response}
+            return
+        if hasattr(response, "message") and getattr(response.message, "content", None):
+            yield {"answer": response.message.content}
+            return
+
+        processed_response_gen = self._llm_handler(
+            response, tools_dict, messages, log_context, self.attachments
+        )
+
+        for event in processed_response_gen:
+            if isinstance(event, str):
+                yield {"answer": event}
+            elif hasattr(event, "message") and getattr(event.message, "content", None):
+                yield {"answer": event.message.content}
+            elif isinstance(event, dict) and "type" in event:
+                yield event
