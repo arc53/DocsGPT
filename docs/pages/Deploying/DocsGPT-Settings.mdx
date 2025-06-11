@@ -20,9 +20,9 @@ The easiest and recommended way to configure basic settings is by using a `.env`
 **Example `.env` file structure:**
 
 ```
-LLM_NAME=openai
+LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY
-MODEL_NAME=gpt-4o
+LLM_NAME=gpt-4o
 ```
 
 ### 2. Configuration via `settings.py` file (Advanced)
@@ -37,7 +37,7 @@ While modifying `settings.py` offers more flexibility, it's generally recommende
 
 Here are some of the most fundamental settings you'll likely want to configure:
 
-- **`LLM_NAME`**: This setting determines which Large Language Model (LLM) provider DocsGPT will use.  It tells DocsGPT which API to interact with.
+- **`LLM_PROVIDER`**: This setting determines which Large Language Model (LLM) provider DocsGPT will use.  It tells DocsGPT which API to interact with.
 
     - **Common values:**
         - `docsgpt`:  Use the DocsGPT Public API Endpoint (simple and free, as offered in `setup.sh` option 1).
@@ -49,11 +49,11 @@ Here are some of the most fundamental settings you'll likely want to configure:
         - `azure_openai`: Use Azure OpenAI Service.
         - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.):  This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
-- **`MODEL_NAME`**:  Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_NAME` you've selected.
+- **`LLM_NAME`**:  Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_PROVIDER` you've selected.
 
     - **Examples:**
-        - For `LLM_NAME=openai`: `gpt-4o`
-        - For `LLM_NAME=google`: `gemini-2.0-flash`
+        - For `LLM_PROVIDER=openai`: `gpt-4o`
+        - For `LLM_PROVIDER=google`: `gemini-2.0-flash`
         - For local models (e.g., Ollama): `llama3.2:1b` (or any model name available in your setup).
 
 - **`EMBEDDINGS_NAME`**:  This setting defines which embedding model DocsGPT will use to generate vector embeddings for your documents. Embeddings are numerical representations of text that allow DocsGPT to understand the semantic meaning of your documents for efficient search and retrieval.
@@ -63,7 +63,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`API_KEY`**:  Required for most cloud-based LLM providers.  This is your authentication key to access the LLM provider's API. You'll need to obtain this key from your chosen provider's platform.
 
-- **`OPENAI_BASE_URL`**:  Specifically used when `LLM_NAME` is set to `openai` but you are connecting to a local inference engine (like Ollama, Llama.cpp, etc.) that exposes an OpenAI-compatible API.  This setting tells DocsGPT where to find your local LLM server.
+- **`OPENAI_BASE_URL`**:  Specifically used when `LLM_PROVIDER` is set to `openai` but you are connecting to a local inference engine (like Ollama, Llama.cpp, etc.) that exposes an OpenAI-compatible API.  This setting tells DocsGPT where to find your local LLM server.
 
 ## Configuration Examples
 
@@ -74,9 +74,9 @@ Let's look at some concrete examples of how to configure these settings in your 
 To use OpenAI's `gpt-4o` model, you would configure your `.env` file like this:
 
 ```
-LLM_NAME=openai
+LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY  # Replace with your actual OpenAI API key
-MODEL_NAME=gpt-4o
+LLM_NAME=gpt-4o
 ```
 
 Make sure to replace `YOUR_OPENAI_API_KEY` with your actual OpenAI API key.
@@ -86,14 +86,14 @@ Make sure to replace `YOUR_OPENAI_API_KEY` with your actual OpenAI API key.
 To use a local Ollama server with the `llama3.2:1b` model, you would configure your `.env` file like this:
 
 ```
-LLM_NAME=openai # Using OpenAI compatible API format for local models
+LLM_PROVIDER=openai # Using OpenAI compatible API format for local models
 API_KEY=None      # API Key is not needed for local Ollama
-MODEL_NAME=llama3.2:1b
+LLM_NAME=llama3.2:1b
 OPENAI_BASE_URL=http://host.docker.internal:11434/v1 # Default Ollama API URL within Docker
 EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2 # You can also run embeddings locally if needed
 ```
 
-In this case, even though you are using Ollama locally, `LLM_NAME` is set to `openai` because Ollama (and many other local inference engines) are designed to be API-compatible with OpenAI.  `OPENAI_BASE_URL` points DocsGPT to the local Ollama server.
+In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to `openai` because Ollama (and many other local inference engines) are designed to be API-compatible with OpenAI.  `OPENAI_BASE_URL` points DocsGPT to the local Ollama server.
 
 ## Authentication Settings
 
