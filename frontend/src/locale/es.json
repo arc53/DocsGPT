@@ -245,7 +245,8 @@
       "promptName": "Nombre del Prompt",
       "promptText": "Texto del Prompt",
       "save": "Guardar",
-      "nameExists": "El nombre ya existe"
+      "nameExists": "El nombre ya existe",
+      "deleteConfirmation": "¿Estás seguro de que deseas eliminar el prompt '{{name}}'?"
     },
     "chunk": {
       "add": "Agregar Fragmento",

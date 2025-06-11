@@ -23,6 +23,7 @@ import {
   setIdentifier,
   updateQuery,
 } from './sharedConversationSlice';
+import { selectCompletedAttachments } from '../upload/uploadSlice';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ export const SharedConversation = () => {
   const date = useSelector(selectDate);
   const apiKey = useSelector(selectClientAPIKey);
   const status = useSelector(selectStatus);
+  const completedAttachments = useSelector(selectCompletedAttachments);
 
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -106,7 +108,19 @@ export const SharedConversation = () => {
   }) => {
     question = question.trim();
     if (question === '') return;
-    !isRetry && dispatch(addQuery({ prompt: question })); //dispatch only new queries
+
+    const filesAttached = completedAttachments
+      .filter((a) => a.id)
+      .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+
+    !isRetry &&
+      dispatch(
+        addQuery({
+          prompt: question,
+          attachments: filesAttached,
+        }),
+      ); //dispatch only new queries
+
     dispatch(fetchSharedAnswer({ question }));
   };
   useEffect(() => {

@@ -7,6 +7,7 @@ import Dropdown from '../components/Dropdown';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
 
 export default function Prompts({
   prompts,
@@ -40,6 +41,11 @@ export default function Prompts({
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
   const { t } = useTranslation();
 
+  const [promptToDelete, setPromptToDelete] = React.useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
   const handleAddPrompt = async () => {
     try {
       const response = await userService.createPrompt(
@@ -69,20 +75,37 @@ export default function Prompts({
   };
 
   const handleDeletePrompt = (id: string) => {
-    setPrompts(prompts.filter((prompt) => prompt.id !== id));
-    userService
-      .deletePrompt({ id }, token)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Failed to delete prompt');
-        }
-        if (prompts.length > 0) {
-          onSelectPrompt(prompts[0].name, prompts[0].id, prompts[0].type);
-        }
-      })
-      .catch((error) => {
-        console.error(error);
-      });
+    const promptToRemove = prompts.find((prompt) => prompt.id === id);
+    if (promptToRemove) {
+      setPromptToDelete({ id, name: promptToRemove.name });
+    }
+  };
+
+  const confirmDeletePrompt = () => {
+    if (promptToDelete) {
+      setPrompts(prompts.filter((prompt) => prompt.id !== promptToDelete.id));
+      userService
+        .deletePrompt({ id: promptToDelete.id }, token)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to delete prompt');
+          }
+          if (prompts.length > 0) {
+            const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
+            if (firstPrompt) {
+              onSelectPrompt(
+                firstPrompt.name,
+                firstPrompt.id,
+                firstPrompt.type,
+              );
+            }
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+        });
+      setPromptToDelete(null);
+    }
   };
 
   const handleFetchPromptContent = async (id: string) => {
@@ -202,6 +225,19 @@ export default function Prompts({
         handleAddPrompt={handleAddPrompt}
         handleEditPrompt={handleSaveChanges}
       />
+      {promptToDelete && (
+        <ConfirmationModal
+          message={t('modals.prompts.deleteConfirmation', {
+            name: promptToDelete.name,
+          })}
+          modalState="ACTIVE"
+          setModalState={() => setPromptToDelete(null)}
+          submitLabel={t('modals.deleteConv.delete')}
+          handleSubmit={confirmDeletePrompt}
+          handleCancel={() => setPromptToDelete(null)}
+          variant="danger"
+        />
+      )}
     </>
   );
 }
