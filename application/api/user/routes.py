@@ -3454,7 +3454,6 @@ class StoreAttachment(Resource):
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
-        # Apply safe_filename to user ID
         user = safe_filename(decoded_token.get("sub"))
 
         try:
