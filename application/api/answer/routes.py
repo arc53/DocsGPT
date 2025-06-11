@@ -310,11 +310,12 @@ def complete_stream(
                     yield f"data: {data}\n\n"
             elif "tool_calls" in line:
                 tool_calls = line["tool_calls"]
-                data = json.dumps({"type": "tool_calls", "tool_calls": tool_calls})
-                yield f"data: {data}\n\n"
             elif "thought" in line:
                 thought += line["thought"]
                 data = json.dumps({"type": "thought", "thought": line["thought"]})
+                yield f"data: {data}\n\n"
+            elif "type" in line:
+                data = json.dumps(line)
                 yield f"data: {data}\n\n"
 
         if isNoneDoc:
