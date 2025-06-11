@@ -11,8 +11,8 @@ from application.worker import (
 
 
 @celery.task(bind=True)
-def ingest(self, directory, formats, name_job, filename, user):
-    resp = ingest_worker(self, directory, formats, name_job, filename, user)
+def ingest(self, directory, formats, job_name, filename, user, dir_name, user_dir):
+    resp = ingest_worker(self, directory, formats, job_name, filename, user, dir_name, user_dir)
     return resp
 
 

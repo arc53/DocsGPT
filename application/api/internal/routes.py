@@ -38,10 +38,10 @@ def upload_index_files():
     """Upload two files(index.faiss, index.pkl) to the user's folder."""
     if "user" not in request.form:
         return {"status": "no user"}
-    user = safe_filename(request.form["user"])
+    user = request.form["user"] 
     if "name" not in request.form:
         return {"status": "no name"}
-    job_name = safe_filename(request.form["name"])
+    job_name = request.form["name"]
     tokens = request.form["tokens"]
     retriever = request.form["retriever"]
     id = request.form["id"]

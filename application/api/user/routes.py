@@ -497,12 +497,16 @@ class UploadFile(Resource):
                 ),
                 400,
             )
-        user = safe_filename(decoded_token.get("sub"))
-        job_name = safe_filename(request.form["name"])
+        user = decoded_token.get("sub")
+        job_name = request.form["name"]
+        
+        # Create safe versions for filesystem operations
+        safe_user = safe_filename(user)
+        dir_name = safe_filename(job_name)
 
         try:
             storage = StorageCreator.get_storage()
-            base_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}"
+            base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
 
             if len(files) > 1:
                 temp_files = []
@@ -512,11 +516,11 @@ class UploadFile(Resource):
                     storage.save_file(file, temp_path)
                     temp_files.append(temp_path)
                     print(f"Saved file: {filename}")
-                zip_filename = f"{job_name}.zip"
+                zip_filename = f"{dir_name}.zip"
                 zip_path = f"{base_path}/{zip_filename}"
                 zip_temp_path = None
 
-                def create_zip_archive(temp_paths, job_name, storage):
+                def create_zip_archive(temp_paths, dir_name, storage):
                     import tempfile
 
                     with tempfile.NamedTemporaryFile(
@@ -556,7 +560,7 @@ class UploadFile(Resource):
                     return zip_output_path
 
                 try:
-                    zip_temp_path = create_zip_archive(temp_files, job_name, storage)
+                    zip_temp_path = create_zip_archive(temp_files, dir_name, storage)
                     with open(zip_temp_path, "rb") as zip_file:
                         storage.save_file(zip_file, zip_path)
                     task = ingest.delay(
@@ -581,6 +585,8 @@ class UploadFile(Resource):
                         job_name,
                         zip_filename,
                         user,
+                        dir_name,
+                        safe_user,
                     )
                 finally:
                     # Clean up temporary files
@@ -628,6 +634,8 @@ class UploadFile(Resource):
                     job_name,
                     filename,  # Corrected variable for single-file case
                     user,
+                    dir_name,
+                    safe_user,
                 )
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
