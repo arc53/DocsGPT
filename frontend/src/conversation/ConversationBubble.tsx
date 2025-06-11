@@ -769,7 +769,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
         </button>
       </div>
       {isToolCallsOpen && (
-        <div className="fade-in ml-3 mr-5 w-[90vw] md:w-[70vw] lg:w-[50vw]">
+        <div className="fade-in ml-3 mr-5 w-[90vw] md:w-[70vw] lg:w-full">
           <div className="grid grid-cols-1 gap-2">
             {toolCalls.map((toolCall, index) => (
               <Accordion
