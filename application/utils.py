@@ -1,8 +1,11 @@
 import hashlib
+import os
 import re
+import uuid
 
 import tiktoken
 from flask import jsonify, make_response
+from werkzeug.utils import secure_filename
 
 
 _encoding = None
@@ -13,6 +16,31 @@ def get_encoding():
     if _encoding is None:
         _encoding = tiktoken.get_encoding("cl100k_base")
     return _encoding
+
+
+def safe_filename(filename):
+    """
+    Creates a safe filename that preserves the original extension.
+    Uses secure_filename, but ensures a proper filename is returned even with non-Latin characters.
+    
+    Args:
+        filename (str): The original filename
+        
+    Returns:
+        str: A safe filename that can be used for storage
+    """
+    if not filename:
+        return str(uuid.uuid4())
+        
+    _, extension = os.path.splitext(filename)
+    
+    safe_name = secure_filename(filename)
+    
+    # If secure_filename returns just the extension or an empty string
+    if not safe_name or safe_name == extension.lstrip('.'):
+        return f"{str(uuid.uuid4())}{extension}"
+    
+    return safe_name
 
 
 def num_tokens_from_string(string: str) -> int:
