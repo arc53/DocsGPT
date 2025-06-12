@@ -28,7 +28,7 @@ from application.core.settings import settings
 from application.extensions import api
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
-from application.utils import check_required_fields, validate_function_name
+from application.utils import check_required_fields, safe_filename, validate_function_name
 from application.vectorstore.vector_creator import VectorCreator
 
 storage = StorageCreator.get_storage()
@@ -497,29 +497,30 @@ class UploadFile(Resource):
                 ),
                 400,
             )
-        user = secure_filename(decoded_token.get("sub"))
-        job_name = secure_filename(request.form["name"])
+        user = decoded_token.get("sub")
+        job_name = request.form["name"]
+        
+        # Create safe versions for filesystem operations
+        safe_user = safe_filename(user)
+        dir_name = safe_filename(job_name)
 
         try:
-            from application.storage.storage_creator import StorageCreator
-
             storage = StorageCreator.get_storage()
-
-            base_path = f"{settings.UPLOAD_FOLDER}/{user}/{job_name}"
+            base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
 
             if len(files) > 1:
                 temp_files = []
                 for file in files:
-                    filename = secure_filename(file.filename)
+                    filename = safe_filename(file.filename)
                     temp_path = f"{base_path}/temp/{filename}"
                     storage.save_file(file, temp_path)
                     temp_files.append(temp_path)
                     print(f"Saved file: {filename}")
-                zip_filename = f"{job_name}.zip"
+                zip_filename = f"{dir_name}.zip"
                 zip_path = f"{base_path}/{zip_filename}"
                 zip_temp_path = None
 
-                def create_zip_archive(temp_paths, job_name, storage):
+                def create_zip_archive(temp_paths, dir_name, storage):
                     import tempfile
 
                     with tempfile.NamedTemporaryFile(
@@ -559,7 +560,7 @@ class UploadFile(Resource):
                     return zip_output_path
 
                 try:
-                    zip_temp_path = create_zip_archive(temp_files, job_name, storage)
+                    zip_temp_path = create_zip_archive(temp_files, dir_name, storage)
                     with open(zip_temp_path, "rb") as zip_file:
                         storage.save_file(zip_file, zip_path)
                     task = ingest.delay(
@@ -584,6 +585,8 @@ class UploadFile(Resource):
                         job_name,
                         zip_filename,
                         user,
+                        dir_name,
+                        safe_user,
                     )
                 finally:
                     # Clean up temporary files
@@ -604,7 +607,7 @@ class UploadFile(Resource):
                 # For single file
 
                 file = files[0]
-                filename = secure_filename(file.filename)
+                filename = safe_filename(file.filename)
                 file_path = f"{base_path}/{filename}"
 
                 storage.save_file(file, file_path)
@@ -631,6 +634,8 @@ class UploadFile(Resource):
                     job_name,
                     filename,  # Corrected variable for single-file case
                     user,
+                    dir_name,
+                    safe_user,
                 )
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
@@ -3457,7 +3462,7 @@ class StoreAttachment(Resource):
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
-        user = secure_filename(decoded_token.get("sub"))
+        user = safe_filename(decoded_token.get("sub"))
 
         try:
             attachment_id = ObjectId()
