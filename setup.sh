@@ -169,7 +169,7 @@ prompt_ollama_options() {
 # 1) Use DocsGPT Public API Endpoint (simple and free)
 use_docs_public_api_endpoint() {
     echo -e "\n${NC}Setting up DocsGPT Public API Endpoint...${NC}"
-    echo "LLM_NAME=docsgpt" > .env
+    echo "LLM_PROVIDER=docsgpt" > .env
     echo "VITE_API_STREAMING=true" >> .env
     echo -e "${GREEN}.env file configured for DocsGPT Public API.${NC}"
 
@@ -237,13 +237,12 @@ serve_local_ollama() {
 
     echo -e "\n${NC}Configuring for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]'))...${NC}" # Using tr for uppercase - more compatible
     echo "API_KEY=xxxx" > .env # Placeholder API Key
-    echo "LLM_NAME=openai" >> .env
-    echo "MODEL_NAME=$model_name" >> .env
+    echo "LLM_PROVIDER=openai" >> .env
+    echo "LLM_NAME=$model_name" >> .env
     echo "VITE_API_STREAMING=true" >> .env
     echo "OPENAI_BASE_URL=http://ollama:11434/v1" >> .env
     echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> .env
     echo -e "${GREEN}.env file configured for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]')${NC}${GREEN}).${NC}"
-    echo -e "${YELLOW}Note: MODEL_NAME is set to '${BOLD}$model_name${NC}${YELLOW}'. You can change it later in the .env file.${NC}"
 
 
     check_and_start_docker
@@ -350,8 +349,8 @@ connect_local_inference_engine() {
 
     echo -e "\n${NC}Configuring for Local Inference Engine: ${BOLD}${engine_name}...${NC}"
     echo "API_KEY=None" > .env
-    echo "LLM_NAME=openai" >> .env
-    echo "MODEL_NAME=$model_name" >> .env
+    echo "LLM_PROVIDER=openai" >> .env
+    echo "LLM_NAME=$model_name" >> .env
     echo "VITE_API_STREAMING=true" >> .env
     echo "OPENAI_BASE_URL=$openai_base_url" >> .env
     echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> .env
@@ -381,7 +380,7 @@ connect_local_inference_engine() {
 
 # 4) Connect Cloud API Provider
 connect_cloud_api_provider() {
-    local provider_choice api_key llm_name
+    local provider_choice api_key llm_provider
     local setup_result # Variable to store the return status
 
     get_api_key() {
@@ -395,43 +394,43 @@ connect_cloud_api_provider() {
         case "$provider_choice" in
             1) # OpenAI
                 provider_name="OpenAI"
-                llm_name="openai"
+                llm_provider="openai"
                 model_name="gpt-4o"
                 get_api_key
                 break ;;
             2) # Google
                 provider_name="Google (Vertex AI, Gemini)"
-                llm_name="google"
+                llm_provider="google"
                 model_name="gemini-2.0-flash"
                 get_api_key
                 break ;;
             3) # Anthropic
                 provider_name="Anthropic (Claude)"
-                llm_name="anthropic"
+                llm_provider="anthropic"
                 model_name="claude-3-5-sonnet-latest"
                 get_api_key
                 break ;;
             4) # Groq
                 provider_name="Groq"
-                llm_name="groq"
+                llm_provider="groq"
                 model_name="llama-3.1-8b-instant"
                 get_api_key
                 break ;;
             5) # HuggingFace Inference API
                 provider_name="HuggingFace Inference API"
-                llm_name="huggingface"
+                llm_provider="huggingface"
                 model_name="meta-llama/Llama-3.1-8B-Instruct"
                 get_api_key
                 break ;;
             6) # Azure OpenAI
                 provider_name="Azure OpenAI"
-                llm_name="azure_openai"
+                llm_provider="azure_openai"
                 model_name="gpt-4o"
                 get_api_key
                 break ;;
             7) # Novita
                 provider_name="Novita"
-                llm_name="novita"
+                llm_provider="novita"
                 model_name="deepseek/deepseek-r1"
                 get_api_key
                 break ;;
@@ -442,8 +441,8 @@ connect_cloud_api_provider() {
 
     echo -e "\n${NC}Configuring for Cloud API Provider: ${BOLD}${provider_name}...${NC}"
     echo "API_KEY=$api_key" > .env
-    echo "LLM_NAME=$llm_name" >> .env
-    echo "MODEL_NAME=$model_name" >> .env
+    echo "LLM_PROVIDER=$llm_provider" >> .env
+    echo "LLM_NAME=$model_name" >> .env
     echo "VITE_API_STREAMING=true" >> .env
     echo -e "${GREEN}.env file configured for ${BOLD}${provider_name}${NC}${GREEN}.${NC}"
 

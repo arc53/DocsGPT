@@ -11,18 +11,18 @@ current_dir = os.path.dirname(
 
 class Settings(BaseSettings):
     AUTH_TYPE: Optional[str] = None
-    LLM_NAME: str = "docsgpt"
-    MODEL_NAME: Optional[str] = (
-        None  # if LLM_NAME is openai, MODEL_NAME can be gpt-4 or gpt-3.5-turbo
+    LLM_PROVIDER: str = "docsgpt"
+    LLM_NAME: Optional[str] = (
+        None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     )
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MONGO_DB_NAME: str = "docsgpt"
-    MODEL_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
+    LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
-    MODEL_TOKEN_LIMITS: dict = {
+    LLM_TOKEN_LIMITS: dict = {
         "gpt-4o-mini": 128000,
         "gpt-3.5-turbo": 4096,
         "claude-2": 1e5,
@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     )
     RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"]  # also brave_search
     AGENT_NAME: str = "classic"
+    FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
+    FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm
+    FALLBACK_LLM_API_KEY: Optional[str] = None  # api key for fallback llm
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
@@ -99,8 +102,7 @@ class Settings(BaseSettings):
     BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
-    STORAGE_TYPE: str = "local"  # local or s3 
-
+    STORAGE_TYPE: str = "local"  # local or s3
 
     JWT_SECRET_KEY: str = ""
 

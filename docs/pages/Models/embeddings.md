@@ -60,7 +60,7 @@ To use OpenAI's `text-embedding-ada-002` embedding model, you need to set `EMBED
 **Example `.env` configuration for OpenAI Embeddings:**
 
 ```
-LLM_NAME=openai
+LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY # Your OpenAI API Key
 EMBEDDINGS_NAME=openai_text-embedding-ada-002
 ```

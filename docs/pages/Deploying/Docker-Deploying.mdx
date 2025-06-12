@@ -37,7 +37,7 @@ The fastest way to try out DocsGPT is by using the public API endpoint. This req
     Open the `.env` file and add the following lines:
 
     ```
-    LLM_NAME=docsgpt
+    LLM_PROVIDER=docsgpt
     VITE_API_STREAMING=true
     ```
 
@@ -93,16 +93,16 @@ There are two Ollama optional files:
 
 3.  **Pull the Ollama Model:**
 
-    **Crucially, after launching with Ollama, you need to pull the desired model into the Ollama container.**  Find the `MODEL_NAME` you configured in your `.env` file (e.g., `llama3.2:1b`). Then execute the following command to pull the model *inside* the running Ollama container:
+    **Crucially, after launching with Ollama, you need to pull the desired model into the Ollama container.**  Find the `LLM_NAME` you configured in your `.env` file (e.g., `llama3.2:1b`). Then execute the following command to pull the model *inside* the running Ollama container:
 
     ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <MODEL_NAME>
+    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <LLM_NAME>
     ```
     or (for GPU):
      ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <MODEL_NAME>
+    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <LLM_NAME>
     ```
-    Replace `<MODEL_NAME>` with the actual model name from your `.env` file.
+    Replace `<LLM_NAME>` with the actual model name from your `.env` file.
 
 4.  **Access DocsGPT in your browser:**
 

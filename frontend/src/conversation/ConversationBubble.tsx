@@ -26,7 +26,9 @@ import UserIcon from '../assets/user.svg';
 import Accordion from '../components/Accordion';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
+import MermaidRenderer from '../components/MermaidRenderer';
 import Sidebar from '../components/Sidebar';
+import Spinner from '../components/Spinner';
 import SpeakButton from '../components/TextToSpeechButton';
 import { useDarkTheme, useOutsideAlerter } from '../hooks';
 import {
@@ -36,7 +38,6 @@ import {
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
 import { ToolCallsType } from './types';
-import MermaidRenderer from '../components/MermaidRenderer';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -768,7 +769,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
         </button>
       </div>
       {isToolCallsOpen && (
-        <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+        <div className="fade-in ml-3 mr-5 w-[90vw] md:w-[70vw] lg:w-full">
           <div className="grid grid-cols-1 gap-2">
             {toolCalls.map((toolCall, index) => (
               <Accordion
@@ -805,14 +806,21 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         textToCopy={JSON.stringify(toolCall.result, null, 2)}
                       />
                     </p>
-                    <p className="dark:tex break-words rounded-b-2xl p-2 font-mono text-sm dark:bg-[#222327]">
-                      <span
-                        className="leading-[23px] text-black dark:text-gray-400"
-                        style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                      >
-                        {JSON.stringify(toolCall.result, null, 2)}
+                    {toolCall.status === 'pending' && (
+                      <span className="flex w-full items-center justify-center rounded-b-2xl p-2 dark:bg-[#222327]">
+                        <Spinner size="small" />
                       </span>
-                    </p>
+                    )}
+                    {toolCall.status === 'completed' && (
+                      <p className="break-words rounded-b-2xl p-2 font-mono text-sm dark:bg-[#222327]">
+                        <span
+                          className="leading-[23px] text-black dark:text-gray-400"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {JSON.stringify(toolCall.result, null, 2)}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </div>
               </Accordion>

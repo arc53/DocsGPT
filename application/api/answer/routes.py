@@ -37,17 +37,17 @@ api.add_namespace(answer_ns)
 
 gpt_model = ""
 # to have some kind of default behaviour
-if settings.LLM_NAME == "openai":
+if settings.LLM_PROVIDER == "openai":
     gpt_model = "gpt-4o-mini"
-elif settings.LLM_NAME == "anthropic":
+elif settings.LLM_PROVIDER == "anthropic":
     gpt_model = "claude-2"
-elif settings.LLM_NAME == "groq":
+elif settings.LLM_PROVIDER == "groq":
     gpt_model = "llama3-8b-8192"
-elif settings.LLM_NAME == "novita":
+elif settings.LLM_PROVIDER == "novita":
     gpt_model = "deepseek/deepseek-r1"
 
-if settings.MODEL_NAME:  # in case there is particular model name configured
-    gpt_model = settings.MODEL_NAME
+if settings.LLM_NAME:  # in case there is particular model name configured
+    gpt_model = settings.LLM_NAME
 
 # load the prompts
 current_dir = os.path.dirname(
@@ -307,11 +307,12 @@ def complete_stream(
                     yield f"data: {data}\n\n"
             elif "tool_calls" in line:
                 tool_calls = line["tool_calls"]
-                data = json.dumps({"type": "tool_calls", "tool_calls": tool_calls})
-                yield f"data: {data}\n\n"
             elif "thought" in line:
                 thought += line["thought"]
                 data = json.dumps({"type": "thought", "thought": line["thought"]})
+                yield f"data: {data}\n\n"
+            elif "type" in line:
+                data = json.dumps(line)
                 yield f"data: {data}\n\n"
 
         if isNoneDoc:
@@ -319,7 +320,7 @@ def complete_stream(
                 doc["source"] = "None"
 
         llm = LLMCreator.create_llm(
-            settings.LLM_NAME,
+            settings.LLM_PROVIDER,
             api_key=settings.API_KEY,
             user_api_key=user_api_key,
             decoded_token=decoded_token,
@@ -451,9 +452,7 @@ class Stream(Resource):
             agent_type = settings.AGENT_NAME
             decoded_token = getattr(request, "decoded_token", None)
             user_sub = decoded_token.get("sub") if decoded_token else None
-            agent_key, is_shared_usage, shared_token = get_agent_key(
-                agent_id, user_sub
-            )
+            agent_key, is_shared_usage, shared_token = get_agent_key(agent_id, user_sub)
 
             if agent_key:
                 data.update({"api_key": agent_key})
@@ -504,7 +503,7 @@ class Stream(Resource):
             agent = AgentCreator.create_agent(
                 agent_type,
                 endpoint="stream",
-                llm_name=settings.LLM_NAME,
+                llm_name=settings.LLM_PROVIDER,
                 gpt_model=gpt_model,
                 api_key=settings.API_KEY,
                 user_api_key=user_api_key,
@@ -658,7 +657,7 @@ class Answer(Resource):
             agent = AgentCreator.create_agent(
                 agent_type,
                 endpoint="api/answer",
-                llm_name=settings.LLM_NAME,
+                llm_name=settings.LLM_PROVIDER,
                 gpt_model=gpt_model,
                 api_key=settings.API_KEY,
                 user_api_key=user_api_key,
@@ -727,7 +726,7 @@ class Answer(Resource):
                     doc["source"] = "None"
 
             llm = LLMCreator.create_llm(
-                settings.LLM_NAME,
+                settings.LLM_PROVIDER,
                 api_key=settings.API_KEY,
                 user_api_key=user_api_key,
                 decoded_token=decoded_token,

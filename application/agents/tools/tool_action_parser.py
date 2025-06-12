@@ -17,26 +17,21 @@ class ToolActionParser:
         return parser(call)
 
     def _parse_openai_llm(self, call):
-        if isinstance(call, dict):
-            try:
-                call_args = json.loads(call["function"]["arguments"])
-                tool_id = call["function"]["name"].split("_")[-1]
-                action_name = call["function"]["name"].rsplit("_", 1)[0]
-            except (KeyError, TypeError) as e:
-                logger.error(f"Error parsing OpenAI LLM call: {e}")
-                return None, None, None
-        else:
-            try:
-                call_args = json.loads(call.function.arguments)
-                tool_id = call.function.name.split("_")[-1]
-                action_name = call.function.name.rsplit("_", 1)[0]
-            except (AttributeError, TypeError) as e:
-                logger.error(f"Error parsing OpenAI LLM call: {e}")
-                return None, None, None
+        try:
+            call_args = json.loads(call.arguments)
+            tool_id = call.name.split("_")[-1]
+            action_name = call.name.rsplit("_", 1)[0]
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error parsing OpenAI LLM call: {e}")
+            return None, None, None
         return tool_id, action_name, call_args
 
     def _parse_google_llm(self, call):
-        call_args = call.args
-        tool_id = call.name.split("_")[-1]
-        action_name = call.name.rsplit("_", 1)[0]
+        try:
+            call_args = call.arguments
+            tool_id = call.name.split("_")[-1]
+            action_name = call.name.rsplit("_", 1)[0]
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error parsing Google LLM call: {e}")
+            return None, None, None
         return tool_id, action_name, call_args
