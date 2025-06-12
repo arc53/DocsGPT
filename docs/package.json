@@ -9,8 +9,8 @@
     "@vercel/analytics": "^1.1.1",
     "docsgpt-react": "^0.5.1",
     "next": "^15.3.3",
-    "nextra": "^2.13.2",
-    "nextra-theme-docs": "^2.13.2",
+    "nextra": "^4.2.17",
+    "nextra-theme-docs": "^4.2.17",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   }
