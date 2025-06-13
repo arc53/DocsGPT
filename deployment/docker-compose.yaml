@@ -28,9 +28,9 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ../application/indexes:/app/application/indexes
+      - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
-      - ../application/vectors:/app/application/vectors
+      - ../application/vectors:/app/vectors
     depends_on:
       - redis
       - mongo
@@ -50,9 +50,9 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
     volumes:
-      - ../application/indexes:/app/application/indexes
+      - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
-      - ../application/vectors:/app/application/vectors
+      - ../application/vectors:/app/vectors
     depends_on:
       - redis
       - mongo
