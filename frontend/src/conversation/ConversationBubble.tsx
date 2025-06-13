@@ -161,7 +161,7 @@ const ConversationBubble = forwardRef<
                     style={{
                       wordBreak: 'break-word',
                     }}
-                    className="ml-2 mr-2 flex max-w-full items-center whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue px-[19px] py-[14px] text-sm leading-normal text-white sm:text-base"
+                    className="ml-2 mr-2 flex max-w-full items-start gap-2 whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] pl-[19px] pr-3 text-sm leading-normal text-white sm:text-base"
                   >
                     <div
                       ref={messageRef}
@@ -169,22 +169,24 @@ const ConversationBubble = forwardRef<
                     >
                       {message}
                     </div>
+                    {shouldShowToggle && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsQuestionCollapsed(!isQuestionCollapsed);
+                        }}
+                        className="rounded-full p-2.5 hover:bg-[#D9D9D933]"
+                      >
+                        <img
+                          src={ChevronDown}
+                          alt="Toggle"
+                          width={24}
+                          height={24}
+                          className={`transform invert transition-transform duration-200 ${isQuestionCollapsed ? '' : 'rotate-180'}`}
+                        />
+                      </button>
+                    )}
                   </div>
-                  {shouldShowToggle && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsQuestionCollapsed(!isQuestionCollapsed);
-                      }}
-                      className="absolute right-3 top-3 z-10 rounded-full bg-purple-400/10 p-1 hover:bg-purple-400/30"
-                    >
-                      <img
-                        src={ChevronDown}
-                        alt="Toggle"
-                        className={`h-4 w-4 transform invert transition-transform duration-200 ${isQuestionCollapsed ? '' : 'rotate-180'}`}
-                      />
-                    </button>
-                  )}
                 </div>
                 <button
                   onClick={() => {
