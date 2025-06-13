@@ -7,7 +7,6 @@ import logging
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.storage.storage_creator import StorageCreator
-from application.utils import safe_filename
 
 
 logger = logging.getLogger(__name__)
