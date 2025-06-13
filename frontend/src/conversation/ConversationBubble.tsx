@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, Fragment, useRef, useState } from 'react';
+import { forwardRef, Fragment, useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
@@ -90,14 +90,24 @@ const ConversationBubble = forwardRef<
   const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isQuestionHovered, setIsQuestionHovered] = useState(false);
   const [editInputBox, setEditInputBox] = useState<string>('');
-
+  const messageRef = useRef<HTMLDivElement>(null);
+  const [shouldShowToggle, setShouldShowToggle] = useState(false);
   const [isLikeClicked, setIsLikeClicked] = useState(false);
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement | null>(null);
+  const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
+
+  useEffect(() => {
+    if (messageRef.current) {
+      const height = messageRef.current.scrollHeight;
+      setShouldShowToggle(height > 84);
+    }
+  }, [message]);
+
   const handleEditClick = () => {
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
@@ -146,14 +156,36 @@ const ConversationBubble = forwardRef<
             />
             {!isEditClicked && (
               <>
-                <div className="mr-2 flex flex-col">
+                <div className="relative mr-2 flex w-full flex-col">
                   <div
                     style={{
                       wordBreak: 'break-word',
                     }}
-                    className="ml-2 mr-2 flex max-w-full items-center whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue px-[19px] py-[14px] text-sm leading-normal text-white sm:text-base"
+                    className="ml-2 mr-2 flex max-w-full items-start gap-2 whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] pl-[19px] pr-3 text-sm leading-normal text-white sm:text-base"
                   >
-                    {message}
+                    <div
+                      ref={messageRef}
+                      className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
+                    >
+                      {message}
+                    </div>
+                    {shouldShowToggle && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsQuestionCollapsed(!isQuestionCollapsed);
+                        }}
+                        className="rounded-full p-2.5 hover:bg-[#D9D9D933]"
+                      >
+                        <img
+                          src={ChevronDown}
+                          alt="Toggle"
+                          width={24}
+                          height={24}
+                          className={`transform invert transition-transform duration-200 ${isQuestionCollapsed ? '' : 'rotate-180'}`}
+                        />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <button
