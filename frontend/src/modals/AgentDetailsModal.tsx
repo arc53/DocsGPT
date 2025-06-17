@@ -94,24 +94,21 @@ export default function AgentDetailsModal({
               <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
                 Public Link
               </h2>
-              {sharedToken && (
-                <div className="mb-1">
+            </div>
+            {sharedToken ? (
+              <div className="items-center gap-2">
+                <p className="inline break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                  {`${baseURL}/shared/agent/${sharedToken}`}
                   <CopyButton
                     textToCopy={`${baseURL}/shared/agent/${sharedToken}`}
                     padding="p-1"
+                    className="ml-1 inline-flex"
                   />
-                </div>
-              )}
-            </div>
-            {sharedToken ? (
-              <div className="flex flex-col flex-wrap items-start gap-2">
-                <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                  {`${baseURL}/shared/agent/${sharedToken}`}
                 </p>
               </div>
             ) : (
               <button
-                className="hover:bg-vi</button>olets-are-blue flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
                 onClick={handleGeneratePublicLink}
               >
                 {loadingStates.publicLink ? (
@@ -127,11 +124,23 @@ export default function AgentDetailsModal({
               API Key
             </h2>
             {apiKey ? (
-              <span className="font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                {apiKey}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                  {apiKey}
+                  {!apiKey.includes('...') && (
+                    <CopyButton
+                      textToCopy={apiKey}
+                      padding="p-1"
+                      className="ml-1 inline-flex"
+                    />
+                  )}
+                </span>
+                {!apiKey.includes('...') && (
+                  <CopyButton textToCopy={apiKey} padding="p-1" />
+                )}
+              </div>
             ) : (
-              <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
+              <button className="w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
                 Generate
               </button>
             )}
@@ -141,21 +150,21 @@ export default function AgentDetailsModal({
               <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
                 Webhook URL
               </h2>
-              {webhookUrl && (
-                <div className="mb-1">
-                  <CopyButton textToCopy={webhookUrl} padding="p-1" />
-                </div>
-              )}
             </div>
             {webhookUrl ? (
-              <div className="flex flex-col flex-wrap items-start gap-2">
-                <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
+              <div className="flex items-center gap-2">
+                <p className="break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
                   {webhookUrl}
+                  <CopyButton
+                    textToCopy={webhookUrl}
+                    padding="p-1"
+                    className="ml-1 inline-flex"
+                  />
                 </p>
               </div>
             ) : (
               <button
-                className="hover:bg-vi</button>olets-are-blue flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
                 onClick={handleGenerateWebhook}
               >
                 {loadingStates.webhook ? (
