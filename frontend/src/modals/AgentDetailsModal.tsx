@@ -94,24 +94,40 @@ export default function AgentDetailsModal({
               <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
                 Public Link
               </h2>
-              {sharedToken && (
-                <div className="mb-1">
+            </div>
+            {sharedToken ? (
+              <div className="flex flex-col gap-2">
+                <p className="inline break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                  <a
+                    href={`${baseURL}/shared/agent/${sharedToken}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {`${baseURL}/shared/agent/${sharedToken}`}
+                  </a>
                   <CopyButton
                     textToCopy={`${baseURL}/shared/agent/${sharedToken}`}
                     padding="p-1"
+                    className="absolute -mt-0.5 ml-1 inline-flex"
                   />
-                </div>
-              )}
-            </div>
-            {sharedToken ? (
-              <div className="flex flex-col flex-wrap items-start gap-2">
-                <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                  {`${baseURL}/shared/agent/${sharedToken}`}
                 </p>
+                <a
+                  href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
+                  className="flex w-fit items-center gap-1 text-purple-30 hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="text-sm">Learn more</span>
+                  <img
+                    src="/src/assets/external-link.svg"
+                    alt="External link"
+                    className="h-3 w-3"
+                  />
+                </a>
               </div>
             ) : (
               <button
-                className="hover:bg-vi</button>olets-are-blue flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="flex w-28 items-center justify-center rounded-3xl border border-solid border-purple-30 px-5 py-2 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white"
                 onClick={handleGeneratePublicLink}
               >
                 {loadingStates.publicLink ? (
@@ -127,11 +143,37 @@ export default function AgentDetailsModal({
               API Key
             </h2>
             {apiKey ? (
-              <span className="font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                {apiKey}
-              </span>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                    {apiKey}
+                    {!apiKey.includes('...') && (
+                      <CopyButton
+                        textToCopy={apiKey}
+                        padding="p-1"
+                        className="absolute -mt-0.5 ml-1 inline-flex"
+                      />
+                    )}
+                  </div>
+                  {!apiKey.includes('...') && (
+                    <a
+                      href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
+                      className="group ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border border-purple-30 py-1.5 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Test
+                      <img
+                        src="/src/assets/external-link.svg"
+                        alt="External link"
+                        className="h-3 w-3 group-hover:brightness-0 group-hover:invert"
+                      />
+                    </a>
+                  )}
+                </div>
+              </div>
             ) : (
-              <button className="hover:bg-vi</button>olets-are-blue w-28 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white">
+              <button className="w-28 rounded-3xl border border-solid border-purple-30 px-5 py-2 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white">
                 Generate
               </button>
             )}
@@ -141,21 +183,36 @@ export default function AgentDetailsModal({
               <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
                 Webhook URL
               </h2>
-              {webhookUrl && (
-                <div className="mb-1">
-                  <CopyButton textToCopy={webhookUrl} padding="p-1" />
-                </div>
-              )}
             </div>
             {webhookUrl ? (
-              <div className="flex flex-col flex-wrap items-start gap-2">
-                <p className="f break-all font-mono text-sm text-gray-700 dark:text-[#ECECF1]">
-                  {webhookUrl}
+              <div className="flex flex-col gap-2">
+                <p className="break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                  <a href={webhookUrl} target="_blank" rel="noreferrer">
+                    {webhookUrl}
+                  </a>
+                  <CopyButton
+                    textToCopy={webhookUrl}
+                    padding="p-1"
+                    className="absolute -mt-0.5 ml-1 inline-flex"
+                  />
                 </p>
+                <a
+                  href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
+                  className="flex w-fit items-center gap-1 text-purple-30 hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="text-sm">Learn more</span>
+                  <img
+                    src="/src/assets/external-link.svg"
+                    alt="External link"
+                    className="h-3 w-3"
+                  />
+                </a>
               </div>
             ) : (
               <button
-                className="hover:bg-vi</button>olets-are-blue flex w-28 items-center justify-center rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="flex w-28 items-center justify-center rounded-3xl border border-solid border-purple-30 px-5 py-2 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white"
                 onClick={handleGenerateWebhook}
               >
                 {loadingStates.webhook ? (

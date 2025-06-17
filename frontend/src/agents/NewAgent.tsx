@@ -333,7 +333,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <button
                   ref={sourceAnchorButtonRef}
                   onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className="w-full truncate rounded-3xl border border-silver bg-white px-5 py-3 text-left text-sm text-gray-400 dark:border-[#7E7E7E] dark:bg-[#222327] dark:text-silver"
+                  className={`w-full truncate rounded-3xl border border-silver bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] dark:bg-[#222327] ${
+                    selectedSourceIds.size > 0
+                      ? 'text-jet dark:text-bright-gray'
+                      : 'text-gray-400 dark:text-silver'
+                  }`}
                 >
                   {selectedSourceIds.size > 0
                     ? Array.from(selectedSourceIds)
@@ -436,7 +440,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <button
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className="w-full truncate rounded-3xl border border-silver bg-white px-5 py-3 text-left text-sm text-gray-400 dark:border-[#7E7E7E] dark:bg-[#222327] dark:text-silver"
+                className={`w-full truncate rounded-3xl border border-silver bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] dark:bg-[#222327] ${
+                  selectedToolIds.size > 0
+                    ? 'text-jet dark:text-bright-gray'
+                    : 'text-gray-400 dark:text-silver'
+                }`}
               >
                 {selectedToolIds.size > 0
                   ? Array.from(selectedToolIds)
