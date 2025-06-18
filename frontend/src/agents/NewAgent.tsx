@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -6,6 +6,7 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
 import Dropdown from '../components/Dropdown';
+import { FileUpload } from '../components/FileUpload';
 import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -48,6 +49,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     agent_type: '',
     status: '',
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [prompts, setPrompts] = useState<
     { name: string; id: string; type: string }[]
   >([]);
@@ -106,6 +108,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
   };
 
+  const handleUpload = useCallback((files: File[]) => {
+    if (files && files.length > 0) {
+      const file = files[0];
+      setImageFile(file);
+    }
+  }, []);
+
   const handleCancel = () => {
     if (selectedAgent) dispatch(setSelectedAgent(null));
     navigate('/agents');
@@ -118,42 +127,80 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handleSaveDraft = async () => {
-    const response =
-      effectiveMode === 'new'
-        ? await userService.createAgent({ ...agent, status: 'draft' }, token)
-        : await userService.updateAgent(
-            agent.id || '',
-            { ...agent, status: 'draft' },
-            token,
-          );
-    if (!response.ok) throw new Error('Failed to create agent draft');
-    const data = await response.json();
-    if (effectiveMode === 'new') {
-      setEffectiveMode('draft');
-      setAgent((prev) => ({ ...prev, id: data.id }));
+    const formData = new FormData();
+    formData.append('name', agent.name);
+    formData.append('description', agent.description);
+    formData.append('source', agent.source);
+    formData.append('chunks', agent.chunks);
+    formData.append('retriever', agent.retriever);
+    formData.append('prompt_id', agent.prompt_id);
+    formData.append('agent_type', agent.agent_type);
+    formData.append('status', 'draft');
+
+    if (imageFile) formData.append('image', imageFile);
+
+    if (agent.tools && agent.tools.length > 0)
+      formData.append('tools', JSON.stringify(agent.tools));
+    else formData.append('tools', '[]');
+
+    try {
+      const response =
+        effectiveMode === 'new'
+          ? await userService.createAgent(formData, token)
+          : await userService.updateAgent(agent.id || '', formData, token);
+      if (!response.ok) throw new Error('Failed to create agent draft');
+      const data = await response.json();
+      if (effectiveMode === 'new') {
+        setEffectiveMode('draft');
+        setAgent((prev) => ({
+          ...prev,
+          id: data.id,
+          image: data.image || prev.image,
+        }));
+      }
+    } catch (error) {
+      console.error('Error saving draft:', error);
+      throw new Error('Failed to save draft');
     }
   };
 
   const handlePublish = async () => {
-    const response =
-      effectiveMode === 'new'
-        ? await userService.createAgent(
-            { ...agent, status: 'published' },
-            token,
-          )
-        : await userService.updateAgent(
-            agent.id || '',
-            { ...agent, status: 'published' },
-            token,
-          );
-    if (!response.ok) throw new Error('Failed to publish agent');
-    const data = await response.json();
-    if (data.id) setAgent((prev) => ({ ...prev, id: data.id }));
-    if (data.key) setAgent((prev) => ({ ...prev, key: data.key }));
-    if (effectiveMode === 'new' || effectiveMode === 'draft') {
-      setEffectiveMode('edit');
-      setAgent((prev) => ({ ...prev, status: 'published' }));
-      setAgentDetails('ACTIVE');
+    const formData = new FormData();
+    formData.append('name', agent.name);
+    formData.append('description', agent.description);
+    formData.append('source', agent.source);
+    formData.append('chunks', agent.chunks);
+    formData.append('retriever', agent.retriever);
+    formData.append('prompt_id', agent.prompt_id);
+    formData.append('agent_type', agent.agent_type);
+    formData.append('status', 'published');
+
+    if (imageFile) formData.append('image', imageFile);
+    if (agent.tools && agent.tools.length > 0)
+      formData.append('tools', JSON.stringify(agent.tools));
+    else formData.append('tools', '[]');
+
+    try {
+      const response =
+        effectiveMode === 'new'
+          ? await userService.createAgent(formData, token)
+          : await userService.updateAgent(agent.id || '', formData, token);
+      if (!response.ok) throw new Error('Failed to publish agent');
+      const data = await response.json();
+      if (data.id) setAgent((prev) => ({ ...prev, id: data.id }));
+      if (data.key) setAgent((prev) => ({ ...prev, key: data.key }));
+      if (effectiveMode === 'new' || effectiveMode === 'draft') {
+        setEffectiveMode('edit');
+        setAgent((prev) => ({
+          ...prev,
+          status: 'published',
+          image: data.image || prev.image,
+        }));
+        setAgentDetails('ACTIVE');
+      }
+    } catch (error) {
+      console.error('Error publishing agent:', error);
+      throw new Error('Failed to publish agent');
     }
   };
 
@@ -325,6 +372,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 setAgent({ ...agent, description: e.target.value })
               }
             />
+            <div className="mt-3">
+              <FileUpload
+                showPreview
+                className="dark:bg-[#222327]"
+                onUpload={handleUpload}
+                onRemove={() => setImageFile(null)}
+                uploadText={[
+                  { text: 'Click to upload', colorClass: 'text-[#7D54D1]' },
+                  {
+                    text: ' or drag and drop',
+                    colorClass: 'text-[#525252]',
+                  },
+                ]}
+              />
+            </div>
           </div>
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Source</h2>
