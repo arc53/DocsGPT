@@ -401,9 +401,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       <div className="flex items-center gap-2">
                         <div className="flex w-6 justify-center">
                           <img
-                            src={agent.image ?? Robot}
+                            src={
+                              agent.image && agent.image.trim() !== ''
+                                ? agent.image
+                                : Robot
+                            }
                             alt="agent-logo"
-                            className="h-6 w-6"
+                            className="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
                         <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">

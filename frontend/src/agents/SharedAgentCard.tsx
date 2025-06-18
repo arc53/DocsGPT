@@ -6,7 +6,10 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
     <div className="flex w-full max-w-[720px] flex-col rounded-3xl border border-dark-gray p-6 shadow-sm dark:border-grey sm:w-fit sm:min-w-[480px]">
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
-          <img src={Robot} className="h-full w-full object-contain" />
+          <img
+            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+            className="h-full w-full rounded-full object-contain"
+          />
         </div>
         <div className="flex max-h-[92px] w-[80%] flex-col gap-px">
           <h2 className="text-base font-semibold text-[#212121] dark:text-[#E0E0E0] sm:text-lg">
