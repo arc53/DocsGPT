@@ -53,7 +53,7 @@ function Dropdown({
   darkBorderColor?: string;
   showEdit?: boolean;
   onEdit?: (value: { name: string; id: string; type: string }) => void;
-  showDelete?: boolean;
+  showDelete?: boolean | ((option: any) => boolean);
   onDelete?: (value: string) => void;
   placeholder?: string;
   placeholderTextColor?: string;
@@ -173,8 +173,15 @@ function Dropdown({
               )}
               {showDelete && onDelete && (
                 <button
-                  onClick={() => onDelete(option.id)}
-                  disabled={option.type === 'public'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete?.(typeof option === 'string' ? option : option.id);
+                  }}
+                  className={`${
+                    typeof showDelete === 'function' && !showDelete(option)
+                      ? 'hidden'
+                      : ''
+                  } mr-2 h-4 w-4 cursor-pointer hover:opacity-50`}
                 >
                   <img
                     src={Trash}

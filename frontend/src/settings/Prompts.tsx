@@ -177,7 +177,7 @@ export default function Prompts({
               rounded="3xl"
               border="border"
               showEdit
-              showDelete
+              showDelete={(prompt) => prompt.type !== 'public'}
               onEdit={({
                 id,
                 name,
