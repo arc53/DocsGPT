@@ -6,16 +6,25 @@ import secrets
 import shutil
 import uuid
 from functools import wraps
+from typing import Optional, Tuple
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
-from flask import Blueprint, current_app, jsonify, make_response, redirect, request
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    Response,
+)
 from flask_restx import fields, inputs, Namespace, Resource
+from pymongo import ReturnDocument
 from werkzeug.utils import secure_filename
 
 from application.agents.tools.tool_manager import ToolManager
-from pymongo import ReturnDocument
 
 from application.api.user.tasks import (
     ingest,
@@ -30,9 +39,9 @@ from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
 from application.utils import (
     check_required_fields,
+    generate_image_url,
     safe_filename,
     validate_function_name,
-    generate_image_url,
 )
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -146,6 +155,29 @@ def get_vector_store(source_id):
         embeddings_key=os.getenv("EMBEDDINGS_KEY"),
     )
     return store
+
+
+def handle_image_upload(
+    request, existing_url: str, user: str, storage, base_path: str = "attachments/"
+) -> Tuple[str, Optional[Response]]:
+    image_url = existing_url
+
+    if "image" in request.files:
+        file = request.files["image"]
+        if file.filename != "":
+            filename = secure_filename(file.filename)
+            upload_path = f"{settings.UPLOAD_FOLDER.rstrip('/')}/{user}/{base_path.rstrip('/')}/{uuid.uuid4()}_{filename}"
+            try:
+                storage.save_file(file, upload_path)
+                image_url = upload_path
+            except Exception as e:
+                current_app.logger.error(f"Error uploading image: {e}")
+                return None, make_response(
+                    jsonify({"success": False, "message": "Image upload failed"}),
+                    400,
+                )
+
+    return image_url, None
 
 
 @user_ns.route("/api/delete_conversation")
@@ -1254,21 +1286,12 @@ class CreateAgent(Resource):
         if missing_fields:
             return missing_fields
 
-        image_url = ""
-        if "image" in request.files:
-            file = request.files["image"]
-            if file.filename != "":
-                filename = secure_filename(file.filename)
-                upload_path = f"agents/{user}/{str(uuid.uuid4())}_{filename}"
-                try:
-                    storage.save_file(file, upload_path)
-                    image_url = upload_path
-                except Exception as e:
-                    current_app.logger.error(f"Error uploading agent image: {e}")
-                    return make_response(
-                        jsonify({"success": False, "message": "Image upload failed"}),
-                        400,
-                    )
+        image_url, error = handle_image_upload(request, "", user, storage)
+        if error:
+            return make_response(
+                jsonify({"success": False, "message": "Image upload failed"}), 400
+            )
+
         try:
             key = str(uuid.uuid4())
             new_agent = {
@@ -1370,21 +1393,13 @@ class UpdateAgent(Resource):
                 404,
             )
 
-        image_url = existing_agent.get("image", "")
-        if "image" in request.files:
-            file = request.files["image"]
-            if file.filename != "":
-                filename = secure_filename(file.filename)
-                upload_path = f"agents/{user}/{str(uuid.uuid4())}_{filename}"
-                try:
-                    storage.save_file(file, upload_path)
-                    image_url = upload_path
-                except Exception as e:
-                    current_app.logger.error(f"Error uploading agent image: {e}")
-                    return make_response(
-                        jsonify({"success": False, "message": "Image upload failed"}),
-                        400,
-                    )
+        image_url, error = handle_image_upload(
+            request, existing_agent.get("image", ""), user, storage
+        )
+        if error:
+            return make_response(
+                jsonify({"success": False, "message": "Image upload failed"}), 400
+            )
 
         update_fields = {}
         allowed_fields = [
@@ -3581,10 +3596,7 @@ class ServeImage(Resource):
     @api.doc(description="Serve an image from storage")
     def get(self, image_path):
         try:
-            s3_storage = StorageCreator.create_storage("s3")
-
-            file_obj = s3_storage.get_file(image_path)
-
+            file_obj = storage.get_file(image_path)
             extension = image_path.split(".")[-1].lower()
             content_type = f"image/{extension}"
             if extension == "jpg":
