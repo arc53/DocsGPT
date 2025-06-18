@@ -57,9 +57,7 @@ export default function SharedAgent() {
 
   const handleFetchAnswer = useCallback(
     ({ question, index }: { question: string; index?: number }) => {
-      fetchStream.current = dispatch(
-        fetchAnswer({ question, indx: index, isPreview: false }),
-      );
+      fetchStream.current = dispatch(fetchAnswer({ question, indx: index }));
     },
     [dispatch],
   );

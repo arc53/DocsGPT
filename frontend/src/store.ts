@@ -8,6 +8,7 @@ import {
   prefSlice,
 } from './preferences/preferenceSlice';
 import uploadReducer from './upload/uploadSlice';
+import agentPreviewReducer from './agents/agentPreviewSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
 const prompt = localStorage.getItem('DocsGPTPrompt');
@@ -54,6 +55,7 @@ const store = configureStore({
     conversation: conversationSlice.reducer,
     sharedConversation: sharedConversationSlice.reducer,
     upload: uploadReducer,
+    agentPreview: agentPreviewReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(prefListenerMiddleware.middleware),
