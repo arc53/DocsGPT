@@ -1,0 +1,306 @@
+{
+  "language": "普通话",
+  "chat": "聊天",
+  "chats": "聊天",
+  "newChat": "新聊天",
+  "inputPlaceholder": "DocsGPT 如何帮助您？",
+  "tagline": "DocsGPT 使用 GenAI, 请使用来源审核关键信息.",
+  "sourceDocs": "源",
+  "none": "无",
+  "cancel": "取消",
+  "help": "帮助",
+  "emailUs": "给我们发邮件",
+  "documentation": "文档",
+  "manageAgents": "管理代理",
+  "demo": [
+    {
+      "header": "了解 DocsGPT",
+      "query": "DocsGPT 是什么"
+    },
+    {
+      "header": "总结文档",
+      "query": "总结当前情况"
+    },
+    {
+      "header": "编写代码",
+      "query": "为 /api/answer API 请求编写代码"
+    },
+    {
+      "header": "学习帮助",
+      "query": "为背景写出潜在问题"
+    }
+  ],
+  "settings": {
+    "label": "设置",
+    "general": {
+      "label": "一般",
+      "selectTheme": "选择主题",
+      "light": "浅色",
+      "dark": "暗色",
+      "selectLanguage": "选择语言",
+      "chunks": "每个查询处理的块",
+      "prompt": "提示",
+      "deleteAllLabel": "删除所有对话",
+      "deleteAllBtn": "删除所有",
+      "addNew": "添加新的",
+      "convHistory": "对话历史",
+      "none": "无",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "unlimited": "无限",
+      "default": "默认",
+      "add": "添加"
+    },
+    "documents": {
+      "title": "此表格包含所有可供您使用的文档以及您上传的文档",
+      "label": "文档",
+      "name": "文件名称",
+      "date": "向量日期",
+      "type": "类型",
+      "tokenUsage": "令牌使用",
+      "noData": "没有现有的文档",
+      "searchPlaceholder": "搜索...",
+      "addNew": "添加新文档",
+      "preLoaded": "预加载",
+      "private": "私有",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "从不",
+        "daily": "每天",
+        "weekly": "每周",
+        "monthly": "每月"
+      },
+      "actions": "操作",
+      "view": "查看",
+      "deleteWarning": "您确定要删除 \"{{name}}\" 吗？",
+      "backToAll": "返回所有文档",
+      "chunks": "文本块",
+      "noChunks": "未找到文本块",
+      "noChunksAlt": "未找到文本块",
+      "goToDocuments": "前往文档",
+      "uploadNew": "上传新文档"
+    },
+    "apiKeys": {
+      "label": "聊天机器人",
+      "name": "名称",
+      "key": "API 密钥",
+      "sourceDoc": "源文档",
+      "createNew": "创建新的",
+      "noData": "没有现有的聊天机器人",
+      "deleteConfirmation": "您确定要删除 API 密钥 '{{name}}' 吗？",
+      "description": "在这里，您可以创建和管理您的聊天机器人。聊天机器人可以作为小部件部署到网站上，或在您的应用程序中使用。"
+    },
+    "analytics": {
+      "label": "分析",
+      "filterByChatbot": "按聊天机器人筛选",
+      "selectChatbot": "选择聊天机器人",
+      "filterOptions": {
+        "hour": "小时",
+        "last24Hours": "24 小时",
+        "last7Days": "7 天",
+        "last15Days": "15 天",
+        "last30Days": "30 天"
+      },
+      "messages": "消息",
+      "tokenUsage": "令牌使用",
+      "userFeedback": "用户反馈",
+      "filterPlaceholder": "筛选",
+      "none": "无",
+      "positiveFeedback": "正向反馈",
+      "negativeFeedback": "负向反馈"
+    },
+    "logs": {
+      "label": "日志",
+      "filterByChatbot": "按聊天机器人筛选",
+      "selectChatbot": "选择聊天机器人",
+      "none": "无",
+      "tableHeader": "API 生成 / 聊天机器人会话"
+    },
+    "tools": {
+      "label": "工具",
+      "searchPlaceholder": "搜索工具...",
+      "addTool": "添加工具",
+      "noToolsFound": "未找到工具",
+      "selectToolSetup": "选择要设置的工具",
+      "settingsIconAlt": "设置图标",
+      "configureToolAria": "配置 {{toolName}}",
+      "toggleToolAria": "切换 {{toolName}}",
+      "manageTools": "前往工具",
+      "edit": "编辑",
+      "delete": "删除",
+      "deleteWarning": "您确定要删除工具 \"{{toolName}}\" 吗？",
+      "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
+      "leaveWithoutSaving": "不保存离开",
+      "saveAndLeave": "保存并离开",
+      "customName": "自定义名称",
+      "customNamePlaceholder": "输入自定义名称（可选）",
+      "authentication": "认证",
+      "actions": "操作",
+      "addAction": "添加操作",
+      "noActionsFound": "未找到操作",
+      "url": "URL",
+      "urlPlaceholder": "输入url",
+      "method": "方法",
+      "description": "描述",
+      "descriptionPlaceholder": "输入描述",
+      "headers": "请求头",
+      "queryParameters": "查询参数",
+      "body": "请求体",
+      "deleteActionWarning": "您确定要删除操作 \"{{name}}\" 吗？",
+      "backToAllTools": "返回所有工具",
+      "save": "保存",
+      "fieldName": "字段名称",
+      "fieldType": "字段类型",
+      "filledByLLM": "由LLM填充",
+      "fieldDescription": "字段描述",
+      "value": "值",
+      "addProperty": "添加属性",
+      "propertyName": "新属性键",
+      "add": "添加",
+      "cancel": "取消",
+      "addNew": "添加新的",
+      "name": "名称",
+      "type": "类型"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "上传新文档",
+      "select": "选择如何将文档上传到 DocsGPT",
+      "file": "从设备上传",
+      "back": "后退",
+      "wait": "请稍等 ...",
+      "remote": "从网站收集",
+      "start": "开始聊天",
+      "name": "名称",
+      "choose": "选择文件",
+      "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip文件",
+      "uploadedFiles": "已上传文件",
+      "cancel": "取消",
+      "train": "训练",
+      "link": "链接",
+      "urlLink": "URL 链接",
+      "repoUrl": "存储库 URL",
+      "reddit": {
+        "id": "客户端ID",
+        "secret": "客户端密钥",
+        "agent": "用户代理",
+        "searchQueries": "搜索查询",
+        "numberOfPosts": "帖子数量",
+        "addQuery": "添加查询"
+      },
+      "drag": {
+        "title": "上传源文件",
+        "description": "将文件拖放到此处以添加为源"
+      },
+      "progress": {
+        "upload": "正在上传",
+        "training": "正在训练",
+        "completed": "训练完成",
+        "wait": "这可能需要几分钟",
+        "tokenLimit": "超出令牌限制，请考虑上传较小的文档"
+      },
+      "showAdvanced": "显示高级选项",
+      "hideAdvanced": "隐藏高级选项"
+    },
+    "createAPIKey": {
+      "label": "创建新的 API 密钥",
+      "apiKeyName": "API 密钥名称",
+      "chunks": "每个查询处理的块",
+      "prompt": "选择活动提示",
+      "sourceDoc": "源文档",
+      "create": "创建"
+    },
+    "saveKey": {
+      "note": "请保存您的密钥",
+      "disclaimer": "这是您的密钥唯一一次展示机会。",
+      "copy": "复制",
+      "copied": "已复制",
+      "confirm": "我已保存密钥"
+    },
+    "deleteConv": {
+      "confirm": "您确定要删除所有对话吗？",
+      "delete": "删除"
+    },
+    "shareConv": {
+      "label": "创建用于分享的公共页面",
+      "note": "源文档、个人信息和后续对话将保持私密",
+      "create": "创建",
+      "option": "允许用户进行更多查询。"
+    },
+    "configTool": {
+      "title": "工具配置",
+      "type": "类型",
+      "apiKeyLabel": "API 密钥 / OAuth",
+      "apiKeyPlaceholder": "输入 API 密钥 / OAuth",
+      "addButton": "添加工具",
+      "closeButton": "关闭"
+    },
+    "prompts": {
+      "addPrompt": "添加提示",
+      "addDescription": "添加自定义提示并保存到 DocsGPT",
+      "editPrompt": "编辑提示",
+      "editDescription": "编辑自定义提示并保存到 DocsGPT",
+      "promptName": "提示名称",
+      "promptText": "提示文本",
+      "save": "保存",
+      "nameExists": "名称已存在",
+      "deleteConfirmation": "您确定要删除提示'{{name}}'吗？"
+    },
+    "chunk": {
+      "add": "添加块",
+      "edit": "编辑块",
+      "title": "标题",
+      "enterTitle": "输入标题",
+      "bodyText": "正文",
+      "promptText": "提示文本",
+      "update": "更新",
+      "close": "关闭",
+      "delete": "删除",
+      "deleteConfirmation": "您确定要删除此块吗？"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "使用创建",
+    "button": "开始使用 DocsGPT",
+    "meta": "DocsGPT 使用 GenAI，请使用资源查看关键信息。"
+  },
+  "convTile": {
+    "share": "分享",
+    "delete": "删除",
+    "rename": "重命名",
+    "deleteWarning": "您确定要删除此对话吗？"
+  },
+  "pagination": {
+    "rowsPerPage": "每页行数",
+    "pageOf": "第 {{currentPage}} 页，共 {{totalPages}} 页",
+    "firstPage": "第一页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "lastPage": "最后一页"
+  },
+  "conversation": {
+    "copy": "复制",
+    "copied": "已复制",
+    "speak": "朗读",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "取消",
+      "placeholder": "输入更新的查询..."
+    },
+    "sources": {
+      "title": "来源",
+      "text": "来源文本",
+      "link": "来源链接",
+      "view_more": "还有{{count}}个来源"
+    },
+    "attachments": {
+      "attach": "附件",
+      "remove": "删除附件",
+      "uploadFailed": "上传失败"
+    },
+    "retry": "重试"
+  }
+}

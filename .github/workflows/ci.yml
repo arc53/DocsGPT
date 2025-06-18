@@ -1,0 +1,112 @@
+name: Build and push DocsGPT Docker image
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    if: github.repository == 'arc53/DocsGPT'
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU  # Only needed for emulation, not for native arm64 builds
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          install: true
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push platform-specific images
+        uses: docker/build-push-action@v6
+        with:
+          file: './application/Dockerfile'
+          platforms: ${{ matrix.platform }}
+          context: ./application
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }}-${{ matrix.suffix }}
+            ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}-${{ matrix.suffix }}
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
+          cache-to: type=inline
+
+  manifest:
+    if: github.repository == 'arc53/DocsGPT'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          install: true
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest for DockerHub
+        run: |
+          set -e
+          docker manifest create ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }} \
+            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }}-amd64 \
+            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }}-arm64
+          docker manifest push ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }}
+          docker manifest create ${{ secrets.DOCKER_USERNAME }}/docsgpt:latest \
+            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }}-amd64 \
+            --amend ${{ secrets.DOCKER_USERNAME }}/docsgpt:${{ github.event.release.tag_name }}-arm64
+          docker manifest push ${{ secrets.DOCKER_USERNAME }}/docsgpt:latest
+
+      - name: Create and push manifest for ghcr.io
+        run: |
+          set -e
+          docker manifest create ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }} \
+            --amend ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}-amd64 \
+            --amend ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}
+          docker manifest create ghcr.io/${{ github.repository_owner }}/docsgpt:latest \
+            --amend ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}-amd64 \
+            --amend ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/docsgpt:latest

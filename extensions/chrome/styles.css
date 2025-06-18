@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+#chat-container {
+    width: 500px;
+    height: 450px;
+    background-color: white;
+    padding: 10px;
+    overflow: auto;
+}
+
+
+
+.bg-gray-200 {
+    background-color: #edf2f7;
+  }
+  
+  .bg-gray-900 {
+    background-color: #1a202c;
+  }
+  
+  .rounded-lg {
+    border-radius: 0.5rem;
+  }
+  
+  .shadow {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  }
+  
+  .text-gray-700 {
+    color: #4a5568;
+  }
+  
+  .text-sm {
+    font-size: 0.875rem;
+  }
+  
+  .p-4 {
+    padding: 1.5rem;
+  }
+  
+
+

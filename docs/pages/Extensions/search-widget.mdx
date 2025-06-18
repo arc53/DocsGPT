@@ -1,0 +1,116 @@
+---
+title: Integrate DocsGPT Search Bar into Your Web Application
+description: Embed the DocsGPT Search Bar Widget in your React or HTML projects to provide AI-powered document search functionality to your users.
+---
+import { Tabs } from 'nextra/components'
+
+# Integrating DocsGPT Search Bar Widget
+
+## Introduction
+
+The DocsGPT Search Bar Widget offers a simple yet powerful way to embed AI-powered document search directly into your web applications. This widget allows users to perform searches across your documents or pages, enabling them to quickly find the information they need. This guide will walk you through embedding the Search Bar Widget into your projects, whether you're using React or plain HTML.
+
+Try out the interactive widget showcase and customize its parameters at the [DocsGPT Widget Demo](https://widget.docsgpt.cloud/).
+
+## Setup
+
+<Tabs items={['React', 'HTML']}>
+  <Tabs.Tab>
+## React Setup
+
+### Installation
+
+Make sure you have Node.js and npm (or yarn, pnpm) installed in your project.  Navigate to your project directory in the terminal and install the `docsgpt` package:
+
+```bash npm
+npm install docsgpt
+```
+
+### Usage
+
+In your React component file, import the `SearchBar` component:
+
+```js
+import { SearchBar } from "docsgpt";
+```
+
+Now, you can embed the widget within your React component's JSX:
+
+```jsx
+<SearchBar
+    apiKey="your-api-key"
+    apiHost="https://your-docsgpt-api.com"
+    theme="light"
+    placeholder="Search or Ask AI..."
+    width="300px"
+/>
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+
+### Installation
+
+To use the DocsGPT Search Bar Widget directly in HTML, include the widget script from a CDN in your HTML file:
+
+```html filename="html"
+<script
+  src="https://unpkg.com/docsgpt/dist/legacy/main.js"
+  type="module"
+></script>
+```
+
+### Usage
+
+In your HTML `<body>`, add a `<div>` element where you want to render the Search Bar Widget. Set an `id` for easy targeting.
+
+```html filename="html"
+<div id="search-bar-container"></div>
+```
+
+Then, in a `<script type="module">` block, use the `renderSearchBar` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and configure its behaviour, pass the relevant parameters within the configuration object of `renderSearchBar`.
+
+```html filename="html"
+<!DOCTYPE html>
+<div id="search-bar-container"></div>
+<script type="module">
+  window.onload = function() {
+    renderSearchBar('search-bar-container', {
+      apiKey: 'your-api-key-here',
+      apiHost: 'https://your-api-host.com',
+      theme: 'light',
+      placeholder: 'Search here...',
+      width: '300px'
+    });
+  }
+</script>
+```
+
+  </Tabs.Tab>
+</Tabs>
+
+---
+
+## Properties Table
+
+The DocsGPT Search Bar Widget offers a range of customizable properties that allow you to tailor its appearance and behavior to perfectly match your web application. These parameters can be modified directly when embedding the widget in your React components or HTML code. Below is a detailed overview of each available prop:
+
+| **Prop**       | **Type**  | **Default Value**                   | **Description**                                                                                  |
+|-----------------|-----------|-------------------------------------|--------------------------------------------------------------------------------------------------|
+| **`apiKey`**    | `string`  | `"your-api-key"`                  | API key for authentication with your DocsGPT API. Leave empty if no authentication is required.                         |
+| **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | **Required.** The URL of your DocsGPT API backend. This endpoint handles vector similarity search queries.           |
+| **`theme`**     | `"dark" \| "light"` | `"dark"`                            | Color theme of the search bar. Options: `"dark"` or `"light"`. Defaults to `"dark"`.                                     |
+| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
+| **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
+
+---
+
+## Notes on Widget Properties
+
+*   **Full Customization:** Every property listed in the table can be customized. Override the defaults to create a Search Bar Widget that perfectly matches your branding and application context.
+*   **API Key Handling:** The `apiKey` prop is optional. Only include it if your DocsGPT backend API is configured to require API key authentication. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com/`
+
+## Explore and Customize Further
+
+The DocsGPT Search Bar Widget is fully open-source, allowing for deep customization and extension beyond the readily available props.
+
+The complete source code for the React-based widget is available in the `extensions/react-widget` directory within the main [DocsGPT GitHub Repository](https://github.com/arc53/DocsGPT). Feel free to explore the code, fork the repository, and tailor the widget to your exact requirements.

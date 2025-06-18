@@ -1,0 +1,17 @@
+node_modules/
+dist/
+prettier.config.cjs
+.eslintrc.cjs
+env.d.ts
+public/
+assets/
+vite-env.d.ts
+.prettierignore
+package-lock.json
+package.json
+postcss.config.cjs
+prettier.config.cjs
+tailwind.config.cjs
+tsconfig.json
+tsconfig.node.json
+vite.config.ts

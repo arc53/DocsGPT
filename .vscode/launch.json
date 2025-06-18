@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Docker Debug Frontend",
+      "request": "launch",
+      "type": "chrome",
+      "preLaunchTask": "docker-compose: debug:frontend",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/frontend",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+        "name": "Flask Debugger",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "flask",
+        "env": {
+            "FLASK_APP": "application/app.py",
+            "PYTHONPATH": "${workspaceFolder}",
+            "FLASK_ENV": "development",
+            "FLASK_DEBUG": "1",
+            "FLASK_RUN_PORT": "7091",
+            "FLASK_RUN_HOST": "0.0.0.0"
+
+        },
+        "args": [
+            "run",
+            "--no-debugger"
+        ],
+        "cwd": "${workspaceFolder}",
+    },
+    {
+      "name": "Celery Debugger",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+      },
+      "args": [
+        "-A",
+        "application.app.celery",
+        "worker",
+        "-l",
+        "INFO",
+        "--pool=solo"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

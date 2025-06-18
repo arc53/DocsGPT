@@ -1,0 +1,69 @@
+services:
+  frontend:
+    build: ../frontend
+    environment:
+      - VITE_API_HOST=http://localhost:7091
+      - VITE_API_STREAMING=$VITE_API_STREAMING
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  backend:
+    build: ../application
+    environment:
+      - API_KEY=$OPENAI_API_KEY
+      - EMBEDDINGS_KEY=$OPENAI_API_KEY
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - OPENAI_API_KEY=$OPENAI_API_KEY
+      - OPENAI_API_BASE=$OPENAI_API_BASE
+      - OPENAI_API_VERSION=$OPENAI_API_VERSION
+      - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
+      - AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$AZURE_EMBEDDINGS_DEPLOYMENT_NAME
+    ports:
+      - "7091:7091"
+    volumes:
+      - ../application/indexes:/app/application/indexes
+      - ../application/inputs:/app/application/inputs
+      - ../application/vectors:/app/application/vectors
+    depends_on:
+        - redis
+        - mongo
+
+  worker:
+    build: ../application
+    command: celery -A application.app.celery worker -l INFO
+    environment:
+      - API_KEY=$OPENAI_API_KEY
+      - EMBEDDINGS_KEY=$OPENAI_API_KEY
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - API_URL=http://backend:7091
+      - OPENAI_API_KEY=$OPENAI_API_KEY
+      - OPENAI_API_BASE=$OPENAI_API_BASE
+      - OPENAI_API_VERSION=$OPENAI_API_VERSION
+      - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
+      - AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$AZURE_EMBEDDINGS_DEPLOYMENT_NAME
+    depends_on:
+        - redis
+        - mongo
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  mongo:
+    image: mongo:6
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/data/db
+
+
+
+volumes:
+  mongodb_data_container:

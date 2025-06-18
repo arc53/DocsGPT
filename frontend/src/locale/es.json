@@ -1,0 +1,306 @@
+{
+  "language": "Español",
+  "chat": "Chat",
+  "chats": "Chats",
+  "newChat": "Nuevo Chat",
+  "inputPlaceholder": "¿Cómo puede DocsGPT ayudarte?",
+  "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
+  "sourceDocs": "Fuente",
+  "none": "Ninguno",
+  "cancel": "Cancelar",
+  "help": "Asistencia",
+  "emailUs": "Envíanos un correo",
+  "documentation": "Documentación",
+  "manageAgents": "Administrar Agentes",
+  "demo": [
+    {
+      "header": "Aprende sobre DocsGPT",
+      "query": "¿Qué es DocsGPT?"
+    },
+    {
+      "header": "Resumir documentación",
+      "query": "Resumir contexto actual"
+    },
+    {
+      "header": "Escribir Código",
+      "query": "Escribir código para solicitud de API a /api/answer"
+    },
+    {
+      "header": "Asistencia de Aprendizaje",
+      "query": "Escribe posibles preguntas para el contexto"
+    }
+  ],
+  "settings": {
+    "label": "Configuración",
+    "general": {
+      "label": "General",
+      "selectTheme": "Seleccionar Tema",
+      "light": "Claro",
+      "dark": "Oscuro",
+      "selectLanguage": "Seleccionar Idioma",
+      "chunks": "Fragmentos procesados por consulta",
+      "prompt": "Prompt Activo",
+      "deleteAllLabel": "Eliminar todas las conversaciones",
+      "deleteAllBtn": "Eliminar todo",
+      "add": "Añadir",
+      "convHistory": "Historial de conversaciones",
+      "none": "Ninguno",
+      "low": "Bajo",
+      "medium": "Medio",
+      "high": "Alto",
+      "unlimited": "Ilimitado",
+      "default": "Predeterminado",
+      "addNew": "Añadir Nuevo"
+    },
+    "documents": {
+      "title": "Esta tabla contiene todos los documentos que están disponibles para ti y los que has subido",
+      "label": "Documentos",
+      "name": "Nombre del Documento",
+      "date": "Fecha de Vector",
+      "type": "Tipo",
+      "tokenUsage": "Uso de Tokens",
+      "noData": "No hay documentos existentes",
+      "searchPlaceholder": "Buscar...",
+      "addNew": "Agregar Nuevo",
+      "preLoaded": "Precargado",
+      "private": "Privado",
+      "sync": "Sincronizar",
+      "syncFrequency": {
+        "never": "Nunca",
+        "daily": "Diario",
+        "weekly": "Semanal",
+        "monthly": "Mensual"
+      },
+      "actions": "Acciones",
+      "view": "Ver",
+      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?",
+      "backToAll": "Volver a todos los documentos",
+      "chunks": "Fragmentos",
+      "noChunks": "No se encontraron fragmentos",
+      "noChunksAlt": "No se encontraron fragmentos",
+      "goToDocuments": "Ir a Documentos",
+      "uploadNew": "Subir nuevo"
+    },
+    "apiKeys": {
+      "label": "Chatbots",
+      "name": "Nombre",
+      "key": "Clave de API",
+      "sourceDoc": "Documento Fuente",
+      "createNew": "Crear Nuevo",
+      "noData": "No hay chatbots existentes",
+      "deleteConfirmation": "¿Estás seguro de que quieres eliminar la clave API '{{name}}'?",
+      "description": "Aquí puede crear y gestionar sus chatbots. Los chatbots se pueden implementar en sitios web como widgets o utilizarse dentro de sus aplicaciones."
+    },
+    "analytics": {
+      "label": "Analítica",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "filterOptions": {
+        "hour": "Hora",
+        "last24Hours": "24 Horas",
+        "last7Days": "7 Días",
+        "last15Days": "15 Días",
+        "last30Days": "30 Días"
+      },
+      "messages": "Mensajes",
+      "tokenUsage": "Uso de Tokens",
+      "userFeedback": "Retroalimentación del Usuario",
+      "filterPlaceholder": "Filtrar",
+      "none": "Ninguno",
+      "positiveFeedback": "Retroalimentación Positiva",
+      "negativeFeedback": "Retroalimentación Negativa"
+    },
+    "logs": {
+      "label": "Registros",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Seleccionar chatbot",
+      "none": "Ninguno",
+      "tableHeader": "Conversaciones generadas por API / chatbot"
+    },
+    "tools": {
+      "label": "Herramientas",
+      "searchPlaceholder": "Buscar...",
+      "addTool": "Agregar Herramienta",
+      "noToolsFound": "No se encontraron herramientas",
+      "selectToolSetup": "Seleccione una herramienta para configurar",
+      "settingsIconAlt": "Icono de configuración",
+      "configureToolAria": "Configurar {{toolName}}",
+      "toggleToolAria": "Alternar {{toolName}}",
+      "manageTools": "Ir a Herramientas",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
+      "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
+      "leaveWithoutSaving": "Salir sin Guardar",
+      "saveAndLeave": "Guardar y Salir",
+      "customName": "Nombre Personalizado",
+      "customNamePlaceholder": "Ingresa un nombre personalizado (opcional)",
+      "authentication": "Autenticación",
+      "actions": "Acciones",
+      "addAction": "Agregar acción",
+      "noActionsFound": "No se encontraron acciones",
+      "url": "URL",
+      "urlPlaceholder": "Ingresa url",
+      "method": "Método",
+      "description": "Descripción",
+      "descriptionPlaceholder": "Ingresa descripción",
+      "headers": "Encabezados",
+      "queryParameters": "Parámetros de Consulta",
+      "body": "Cuerpo",
+      "deleteActionWarning": "¿Estás seguro de que deseas eliminar la acción \"{{name}}\"?",
+      "save": "Guardar",
+      "name": "Nombre",
+      "type": "Tipo",
+      "filledByLLM": "Completado por LLM",
+      "value": "Valor",
+      "addProperty": "Agregar propiedad",
+      "propertyName": "Nueva clave de propiedad",
+      "backToAllTools": "Volver a todas las herramientas",
+      "fieldName": "Nombre del campo",
+      "fieldType": "Tipo de campo",
+      "fieldDescription": "Descripción del campo",
+      "add": "Añadir",
+      "cancel": "Cancelar",
+      "addNew": "Añadir Nuevo"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "Subir nuevo documento",
+      "select": "Elige cómo cargar tu documento en DocsGPT",
+      "file": "Subir desde el dispositivo",
+      "back": "Atrás",
+      "wait": "Por favor espera ...",
+      "remote": "Recoger desde un sitio web",
+      "start": "Comenzar a chatear",
+      "name": "Nombre",
+      "choose": "Seleccionar Archivos",
+      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
+      "uploadedFiles": "Archivos Subidos",
+      "cancel": "Cancelar",
+      "train": "Entrenar",
+      "link": "Enlace",
+      "urlLink": "Enlace URL",
+      "repoUrl": "URL del Repositorio",
+      "reddit": {
+        "id": "ID del Cliente",
+        "secret": "Secreto del Cliente",
+        "agent": "Agente de usuario",
+        "searchQueries": "Consultas de búsqueda",
+        "numberOfPosts": "Número de publicaciones",
+        "addQuery": "Agregar Consulta"
+      },
+      "drag": {
+        "title": "Subir archivo fuente",
+        "description": "Arrastra tu archivo aquí para agregarlo como fuente"
+      },
+      "progress": {
+        "upload": "Subida en progreso",
+        "training": "Entrenamiento en progreso",
+        "completed": "Entrenamiento completado",
+        "wait": "Esto puede tardar varios minutos",
+        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño"
+      },
+      "showAdvanced": "Mostrar opciones avanzadas",
+      "hideAdvanced": "Ocultar opciones avanzadas"
+    },
+    "createAPIKey": {
+      "label": "Crear Nueva Clave de API",
+      "apiKeyName": "Nombre de la Clave de API",
+      "chunks": "Fragmentos procesados por consulta",
+      "prompt": "Selecciona el prompt activo",
+      "sourceDoc": "Documento Fuente",
+      "create": "Crear"
+    },
+    "saveKey": {
+      "note": "Por favor, guarda tu Clave",
+      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "confirm": "He guardado la Clave"
+    },
+    "deleteConv": {
+      "confirm": "¿Estás seguro de que deseas eliminar todas las conversaciones?",
+      "delete": "Eliminar"
+    },
+    "shareConv": {
+      "label": "Crear una página pública para compartir",
+      "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
+      "create": "Crear",
+      "option": "Permitir a los usuarios realizar más consultas"
+    },
+    "configTool": {
+      "title": "Configuración de la Herramienta",
+      "type": "Tipo",
+      "apiKeyLabel": "Clave API / OAuth",
+      "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
+      "addButton": "Agregar Herramienta",
+      "closeButton": "Cerrar"
+    },
+    "prompts": {
+      "addPrompt": "Agregar Prompt",
+      "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
+      "editPrompt": "Editar Prompt",
+      "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
+      "promptName": "Nombre del Prompt",
+      "promptText": "Texto del Prompt",
+      "save": "Guardar",
+      "nameExists": "El nombre ya existe",
+      "deleteConfirmation": "¿Estás seguro de que deseas eliminar el prompt '{{name}}'?"
+    },
+    "chunk": {
+      "add": "Agregar Fragmento",
+      "edit": "Editar Fragmento",
+      "title": "Título",
+      "enterTitle": "Ingresar título",
+      "bodyText": "Texto del cuerpo",
+      "promptText": "Texto del prompt",
+      "update": "Actualizar",
+      "close": "Cerrar",
+      "delete": "Eliminar",
+      "deleteConfirmation": "¿Estás seguro de que deseas eliminar este fragmento?"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "Creado con",
+    "button": "Comienza con DocsGPT",
+    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes."
+  },
+  "convTile": {
+    "share": "Compartir",
+    "delete": "Eliminar",
+    "rename": "Renombrar",
+    "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+  },
+  "pagination": {
+    "rowsPerPage": "Filas por página",
+    "pageOf": "Página {{currentPage}} de {{totalPages}}",
+    "firstPage": "Primera página",
+    "previousPage": "Página anterior",
+    "nextPage": "Página siguiente",
+    "lastPage": "Última página"
+  },
+  "conversation": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "speak": "Hablar",
+    "answer": "Respuesta",
+    "edit": {
+      "update": "Actualizar",
+      "cancel": "Cancelar",
+      "placeholder": "Ingrese la consulta actualizada..."
+    },
+    "sources": {
+      "title": "Fuentes",
+      "link": "Enlace fuente",
+      "view_more": "Ver {{count}} más fuentes",
+      "text": "Elegir tus fuentes"
+    },
+    "attachments": {
+      "attach": "Adjuntar",
+      "remove": "Eliminar adjunto",
+      "uploadFailed": "Error al subir"
+    },
+    "retry": "Reintentar"
+  }
+}

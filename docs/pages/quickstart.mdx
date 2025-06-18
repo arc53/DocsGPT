@@ -1,0 +1,119 @@
+---
+title: Quickstart - Launching DocsGPT Web App
+description: Get started with DocsGPT quickly by launching the web application using the setup script.
+---
+
+# Quickstart
+
+**Prerequisites:**
+
+* **Docker:** Ensure you have Docker installed and running on your system.
+
+## Launching DocsGPT (macOS and Linux)
+
+The easiest way to launch DocsGPT is using the provided `setup.sh` script. This script automates the configuration process and offers several setup options.
+
+**Steps:**
+
+1. **Download the DocsGPT Repository:**
+
+   First, you need to download the DocsGPT repository to your local machine. You can do this using Git:
+
+   ```bash
+   git clone https://github.com/arc53/DocsGPT.git
+   cd DocsGPT
+   ```
+
+2. **Run the `setup.sh` script:**
+
+   Navigate to the DocsGPT directory in your terminal and execute the `setup.sh` script:
+
+   ```bash
+   ./setup.sh
+   ```
+
+3. **Follow the interactive setup:**
+
+   The `setup.sh` script will guide you through an interactive menu with the following options:
+
+   ```
+   Welcome to DocsGPT Setup!
+   How would you like to proceed?
+   1) Use DocsGPT Public API Endpoint (simple and free)
+   2) Serve Local (with Ollama)
+   3) Connect Local Inference Engine
+   4) Connect Cloud API Provider
+   Choose option (1-4):
+   ```
+
+   Let's break down each option:
+
+   * **1) Use DocsGPT Public API Endpoint (simple and free):**  This is the simplest option to get started. It utilizes the DocsGPT public API, requiring no API keys or local model downloads. Choose this for a quick and easy setup.
+
+   * **2) Serve Local (with Ollama):** This option allows you to run a Large Language Model locally using [Ollama](https://ollama.com/).  You'll be prompted to choose between CPU or GPU for Ollama and select a model to download. This is a good option for local processing and experimentation.
+
+   * **3) Connect Local Inference Engine:**  If you are already running a local inference engine like Llama.cpp, Text Generation Inference (TGI), vLLM, or others, choose this option.  You'll be asked to select your engine and provide the necessary connection details. This is for users with existing local LLM infrastructure.
+
+   * **4) Connect Cloud API Provider:** This option lets you connect DocsGPT to a commercial Cloud API provider such as OpenAI, Google (Vertex AI/Gemini), Anthropic (Claude), Groq, HuggingFace Inference API, or Azure OpenAI. You will need an API key from your chosen provider. Select this if you prefer to use a powerful cloud-based LLM.
+
+   After selecting an option and providing any required information (like API keys or model names), the script will configure your `.env` file and start DocsGPT using Docker Compose.
+
+4. **Access DocsGPT in your browser:**
+
+   Once the setup is complete and Docker containers are running, navigate to [http://localhost:5173/](http://localhost:5173/) in your web browser to access the DocsGPT web application.
+
+5. **Stopping DocsGPT:**
+
+   To stop DocsGPT, simply open a new terminal in the `DocsGPT` directory and run:
+
+   ```bash
+   docker compose -f deployment/docker-compose.yaml down
+   ```
+   (or the specific `docker compose` command shown at the end of the `setup.sh` execution, which may include optional compose files depending on your choices).
+
+## Launching DocsGPT (Windows)
+
+For Windows users, we provide a PowerShell script that offers the same functionality as the macOS/Linux setup script.
+
+**Steps:**
+
+1. **Download the DocsGPT Repository:**
+
+   First, you need to download the DocsGPT repository to your local machine. You can do this using Git:
+
+   ```powershell
+   git clone https://github.com/arc53/DocsGPT.git
+   cd DocsGPT
+   ```
+
+2. **Run the `setup.ps1` script:**
+
+   Execute the PowerShell setup script:
+
+   ```powershell
+   PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
+   ```
+
+3. **Follow the interactive setup:**
+
+   Just like the Linux/macOS script, the PowerShell script will guide you through setting DocsGPT.
+   The script will handle environment configuration and start DocsGPT based on your selections.
+
+4. **Access DocsGPT in your browser:**
+
+   Once the setup is complete and Docker containers are running, navigate to [http://localhost:5173/](http://localhost:5173/) in your web browser to access the DocsGPT web application.
+
+5. **Stopping DocsGPT:**
+
+   To stop DocsGPT run the Docker Compose down command displayed at the end of the setup script's execution.
+
+**Important for Windows:** Ensure Docker Desktop is installed and running correctly on your Windows system before proceeding. The script will attempt to start Docker if it's not running, but you may need to start it manually if there are issues.
+
+**Alternative Method:**
+If you prefer a more manual approach, you can follow our [Docker Deployment documentation](/Deploying/Docker-Deploying) for detailed instructions on setting up DocsGPT on Windows using Docker commands directly.
+
+## Advanced Configuration
+
+For more advanced customization of DocsGPT settings, such as configuring vector stores, embedding models, and other parameters, please refer to the [DocsGPT Settings documentation](/Deploying/DocsGPT-Settings). This guide explains how to modify the `.env` file or `settings.py` for deeper configuration.
+
+Enjoy using DocsGPT!

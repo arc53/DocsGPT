@@ -1,0 +1,159 @@
+---
+title: Integrate DocsGPT Chat Widget into Your Web Application
+description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
+---
+import { Tabs } from 'nextra/components'
+
+# Integrating DocsGPT Chat Widget
+
+## Introduction
+
+The DocsGPT Widget is a powerful tool that allows you to integrate AI-driven document assistance directly into your web applications.  This guide will walk you through embedding the DocsGPT Widget into your projects, whether you're using React, plain HTML, or Nextra.  Enhance your user experience by providing seamless access to intelligent document search and chatbot capabilities.
+
+Try out the interactive widget showcase and customize its parameters at the [DocsGPT Widget Demo](https://widget.docsgpt.cloud/).
+
+## Setup
+<Tabs items={['React', 'HTML', 'Nextra']}>
+  <Tabs.Tab>
+
+### Installation
+
+Make sure you have Node.js and npm (or yarn, pnpm) installed in your project.  Navigate to your project directory in the terminal and install the `docsgpt` package:
+
+```bash npm
+npm install docsgpt
+```
+
+### Usage
+
+In your React component file, import the `DocsGPTWidget` component:
+
+```js
+import { DocsGPTWidget } from "docsgpt";
+```
+
+Now, you can embed the widget within your React component's JSX:
+
+```jsx
+<DocsGPTWidget
+  apiHost="https://your-docsgpt-api.com"
+  apiKey=""
+  avatar="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
+  title="Get AI assistance"
+  description="DocsGPT's AI Chatbot is here to help"
+  heroTitle="Welcome to DocsGPT !"
+  heroDescription="This chatbot is built with DocsGPT and utilises GenAI,
+  please review important information using sources."
+  theme="dark"
+  buttonIcon="https://your-icon"
+  buttonBg="#222327"
+/>
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+
+### Installation
+
+To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
+
+```html filename="html"
+<script
+  src="https://unpkg.com/docsgpt/dist/legacy/main.js"
+  type="module"
+></script>
+```
+
+### Usage
+
+In your HTML `<body>`, add a `<div>` element where you want to render the widget.  Set an `id` for easy targeting.
+
+```html filename="html"
+<div id="app"></div>
+```
+
+Then, in a `<script type="module">` block, use the `renderDocsGPTWidget` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and specific documents, pass the relevant parameters within the configuration object of `renderDocsGPTWidget`.
+
+```html filename="html"
+<!DOCTYPE html>
+<div id="app"></div>
+<script type="module">
+  window.onload = function() {
+    renderDocsGPTWidget('app', {
+      apiHost: 'http://localhost:7001', // Replace with your API Host
+      apiKey:"",
+      avatar: 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+      title: 'Get AI assistance',
+      description: "DocsGPT's AI Chatbot is here to help",
+      heroTitle: 'Welcome to DocsGPT!',
+      heroDescription: 'This chatbot is utilises GenAI, please review important information.',
+      theme:"dark",
+      buttonIcon:"https://your-icon",
+      buttonBg:"#222327"
+    });
+  }
+</script>
+```
+
+  </Tabs.Tab>
+  <Tabs.Tab>
+
+### Installation
+
+Make sure you have Node.js and npm (or yarn, pnpm) installed in your project.  Navigate to your project directory in the terminal and install the `docsgpt` package:
+
+```bash npm
+npm install docsgpt
+```
+
+### Usage with Nextra (Next.js + MDX)
+
+To integrate the DocsGPT Widget into a [Nextra](https://nextra.site/) documentation site (built with Next.js and MDX), create or modify your `pages/_app.js` file as follows:
+
+```js filename="pages/_app.js"
+import { DocsGPTWidget } from "docsgpt";
+
+export default function MyApp({ Component, pageProps }) {
+    return (
+        <>
+            <Component {...pageProps} />
+            <DocsGPTWidget selectDocs="local/docsgpt-sep.zip/"/>
+        </>
+    )
+}
+```
+  </Tabs.Tab>
+</Tabs>
+
+---
+
+## Properties Table
+
+The DocsGPT Widget offers a range of customizable properties that allow you to tailor its appearance and behavior to perfectly match your web application. These parameters can be modified directly when embedding the widget in your React components or HTML code.  Below is a detailed overview of each available prop:
+
+| **Prop**          | **Type**         | **Default Value**                                           | **Description**                                                                                     |
+|--------------------|------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| **`apiHost`**      | `string`         | `"https://gptcloud.arc53.com"`                                     | **Required.** The URL of your DocsGPT API backend. This endpoint handles vector search and chatbot queries. |
+| **`apiKey`**       | `string`         | `"your-api-key"`                                            | API key for authentication with your DocsGPT API. Leave empty if no authentication is required.       |
+| **`avatar`**       | `string`         | [`dino-icon-link`](https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png)   | URL for the avatar image displayed in the chatbot interface.                                         |
+| **`title`**        | `string`         | `"Get AI assistance"`                                       | Title text shown in the chatbot header.                                                              |
+| **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
+| **`heroTitle`**    | `string`         | `"Welcome to DocsGPT !"`                                    | Welcome message displayed when the chatbot is initially opened.                                     |
+| **`heroDescription`** | `string`     | `"This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources."` | Introductory text providing context or disclaimers about the chatbot.                                 |
+| **`theme`**        | `"dark" \| "light"` | `"dark"`                                                  | Color theme of the widget interface. Options: `"dark"` or `"light"`. Defaults to `"dark"`.         |
+| **`buttonIcon`**   | `string`         | `"https://your-icon"`                                        | URL for the icon image used in the widget's launch button.                                          |
+| **`buttonBg`**     | `string`         | `"#222327"`                                                 | Background color of the widget's launch button.                                                      |
+| **`size`**         | `"small" \| "medium"` | `"medium"`                                              | Size of the widget. Options: `"small"` or `"medium"`. Defaults to `"medium"`.                         |
+| **`showSources`**         | `boolean` | `false`                                              | Enables displaying source URLs for data fetched within the widget. When set to `true`, the widget will show the original sources of the fetched data.                         |
+
+---
+
+## Notes on Widget Properties
+
+*   **Full Customization:**  Every property listed in the table can be customized.  Override the defaults to create a widget that perfectly matches your branding and application context.  From avatars and titles to color schemes, you have fine-grained control over the widget's presentation.
+*   **API Key Handling:** The `apiKey` prop is optional. Only include it if your DocsGPT backend API is configured to require API key authentication. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com/`
+
+## Explore and Customize Further
+
+The DocsGPT Widget is fully open-source, allowing for deep customization and extension beyond the readily available props.
+
+The complete source code for the React-based widget is available in the `extensions/react-widget` directory within the main [DocsGPT GitHub Repository](https://github.com/arc53/DocsGPT).  Feel free to explore the code, fork the repository, and tailor the widget to your exact requirements.

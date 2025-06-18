@@ -1,0 +1,31 @@
+repo:
+- changed-files:
+  - any-glob-to-any-file: '*'
+
+github:
+- changed-files:
+  - any-glob-to-any-file: '.github/**/*'
+
+application:
+- changed-files:
+  - any-glob-to-any-file: 'application/**/*'
+
+docs:
+- changed-files:
+  - any-glob-to-any-file: 'docs/**/*'
+
+extensions:
+- changed-files:
+  - any-glob-to-any-file: 'extensions/**/*'
+
+frontend:
+- changed-files:
+  - any-glob-to-any-file: 'frontend/**/*'
+
+scripts:
+- changed-files:
+  - any-glob-to-any-file: 'scripts/**/*'
+
+tests:
+- changed-files:
+  - any-glob-to-any-file: 'tests/**/*'

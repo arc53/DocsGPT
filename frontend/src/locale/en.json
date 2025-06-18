@@ -1,0 +1,306 @@
+{
+  "language": "English",
+  "chat": "Chat",
+  "chats": "Chats",
+  "newChat": "New Chat",
+  "inputPlaceholder": "How can DocsGPT help you?",
+  "tagline": "DocsGPT uses GenAI, please review critical information using sources.",
+  "sourceDocs": "Source",
+  "none": "None",
+  "cancel": "Cancel",
+  "help": "Help",
+  "emailUs": "Email us",
+  "documentation": "Documentation",
+  "manageAgents": "Manage Agents",
+  "demo": [
+    {
+      "header": "Learn about DocsGPT",
+      "query": "What is DocsGPT?"
+    },
+    {
+      "header": "Summarize documentation",
+      "query": "Summarize current context"
+    },
+    {
+      "header": "Write Code",
+      "query": "Write code for api request to /api/answer"
+    },
+    {
+      "header": "Learning Assistance",
+      "query": "Write potential questions for context"
+    }
+  ],
+  "settings": {
+    "label": "Settings",
+    "general": {
+      "label": "General",
+      "selectTheme": "Select Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "selectLanguage": "Select Language",
+      "chunks": "Chunks processed per query",
+      "prompt": "Active Prompt",
+      "deleteAllLabel": "Delete All Conversations",
+      "deleteAllBtn": "Delete All",
+      "addNew": "Add New",
+      "convHistory": "Conversation History",
+      "none": "None",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "unlimited": "Unlimited",
+      "default": "Default",
+      "add": "Add"
+    },
+    "documents": {
+      "title": "This table contains all the documents that are available to you and those you have uploaded",
+      "label": "Documents",
+      "name": "Document Name",
+      "date": "Vector Date",
+      "type": "Type",
+      "tokenUsage": "Token Usage",
+      "noData": "No existing Documents",
+      "searchPlaceholder": "Search...",
+      "addNew": "Add New",
+      "preLoaded": "Pre-loaded",
+      "private": "Private",
+      "sync": "Sync",
+      "syncFrequency": {
+        "never": "Never",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly"
+      },
+      "actions": "Actions",
+      "view": "View",
+      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
+      "backToAll": "Back to all documents",
+      "chunks": "Chunks",
+      "noChunks": "No chunks found",
+      "noChunksAlt": "No chunks found",
+      "goToDocuments": "Go to Documents",
+      "uploadNew": "Upload new"
+    },
+    "apiKeys": {
+      "label": "Chatbots",
+      "name": "Name",
+      "key": "API Key",
+      "sourceDoc": "Source Document",
+      "createNew": "Create New",
+      "noData": "No existing Chatbots",
+      "deleteConfirmation": "Are you sure you want to delete the API key '{{name}}'?",
+      "description": "Here you can create and manage your chatbots. Chatbots can be deployed to websites as widgets or used inside your applications."
+    },
+    "analytics": {
+      "label": "Analytics",
+      "filterByChatbot": "Filter by chatbot",
+      "selectChatbot": "Select chatbot",
+      "filterOptions": {
+        "hour": "Hour",
+        "last24Hours": "24 Hours",
+        "last7Days": "7 Days",
+        "last15Days": "15 Days",
+        "last30Days": "30 Days"
+      },
+      "messages": "Messages",
+      "tokenUsage": "Token Usage",
+      "userFeedback": "User Feedback",
+      "filterPlaceholder": "Filter",
+      "none": "None",
+      "positiveFeedback": "Positive Feedback",
+      "negativeFeedback": "Negative Feedback"
+    },
+    "logs": {
+      "label": "Logs",
+      "filterByChatbot": "Filter by chatbot",
+      "selectChatbot": "Select chatbot",
+      "none": "None",
+      "tableHeader": "API generated / chatbot conversations"
+    },
+    "tools": {
+      "label": "Tools",
+      "searchPlaceholder": "Search tools...",
+      "addTool": "Add Tool",
+      "noToolsFound": "No tools found",
+      "selectToolSetup": "Select a tool to set up",
+      "settingsIconAlt": "Settings icon",
+      "configureToolAria": "Configure {{toolName}}",
+      "toggleToolAria": "Toggle {{toolName}}",
+      "manageTools": "Go to Tools",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
+      "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
+      "leaveWithoutSaving": "Leave without Saving",
+      "saveAndLeave": "Save and Leave",
+      "customName": "Custom Name",
+      "customNamePlaceholder": "Enter a custom name (optional)",
+      "authentication": "Authentication",
+      "actions": "Actions",
+      "addAction": "Add action",
+      "noActionsFound": "No actions found",
+      "url": "URL",
+      "urlPlaceholder": "Enter URL",
+      "method": "Method",
+      "description": "Description",
+      "descriptionPlaceholder": "Enter description",
+      "headers": "Headers",
+      "queryParameters": "Query Parameters",
+      "body": "Body",
+      "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
+      "backToAllTools": "Back to all tools",
+      "save": "Save",
+      "fieldName": "Field Name",
+      "fieldType": "Field Type",
+      "filledByLLM": "Filled by LLM",
+      "fieldDescription": "Field description",
+      "value": "Value",
+      "addProperty": "Add property",
+      "propertyName": "New property key",
+      "add": "Add",
+      "cancel": "Cancel",
+      "addNew": "Add New",
+      "name": "Name",
+      "type": "Type"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "Upload new document",
+      "select": "Choose how to upload your document to DocsGPT",
+      "file": "Upload from device",
+      "back": "Back",
+      "wait": "Please wait ...",
+      "remote": "Collect from website",
+      "start": "Start Chatting",
+      "name": "Name",
+      "choose": "Choose Files",
+      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limited to 25mb",
+      "uploadedFiles": "Uploaded Files",
+      "cancel": "Cancel",
+      "train": "Train",
+      "link": "Link",
+      "urlLink": "URL Link",
+      "repoUrl": "Repository URL",
+      "reddit": {
+        "id": "Client ID",
+        "secret": "Client Secret",
+        "agent": "User agent",
+        "searchQueries": "Search queries",
+        "numberOfPosts": "Number of posts",
+        "addQuery": "Add Query"
+      },
+      "drag": {
+        "title": "Upload a source file",
+        "description": "Drop your file here to add it as a source"
+      },
+      "progress": {
+        "upload": "Upload is in progress",
+        "training": "Training is in progress",
+        "completed": "Training completed",
+        "wait": "This may take several minutes",
+        "tokenLimit": "Over the token limit, please consider uploading smaller document"
+      },
+      "showAdvanced": "Show advanced options",
+      "hideAdvanced": "Hide advanced options"
+    },
+    "createAPIKey": {
+      "label": "Create New API Key",
+      "apiKeyName": "API Key Name",
+      "chunks": "Chunks processed per query",
+      "prompt": "Select active prompt",
+      "sourceDoc": "Source document",
+      "create": "Create"
+    },
+    "saveKey": {
+      "note": "Please save your Key",
+      "disclaimer": "This is the only time your key will be shown.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "confirm": "I saved the Key"
+    },
+    "deleteConv": {
+      "confirm": "Are you sure you want to delete all the conversations?",
+      "delete": "Delete"
+    },
+    "shareConv": {
+      "label": "Create a public page to share",
+      "note": "Source document, personal information and further conversation will remain private",
+      "create": "Create",
+      "option": "Allow users to prompt further"
+    },
+    "configTool": {
+      "title": "Tool Config",
+      "type": "Type",
+      "apiKeyLabel": "API Key / OAuth",
+      "apiKeyPlaceholder": "Enter API Key / OAuth",
+      "addButton": "Add Tool",
+      "closeButton": "Close"
+    },
+    "prompts": {
+      "addPrompt": "Add Prompt",
+      "addDescription": "Add your custom prompt and save it to DocsGPT",
+      "editPrompt": "Edit Prompt",
+      "editDescription": "Edit your custom prompt and save it to DocsGPT",
+      "promptName": "Prompt Name",
+      "promptText": "Prompt Text",
+      "save": "Save",
+      "nameExists": "Name already exists",
+      "deleteConfirmation": "Are you sure you want to delete the prompt '{{name}}'?"
+    },
+    "chunk": {
+      "add": "Add Chunk",
+      "edit": "Edit Chunk",
+      "title": "Title",
+      "enterTitle": "Enter title",
+      "bodyText": "Body text",
+      "promptText": "Prompt Text",
+      "update": "Update",
+      "close": "Close",
+      "delete": "Delete",
+      "deleteConfirmation": "Are you sure you want to delete this chunk?"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "Created with",
+    "button": "Get Started with DocsGPT",
+    "meta": "DocsGPT uses GenAI, please review critical information using sources."
+  },
+  "convTile": {
+    "share": "Share",
+    "delete": "Delete",
+    "rename": "Rename",
+    "deleteWarning": "Are you sure you want to delete this conversation?"
+  },
+  "pagination": {
+    "rowsPerPage": "Rows per page",
+    "pageOf": "Page {{currentPage}} of {{totalPages}}",
+    "firstPage": "First page",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "lastPage": "Last page"
+  },
+  "conversation": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "speak": "Speak",
+    "answer": "Answer",
+    "edit": {
+      "update": "Update",
+      "cancel": "Cancel",
+      "placeholder": "Type the updated query..."
+    },
+    "sources": {
+      "title": "Sources",
+      "text": "Choose Your Sources",
+      "link": "Source link",
+      "view_more": "{{count}} more sources"
+    },
+    "attachments": {
+      "attach": "Attach",
+      "remove": "Remove attachment",
+      "uploadFailed": "Upload failed"
+    },
+    "retry": "Retry"
+  }
+}

@@ -1,0 +1,306 @@
+{
+  "language": "繁體中文（臺灣）",
+  "chat": "對話",
+  "chats": "對話",
+  "newChat": "新對話",
+  "inputPlaceholder": "DocsGPT 如何幫助您？",
+  "tagline": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。",
+  "sourceDocs": "原始文件",
+  "none": "無",
+  "cancel": "取消",
+  "help": "幫助",
+  "emailUs": "給我們發電郵",
+  "documentation": "文件",
+  "manageAgents": "管理代理",
+  "demo": [
+    {
+      "header": "了解 DocsGPT",
+      "query": "什麼是 DocsGPT？"
+    },
+    {
+      "header": "摘要文件",
+      "query": "摘要目前的內容"
+    },
+    {
+      "header": "撰寫程式碼",
+      "query": "為 /api/answer 撰寫 API 請求程式碼"
+    },
+    {
+      "header": "學習輔助",
+      "query": "為此內容撰寫可能的問題"
+    }
+  ],
+  "settings": {
+    "label": "設定",
+    "general": {
+      "label": "一般",
+      "selectTheme": "選擇主題",
+      "light": "淺色",
+      "dark": "深色",
+      "selectLanguage": "選擇語言",
+      "chunks": "每次查詢處理的區塊數",
+      "prompt": "使用中的提示",
+      "deleteAllLabel": "刪除所有對話",
+      "deleteAllBtn": "全部刪除",
+      "addNew": "新增",
+      "convHistory": "對話歷史記錄",
+      "none": "無",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "unlimited": "無限制",
+      "default": "預設",
+      "add": "添加"
+    },
+    "documents": {
+      "title": "此表格包含所有可供您使用的文件以及您上傳的文件",
+      "label": "文件",
+      "name": "文件名稱",
+      "date": "向量日期",
+      "type": "類型",
+      "tokenUsage": "Token 使用量",
+      "noData": "沒有現有的文件",
+      "searchPlaceholder": "搜尋...",
+      "addNew": "新增文件",
+      "preLoaded": "預載入",
+      "private": "私人",
+      "sync": "同步",
+      "syncFrequency": {
+        "never": "從不",
+        "daily": "每天",
+        "weekly": "每週",
+        "monthly": "每月"
+      },
+      "actions": "操作",
+      "view": "查看",
+      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
+      "backToAll": "返回所有文件",
+      "chunks": "文本塊",
+      "noChunks": "未找到文本塊",
+      "noChunksAlt": "未找到文本塊",
+      "goToDocuments": "前往文件",
+      "uploadNew": "上傳新文件"
+    },
+    "apiKeys": {
+      "label": "聊天機器人",
+      "name": "名稱",
+      "key": "API 金鑰",
+      "sourceDoc": "來源文件",
+      "createNew": "建立新的",
+      "noData": "沒有現有的聊天機器人",
+      "deleteConfirmation": "您確定要刪除 API 金鑰 '{{name}}' 嗎？",
+      "description": "在這裡，您可以創建和管理您的聊天機器人。聊天機器人可以作為小部件部署到網站上，或在您的應用程序中使用。"
+    },
+    "analytics": {
+      "label": "分析",
+      "filterByChatbot": "按聊天機器人篩選",
+      "selectChatbot": "選擇聊天機器人",
+      "filterOptions": {
+        "hour": "小時",
+        "last24Hours": "24 小時",
+        "last7Days": "7 天",
+        "last15Days": "15 天",
+        "last30Days": "30 天"
+      },
+      "messages": "訊息",
+      "tokenUsage": "Token 使用量",
+      "userFeedback": "使用者反饋",
+      "filterPlaceholder": "篩選",
+      "none": "無",
+      "positiveFeedback": "正向回饋",
+      "negativeFeedback": "負向回饋"
+    },
+    "logs": {
+      "label": "日誌",
+      "filterByChatbot": "按聊天機器人篩選",
+      "selectChatbot": "選擇聊天機器人",
+      "none": "無",
+      "tableHeader": "API 生成 / 聊天機器人會話"
+    },
+    "tools": {
+      "label": "工具",
+      "searchPlaceholder": "搜尋工具...",
+      "addTool": "新增工具",
+      "noToolsFound": "找不到工具",
+      "selectToolSetup": "選擇要設定的工具",
+      "settingsIconAlt": "設定圖示",
+      "configureToolAria": "設定 {{toolName}}",
+      "toggleToolAria": "切換 {{toolName}}",
+      "manageTools": "前往工具",
+      "edit": "編輯",
+      "delete": "刪除",
+      "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
+      "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
+      "leaveWithoutSaving": "不儲存離開",
+      "saveAndLeave": "儲存並離開",
+      "customName": "自訂名稱",
+      "customNamePlaceholder": "輸入自訂名稱（選填）",
+      "authentication": "認證",
+      "actions": "操作",
+      "addAction": "新增操作",
+      "noActionsFound": "找不到操作",
+      "url": "URL",
+      "urlPlaceholder": "輸入url",
+      "method": "方法",
+      "description": "描述",
+      "descriptionPlaceholder": "輸入描述",
+      "headers": "標頭",
+      "queryParameters": "查詢參數",
+      "body": "主體",
+      "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
+      "backToAllTools": "返回所有工具",
+      "save": "儲存",
+      "fieldName": "欄位名稱",
+      "fieldType": "欄位類型",
+      "filledByLLM": "由LLM填入",
+      "fieldDescription": "欄位描述",
+      "value": "值",
+      "addProperty": "新增屬性",
+      "propertyName": "新屬性鍵",
+      "add": "新增",
+      "cancel": "取消",
+      "addNew": "新增",
+      "name": "名稱",
+      "type": "類型"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "上傳新文件",
+      "select": "選擇如何將文件上傳到 DocsGPT",
+      "file": "從檔案",
+      "remote": "遠端",
+      "back": "返回",
+      "wait": "請稍候...",
+      "start": "開始對話",
+      "name": "名稱",
+      "choose": "選擇檔案",
+      "info": "請上傳限制為25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip檔案",
+      "uploadedFiles": "已上傳檔案",
+      "cancel": "取消",
+      "train": "訓練",
+      "link": "連結",
+      "urlLink": "URL 連結",
+      "repoUrl": "儲存庫 URL",
+      "reddit": {
+        "id": "客戶端ID",
+        "secret": "客戶端密鑰",
+        "agent": "使用者代理",
+        "searchQueries": "搜尋查詢",
+        "numberOfPosts": "貼文數量",
+        "addQuery": "新增查詢"
+      },
+      "drag": {
+        "title": "上傳來源檔案",
+        "description": "將檔案拖放到此處以新增為來源"
+      },
+      "progress": {
+        "upload": "正在上傳",
+        "training": "正在訓練",
+        "completed": "訓練完成",
+        "wait": "這可能需要幾分鐘",
+        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔"
+      },
+      "showAdvanced": "顯示進階選項",
+      "hideAdvanced": "隱藏進階選項"
+    },
+    "createAPIKey": {
+      "label": "建立新的 API 金鑰",
+      "apiKeyName": "API 金鑰名稱",
+      "chunks": "每次查詢處理的區塊數",
+      "prompt": "選擇使用中的提示",
+      "sourceDoc": "來源文件",
+      "create": "建立"
+    },
+    "saveKey": {
+      "note": "請儲存您的金鑰",
+      "disclaimer": "這是唯一一次顯示您的金鑰。",
+      "copy": "複製",
+      "copied": "已複製",
+      "confirm": "我已儲存金鑰"
+    },
+    "deleteConv": {
+      "confirm": "您確定要刪除所有對話嗎？",
+      "delete": "刪除"
+    },
+    "shareConv": {
+      "label": "建立公開頁面以分享",
+      "note": "來源文件、個人資訊和後續對話將保持私密",
+      "create": "建立",
+      "option": "允許使用者進行更多查詢"
+    },
+    "configTool": {
+      "title": "工具設定",
+      "type": "類型",
+      "apiKeyLabel": "API 金鑰 / OAuth",
+      "apiKeyPlaceholder": "輸入 API 金鑰 / OAuth",
+      "addButton": "新增工具",
+      "closeButton": "關閉"
+    },
+    "prompts": {
+      "addPrompt": "新增提示",
+      "addDescription": "新增自定義提示並儲存到 DocsGPT",
+      "editPrompt": "編輯提示",
+      "editDescription": "編輯自定義提示並儲存到 DocsGPT",
+      "promptName": "提示名稱",
+      "promptText": "提示文字",
+      "save": "儲存",
+      "nameExists": "名稱已存在",
+      "deleteConfirmation": "您確定要刪除提示「{{name}}」嗎？"
+    },
+    "chunk": {
+      "add": "新增區塊",
+      "edit": "編輯區塊",
+      "title": "標題",
+      "enterTitle": "輸入標題",
+      "bodyText": "內文",
+      "promptText": "提示文字",
+      "update": "更新",
+      "close": "關閉",
+      "delete": "刪除",
+      "deleteConfirmation": "您確定要刪除此區塊嗎？"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "使用以下工具建立",
+    "button": "開始使用 DocsGPT",
+    "meta": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。"
+  },
+  "convTile": {
+    "share": "分享",
+    "delete": "刪除",
+    "rename": "重新命名",
+    "deleteWarning": "您確定要刪除這個對話嗎？"
+  },
+  "pagination": {
+    "rowsPerPage": "每頁行數",
+    "pageOf": "第 {{currentPage}} 頁，共 {{totalPages}} 頁",
+    "firstPage": "第一頁",
+    "previousPage": "上一頁",
+    "nextPage": "下一頁",
+    "lastPage": "最後一頁"
+  },
+  "conversation": {
+    "copy": "複製",
+    "copied": "已複製",
+    "speak": "朗讀",
+    "answer": "回答",
+    "edit": {
+      "update": "更新",
+      "cancel": "取消",
+      "placeholder": "輸入更新的查詢..."
+    },
+    "sources": {
+      "title": "來源",
+      "text": "來源文字",
+      "link": "來源連結",
+      "view_more": "查看更多 {{count}} 個來源"
+    },
+    "attachments": {
+      "attach": "附件",
+      "remove": "刪除附件",
+      "uploadFailed": "上傳失敗"
+    },
+    "retry": "重試"
+  }
+}

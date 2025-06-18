@@ -1,0 +1,135 @@
+---
+title: Docker Deployment of DocsGPT
+description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
+---
+
+# Docker Deployment of DocsGPT
+
+Docker is the recommended method for deploying DocsGPT, providing a consistent and isolated environment for the application to run. This guide will walk you through deploying DocsGPT using Docker and Docker Compose.
+
+## Prerequisites
+
+* **Docker Engine:** You need to have Docker Engine installed on your system.
+    * **macOS:** [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+    * **Linux:** [Docker Engine Installation Guide](https://docs.docker.com/engine/install/) (follow instructions for your specific distribution)
+    * **Windows:** [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/) (requires WSL 2 backend, see notes below)
+* **Docker Compose:** Docker Compose is usually included with Docker Desktop. If you are using Docker Engine separately, ensure you have Docker Compose V2 installed.
+
+**Important Note for Windows Users:** Docker Desktop on Windows generally requires the WSL 2 backend to function correctly, especially when using features like host networking which are utilized in DocsGPT's Docker Compose setup. Ensure WSL 2 is enabled and configured in Docker Desktop settings.
+
+## Quickest Setup: Using DocsGPT Public API
+
+The fastest way to try out DocsGPT is by using the public API endpoint. This requires minimal configuration and no local LLM setup.
+
+1.  **Clone the DocsGPT Repository (if you haven't already):**
+
+    ```bash
+    git clone https://github.com/arc53/DocsGPT.git
+    cd DocsGPT
+    ```
+
+2.  **Create a `.env` file:**
+
+    In the root directory of your DocsGPT repository, create a file named `.env`.
+
+3.  **Add Public API Configuration to `.env`:**
+
+    Open the `.env` file and add the following lines:
+
+    ```
+    LLM_PROVIDER=docsgpt
+    VITE_API_STREAMING=true
+    ```
+
+    This minimal configuration tells DocsGPT to use the public API. For more advanced settings and other LLM options, refer to the [DocsGPT Settings Guide](/Deploying/DocsGPT-Settings).
+
+4.  **Launch DocsGPT with Docker Compose:**
+
+    Navigate to the root directory of the DocsGPT repository in your terminal and run:
+
+    ```bash
+    docker compose -f deployment/docker-compose.yaml up -d
+    ```
+
+    The `-d` flag runs Docker Compose in detached mode (in the background).
+
+5.  **Access DocsGPT in your browser:**
+
+    Once the containers are running, open your web browser and go to [http://localhost:5173/](http://localhost:5173/).
+
+6.  **Stopping DocsGPT:**
+
+    To stop the application, navigate to the same directory in your terminal and run:
+
+    ```bash
+    docker compose -f deployment/docker-compose.yaml down
+    ```
+
+## Optional Ollama Setup (Local Models)
+
+DocsGPT provides optional Docker Compose files to easily integrate with [Ollama](https://ollama.com/) for running local models. These files add an official Ollama container to your Docker Compose setup. These files are located in the `deployment/optional/` directory.
+
+There are two Ollama optional files:
+
+*   **`docker-compose.optional.ollama-cpu.yaml`**: For running Ollama on CPU.
+*   **`docker-compose.optional.ollama-gpu.yaml`**: For running Ollama on GPU (requires Docker to be configured for GPU usage).
+
+### Launching with Ollama and Pulling a Model
+
+1.  **Clone the DocsGPT Repository and Create `.env` (as described above).**
+
+2.  **Launch DocsGPT with Ollama Docker Compose:**
+
+    Choose the appropriate Ollama Compose file (CPU or GPU) and launch DocsGPT:
+
+    **CPU:**
+    ```bash
+    docker compose --env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml up -d
+    ```
+    **GPU:**
+    ```bash
+    docker compose --env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml up -d
+    ```
+
+3.  **Pull the Ollama Model:**
+
+    **Crucially, after launching with Ollama, you need to pull the desired model into the Ollama container.**  Find the `LLM_NAME` you configured in your `.env` file (e.g., `llama3.2:1b`). Then execute the following command to pull the model *inside* the running Ollama container:
+
+    ```bash
+    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <LLM_NAME>
+    ```
+    or (for GPU):
+     ```bash
+    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <LLM_NAME>
+    ```
+    Replace `<LLM_NAME>` with the actual model name from your `.env` file.
+
+4.  **Access DocsGPT in your browser:**
+
+    Once the model is pulled and containers are running, open your web browser and go to [http://localhost:5173/](http://localhost:5173/).
+
+5.  **Stopping Ollama Setup:**
+
+    To stop a DocsGPT setup launched with Ollama optional files, use `docker compose down` and include all the compose files used during the `up` command:
+
+    ```bash
+    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml down
+    ```
+    or
+
+    ```bash
+    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml down
+    ```
+
+**Important for GPU Usage:**
+
+*   **NVIDIA Container Toolkit (for NVIDIA GPUs):** If you are using NVIDIA GPUs, you need to have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed and configured on your system for Docker to access your GPU.
+*   **Docker GPU Configuration:** Ensure Docker is configured to utilize your GPU. Refer to the [Ollama Docker Hub page](https://hub.docker.com/r/ollama/ollama) and Docker documentation for GPU setup instructions specific to your GPU type (NVIDIA, AMD, Intel).
+
+## Restarting After Configuration Changes
+
+Whenever you modify the `.env` file or any Docker Compose files, you need to restart the Docker containers for the changes to be applied.  Use the same `docker compose down` and `docker compose up -d` commands you used to launch DocsGPT, ensuring you include all relevant `-f` flags for optional files if you are using them.
+
+## Further Configuration
+
+This guide covers the basic Docker deployment of DocsGPT. For detailed information on configuring various aspects of DocsGPT, such as LLM providers, models, vector stores, and more, please refer to the comprehensive [DocsGPT Settings Guide](/Deploying/DocsGPT-Settings).

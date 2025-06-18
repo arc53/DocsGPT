@@ -1,0 +1,44 @@
+---
+title: Connecting DocsGPT to Local Inference Engines
+description: Connect DocsGPT to local inference engines for running LLMs directly on your hardware.
+---
+
+# Connecting DocsGPT to Local Inference Engines
+
+DocsGPT can be configured to leverage local inference engines, allowing you to run Large Language Models directly on your own infrastructure. This approach offers enhanced privacy and control over your LLM processing.
+
+Currently, DocsGPT primarily supports local inference engines that are compatible with the OpenAI API format. This means you can connect DocsGPT to various local LLM servers that mimic the OpenAI API structure.
+
+## Configuration via `.env` file
+
+Setting up a local inference engine with DocsGPT is configured through environment variables in the `.env` file. For a detailed explanation of all settings, please consult the [DocsGPT Settings Guide](/Deploying/DocsGPT-Settings).
+
+To connect to a local inference engine, you will generally need to configure these settings in your `.env` file:
+
+*   **`LLM_PROVIDER`**:  Crucially set this to `openai`. This tells DocsGPT to use the OpenAI-compatible API format for communication, even though the LLM is local.
+*   **`LLM_NAME`**:  Specify the model name as recognized by your local inference engine. This might be a model identifier or left as `None` if the engine doesn't require explicit model naming in the API request.
+*   **`OPENAI_BASE_URL`**:  This is essential. Set this to the base URL of your local inference engine's API endpoint. This tells DocsGPT where to find your local LLM server.
+*   **`API_KEY`**:  Generally, for local inference engines, you can set `API_KEY=None` as authentication is usually not required in local setups.
+
+## Supported Local Inference Engines (OpenAI API Compatible)
+
+DocsGPT is readily configurable to work with the following local inference engines, all communicating via the OpenAI API format. Here are example `OPENAI_BASE_URL` values for each, based on default setups:
+
+| Inference Engine              | `LLM_PROVIDER` | `OPENAI_BASE_URL`          |
+| :---------------------------- | :------------- | :------------------------- |
+| LLaMa.cpp                     | `openai`       | `http://localhost:8000/v1`   |
+| Ollama                        | `openai`       | `http://localhost:11434/v1`  |
+| Text Generation Inference (TGI)| `openai`      | `http://localhost:8080/v1`   |
+| SGLang                        | `openai`       | `http://localhost:30000/v1`  |
+| vLLM                          | `openai`       | `http://localhost:8000/v1`   |
+| Aphrodite                     | `openai`       | `http://localhost:2242/v1`   |
+| FriendliAI                    | `openai`       | `http://localhost:8997/v1`   |
+| LMDeploy                      | `openai`       | `http://localhost:23333/v1` |
+
+**Important Note on `localhost` vs `host.docker.internal`:**
+
+The `OPENAI_BASE_URL` examples above use `http://localhost`.  If you are running DocsGPT within Docker and your local inference engine is running on your host machine (outside of Docker), you will likely need to replace `localhost` with `http://host.docker.internal` to ensure Docker can correctly access your host's services. For example, `http://host.docker.internal:11434/v1` for Ollama.
+
+## Adding Support for Other Local Engines
+
+While DocsGPT currently focuses on OpenAI API compatible local engines, you can extend its capabilities to support other local inference solutions.  To do this, navigate to the `application/llm` directory in the DocsGPT repository.  Examine the existing Python files for examples of LLM integrations. You can create a new module for your desired local engine, and then register it in the `llm_creator.py` file within the same directory. This allows for custom integration with a wide range of local LLM servers beyond those listed above.

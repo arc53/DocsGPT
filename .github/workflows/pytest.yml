@@ -1,0 +1,30 @@
+name: Run python tests with pytest
+on: [push, pull_request]
+jobs:
+  pytest_and_coverage:
+    name: Run tests and count coverage
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+          cd application
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Test with pytest and generate coverage report
+        run: |
+          python -m pytest --cov=application --cov-report=xml
+      - name: Upload coverage reports to Codecov
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+

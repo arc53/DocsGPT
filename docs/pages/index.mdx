@@ -1,0 +1,94 @@
+---
+title: 'Home'
+description: Documentation of DocsGPT - quickstart, deployment guides, model configuration, and widget integration documentation.
+---
+import { Cards, Card } from 'nextra/components'
+import Image from 'next/image'
+
+export const allGuides = {
+  "quickstart": {
+    "title": "⚡️ Quickstart",
+    "href": "/quickstart"
+  },
+  "DocsGPT-Settings": {
+    "title": "⚙️ App Configuration",
+    "href": "/Deploying/DocsGPT-Settings"
+  },
+  "Docker-Deploying": {
+    "title": "🛳️ Docker Setup",
+    "href": "/Deploying/Docker-Deploying"
+  },
+  "Development-Environment": {
+    "title": "🛠️Development Environment",
+    "href": "/Deploying/Development-Environment"
+  },
+  "https://gptcloud.arc53.com/": {
+    "title": "🧑‍💻️ API",
+    "href": "https://gptcloud.arc53.com/",
+    "newWindow": true
+  },
+  "cloud-providers": {
+    "title": "☁️ Cloud Providers",
+    "href": "/Models/cloud-providers"
+  },
+  "local-inference": {
+    "title": "🖥️ Local Inference",
+    "href": "/Models/local-inference"
+  },
+  "embeddings": {
+    "title": "📝 Embeddings",
+    "href": "/Models/embeddings"
+  },
+  "api-key-guide": {
+    "title": "🔑 Getting API key",
+    "href": "/Extensions/api-key-guide"
+  },
+  "chat-widget": {
+    "title": "💬️ Chat Widget",
+    "href": "/Extensions/chat-widget"
+  },
+  "search-widget": {
+    "title": "🔎 Search Widget",
+    "href": "/Extensions/search-widget"
+  },
+  "Customising-prompts": {
+    "title": "️💻 Customising Prompts",
+    "href": "/Guides/Customising-prompts"
+  }
+};
+
+#  **DocsGPT 🦖**
+
+DocsGPT is an open-source genAI tool that helps users get reliable answers from any knowledge source, while avoiding hallucinations. It enables quick and reliable information retrieval, with tooling and agentic system capability built in.
+
+
+<video controls width={1920} height={1080} muted autoPlay loop playsInline>
+  <source src="https://d3dg1063dc54p9.cloudfront.net/videos/demov4.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
+
+
+Try it yourself: [https://www.docsgpt.cloud/](https://www.docsgpt.cloud/)
+
+### Features:
+- **🗂️ Wide Format Support:** Reads PDF, DOCX, CSV, XLSX, EPUB, MD, RST, HTML, MDX, JSON, PPTX, and images.
+- **🌐 Web & Data Integration:** Ingests from URLs, sitemaps, Reddit, GitHub and web crawlers.
+- **✅ Reliable Answers:** Get accurate, hallucination-free responses with source citations viewable in a clean UI.
+- **🔑 Streamlined API Keys:**  Generate keys linked to your settings, documents, and models, simplifying chatbot and integration setup.
+- **🔗 Actionable Tooling:** Connect to APIs, tools, and other services to enable LLM actions.
+- **🧩 Pre-built Integrations:** Use readily available HTML/React chat widgets, search tools, Discord/Telegram bots, and more.
+- **🔌 Flexible Deployment:** Works with major LLMs (OpenAI, Google, Anthropic) and local models (Ollama, llama_cpp).
+- **🏢 Secure & Scalable:** Run privately and securely with Kubernetes support, designed for enterprise-grade reliability.
+
+**Contribute and Extend:** As an open-source project, community contributions are highly encouraged! If you develop valuable customizations or enhancements, consider contributing them back to the main repository to benefit other DocsGPT users.
+
+<Cards
+      num={3}
+      children={Object.keys(allGuides).map((key, i) => (
+        <Card
+          key={i}
+          title={allGuides[key].title}
+          href={allGuides[key].href}
+        />
+      ))}
+    />
