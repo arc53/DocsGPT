@@ -157,12 +157,7 @@ const ConversationBubble = forwardRef<
             {!isEditClicked && (
               <>
                 <div className="relative mr-2 flex w-full flex-col">
-                  <div
-                    style={{
-                      wordBreak: 'break-word',
-                    }}
-                    className="ml-2 mr-2 flex max-w-full items-start gap-2 whitespace-pre-wrap rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue py-[14px] pl-[19px] pr-3 text-sm leading-normal text-white sm:text-base"
-                  >
+                  <div className="ml-2 mr-2 flex max-w-full items-start gap-2 whitespace-pre-wrap break-words rounded-[28px] bg-gradient-to-b from-medium-purple to-slate-blue px-5 py-4 text-sm leading-normal text-white sm:text-base">
                     <div
                       ref={messageRef}
                       className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
@@ -175,7 +170,7 @@ const ConversationBubble = forwardRef<
                           e.stopPropagation();
                           setIsQuestionCollapsed(!isQuestionCollapsed);
                         }}
-                        className="rounded-full p-2.5 hover:bg-[#D9D9D933]"
+                        className="ml-1 rounded-full p-2 hover:bg-[#D9D9D933]"
                       >
                         <img
                           src={ChevronDown}
