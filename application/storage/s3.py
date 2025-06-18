@@ -1,13 +1,14 @@
 """S3 storage implementation."""
+
 import io
-from typing import BinaryIO, List, Callable
 import os
+from typing import BinaryIO, Callable, List
 
 import boto3
-from botocore.exceptions import ClientError
+from application.core.settings import settings
 
 from application.storage.base import BaseStorage
-from application.core.settings import settings
+from botocore.exceptions import ClientError
 
 
 class S3Storage(BaseStorage):
@@ -20,18 +21,21 @@ class S3Storage(BaseStorage):
         Args:
             bucket_name: S3 bucket name (optional, defaults to settings)
         """
-        self.bucket_name = bucket_name or getattr(settings, "S3_BUCKET_NAME", "docsgpt-test-bucket")
+        self.bucket_name = bucket_name or getattr(
+            settings, "S3_BUCKET_NAME", "docsgpt-test-bucket"
+        )
 
         # Get credentials from settings
+
         aws_access_key_id = getattr(settings, "SAGEMAKER_ACCESS_KEY", None)
         aws_secret_access_key = getattr(settings, "SAGEMAKER_SECRET_KEY", None)
         region_name = getattr(settings, "SAGEMAKER_REGION", None)
 
         self.s3 = boto3.client(
-            's3',
+            "s3",
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
-            region_name=region_name
+            region_name=region_name,
         )
 
     def save_file(self, file_data: BinaryIO, path: str) -> dict:
@@ -41,17 +45,16 @@ class S3Storage(BaseStorage):
         region = getattr(settings, "SAGEMAKER_REGION", None)
 
         return {
-            'storage_type': 's3',
-            'bucket_name': self.bucket_name,
-            'uri': f's3://{self.bucket_name}/{path}',
-            'region': region
+            "storage_type": "s3",
+            "bucket_name": self.bucket_name,
+            "uri": f"s3://{self.bucket_name}/{path}",
+            "region": region,
         }
 
     def get_file(self, path: str) -> BinaryIO:
         """Get a file from S3 storage."""
         if not self.file_exists(path):
             raise FileNotFoundError(f"File not found: {path}")
-
         file_obj = io.BytesIO()
         self.s3.download_fileobj(self.bucket_name, path, file_obj)
         file_obj.seek(0)
@@ -76,18 +79,17 @@ class S3Storage(BaseStorage):
     def list_files(self, directory: str) -> List[str]:
         """List all files in a directory in S3 storage."""
         # Ensure directory ends with a slash if it's not empty
-        if directory and not directory.endswith('/'):
-            directory += '/'
 
+        if directory and not directory.endswith("/"):
+            directory += "/"
         result = []
-        paginator = self.s3.get_paginator('list_objects_v2')
+        paginator = self.s3.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=self.bucket_name, Prefix=directory)
 
         for page in pages:
-            if 'Contents' in page:
-                for obj in page['Contents']:
-                    result.append(obj['Key'])
-
+            if "Contents" in page:
+                for obj in page["Contents"]:
+                    result.append(obj["Key"])
         return result
 
     def process_file(self, path: str, processor_func: Callable, **kwargs):
@@ -98,22 +100,24 @@ class S3Storage(BaseStorage):
             path: Path to the file
             processor_func: Function that processes the file
             **kwargs: Additional arguments to pass to the processor function
-        
+
         Returns:
             The result of the processor function
         """
-        import tempfile
         import logging
-        
+        import tempfile
+
         if not self.file_exists(path):
             raise FileNotFoundError(f"File not found in S3: {path}")
-        
-        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(path)[1], delete=True) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            suffix=os.path.splitext(path)[1], delete=True
+        ) as temp_file:
             try:
                 # Download the file from S3 to the temporary file
+
                 self.s3.download_fileobj(self.bucket_name, path, temp_file)
                 temp_file.flush()
-                
+
                 return processor_func(local_path=temp_file.name, **kwargs)
             except Exception as e:
                 logging.error(f"Error processing S3 file {path}: {e}", exc_info=True)

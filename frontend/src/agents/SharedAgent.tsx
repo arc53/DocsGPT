@@ -155,9 +155,13 @@ export default function SharedAgent() {
     <div className="relative h-full w-full">
       <div className="absolute left-4 top-5 hidden items-center gap-3 sm:flex">
         <img
-          src={sharedAgent.image ?? Robot}
+          src={
+            sharedAgent.image && sharedAgent.image.trim() !== ''
+              ? sharedAgent.image
+              : Robot
+          }
           alt="agent-logo"
-          className="h-6 w-6"
+          className="h-6 w-6 rounded-full object-contain"
         />
         <h2 className="text-lg font-semibold text-[#212121] dark:text-[#E0E0E0]">
           {sharedAgent.name}

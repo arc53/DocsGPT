@@ -6,6 +6,7 @@ import uuid
 import tiktoken
 from flask import jsonify, make_response
 from werkzeug.utils import secure_filename
+from application.core.settings import settings
 
 
 _encoding = None
@@ -22,24 +23,24 @@ def safe_filename(filename):
     """
     Creates a safe filename that preserves the original extension.
     Uses secure_filename, but ensures a proper filename is returned even with non-Latin characters.
-    
+
     Args:
         filename (str): The original filename
-        
+
     Returns:
         str: A safe filename that can be used for storage
     """
     if not filename:
         return str(uuid.uuid4())
-        
+
     _, extension = os.path.splitext(filename)
-    
+
     safe_name = secure_filename(filename)
-    
+
     # If secure_filename returns just the extension or an empty string
-    if not safe_name or safe_name == extension.lstrip('.'):
+    if not safe_name or safe_name == extension.lstrip("."):
         return f"{str(uuid.uuid4())}{extension}"
-    
+
     return safe_name
 
 
@@ -137,3 +138,14 @@ def validate_function_name(function_name):
     if not re.match(r"^[a-zA-Z0-9_-]+$", function_name):
         return False
     return True
+
+
+def generate_image_url(image_path):
+    strategy = getattr(settings, "URL_STRATEGY", "backend")
+    if strategy == "s3":
+        bucket_name = getattr(settings, "S3_BUCKET_NAME", "docsgpt-test-bucket")
+        region_name = getattr(settings, "SAGEMAKER_REGION", "eu-central-1")
+        return f"https://{bucket_name}.s3.{region_name}.amazonaws.com/{image_path}"
+    else:
+        base_url = getattr(settings, "API_URL", "http://localhost:7091")
+        return f"{base_url}/api/images/{image_path}"

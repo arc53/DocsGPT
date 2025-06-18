@@ -28,7 +28,12 @@ from application.core.settings import settings
 from application.extensions import api
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
-from application.utils import check_required_fields, safe_filename, validate_function_name
+from application.utils import (
+    check_required_fields,
+    safe_filename,
+    validate_function_name,
+    generate_image_url,
+)
 from application.vectorstore.vector_creator import VectorCreator
 
 storage = StorageCreator.get_storage()
@@ -253,7 +258,7 @@ class GetSingleConversation(Resource):
             )
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
-            
+
             # Process queries to include attachment names
             queries = conversation["queries"]
             for query in queries:
@@ -265,13 +270,18 @@ class GetSingleConversation(Resource):
                                 {"_id": ObjectId(attachment_id)}
                             )
                             if attachment:
-                                attachment_details.append({
-                                    "id": str(attachment["_id"]),
-                                    "fileName": attachment.get("filename", "Unknown file")
-                                })
+                                attachment_details.append(
+                                    {
+                                        "id": str(attachment["_id"]),
+                                        "fileName": attachment.get(
+                                            "filename", "Unknown file"
+                                        ),
+                                    }
+                                )
                         except Exception as e:
                             current_app.logger.error(
-                                f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
+                                f"Error retrieving attachment {attachment_id}: {e}",
+                                exc_info=True,
                             )
                     query["attachments"] = attachment_details
         except Exception as err:
@@ -499,7 +509,7 @@ class UploadFile(Resource):
             )
         user = decoded_token.get("sub")
         job_name = request.form["name"]
-        
+
         # Create safe versions for filesystem operations
         safe_user = safe_filename(user)
         dir_name = safe_filename(job_name)
@@ -1069,27 +1079,28 @@ class UpdatePrompt(Resource):
 
 @user_ns.route("/api/get_agent")
 class GetAgent(Resource):
-    @api.doc(params={"id": "ID of the agent"}, description="Get a single agent by ID")
+    @api.doc(params={"id": "Agent ID"}, description="Get agent by ID")
     def get(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        agent_id = request.args.get("id")
-        if not agent_id:
-            return make_response(
-                jsonify({"success": False, "message": "ID is required"}), 400
-            )
+        if not (decoded_token := request.decoded_token):
+            return {"success": False}, 401
+
+        if not (agent_id := request.args.get("id")):
+            return {"success": False, "message": "ID required"}, 400
+
         try:
             agent = agents_collection.find_one(
-                {"_id": ObjectId(agent_id), "user": user}
+                {"_id": ObjectId(agent_id), "user": decoded_token["sub"]}
             )
             if not agent:
-                return make_response(jsonify({"status": "Not found"}), 404)
+                return {"status": "Not found"}, 404
+
             data = {
                 "id": str(agent["_id"]),
                 "name": agent["name"],
                 "description": agent.get("description", ""),
+                "image": (
+                    generate_image_url(agent["image"]) if agent.get("image") else ""
+                ),
                 "source": (
                     str(source_doc["_id"])
                     if isinstance(agent.get("source"), DBRef)
@@ -1116,19 +1127,20 @@ class GetAgent(Resource):
                 "shared_metadata": agent.get("shared_metadata", {}),
                 "shared_token": agent.get("shared_token", ""),
             }
-        except Exception as err:
-            current_app.logger.error(f"Error retrieving agent: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(data), 200)
+            return make_response(jsonify(data), 200)
+
+        except Exception as e:
+            current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)
+            return {"success": False}, 400
 
 
 @user_ns.route("/api/get_agents")
 class GetAgents(Resource):
     @api.doc(description="Retrieve agents for the user")
     def get(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
+        if not (decoded_token := request.decoded_token):
+            return {"success": False}, 401
+
         user = decoded_token.get("sub")
         try:
             user_doc = ensure_user_doc(user)
@@ -1140,6 +1152,9 @@ class GetAgents(Resource):
                     "id": str(agent["_id"]),
                     "name": agent["name"],
                     "description": agent.get("description", ""),
+                    "image": (
+                        generate_image_url(agent["image"]) if agent.get("image") else ""
+                    ),
                     "source": (
                         str(source_doc["_id"])
                         if isinstance(agent.get("source"), DBRef)
@@ -1184,8 +1199,8 @@ class CreateAgent(Resource):
             "description": fields.String(
                 required=True, description="Description of the agent"
             ),
-            "image": fields.String(
-                required=False, description="Image URL or identifier"
+            "image": fields.Raw(
+                required=False, description="Image file upload", type="file"
             ),
             "source": fields.String(required=True, description="Source ID"),
             "chunks": fields.Integer(required=True, description="Chunks count"),
@@ -1204,12 +1219,20 @@ class CreateAgent(Resource):
     @api.expect(create_agent_model)
     @api.doc(description="Create a new agent")
     def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
+        if not (decoded_token := request.decoded_token):
+            return {"success": False}, 401
         user = decoded_token.get("sub")
-        data = request.get_json()
-
+        if request.content_type == "application/json":
+            data = request.get_json()
+        else:
+            print(request.form)
+            data = request.form.to_dict()
+            if "tools" in data:
+                try:
+                    data["tools"] = json.loads(data["tools"])
+                except json.JSONDecodeError:
+                    data["tools"] = []
+        print(f"Received data: {data}")
         if data.get("status") not in ["draft", "published"]:
             return make_response(
                 jsonify({"success": False, "message": "Invalid status"}), 400
@@ -1230,13 +1253,29 @@ class CreateAgent(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+
+        image_url = ""
+        if "image" in request.files:
+            file = request.files["image"]
+            if file.filename != "":
+                filename = secure_filename(file.filename)
+                upload_path = f"agents/{user}/{str(uuid.uuid4())}_{filename}"
+                try:
+                    storage.save_file(file, upload_path)
+                    image_url = upload_path
+                except Exception as e:
+                    current_app.logger.error(f"Error uploading agent image: {e}")
+                    return make_response(
+                        jsonify({"success": False, "message": "Image upload failed"}),
+                        400,
+                    )
         try:
             key = str(uuid.uuid4())
             new_agent = {
                 "user": user,
                 "name": data.get("name"),
                 "description": data.get("description", ""),
-                "image": data.get("image", ""),
+                "image": image_url,
                 "source": (
                     DBRef("sources", ObjectId(data.get("source")))
                     if ObjectId.is_valid(data.get("source"))
@@ -1294,11 +1333,18 @@ class UpdateAgent(Resource):
     @api.expect(update_agent_model)
     @api.doc(description="Update an existing agent")
     def put(self, agent_id):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
+        if not (decoded_token := request.decoded_token):
+            return {"success": False}, 401
         user = decoded_token.get("sub")
-        data = request.get_json()
+        if request.content_type == "application/json":
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
+            if "tools" in data:
+                try:
+                    data["tools"] = json.loads(data["tools"])
+                except json.JSONDecodeError:
+                    data["tools"] = []
 
         if not ObjectId.is_valid(agent_id):
             return make_response(
@@ -1323,6 +1369,23 @@ class UpdateAgent(Resource):
                 ),
                 404,
             )
+
+        image_url = existing_agent.get("image", "")
+        if "image" in request.files:
+            file = request.files["image"]
+            if file.filename != "":
+                filename = secure_filename(file.filename)
+                upload_path = f"agents/{user}/{str(uuid.uuid4())}_{filename}"
+                try:
+                    storage.save_file(file, upload_path)
+                    image_url = upload_path
+                except Exception as e:
+                    current_app.logger.error(f"Error uploading agent image: {e}")
+                    return make_response(
+                        jsonify({"success": False, "message": "Image upload failed"}),
+                        400,
+                    )
+
         update_fields = {}
         allowed_fields = [
             "name",
@@ -1394,6 +1457,8 @@ class UpdateAgent(Resource):
                             )
                 else:
                     update_fields[field] = data[field]
+        if image_url:
+            update_fields["image"] = image_url
         if not update_fields:
             return make_response(
                 jsonify({"success": False, "message": "No update data provided"}), 400
@@ -1542,6 +1607,9 @@ class PinnedAgents(Resource):
                     "id": str(agent["_id"]),
                     "name": agent.get("name", ""),
                     "description": agent.get("description", ""),
+                    "image": (
+                        generate_image_url(agent["image"]) if agent.get("image") else ""
+                    ),
                     "source": (
                         str(db.dereference(agent["source"])["_id"])
                         if "source" in agent
@@ -1702,6 +1770,11 @@ class SharedAgent(Resource):
                 "id": agent_id,
                 "user": shared_agent.get("user", ""),
                 "name": shared_agent.get("name", ""),
+                "image": (
+                    generate_image_url(shared_agent["image"])
+                    if shared_agent.get("image")
+                    else ""
+                ),
                 "description": shared_agent.get("description", ""),
                 "tools": shared_agent.get("tools", []),
                 "tool_details": resolve_tool_details(shared_agent.get("tools", [])),
@@ -1777,6 +1850,9 @@ class SharedAgents(Resource):
                     "id": str(agent["_id"]),
                     "name": agent.get("name", ""),
                     "description": agent.get("description", ""),
+                    "image": (
+                        generate_image_url(agent["image"]) if agent.get("image") else ""
+                    ),
                     "tools": agent.get("tools", []),
                     "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
@@ -2241,7 +2317,7 @@ class GetPubliclySharedConversations(Resource):
                 conversation_queries = conversation["queries"][
                     : (shared["first_n_queries"])
                 ]
-                
+
                 for query in conversation_queries:
                     if "attachments" in query and query["attachments"]:
                         attachment_details = []
@@ -2251,13 +2327,18 @@ class GetPubliclySharedConversations(Resource):
                                     {"_id": ObjectId(attachment_id)}
                                 )
                                 if attachment:
-                                    attachment_details.append({
-                                        "id": str(attachment["_id"]),
-                                        "fileName": attachment.get("filename", "Unknown file")
-                                    })
+                                    attachment_details.append(
+                                        {
+                                            "id": str(attachment["_id"]),
+                                            "fileName": attachment.get(
+                                                "filename", "Unknown file"
+                                            ),
+                                        }
+                                    )
                             except Exception as e:
                                 current_app.logger.error(
-                                    f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
+                                    f"Error retrieving attachment {attachment_id}: {e}",
+                                    exc_info=True,
                                 )
                         query["attachments"] = attachment_details
             else:
@@ -3493,3 +3574,33 @@ class StoreAttachment(Resource):
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
+
+
+@user_ns.route("/api/images/<path:image_path>")
+class ServeImage(Resource):
+    @api.doc(description="Serve an image from storage")
+    def get(self, image_path):
+        try:
+            s3_storage = StorageCreator.create_storage("s3")
+
+            file_obj = s3_storage.get_file(image_path)
+
+            extension = image_path.split(".")[-1].lower()
+            content_type = f"image/{extension}"
+            if extension == "jpg":
+                content_type = "image/jpeg"
+
+            response = make_response(file_obj.read())
+            response.headers.set("Content-Type", content_type)
+            response.headers.set("Cache-Control", "max-age=86400")
+
+            return response
+        except FileNotFoundError:
+            return make_response(
+                jsonify({"success": False, "message": "Image not found"}), 404
+            )
+        except Exception as e:
+            current_app.logger.error(f"Error serving image: {e}")
+            return make_response(
+                jsonify({"success": False, "message": "Error retrieving image"}), 500
+            )

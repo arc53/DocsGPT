@@ -324,17 +324,21 @@ function AgentCard({
         iconWidth: 14,
         iconHeight: 14,
       },
-      {
-        icon: agent.pinned ? UnPin : Pin,
-        label: agent.pinned ? 'Unpin' : 'Pin agent',
-        onClick: (e: SyntheticEvent) => {
-          e.stopPropagation();
-          togglePin();
-        },
-        variant: 'primary',
-        iconWidth: 18,
-        iconHeight: 18,
-      },
+      ...(agent.status === 'published'
+        ? [
+            {
+              icon: agent.pinned ? UnPin : Pin,
+              label: agent.pinned ? 'Unpin' : 'Pin agent',
+              onClick: (e: SyntheticEvent) => {
+                e.stopPropagation();
+                togglePin();
+              },
+              variant: 'primary' as const,
+              iconWidth: 18,
+              iconHeight: 18,
+            },
+          ]
+        : []),
       {
         icon: Trash,
         label: 'Delete',
@@ -426,16 +430,16 @@ function AgentCard({
           setIsOpen={setIsMenuOpen}
           options={menuOptions}
           anchorRef={menuRef}
-          position="top-right"
+          position="bottom-right"
           offset={{ x: 0, y: 0 }}
         />
       </div>
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
           <img
-            src={agent.image ?? Robot}
+            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
             alt={`${agent.name}`}
-            className="h-7 w-7 rounded-full"
+            className="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
             <p className="text-xs text-black opacity-50 dark:text-[#E0E0E0]">{`(Draft)`}</p>
