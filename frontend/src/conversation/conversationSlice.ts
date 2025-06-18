@@ -11,13 +11,7 @@ import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
 } from './conversationHandlers';
-import {
-  Answer,
-  Attachment,
-  ConversationState,
-  Query,
-  Status,
-} from './conversationModels';
+import { Answer, ConversationState, Query, Status } from './conversationModels';
 import { ToolCallsType } from './types';
 
 const initialState: ConversationState = {
@@ -76,72 +70,84 @@ export const fetchAnswer = createAsyncThunk<
             const data = JSON.parse(event.data);
             const targetIndex = indx ?? state.conversation.queries.length - 1;
 
-            if (data.type === 'end') {
-              dispatch(conversationSlice.actions.setStatus('idle'));
-              if (!isPreview) {
-                getConversations(state.preference.token)
-                  .then((fetchedConversations) => {
-                    dispatch(setConversations(fetchedConversations));
-                  })
-                  .catch((error) => {
-                    console.error('Failed to fetch conversations: ', error);
-                  });
-              }
-              if (!isSourceUpdated) {
+            // Only process events if they match the current conversation
+            if (currentConversationId === state.conversation.conversationId) {
+              if (data.type === 'end') {
+                dispatch(conversationSlice.actions.setStatus('idle'));
+                if (!isPreview) {
+                  getConversations(state.preference.token)
+                    .then((fetchedConversations) => {
+                      dispatch(setConversations(fetchedConversations));
+                    })
+                    .catch((error) => {
+                      console.error('Failed to fetch conversations: ', error);
+                    });
+                }
+                if (!isSourceUpdated) {
+                  dispatch(
+                    updateStreamingSource({
+                      conversationId: currentConversationId,
+                      index: targetIndex,
+                      query: { sources: [] },
+                    }),
+                  );
+                }
+              } else if (data.type === 'id') {
+                if (!isPreview) {
+                  // Only update the conversationId if it's currently null
+                  const currentState = getState() as RootState;
+                  if (currentState.conversation.conversationId === null) {
+                    dispatch(
+                      updateConversationId({
+                        query: { conversationId: data.id },
+                      }),
+                    );
+                  }
+                }
+              } else if (data.type === 'thought') {
+                const result = data.thought;
+                dispatch(
+                  updateThought({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    query: { thought: result },
+                  }),
+                );
+              } else if (data.type === 'source') {
+                isSourceUpdated = true;
                 dispatch(
                   updateStreamingSource({
+                    conversationId: currentConversationId,
                     index: targetIndex,
-                    query: { sources: [] },
+                    query: { sources: data.source ?? [] },
                   }),
                 );
-              }
-            } else if (data.type === 'id') {
-              if (!isPreview) {
+              } else if (data.type === 'tool_call') {
                 dispatch(
-                  updateConversationId({
-                    query: { conversationId: data.id },
+                  updateToolCall({
+                    index: targetIndex,
+                    tool_call: data.data as ToolCallsType,
+                  }),
+                );
+              } else if (data.type === 'error') {
+                // set status to 'failed'
+                dispatch(conversationSlice.actions.setStatus('failed'));
+                dispatch(
+                  conversationSlice.actions.raiseError({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    message: data.error,
+                  }),
+                );
+              } else {
+                dispatch(
+                  updateStreamingQuery({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    query: { response: data.answer },
                   }),
                 );
               }
-            } else if (data.type === 'thought') {
-              const result = data.thought;
-              dispatch(
-                updateThought({
-                  index: targetIndex,
-                  query: { thought: result },
-                }),
-              );
-            } else if (data.type === 'source') {
-              isSourceUpdated = true;
-              dispatch(
-                updateStreamingSource({
-                  index: targetIndex,
-                  query: { sources: data.source ?? [] },
-                }),
-              );
-            } else if (data.type === 'tool_call') {
-              dispatch(
-                updateToolCall({
-                  index: targetIndex,
-                  tool_call: data.data as ToolCallsType,
-                }),
-              );
-            } else if (data.type === 'error') {
-              // set status to 'failed'
-              dispatch(conversationSlice.actions.setStatus('failed'));
-              dispatch(
-                conversationSlice.actions.raiseError({
-                  index: targetIndex,
-                  message: data.error,
-                }),
-              );
-            } else {
-              dispatch(
-                updateStreamingQuery({
-                  index: targetIndex,
-                  query: { response: data.answer },
-                }),
-              );
             }
           },
           indx,
@@ -242,18 +248,20 @@ export const conversationSlice = createSlice({
     },
     updateStreamingQuery(
       state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        query: Partial<Query>;
+      }>,
     ) {
-      if (state.status === 'idle') return;
-      const { index, query } = action.payload;
+      const { conversationId, index, query } = action.payload;
+      // Only update if this update is for the current conversation
+      if (state.status === 'idle' || state.conversationId !== conversationId)
+        return;
+
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
-      } else {
-        state.queries[index] = {
-          ...state.queries[index],
-          ...query,
-        };
       }
     },
     updateConversationId(
@@ -265,28 +273,35 @@ export const conversationSlice = createSlice({
     },
     updateThought(
       state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        query: Partial<Query>;
+      }>,
     ) {
-      const { index, query } = action.payload;
+      const { conversationId, index, query } = action.payload;
+      if (state.conversationId !== conversationId) return;
+
       if (query.thought != undefined) {
         state.queries[index].thought =
           (state.queries[index].thought || '') + query.thought;
-      } else {
-        state.queries[index] = {
-          ...state.queries[index],
-          ...query,
-        };
       }
     },
     updateStreamingSource(
       state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        query: Partial<Query>;
+      }>,
     ) {
-      const { index, query } = action.payload;
+      const { conversationId, index, query } = action.payload;
+      if (state.conversationId !== conversationId) return;
+
       if (!state.queries[index].sources) {
         state.queries[index].sources = query?.sources;
-      } else {
-        state.queries[index].sources!.push(query.sources![0]);
+      } else if (query.sources) {
+        state.queries[index].sources!.push(...query.sources);
       }
     },
     updateToolCall(state, action) {
@@ -323,9 +338,15 @@ export const conversationSlice = createSlice({
     },
     raiseError(
       state,
-      action: PayloadAction<{ index: number; message: string }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        message: string;
+      }>,
     ) {
-      const { index, message } = action.payload;
+      const { conversationId, index, message } = action.payload;
+      if (state.conversationId !== conversationId) return;
+
       state.queries[index].error = message;
     },
 
