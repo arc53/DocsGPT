@@ -19,7 +19,7 @@
     ]
   },
   "dependencies": {
-    "@reduxjs/toolkit": "^2.5.1",
+    "@reduxjs/toolkit": "^2.8.2",
     "chart.js": "^4.4.4",
     "clsx": "^2.1.1",
     "i18next": "^24.2.0",
