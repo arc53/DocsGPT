@@ -19,7 +19,7 @@
     ]
   },
   "dependencies": {
-    "@reduxjs/toolkit": "^2.5.1",
+    "@reduxjs/toolkit": "^2.8.2",
     "chart.js": "^4.4.4",
     "clsx": "^2.1.1",
     "i18next": "^24.2.0",
@@ -30,7 +30,7 @@
     "react-chartjs-2": "^5.3.0",
     "react-copy-to-clipboard": "^5.1.0",
     "react-dom": "^18.3.1",
-    "react-dropzone": "^14.3.5",
+    "react-dropzone": "^14.3.8",
     "react-helmet": "^6.1.0",
     "react-i18next": "^15.4.0",
     "react-markdown": "^9.0.1",
