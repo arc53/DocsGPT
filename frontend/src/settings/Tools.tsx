@@ -35,7 +35,7 @@ export default function Tools() {
   const [loading, setLoading] = React.useState(false);
   const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
   const menuRefs = React.useRef<{
-    [key: string]: React.RefObject<HTMLDivElement>;
+    [key: string]: React.RefObject<HTMLDivElement | null>;
   }>({});
   const [deleteModalState, setDeleteModalState] =
     React.useState<ActiveState>('INACTIVE');
@@ -46,7 +46,7 @@ export default function Tools() {
   React.useEffect(() => {
     userTools.forEach((tool) => {
       if (!menuRefs.current[tool.id]) {
-        menuRefs.current[tool.id] = React.createRef();
+        menuRefs.current[tool.id] = React.createRef<HTMLDivElement>();
       }
     });
   }, [userTools]);

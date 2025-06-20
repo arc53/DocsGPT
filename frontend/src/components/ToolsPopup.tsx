@@ -14,7 +14,7 @@ import { useDarkTheme } from '../hooks';
 interface ToolsPopupProps {
   isOpen: boolean;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement>;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 export default function ToolsPopup({

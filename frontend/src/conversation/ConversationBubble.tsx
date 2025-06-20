@@ -96,7 +96,7 @@ const ConversationBubble = forwardRef<
   const [isDislikeClicked, setIsDislikeClicked] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  const editableQueryRef = useRef<HTMLDivElement | null>(null);
+  const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);

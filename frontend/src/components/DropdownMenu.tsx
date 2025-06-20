@@ -7,12 +7,12 @@ type DropdownMenuProps = {
   onSelect: (value: string) => void;
   defaultValue?: string;
   icon?: string;
-  isOpen?: boolean;
-  onOpenChange?: (isOpen: boolean) => void;
-  anchorRef?: React.RefObject<HTMLElement>;
-  className?: string;
-  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  position?: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
   offset?: { x: number; y: number };
+  className?: string;
 };
 
 export default function DropdownMenu({

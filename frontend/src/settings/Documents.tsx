@@ -68,9 +68,9 @@ export default function Documents({
   const [totalPages, setTotalPages] = useState<number>(1);
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const menuRefs = useRef<{ [key: string]: React.RefObject<HTMLDivElement> }>(
-    {},
-  );
+  const menuRefs = useRef<{
+    [key: string]: React.RefObject<HTMLDivElement | null>;
+  }>({});
 
   // Create or get a ref for each document wrapper div (not the td)
   const getMenuRef = (docId: string) => {

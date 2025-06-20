@@ -17,7 +17,7 @@ export type OptionType = {
 type MultiSelectPopupProps = {
   isOpen: boolean;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLElement>;
+  anchorRef: React.RefObject<HTMLElement | null>;
   options: OptionType[];
   selectedIds: Set<string | number>;
   onSelectionChange: (newSelectedIds: Set<string | number>) => void;
