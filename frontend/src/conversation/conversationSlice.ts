@@ -11,13 +11,7 @@ import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
 } from './conversationHandlers';
-import {
-  Answer,
-  Attachment,
-  ConversationState,
-  Query,
-  Status,
-} from './conversationModels';
+import { Answer, ConversationState, Query, Status } from './conversationModels';
 import { ToolCallsType } from './types';
 
 const initialState: ConversationState = {
@@ -38,65 +32,64 @@ export function handleAbort() {
 
 export const fetchAnswer = createAsyncThunk<
   Answer,
-  { question: string; indx?: number; isPreview?: boolean }
->(
-  'fetchAnswer',
-  async ({ question, indx, isPreview = false }, { dispatch, getState }) => {
-    if (abortController) abortController.abort();
-    abortController = new AbortController();
-    const { signal } = abortController;
+  { question: string; indx?: number }
+>('fetchAnswer', async ({ question, indx }, { dispatch, getState }) => {
+  if (abortController) abortController.abort();
+  abortController = new AbortController();
+  const { signal } = abortController;
 
-    let isSourceUpdated = false;
-    const state = getState() as RootState;
-    const attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+  let isSourceUpdated = false;
+  const state = getState() as RootState;
+  const attachmentIds = selectCompletedAttachments(state)
+    .filter((a) => a.id)
+    .map((a) => a.id) as string[];
 
-    if (attachmentIds.length > 0) {
-      dispatch(clearAttachments());
-    }
+  if (attachmentIds.length > 0) {
+    dispatch(clearAttachments());
+  }
 
-    const currentConversationId = state.conversation.conversationId;
-    const conversationIdToSend = isPreview ? null : currentConversationId;
-    const save_conversation = isPreview ? false : true;
+  const currentConversationId = state.conversation.conversationId;
 
-    if (state.preference) {
-      if (API_STREAMING) {
-        await handleFetchAnswerSteaming(
-          question,
-          signal,
-          state.preference.token,
-          state.preference.selectedDocs!,
-          state.conversation.queries,
-          conversationIdToSend,
-          state.preference.prompt.id,
-          state.preference.chunks,
-          state.preference.token_limit,
-          (event) => {
-            const data = JSON.parse(event.data);
-            const targetIndex = indx ?? state.conversation.queries.length - 1;
+  if (state.preference) {
+    if (API_STREAMING) {
+      await handleFetchAnswerSteaming(
+        question,
+        signal,
+        state.preference.token,
+        state.preference.selectedDocs!,
+        state.conversation.queries,
+        currentConversationId,
+        state.preference.prompt.id,
+        state.preference.chunks,
+        state.preference.token_limit,
+        (event) => {
+          const data = JSON.parse(event.data);
+          const targetIndex = indx ?? state.conversation.queries.length - 1;
 
+          // Only process events if they match the current conversation
+          if (currentConversationId === state.conversation.conversationId) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
-              if (!isPreview) {
-                getConversations(state.preference.token)
-                  .then((fetchedConversations) => {
-                    dispatch(setConversations(fetchedConversations));
-                  })
-                  .catch((error) => {
-                    console.error('Failed to fetch conversations: ', error);
-                  });
-              }
+              getConversations(state.preference.token)
+                .then((fetchedConversations) => {
+                  dispatch(setConversations(fetchedConversations));
+                })
+                .catch((error) => {
+                  console.error('Failed to fetch conversations: ', error);
+                });
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
+                    conversationId: currentConversationId,
                     index: targetIndex,
                     query: { sources: [] },
                   }),
                 );
               }
             } else if (data.type === 'id') {
-              if (!isPreview) {
+              // Only update the conversationId if it's currently null
+              const currentState = getState() as RootState;
+              if (currentState.conversation.conversationId === null) {
                 dispatch(
                   updateConversationId({
                     query: { conversationId: data.id },
@@ -107,6 +100,7 @@ export const fetchAnswer = createAsyncThunk<
               const result = data.thought;
               dispatch(
                 updateThought({
+                  conversationId: currentConversationId,
                   index: targetIndex,
                   query: { thought: result },
                 }),
@@ -115,6 +109,7 @@ export const fetchAnswer = createAsyncThunk<
               isSourceUpdated = true;
               dispatch(
                 updateStreamingSource({
+                  conversationId: currentConversationId,
                   index: targetIndex,
                   query: { sources: data.source ?? [] },
                 }),
@@ -131,6 +126,7 @@ export const fetchAnswer = createAsyncThunk<
               dispatch(conversationSlice.actions.setStatus('failed'));
               dispatch(
                 conversationSlice.actions.raiseError({
+                  conversationId: currentConversationId,
                   index: targetIndex,
                   message: data.error,
                 }),
@@ -138,88 +134,87 @@ export const fetchAnswer = createAsyncThunk<
             } else {
               dispatch(
                 updateStreamingQuery({
+                  conversationId: currentConversationId,
                   index: targetIndex,
                   query: { response: data.answer },
                 }),
               );
             }
-          },
-          indx,
-          state.preference.selectedAgent?.id,
-          attachmentIds,
-          save_conversation,
-        );
-      } else {
-        const answer = await handleFetchAnswer(
-          question,
-          signal,
-          state.preference.token,
-          state.preference.selectedDocs!,
-          state.conversation.queries,
-          state.conversation.conversationId,
-          state.preference.prompt.id,
-          state.preference.chunks,
-          state.preference.token_limit,
-          state.preference.selectedAgent?.id,
-          attachmentIds,
-          save_conversation,
-        );
-        if (answer) {
-          let sourcesPrepped = [];
-          sourcesPrepped = answer.sources.map((source: { title: string }) => {
-            if (source && source.title) {
-              const titleParts = source.title.split('/');
-              return {
-                ...source,
-                title: titleParts[titleParts.length - 1],
-              };
-            }
-            return source;
-          });
-
-          const targetIndex = indx ?? state.conversation.queries.length - 1;
-
-          dispatch(
-            updateQuery({
-              index: targetIndex,
-              query: {
-                response: answer.answer,
-                thought: answer.thought,
-                sources: sourcesPrepped,
-                tool_calls: answer.toolCalls,
-              },
-            }),
-          );
-          if (!isPreview) {
-            dispatch(
-              updateConversationId({
-                query: { conversationId: answer.conversationId },
-              }),
-            );
-            getConversations(state.preference.token)
-              .then((fetchedConversations) => {
-                dispatch(setConversations(fetchedConversations));
-              })
-              .catch((error) => {
-                console.error('Failed to fetch conversations: ', error);
-              });
           }
-          dispatch(conversationSlice.actions.setStatus('idle'));
-        }
+        },
+        indx,
+        state.preference.selectedAgent?.id,
+        attachmentIds,
+        true, // Always save conversation
+      );
+    } else {
+      const answer = await handleFetchAnswer(
+        question,
+        signal,
+        state.preference.token,
+        state.preference.selectedDocs!,
+        state.conversation.queries,
+        state.conversation.conversationId,
+        state.preference.prompt.id,
+        state.preference.chunks,
+        state.preference.token_limit,
+        state.preference.selectedAgent?.id,
+        attachmentIds,
+        true, // Always save conversation
+      );
+      if (answer) {
+        let sourcesPrepped = [];
+        sourcesPrepped = answer.sources.map((source: { title: string }) => {
+          if (source && source.title) {
+            const titleParts = source.title.split('/');
+            return {
+              ...source,
+              title: titleParts[titleParts.length - 1],
+            };
+          }
+          return source;
+        });
+
+        const targetIndex = indx ?? state.conversation.queries.length - 1;
+
+        dispatch(
+          updateQuery({
+            index: targetIndex,
+            query: {
+              response: answer.answer,
+              thought: answer.thought,
+              sources: sourcesPrepped,
+              tool_calls: answer.toolCalls,
+            },
+          }),
+        );
+        dispatch(
+          updateConversationId({
+            query: { conversationId: answer.conversationId },
+          }),
+        );
+        getConversations(state.preference.token)
+          .then((fetchedConversations) => {
+            dispatch(setConversations(fetchedConversations));
+          })
+          .catch((error) => {
+            console.error('Failed to fetch conversations: ', error);
+          });
+        dispatch(conversationSlice.actions.setStatus('idle'));
       }
     }
-    return {
-      conversationId: null,
-      title: null,
-      answer: '',
-      query: question,
-      result: '',
-      thought: '',
-      sources: [],
-      tool_calls: [],
-    };
-  },
-);
+  }
+  return {
+    conversationId: null,
+    title: null,
+    answer: '',
+    query: question,
+    result: '',
+    thought: '',
+    sources: [],
+    tool_calls: [],
+  };
+});
 
 export const conversationSlice = createSlice({
   name: 'conversation',
@@ -242,18 +237,20 @@ export const conversationSlice = createSlice({
     },
     updateStreamingQuery(
       state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        query: Partial<Query>;
+      }>,
     ) {
-      if (state.status === 'idle') return;
-      const { index, query } = action.payload;
+      const { conversationId, index, query } = action.payload;
+      // Only update if this update is for the current conversation
+      if (state.status === 'idle' || state.conversationId !== conversationId)
+        return;
+
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
-      } else {
-        state.queries[index] = {
-          ...state.queries[index],
-          ...query,
-        };
       }
     },
     updateConversationId(
@@ -265,28 +262,35 @@ export const conversationSlice = createSlice({
     },
     updateThought(
       state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        query: Partial<Query>;
+      }>,
     ) {
-      const { index, query } = action.payload;
+      const { conversationId, index, query } = action.payload;
+      if (state.conversationId !== conversationId) return;
+
       if (query.thought != undefined) {
         state.queries[index].thought =
           (state.queries[index].thought || '') + query.thought;
-      } else {
-        state.queries[index] = {
-          ...state.queries[index],
-          ...query,
-        };
       }
     },
     updateStreamingSource(
       state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        query: Partial<Query>;
+      }>,
     ) {
-      const { index, query } = action.payload;
+      const { conversationId, index, query } = action.payload;
+      if (state.conversationId !== conversationId) return;
+
       if (!state.queries[index].sources) {
         state.queries[index].sources = query?.sources;
-      } else {
-        state.queries[index].sources!.push(query.sources![0]);
+      } else if (query.sources) {
+        state.queries[index].sources!.push(...query.sources);
       }
     },
     updateToolCall(state, action) {
@@ -323,9 +327,15 @@ export const conversationSlice = createSlice({
     },
     raiseError(
       state,
-      action: PayloadAction<{ index: number; message: string }>,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        message: string;
+      }>,
     ) {
-      const { index, message } = action.payload;
+      const { conversationId, index, message } = action.payload;
+      if (state.conversationId !== conversationId) return;
+
       state.queries[index].error = message;
     },
 

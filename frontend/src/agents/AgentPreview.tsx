@@ -6,24 +6,23 @@ import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import {
   addQuery,
-  fetchAnswer,
-  handleAbort,
+  fetchPreviewAnswer,
+  handlePreviewAbort,
   resendQuery,
-  resetConversation,
-  selectQueries,
-  selectStatus,
-} from '../conversation/conversationSlice';
+  resetPreview,
+  selectPreviewQueries,
+  selectPreviewStatus,
+} from './agentPreviewSlice';
 import { selectSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 
 export default function AgentPreview() {
   const dispatch = useDispatch<AppDispatch>();
 
-  const queries = useSelector(selectQueries);
-  const status = useSelector(selectStatus);
+  const queries = useSelector(selectPreviewQueries);
+  const status = useSelector(selectPreviewStatus);
   const selectedAgent = useSelector(selectSelectedAgent);
 
-  const [input, setInput] = useState('');
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
 
   const fetchStream = useRef<any>(null);
@@ -31,7 +30,7 @@ export default function AgentPreview() {
   const handleFetchAnswer = useCallback(
     ({ question, index }: { question: string; index?: number }) => {
       fetchStream.current = dispatch(
-        fetchAnswer({ question, indx: index, isPreview: true }),
+        fetchPreviewAnswer({ question, indx: index }),
       );
     },
     [dispatch],
@@ -95,11 +94,11 @@ export default function AgentPreview() {
   };
 
   useEffect(() => {
-    dispatch(resetConversation());
+    dispatch(resetPreview());
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
-      handleAbort();
-      dispatch(resetConversation());
+      handlePreviewAbort();
+      dispatch(resetPreview());
     };
   }, [dispatch]);
 

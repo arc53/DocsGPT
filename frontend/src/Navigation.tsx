@@ -81,8 +81,27 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     useState<ActiveState>('INACTIVE');
   const [recentAgents, setRecentAgents] = useState<Agent[]>([]);
 
-  const navRef = useRef(null);
+  const navRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        navRef.current &&
+        !navRef.current.contains(event.target as Node) &&
+        (isMobile || isTablet) &&
+        navOpen
+      ) {
+        setNavOpen(false);
+      }
+    }
 
+    //event listener only for mobile/tablet when nav is open
+    if ((isMobile || isTablet) && navOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [navOpen, isMobile, isTablet, setNavOpen]);
   async function fetchRecentAgents() {
     try {
       const response = await userService.getPinnedAgents(token);
