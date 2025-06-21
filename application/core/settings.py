@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     )
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
+    EMBEDDINGS_PATH: Optional[str] = "./models/all-mpnet-base-v2" # Set None for SentenceTransformer to manage download
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
