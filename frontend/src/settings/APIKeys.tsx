@@ -102,9 +102,9 @@ export default function APIKeys() {
 
   return (
     <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
-      <div className="relative flex flex-grow flex-col">
+      <div className="relative flex grow flex-col">
         <div className="mb-6">
-          <h2 className="text-base font-medium text-sonic-silver">
+          <h2 className="text-sonic-silver text-base font-medium">
             {t('settings.apiKeys.description')}
           </h2>
         </div>
@@ -112,7 +112,7 @@ export default function APIKeys() {
         <div className="mb-6 flex flex-col items-start justify-end gap-3 sm:flex-row sm:items-center">
           <button
             onClick={() => setCreateModal(true)}
-            className="flex h-[30px] w-[108px] items-center justify-center rounded-full bg-purple-30 text-sm text-white hover:bg-violets-are-blue"
+            className="bg-purple-30 hover:bg-violets-are-blue flex h-[30px] w-[108px] items-center justify-center rounded-full text-sm text-white"
             title={t('settings.apiKeys.createNew')}
           >
             {t('settings.apiKeys.createNew')}
@@ -120,18 +120,18 @@ export default function APIKeys() {
         </div>
 
         <div className="relative w-full">
-          <div className="overflow-hidden rounded-md border border-gray-300 dark:border-silver/40">
+          <div className="dark:border-silver/40 overflow-hidden rounded-md border border-gray-300">
             <div className="table-scroll overflow-x-auto">
               <table className="w-full table-auto">
                 <thead>
-                  <tr className="border-b border-gray-300 dark:border-silver/40">
-                    <th className="w-[35%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
+                  <tr className="dark:border-silver/40 border-b border-gray-300">
+                    <th className="text-sonic-silver w-[35%] px-4 py-3 text-left text-xs font-medium">
                       {t('settings.apiKeys.name')}
                     </th>
-                    <th className="w-[35%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
+                    <th className="text-sonic-silver w-[35%] px-4 py-3 text-left text-xs font-medium">
                       {t('settings.apiKeys.sourceDoc')}
                     </th>
-                    <th className="w-[25%] px-4 py-3 text-left text-xs font-medium text-sonic-silver">
+                    <th className="text-sonic-silver w-[25%] px-4 py-3 text-left text-xs font-medium">
                       <span className="hidden sm:inline">
                         {t('settings.apiKeys.key')}
                       </span>
@@ -144,7 +144,7 @@ export default function APIKeys() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-300 dark:divide-silver/40">
+                <tbody className="dark:divide-silver/40 divide-y divide-gray-300">
                   {loading ? (
                     <SkeletonLoader component="table" />
                   ) : !apiKeys?.length ? (
@@ -163,12 +163,12 @@ export default function APIKeys() {
                         key={element.id}
                         className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                       >
-                        <td className="w-[35%] min-w-48 max-w-0 px-4 py-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0]">
+                        <td className="w-[35%] max-w-0 min-w-48 px-4 py-4 text-sm font-semibold text-gray-700 dark:text-[#E0E0E0]">
                           <div className="truncate" title={element.name}>
                             {element.name}
                           </div>
                         </td>
-                        <td className="w-[35%] min-w-48 max-w-0 px-4 py-4 text-sm text-gray-700 dark:text-[#E0E0E0]">
+                        <td className="w-[35%] max-w-0 min-w-48 px-4 py-4 text-sm text-gray-700 dark:text-[#E0E0E0]">
                           <div className="truncate" title={element.source}>
                             {element.source}
                           </div>
@@ -187,7 +187,7 @@ export default function APIKeys() {
                                   name: element.name,
                                 })
                               }
-                              className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
                               <img
                                 src={Trash}

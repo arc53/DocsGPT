@@ -220,7 +220,7 @@ export default function Conversation() {
         }
       />
 
-      <div className="z-3 flex h-auto w-full max-w-[1300px] flex-col items-end self-center rounded-2xl bg-opacity-0 py-1 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+      <div className="bg-opacity-0 z-3 flex h-auto w-full max-w-[1300px] flex-col items-end self-center rounded-2xl py-1 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
         <div
           {...getRootProps()}
           className="flex w-full items-center rounded-[40px]"
@@ -239,17 +239,17 @@ export default function Conversation() {
           />
         </div>
 
-        <p className="hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline md:w-full">
+        <p className="text-gray-4000 dark:text-sonic-silver hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">
           {t('tagline')}
         </p>
       </div>
       {handleDragActive && (
-        <div className="pointer-events-none fixed left-0 top-0 z-30 flex size-full flex-col items-center justify-center bg-white bg-opacity-50 dark:bg-gray-alpha">
+        <div className="bg-opacity-50 dark:bg-gray-alpha pointer-events-none fixed top-0 left-0 z-30 flex size-full flex-col items-center justify-center bg-white">
           <img className="filter dark:invert" src={DragFileUpload} />
-          <span className="px-2 text-2xl font-bold text-outer-space dark:text-silver">
+          <span className="text-outer-space dark:text-silver px-2 text-2xl font-bold">
             {t('modals.uploadDoc.drag.title')}
           </span>
-          <span className="text-s w-48 p-2 text-center text-outer-space dark:text-silver">
+          <span className="text-s text-outer-space dark:text-silver w-48 p-2 text-center">
             {t('modals.uploadDoc.drag.description')}
           </span>
         </div>

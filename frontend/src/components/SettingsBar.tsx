@@ -50,10 +50,10 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
   return (
     <div className="relative mt-6 flex flex-row items-center space-x-1 overflow-auto md:space-x-0">
       <div
-        className={`${hiddenGradient === 'left' ? 'hidden' : ''} pointer-events-none absolute inset-y-0 left-6 w-14 bg-gradient-to-r from-white dark:from-raisin-black md:hidden`}
+        className={`${hiddenGradient === 'left' ? 'hidden' : ''} dark:from-raisin-black pointer-events-none absolute inset-y-0 left-6 w-14 bg-linear-to-r from-white md:hidden`}
       ></div>
       <div
-        className={`${hiddenGradient === 'right' ? 'hidden' : ''} pointer-events-none absolute inset-y-0 right-6 w-14 bg-gradient-to-l from-white dark:from-raisin-black md:hidden`}
+        className={`${hiddenGradient === 'right' ? 'hidden' : ''} dark:from-raisin-black pointer-events-none absolute inset-y-0 right-6 w-14 bg-linear-to-l from-white md:hidden`}
       ></div>
 
       <div className="z-10 md:hidden">
@@ -77,7 +77,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
             onClick={() => setActiveTab(tab)}
             className={`h-9 snap-start rounded-3xl px-4 font-bold transition-colors ${
               activeTab === tab
-                ? 'bg-[#F4F4F5] text-neutral-900 dark:bg-dark-charcoal dark:text-white'
+                ? 'dark:bg-dark-charcoal bg-[#F4F4F5] text-neutral-900 dark:text-white'
                 : 'text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white'
             }`}
             role="tab"

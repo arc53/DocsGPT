@@ -97,7 +97,7 @@ function Dropdown({
         }`}
       >
         {typeof selectedValue === 'string' ? (
-          <span className="truncate dark:text-bright-gray">
+          <span className="dark:text-bright-gray truncate">
             {selectedValue}
           </span>
         ) : (
@@ -130,7 +130,7 @@ function Dropdown({
       </button>
       {isOpen && (
         <div
-          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-${optionsBackgroundColor} shadow-lg dark:border-${darkBorderColor} dark:bg-${optionsDarkBackgroundColor}`}
+          className={`absolute right-0 left-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-${optionsBackgroundColor} shadow-lg dark:border-${darkBorderColor} dark:bg-${optionsDarkBackgroundColor}`}
         >
           {options.map((option: any, index) => (
             <div
@@ -142,7 +142,7 @@ function Dropdown({
                   onSelect(option);
                   setIsOpen(false);
                 }}
-                className={`ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray ${contentSize}`}
+                className={`dark:text-light-gray ml-5 flex-1 overflow-hidden py-3 text-ellipsis whitespace-nowrap ${contentSize}`}
               >
                 {typeof option === 'string'
                   ? option

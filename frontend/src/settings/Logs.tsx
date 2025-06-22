@@ -113,13 +113,13 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
   }, []);
 
   return (
-    <div className="logs-table h-[55vh] w-full overflow-hidden rounded-xl border border-light-silver bg-white dark:border-transparent dark:bg-black">
-      <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-[#191919]">
-        <p className="px-3 text-xs dark:text-gray-6000">
+    <div className="logs-table border-light-silver h-[55vh] w-full overflow-hidden rounded-xl border bg-white dark:border-transparent dark:bg-black">
+      <div className="dark:bg-eerie-black-2 flex h-8 flex-col items-start justify-center bg-black/10">
+        <p className="dark:text-gray-6000 px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="relative flex h-[51vh] flex-grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
+      <div className="relative flex h-[51vh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
         {logs?.map((log, index) => {
           if (index === logs.length - 1) {
             return (
@@ -164,7 +164,7 @@ function Log({
   const { id, action, timestamp, ...filteredLog } = log;
 
   return (
-    <div className="group w-full rounded-xl bg-transparent hover:bg-[#F9F9F9] hover:dark:bg-dark-charcoal">
+    <div className="group dark:hover:bg-dark-charcoal w-full rounded-xl bg-transparent hover:bg-[#F9F9F9]">
       <div
         onClick={() => onToggle(log.id)}
         className={`flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-gray-900 ${
@@ -177,7 +177,7 @@ function Log({
           className={`mt-[3px] h-3 w-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
         />
         <span className="flex flex-row gap-2">
-          <h2 className="text-xs text-black/60 dark:text-bright-gray">{`${log.timestamp}`}</h2>
+          <h2 className="dark:text-bright-gray text-xs text-black/60">{`${log.timestamp}`}</h2>
           <h2 className="text-xs text-[#913400] dark:text-[#DF5200]">{`[${log.action}]`}</h2>
           <h2
             className={`max-w-72 text-xs ${logLevelColor[log.level]} break-words`}
@@ -191,7 +191,7 @@ function Log({
       {isOpen && (
         <div className="rounded-b-xl bg-[#F1F1F1] px-4 py-3 dark:bg-[#1B1B1B]">
           <div className="scrollbar-thin overflow-y-auto">
-            <pre className="whitespace-pre-wrap break-words px-2 font-mono text-xs leading-relaxed text-gray-700 dark:text-gray-400">
+            <pre className="px-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-gray-700 dark:text-gray-400">
               {JSON.stringify(filteredLog, null, 2)}
             </pre>
           </div>

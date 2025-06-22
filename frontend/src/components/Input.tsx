@@ -42,7 +42,7 @@ const Input = ({
     <div className={`relative ${className}`}>
       <input
         ref={inputRef}
-        className={`peer h-[42px] w-full rounded-full bg-transparent px-3 py-1 text-jet placeholder-transparent outline-none dark:text-bright-gray ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
+        className={`peer text-jet dark:text-bright-gray h-[42px] w-full rounded-full bg-transparent px-3 py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
         type={type}
         id={id}
         name={name}
@@ -62,9 +62,9 @@ const Input = ({
           htmlFor={id}
           className={`absolute select-none ${
             hasValue ? '-top-2.5 left-3 text-xs' : ''
-          } px-2 transition-all peer-placeholder-shown:left-3 peer-placeholder-shown:top-2.5 peer-placeholder-shown:${
+          } px-2 transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:${
             textSizeStyles[textSize]
-          } pointer-events-none cursor-none text-gray-4000 peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
+          } text-gray-4000 pointer-events-none cursor-none peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
         >
           {placeholder}
           {required && (

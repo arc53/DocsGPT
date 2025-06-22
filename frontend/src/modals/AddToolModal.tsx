@@ -104,7 +104,7 @@ export default function AddToolModal({
         >
           <div className="flex h-full flex-col">
             <div>
-              <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
+              <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
                 {t('settings.tools.selectToolSetup')}
               </h2>
               <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
@@ -119,7 +119,7 @@ export default function AddToolModal({
                         role="button"
                         tabIndex={0}
                         key={index}
-                        className="flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border border-light-gainsboro bg-white-3000 p-6 hover:border-[#9d9d9d] dark:border-arsenic dark:bg-gunmetal hover:dark:border-[#717179]"
+                        className="border-light-gainsboro bg-white-3000 dark:border-arsenic dark:bg-gunmetal flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6 hover:border-[#9d9d9d] dark:hover:border-[#717179]"
                         onClick={() => {
                           setSelectedTool(tool);
                           handleAddTool(tool);
@@ -142,11 +142,11 @@ export default function AddToolModal({
                           <div className="mt-[9px]">
                             <p
                               title={tool.displayName}
-                              className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-raisin-black-light dark:text-bright-gray"
+                              className="text-raisin-black-light dark:text-bright-gray truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
                             >
                               {tool.displayName}
                             </p>
-                            <p className="mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed text-old-silver dark:text-sonic-silver-light">
+                            <p className="text-old-silver dark:text-sonic-silver-light mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
                               {tool.description}
                             </p>
                           </div>

@@ -138,18 +138,18 @@ export const SharedConversation = () => {
         twitterTitle={title}
         twitterDescription="Shared conversations with DocsGPT"
       />
-      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
-        <div className="w-full max-w-[1200px] border-b p-2 dark:border-b-silver md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
-          <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">
+      <div className="dark:bg-raisin-black flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
+        <div className="dark:border-b-silver w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+          <h1 className="font-semi-bold text-chinese-black dark:text-chinese-silver text-4xl">
             {title}
           </h1>
-          <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
+          <h2 className="font-semi-bold text-chinese-black dark:text-chinese-silver text-base">
             {t('sharedConv.subtitle')}{' '}
             <a href="/" className="text-[#007DFF]">
               DocsGPT
             </a>
           </h2>
-          <h2 className="font-semi-bold text-base text-chinese-black dark:text-chinese-silver">
+          <h2 className="font-semi-bold text-chinese-black dark:text-chinese-silver text-base">
             {date}
           </h2>
         </div>
@@ -172,13 +172,13 @@ export const SharedConversation = () => {
           ) : (
             <button
               onClick={() => navigate('/')}
-              className="mb-14 w-fit rounded-full bg-purple-30 px-5 py-3 text-white shadow-xl transition-colors duration-200 hover:bg-violets-are-blue sm:mb-0"
+              className="bg-purple-30 hover:bg-violets-are-blue mb-14 w-fit rounded-full px-5 py-3 text-white shadow-xl transition-colors duration-200 sm:mb-0"
             >
               {t('sharedConv.button')}
             </button>
           )}
 
-          <p className="hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline md:w-full">
+          <p className="text-gray-4000 dark:text-sonic-silver hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">
             {t('sharedConv.meta')}
           </p>
         </div>

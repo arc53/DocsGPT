@@ -25,10 +25,10 @@ function AddPrompt({
 
   return (
     <div>
-      <p className="mb-1 text-xl text-jet dark:text-bright-gray">
+      <p className="text-jet dark:text-bright-gray mb-1 text-xl">
         {t('modals.prompts.addPrompt')}
       </p>
-      <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
+      <p className="text-sonic-silver mb-7 text-xs dark:text-[#7F7F82]">
         {t('modals.prompts.addDescription')}
       </p>
       <div>
@@ -41,8 +41,8 @@ function AddPrompt({
           labelBgClassName="bg-white dark:bg-[#26272E]"
           borderVariant="thin"
         />
-        <div className="relative left-3 top-[7px]">
-          <span className="bg-white px-1 text-xs text-silver dark:bg-[#26272E] dark:text-silver">
+        <div className="relative top-[7px] left-3">
+          <span className="text-silver dark:text-silver bg-white px-1 text-xs dark:bg-[#26272E]">
             {t('modals.prompts.promptText')}
           </span>
         </div>
@@ -51,7 +51,7 @@ function AddPrompt({
         </label>
         <textarea
           id="new-prompt-content"
-          className="h-56 w-full resize-none rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+          className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
           value={newPromptContent}
           onChange={(e) => setNewPromptContent(e.target.value)}
           aria-label="Prompt Text"
@@ -60,7 +60,7 @@ function AddPrompt({
       <div className="mt-6 flex flex-row-reverse">
         <button
           onClick={handleAddPrompt}
-          className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue disabled:hover:bg-purple-30"
+          className="bg-purple-30 hover:bg-violets-are-blue disabled:hover:bg-purple-30 rounded-3xl px-5 py-2 text-sm text-white transition-all"
           disabled={disableSave}
           title={
             disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
@@ -97,10 +97,10 @@ function EditPrompt({
   return (
     <div>
       <div className="">
-        <p className="mb-1 text-xl text-jet dark:text-bright-gray">
+        <p className="text-jet dark:text-bright-gray mb-1 text-xl">
           {t('modals.prompts.editPrompt')}
         </p>
-        <p className="mb-7 text-xs text-[#747474] dark:text-[#7F7F82]">
+        <p className="text-sonic-silver mb-7 text-xs dark:text-[#7F7F82]">
           {t('modals.prompts.editDescription')}
         </p>
         <div>
@@ -113,8 +113,8 @@ function EditPrompt({
             labelBgClassName="bg-white dark:bg-charleston-green-2"
             borderVariant="thin"
           />
-          <div className="relative left-3 top-[7px]">
-            <span className="bg-white px-1 text-xs text-silver dark:bg-charleston-green-2 dark:text-silver">
+          <div className="relative top-[7px] left-3">
+            <span className="text-silver dark:bg-charleston-green-2 dark:text-silver bg-white px-1 text-xs">
               {t('modals.prompts.promptText')}
             </span>
           </div>
@@ -123,7 +123,7 @@ function EditPrompt({
           </label>
           <textarea
             id="edit-prompt-content"
-            className="h-56 w-full resize-none rounded-lg border-2 border-silver px-3 py-2 outline-none dark:border-silver/40 dark:bg-transparent dark:text-white"
+            className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
             aria-label="Prompt Text"
@@ -131,7 +131,7 @@ function EditPrompt({
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">
           <button
-            className={`rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue disabled:hover:bg-purple-30 ${
+            className={`bg-purple-30 hover:bg-violets-are-blue disabled:hover:bg-purple-30 rounded-3xl px-5 py-2 text-sm text-white transition-all ${
               currentPromptEdit.type === 'public'
                 ? 'cursor-not-allowed opacity-50'
                 : ''

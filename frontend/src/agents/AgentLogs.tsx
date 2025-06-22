@@ -44,12 +44,12 @@ export default function AgentLogs() {
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-        <p className="mt-px text-sm font-semibold text-eerie-black dark:text-bright-gray">
+        <p className="text-eerie-black dark:text-bright-gray mt-px text-sm font-semibold">
           Back to all agents
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="m-0 text-[40px] font-bold text-[#212121] dark:text-white">
+        <h1 className="text-eerie-black m-0 text-[40px] font-bold dark:text-white">
           Agent Logs
         </h1>
       </div>
