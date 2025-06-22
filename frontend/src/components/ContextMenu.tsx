@@ -14,10 +14,10 @@ interface ContextMenuProps {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   options: MenuOption[];
-  anchorRef: React.RefObject<HTMLElement>;
-  className?: string;
-  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  anchorRef: React.RefObject<HTMLDivElement | null>;
+  position?: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
   offset?: { x: number; y: number };
+  className?: string;
 }
 
 export default function ContextMenu({

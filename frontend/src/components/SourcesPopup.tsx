@@ -16,7 +16,7 @@ import { ActiveState } from '../models/misc';
 type SourcesPopupProps = {
   isOpen: boolean;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement>;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
   handlePostDocumentSelect: (doc: Doc | null) => void;
   setUploadModalState: React.Dispatch<React.SetStateAction<ActiveState>>;
 };

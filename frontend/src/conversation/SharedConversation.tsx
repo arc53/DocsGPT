@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Helmet } from 'react-helmet';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -24,6 +23,7 @@ import {
   updateQuery,
 } from './sharedConversationSlice';
 import { selectCompletedAttachments } from '../upload/uploadSlice';
+import { DocumentHead } from '../components/DocumentHead';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();
@@ -129,21 +129,15 @@ export const SharedConversation = () => {
 
   return (
     <>
-      <Helmet>
-        <title>{`DocsGPT | ${title}`}</title>
-        <meta name="description" content="Shared conversations with DocsGPT" />
-        <meta property="og:title" content={title} />
-        <meta
-          property="og:description"
-          content="Shared conversations with DocsGPT"
-        />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={title} />
-        <meta
-          name="twitter:description"
-          content="Shared conversations with DocsGPT"
-        />
-      </Helmet>
+      <DocumentHead
+        title={`DocsGPT | ${title}`}
+        description="Shared conversations with DocsGPT"
+        ogTitle={title}
+        ogDescription="Shared conversations with DocsGPT"
+        twitterCard="summary_large_image"
+        twitterTitle={title}
+        twitterDescription="Shared conversations with DocsGPT"
+      />
       <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
         <div className="w-full max-w-[1200px] border-b p-2 dark:border-b-silver md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           <h1 className="font-semi-bold text-4xl text-chinese-black dark:text-chinese-silver">

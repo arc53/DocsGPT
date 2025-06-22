@@ -194,7 +194,7 @@ function Upload({
   }>();
 
   const { t } = useTranslation();
-  const setTimeoutRef = useRef<number | null>();
+  const setTimeoutRef = useRef<number | null>(null);
 
   const urlOptions: { label: string; value: IngestorType }[] = [
     { label: 'Crawler', value: 'crawler' },

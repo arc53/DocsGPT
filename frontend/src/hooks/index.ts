@@ -1,7 +1,7 @@
 import { useEffect, RefObject, useState } from 'react';
 
 export function useOutsideAlerter<T extends HTMLElement>(
-  ref: RefObject<T>,
+  ref: RefObject<T | null>,
   handler: () => void,
   additionalDeps: unknown[],
   handleEscapeKey?: boolean,
@@ -30,7 +30,7 @@ export function useOutsideAlerter<T extends HTMLElement>(
         document.removeEventListener('keydown', handleEscape);
       }
     };
-  }, [ref, ...additionalDeps]);
+  }, [ref, handler, handleEscapeKey, ...additionalDeps]);
 }
 
 export function useMediaQuery() {
