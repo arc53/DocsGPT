@@ -289,8 +289,7 @@ const ConversationBubble = forwardRef<
         type === 'ERROR' ||
         sources?.length === 0 ||
         sources?.some((source) => source.link === 'None') ? null : !sources &&
-          chunks !== '0' &&
-          selectedDocs ? (
+          chunks !== '0' ? (
           <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
