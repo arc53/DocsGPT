@@ -29,6 +29,20 @@ export default function ConfirmationModal({
       ? 'rounded-3xl bg-rosso-corsa px-5 py-2 text-sm text-lotion transition-all hover:bg-red-2000 hover:font-bold tracking-[0.019em] hover:tracking-normal'
       : 'rounded-3xl bg-purple-30 px-5 py-2 text-sm text-lotion transition-all hover:bg-violets-are-blue';
 
+  const handleSubmitClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSubmit();
+    setModalState('INACTIVE');
+  };
+
+  const handleCancelClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setModalState('INACTIVE');
+    handleCancel?.();
+  };
+
   return (
     <>
       {modalState === 'ACTIVE' && (
@@ -41,20 +55,13 @@ export default function ConfirmationModal({
               <div>
                 <div className="mt-6 flex flex-row-reverse gap-1">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSubmit();
-                    }}
+                    onClick={handleSubmitClick}
                     className={submitButtonClasses}
                   >
                     {submitLabel}
                   </button>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setModalState('INACTIVE');
-                      handleCancel && handleCancel();
-                    }}
+                    onClick={handleCancelClick}
                     className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
                   >
                     {cancelLabel ? cancelLabel : t('cancel')}

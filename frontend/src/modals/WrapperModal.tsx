@@ -3,38 +3,33 @@ import { createPortal } from 'react-dom';
 
 import Exit from '../assets/exit.svg';
 
-interface WrapperModalPropsType {
+type WrapperModalPropsType = {
   children: React.ReactNode;
   close: () => void;
   isPerformingTask?: boolean;
   className?: string;
   contentClassName?: string;
-}
+};
 
 export default function WrapperModal({
   children,
   close,
   isPerformingTask = false,
-  className = '', // Default width, but can be overridden
-  contentClassName = '', // Default padding, but can be overridden
+  className = '',
+  contentClassName = '',
 }: WrapperModalPropsType) {
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isPerformingTask) return;
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node))
         close();
-      }
     };
 
     const handleEscapePress = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        close();
-      }
+      if (event.key === 'Escape') close();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -44,7 +39,7 @@ export default function WrapperModal({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscapePress);
     };
-  }, [close]);
+  }, [close, isPerformingTask]);
 
   const modalContent = (
     <div className="fixed left-0 top-0 z-30 flex h-screen w-screen items-center justify-center bg-gray-alpha bg-opacity-50">
