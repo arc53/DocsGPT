@@ -250,7 +250,7 @@ export default function ConversationTile({
                 }}
                 className="mr-2 flex w-4 justify-center"
               >
-                <img src={threeDots} width={8} />
+                <img src={threeDots} width={8} alt="menu" />
               </button>
             )}
             <ContextMenu
