@@ -1,0 +1,152 @@
+---
+title: Triggering Agents with Webhooks
+description: Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
+---
+
+import { Callout, Tabs } from 'nextra/components';
+
+# Triggering Agents with Webhooks
+
+Agent Webhooks provide a powerful mechanism to trigger an agent's execution from external systems. Unlike the direct API which provides an immediate response, webhooks are designed for **asynchronous** operations. When you call a webhook, DocsGPT enqueues the agent's task for background processing and immediately returns a `task_id`. You then use this ID to poll for the result.
+
+This workflow is ideal for integrating with services that expect a quick initial response (e.g., form submissions) or for triggering long-running tasks without tying up a client connection.
+
+Each agent has its own unique webhook URL, which can be generated from the agent's edit page in the DocsGPT UI. This URL includes a secure token for authentication.
+
+### API Endpoints
+
+- **Webhook URL:** `http://localhost:7091/api/webhooks/agents/{AGENT_WEBHOOK_TOKEN}`
+- **Task Status URL:** `http://localhost:7091/api/task_status`
+
+<Callout type="info">
+For DocsGPT Cloud, use `https://gptcloud.arc53.com/` as the base URL.
+</Callout>
+
+For more technical details, you can explore the API swagger documentation available for the cloud version or your local instance.
+
+---
+
+## The Webhook Workflow
+
+The process involves two main steps: triggering the task and polling for the result.
+
+### Step 1: Trigger the Webhook
+
+Send an HTTP `POST` request to the agent's unique webhook URL with the required payload. The structure of this payload should match what the agent's prompt and tools are designed to handle.
+
+-   **Method:** `POST`
+-   **Response:** A JSON object with a `task_id`. `{"task_id": "a1b2c3d4-e5f6-..."}`
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST \
+      http://localhost:7091/api/webhooks/agents/your_webhook_token \
+      -H "Content-Type: application/json" \
+      -d '{"question": "Your message to agent"}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+
+    WEBHOOK_URL = "http://localhost:7091/api/webhooks/agents/your_webhook_token"
+    payload = {"question": "Your message to agent"}
+
+    try:
+        response = requests.post(WEBHOOK_URL, json=payload)
+        response.raise_for_status()
+        task_id = response.json().get("task_id")
+        print(f"Task successfully created with ID: {task_id}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error triggering webhook: {e}")
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const webhookUrl = 'http://localhost:7091/api/webhooks/agents/your_webhook_token';
+    const payload = { question: 'Your message to agent' };
+
+    async function triggerWebhook() {
+      try {
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(`HTTP error! ${response.status}`);
+        const data = await response.json();
+        console.log(`Task successfully created with ID: ${data.task_id}`);
+        return data.task_id;
+      } catch (error) {
+        console.error('Error triggering webhook:', error);
+      }
+    }
+    
+    triggerWebhook();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Step 2: Poll for the Result
+
+Once you have the `task_id`, periodically send a `GET` request to the `/api/task_status` endpoint until the task `status` is `SUCCESS` or `FAILURE`.
+
+- **`status`**: The current state of the task (`PENDING`, `STARTED`, `SUCCESS`, `FAILURE`).
+- **`result`**: The final output from the agent, available when the status is `SUCCESS` or `FAILURE`.
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    # Replace the task_id with the one you received
+    curl http://localhost:7091/api/task_status?task_id=YOUR_TASK_ID
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+    import time
+
+    STATUS_URL = "http://localhost:7091/api/task_status"
+    task_id = "YOUR_TASK_ID"
+
+    while True:
+        response = requests.get(STATUS_URL, params={"task_id": task_id})
+        data = response.json()
+        status = data.get("status")
+        print(f"Current task status: {status}")
+
+        if status in ["SUCCESS", "FAILURE"]:
+            print("Final Result:")
+            print(data.get("result"))
+            break
+        
+        time.sleep(2)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const statusUrl = 'http://localhost:7091/api/task_status';
+    const taskId = 'YOUR_TASK_ID';
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function pollForResult() {
+      while (true) {
+        const response = await fetch(`${statusUrl}?task_id=${taskId}`);
+        const data = await response.json();
+        const status = data.status;
+        console.log(`Current task status: ${status}`);
+
+        if (status === 'SUCCESS' || status === 'FAILURE') {
+          console.log('Final Result:', data.result);
+          break;
+        }
+        await sleep(2000);
+      }
+    }
+
+    pollForResult();
+    ```
+  </Tabs.Tab>
+</Tabs>
