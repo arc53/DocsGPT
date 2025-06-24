@@ -353,7 +353,7 @@ export default function MessageInput({
             onChange={handleChange}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-4 py-3 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-6 sm:py-5 dark:bg-transparent"
+            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-4 py-3 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-6 sm:py-5 dark:bg-transparent"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             aria-label={t('inputPlaceholder')}
