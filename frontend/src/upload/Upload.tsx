@@ -150,7 +150,10 @@ function Upload({
             rounded="3xl"
             placeholder={field.label}
             border="border"
-            borderColor="gray-5000"
+            buttonClassName="border-silver bg-white dark:border-dim-gray dark:bg-[#222327]"
+            optionsClassName="border-silver bg-white dark:border-dim-gray dark:bg-[#383838]"
+            placeholderClassName="text-gray-400 dark:text-silver"
+            contentSize="text-sm"
           />
         );
       case 'boolean':
@@ -651,7 +654,6 @@ function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              border="border"
               options={urlOptions}
               selectedValue={
                 urlOptions.find((opt) => opt.value === ingestor.type) || null
@@ -660,8 +662,10 @@ function Upload({
                 handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
-              darkBorderColor="dim-gray"
               rounded="3xl"
+              border="border"
+              placeholder="Select ingestor type"
+              placeholderClassName="text-gray-400 dark:text-silver"
             />
             {/* Dynamically render form fields based on schema */}
 

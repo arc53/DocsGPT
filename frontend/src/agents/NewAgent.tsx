@@ -447,12 +447,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   size="w-full"
                   rounded="3xl"
-                  buttonDarkBackgroundColor="[#222327]"
                   border="border"
-                  darkBorderColor="[#7E7E7E]"
+                  buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                  optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                   placeholder="Chunks per query"
-                  placeholderTextColor="gray-400"
-                  darkPlaceholderTextColor="silver"
+                  placeholderClassName="text-gray-400 dark:text-silver"
                   contentSize="text-sm"
                 />
               </div>
@@ -479,12 +478,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   size="w-full"
                   rounded="3xl"
-                  buttonDarkBackgroundColor="[#222327]"
                   border="border"
-                  darkBorderColor="[#7E7E7E]"
+                  buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                  optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E] dark:border-[#7E7E7E] dark:bg-dark-charcoal"
+                  placeholderClassName="text-gray-400 dark:text-silver"
                   placeholder="Select a prompt"
-                  placeholderTextColor="gray-400"
-                  darkPlaceholderTextColor="silver"
                   contentSize="text-sm"
                 />
               </div>
@@ -548,12 +546,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
                 size="w-full"
                 rounded="3xl"
-                buttonDarkBackgroundColor="[#222327]"
                 border="border"
-                darkBorderColor="[#7E7E7E]"
+                buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                 placeholder="Select type"
-                placeholderTextColor="gray-400"
-                darkPlaceholderTextColor="silver"
+                placeholderClassName="text-gray-400 dark:text-silver"
                 contentSize="text-sm"
               />
             </div>
