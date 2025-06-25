@@ -879,29 +879,6 @@ class CombinedJson(Resource):
                         "syncFrequency": index.get("sync_frequency", ""),
                     }
                 )
-            if "duckduck_search" in settings.RETRIEVERS_ENABLED:
-                data.append(
-                    {
-                        "name": "DuckDuckGo Search",
-                        "date": "duckduck_search",
-                        "model": settings.EMBEDDINGS_NAME,
-                        "location": "custom",
-                        "tokens": "",
-                        "retriever": "duckduck_search",
-                    }
-                )
-            if "brave_search" in settings.RETRIEVERS_ENABLED:
-                data.append(
-                    {
-                        "name": "Brave Search",
-                        "language": "en",
-                        "date": "brave_search",
-                        "model": settings.EMBEDDINGS_NAME,
-                        "location": "custom",
-                        "tokens": "",
-                        "retriever": "brave_search",
-                    }
-                )
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

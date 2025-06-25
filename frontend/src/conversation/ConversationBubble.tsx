@@ -288,136 +288,101 @@ const ConversationBubble = forwardRef<
         {DisableSourceFE ||
         type === 'ERROR' ||
         sources?.length === 0 ||
-        sources?.some((source) => source.link === 'None') ? null : !sources &&
-          chunks !== '0' &&
-          selectedDocs ? (
-          <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <Avatar
-                className="h-[26px] w-[30px] text-xl"
-                avatar={
-                  <img
-                    src={Sources}
-                    alt={t('conversation.sources.title')}
-                    className="h-full w-full object-fill"
+        sources?.some((source) => source.link === 'None')
+          ? null
+          : sources && (
+              <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
+                <div className="my-2 flex flex-row items-center justify-center gap-3">
+                  <Avatar
+                    className="h-[26px] w-[30px] text-xl"
+                    avatar={
+                      <img
+                        src={Sources}
+                        alt={t('conversation.sources.title')}
+                        className="h-full w-full object-fill"
+                      />
+                    }
                   />
-                }
-              />
-              <p className="text-base font-semibold">
-                {t('conversation.sources.title')}
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="flex h-28 cursor-pointer flex-col items-start gap-1 rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
-                >
-                  <span className="h-px w-10 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
-                  <span className="h-px w-24 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
-                  <span className="h-px w-16 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
-                  <span className="h-px w-32 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
-                  <span className="h-px w-24 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
-                  <span className="h-px w-20 animate-pulse cursor-pointer rounded-[20px] bg-[#B2B2B2] p-1"></span>
+                  <p className="text-base font-semibold">
+                    {t('conversation.sources.title')}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          sources && (
-            <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
-              <div className="my-2 flex flex-row items-center justify-center gap-3">
-                <Avatar
-                  className="h-[26px] w-[30px] text-xl"
-                  avatar={
-                    <img
-                      src={Sources}
-                      alt={t('conversation.sources.title')}
-                      className="h-full w-full object-fill"
-                    />
-                  }
-                />
-                <p className="text-base font-semibold">
-                  {t('conversation.sources.title')}
-                </p>
-              </div>
-              <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                  {sources?.slice(0, 3)?.map((source, index) => (
-                    <div key={index} className="relative">
-                      <div
-                        className="h-28 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
-                        onMouseOver={() => setActiveTooltip(index)}
-                        onMouseOut={() => setActiveTooltip(null)}
-                      >
-                        <p className="ellipsis-text h-12 break-words text-xs">
-                          {source.text}
-                        </p>
+                <div className="fade-in ml-3 mr-5 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+                  <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                    {sources?.slice(0, 3)?.map((source, index) => (
+                      <div key={index} className="relative">
                         <div
-                          className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
-                            source.link && source.link !== 'local'
-                              ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
-                              : ''
-                          }`}
-                          onClick={() =>
-                            source.link && source.link !== 'local'
-                              ? window.open(
-                                  source.link,
-                                  '_blank',
-                                  'noopener, noreferrer',
-                                )
-                              : null
-                          }
-                        >
-                          <img
-                            src={Document}
-                            alt="Document"
-                            className="h-[17px] w-[17px] object-fill"
-                          />
-                          <p
-                            className="mt-[2px] truncate text-xs"
-                            title={
-                              source.link && source.link !== 'local'
-                                ? source.link
-                                : source.title
-                            }
-                          >
-                            {source.link && source.link !== 'local'
-                              ? source.link
-                              : source.title}
-                          </p>
-                        </div>
-                      </div>
-                      {activeTooltip === index && (
-                        <div
-                          className={`absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver sm:w-56`}
+                          className="h-28 cursor-pointer rounded-[20px] bg-gray-1000 p-4 hover:bg-[#F1F1F1] dark:bg-gun-metal dark:hover:bg-[#2C2E3C]"
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
-                          <p className="line-clamp-6 max-h-[164px] overflow-hidden text-ellipsis break-words rounded-md text-sm">
+                          <p className="ellipsis-text h-12 break-words text-xs">
                             {source.text}
                           </p>
+                          <div
+                            className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
+                              source.link && source.link !== 'local'
+                                ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
+                                : ''
+                            }`}
+                            onClick={() =>
+                              source.link && source.link !== 'local'
+                                ? window.open(
+                                    source.link,
+                                    '_blank',
+                                    'noopener, noreferrer',
+                                  )
+                                : null
+                            }
+                          >
+                            <img
+                              src={Document}
+                              alt="Document"
+                              className="h-[17px] w-[17px] object-fill"
+                            />
+                            <p
+                              className="mt-[2px] truncate text-xs"
+                              title={
+                                source.link && source.link !== 'local'
+                                  ? source.link
+                                  : source.title
+                              }
+                            >
+                              {source.link && source.link !== 'local'
+                                ? source.link
+                                : source.title}
+                            </p>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                  {(sources?.length ?? 0) > 3 && (
-                    <div
-                      className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
-                      onClick={() => setIsSidebarOpen(true)}
-                    >
-                      <p className="ellipsis-text h-22 text-xs">
-                        {t('conversation.sources.view_more', {
-                          count: sources?.length ? sources.length - 3 : 0,
-                        })}
-                      </p>
-                    </div>
-                  )}
+                        {activeTooltip === index && (
+                          <div
+                            className={`absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl dark:bg-chinese-black dark:text-chinese-silver sm:w-56`}
+                            onMouseOver={() => setActiveTooltip(index)}
+                            onMouseOut={() => setActiveTooltip(null)}
+                          >
+                            <p className="line-clamp-6 max-h-[164px] overflow-hidden text-ellipsis break-words rounded-md text-sm">
+                              {source.text}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {(sources?.length ?? 0) > 3 && (
+                      <div
+                        className="flex h-28 cursor-pointer flex-col-reverse rounded-[20px] bg-gray-1000 p-4 text-purple-30 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:bg-gun-metal dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                        onClick={() => setIsSidebarOpen(true)}
+                      >
+                        <p className="ellipsis-text h-22 text-xs">
+                          {t('conversation.sources.view_more', {
+                            count: sources?.length ? sources.length - 3 : 0,
+                          })}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        )}
+            )}
         {toolCalls && toolCalls.length > 0 && (
           <ToolCalls toolCalls={toolCalls} />
         )}

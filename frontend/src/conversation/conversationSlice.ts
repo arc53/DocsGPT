@@ -284,14 +284,9 @@ export const conversationSlice = createSlice({
         query: Partial<Query>;
       }>,
     ) {
-      const { conversationId, index, query } = action.payload;
-      if (state.conversationId !== conversationId) return;
-
-      if (!state.queries[index].sources) {
-        state.queries[index].sources = query?.sources;
-      } else if (query.sources) {
-        state.queries[index].sources!.push(...query.sources);
-      }
+      const { index, query } = action.payload;
+      if (query.sources !== undefined)
+        state.queries[index].sources = query.sources;
     },
     updateToolCall(state, action) {
       const { index, tool_call } = action.payload;

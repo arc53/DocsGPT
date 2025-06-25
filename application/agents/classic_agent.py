@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class ClassicAgent(BaseAgent):
-    """A simplified classic agent with clear execution flow.
+    """A simplified agent with clear execution flow.
 
     Usage:
     1. Processes a query through retrieval
