@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     VECTOR_STORE: str = (
         "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
     )
-    RETRIEVERS_ENABLED: list = ["classic_rag", "duckduck_search"]  # also brave_search
+    RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
     FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm
@@ -99,7 +99,6 @@ class Settings(BaseSettings):
     LANCEDB_TABLE_NAME: Optional[str] = (
         "docsgpts"  # Name of the table to use for storing vectors
     )
-    BRAVE_SEARCH_API_KEY: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3

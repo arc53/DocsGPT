@@ -614,7 +614,7 @@ class Answer(Resource):
         try:
             question = data["question"]
             history = limit_chat_history(
-                json.loads(data.get("history", [])), gpt_model=gpt_model
+                json.loads(data.get("history", "[]")), gpt_model=gpt_model
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")

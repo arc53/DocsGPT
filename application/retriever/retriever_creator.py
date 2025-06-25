@@ -1,13 +1,9 @@
 from application.retriever.classic_rag import ClassicRAG
-from application.retriever.duckduck_search import DuckDuckSearch
-from application.retriever.brave_search import BraveRetSearch
 
 
 class RetrieverCreator:
     retrievers = {
         "classic": ClassicRAG,
-        "duckduck_search": DuckDuckSearch,
-        "brave_search": BraveRetSearch,
         "default": ClassicRAG,
     }
 

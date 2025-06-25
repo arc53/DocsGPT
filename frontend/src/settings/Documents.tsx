@@ -9,8 +9,10 @@ import Edit from '../assets/edit.svg';
 import EyeView from '../assets/eye-view.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import SyncIcon from '../assets/sync.svg';
 import Trash from '../assets/red-trash.svg';
+import SyncIcon from '../assets/sync.svg';
+import ThreeDots from '../assets/three-dots.svg';
+import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import Input from '../components/Input';
@@ -29,8 +31,6 @@ import {
 import Upload from '../upload/Upload';
 import { formatDate } from '../utils/dateTimeUtils';
 import { ChunkType } from './types';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
-import ThreeDots from '../assets/three-dots.svg';
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -766,19 +766,23 @@ function DocumentChunks({
         setModalState={setAddModal}
         handleSubmit={handleAddChunk}
       />
-      <ChunkModal
-        type="EDIT"
-        modalState={editModal.state}
-        setModalState={(state) => setEditModal((prev) => ({ ...prev, state }))}
-        handleSubmit={(title, text) => {
-          handleUpdateChunk(title, text, editModal.chunk as ChunkType);
-        }}
-        originalText={editModal.chunk?.text}
-        originalTitle={editModal.chunk?.metadata?.title}
-        handleDelete={() => {
-          handleDeleteChunk(editModal.chunk as ChunkType);
-        }}
-      />
+      {editModal.chunk && (
+        <ChunkModal
+          type="EDIT"
+          modalState={editModal.state}
+          setModalState={(state) =>
+            setEditModal((prev) => ({ ...prev, state }))
+          }
+          handleSubmit={(title, text) => {
+            handleUpdateChunk(title, text, editModal.chunk as ChunkType);
+          }}
+          originalText={editModal.chunk?.text ?? ''}
+          originalTitle={editModal.chunk?.metadata?.title ?? ''}
+          handleDelete={() => {
+            handleDeleteChunk(editModal.chunk as ChunkType);
+          }}
+        />
+      )}
     </div>
   );
 }
