@@ -537,7 +537,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+                `mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
                   isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
@@ -545,9 +545,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 src={SettingGear}
                 alt="Settings"
-                className="w- ml-2 filter dark:invert"
+                width={21}
+                height={21}
+                className="my-auto ml-2 filter dark:invert"
               />
-              <p className="text-eerie-black my-auto text-sm dark:text-white">
+              <p className="text-eerie-black text-sm dark:text-white">
                 {t('settings.label')}
               </p>
             </NavLink>
