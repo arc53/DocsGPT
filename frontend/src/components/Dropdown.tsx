@@ -10,20 +10,15 @@ function Dropdown({
   onSelect,
   size = 'w-32',
   rounded = 'xl',
-  buttonBackgroundColor = 'white',
-  buttonDarkBackgroundColor = 'transparent',
-  optionsBackgroundColor = 'white',
-  optionsDarkBackgroundColor = 'dark-charcoal',
+  buttonClassName = 'border-silver bg-white dark:bg-transparent dark:border-dim-gray',
+  optionsClassName = 'border-silver bg-white dark:border-dim-gray dark:bg-dark-charcoal',
   border = 'border-2',
-  borderColor = 'silver',
-  darkBorderColor = 'dim-gray',
   showEdit,
   onEdit,
   showDelete,
   onDelete,
   placeholder,
-  placeholderTextColor = 'gray-500',
-  darkPlaceholderTextColor = 'gray-400',
+  placeholderClassName = 'text-gray-500 dark:text-gray-400',
   contentSize = 'text-base',
 }: {
   options:
@@ -44,20 +39,15 @@ function Dropdown({
     | ((value: { value: number; description: string }) => void);
   size?: string;
   rounded?: 'xl' | '3xl';
-  buttonBackgroundColor?: string;
-  buttonDarkBackgroundColor?: string;
-  optionsBackgroundColor?: string;
-  optionsDarkBackgroundColor?: string;
+  buttonClassName?: string;
+  optionsClassName?: string;
   border?: 'border' | 'border-2';
-  borderColor?: string;
-  darkBorderColor?: string;
   showEdit?: boolean;
   onEdit?: (value: { name: string; id: string; type: string }) => void;
   showDelete?: boolean | ((option: any) => boolean);
   onDelete?: (value: string) => void;
   placeholder?: string;
-  placeholderTextColor?: string;
-  darkPlaceholderTextColor?: string;
+  placeholderClassName?: string;
   contentSize?: string;
 }) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -80,6 +70,7 @@ function Dropdown({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
   return (
     <div
       className={[
@@ -92,19 +83,18 @@ function Dropdown({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between ${border} border-${borderColor} bg-${buttonBackgroundColor} px-5 py-3 dark:border-${darkBorderColor} dark:bg-${buttonDarkBackgroundColor} ${
+        className={`flex w-full cursor-pointer items-center justify-between ${border} ${buttonClassName} px-5 py-3 ${
           isOpen ? `${borderTopRadius}` : `${borderRadius}`
         }`}
       >
         {typeof selectedValue === 'string' ? (
-          <span className="truncate dark:text-bright-gray">
+          <span className="dark:text-bright-gray truncate">
             {selectedValue}
           </span>
         ) : (
           <span
             className={`truncate ${selectedValue && `dark:text-bright-gray`} ${
-              !selectedValue &&
-              `text-${placeholderTextColor} dark:text-${darkPlaceholderTextColor}`
+              !selectedValue && ` ${placeholderClassName}`
             } ${contentSize}`}
           >
             {selectedValue && 'label' in selectedValue
@@ -130,7 +120,7 @@ function Dropdown({
       </button>
       {isOpen && (
         <div
-          className={`absolute left-0 right-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} border-${borderColor} bg-${optionsBackgroundColor} shadow-lg dark:border-${darkBorderColor} dark:bg-${optionsDarkBackgroundColor}`}
+          className={`absolute right-0 left-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} ${optionsClassName} shadow-lg`}
         >
           {options.map((option: any, index) => (
             <div
@@ -142,7 +132,7 @@ function Dropdown({
                   onSelect(option);
                   setIsOpen(false);
                 }}
-                className={`ml-5 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3 dark:text-light-gray ${contentSize}`}
+                className={`dark:text-light-gray ml-5 flex-1 overflow-hidden py-3 text-ellipsis whitespace-nowrap ${contentSize}`}
               >
                 {typeof option === 'string'
                   ? option

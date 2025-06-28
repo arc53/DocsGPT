@@ -143,7 +143,7 @@ export default function SharedAgent() {
             alt="No agent found"
             className="mx-auto mb-6 h-32 w-32"
           />
-          <p className="text-center text-lg text-[#71717A] dark:text-[#949494]">
+          <p className="dark:text-gray-4000 text-center text-lg text-[#71717A]">
             No agent found. Please ensure the agent is shared.
           </p>
         </div>
@@ -151,7 +151,7 @@ export default function SharedAgent() {
     );
   return (
     <div className="relative h-full w-full">
-      <div className="absolute left-4 top-5 hidden items-center gap-3 sm:flex">
+      <div className="absolute top-5 left-4 hidden items-center gap-3 sm:flex">
         <img
           src={
             sharedAgent.image && sharedAgent.image.trim() !== ''
@@ -161,7 +161,7 @@ export default function SharedAgent() {
           alt="agent-logo"
           className="h-6 w-6 rounded-full object-contain"
         />
-        <h2 className="text-lg font-semibold text-[#212121] dark:text-[#E0E0E0]">
+        <h2 className="text-eerie-black text-lg font-semibold dark:text-[#E0E0E0]">
           {sharedAgent.name}
         </h2>
       </div>
@@ -188,7 +188,7 @@ export default function SharedAgent() {
             showToolButton={sharedAgent ? false : true}
             autoFocus={false}
           />
-          <p className="hidden w-[100vw] self-center bg-transparent py-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline md:w-full">
+          <p className="text-gray-4000 dark:text-sonic-silver hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">
             {t('tagline')}
           </p>
         </div>

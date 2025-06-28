@@ -54,7 +54,7 @@ export default function AgentCard({
 
   return (
     <div
-      className={`relative flex h-44 w-48 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] dark:bg-[#383838] hover:dark:bg-[#383838]/80 ${
+      className={`relative flex h-44 w-48 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${
         agent.status === 'published' ? 'cursor-pointer' : ''
       }`}
       onClick={handleCardClick}
@@ -65,7 +65,7 @@ export default function AgentCard({
           e.stopPropagation();
           setIsMenuOpen(true);
         }}
-        className="absolute right-4 top-4 z-10 cursor-pointer"
+        className="absolute top-4 right-4 z-10 cursor-pointer"
       >
         <img src={ThreeDots} alt="options" className="h-[19px] w-[19px]" />
         {menuOptions && (
@@ -96,11 +96,11 @@ export default function AgentCard({
         <div className="mt-2">
           <p
             title={agent.name}
-            className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-[#020617] dark:text-[#E0E0E0]"
+            className="truncate px-1 text-[13px] leading-relaxed font-semibold text-[#020617] capitalize dark:text-[#E0E0E0]"
           >
             {agent.name}
           </p>
-          <p className="mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed text-[#64748B] dark:text-sonic-silver-light">
+          <p className="dark:text-sonic-silver-light mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed text-[#64748B]">
             {agent.description}
           </p>
         </div>

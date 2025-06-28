@@ -49,7 +49,7 @@ export default function ConfirmationModal({
         <WrapperModal close={() => setModalState('INACTIVE')}>
           <div className="relative">
             <div>
-              <p className="font-base mb-1 w-[90%] break-words text-lg text-jet dark:text-bright-gray">
+              <p className="font-base text-jet dark:text-bright-gray mb-1 w-[90%] text-lg break-words">
                 {message}
               </p>
               <div>
@@ -62,7 +62,7 @@ export default function ConfirmationModal({
                   </button>
                   <button
                     onClick={handleCancelClick}
-                    className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
+                    className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
                   >
                     {cancelLabel ? cancelLabel : t('cancel')}
                   </button>

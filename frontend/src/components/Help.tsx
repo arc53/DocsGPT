@@ -43,13 +43,13 @@ const Help = () => {
       </button>
       {isOpen && (
         <div
-          className={`absolute z-10 w-48 -translate-y-28 translate-x-4 rounded-xl bg-white shadow-lg dark:bg-[#444654]`}
+          className={`dark:bg-outer-space absolute z-10 w-48 translate-x-4 -translate-y-28 rounded-xl bg-white shadow-lg`}
         >
           <a
             href="https://docs.docsgpt.cloud/"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-start gap-4 rounded-t-xl px-4 py-2 text-black hover:bg-bright-gray dark:text-white dark:hover:bg-[#545561]"
+            className="hover:bg-bright-gray flex items-start gap-4 rounded-t-xl px-4 py-2 text-black dark:text-white dark:hover:bg-[#545561]"
           >
             <img
               src={PageIcon}
@@ -61,7 +61,7 @@ const Help = () => {
           </a>
           <a
             href="mailto:support@docsgpt.cloud"
-            className="flex items-start gap-4 rounded-b-xl px-4 py-2 text-black hover:bg-bright-gray dark:text-white dark:hover:bg-[#545561]"
+            className="hover:bg-bright-gray flex items-start gap-4 rounded-b-xl px-4 py-2 text-black dark:text-white dark:hover:bg-[#545561]"
           >
             <img
               src={EmailIcon}

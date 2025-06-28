@@ -258,9 +258,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="w-inherit group relative rounded-lg border border-light-silver bg-white dark:border-raisin-black dark:bg-eerie-black">
-      <div className="flex items-center justify-between bg-platinum px-2 py-1 dark:bg-eerie-black-2">
-        <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+    <div className="w-inherit group border-light-silver dark:border-raisin-black dark:bg-eerie-black relative rounded-lg border bg-white">
+      <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
+        <span className="text-just-black dark:text-chinese-white text-xs font-medium">
           mermaid
         </span>
         <div className="flex items-center gap-2">
@@ -270,13 +270,13 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             <div className="relative" ref={downloadMenuRef}>
               <button
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                className="flex h-full items-center rounded bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
+                className="flex h-full items-center rounded-sm bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
                 title="Download options"
               >
                 Download <span className="ml-1">▼</span>
               </button>
               {showDownloadMenu && (
-                <div className="absolute right-0 z-10 mt-1 w-40 rounded border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                <div className="absolute right-0 z-10 mt-1 w-40 rounded-sm border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
                   <ul>
                     {downloadOptions.map((option, index) => (
                       <li key={index}>
@@ -314,14 +314,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       </div>
 
       {isCurrentlyLoading ? (
-        <div className="flex items-center justify-center bg-white p-4 dark:bg-eerie-black">
+        <div className="dark:bg-eerie-black flex items-center justify-center bg-white p-4">
           <div className="text-sm text-gray-500 dark:text-gray-400">
             Loading diagram...
           </div>
         </div>
       ) : errorRender ? (
-        <div className="m-2 rounded border-2 border-red-400 dark:border-red-700">
-          <div className="overflow-auto whitespace-normal break-words bg-red-100 px-4 py-2 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-300">
+        <div className="m-2 rounded-sm border-2 border-red-400 dark:border-red-700">
+          <div className="overflow-auto bg-red-100 px-4 py-2 text-sm break-words whitespace-normal text-red-800 dark:bg-red-900/30 dark:text-red-300">
             {error}
           </div>
         </div>
@@ -329,7 +329,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         <>
           <div
             ref={containerRef}
-            className="no-scrollbar relative block w-full bg-white p-4 dark:bg-eerie-black"
+            className="no-scrollbar dark:bg-eerie-black relative block w-full bg-white p-4"
             style={{
               overflow: 'auto',
               scrollbarWidth: 'none',
@@ -345,7 +345,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           >
             {isHovering && (
               <>
-                <div className="absolute right-2 top-2 z-10 flex items-center gap-2 rounded bg-black/70 px-2 py-1 text-xs text-white">
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
                   <button
                     onClick={() =>
                       setZoomFactor((prev) => Math.max(1, prev - 0.5))
@@ -395,9 +395,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           </div>
 
           {showCode && (
-            <div className="border-t border-light-silver dark:border-raisin-black">
-              <div className="bg-platinum p-2 dark:bg-eerie-black-2">
-                <span className="text-xs font-medium text-just-black dark:text-chinese-white">
+            <div className="border-light-silver dark:border-raisin-black border-t">
+              <div className="bg-platinum dark:bg-eerie-black-2 p-2">
+                <span className="text-just-black dark:text-chinese-white text-xs font-medium">
                   Mermaid Code
                 </span>
               </div>

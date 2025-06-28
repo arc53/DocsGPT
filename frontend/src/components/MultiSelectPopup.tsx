@@ -79,18 +79,18 @@ export default function MultiSelectPopup({
           <img
             src={icon}
             alt=""
-            className="mr-3 h-5 w-5 flex-shrink-0"
+            className="mr-3 h-5 w-5 shrink-0"
             aria-hidden="true"
           />
         );
       }
       return (
-        <span className="mr-3 h-5 w-5 flex-shrink-0" aria-hidden="true">
+        <span className="mr-3 h-5 w-5 shrink-0" aria-hidden="true">
           {icon}
         </span>
       );
     }
-    return <span className="mr-3 flex-shrink-0">{icon}</span>;
+    return <span className="mr-3 shrink-0">{icon}</span>;
   };
 
   useLayoutEffect(() => {
@@ -168,7 +168,7 @@ export default function MultiSelectPopup({
   return (
     <div
       ref={popupRef}
-      className="fixed z-[9999] flex flex-col rounded-lg border border-light-silver bg-lotion shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033] dark:border-dim-gray dark:bg-charleston-green-2"
+      className="border-light-silver bg-lotion dark:border-dim-gray dark:bg-charleston-green-2 fixed z-9999 flex flex-col rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
       style={{
         top: popupPosition.showAbove ? undefined : popupPosition.top,
         bottom: popupPosition.showAbove
@@ -181,7 +181,7 @@ export default function MultiSelectPopup({
       }}
     >
       {(title || showSearch) && (
-        <div className="flex-shrink-0 p-4">
+        <div className="shrink-0 p-4">
           {title && (
             <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-white">
               {title}
@@ -206,13 +206,13 @@ export default function MultiSelectPopup({
           )}
         </div>
       )}
-      <div className="mx-4 mb-4 flex-grow overflow-auto rounded-md border border-[#D9D9D9] dark:border-dim-gray">
+      <div className="dark:border-dim-gray mx-4 mb-4 grow overflow-auto rounded-md border border-[#D9D9D9]">
         {loading ? (
           <div className="flex h-full items-center justify-center py-4">
             <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900 dark:border-white"></div>
           </div>
         ) : (
-          <div className="h-full overflow-y-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-400 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-track]:bg-gray-200 dark:[&::-webkit-scrollbar-track]:bg-[#2C2E3C] [&::-webkit-scrollbar]:w-2">
+          <div className="h-full overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-400 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-track]:bg-gray-200 dark:[&::-webkit-scrollbar-track]:bg-[#2C2E3C]">
             {filteredOptions.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-4 py-8 text-center">
                 <img
@@ -233,22 +233,22 @@ export default function MultiSelectPopup({
                   <div
                     key={option.id}
                     onClick={() => handleOptionClick(option.id)}
-                    className="flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0 hover:bg-gray-100 dark:border-dim-gray dark:hover:bg-charleston-green-3"
+                    className="dark:border-dim-gray dark:hover:bg-charleston-green-3 flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0 hover:bg-gray-100"
                     role="option"
                     aria-selected={isSelected}
                   >
-                    <div className="mr-3 flex flex-grow items-center overflow-hidden">
+                    <div className="mr-3 flex grow items-center overflow-hidden">
                       {option.icon && renderIcon(option.icon)}
                       <p
-                        className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white"
+                        className="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-gray-900 dark:text-white"
                         title={option.label}
                       >
                         {option.label}
                       </p>
                     </div>
-                    <div className="flex-shrink-0">
+                    <div className="shrink-0">
                       <div
-                        className={`flex h-4 w-4 items-center justify-center rounded-sm border border-[#C6C6C6] bg-white dark:border-[#757783] dark:bg-charleston-green-2`}
+                        className={`dark:bg-charleston-green-2 flex h-4 w-4 items-center justify-center rounded-xs border border-[#C6C6C6] bg-white dark:border-[#757783]`}
                         aria-hidden="true"
                       >
                         {isSelected && (
@@ -269,7 +269,7 @@ export default function MultiSelectPopup({
         )}
       </div>
       {footerContent && (
-        <div className="flex-shrink-0 border-t border-light-silver p-4 dark:border-dim-gray">
+        <div className="border-light-silver dark:border-dim-gray shrink-0 border-t p-4">
           {footerContent}
         </div>
       )}

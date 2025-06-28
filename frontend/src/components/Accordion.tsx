@@ -32,9 +32,9 @@ export default function Accordion({
     setIsOpen(!isOpen);
   };
   return (
-    <div className={`overflow-hidden shadow-sm ${className}`}>
+    <div className={`overflow-hidden shadow-xs ${className}`}>
       <button
-        className={`flex w-full items-center justify-between focus:outline-none ${titleClassName}`}
+        className={`flex w-full items-center justify-between focus:outline-hidden ${titleClassName}`}
         onClick={toggleAccordion}
       >
         <p className="break-words">{title}</p>

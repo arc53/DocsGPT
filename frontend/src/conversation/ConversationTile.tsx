@@ -192,7 +192,7 @@ export default function ConversationTile({
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+        className={`hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl pl-4 ${
           conversationId === conversation.id || isOpen || isHovered || isEdit
             ? 'bg-bright-gray dark:bg-dark-charcoal'
             : ''
@@ -203,19 +203,19 @@ export default function ConversationTile({
             <input
               autoFocus
               type="text"
-              className="h-6 w-full bg-transparent px-1 text-sm font-normal leading-6 focus:outline-[#0075FF]"
+              className="h-6 w-full bg-transparent px-1 text-sm leading-6 font-normal focus:outline-[#0075FF]"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
             />
           ) : (
-            <p className="my-auto overflow-hidden overflow-ellipsis whitespace-nowrap text-sm font-normal leading-6 text-eerie-black dark:text-bright-gray">
+            <p className="text-eerie-black dark:text-bright-gray my-auto overflow-hidden text-sm leading-6 font-normal text-ellipsis whitespace-nowrap">
               {conversationName}
             </p>
           )}
         </div>
         {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div className="flex text-white dark:text-sonic-silver" ref={menuRef}>
+          <div className="dark:text-sonic-silver flex text-white" ref={menuRef}>
             {isEdit ? (
               <div className="flex gap-1">
                 <img
@@ -234,7 +234,7 @@ export default function ConversationTile({
                 <img
                   src={Exit}
                   alt="Exit"
-                  className={`mr-4 mt-px h-3 w-3 cursor-pointer filter hover:opacity-50 dark:invert`}
+                  className={`mt-px mr-4 h-3 w-3 cursor-pointer filter hover:opacity-50 dark:invert`}
                   id={`img-${conversation.id}`}
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
@@ -250,7 +250,7 @@ export default function ConversationTile({
                 }}
                 className="mr-2 flex w-4 justify-center"
               >
-                <img src={threeDots} width={8} />
+                <img src={threeDots} width={8} alt="menu" />
               </button>
             )}
             <ContextMenu

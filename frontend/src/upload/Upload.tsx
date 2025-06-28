@@ -70,7 +70,7 @@ function Upload({
             }`}
           >
             <div className="flex flex-col gap-4 overflow-hidden">
-              <hr className="my-4 border-[1px] border-[#C4C4C4]/40" />
+              <hr className="my-4 border border-[#C4C4C4]/40" />
               <div className="flex flex-col gap-4">
                 {advancedFields.map((field: FormField) => renderField(field))}
               </div>
@@ -150,7 +150,10 @@ function Upload({
             rounded="3xl"
             placeholder={field.label}
             border="border"
-            borderColor="gray-5000"
+            buttonClassName="border-silver bg-white dark:border-dim-gray dark:bg-[#222327]"
+            optionsClassName="border-silver bg-white dark:border-dim-gray dark:bg-[#383838]"
+            placeholderClassName="text-gray-400 dark:text-silver"
+            contentSize="text-sm"
           />
         );
       case 'boolean':
@@ -216,7 +219,7 @@ function Upload({
         <div className="relative h-32 w-32 rounded-full">
           <div className="absolute inset-0 rounded-full shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset] dark:shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset]"></div>
           <div
-            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'bg-gradient-to-r from-white to-gray-400 shadow-xl shadow-lime-300/50 dark:bg-gradient-to-br dark:from-gray-500 dark:to-gray-300 dark:shadow-lime-300/50' : 'shadow-[0_4px_0_#7D54D1] dark:shadow-[0_4px_0_#7D54D1]'}`}
+            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'bg-linear-to-r from-white to-gray-400 shadow-xl shadow-lime-300/50 dark:bg-linear-to-br dark:from-gray-500 dark:to-gray-300 dark:shadow-lime-300/50' : 'shadow-[0_4px_0_#7D54D1] dark:shadow-[0_4px_0_#7D54D1]'}`}
             style={{
               animation: `${progressPercent === 100 ? 'none' : 'rotate 2s linear infinite'}`,
             }}
@@ -247,7 +250,7 @@ function Upload({
     isTraining?: boolean;
   }) {
     return (
-      <div className="mt-5 flex flex-col items-center gap-2 text-gray-2000 dark:text-bright-gray">
+      <div className="text-gray-2000 dark:text-bright-gray mt-5 flex flex-col items-center gap-2">
         <p className="text-gra text-xl tracking-[0.15px]">
           {isTraining &&
             (progress?.percentage === 100
@@ -571,18 +574,18 @@ function Upload({
   } else {
     view = (
       <div className="flex w-full flex-col gap-4">
-        <p className="text-center text-2xl font-semibold text-jet dark:text-bright-gray">
+        <p className="text-jet dark:text-bright-gray text-center text-2xl font-semibold">
           {t('modals.uploadDoc.label')}
         </p>
         {!activeTab && (
           <div>
-            <p className="dark text-center text-sm font-medium text-gray-6000 dark:text-bright-gray">
+            <p className="dark text-gray-6000 dark:text-bright-gray text-center text-sm font-medium">
               {t('modals.uploadDoc.select')}
             </p>
             <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-4 md:flex-row md:gap-4">
               <button
                 onClick={() => setActiveTab('file')}
-                className="flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:border-purple-30 hover:opacity-100 hover:shadow-lg hover:shadow-purple-30/30 dark:bg-transparent dark:text-[#c3c3c3] md:h-52 md:w-52"
+                className="hover:border-purple-30 hover:shadow-purple-30/30 flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:opacity-100 hover:shadow-lg md:h-52 md:w-52 dark:bg-transparent dark:text-[#c3c3c3]"
               >
                 <img
                   src={FileUpload}
@@ -592,7 +595,7 @@ function Upload({
               </button>
               <button
                 onClick={() => setActiveTab('remote')}
-                className="flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:border-purple-30 hover:opacity-100 hover:shadow-lg hover:shadow-purple-30/30 dark:bg-transparent dark:text-[#c3c3c3] md:h-52 md:w-52"
+                className="hover:border-purple-30 hover:shadow-purple-30/30 flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:opacity-100 hover:shadow-lg md:h-52 md:w-52 dark:bg-transparent dark:text-[#c3c3c3]"
               >
                 <img
                   src={WebsiteCollect}
@@ -617,30 +620,30 @@ function Upload({
               required={true}
             />
             <div className="my-2" {...getRootProps()}>
-              <span className="rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium text-purple-30 hover:cursor-pointer dark:text-silver">
+              <span className="text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}
               </span>
             </div>
-            <p className="mb-0 text-xs italic text-gray-4000">
+            <p className="text-gray-4000 mb-0 text-xs italic">
               {t('modals.uploadDoc.info')}
             </p>
             <div className="mt-0 max-w-full">
-              <p className="mb-[14px] text-[14px] font-medium text-eerie-black dark:text-light-gray">
+              <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
                 {t('modals.uploadDoc.uploadedFiles')}
               </p>
               <div className="max-w-full overflow-hidden">
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="overflow-hidden truncate text-ellipsis text-gray-6000"
+                    className="text-gray-6000 truncate overflow-hidden text-ellipsis"
                     title={file.name}
                   >
                     {file.name}
                   </p>
                 ))}
                 {files.length === 0 && (
-                  <p className="text-[14px] text-gray-6000 dark:text-light-gray">
+                  <p className="text-gray-6000 dark:text-light-gray text-[14px]">
                     {t('none')}
                   </p>
                 )}
@@ -651,7 +654,6 @@ function Upload({
         {activeTab === 'remote' && (
           <>
             <Dropdown
-              border="border"
               options={urlOptions}
               selectedValue={
                 urlOptions.find((opt) => opt.value === ingestor.type) || null
@@ -660,8 +662,10 @@ function Upload({
                 handleIngestorTypeChange(selected.value as IngestorType)
               }
               size="w-full"
-              darkBorderColor="dim-gray"
               rounded="3xl"
+              border="border"
+              placeholder="Select ingestor type"
+              placeholderClassName="text-gray-400 dark:text-silver"
             />
             {/* Dynamically render form fields based on schema */}
 
@@ -681,7 +685,7 @@ function Upload({
             ) && (
               <button
                 onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                className="bg-transparent py-2 pl-0 text-left text-sm font-normal text-purple-30 hover:cursor-pointer"
+                className="text-purple-30 bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
               >
                 {showAdvancedOptions
                   ? t('modals.uploadDoc.hideAdvanced')
@@ -694,7 +698,7 @@ function Upload({
           {activeTab && (
             <button
               onClick={() => setActiveTab(null)}
-              className="rounded-3xl bg-transparent px-4 py-2 text-[14px] font-medium text-purple-30 hover:cursor-pointer dark:text-silver"
+              className="text-purple-30 dark:text-silver rounded-3xl bg-transparent px-4 py-2 text-[14px] font-medium hover:cursor-pointer"
             >
               {t('modals.uploadDoc.back')}
             </button>
@@ -712,7 +716,7 @@ function Upload({
               className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
                 isUploadDisabled()
                   ? 'cursor-not-allowed bg-gray-300 text-gray-500'
-                  : 'cursor-pointer bg-purple-30 text-white hover:bg-violets-are-blue'
+                  : 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer text-white'
               }`}
             >
               {t('modals.uploadDoc.train')}

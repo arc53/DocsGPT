@@ -61,7 +61,7 @@ export default function CopyButton({
 
   const rootButtonClasses = clsx(
     'flex items-center gap-2 group',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 rounded-full',
+    'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 rounded-full',
     className,
   );
 

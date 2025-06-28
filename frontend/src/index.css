@@ -1,107 +1,169 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap')
+layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-:root {
-  --viewport-height: 100vh;
-  font-synthesis: none !important;
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-roboto: Roboto, sans-serif;
+
+  --color-eerie-black: #212121;
+  --color-black-1000: #343541;
+  --color-jet: #343541;
+  --color-gray-alpha: rgba(0, 0, 0, 0.64);
+  --color-gray-1000: #f6f6f6;
+  --color-gray-2000: rgba(0, 0, 0, 0.5);
+  --color-gray-3000: rgba(243, 243, 243, 1);
+  --color-gray-4000: #949494;
+  --color-gray-5000: #bbbbbb;
+  --color-gray-6000: #757575;
+  --color-red-1000: rgb(254, 202, 202);
+  --color-red-2000: #f44336;
+  --color-red-3000: #621b16;
+  --color-blue-1000: #7d54d1;
+  --color-blue-2000: #002b49;
+  --color-blue-3000: #4b02e2;
+  --color-purple-30: #7d54d1;
+  --color-purple-3000: rgb(230, 222, 247);
+  --color-blue-4000: rgba(0, 125, 255, 0.36);
+  --color-blue-5000: rgba(0, 125, 255);
+  --color-green-2000: #0fff50;
+  --color-light-gray: #edeef0;
+  --color-white-3000: #ffffff;
+  --color-just-black: #00000;
+  --color-purple-taupe: #464152;
+  --color-dove-gray: #6c6c6c;
+  --color-silver: #c4c4c4;
+  --color-rainy-gray: #a4a4a4;
+  --color-raisin-black: #222327;
+  --color-chinese-black: #161616;
+  --color-chinese-silver: #cdcdcd;
+  --color-dark-charcoal: #2f3036;
+  --color-bright-gray: #ebebeb;
+  --color-outer-space: #444654;
+  --color-gun-metal: #2e303e;
+  --color-sonic-silver: #747474;
+  --color-soap: #d8ccf1;
+  --color-independence: #54546d;
+  --color-philippine-yellow: #ffc700;
+  --color-chinese-white: #e0e0e0;
+  --color-dark-gray: #aaaaaa;
+  --color-dim-gray: #6a6a6a;
+  --color-cultured: #f4f4f4;
+  --color-charleston-green: #2b2c31;
+  --color-charleston-green-2: #26272e;
+  --color-charleston-green-3: #26272a;
+  --color-grey: #7e7e7e;
+  --color-lotion: #fbfbfb;
+  --color-platinum: #e6e6e6;
+  --color-eerie-black-2: #191919;
+  --color-light-silver: #d9d9d9;
+  --color-carbon: #2e2e2e;
+  --color-onyx: #35363b;
+  --color-royal-purple: #6c4ab0;
+  --color-chinese-black-2: #0f1419;
+  --color-gainsboro: #d9dcde;
+  --color-onyx-2: #35383c;
+  --color-philippine-grey: #929292;
+  --color-charcoal-grey: #53545d;
+  --color-rosso-corsa: #d30000;
+  --color-north-texas-green: #0c9d35;
+  --color-medium-purple: #8d66dd;
+  --color-slate-blue: #6f5fca;
+  --color-old-silver: #848484;
+  --color-arsenic: #4d4e58;
+  --color-light-gainsboro: #d7d7d7;
+  --color-raisin-black-light: #18181b;
+  --color-gunmetal: #32333b;
+  --color-sonic-silver-light: #7f7f82;
+  --color-violets-are-blue: #976af3;
 }
 
-@supports (height: 100dvh) {
-  :root {
-    --viewport-height: 100dvh; /* Use dvh where supported */
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
   }
 }
 
-body.dark {
-  background-color: #202124; /* raisin-black */
-}
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-.dark ::-webkit-scrollbar-track {
-  background: #2f3036;
-}
-::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 40px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #b1afaf;
-}
-
-@layer utilities {
+@utility no-scrollbar {
   /* Chrome, Safari and Opera */
-  .no-scrollbar::-webkit-scrollbar {
+  &::-webkit-scrollbar {
     display: none;
   }
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
 
-  .no-scrollbar {
-    -ms-overflow-style: none; /* IE and Edge */
-    scrollbar-width: none; /* Firefox */
-  }
-
+@utility scrollbar-thin {
   /* Thin scrollbar utility */
-  .scrollbar-thin::-webkit-scrollbar {
+  &::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
 
-  .scrollbar-thin::-webkit-scrollbar-track {
+  &::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .scrollbar-thin::-webkit-scrollbar-thumb {
+  &::-webkit-scrollbar-thumb {
     background: rgba(156, 163, 175, 0.5);
     border-radius: 3px;
   }
 
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  &::-webkit-scrollbar-thumb:hover {
     background: rgba(156, 163, 175, 0.7);
   }
 
   /* For Firefox */
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
-  }
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
 }
 
-@layer components {
-  .table-default {
-    @apply block w-full table-auto justify-center overflow-auto rounded-xl border border-silver text-center dark:border-silver/40 dark:text-bright-gray;
-  }
+@utility table-default {
+  @apply block w-full table-auto justify-center overflow-auto rounded-xl border border-silver text-center dark:border-silver/40 dark:text-bright-gray;
 
-  .table-default th {
+  & th {
     @apply text-nowrap p-4 font-normal text-gray-400;
   }
 
-  .table-default th {
+  & th {
     flex: 1;
   }
 
-  .table-default th:last-child {
+  & th:last-child {
     flex: 0;
   }
 
-  .table-default td {
+  & td {
     @apply w-full border-t border-silver px-4 py-2 dark:border-silver/40;
   }
 
-  .table-default td:last-child {
+  & td:last-child {
     @apply border-r-0;
   }
 
-  .table-default th,
-  .table-default td {
+  & th {
+    min-width: 150px;
+    max-width: 320px;
+    overflow: auto;
+    scrollbar-width: thin;
+    scrollbar-color: grey transparent;
+  }
+
+  & td {
     min-width: 150px;
     max-width: 320px;
     overflow: auto;
@@ -110,7 +172,44 @@ body.dark {
   }
 }
 
-/*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
+@layer utilities {
+  :root {
+    --viewport-height: 100vh;
+    font-synthesis: none !important;
+  }
+
+  @supports (height: 100dvh) {
+    :root {
+      --viewport-height: 100dvh; /* Use dvh where supported */
+    }
+  }
+
+  body.dark {
+    background-color: #202124; /* raisin-black */
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+  .dark ::-webkit-scrollbar-track {
+    background: #2f3036;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 40px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #b1afaf;
+  }
+}
+
+@layer base{
+  /*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
 
 /* Document
    ========================================================================== */
@@ -326,6 +425,7 @@ button,
 [type='reset'],
 [type='submit'] {
   -webkit-appearance: button;
+  cursor: pointer;
 }
 
 /**
@@ -585,4 +685,6 @@ input:-webkit-autofill:active {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
 }

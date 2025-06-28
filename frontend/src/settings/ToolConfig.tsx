@@ -162,7 +162,7 @@ export default function ToolConfig({
   return (
     <div className="scrollbar-thin mt-8 flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3 text-sm text-eerie-black dark:text-bright-gray">
+        <div className="text-eerie-black dark:text-bright-gray flex items-center gap-3 text-sm">
           <button
             className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={handleBackClick}
@@ -172,7 +172,7 @@ export default function ToolConfig({
           <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
         </div>
         <button
-          className="text-nowrap rounded-full bg-purple-30 px-3 py-2 text-xs text-white hover:bg-violets-are-blue sm:px-4 sm:py-2"
+          className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
         >
           {t('settings.tools.save')}
@@ -180,7 +180,7 @@ export default function ToolConfig({
       </div>
       {/* Custom name section */}
       <div className="mt-1">
-        <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
+        <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
           {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
@@ -195,7 +195,7 @@ export default function ToolConfig({
       </div>
       <div className="mt-1">
         {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (
-          <p className="text-sm font-semibold text-eerie-black dark:text-bright-gray">
+          <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
             {t('settings.tools.authentication')}
           </p>
         )}
@@ -217,7 +217,7 @@ export default function ToolConfig({
       <div className="flex flex-col gap-4">
         <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
         <div className="flex w-full flex-row items-center justify-between gap-2">
-          <p className="text-base font-semibold text-eerie-black dark:text-bright-gray">
+          <p className="text-eerie-black dark:text-bright-gray text-base font-semibold">
             {t('settings.tools.actions')}
           </p>
           {tool.name === 'api_tool' &&
@@ -225,7 +225,7 @@ export default function ToolConfig({
               Object.keys(tool.config.actions).length === 0) && (
               <button
                 onClick={() => setActionModalState('ACTIVE')}
-                className="rounded-full border border-solid border-violets-are-blue px-5 py-1 text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
               >
                 {t('settings.tools.addAction')}
               </button>
@@ -255,10 +255,10 @@ export default function ToolConfig({
               tool.actions.map((action, actionIndex) => (
                 <div
                   key={actionIndex}
-                  className="w-full rounded-xl border border-silver dark:border-silver/40"
+                  className="border-silver dark:border-silver/40 w-full rounded-xl border"
                 >
-                  <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
-                    <p className="font-semibold text-eerie-black dark:text-bright-gray">
+                  <div className="border-silver dark:border-silver/40 flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b bg-[#F9F9F9] px-5 dark:bg-[#28292D]">
+                    <p className="text-eerie-black dark:text-bright-gray font-semibold">
                       {action.name}
                     </p>
                     <ToggleSwitch
@@ -319,7 +319,7 @@ export default function ToolConfig({
                             return (
                               <tr
                                 key={index}
-                                className="text-nowrap font-normal"
+                                className="font-normal text-nowrap"
                               >
                                 <td>{param[0]}</td>
                                 <td>{param[1].type}</td>
@@ -334,7 +334,7 @@ export default function ToolConfig({
                                         checked={param[1].filled_by_llm}
                                         id={uniqueKey}
                                         type="checkbox"
-                                        className="size-4 rounded border-gray-300 bg-transparent"
+                                        className="size-4 rounded-sm border-gray-300 bg-transparent"
                                         onChange={() =>
                                           handleCheckboxChange(
                                             actionIndex,
@@ -349,7 +349,7 @@ export default function ToolConfig({
                                   <input
                                     key={uniqueKey}
                                     value={param[1].description}
-                                    className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                                    className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                                     onChange={(e) => {
                                       setTool({
                                         ...tool,
@@ -385,7 +385,7 @@ export default function ToolConfig({
                                     value={param[1].value}
                                     key={uniqueKey}
                                     disabled={param[1].filled_by_llm}
-                                    className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
+                                    className={`border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
                                     onChange={(e) => {
                                       setTool({
                                         ...tool,
@@ -563,10 +563,10 @@ function APIToolConfig({
           ([actionName, action], actionIndex) => (
             <div
               key={actionIndex}
-              className="w-full rounded-xl border border-silver dark:border-silver/40"
+              className="border-silver dark:border-silver/40 w-full rounded-xl border"
             >
-              <div className="flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b border-silver bg-[#F9F9F9] px-5 dark:border-silver/40 dark:bg-[#28292D]">
-                <p className="font-semibold text-eerie-black dark:text-bright-gray">
+              <div className="border-silver dark:border-silver/40 flex h-10 flex-wrap items-center justify-between rounded-t-xl border-b bg-[#F9F9F9] px-5 dark:bg-[#28292D]">
+                <p className="text-eerie-black dark:text-bright-gray font-semibold">
                   {action.name}
                 </p>
                 <div className="flex items-center gap-2">
@@ -618,7 +618,7 @@ function APIToolConfig({
               </div>
               <div className="mt-4 px-5 py-2">
                 <div className="relative w-full">
-                  <span className="absolute -top-2 left-5 z-10 bg-white px-2 text-xs text-gray-4000 dark:bg-raisin-black dark:text-silver">
+                  <span className="text-gray-4000 dark:bg-raisin-black dark:text-silver absolute -top-2 left-5 z-10 bg-white px-2 text-xs">
                     {t('settings.tools.method')}
                   </span>
                   <Dropdown
@@ -867,14 +867,14 @@ function APIActionTable({
       <>
         {Object.entries(action[section].properties).map(
           ([key, param], index) => (
-            <tr key={index} className="text-nowrap font-normal">
+            <tr key={index} className="font-normal text-nowrap">
               <td className="relative">
                 {editingPropertyKey.section === section &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
                     <input
                       value={newPropertyKey}
-                      className="flex w-full min-w-[130.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                      className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -904,7 +904,7 @@ function APIActionTable({
                 ) : (
                   <input
                     value={key}
-                    className="flex w-full min-w-[175.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                    className="border-silver dark:border-silver/40 flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
@@ -917,7 +917,7 @@ function APIActionTable({
                     <input
                       checked={param.filled_by_llm}
                       type="checkbox"
-                      className="size-4 rounded border-gray-300 bg-transparent"
+                      className="size-4 rounded-sm border-gray-300 bg-transparent"
                       onChange={(e) =>
                         handlePropertyChange(
                           section,
@@ -933,7 +933,7 @@ function APIActionTable({
               <td className="w-10">
                 <input
                   value={param.description}
-                  className="rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                  className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                   onChange={(e) =>
                     handlePropertyChange(
                       section,
@@ -951,7 +951,7 @@ function APIActionTable({
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
-                  className={`rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40 ${param.filled_by_llm ? 'opacity-50' : ''}`}
+                  className={`border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param.filled_by_llm ? 'opacity-50' : ''}`}
                 ></input>
               </td>
               <td
@@ -961,7 +961,7 @@ function APIActionTable({
                   maxWidth: '50px',
                   padding: '0',
                 }}
-                className="border-b border-silver dark:border-silver/40"
+                className="border-silver dark:border-silver/40 border-b"
               >
                 <button
                   onClick={() => handlePorpertyDelete(section, key)}
@@ -985,13 +985,13 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="flex w-full min-w-[130.5px] items-start rounded-lg border border-silver bg-transparent px-2 py-1 text-sm outline-none dark:border-silver/40"
+                className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
               />
             </td>
             <td colSpan={4} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="mr-1 rounded-full bg-purple-30 px-5 py-[4px] text-sm text-white hover:bg-violets-are-blue"
+                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
               >
                 {t('settings.tools.add')}
               </button>
@@ -1016,7 +1016,7 @@ function APIActionTable({
             <td colSpan={5}>
               <button
                 onClick={() => handleAddPropertyStart(section)}
-                className="flex items-start text-nowrap rounded-full border border-solid border-violets-are-blue px-5 py-[4px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-[4px] text-sm text-nowrap transition-colors hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </button>
@@ -1037,25 +1037,25 @@ function APIActionTable({
   return (
     <div className="scrollbar-thin flex flex-col gap-6">
       <div>
-        <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
+        <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
           {t('settings.tools.headers')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th
@@ -1072,25 +1072,25 @@ function APIActionTable({
         </table>
       </div>
       <div>
-        <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
+        <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
           {t('settings.tools.queryParameters')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th
@@ -1107,25 +1107,25 @@ function APIActionTable({
         </table>
       </div>
       <div className="mb-6">
-        <h3 className="mb-1 text-base font-normal text-eerie-black dark:text-bright-gray">
+        <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
           {t('settings.tools.body')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="px-2 py-1 text-left text-sm font-normal text-eerie-black dark:text-bright-gray">
+              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th

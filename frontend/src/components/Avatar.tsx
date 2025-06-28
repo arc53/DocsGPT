@@ -9,5 +9,5 @@ export default function Avatar({
   size?: 'SMALL' | 'MEDIUM' | 'LARGE';
   className: string;
 }) {
-  return <div className={`${className} flex-shrink-0`}>{avatar}</div>;
+  return <div className={`${className} shrink-0`}>{avatar}</div>;
 }

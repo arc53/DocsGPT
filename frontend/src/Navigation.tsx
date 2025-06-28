@@ -293,7 +293,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   return (
     <>
       {!navOpen && (
-        <div className="duration-25 absolute left-3 top-3 z-20 hidden transition-all lg:block">
+        <div className="absolute top-3 left-3 z-20 hidden transition-all duration-25 lg:block">
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
@@ -321,7 +321,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 />
               </button>
             )}
-            <div className="text-[20px] font-medium text-[#949494]">
+            <div className="text-gray-4000 text-[20px] font-medium">
               DocsGPT
             </div>
           </div>
@@ -330,8 +330,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       <div
         ref={navRef}
         className={`${
-          !navOpen && '-ml-96 md:-ml-[18rem]'
-        } duration-20 fixed top-0 z-20 flex h-full w-72 flex-col border-b-0 border-r-[1px] bg-lotion transition-all dark:border-r-purple-taupe dark:bg-chinese-black dark:text-white`}
+          !navOpen && '-ml-96 md:-ml-72'
+        } bg-lotion dark:border-r-purple-taupe dark:bg-chinese-black fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-20 dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -375,7 +375,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-transparent' : ''
-            } group sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border border-silver p-3 hover:border-rainy-gray hover:bg-transparent dark:border-purple-taupe dark:text-white`
+            } group border-silver hover:border-rainy-gray dark:border-purple-taupe sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
           }
         >
           <img
@@ -383,16 +383,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className="text-sm text-dove-gray group-hover:text-neutral-600 dark:text-chinese-silver dark:group-hover:text-bright-gray">
+          <p className="text-dove-gray dark:text-chinese-silver dark:group-hover:text-bright-gray text-sm group-hover:text-neutral-600">
             {t('newChat')}
           </p>
         </NavLink>
         <div
           id="conversationsMainDiv"
-          className="mb-auto h-[78vh] overflow-y-auto overflow-x-hidden dark:text-white"
+          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
               <img
                 src={isDarkTheme ? SpinnerDark : Spinner}
                 className="animate-spin cursor-pointer bg-transparent"
@@ -403,14 +403,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           {recentAgents?.length > 0 ? (
             <div>
               <div className="mx-4 my-auto mt-2 flex h-6 items-center">
-                <p className="ml-4 mt-1 text-sm font-semibold">Agents</p>
+                <p className="mt-1 ml-4 text-sm font-semibold">Agents</p>
               </div>
               <div className="agents-container">
                 <div>
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`group mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal ${
+                      className={`group hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
                         agent.id === selectedAgent?.id && !conversationId
                           ? 'bg-bright-gray dark:bg-dark-charcoal'
                           : ''
@@ -429,7 +429,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                             className="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
-                        <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
+                        <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                           {agent.name}
                         </p>
                       </div>
@@ -453,7 +453,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   ))}
                 </div>
                 <div
-                  className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
+                  className="hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
                   onClick={() => {
                     dispatch(setSelectedAgent(null));
                     if (isMobile || isTablet) {
@@ -469,7 +469,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       className="h-[18px] w-[18px]"
                     />
                   </div>
-                  <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
+                  <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                     {t('manageAgents')}
                   </p>
                 </div>
@@ -477,7 +477,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </div>
           ) : (
             <div
-              className="mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 hover:bg-bright-gray dark:hover:bg-dark-charcoal"
+              className="hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
               onClick={() => {
                 if (isMobile || isTablet) {
                   setNavOpen(false);
@@ -493,7 +493,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   className="h-[18px] w-[18px]"
                 />
               </div>
-              <p className="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm leading-6 text-eerie-black dark:text-bright-gray">
+              <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                 {t('manageAgents')}
               </p>
             </div>
@@ -501,7 +501,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
               <div className="mx-4 my-auto mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
-                <p className="ml-4 mt-1 text-sm font-semibold">{t('chats')}</p>
+                <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
               </div>
               <div className="conversations-container">
                 {conversations.data?.map((conversation) => (
@@ -526,8 +526,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <></>
           )}
         </div>
-        <div className="flex h-auto flex-col justify-end text-eerie-black dark:text-white">
-          <div className="flex flex-col gap-2 border-b-[1px] py-2 dark:border-b-purple-taupe">
+        <div className="text-eerie-black flex h-auto flex-col justify-end dark:text-white">
+          <div className="dark:border-b-purple-taupe flex flex-col gap-2 border-b py-2">
             <NavLink
               onClick={() => {
                 if (isMobile || isTablet) {
@@ -537,7 +537,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `mx-4 my-auto flex h-9 cursor-pointer gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
+                `mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
                   isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
                 }`
               }
@@ -545,14 +545,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <img
                 src={SettingGear}
                 alt="Settings"
-                className="w- ml-2 filter dark:invert"
+                width={21}
+                height={21}
+                className="my-auto ml-2 filter dark:invert"
               />
-              <p className="my-auto text-sm text-eerie-black dark:text-white">
+              <p className="text-eerie-black text-sm dark:text-white">
                 {t('settings.label')}
               </p>
             </NavLink>
           </div>
-          <div className="flex flex-col justify-end text-eerie-black dark:text-white">
+          <div className="text-eerie-black flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">
               <Help />
 
@@ -601,7 +603,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <div className="sticky z-10 h-16 w-full border-b-2 bg-gray-50 dark:border-b-purple-taupe dark:bg-chinese-black lg:hidden">
+      <div className="dark:border-b-purple-taupe dark:bg-chinese-black sticky z-10 h-16 w-full border-b-2 bg-gray-50 lg:hidden">
         <div className="ml-6 flex h-full items-center gap-6">
           <button
             className="h-6 w-6 lg:hidden"
@@ -613,7 +615,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className="w-7 filter dark:invert"
             />
           </button>
-          <div className="text-[20px] font-medium text-[#949494]">DocsGPT</div>
+          <div className="text-gray-4000 text-[20px] font-medium">DocsGPT</div>
         </div>
       </div>
       <DeleteConvModal

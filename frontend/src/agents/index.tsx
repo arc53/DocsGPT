@@ -111,10 +111,10 @@ function AgentsList() {
   }, [token]);
   return (
     <div className="p-4 md:p-12">
-      <h1 className="mb-0 text-[40px] font-bold text-[#212121] dark:text-[#E0E0E0]">
+      <h1 className="text-eerie-black mb-0 text-[40px] font-bold dark:text-[#E0E0E0]">
         Agents
       </h1>
-      <p className="mt-5 text-[15px] text-[#71717A] dark:text-[#949494]">
+      <p className="dark:text-gray-4000 mt-5 text-[15px] text-[#71717A]">
         Discover and create custom versions of DocsGPT that combine
         instructions, extra knowledge, and any combination of skills
       </p>
@@ -206,7 +206,7 @@ function AgentSection({
         </div>
         {sectionConfig[section].showNewAgentButton && (
           <button
-            className="rounded-full bg-purple-30 px-4 py-2 text-sm text-white hover:bg-violets-are-blue"
+            className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
             onClick={() => navigate('/agents/new')}
           >
             New Agent
@@ -235,7 +235,7 @@ function AgentSection({
             <p>{sectionConfig[section].emptyStateDescription}</p>
             {sectionConfig[section].showNewAgentButton && (
               <button
-                className="ml-2 rounded-full bg-purple-30 px-4 py-2 text-sm text-white hover:bg-violets-are-blue"
+                className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
                 onClick={() => navigate('/agents/new')}
               >
                 New Agent
@@ -410,7 +410,7 @@ function AgentCard({
   };
   return (
     <div
-      className={`relative flex h-44 w-full flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] dark:bg-[#383838] hover:dark:bg-[#383838]/80 md:w-48 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`relative flex h-44 w-full flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] md:w-48 dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
@@ -422,7 +422,7 @@ function AgentCard({
           e.stopPropagation();
           setIsMenuOpen(true);
         }}
-        className="absolute right-4 top-4 z-10 cursor-pointer"
+        className="absolute top-4 right-4 z-10 cursor-pointer"
       >
         <img src={ThreeDots} alt={'use-agent'} className="h-[19px] w-[19px]" />
         <ContextMenu
@@ -448,11 +448,11 @@ function AgentCard({
         <div className="mt-2">
           <p
             title={agent.name}
-            className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-[#020617] dark:text-[#E0E0E0]"
+            className="truncate px-1 text-[13px] leading-relaxed font-semibold text-[#020617] capitalize dark:text-[#E0E0E0]"
           >
             {agent.name}
           </p>
-          <p className="mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed text-[#64748B] dark:text-sonic-silver-light">
+          <p className="dark:text-sonic-silver-light mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed text-[#64748B]">
             {agent.description}
           </p>
         </div>

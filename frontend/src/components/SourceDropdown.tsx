@@ -79,13 +79,13 @@ function SourceDropdown({
     <div className="relative w-5/6 rounded-3xl" ref={dropdownRef}>
       <button
         onClick={() => setIsDocsListOpen(!isDocsListOpen)}
-        className={`flex w-full cursor-pointer items-center border border-silver bg-white p-[11px] dark:bg-transparent ${
+        className={`border-silver flex w-full cursor-pointer items-center border bg-white p-[11px] dark:bg-transparent ${
           isDocsListOpen
-            ? 'rounded-t-3xl dark:border-silver/40'
-            : 'rounded-3xl dark:border-purple-taupe'
+            ? 'dark:border-silver/40 rounded-t-3xl'
+            : 'dark:border-purple-taupe rounded-3xl'
         }`}
       >
-        <span className="ml-1 mr-2 flex-1 overflow-hidden text-ellipsis text-left dark:text-bright-gray">
+        <span className="dark:text-bright-gray mr-2 ml-1 flex-1 overflow-hidden text-left text-ellipsis">
           <div className="flex flex-row gap-2">
             <p className="max-w-3/4 truncate whitespace-nowrap">
               {selectedDocs?.name || 'None'}
@@ -101,14 +101,14 @@ function SourceDropdown({
         />
       </button>
       {isDocsListOpen && (
-        <div className="absolute left-0 right-0 z-20 -mt-1 max-h-28 overflow-y-auto rounded-b-xl border border-silver bg-white shadow-lg dark:border-silver/40 dark:bg-dark-charcoal">
+        <div className="border-silver dark:border-silver/40 dark:bg-dark-charcoal absolute right-0 left-0 z-20 -mt-1 max-h-28 overflow-y-auto rounded-b-xl border bg-white shadow-lg">
           {options ? (
             options.map((option: any, index: number) => {
               if (option.model === embeddingsName) {
                 return (
                   <div
                     key={index}
-                    className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-[#545561]"
+                    className="dark:text-bright-gray flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-[#545561]"
                     onClick={() => {
                       dispatch(setSelectedDocs(option));
                       setIsDocsListOpen(false);
@@ -119,7 +119,7 @@ function SourceDropdown({
                       onClick={() => {
                         setIsDocsListOpen(false);
                       }}
-                      className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
+                      className="ml-4 flex-1 overflow-hidden py-3 text-ellipsis whitespace-nowrap"
                     >
                       {option.name}
                     </span>
@@ -143,11 +143,11 @@ function SourceDropdown({
             <></>
           )}
           <div
-            className="flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:text-bright-gray dark:hover:bg-purple-taupe"
+            className="dark:text-bright-gray dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-between hover:bg-gray-100"
             onClick={handleEmptyDocumentSelect}
           >
             <span
-              className="ml-4 flex-1 overflow-hidden overflow-ellipsis whitespace-nowrap py-3"
+              className="ml-4 flex-1 overflow-hidden py-3 text-ellipsis whitespace-nowrap"
               onClick={() => {
                 handlePostDocumentSelect(null);
               }}

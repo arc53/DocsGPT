@@ -295,24 +295,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-        <p className="mt-px text-sm font-semibold text-eerie-black dark:text-bright-gray">
+        <p className="text-eerie-black dark:text-bright-gray mt-px text-sm font-semibold">
           Back to all agents
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="m-0 text-[40px] font-bold text-[#212121] dark:text-white">
+        <h1 className="text-eerie-black m-0 text-[40px] font-bold dark:text-white">
           {modeConfig[effectiveMode].heading}
         </h1>
         <div className="flex flex-wrap items-center gap-1">
           <button
-            className="mr-4 rounded-3xl py-2 text-sm font-medium text-purple-30 dark:bg-transparent dark:text-light-gray"
+            className="text-purple-30 dark:text-light-gray mr-4 rounded-3xl py-2 text-sm font-medium dark:bg-transparent"
             onClick={handleCancel}
           >
             Cancel
           </button>
           {modeConfig[effectiveMode].showDelete && agent.id && (
             <button
-              className="group flex items-center gap-2 rounded-3xl border border-solid border-red-2000 px-5 py-2 text-sm font-medium text-red-2000 transition-colors hover:bg-red-2000 hover:text-white"
+              className="group border-red-2000 text-red-2000 hover:bg-red-2000 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => setDeleteConfirmation('ACTIVE')}
             >
               <span className="block h-4 w-4 bg-[url('/src/assets/red-trash.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/white-trash.svg')]" />
@@ -321,7 +321,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
             <button
-              className="hover:bg-vi</button>olets-are-blue rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={handleSaveDraft}
             >
               Save Draft
@@ -329,7 +329,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
             <button
-              className="group flex items-center gap-2 rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+              className="group border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => navigate(`/agents/logs/${agent.id}`)}
             >
               <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
@@ -338,7 +338,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
             <button
-              className="hover:bg-vi</button>olets-are-blue rounded-3xl border border-solid border-violets-are-blue px-5 py-2 text-sm font-medium text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
+              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => setAgentDetails('ACTIVE')}
             >
               Access Details
@@ -346,7 +346,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           <button
             disabled={!isPublishable()}
-            className={`${!isPublishable() && 'cursor-not-allowed opacity-30'} rounded-3xl bg-purple-30 px-5 py-2 text-sm font-medium text-white hover:bg-violets-are-blue`}
+            className={`${!isPublishable() && 'cursor-not-allowed opacity-30'} bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm font-medium text-white`}
             onClick={handlePublish}
           >
             Publish
@@ -358,14 +358,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Meta</h2>
             <input
-              className="mt-3 w-full rounded-3xl border border-silver bg-white px-5 py-3 text-sm text-jet outline-none placeholder:text-gray-400 dark:border-[#7E7E7E] dark:bg-[#222327] dark:text-bright-gray placeholder:dark:text-silver"
+              className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
               type="text"
               value={agent.name}
               placeholder="Agent name"
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
-              className="mt-3 h-32 w-full rounded-3xl border border-silver bg-white px-5 py-4 text-sm text-jet outline-none placeholder:text-gray-400 dark:border-[#7E7E7E] dark:bg-[#222327] dark:text-bright-gray placeholder:dark:text-silver"
+              className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 h-32 w-full rounded-3xl border bg-white px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
               placeholder="Describe your agent"
               value={agent.description}
               onChange={(e) =>
@@ -375,7 +375,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <div className="mt-3">
               <FileUpload
                 showPreview
-                className="dark:bg-[#222327]"
+                className="dark:bg-raisin-black"
                 onUpload={handleUpload}
                 onRemove={() => setImageFile(null)}
                 uploadText={[
@@ -395,10 +395,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <button
                   ref={sourceAnchorButtonRef}
                   onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className={`w-full truncate rounded-3xl border border-silver bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] dark:bg-[#222327] ${
+                  className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
                     selectedSourceIds.size > 0
                       ? 'text-jet dark:text-bright-gray'
-                      : 'text-gray-400 dark:text-silver'
+                      : 'dark:text-silver text-gray-400'
                   }`}
                 >
                   {selectedSourceIds.size > 0
@@ -447,12 +447,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   size="w-full"
                   rounded="3xl"
-                  buttonDarkBackgroundColor="[#222327]"
                   border="border"
-                  darkBorderColor="[#7E7E7E]"
+                  buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                  optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                   placeholder="Chunks per query"
-                  placeholderTextColor="gray-400"
-                  darkPlaceholderTextColor="silver"
+                  placeholderClassName="text-gray-400 dark:text-silver"
                   contentSize="text-sm"
                 />
               </div>
@@ -461,7 +460,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Prompt</h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
-              <div className="min-w-20 flex-grow basis-full sm:basis-0">
+              <div className="min-w-20 grow basis-full sm:basis-0">
                 <Dropdown
                   options={prompts.map((prompt) => ({
                     label: prompt.name,
@@ -479,17 +478,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   size="w-full"
                   rounded="3xl"
-                  buttonDarkBackgroundColor="[#222327]"
                   border="border"
-                  darkBorderColor="[#7E7E7E]"
+                  buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                  optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E] dark:border-[#7E7E7E] dark:bg-dark-charcoal"
+                  placeholderClassName="text-gray-400 dark:text-silver"
                   placeholder="Select a prompt"
-                  placeholderTextColor="gray-400"
-                  darkPlaceholderTextColor="silver"
                   contentSize="text-sm"
                 />
               </div>
               <button
-                className="w-20 flex-shrink-0 basis-full rounded-3xl border-2 border-solid border-violets-are-blue px-5 py-[11px] text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white sm:basis-auto"
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-20 shrink-0 basis-full rounded-3xl border-2 border-solid px-5 py-[11px] text-sm transition-colors hover:text-white sm:basis-auto"
                 onClick={() => setAddPromptModal('ACTIVE')}
               >
                 Add
@@ -502,10 +500,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <button
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className={`w-full truncate rounded-3xl border border-silver bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] dark:bg-[#222327] ${
+                className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
                   selectedToolIds.size > 0
                     ? 'text-jet dark:text-bright-gray'
-                    : 'text-gray-400 dark:text-silver'
+                    : 'dark:text-silver text-gray-400'
                 }`}
               >
                 {selectedToolIds.size > 0
@@ -548,12 +546,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
                 size="w-full"
                 rounded="3xl"
-                buttonDarkBackgroundColor="[#222327]"
                 border="border"
-                darkBorderColor="[#7E7E7E]"
+                buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                 placeholder="Select type"
-                placeholderTextColor="gray-400"
-                darkPlaceholderTextColor="silver"
+                placeholderClassName="text-gray-400 dark:text-silver"
                 contentSize="text-sm"
               />
             </div>
@@ -598,7 +595,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 function AgentPreviewArea() {
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white dark:border-[#7E7E7E] dark:bg-[#222327] max-[1180px]:h-[48rem]">
+    <div className="dark:bg-raisin-black h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white max-[1180px]:h-192 dark:border-[#7E7E7E]">
       {selectedAgent?.status === 'published' ? (
         <div className="flex h-full w-full flex-col justify-end overflow-auto rounded-[30px]">
           <AgentPreview />
@@ -606,7 +603,7 @@ function AgentPreviewArea() {
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2">
           <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
-          <p className="text-xs text-[#18181B] dark:text-[#949494]">
+          <p className="dark:text-gray-4000 text-xs text-[#18181B]">
             Published agents can be previewed here
           </p>
         </div>

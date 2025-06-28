@@ -258,17 +258,17 @@ export default function MessageInput({
   };
   return (
     <div className="mx-2 flex w-full flex-col">
-      <div className="relative flex w-full flex-col rounded-[23px] border border-dark-gray bg-lotion dark:border-grey dark:bg-transparent">
-        <div className="flex flex-wrap gap-1.5 px-4 pb-0 pt-3 sm:gap-2 sm:px-6">
+      <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
+        <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-0 sm:gap-2 sm:px-6">
           {attachments.map((attachment, index) => (
             <div
               key={index}
-              className={`group relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] dark:bg-[#393B3D] dark:text-bright-gray sm:px-3 sm:py-1.5 sm:text-[14px] ${
+              className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
                 attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               }`}
               title={attachment.fileName}
             >
-              <div className="mr-2 items-center justify-center rounded-lg bg-purple-30 p-[5.5px]">
+              <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
                 {attachment.status === 'completed' && (
                   <img
                     src={DocumentationDark}
@@ -353,7 +353,7 @@ export default function MessageInput({
             onChange={handleChange}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap rounded-t-[23px] bg-lotion px-4 py-3 text-base leading-tight opacity-100 focus:outline-none dark:bg-transparent dark:text-bright-gray dark:placeholder-bright-gray dark:placeholder-opacity-50 sm:px-6 sm:py-5"
+            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-4 py-3 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-6 sm:py-5 dark:bg-transparent"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             aria-label={t('inputPlaceholder')}
@@ -361,11 +361,11 @@ export default function MessageInput({
         </div>
 
         <div className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2">
-          <div className="flex flex-grow flex-wrap gap-1 sm:gap-2">
+          <div className="flex grow flex-wrap gap-1 sm:gap-2">
             {showSourceButton && (
               <button
                 ref={sourceButtonRef}
-                className="xs:px-3 xs:py-1.5 flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C] sm:max-w-[150px]"
+                className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 sm:max-w-[150px] dark:hover:bg-[#2C2E3C]"
                 onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
                 title={
                   selectedDocs
@@ -376,15 +376,15 @@ export default function MessageInput({
                 <img
                   src={SourceIcon}
                   alt="Sources"
-                  className="mr-1 h-3.5 w-3.5 flex-shrink-0 sm:mr-1.5 sm:h-4"
+                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
                 />
-                <span className="xs:text-[12px] overflow-hidden truncate text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
+                <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
                   {selectedDocs
                     ? selectedDocs.name
                     : t('conversation.sources.title')}
                 </span>
                 {!isTouch && (
-                  <span className="ml-1 hidden text-[10px] text-gray-500 dark:text-gray-400 sm:inline-block">
+                  <span className="ml-1 hidden text-[10px] text-gray-500 sm:inline-block dark:text-gray-400">
                     {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
                   </span>
                 )}
@@ -394,26 +394,26 @@ export default function MessageInput({
             {showToolButton && (
               <button
                 ref={toolButtonRef}
-                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C]"
+                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]"
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
               >
                 <img
                   src={ToolIcon}
                   alt="Tools"
-                  className="mr-1 h-3.5 w-3.5 flex-shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
+                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
                 />
-                <span className="xs:text-[12px] overflow-hidden truncate text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
+                <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
                   {t('settings.tools.label')}
                 </span>
               </button>
             )}
-            <label className="xs:px-3 xs:py-1.5 flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:border-purple-taupe dark:hover:bg-[#2C2E3C]">
+            <label className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]">
               <img
                 src={ClipIcon}
                 alt="Attach"
                 className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
               />
-              <span className="xs:text-[12px] text-[10px] font-medium text-[#5D5D5D] dark:text-bright-gray sm:text-[14px]">
+              <span className="xs:text-[12px] dark:text-bright-gray text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
                 {t('conversation.attachments.attach')}
               </span>
               <input
@@ -428,7 +428,7 @@ export default function MessageInput({
           <button
             onClick={loading ? undefined : handleSubmit}
             aria-label={loading ? t('loading') : t('send')}
-            className={`flex items-center justify-center rounded-full p-2 sm:p-2.5 ${loading ? 'bg-gray-300 dark:bg-gray-600' : 'bg-black dark:bg-white'} ml-auto flex-shrink-0`}
+            className={`flex items-center justify-center rounded-full p-2 sm:p-2.5 ${loading ? 'bg-gray-300 dark:bg-gray-600' : 'bg-black dark:bg-white'} ml-auto shrink-0`}
             disabled={loading}
           >
             {loading ? (

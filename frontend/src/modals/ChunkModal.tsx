@@ -50,7 +50,7 @@ export default function ChunkModal({
 
   const content = (
     <div>
-      <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
+      <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
         {t(`modals.chunk.${type === 'ADD' ? 'add' : 'edit'}`)}
       </h2>
       <div className="relative mt-6 px-3">
@@ -64,13 +64,13 @@ export default function ChunkModal({
         />
       </div>
       <div className="relative mt-6 px-3">
-        <div className="rounded-lg border border-silver pb-1 pt-3 dark:border-silver/40">
-          <span className="absolute -top-2 left-5 rounded-lg bg-white px-2 text-xs text-gray-4000 dark:bg-[#26272E] dark:text-silver">
+        <div className="border-silver dark:border-silver/40 rounded-lg border pt-3 pb-1">
+          <span className="text-gray-4000 dark:text-silver absolute -top-2 left-5 rounded-lg bg-white px-2 text-xs dark:bg-[#26272E]">
             {t('modals.chunk.bodyText')}
           </span>
           <textarea
             id="chunk-body-text"
-            className="h-60 max-h-60 w-full resize-none px-3 outline-none dark:bg-transparent dark:text-white"
+            className="h-60 max-h-60 w-full resize-none px-3 outline-hidden dark:bg-transparent dark:text-white"
             value={chunkText}
             onChange={(e) => setChunkText(e.target.value)}
             aria-label={t('modals.chunk.promptText')}
@@ -86,7 +86,7 @@ export default function ChunkModal({
               setModalState('INACTIVE');
               resetForm();
             }}
-            className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue"
+            className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all"
           >
             {t('modals.chunk.add')}
           </button>
@@ -95,7 +95,7 @@ export default function ChunkModal({
               setModalState('INACTIVE');
               resetForm();
             }}
-            className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
+            className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
           >
             {t('modals.chunk.close')}
           </button>
@@ -103,7 +103,7 @@ export default function ChunkModal({
       ) : (
         <div className="mt-8 flex w-full items-center justify-between px-3">
           <button
-            className="text-nowrap rounded-full border border-solid border-red-500 px-5 py-2 text-sm text-red-500 hover:bg-red-500 hover:text-white"
+            className="rounded-full border border-solid border-red-500 px-5 py-2 text-sm text-nowrap text-red-500 hover:bg-red-500 hover:text-white"
             onClick={() => {
               setDeleteModal('ACTIVE');
             }}
@@ -116,7 +116,7 @@ export default function ChunkModal({
                 handleSubmit(title, chunkText);
                 setModalState('INACTIVE');
               }}
-              className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue"
+              className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all"
             >
               {t('modals.chunk.update')}
             </button>
@@ -124,7 +124,7 @@ export default function ChunkModal({
               onClick={() => {
                 setModalState('INACTIVE');
               }}
-              className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
+              className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
             >
               {t('modals.chunk.close')}
             </button>
