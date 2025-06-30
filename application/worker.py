@@ -194,7 +194,8 @@ def run_agent_logic(agent_config, input_data):
 
 # Define the main function for ingesting and processing documents.
 def ingest_worker(
-    self, directory, formats, job_name, filename, user, dir_name=None, user_dir=None, retriever="classic"
+    self, directory, formats, job_name, file_path, filename, user, 
+    retriever="classic"
 ):
     """
     Ingest and process documents.
@@ -204,10 +205,9 @@ def ingest_worker(
         directory (str): Specifies the directory for ingesting ('inputs' or 'temp').
         formats (list of str): List of file extensions to consider for ingestion (e.g., [".rst", ".md"]).
         job_name (str): Name of the job for this ingestion task (original, unsanitized).
-        filename (str): Name of the file to be ingested.
+        file_path (str): Complete file path to use consistently throughout the pipeline.
+        filename (str): Original unsanitized filename provided by the user.
         user (str): Identifier for the user initiating the ingestion (original, unsanitized).
-        dir_name (str, optional): Sanitized directory name for filesystem operations.
-        user_dir (str, optional): Sanitized user ID for filesystem operations.
         retriever (str): Type of retriever to use for processing the documents.
 
     Returns:
@@ -220,11 +220,8 @@ def ingest_worker(
     sample = False
     
     storage = StorageCreator.get_storage()
-
-    full_path = os.path.join(directory, user_dir, dir_name)
-    source_file_path = os.path.join(full_path, filename)
-
-    logging.info(f"Ingest file: {full_path}", extra={"user": user, "job": job_name})
+    
+    logging.info(f"Ingest file: {file_path}", extra={"user": user, "job": job_name})
 
     # Create temporary working directory
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -232,8 +229,10 @@ def ingest_worker(
             os.makedirs(temp_dir, exist_ok=True)
 
             # Download file from storage to temp directory
-            temp_file_path = os.path.join(temp_dir, filename)
-            file_data = storage.get_file(source_file_path)
+            temp_filename = os.path.basename(file_path)
+            temp_file_path = os.path.join(temp_dir, temp_filename)
+            
+            file_data = storage.get_file(file_path)
 
             with open(temp_file_path, "wb") as f:
                 f.write(file_data.read())
@@ -241,8 +240,8 @@ def ingest_worker(
             self.update_state(state="PROGRESS", meta={"current": 1})
 
             # Handle zip files
-            if filename.endswith(".zip"):
-                logging.info(f"Extracting zip file: {filename}")
+            if temp_filename.endswith(".zip"):
+                logging.info(f"Extracting zip file: {temp_filename}")
                 extract_zip_recursive(
                     temp_file_path, temp_dir, current_depth=0, max_depth=RECURSION_DEPTH
                 )
@@ -292,7 +291,7 @@ def ingest_worker(
                 "retriever": retriever,
                 "id": str(id),
                 "type": "local",
-                "original_file_path": source_file_path,
+                "file_path": file_path,
             }
 
             upload_index(vector_store_path, file_data)

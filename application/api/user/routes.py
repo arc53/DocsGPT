@@ -553,11 +553,12 @@ class UploadFile(Resource):
             if len(files) > 1:
                 temp_files = []
                 for file in files:
-                    filename = safe_filename(file.filename)
-                    temp_path = f"{base_path}/temp/{filename}"
+                    original_filename = file.filename
+                    safe_file = safe_filename(original_filename)
+                    temp_path = f"{base_path}/temp/{safe_file}"
                     storage.save_file(file, temp_path)
-                    temp_files.append(temp_path)
-                    print(f"Saved file: {filename}")
+                    temp_files.append({"path": temp_path, "original_name": original_filename})
+                    print(f"Saved file: {original_filename}")
                 zip_filename = f"{dir_name}.zip"
                 zip_path = f"{base_path}/{zip_filename}"
                 zip_temp_path = None
@@ -625,14 +626,12 @@ class UploadFile(Resource):
                             ".jpeg",
                         ],
                         job_name,
-                        zip_filename,
                         user,
-                        dir_name,
-                        safe_user,
+                        file_path=zip_path,
+                        filename=zip_filename
                     )
                 finally:
                     # Clean up temporary files
-
                     for temp_path in temp_files:
                         try:
                             storage.delete_file(temp_path)
@@ -642,15 +641,15 @@ class UploadFile(Resource):
                                 exc_info=True,
                             )
                     # Clean up the zip file if it was created
-
                     if zip_temp_path and os.path.exists(zip_temp_path):
                         os.remove(zip_temp_path)
             else:  # Keep this else block for single file upload
                 # For single file
 
                 file = files[0]
-                filename = safe_filename(file.filename)
-                file_path = f"{base_path}/{filename}"
+                original_filename = file.filename
+                safe_file = safe_filename(original_filename)
+                file_path = f"{base_path}/{safe_file}"
 
                 storage.save_file(file, file_path)
 
@@ -674,10 +673,9 @@ class UploadFile(Resource):
                         ".jpeg",
                     ],
                     job_name,
-                    filename,  # Corrected variable for single-file case
                     user,
-                    dir_name,
-                    safe_user,
+                    file_path=file_path,
+                    filename=original_filename
                 )
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
