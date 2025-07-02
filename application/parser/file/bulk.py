@@ -15,6 +15,7 @@ from application.parser.file.json_parser import JSONParser
 from application.parser.file.pptx_parser import PPTXParser
 from application.parser.file.image_parser import ImageParser
 from application.parser.schema.base import Document
+from application.utils import num_tokens_from_string
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".pdf": PDFParser(),
@@ -146,6 +147,8 @@ class SimpleDirectoryReader(BaseReader):
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
+        file_token_counts = {}
+        
         for input_file in self.input_files:
             if input_file.suffix in self.file_extractor:
                 parser = self.file_extractor[input_file.suffix]
@@ -156,6 +159,15 @@ class SimpleDirectoryReader(BaseReader):
                 # do standard read
                 with open(input_file, "r", errors=self.errors) as f:
                     data = f.read()
+            
+            # Calculate token count for this file
+            if isinstance(data, List):
+                file_tokens = sum(num_tokens_from_string(str(d)) for d in data)
+            else:
+                file_tokens = num_tokens_from_string(str(data))
+            
+            file_token_counts[input_file.name] = file_tokens
+            
             # Prepare metadata for this file
             if self.file_metadata is not None:
                 file_metadata = self.file_metadata(input_file.name)
@@ -174,6 +186,9 @@ class SimpleDirectoryReader(BaseReader):
                 data_list.append(str(data))
                 # Add the file's metadata to metadata_list
                 metadata_list.append(file_metadata)
+
+        self.file_token_counts = file_token_counts
+        logging.info(f"File token counts: {file_token_counts}")
 
         if concatenate:
             return [Document("\n".join(data_list))]

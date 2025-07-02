@@ -1,5 +1,6 @@
 import os
 import datetime
+import json
 from flask import Blueprint, request, send_from_directory
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
@@ -49,6 +50,16 @@ def upload_index_files():
     sync_frequency = request.form["sync_frequency"] if "sync_frequency" in request.form else None
     
     file_path = request.form.get("file_path")
+    file_token_counts = request.form.get("file_token_counts")
+    
+    if file_token_counts:
+        try:
+            file_token_counts = json.loads(file_token_counts)
+        except:
+            logger.error("Error parsing file_token_counts")
+            file_token_counts = {}
+    else:
+        file_token_counts = {}
 
     storage = StorageCreator.get_storage()
     index_base_path = f"indexes/{id}"
@@ -88,6 +99,7 @@ def upload_index_files():
                     "remote_data": remote_data,
                     "sync_frequency": sync_frequency,
                     "file_path": file_path,
+                    "file_token_counts": file_token_counts,
                 }
             },
         )
@@ -106,6 +118,7 @@ def upload_index_files():
                 "remote_data": remote_data,
                 "sync_frequency": sync_frequency,
                 "file_path": file_path,
+                "file_token_counts": file_token_counts,
             }
         )
     return {"status": "ok"}

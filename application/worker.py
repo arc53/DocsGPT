@@ -258,6 +258,10 @@ def ingest_worker(
                 file_metadata=metadata_from_filename,
             )
             raw_docs = reader.load_data()
+            
+            file_token_counts = getattr(reader, 'file_token_counts', {})
+            
+            logging.info(f"File token counts from reader: {file_token_counts}")
 
             chunker = Chunker(
                 chunking_strategy="classic_chunk",
@@ -292,6 +296,7 @@ def ingest_worker(
                 "id": str(id),
                 "type": "local",
                 "file_path": file_path,
+                "file_token_counts": json.dumps(file_token_counts),
             }
 
             upload_index(vector_store_path, file_data)
