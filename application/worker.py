@@ -259,9 +259,8 @@ def ingest_worker(
             )
             raw_docs = reader.load_data()
             
-            file_token_counts = getattr(reader, 'file_token_counts', {})
-            
-            logging.info(f"File token counts from reader: {file_token_counts}")
+            directory_structure = getattr(reader, 'directory_structure', {})
+            logging.info(f"Directory structure from reader: {directory_structure}")
 
             chunker = Chunker(
                 chunking_strategy="classic_chunk",
@@ -288,15 +287,15 @@ def ingest_worker(
                 for i in range(min(5, len(raw_docs))):
                     logging.info(f"Sample document {i}: {raw_docs[i]}")
             file_data = {
-                "name": job_name,  # Use original job_name
+                "name": job_name,
                 "file": filename,
-                "user": user,  # Use original user
+                "user": user,
                 "tokens": tokens,
                 "retriever": retriever,
                 "id": str(id),
                 "type": "local",
                 "file_path": file_path,
-                "file_token_counts": json.dumps(file_token_counts),
+                "directory_structure": json.dumps(directory_structure),
             }
 
             upload_index(vector_store_path, file_data)

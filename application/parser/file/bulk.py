@@ -142,7 +142,6 @@ class SimpleDirectoryReader(BaseReader):
 
         Returns:
             List[Document]: A list of documents.
-
         """
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
@@ -188,7 +187,13 @@ class SimpleDirectoryReader(BaseReader):
                 metadata_list.append(file_metadata)
 
         self.file_token_counts = file_token_counts
-        logging.info(f"File token counts: {file_token_counts}")
+        
+        # Build directory structure if input_dir is provided
+        if hasattr(self, 'input_dir'):
+            self.directory_structure = self._build_directory_structure(self.input_dir)
+            logging.info(f"Directory structure built successfully")
+        else:
+            self.directory_structure = {}
 
         if concatenate:
             return [Document("\n".join(data_list))]
@@ -196,3 +201,39 @@ class SimpleDirectoryReader(BaseReader):
             return [Document(d, extra_info=m) for d, m in zip(data_list, metadata_list)]
         else:
             return [Document(d) for d in data_list]
+
+    def _build_directory_structure(self, base_path):
+        """Build a dictionary representing the directory structure.
+        
+        Args:
+            base_path: The base path to start building the structure from.
+            
+        Returns:
+            dict: A nested dictionary representing the directory structure.
+        """
+        structure = {}
+        base_path = Path(base_path)
+        
+        def _build_tree(path, current_dict):
+            for item in path.iterdir():
+                if item.is_dir():
+                    if self.exclude_hidden and item.name.startswith('.'):
+                        continue
+                    current_dict[item.name] = {}
+                    _build_tree(item, current_dict[item.name])
+                else:
+                    if self.exclude_hidden and item.name.startswith('.'):
+                        continue
+                    if self.required_exts is not None and item.suffix not in self.required_exts:
+                        continue
+                    # Store file with its token count if available
+                    if hasattr(self, 'file_token_counts') and item.name in self.file_token_counts:
+                        current_dict[item.name] = {
+                            "type": "file",
+                            "token_count": self.file_token_counts[item.name]
+                        }
+                    else:
+                        current_dict[item.name] = {"type": "file"}
+        
+        _build_tree(base_path, structure)
+        return structure
