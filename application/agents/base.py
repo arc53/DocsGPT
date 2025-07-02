@@ -91,8 +91,8 @@ class BaseAgent(ABC):
         user_tools_collection = db["user_tools"]
         user_tools = user_tools_collection.find({"user": user, "status": True})
         user_tools = list(user_tools)
-        tools_by_id = {str(tool["_id"]): tool for tool in user_tools}
-        return tools_by_id
+
+        return {str(i): tool for i, tool in enumerate(user_tools)}
 
     def _build_tool_parameters(self, action):
         params = {"type": "object", "properties": {}, "required": []}
@@ -313,7 +313,6 @@ class BaseAgent(ABC):
         if hasattr(response, "message") and getattr(response.message, "content", None):
             yield {"answer": response.message.content}
             return
-
         processed_response_gen = self._llm_handler(
             response, tools_dict, messages, log_context, self.attachments
         )
