@@ -35,11 +35,33 @@ class Chunker:
     def combine_documents(self, doc: Document, next_doc: Document) -> Document:
         combined_text = doc.text + " " + next_doc.text
         combined_token_count = len(self.encoding.encode(combined_text))
+        
+        combined_extra_info = {**(doc.extra_info or {}), "token_count": combined_token_count}
+        
+        sources = []
+        if doc.extra_info and 'source' in doc.extra_info:
+            sources.append(doc.extra_info['source'])
+        if next_doc.extra_info and 'source' in next_doc.extra_info:
+            sources.append(next_doc.extra_info['source'])
+        
+        if sources:
+            combined_extra_info['source'] = sources
+    
+        titles = []
+        if doc.extra_info and 'title' in doc.extra_info:
+            titles.append(doc.extra_info['title'])
+        if next_doc.extra_info and 'title' in next_doc.extra_info:
+            titles.append(next_doc.extra_info['title'])
+        
+        # Store combined title
+        if titles:
+            combined_extra_info['title'] = ", ".join(titles)
+        
         new_doc = Document(
             text=combined_text,
             doc_id=doc.doc_id,
             embedding=doc.embedding,
-            extra_info={**(doc.extra_info or {}), "token_count": combined_token_count}
+            extra_info=combined_extra_info
         )
         return new_doc
     
