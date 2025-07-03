@@ -232,16 +232,24 @@ class SimpleDirectoryReader(BaseReader):
                         continue
                     if self.required_exts is not None and item.suffix not in self.required_exts:
                         continue
-                    # Store file with its token count if available
-                
+                    
                     full_path = str(item.resolve())
+                    file_size_bytes = item.stat().st_size
+                    
+                    import mimetypes
+                    mime_type = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
+                    
                     if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:
                         current_dict[item.name] = {
-                            "type": "file",
-                            "token_count": self.file_token_counts[full_path]
+                            "type": mime_type,
+                            "token_count": self.file_token_counts[full_path],
+                            "size_bytes": file_size_bytes
                         }
                     else:
-                        current_dict[item.name] = {"type": "file"}
+                        current_dict[item.name] = {
+                            "type": mime_type,
+                            "size_bytes": file_size_bytes
+                        }
         
         _build_tree(base_path, structure)
         return structure
