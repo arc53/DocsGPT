@@ -146,7 +146,7 @@ class SimpleDirectoryReader(BaseReader):
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
-        file_token_counts = {}
+        self.file_token_counts = {}
         
         for input_file in self.input_files:
             if input_file.suffix in self.file_extractor:
@@ -165,28 +165,34 @@ class SimpleDirectoryReader(BaseReader):
             else:
                 file_tokens = num_tokens_from_string(str(data))
             
-            file_token_counts[input_file.name] = file_tokens
+            full_path = str(input_file.resolve())
+            self.file_token_counts[full_path] = file_tokens
             
-            # Prepare metadata for this file
-            if self.file_metadata is not None:
-                file_metadata = self.file_metadata(input_file.name)
+            base_metadata = {
+                'title': input_file.name,
+                'token_count': file_tokens,
+            }
+            
+            if hasattr(self, 'input_dir'):
+                try:
+                    relative_path = str(input_file.relative_to(self.input_dir))
+                    base_metadata['source'] = relative_path
+                except ValueError:
+                    base_metadata['source'] = str(input_file)
             else:
-                # Provide a default empty metadata
-                file_metadata = {'title': '', 'store': ''}
-                # TODO: Find a case with no metadata and check if breaks anything 
+                base_metadata['source'] = str(input_file)
+
+            if self.file_metadata is not None:
+                custom_metadata = self.file_metadata(input_file.name)
+                base_metadata.update(custom_metadata)
 
             if isinstance(data, List):
                 # Extend data_list with each item in the data list
                 data_list.extend([str(d) for d in data])
-                # For each item in the data list, add the file's metadata to metadata_list
-                metadata_list.extend([file_metadata for _ in data])
+                metadata_list.extend([base_metadata for _ in data])
             else:
-                # Add the single piece of data to data_list
                 data_list.append(str(data))
-                # Add the file's metadata to metadata_list
-                metadata_list.append(file_metadata)
-
-        self.file_token_counts = file_token_counts
+                metadata_list.append(base_metadata)
         
         # Build directory structure if input_dir is provided
         if hasattr(self, 'input_dir'):
@@ -227,10 +233,12 @@ class SimpleDirectoryReader(BaseReader):
                     if self.required_exts is not None and item.suffix not in self.required_exts:
                         continue
                     # Store file with its token count if available
-                    if hasattr(self, 'file_token_counts') and item.name in self.file_token_counts:
+                
+                    full_path = str(item.resolve())
+                    if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:
                         current_dict[item.name] = {
                             "type": "file",
-                            "token_count": self.file_token_counts[item.name]
+                            "token_count": self.file_token_counts[full_path]
                         }
                     else:
                         current_dict[item.name] = {"type": "file"}
