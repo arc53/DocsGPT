@@ -437,8 +437,9 @@ class Stream(Resource):
 
         try:
             question = data["question"]
+            token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             history = limit_chat_history(
-                json.loads(data.get("history", "[]")), gpt_model=gpt_model
+                json.loads(data.get("history", "[]")), token_limit
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
@@ -446,7 +447,6 @@ class Stream(Resource):
 
             index = data.get("index", None)
             chunks = int(data.get("chunks", 2))
-            token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
             agent_id = data.get("agent_id", None)
             agent_type = settings.AGENT_NAME
@@ -613,13 +613,13 @@ class Answer(Resource):
 
         try:
             question = data["question"]
+            token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             history = limit_chat_history(
-                json.loads(data.get("history", "[]")), gpt_model=gpt_model
+                json.loads(data.get("history", "[]")), token_limit
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             chunks = int(data.get("chunks", 2))
-            token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
             agent_type = settings.AGENT_NAME
 
