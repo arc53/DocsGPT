@@ -1,4 +1,5 @@
 """Base storage class for file system abstraction."""
+
 from abc import ABC, abstractmethod
 from typing import BinaryIO, List, Callable
 
@@ -7,7 +8,7 @@ class BaseStorage(ABC):
     """Abstract base class for storage implementations."""
 
     @abstractmethod
-    def save_file(self, file_data: BinaryIO, path: str) -> dict:
+    def save_file(self, file_data: BinaryIO, path: str, **kwargs) -> dict:
         """
         Save a file to storage.
 

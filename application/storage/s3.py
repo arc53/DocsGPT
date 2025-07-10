@@ -38,9 +38,17 @@ class S3Storage(BaseStorage):
             region_name=region_name,
         )
 
-    def save_file(self, file_data: BinaryIO, path: str) -> dict:
+    def save_file(
+        self,
+        file_data: BinaryIO,
+        path: str,
+        storage_class: str = "INTELLIGENT_TIERING",
+        **kwargs,
+    ) -> dict:
         """Save a file to S3 storage."""
-        self.s3.upload_fileobj(file_data, self.bucket_name, path)
+        self.s3.upload_fileobj(
+            file_data, self.bucket_name, path, ExtraArgs={"StorageClass": storage_class}
+        )
 
         region = getattr(settings, "SAGEMAKER_REGION", None)
 
