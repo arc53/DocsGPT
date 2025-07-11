@@ -4,7 +4,6 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
-import caretSort from '../assets/caret-sort.svg';
 import Edit from '../assets/edit.svg';
 import EyeView from '../assets/eye-view.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
@@ -323,146 +322,123 @@ export default function Documents({
           </button>
         </div>
         <div className="relative w-full">
-          <div className="dark:border-silver/40 overflow-hidden rounded-md border border-gray-300">
-            <div className="table-scroll overflow-x-auto">
-              <table className="w-full table-auto">
-                <thead>
-                  <tr className="dark:border-silver/40 border-b border-gray-300">
-                    <th className="text-sonic-silver w-[45%] px-4 py-3 text-left text-xs font-medium">
-                      {t('settings.documents.name')}
-                    </th>
-                    <th className="text-sonic-silver w-[30%] px-4 py-3 text-left text-xs font-medium">
-                      <div className="flex items-center justify-start">
-                        {t('settings.documents.date')}
-                        <img
-                          className="ml-2 cursor-pointer"
-                          onClick={() => refreshDocs('date')}
-                          src={caretSort}
-                          alt="sort"
-                        />
-                      </div>
-                    </th>
-                    <th className="text-sonic-silver w-[15%] px-4 py-3 text-left text-xs font-medium">
-                      <div className="flex items-center justify-start">
-                        <span className="hidden sm:inline">
-                          {t('settings.documents.tokenUsage')}
-                        </span>
-                        <span className="sm:hidden">
-                          {t('settings.documents.tokenUsage')}
-                        </span>
-                        <img
-                          className="ml-2 cursor-pointer"
-                          onClick={() => refreshDocs('tokens')}
-                          src={caretSort}
-                          alt="sort"
-                        />
-                      </div>
-                    </th>
-                    <th className="sr-only w-[10%] px-4 py-3">
-                      {t('settings.documents.actions')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="dark:divide-silver/40 divide-y divide-gray-300">
-                  {loading ? (
-                    <SkeletonLoader component="table" />
-                  ) : !currentDocuments?.length ? (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="bg-transparent py-4 text-center text-gray-700 dark:text-neutral-200"
-                      >
-                        {t('settings.documents.noData')}
-                      </td>
-                    </tr>
-                  ) : (
-                    currentDocuments.map((document, index) => {
-                      const docId = document.id ? document.id.toString() : '';
+          {loading ? (
+            <SkeletonLoader />
+          ) : !currentDocuments?.length ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <img
+                src={NoFilesIcon}
+                alt={t('settings.documents.noData')}
+                className="mx-auto mb-6 h-32 w-32"
+              />
+              <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+                {t('settings.documents.noData')}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-6">
+              {currentDocuments.map((document, index) => {
+                const docId = document.id ? document.id.toString() : '';
 
-                      return (
-                        <tr key={docId} className="group transition-colors">
-                          <td
-                            className="max-w-0 min-w-48 truncate px-4 py-4 text-sm font-semibold text-gray-700 group-hover:bg-gray-50 dark:text-[#E0E0E0] dark:group-hover:bg-gray-800/50"
+                return (
+                  <div key={docId} className="relative">
+                    <div
+                      className={`flex h-[123px] w-[308px] flex-col justify-between rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
+                        activeMenuId === docId || syncMenuState.docId === docId
+                          ? 'scale-[1.02] shadow-lg'
+                          : 'hover:scale-[1.02] hover:shadow-lg'
+                      }`}
+                    >
+                      <div className="w-full">
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <h3
+                            className="font-inter dark:text-bright-gray line-clamp-3 text-[13px] leading-[18px] font-semibold break-words text-[#18181B]"
                             title={document.name}
                           >
                             {document.name}
-                          </td>
-                          <td className="px-4 py-4 text-sm whitespace-nowrap text-gray-700 group-hover:bg-gray-50 dark:text-[#E0E0E0] dark:group-hover:bg-gray-800/50">
-                            {document.date ? formatDate(document.date) : ''}
-                          </td>
-                          <td className="px-4 py-4 text-sm whitespace-nowrap text-gray-700 group-hover:bg-gray-50 dark:text-[#E0E0E0] dark:group-hover:bg-gray-800/50">
+                          </h3>
+                          <div
+                            ref={getMenuRef(docId)}
+                            className="relative flex items-center justify-end"
+                          >
+                            {document.syncFrequency && (
+                              <DropdownMenu
+                                name={t('settings.documents.sync')}
+                                options={syncOptions}
+                                onSelect={(value: string) => {
+                                  handleManageSync(document, value);
+                                }}
+                                defaultValue={document.syncFrequency}
+                                icon={SyncIcon}
+                                isOpen={
+                                  syncMenuState.docId === docId &&
+                                  syncMenuState.isOpen
+                                }
+                                onOpenChange={(isOpen) => {
+                                  setSyncMenuState((prev) => ({
+                                    ...prev,
+                                    isOpen,
+                                    docId: isOpen ? docId : null,
+                                    document: isOpen ? document : null,
+                                  }));
+                                }}
+                                anchorRef={getMenuRef(docId)}
+                                position="bottom-left"
+                                offset={{ x: 24, y: -24 }}
+                                className="min-w-[120px]"
+                              />
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMenuClick(e, docId);
+                              }}
+                              className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                              aria-label="Open menu"
+                              data-testid={`menu-button-${docId}`}
+                            >
+                              <img
+                                src={ThreeDots}
+                                alt={t('convTile.menu')}
+                                className="opacity-60 hover:opacity-100"
+                              />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-auto flex items-center justify-between pt-3">
+                        <div className="font-inter text-[12px] leading-[18px] font-[500] text-[#848484] dark:text-[#848484]">
+                          {document.date ? formatDate(document.date) : ''}
+                        </div>
+                        <div className="font-inter text-[12px] leading-[18px]">
+                          <span className="dark:text-bright-gray font-[400] text-[#18181B]">
+                            {t('settings.documents.tokenUsage')}:
+                          </span>
+                          <span className="ml-1 font-[400] text-[#848484] dark:text-[#848484]">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}
-                          </td>
-                          <td
-                            className="px-4 py-4 text-right group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div
-                              ref={getMenuRef(docId)}
-                              className="relative flex items-center justify-end gap-3"
-                            >
-                              {document.syncFrequency && (
-                                <DropdownMenu
-                                  name={t('settings.documents.sync')}
-                                  options={syncOptions}
-                                  onSelect={(value: string) => {
-                                    handleManageSync(document, value);
-                                  }}
-                                  defaultValue={document.syncFrequency}
-                                  icon={SyncIcon}
-                                  isOpen={
-                                    syncMenuState.docId === docId &&
-                                    syncMenuState.isOpen
-                                  }
-                                  onOpenChange={(isOpen) => {
-                                    setSyncMenuState((prev) => ({
-                                      ...prev,
-                                      isOpen,
-                                      docId: isOpen ? docId : null,
-                                      document: isOpen ? document : null,
-                                    }));
-                                  }}
-                                  anchorRef={getMenuRef(docId)}
-                                  position="bottom-left"
-                                  offset={{ x: 24, y: -24 }}
-                                  className="min-w-[120px]"
-                                />
-                              )}
-                              <button
-                                onClick={(e) => handleMenuClick(e, docId)}
-                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
-                                aria-label="Open menu"
-                                data-testid={`menu-button-${docId}`}
-                              >
-                                <img
-                                  src={ThreeDots}
-                                  alt={t('convTile.menu')}
-                                  className="h-4 w-4 opacity-60 hover:opacity-100"
-                                />
-                              </button>
-                              <ContextMenu
-                                isOpen={activeMenuId === docId}
-                                setIsOpen={(isOpen) => {
-                                  setActiveMenuId(isOpen ? docId : null);
-                                }}
-                                options={getActionOptions(index, document)}
-                                anchorRef={getMenuRef(docId)}
-                                position="bottom-left"
-                                offset={{ x: 48, y: 0 }}
-                                className="z-50"
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <ContextMenu
+                      isOpen={activeMenuId === docId}
+                      setIsOpen={(isOpen) => {
+                        setActiveMenuId(isOpen ? docId : null);
+                      }}
+                      options={getActionOptions(index, document)}
+                      anchorRef={getMenuRef(docId)}
+                      position="bottom-left"
+                      offset={{ x: 48, y: 0 }}
+                      className="z-50"
+                    />
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
       </div>
 
