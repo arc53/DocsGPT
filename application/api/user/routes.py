@@ -168,7 +168,7 @@ def handle_image_upload(
             filename = secure_filename(file.filename)
             upload_path = f"{settings.UPLOAD_FOLDER.rstrip('/')}/{user}/{base_path.rstrip('/')}/{uuid.uuid4()}_{filename}"
             try:
-                storage.save_file(file, upload_path)
+                storage.save_file(file, upload_path, storage_class="STANDARD")
                 image_url = upload_path
             except Exception as e:
                 current_app.logger.error(f"Error uploading image: {e}")
