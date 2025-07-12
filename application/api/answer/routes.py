@@ -599,6 +599,9 @@ class Answer(Resource):
             "isNoneDoc": fields.Boolean(
                 required=False, description="Flag indicating if no document is used"
             ),
+            "attachments": fields.List(
+                fields.String, required=False, description="List of attachment IDs"
+            ),
         },
     )
 
@@ -618,6 +621,7 @@ class Answer(Resource):
             )
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
+            attachment_ids = data.get("attachments", []) 
             chunks = int(data.get("chunks", 2))
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
@@ -647,10 +651,14 @@ class Answer(Resource):
             if not decoded_token:
                 return make_response({"error": "Unauthorized"}, 401)
 
+            attachments = get_attachments_content(
+                attachment_ids, decoded_token.get("sub")
+            )
+
             prompt = get_prompt(prompt_id)
 
             logger.info(
-                f"/api/answer - request_data: {data}, source: {source}",
+                f"/api/answer - request_data: {data}, source: {source}, attachments: {len(attachments)}",
                 extra={"data": json.dumps({"request_data": data, "source": source})},
             )
 
@@ -664,6 +672,7 @@ class Answer(Resource):
                 prompt=prompt,
                 chat_history=history,
                 decoded_token=decoded_token,
+                attachments=attachments,
             )
 
             retriever = RetrieverCreator.create_retriever(
@@ -694,6 +703,7 @@ class Answer(Resource):
                 isNoneDoc=data.get("isNoneDoc"),
                 index=None,
                 should_save_conversation=False,
+                attachment_ids=attachment_ids,
             ):
                 try:
                     event_data = line.replace("data: ", "").strip()
@@ -744,6 +754,7 @@ class Answer(Resource):
                     llm,
                     decoded_token,
                     api_key=user_api_key,
+                    attachment_ids=attachment_ids,
                 )
             )
 
