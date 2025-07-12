@@ -80,10 +80,33 @@ def check_required_fields(data, required_fields):
             jsonify(
                 {
                     "success": False,
-                    "message": f"Missing fields: {', '.join(missing_fields)}",
+                    "message": f"Missing required fields: {', '.join(missing_fields)}",
                 }
             ),
             400,
+        )
+    return None
+
+
+def validate_required_fields(data, required_fields):
+    missing_fields = []
+    empty_fields = []
+
+    for field in required_fields:
+        if field not in data:
+            missing_fields.append(field)
+        elif not data[field]:
+            empty_fields.append(field)
+
+    errors = []
+    if missing_fields:
+        errors.append(f"Missing required fields: {', '.join(missing_fields)}")
+    if empty_fields:
+        errors.append(f"Empty values in required fields: {', '.join(empty_fields)}")
+
+    if errors:
+        return make_response(
+            jsonify({"success": False, "message": " | ".join(errors)}), 400
         )
     return None
 

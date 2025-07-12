@@ -110,7 +110,7 @@ export default function AgentPreview() {
   }, [queries]);
   return (
     <div>
-      <div className="flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden dark:bg-raisin-black">
+      <div className="dark:bg-raisin-black flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
         <div className="h-[512px] w-full overflow-y-auto">
           <ConversationMessages
             handleQuestion={handleQuestion}
@@ -128,7 +128,7 @@ export default function AgentPreview() {
             showToolButton={selectedAgent ? false : true}
             autoFocus={false}
           />
-          <p className="w-full self-center bg-transparent pt-2 text-center text-xs text-gray-4000 dark:text-sonic-silver md:inline">
+          <p className="text-gray-4000 dark:text-sonic-silver w-full self-center bg-transparent pt-2 text-center text-xs md:inline">
             This is a preview of the agent. You can publish it to start using it
             in conversations.
           </p>

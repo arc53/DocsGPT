@@ -42,6 +42,7 @@ from application.utils import (
     generate_image_url,
     safe_filename,
     validate_function_name,
+    validate_required_fields,
 )
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -1234,7 +1235,6 @@ class CreateAgent(Resource):
         if request.content_type == "application/json":
             data = request.get_json()
         else:
-            print(request.form)
             data = request.form.to_dict()
             if "tools" in data:
                 try:
@@ -1242,11 +1242,18 @@ class CreateAgent(Resource):
                 except json.JSONDecodeError:
                     data["tools"] = []
         print(f"Received data: {data}")
+
         if data.get("status") not in ["draft", "published"]:
             return make_response(
-                jsonify({"success": False, "message": "Invalid status"}), 400
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Status must be either 'draft' or 'published'",
+                    }
+                ),
+                400,
             )
-        required_fields = []
+
         if data.get("status") == "published":
             required_fields = [
                 "name",
@@ -1259,7 +1266,7 @@ class CreateAgent(Resource):
             ]
         else:
             required_fields = ["name"]
-        missing_fields = check_required_fields(data, required_fields)
+        missing_fields = validate_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
 
@@ -1270,7 +1277,7 @@ class CreateAgent(Resource):
             )
 
         try:
-            key = str(uuid.uuid4())
+            key = str(uuid.uuid4()) if data.get("status") == "published" else ""
             new_agent = {
                 "user": user,
                 "name": data.get("name"),
@@ -1455,6 +1462,7 @@ class UpdateAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "No update data provided"}), 400
             )
+        newly_generated_key = None
         final_status = update_fields.get("status", existing_agent.get("status"))
         if final_status == "published":
             required_published_fields = [
@@ -1484,6 +1492,10 @@ class UpdateAgent(Resource):
                     ),
                     400,
                 )
+
+            if not existing_agent.get("key"):
+                newly_generated_key = str(uuid.uuid4())
+                update_fields["key"] = newly_generated_key
         update_fields["updatedAt"] = datetime.datetime.now(datetime.timezone.utc)
 
         try:
@@ -1506,7 +1518,7 @@ class UpdateAgent(Resource):
                     jsonify(
                         {
                             "success": True,
-                            "message": "Agent found, but no changes were applied.",
+                            "message": "Agent found, but no changes were applied",
                         }
                     ),
                     304,
@@ -1519,14 +1531,15 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
             )
+        response_data = {
+            "success": True,
+            "id": agent_id,
+            "message": "Agent updated successfully",
+        }
+        if newly_generated_key:
+            response_data["key"] = newly_generated_key
         return make_response(
-            jsonify(
-                {
-                    "success": True,
-                    "id": agent_id,
-                    "message": "Agent updated successfully",
-                }
-            ),
+            jsonify(response_data),
             200,
         )
 
