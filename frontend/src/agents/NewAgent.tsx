@@ -320,11 +320,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       !isEqual(agent, initialAgentRef.current) || imageFile !== null;
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile]);
-
-  useEffect(() => {
-    console.log(initialAgentRef.current);
-    console.log(agent);
-  }, [agent, initialAgentRef.current]);
   return (
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
@@ -705,7 +700,7 @@ function AddPromptModal({
       setNewPromptContent('');
       onSelect?.(newPromptName, newPrompt.id, newPromptContent);
     } catch (error) {
-      console.error(error);
+      console.error('Error adding prompt:', error);
     }
   };
   return (
