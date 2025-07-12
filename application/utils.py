@@ -92,21 +92,11 @@ def get_hash(data):
     return hashlib.md5(data.encode(), usedforsecurity=False).hexdigest()
 
 
-def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
+def limit_chat_history(history, max_token_limit):
     """
     Limits chat history based on token count.
     Returns a list of messages that fit within the token limit.
     """
-    from application.core.settings import settings
-
-    max_token_limit = (
-        max_token_limit
-        if max_token_limit
-        and max_token_limit
-        < settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
-        else settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
-    )
-
     if not history:
         return []
 
