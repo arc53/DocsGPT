@@ -3322,8 +3322,13 @@ class DeleteTool(Resource):
 @user_ns.route("/api/get_chunks")
 class GetChunks(Resource):
     @api.doc(
-        description="Retrieves all chunks associated with a document",
-        params={"id": "The document ID"},
+        description="Retrieves chunks from a document, optionally filtered by file path",
+        params={
+            "id": "The document ID",
+            "page": "Page number for pagination",
+            "per_page": "Number of chunks per page",
+            "file_path": "Optional: Filter chunks by relative file path"
+        },
     )
     def get(self):
         decoded_token = request.decoded_token
@@ -3333,6 +3338,7 @@ class GetChunks(Resource):
         doc_id = request.args.get("id")
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 10))
+        file_path = request.args.get("file_path")
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
@@ -3344,6 +3350,22 @@ class GetChunks(Resource):
         try:
             store = get_vector_store(doc_id)
             chunks = store.get_chunks()
+            
+            if file_path:
+                filtered_chunks = []
+                for chunk in chunks:
+                    metadata = chunk.get("metadata", {})
+                    source = metadata.get("source", "")
+                    
+                    if isinstance(source, str) and source.endswith(file_path):
+                        filtered_chunks.append(chunk)
+                    elif isinstance(source, list):
+                        for src in source:
+                            if isinstance(src, str) and src.endswith(file_path):
+                                filtered_chunks.append(chunk)
+                                break
+                chunks = filtered_chunks
+            
             total_chunks = len(chunks)
             start = (page - 1) * per_page
             end = start + per_page
@@ -3356,6 +3378,7 @@ class GetChunks(Resource):
                         "per_page": per_page,
                         "total": total_chunks,
                         "chunks": paginated_chunks,
+                        "file_path": file_path if file_path else None
                     }
                 ),
                 200,
