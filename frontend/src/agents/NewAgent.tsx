@@ -1,3 +1,4 @@
+import isEqual from 'lodash/isEqual';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -8,6 +9,7 @@ import SourceIcon from '../assets/source.svg';
 import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
 import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
+import Spinner from '../components/Spinner';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
@@ -66,34 +68,41 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
+  const [hasChanges, setHasChanges] = useState(false);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
 
+  const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const toolAnchorButtonRef = useRef<HTMLButtonElement>(null);
 
   const modeConfig = {
     new: {
       heading: 'New Agent',
-      buttonText: 'Create Agent',
+      buttonText: 'Publish',
       showDelete: false,
       showSaveDraft: true,
       showLogs: false,
       showAccessDetails: false,
+      trackChanges: false,
     },
     edit: {
       heading: 'Edit Agent',
-      buttonText: 'Save Changes',
+      buttonText: 'Save',
       showDelete: true,
       showSaveDraft: false,
       showLogs: true,
       showAccessDetails: true,
+      trackChanges: true,
     },
     draft: {
       heading: 'New Agent (Draft)',
-      buttonText: 'Publish Draft',
+      buttonText: 'Publish',
       showDelete: true,
       showSaveDraft: true,
       showLogs: false,
       showAccessDetails: false,
+      trackChanges: false,
     },
   };
   const chunks = ['0', '2', '4', '6', '8', '10'];
@@ -144,23 +153,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     else formData.append('tools', '[]');
 
     try {
+      setDraftLoading(true);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
       if (!response.ok) throw new Error('Failed to create agent draft');
       const data = await response.json();
-      if (effectiveMode === 'new') {
-        setEffectiveMode('draft');
-        setAgent((prev) => ({
-          ...prev,
-          id: data.id,
-          image: data.image || prev.image,
-        }));
-      }
+
+      const updatedAgent = {
+        ...agent,
+        id: data.id || agent.id,
+        image: data.image || agent.image,
+      };
+      setAgent(updatedAgent);
+
+      if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
       console.error('Error saving draft:', error);
       throw new Error('Failed to save draft');
+    } finally {
+      setDraftLoading(false);
     }
   };
 
@@ -181,26 +194,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     else formData.append('tools', '[]');
 
     try {
+      setPublishLoading(true);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
       if (!response.ok) throw new Error('Failed to publish agent');
       const data = await response.json();
-      if (data.id) setAgent((prev) => ({ ...prev, id: data.id }));
-      if (data.key) setAgent((prev) => ({ ...prev, key: data.key }));
+
+      const updatedAgent = {
+        ...agent,
+        id: data.id || agent.id,
+        key: data.key || agent.key,
+        status: 'published',
+        image: data.image || agent.image,
+      };
+      setAgent(updatedAgent);
+      initialAgentRef.current = updatedAgent;
+
       if (effectiveMode === 'new' || effectiveMode === 'draft') {
         setEffectiveMode('edit');
-        setAgent((prev) => ({
-          ...prev,
-          status: 'published',
-          image: data.image || prev.image,
-        }));
         setAgentDetails('ACTIVE');
       }
+      setImageFile(null);
     } catch (error) {
       console.error('Error publishing agent:', error);
       throw new Error('Failed to publish agent');
+    } finally {
+      setPublishLoading(false);
     }
   };
 
@@ -243,6 +264,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         if (data.tools) setSelectedToolIds(new Set(data.tools));
         if (data.status === 'draft') setEffectiveMode('draft');
         setAgent(data);
+        initialAgentRef.current = data;
       };
       getAgent();
     }
@@ -285,7 +307,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     if (isPublishable()) dispatch(setSelectedAgent(agent));
-  }, [agent, dispatch]);
+
+    if (!modeConfig[effectiveMode].trackChanges) {
+      setHasChanges(true);
+      return;
+    }
+    if (!initialAgentRef.current) {
+      setHasChanges(false);
+      return;
+    }
+    const isChanged =
+      !isEqual(agent, initialAgentRef.current) || imageFile !== null;
+    setHasChanges(isChanged);
+  }, [agent, dispatch, effectiveMode, imageFile]);
   return (
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
@@ -321,10 +355,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
             <button
-              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-28 rounded-3xl border border-solid py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={handleSaveDraft}
             >
-              Save Draft
+              <span className="flex items-center justify-center transition-all duration-200">
+                {draftLoading ? (
+                  <Spinner size="small" color="#976af3" />
+                ) : (
+                  'Save Draft'
+                )}
+              </span>
             </button>
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
@@ -345,11 +385,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </button>
           )}
           <button
-            disabled={!isPublishable()}
-            className={`${!isPublishable() && 'cursor-not-allowed opacity-30'} bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm font-medium text-white`}
+            disabled={!isPublishable() || !hasChanges}
+            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-purple-30 hover:bg-violets-are-blue flex w-28 items-center justify-center rounded-3xl py-2 text-sm font-medium text-white`}
             onClick={handlePublish}
           >
-            Publish
+            <span className="flex items-center justify-center transition-all duration-200">
+              {publishLoading ? (
+                <Spinner size="small" color="white" />
+              ) : (
+                modeConfig[effectiveMode].buttonText
+              )}
+            </span>
           </button>
         </div>
       </div>
@@ -654,7 +700,7 @@ function AddPromptModal({
       setNewPromptContent('');
       onSelect?.(newPromptName, newPrompt.id, newPromptContent);
     } catch (error) {
-      console.error(error);
+      console.error('Error adding prompt:', error);
     }
   };
   return (
