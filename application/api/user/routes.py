@@ -7,6 +7,8 @@ import shutil
 import uuid
 from functools import wraps
 from typing import Optional, Tuple
+import tempfile
+import zipfile
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -3608,4 +3610,52 @@ class ServeImage(Resource):
             current_app.logger.error(f"Error serving image: {e}")
             return make_response(
                 jsonify({"success": False, "message": "Error retrieving image"}), 500
+            )
+
+
+@user_ns.route("/api/directory_structure")
+class DirectoryStructure(Resource):
+    @api.doc(
+        description="Get the directory structure for a document",
+        params={"id": "The document ID"},
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        
+        user = decoded_token.get("sub")
+        doc_id = request.args.get("id")
+        
+        if not doc_id:
+            return make_response(
+                jsonify({"error": "Document ID is required"}), 400
+            )
+            
+        if not ObjectId.is_valid(doc_id):
+            return make_response(jsonify({"error": "Invalid document ID"}), 400)
+            
+        try:
+            doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+            if not doc:
+                return make_response(
+                    jsonify({"error": "Document not found or access denied"}), 404
+                )
+                
+            directory_structure = doc.get("directory_structure", {})
+            
+            return make_response(
+                jsonify({
+                    "success": True,
+                    "directory_structure": directory_structure,
+                    "base_path": doc.get("file_path", "")
+                }), 200
+            )
+            
+        except Exception as e:
+            current_app.logger.error(
+                f"Error retrieving directory structure: {e}", exc_info=True
+            )
+            return make_response(
+                jsonify({"success": False, "error": str(e)}), 500
             )
