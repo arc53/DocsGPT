@@ -1264,11 +1264,16 @@ class CreateAgent(Resource):
                 "prompt_id",
                 "agent_type",
             ]
+            validate_fields = ["name", "description", "prompt_id", "agent_type"]
         else:
             required_fields = ["name"]
-        missing_fields = validate_required_fields(data, required_fields)
+            validate_fields = []
+        missing_fields = check_required_fields(data, required_fields)
+        invalid_fields = validate_required_fields(data, validate_fields)
         if missing_fields:
             return missing_fields
+        if invalid_fields:
+            return invalid_fields
 
         image_url, error = handle_image_upload(request, "", user, storage)
         if error:
