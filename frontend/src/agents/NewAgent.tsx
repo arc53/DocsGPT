@@ -232,7 +232,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
         id: tool.id,
-        label: tool.displayName,
+        label: tool.customName,
         icon: `/toolIcons/tool_${tool.name}.svg`,
       }));
       setUserTools(tools);
