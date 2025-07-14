@@ -25,6 +25,7 @@
     "copy-to-clipboard": "^3.3.3",
     "i18next": "^24.2.0",
     "i18next-browser-languagedetector": "^8.0.2",
+    "lodash": "^4.17.21",
     "mermaid": "^11.6.0",
     "prop-types": "^15.8.1",
     "react": "^19.1.0",
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.10",
+    "@types/lodash": "^4.17.20",
     "@types/mermaid": "^9.1.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.0.0",
