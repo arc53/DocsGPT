@@ -1,5 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import DocumentChunks from './DocumentChunks';
+import ContextMenu, { MenuOption } from './ContextMenu';
 import userService from '../api/services/userService';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -8,9 +11,6 @@ import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import OutlineSource from '../assets/outline-source.svg';
 import Trash from '../assets/red-trash.svg';
-import Spinner from './Spinner';
-import { useTranslation } from 'react-i18next';
-import ContextMenu, { MenuOption } from './ContextMenu';
 
 interface FileNode {
   type?: string;
@@ -45,6 +45,18 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const menuRefs = useRef<{
     [key: string]: React.RefObject<HTMLDivElement | null>;
   }>({});
+  const [selectedFile, setSelectedFile] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const handleFileClick = (fileName: string) => {
+    const fullPath = [...currentPath, fileName].join('/');
+    setSelectedFile({
+      id: fullPath,
+      name: fileName,
+    });
+  };
 
   useEffect(() => {
     const fetchDirectoryStructure = async () => {
@@ -129,7 +141,11 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     setActiveMenuId(itemId);
   };
 
-  const getActionOptions = (name: string, isFile: boolean): MenuOption[] => {
+  const getActionOptions = (
+    name: string,
+    isFile: boolean,
+    itemId: string,
+  ): MenuOption[] => {
     const options: MenuOption[] = [];
 
     if (isFile) {
@@ -138,8 +154,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         label: t('settings.documents.view'),
         onClick: (event: React.SyntheticEvent) => {
           event.stopPropagation();
-          console.log('View file:', name);
-          // View file action will be implemented later
+          handleFileClick(name);
         },
         iconWidth: 18,
         iconHeight: 18,
@@ -195,32 +210,89 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       </div>
     );
   };
+
+  const calculateDirectoryStats = (
+    structure: DirectoryStructure,
+  ): { totalSize: number; totalTokens: number } => {
+    let totalSize = 0;
+    let totalTokens = 0;
+
+    Object.entries(structure).forEach(([_, node]) => {
+      if (node.type) {
+        // It's a file
+        totalSize += node.size_bytes || 0;
+        totalTokens += node.token_count || 0;
+      } else {
+        // It's a directory, recurse
+        const stats = calculateDirectoryStats(node);
+        totalSize += stats.totalSize;
+        totalTokens += stats.totalTokens;
+      }
+    });
+
+    return { totalSize, totalTokens };
+  };
+
   const renderFileTree = (structure: DirectoryStructure): React.ReactNode[] => {
+    // Separate directories and files
     const entries = Object.entries(structure);
     const directories = entries.filter(([_, node]) => !node.type);
     const files = entries.filter(([_, node]) => node.type);
 
+    // Create parent directory row
+    const parentRow =
+      currentPath.length > 0
+        ? [
+            <tr
+              key="parent-dir"
+              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+              onClick={navigateUp}
+            >
+              <td className="px-4 py-2">
+                <div className="flex items-center">
+                  <img
+                    src={FolderIcon}
+                    alt="Parent folder"
+                    className="mr-2 h-4 w-4"
+                  />
+                  <span className="text-sm dark:text-[#E0E0E0]">..</span>
+                </div>
+              </td>
+              <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
+              <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
+              <td className="w-10 px-4 py-2 text-sm"></td>
+            </tr>,
+          ]
+        : [];
+
+    // Render directories first, then files
     return [
+      ...parentRow,
       ...directories.map(([name, node]) => {
         const itemId = `dir-${name}`;
         const menuRef = getMenuRef(itemId);
+        const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
           <tr
             key={itemId}
-            className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]"
+            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+            onClick={() => navigateToDirectory(name)}
           >
             <td className="px-4 py-2">
-              <div
-                className="flex cursor-pointer items-center"
-                onClick={() => navigateToDirectory(name)}
-              >
+              <div className="flex items-center">
                 <img src={FolderIcon} alt="Folder" className="mr-2 h-4 w-4" />
-                <span className="text-sm">{name}</span>
+                <span className="text-sm dark:text-[#E0E0E0]">{name}</span>
               </div>
             </td>
-            <td className="px-4 py-2 text-sm">-</td>
-            <td className="px-4 py-2 text-sm">-</td>
+            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
+              {dirStats.totalTokens > 0
+                ? dirStats.totalTokens.toLocaleString()
+                : '-'}
+            </td>
+            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
+              {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
+            </td>
             <td className="w-10 px-4 py-2 text-sm">
               <div ref={menuRef} className="relative">
                 <button
@@ -239,7 +311,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   setIsOpen={(isOpen) =>
                     setActiveMenuId(isOpen ? itemId : null)
                   }
-                  options={getActionOptions(name, false)}
+                  options={getActionOptions(name, false, itemId)}
                   anchorRef={menuRef}
                   position="bottom-left"
                   offset={{ x: 0, y: 8 }}
@@ -256,18 +328,19 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         return (
           <tr
             key={itemId}
-            className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]"
+            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+            onClick={() => handleFileClick(name)}
           >
             <td className="px-4 py-2">
               <div className="flex items-center">
                 <img src={FileIcon} alt="File" className="mr-2 h-4 w-4" />
-                <span className="text-sm">{name}</span>
+                <span className="text-sm dark:text-[#E0E0E0]">{name}</span>
               </div>
             </td>
-            <td className="px-4 py-2 text-sm">
+            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
               {node.token_count?.toLocaleString() || '-'}
             </td>
-            <td className="px-4 py-2 text-sm">
+            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
               {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
             </td>
             <td className="w-10 px-4 py-2 text-sm">
@@ -288,7 +361,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   setIsOpen={(isOpen) =>
                     setActiveMenuId(isOpen ? itemId : null)
                   }
-                  options={getActionOptions(name, true)}
+                  options={getActionOptions(name, true, itemId)}
                   anchorRef={menuRef}
                   position="bottom-left"
                   offset={{ x: 0, y: 8 }}
@@ -300,57 +373,47 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       }),
     ];
   };
-
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
-
-  if (error) {
-    return <div className="p-4 text-center text-red-500">{error}</div>;
-  }
-
-  if (!directoryStructure) {
-    return (
-      <div className="p-4 text-center text-gray-500">
-        No directory structure available
-      </div>
-    );
-  }
-
   const currentDirectory = getCurrentDirectory();
 
   return (
-    <div className="w-full">
-      <div className="mb-4">{renderPathNavigation()}</div>
+    <>
+      {selectedFile ? (
+        <DocumentChunks
+          documentId={docId}
+          documentName={selectedFile.name}
+          handleGoBack={() => setSelectedFile(null)}
+          path={selectedFile.id}
+        />
+      ) : (
+        <div className="mt-8 flex flex-col">
+          <div className="mb-4">{renderPathNavigation()}</div>
 
-      <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-        <table className="min-w-full table-fixed bg-white dark:bg-gray-900">
-          <thead className="bg-gray-100 dark:bg-gray-800">
-            <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-              <th className="w-3/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                Name
-              </th>
-              <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                Tokens
-              </th>
-              <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                Size
-              </th>
-              <th className="w-[60px] px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="[&>tr:last-child]:border-b-0">
-            {renderFileTree(currentDirectory)}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
+            <table className="min-w-full table-fixed bg-transparent">
+              <thead className="bg-gray-100 dark:bg-[#27282D]">
+                <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
+                  <th className="w-3/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                    Name
+                  </th>
+                  <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                    Tokens
+                  </th>
+                  <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                    Size
+                  </th>
+                  <th className="w-[60px] px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child]:border-b-0">
+                {renderFileTree(currentDirectory)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
