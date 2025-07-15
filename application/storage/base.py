@@ -93,3 +93,16 @@ class BaseStorage(ABC):
             List[str]: List of file paths
         """
         pass
+        
+    @abstractmethod
+    def is_directory(self, path: str) -> bool:
+        """
+        Check if a path is a directory.
+
+        Args:
+            path: Path to check
+
+        Returns:
+            bool: True if the path is a directory
+        """
+        pass
