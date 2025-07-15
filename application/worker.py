@@ -221,31 +221,53 @@ def ingest_worker(
     
     storage = StorageCreator.get_storage()
     
-    logging.info(f"Ingest file: {file_path}", extra={"user": user, "job": job_name})
+    logging.info(f"Ingest path: {file_path}", extra={"user": user, "job": job_name})
 
     # Create temporary working directory
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             os.makedirs(temp_dir, exist_ok=True)
 
-            # Download file from storage to temp directory
-            temp_filename = os.path.basename(file_path)
-            temp_file_path = os.path.join(temp_dir, temp_filename)
-            
-            file_data = storage.get_file(file_path)
+            if storage.is_directory(file_path):
+                # Handle directory case
+                logging.info(f"Processing directory: {file_path}")
+                files_list = storage.list_files(file_path)
+                
+                for storage_file_path in files_list:
+                    if storage.is_directory(storage_file_path):
+                        continue
+                        
+                    # Create relative path structure in temp directory
+                    rel_path = os.path.relpath(storage_file_path, file_path)
+                    local_file_path = os.path.join(temp_dir, rel_path)
+                    
+                    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                    
+                    # Download file
+                    try:
+                        file_data = storage.get_file(storage_file_path)
+                        with open(local_file_path, "wb") as f:
+                            f.write(file_data.read())
+                    except Exception as e:
+                        logging.error(f"Error downloading file {storage_file_path}: {e}")
+                        continue
+            else:
+                # Handle single file case
+                temp_filename = os.path.basename(file_path)
+                temp_file_path = os.path.join(temp_dir, temp_filename)
+                
+                file_data = storage.get_file(file_path)
+                with open(temp_file_path, "wb") as f:
+                    f.write(file_data.read())
 
-            with open(temp_file_path, "wb") as f:
-                f.write(file_data.read())
+                # Handle zip files
+                if temp_filename.endswith(".zip"):
+                    logging.info(f"Extracting zip file: {temp_filename}")
+                    extract_zip_recursive(
+                        temp_file_path, temp_dir, current_depth=0, max_depth=RECURSION_DEPTH
+                    )
 
             self.update_state(state="PROGRESS", meta={"current": 1})
-
-            # Handle zip files
-            if temp_filename.endswith(".zip"):
-                logging.info(f"Extracting zip file: {temp_filename}")
-                extract_zip_recursive(
-                    temp_file_path, temp_dir, current_depth=0, max_depth=RECURSION_DEPTH
-                )
-
             if sample:
                 logging.info(f"Sample mode enabled. Using {limit} documents.")
 
