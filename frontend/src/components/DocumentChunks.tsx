@@ -7,11 +7,13 @@ import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
+import OutlineSource from '../assets/outline-source.svg';
 import Spinner from '../components/Spinner';
-import Input from '../components/Input';
 import ChunkModal from '../modals/ChunkModal';
 import { ActiveState } from '../models/misc';
 import { ChunkType } from '../settings/types';
+import EditIcon from '../assets/edit.svg';
+import Pagination from './DocumentPagination';
 
 interface DocumentChunksProps {
   documentId: string;
@@ -42,6 +44,8 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
     state: ActiveState;
     chunk: ChunkType | null;
   }>({ state: 'INACTIVE', chunk: null });
+
+  const pathParts = path ? path.split('/') : [];
 
   const fetchChunks = () => {
     setLoading(true);
@@ -138,40 +142,71 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
     fetchChunks();
   }, [page, perPage]);
 
+  const filteredChunks = paginatedChunks.filter((chunk) => {
+    if (!chunk.metadata?.title) return true;
+    return chunk.metadata.title
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
+  });
+
   return (
     <div className="mt-8 flex flex-col">
-      {showHeader && (
-        <div className="text-eerie-black dark:text-bright-gray mb-3 flex items-center gap-3 text-sm">
+      <div className="mb-4 flex items-center">
+        {showHeader && (
           <button
-            className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={handleGoBack}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-          <p className="mt-px">{t('settings.documents.backToAll')}</p>
+        )}
+
+        <div className="flex items-center">
+          <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
+          <span className="text-[#7D54D1] font-semibold text-base leading-6">
+            {documentName}
+          </span>
+
+          {pathParts.length > 0 && (
+            <>
+              <span className="mx-1 text-gray-500">/</span>
+              {pathParts.map((part, index) => (
+                <React.Fragment key={index}>
+                  <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300">
+                    {part}
+                  </span>
+                  {index < pathParts.length - 1 && (
+                    <span className="mx-1 text-gray-500">/</span>
+                  )}
+                </React.Fragment>
+              ))}
+            </>
+          )}
         </div>
-      )}
-      <div className="my-3 flex items-center justify-between gap-1">
-        <div className="text-eerie-black dark:text-bright-gray flex w-full items-center gap-2 sm:w-auto">
-          <p className="hidden text-2xl font-semibold sm:flex">{`${totalChunks} ${t('settings.documents.chunks')}`}</p>
-          <label htmlFor="chunk-search-input" className="sr-only">
-            {t('settings.documents.searchPlaceholder')}
-          </label>
-          <Input
-            maxLength={256}
-            placeholder={t('settings.documents.searchPlaceholder')}
-            name="chunk-search-input"
-            type="text"
-            id="chunk-search-input"
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-            }}
-            borderVariant="thin"
-          />
+      </div>
+
+      <div className="my-3 flex items-center justify-between gap-3">
+        <div className="flex-1 flex items-center border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-md overflow-hidden h-[38px]">
+          <div className="px-4 flex items-center text-gray-700 dark:text-[#E0E0E0] font-medium whitespace-nowrap h-full">
+            {totalChunks > 999999
+              ? `${(totalChunks / 1000000).toFixed(2)}M`
+              : totalChunks > 999
+                ? `${(totalChunks / 1000).toFixed(2)}K`
+                : totalChunks} {t('settings.documents.chunks')}
+          </div>
+          <div className="h-full w-[1px] bg-[#D1D9E0] dark:bg-[#6A6A6A]"></div>
+          <div className="flex-1 h-full">
+            <input
+              type="text"
+              placeholder={t('settings.documents.searchPlaceholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full h-full px-3 py-2 bg-transparent border-none outline-none font-normal text-[13.56px] leading-[100%] dark:text-[#E0E0E0]"
+            />
+          </div>
         </div>
         <button
-          className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+          className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white shrink-0"
           title={t('settings.documents.addNew')}
           onClick={() => setAddModal('ACTIVE')}
         >
@@ -185,14 +220,9 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {paginatedChunks.filter((chunk) => {
-            if (!chunk.metadata?.title) return true;
-            return chunk.metadata.title
-              .toLowerCase()
-              .includes(searchTerm.toLowerCase());
-          }).length === 0 ? (
-            <div className="col-span-2 mt-24 text-center text-gray-500 lg:col-span-3 dark:text-gray-400">
+        <div className="flex flex-wrap gap-4">
+          {filteredChunks.length === 0 ? (
+            <div className="w-full flex flex-col items-center justify-center mt-24 text-center text-gray-500 dark:text-gray-400">
               <img
                 src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
                 alt={t('settings.documents.noChunksAlt')}
@@ -201,46 +231,52 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               {t('settings.documents.noChunks')}
             </div>
           ) : (
-            paginatedChunks
-              .filter((chunk) => {
-                if (!chunk.metadata?.title) return true;
-                return chunk.metadata.title
-                  .toLowerCase()
-                  .includes(searchTerm.toLowerCase());
-              })
-              .map((chunk, index) => (
-                <div
-                  key={index}
-                  className="border-silver dark:border-silver/40 relative flex h-56 w-full flex-col justify-between rounded-2xl border p-6"
-                >
-                  <div className="w-full">
-                    <div className="flex w-full items-center justify-between">
-                      <button
-                        aria-label={'edit'}
-                        onClick={() => {
-                          setEditModal({
-                            state: 'ACTIVE',
-                            chunk: chunk,
-                          });
-                        }}
-                        className="text-left"
-                      >
-                        <h3 className="text-eerie-black dark:text-bright-gray line-clamp-2 text-base font-semibold">
-                          {chunk.metadata?.title ||
-                            t('settings.documents.untitled')}
-                        </h3>
-                      </button>
+            filteredChunks.map((chunk, index) => (
+              <div
+                key={index}
+                className="relative flex h-[208px] w-[486px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden"
+              >
+                <div className="w-full">
+                  <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
+                    <div className="text-[#59636E] text-sm dark:text-[#E0E0E0]">
+                      {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} tokens
                     </div>
-                    <div className="mt-2 h-[80px] overflow-hidden">
-                      <p className="text-eerie-black dark:text-bright-gray line-clamp-4 text-sm">
-                        {chunk.text}
-                      </p>
-                    </div>
+                    <button
+                      aria-label={'edit'}
+                      onClick={() => {
+                        setEditModal({
+                          state: 'ACTIVE',
+                          chunk: chunk,
+                        });
+                      }}
+                      className="text-left"
+                    >
+                      <img src={EditIcon} alt="edit" className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    <p className="font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] dark:text-[#E0E0E0] line-clamp-7 font-normal">
+                      {chunk.text}
+                    </p>
                   </div>
                 </div>
-              ))
+              </div>
+            ))
           )}
         </div>
+      )}
+
+      {!loading && filteredChunks.length > 0 && (
+        <Pagination
+          currentPage={page}
+          totalPages={Math.ceil(totalChunks / perPage)}
+          rowsPerPage={perPage}
+          onPageChange={setPage}
+          onRowsPerPageChange={(rows) => {
+            setPerPage(rows);
+            setPage(1);
+          }}
+        />
       )}
 
       <ChunkModal
