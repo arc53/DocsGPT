@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -93,23 +94,6 @@ export default function Documents({
     }
     setActiveMenuId(docId);
   };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (activeMenuId) {
-        const activeRef = menuRefs.current[activeMenuId];
-        if (
-          activeRef?.current &&
-          !activeRef.current.contains(event.target as Node)
-        ) {
-          setActiveMenuId(null);
-        }
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [activeMenuId]);
 
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
@@ -288,7 +272,7 @@ export default function Documents({
           documentId={documentToView.id || ''}
           documentName={documentToView.name}
           handleGoBack={() => setDocumentToView(undefined)}
-          showHeader={false}
+          showHeader={true}
         />
       )}
     </div>
@@ -345,19 +329,19 @@ export default function Documents({
               </p>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-6">
-              {currentDocuments.map((document, index) => {
-                const docId = document.id ? document.id.toString() : '';
+            <div className="flex flex-wrap justify-center md:justify-start gap-6 mx-1">
+            {currentDocuments.map((document, index) => {
+              const docId = document.id ? document.id.toString() : '';
 
-                return (
-                  <div key={docId} className="relative">
-                    <div
-                      className={`flex h-[123px] w-[308px] flex-col justify-between rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
-                        activeMenuId === docId || syncMenuState.docId === docId
-                          ? 'scale-[1.02] shadow-lg'
-                          : 'hover:scale-[1.02] hover:shadow-lg'
-                      }`}
-                    >
+              return (
+                <div key={docId} className="relative">
+                  <div
+                    className={`flex h-[123px] w-[308px] flex-col justify-between rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
+                      activeMenuId === docId || syncMenuState.docId === docId
+                        ? 'scale-[1.02]'
+                        : 'hover:scale-[1.02]'
+                    }`}
+                  >
                       <div className="w-full">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
