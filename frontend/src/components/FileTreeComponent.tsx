@@ -114,7 +114,9 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   };
 
   const handleBackNavigation = () => {
-    if (currentPath.length === 0) {
+    if (selectedFile) {
+      setSelectedFile(null);
+    } else if (currentPath.length === 0) {
       if (onBackToDocuments) {
         onBackToDocuments();
       }
@@ -187,7 +189,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-
+  
         <div className="flex items-center">
           <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
           <span className="text-purple-30 font-medium">{sourceName}</span>
@@ -204,6 +206,14 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   )}
                 </React.Fragment>
               ))}
+            </>
+          )}
+          {selectedFile && (
+            <>
+              <span className="mx-1 text-gray-500">/</span>
+              <span className="text-gray-700 dark:text-gray-300">
+                {selectedFile.name}
+              </span>
             </>
           )}
         </div>
@@ -243,26 +253,26 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-            <tr
-              key="parent-dir"
-              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
-              onClick={navigateUp}
-            >
-              <td className="px-4 py-2">
-                <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt="Parent folder"
-                    className="mr-2 h-4 w-4"
-                  />
-                  <span className="text-sm dark:text-[#E0E0E0]">..</span>
-                </div>
-              </td>
-              <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
-              <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
-              <td className="w-10 px-4 py-2 text-sm"></td>
-            </tr>,
-          ]
+          <tr
+            key="parent-dir"
+            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+            onClick={navigateUp}
+          >
+            <td className="px-4 py-2">
+              <div className="flex items-center">
+                <img
+                  src={FolderIcon}
+                  alt="Parent folder"
+                  className="mr-2 h-4 w-4"
+                />
+                <span className="text-sm dark:text-[#E0E0E0]">..</span>
+              </div>
+            </td>
+            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
+            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
+            <td className="w-10 px-4 py-2 text-sm"></td>
+          </tr>,
+        ]
         : [];
 
     // Render directories first, then files
@@ -377,16 +387,17 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
   return (
     <>
+      <div className="mb-4">{renderPathNavigation()}</div>
       {selectedFile ? (
         <DocumentChunks
           documentId={docId}
-          documentName={selectedFile.name}
+          documentName={sourceName}
           handleGoBack={() => setSelectedFile(null)}
           path={selectedFile.id}
+          showHeader={false}
         />
       ) : (
         <div className="mt-8 flex flex-col">
-          <div className="mb-4">{renderPathNavigation()}</div>
 
           <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
             <table className="min-w-full table-fixed bg-transparent">

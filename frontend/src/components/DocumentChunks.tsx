@@ -151,39 +151,39 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
   return (
     <div className="mt-8 flex flex-col">
-      <div className="mb-4 flex items-center">
-        {showHeader && (
+      {showHeader && (
+        <div className="mb-4 flex items-center">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={handleGoBack}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-        )}
 
-        <div className="flex items-center">
-          <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
-          <span className="text-[#7D54D1] font-semibold text-base leading-6">
-            {documentName}
-          </span>
+          <div className="flex items-center">
+            <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
+            <span className="text-[#7D54D1] font-semibold text-base leading-6">
+              {documentName}
+            </span>
 
-          {pathParts.length > 0 && (
-            <>
-              <span className="mx-1 text-gray-500">/</span>
-              {pathParts.map((part, index) => (
-                <React.Fragment key={index}>
-                  <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300">
-                    {part}
-                  </span>
-                  {index < pathParts.length - 1 && (
-                    <span className="mx-1 text-gray-500">/</span>
-                  )}
-                </React.Fragment>
-              ))}
-            </>
-          )}
+            {pathParts.length > 0 && (
+              <>
+                <span className="mx-1 text-gray-500">/</span>
+                {pathParts.map((part, index) => (
+                  <React.Fragment key={index}>
+                    <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300">
+                      {part}
+                    </span>
+                    {index < pathParts.length - 1 && (
+                      <span className="mx-1 text-gray-500">/</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="my-3 flex items-center justify-between gap-3">
         <div className="flex-1 flex items-center border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-md overflow-hidden h-[38px]">
