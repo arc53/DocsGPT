@@ -60,7 +60,7 @@ const config = {
           GitHub
         </a>
         {' | '}
-        <a href="https://www.blog.docsgpt.cloud/" target="_blank">
+        <a href="https://blog.docsgpt.cloud/" target="_blank">
           Blog
         </a>
       </div>
