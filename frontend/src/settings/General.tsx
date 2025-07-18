@@ -88,7 +88,7 @@ export default function General() {
       {' '}
       <div className="flex flex-col gap-4">
         {' '}
-        <label className="text-base font-medium text-jet dark:text-bright-gray">
+        <label className="text-jet dark:text-bright-gray text-base font-medium">
           {t('settings.general.selectTheme')}
         </label>
         <Dropdown
@@ -106,7 +106,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-base font-medium text-jet dark:text-bright-gray">
+        <label className="text-jet dark:text-bright-gray text-base font-medium">
           {t('settings.general.selectLanguage')}
         </label>
         <Dropdown
@@ -124,7 +124,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-base font-medium text-jet dark:text-bright-gray">
+        <label className="text-jet dark:text-bright-gray text-base font-medium">
           {t('settings.general.chunks')}
         </label>
         <Dropdown
@@ -137,7 +137,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-base font-medium text-jet dark:text-bright-gray">
+        <label className="text-jet dark:text-bright-gray text-base font-medium">
           {t('settings.general.convHistory')}
         </label>
         <Dropdown
@@ -169,13 +169,14 @@ export default function General() {
             dispatch(setPrompt({ name: name, id: id, type: type }))
           }
           setPrompts={setPrompts}
+          dropdownProps={{ size: 'w-56', rounded: '3xl', border: 'border' }}
         />
       </div>
-      <hr className="my-4 w-[calc(min(665px,100%))] border-t border-silver dark:border-silver/40" />
+      <hr className="border-silver dark:border-silver/40 my-4 w-[calc(min(665px,100%))] border-t" />
       <div className="flex flex-col gap-2">
         <button
           title={t('settings.general.deleteAllLabel')}
-          className="flex w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid border-rosso-corsa bg-transparent px-5 py-3 text-sm font-medium tracking-[0.015em] text-rosso-corsa transition-colors hover:bg-rosso-corsa hover:font-bold hover:tracking-normal hover:text-white"
+          className="border-rosso-corsa text-rosso-corsa hover:bg-rosso-corsa flex w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid bg-transparent px-5 py-3 text-sm font-medium tracking-[0.015em] transition-colors hover:font-bold hover:tracking-normal hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}
