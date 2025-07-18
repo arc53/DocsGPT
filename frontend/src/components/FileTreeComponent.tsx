@@ -11,6 +11,7 @@ import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import OutlineSource from '../assets/outline-source.svg';
 import Trash from '../assets/red-trash.svg';
+import SearchIcon from '../assets/search.svg';
 
 interface FileNode {
   type?: string;
@@ -27,6 +28,12 @@ interface FileTreeComponentProps {
   docId: string;
   sourceName: string;
   onBackToDocuments?: () => void;
+}
+
+interface SearchResult {
+  name: string;
+  path: string;
+  isFile: boolean;
 }
 
 const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
@@ -49,6 +56,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     id: string;
     name: string;
   } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
   const handleFileClick = (fileName: string) => {
     const fullPath = [...currentPath, fileName].join('/');
@@ -189,7 +198,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-  
+
         <div className="flex items-center">
           <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
           <span className="text-purple-30 font-medium">{sourceName}</span>
@@ -385,20 +394,116 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   };
   const currentDirectory = getCurrentDirectory();
 
+  const searchFiles = (query: string, structure: DirectoryStructure, currentPath: string[] = []): SearchResult[] => {
+    let results: SearchResult[] = [];
+
+    Object.entries(structure).forEach(([name, node]) => {
+      const fullPath = [...currentPath, name].join('/');
+
+      if (name.toLowerCase().includes(query.toLowerCase())) {
+        results.push({
+          name,
+          path: fullPath,
+          isFile: !!node.type
+        });
+      }
+
+      if (!node.type) {
+        // If it's a directory, search recursively
+        results = [...results, ...searchFiles(query, node as DirectoryStructure, [...currentPath, name])];
+      }
+    });
+
+    return results;
+  };
+
+
+  const handleSearchSelect = (result: SearchResult) => {
+    if (result.isFile) {
+      const pathParts = result.path.split('/');
+      const fileName = pathParts.pop() || '';
+      setCurrentPath(pathParts);
+      
+      setSelectedFile({
+        id: result.path,
+        name: fileName
+      });
+    } else {
+      setCurrentPath(result.path.split('/'));
+      setSelectedFile(null);
+    }
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
   return (
     <>
       <div className="mb-4">{renderPathNavigation()}</div>
       {selectedFile ? (
-        <DocumentChunks
-          documentId={docId}
-          documentName={sourceName}
-          handleGoBack={() => setSelectedFile(null)}
-          path={selectedFile.id}
-          showHeader={false}
-        />
+        <div className="flex">
+          {/* Search Panel */}
+          <div className="w-[283px] min-w-[283px] pr-4">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (directoryStructure) {
+                    setSearchResults(searchFiles(e.target.value, directoryStructure));
+                  }
+                }}
+                placeholder={t('settings.documents.searchFiles')}
+                className={`w-full px-4 py-2 pl-10 border border-[#D1D9E0] dark:border-[#6A6A6A] ${searchQuery ? 'rounded-t-md rounded-b-none border-b-0' : 'rounded-md'
+                  } bg-transparent dark:text-[#E0E0E0] focus:outline-none`}
+              />
+
+              <img
+                src={SearchIcon}
+                alt="Search"
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 opacity-60"
+              />
+
+              {searchQuery && (
+                <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto" style={{ marginTop: "-1px", borderTop: "none", borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+                  {searchResults.map((result, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handleSearchSelect(result)}
+                      className={`flex items-center px-3 py-2 cursor-pointer hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${index !== searchResults.length - 1 ? "border-b border-[#D1D9E0] dark:border-[#6A6A6A]" : ""
+                        }`}
+                    >
+                      <img
+                        src={result.isFile ? FileIcon : FolderIcon}
+                        alt={result.isFile ? "File" : "Folder"}
+                        className="w-4 h-4 mr-2"
+                      />
+                      <span className="text-sm truncate dark:text-[#E0E0E0]">
+                        {result.path}
+                      </span>
+                    </div>
+                  ))}
+                  {searchResults.length === 0 && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                      {t('settings.documents.noResults')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 pl-4 pt-0">
+      <DocumentChunks
+        documentId={docId}
+        documentName={sourceName}
+        handleGoBack={() => setSelectedFile(null)}
+        path={selectedFile.id}
+        showHeader={false}
+      />
+    </div>
+        </div>
       ) : (
         <div className="mt-8 flex flex-col">
-
           <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
             <table className="min-w-full table-fixed bg-transparent">
               <thead className="bg-gray-100 dark:bg-[#27282D]">
@@ -429,3 +534,4 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 };
 
 export default FileTreeComponent;
+

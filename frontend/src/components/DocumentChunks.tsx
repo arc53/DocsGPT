@@ -140,7 +140,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
   useEffect(() => {
     fetchChunks();
-  }, [page, perPage]);
+  }, [page, perPage, path]);
 
   const filteredChunks = paginatedChunks.filter((chunk) => {
     if (!chunk.metadata?.title) return true;
@@ -150,7 +150,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   });
 
   return (
-    <div className="mt-8 flex flex-col">
+    <div className={`${showHeader ? 'mt-8' : 'mt-0'} flex flex-col`}>
       {showHeader && (
         <div className="mb-4 flex items-center">
           <button
@@ -185,7 +185,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         </div>
       )}
 
-      <div className="my-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex-1 flex items-center border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-md overflow-hidden h-[38px]">
           <div className="px-4 flex items-center text-gray-700 dark:text-[#E0E0E0] font-medium whitespace-nowrap h-full">
             {totalChunks > 999999
@@ -234,7 +234,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
             filteredChunks.map((chunk, index) => (
               <div
                 key={index}
-                className="relative flex h-[208px] w-[486px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden"
+                className="relative flex h-[208px] w-[400px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden"
               >
                 <div className="w-full">
                   <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
