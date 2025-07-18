@@ -4,17 +4,29 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
+import { DropdownProps } from '../components/types/Dropdown.types';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
-import ConfirmationModal from '../modals/ConfirmationModal';
+
+type ExtendedPromptProps = PromptProps & {
+  title?: string;
+  titleClassName?: string;
+  dropdownProps?: Partial<DropdownProps>;
+  showAddButton?: boolean;
+};
 
 export default function Prompts({
   prompts,
   selectedPrompt,
   onSelectPrompt,
   setPrompts,
-}: PromptProps) {
+  title,
+  titleClassName = 'dark:text-bright-gray font-medium',
+  dropdownProps = {},
+  showAddButton = true,
+}: ExtendedPromptProps) {
   const handleSelectPrompt = ({
     name,
     id,
@@ -27,6 +39,7 @@ export default function Prompts({
     setEditPromptName(name);
     onSelectPrompt(name, id, type);
   };
+
   const token = useSelector(selectToken);
   const [newPromptName, setNewPromptName] = React.useState('');
   const [newPromptContent, setNewPromptContent] = React.useState('');
@@ -164,18 +177,19 @@ export default function Prompts({
   return (
     <>
       <div>
-        <div className="flex flex-col gap-4">
-          <p className="font-medium dark:text-bright-gray">
-            {t('settings.general.prompt')}
+        <div className="flex flex-col gap-3">
+          <p className={titleClassName}>
+            {title ? title : t('settings.general.prompt')}
           </p>
-          <div className="flex flex-row items-baseline justify-start gap-6">
+          <div className="flex flex-row flex-wrap items-baseline justify-start gap-6">
             <Dropdown
-              options={prompts}
-              selectedValue={selectedPrompt.name}
+              options={prompts.map((prompt: any) =>
+                typeof prompt === 'string'
+                  ? { name: prompt, id: prompt, type: '' }
+                  : prompt,
+              )}
+              selectedValue={selectedPrompt ? selectedPrompt.name : ''}
               onSelect={handleSelectPrompt}
-              size="w-56"
-              rounded="3xl"
-              border="border"
               showEdit
               showDelete={(prompt) => prompt.type !== 'public'}
               onEdit={({
@@ -185,26 +199,29 @@ export default function Prompts({
               }: {
                 id: string;
                 name: string;
-                type: string;
+                type?: string;
               }) => {
                 setModalType('EDIT');
                 setEditPromptName(name);
                 handleFetchPromptContent(id);
-                setCurrentPromptEdit({ id: id, name: name, type: type });
+                setCurrentPromptEdit({ id: id, name: name, type: type ?? '' });
                 setModalState('ACTIVE');
               }}
               onDelete={handleDeletePrompt}
+              placeholder={'Select a prompt'}
+              {...dropdownProps}
             />
-
-            <button
-              className="h-10 w-20 rounded-3xl border border-solid border-violets-are-blue text-sm text-violets-are-blue transition-colors hover:bg-violets-are-blue hover:text-white"
-              onClick={() => {
-                setModalType('ADD');
-                setModalState('ACTIVE');
-              }}
-            >
-              {t('settings.general.add')}
-            </button>
+            {showAddButton && (
+              <button
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue h-10 w-20 rounded-3xl border border-solid text-sm transition-colors hover:text-white"
+                onClick={() => {
+                  setModalType('ADD');
+                  setModalState('ACTIVE');
+                }}
+              >
+                {t('settings.general.add')}
+              </button>
+            )}
           </div>
         </div>
       </div>

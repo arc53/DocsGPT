@@ -20,6 +20,7 @@ import {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
+import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
 import { Agent } from './types';
@@ -46,7 +47,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     source: '',
     chunks: '',
     retriever: '',
-    prompt_id: '',
+    prompt_id: 'default',
     tools: [],
     agent_type: '',
     status: '',
@@ -504,32 +505,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </div>
           </div>
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
-            <h2 className="text-lg font-semibold">Prompt</h2>
-            <div className="mt-3 flex flex-wrap items-center gap-1">
+            <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
-                <Dropdown
-                  options={prompts.map((prompt) => ({
-                    label: prompt.name,
-                    value: prompt.id,
-                  }))}
-                  selectedValue={
-                    agent.prompt_id
-                      ? prompts.filter(
-                          (prompt) => prompt.id === agent.prompt_id,
-                        )[0]?.name || null
-                      : null
+                <Prompts
+                  prompts={prompts}
+                  selectedPrompt={
+                    prompts.find((prompt) => prompt.id === agent.prompt_id) ||
+                    prompts[0]
                   }
-                  onSelect={(option: { label: string; value: string }) =>
-                    setAgent({ ...agent, prompt_id: option.value })
+                  onSelectPrompt={(name, id, type) =>
+                    setAgent({ ...agent, prompt_id: id })
                   }
-                  size="w-full"
-                  rounded="3xl"
-                  border="border"
-                  buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
-                  optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E] dark:border-[#7E7E7E] dark:bg-dark-charcoal"
-                  placeholderClassName="text-gray-400 dark:text-silver"
-                  placeholder="Select a prompt"
-                  contentSize="text-sm"
+                  setPrompts={setPrompts}
+                  title="Prompt"
+                  titleClassName="text-lg font-semibold dark:text-[#E0E0E0]"
+                  showAddButton={false}
+                  dropdownProps={{
+                    size: 'w-full',
+                    rounded: '3xl',
+                    border: 'border',
+                    buttonClassName:
+                      'bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]',
+                    optionsClassName:
+                      'bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]',
+                    placeholderClassName: 'text-gray-400 dark:text-silver',
+                    contentSize: 'text-sm',
+                  }}
                 />
               </div>
               <button
