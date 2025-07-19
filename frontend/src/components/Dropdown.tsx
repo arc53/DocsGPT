@@ -3,8 +3,9 @@ import React from 'react';
 import Arrow2 from '../assets/dropdown-arrow.svg';
 import Edit from '../assets/edit.svg';
 import Trash from '../assets/trash.svg';
+import { DropdownOption, DropdownProps } from './types/Dropdown.types';
 
-function Dropdown({
+function Dropdown<T extends DropdownOption>({
   options,
   selectedValue,
   onSelect,
@@ -20,36 +21,7 @@ function Dropdown({
   placeholder,
   placeholderClassName = 'text-gray-500 dark:text-gray-400',
   contentSize = 'text-base',
-}: {
-  options:
-    | string[]
-    | { name: string; id: string; type: string }[]
-    | { label: string; value: string }[]
-    | { value: number; description: string }[];
-  selectedValue:
-    | string
-    | { label: string; value: string }
-    | { value: number; description: string }
-    | { name: string; id: string; type: string }
-    | null;
-  onSelect:
-    | ((value: string) => void)
-    | ((value: { name: string; id: string; type: string }) => void)
-    | ((value: { label: string; value: string }) => void)
-    | ((value: { value: number; description: string }) => void);
-  size?: string;
-  rounded?: 'xl' | '3xl';
-  buttonClassName?: string;
-  optionsClassName?: string;
-  border?: 'border' | 'border-2';
-  showEdit?: boolean;
-  onEdit?: (value: { name: string; id: string; type: string }) => void;
-  showDelete?: boolean | ((option: any) => boolean);
-  onDelete?: (value: string) => void;
-  placeholder?: string;
-  placeholderClassName?: string;
-  contentSize?: string;
-}) {
+}: DropdownProps<T>) {
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = React.useState(false);
   const borderRadius = rounded === 'xl' ? 'rounded-xl' : 'rounded-3xl';
