@@ -130,3 +130,28 @@ class S3Storage(BaseStorage):
             except Exception as e:
                 logging.error(f"Error processing S3 file {path}: {e}", exc_info=True)
                 raise
+
+    def is_directory(self, path: str) -> bool:
+        """
+        Check if a path is a directory in S3 storage.
+        
+        In S3, directories are virtual concepts. A path is considered a directory
+        if there are objects with the path as a prefix.
+        
+        Args:
+            path: Path to check
+        
+        Returns:
+            bool: True if the path is a directory, False otherwise
+        """
+        # Ensure path ends with a slash if not empty
+        if path and not path.endswith('/'):
+            path += '/'
+        
+        response = self.s3.list_objects_v2(
+            Bucket=self.bucket_name,
+            Prefix=path,
+            MaxKeys=1
+        )
+        
+        return 'Contents' in response
