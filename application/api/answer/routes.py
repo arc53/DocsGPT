@@ -566,10 +566,10 @@ class Stream(Resource):
                     attachment_ids, decoded_token.get("sub")
                 )
             except Exception as e:
-                message = f"Invalid attachment IDs or error retrieving attachments: {str(e)}"
-                logger.error(f"/stream - error: {message} - attachment_ids: {attachment_ids}")
+                user_message = "Invalid attachment IDs or an internal error occurred."
+                logger.error(f"/stream - error: {str(e)} - traceback: {traceback.format_exc()} - attachment_ids: {attachment_ids}")
                 return Response(
-                    error_stream_generate(message),
+                    error_stream_generate(user_message),
                     status=400,
                     mimetype="text/event-stream",
                 )
@@ -634,7 +634,7 @@ class Stream(Resource):
             )
             status_code = 400
             return Response(
-                error_stream_generate("Unknown error occurred"),
+                error_stream_generate("An internal error has occurred."),
                 status=status_code,
                 mimetype="text/event-stream",
             )
