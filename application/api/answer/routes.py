@@ -425,7 +425,25 @@ class Stream(Resource):
     @api.expect(stream_model)
     @api.doc(description="Stream a response based on the question and retriever")
     def post(self):
-        data = request.get_json()
+        try:
+            data = request.get_json()
+            if data is None:
+                message = "Request body is missing or invalid JSON format"
+                logger.error(f"/stream - error: {message} - Content-Type: {request.content_type} - Raw data length: {len(request.get_data())}")
+                return Response(
+                    error_stream_generate(message),
+                    status=400,
+                    mimetype="text/event-stream",
+                )
+        except Exception as e:
+            message = f"Failed to parse JSON request body: {str(e)}"
+            logger.error(f"/stream - error: {message} - Content-Type: {request.content_type} - Raw data: {request.get_data()[:500]}")
+            return Response(
+                error_stream_generate(message),
+                status=400,
+                mimetype="text/event-stream",
+            )
+
         required_fields = ["question"]
         if "index" in data:
             required_fields = ["question", "conversation_id"]
@@ -437,22 +455,59 @@ class Stream(Resource):
 
         try:
             question = data["question"]
-            history = limit_chat_history(
-                json.loads(data.get("history", "[]")), gpt_model=gpt_model
-            )
+            
+            # Parse and validate history field
+            try:
+                history_raw = data.get("history", "[]")
+                if isinstance(history_raw, str):
+                    history = limit_chat_history(json.loads(history_raw), gpt_model=gpt_model)
+                else:
+                    history = limit_chat_history(history_raw, gpt_model=gpt_model)
+            except (json.JSONDecodeError, TypeError) as e:
+                message = f"Invalid 'history' field format: {str(e)}"
+                logger.error(f"/stream - error: {message} - history value: {data.get('history', 'N/A')}")
+                return Response(
+                    error_stream_generate(message),
+                    status=400,
+                    mimetype="text/event-stream",
+                )
+
             conversation_id = data.get("conversation_id")
             prompt_id = data.get("prompt_id", "default")
             attachment_ids = data.get("attachments", [])
 
             index = data.get("index", None)
-            chunks = int(data.get("chunks", 2))
+            
+            # Validate chunks field
+            try:
+                chunks = int(data.get("chunks", 2))
+            except (ValueError, TypeError) as e:
+                message = f"Invalid 'chunks' field - must be an integer: {str(e)}"
+                logger.error(f"/stream - error: {message} - chunks value: {data.get('chunks', 'N/A')}")
+                return Response(
+                    error_stream_generate(message),
+                    status=400,
+                    mimetype="text/event-stream",
+                )
+
             token_limit = data.get("token_limit", settings.DEFAULT_MAX_HISTORY)
             retriever_name = data.get("retriever", "classic")
             agent_id = data.get("agent_id", None)
             agent_type = settings.AGENT_NAME
             decoded_token = getattr(request, "decoded_token", None)
             user_sub = decoded_token.get("sub") if decoded_token else None
-            agent_key, is_shared_usage, shared_token = get_agent_key(agent_id, user_sub)
+            
+            # Validate agent_id if provided
+            try:
+                agent_key, is_shared_usage, shared_token = get_agent_key(agent_id, user_sub)
+            except Exception as e:
+                message = f"Invalid agent_id or agent access error: {str(e)}"
+                logger.error(f"/stream - error: {message} - agent_id: {agent_id}")
+                return Response(
+                    error_stream_generate(message),
+                    status=400,
+                    mimetype="text/event-stream",
+                )
 
             if agent_key:
                 data.update({"api_key": agent_key})
@@ -460,24 +515,42 @@ class Stream(Resource):
                 agent_id = None
 
             if "api_key" in data:
-                data_key = get_data_from_api_key(data["api_key"])
-                chunks = int(data_key.get("chunks", 2))
-                prompt_id = data_key.get("prompt_id", "default")
-                source = {"active_docs": data_key.get("source")}
-                retriever_name = data_key.get("retriever", retriever_name)
-                user_api_key = data["api_key"]
-                agent_type = data_key.get("agent_type", agent_type)
-                if is_shared_usage:
-                    decoded_token = request.decoded_token
-                else:
-                    decoded_token = {"sub": data_key.get("user")}
-                    is_shared_usage = False
+                try:
+                    data_key = get_data_from_api_key(data["api_key"])
+                    chunks = int(data_key.get("chunks", 2))
+                    prompt_id = data_key.get("prompt_id", "default")
+                    source = {"active_docs": data_key.get("source")}
+                    retriever_name = data_key.get("retriever", retriever_name)
+                    user_api_key = data["api_key"]
+                    agent_type = data_key.get("agent_type", agent_type)
+                    if is_shared_usage:
+                        decoded_token = request.decoded_token
+                    else:
+                        decoded_token = {"sub": data_key.get("user")}
+                        is_shared_usage = False
+                except Exception as e:
+                    message = f"Invalid API key or error retrieving API key data: {str(e)}"
+                    logger.error(f"/stream - error: {message} - api_key: {data.get('api_key', 'N/A')[:10]}***")
+                    return Response(
+                        error_stream_generate(message),
+                        status=400,
+                        mimetype="text/event-stream",
+                    )
 
             elif "active_docs" in data:
-                source = {"active_docs": data["active_docs"]}
-                retriever_name = get_retriever(data["active_docs"]) or retriever_name
-                user_api_key = None
-                decoded_token = request.decoded_token
+                try:
+                    source = {"active_docs": data["active_docs"]}
+                    retriever_name = get_retriever(data["active_docs"]) or retriever_name
+                    user_api_key = None
+                    decoded_token = request.decoded_token
+                except Exception as e:
+                    message = f"Invalid active_docs ID or error retrieving document: {str(e)}"
+                    logger.error(f"/stream - error: {message} - active_docs: {data.get('active_docs', 'N/A')}")
+                    return Response(
+                        error_stream_generate(message),
+                        status=400,
+                        mimetype="text/event-stream",
+                    )
 
             else:
                 source = {}
@@ -487,9 +560,19 @@ class Stream(Resource):
             if not decoded_token:
                 return make_response({"error": "Unauthorized"}, 401)
 
-            attachments = get_attachments_content(
-                attachment_ids, decoded_token.get("sub")
-            )
+            # Validate and get attachments
+            try:
+                attachments = get_attachments_content(
+                    attachment_ids, decoded_token.get("sub")
+                )
+            except Exception as e:
+                message = f"Invalid attachment IDs or error retrieving attachments: {str(e)}"
+                logger.error(f"/stream - error: {message} - attachment_ids: {attachment_ids}")
+                return Response(
+                    error_stream_generate(message),
+                    status=400,
+                    mimetype="text/event-stream",
+                )
 
             logger.info(
                 f"/stream - request_data: {data}, source: {source}, attachments: {len(attachments)}",
@@ -544,14 +627,6 @@ class Stream(Resource):
                 mimetype="text/event-stream",
             )
 
-        except ValueError:
-            message = "Malformed request body"
-            logger.error(f"/stream - error: {message}")
-            return Response(
-                error_stream_generate(message),
-                status=400,
-                mimetype="text/event-stream",
-            )
         except Exception as e:
             logger.error(
                 f"/stream - error: {str(e)} - traceback: {traceback.format_exc()}",
