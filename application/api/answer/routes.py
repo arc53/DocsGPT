@@ -544,10 +544,12 @@ class Stream(Resource):
                     user_api_key = None
                     decoded_token = request.decoded_token
                 except Exception as e:
-                    message = f"Invalid active_docs ID or error retrieving document: {str(e)}"
-                    logger.error(f"/stream - error: {message} - active_docs: {data.get('active_docs', 'N/A')}")
+                    logger.error(
+                        f"/stream - error: Invalid active_docs ID or error retrieving document: {str(e)}",
+                        extra={"error": str(e), "traceback": traceback.format_exc()},
+                    )
                     return Response(
-                        error_stream_generate(message),
+                        error_stream_generate("An internal error has occurred."),
                         status=400,
                         mimetype="text/event-stream",
                     )
