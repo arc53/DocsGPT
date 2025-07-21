@@ -436,6 +436,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     setSearchResults([]);
   };
 
+
   return (
     <>
       <div className="mb-4">{renderPathNavigation()}</div>
@@ -465,24 +466,29 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               />
 
               {searchQuery && (
-                <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto" style={{ marginTop: "-1px", borderTop: "none", borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
-                  {searchResults.map((result, index) => (
-                    <div
-                      key={index}
-                      onClick={() => handleSearchSelect(result)}
-                      className={`flex items-center px-3 py-2 cursor-pointer hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${index !== searchResults.length - 1 ? "border-b border-[#D1D9E0] dark:border-[#6A6A6A]" : ""
-                        }`}
-                    >
-                      <img
-                        src={result.isFile ? FileIcon : FolderIcon}
-                        alt={result.isFile ? "File" : "Folder"}
-                        className="w-4 h-4 mr-2"
-                      />
-                      <span className="text-sm truncate dark:text-[#E0E0E0]">
-                        {result.path}
-                      </span>
-                    </div>
-                  ))}
+                <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto">
+                  {searchResults.map((result, index) => {
+                    const name = result.path.split('/').pop() || result.path;
+
+                    return (
+                      <div
+                        key={index}
+                        onClick={() => handleSearchSelect(result)}
+                        title={result.path}
+                        className={`flex items-center px-3 py-2 cursor-pointer hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${index !== searchResults.length - 1 ? "border-b border-[#D1D9E0] dark:border-[#6A6A6A]" : ""
+                          }`}
+                      >
+                        <img
+                          src={result.isFile ? FileIcon : FolderIcon}
+                          alt={result.isFile ? "File" : "Folder"}
+                          className="flex-shrink-0 w-4 h-4 mr-2"
+                        />
+                        <span className="text-sm dark:text-[#E0E0E0]">
+                          {name}
+                        </span>
+                      </div>
+                    );
+                  })}
                   {searchResults.length === 0 && (
                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
                       {t('settings.documents.noResults')}
@@ -493,14 +499,14 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             </div>
           </div>
           <div className="flex-1 pl-4 pt-0">
-      <DocumentChunks
-        documentId={docId}
-        documentName={sourceName}
-        handleGoBack={() => setSelectedFile(null)}
-        path={selectedFile.id}
-        showHeader={false}
-      />
-    </div>
+            <DocumentChunks
+              documentId={docId}
+              documentName={sourceName}
+              handleGoBack={() => setSelectedFile(null)}
+              path={selectedFile.id}
+              showHeader={false}
+            />
+          </div>
         </div>
       ) : (
         <div className="mt-8 flex flex-col">

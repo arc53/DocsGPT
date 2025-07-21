@@ -152,30 +152,30 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   return (
     <div className={`${showHeader ? 'mt-8' : 'mt-0'} flex flex-col`}>
       {showHeader && (
-        <div className="mb-4 flex items-center">
+        <div className="mb-4 flex items-center overflow-hidden">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] flex-shrink-0"
             onClick={handleGoBack}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
 
-          <div className="flex items-center">
-            <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
-            <span className="text-[#7D54D1] font-semibold text-base leading-6">
+          <div className="flex items-center overflow-hidden">
+            <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
+            <span className="text-[#7D54D1] font-semibold text-base leading-6 whitespace-nowrap">
               {documentName}
             </span>
 
             {pathParts.length > 0 && (
               <>
-                <span className="mx-1 text-gray-500">/</span>
+                <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
                 {pathParts.map((part, index) => (
                   <React.Fragment key={index}>
-                    <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300">
+                    <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300 whitespace-nowrap">
                       {part}
                     </span>
                     {index < pathParts.length - 1 && (
-                      <span className="mx-1 text-gray-500">/</span>
+                      <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
                     )}
                   </React.Fragment>
                 ))}
@@ -185,8 +185,8 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex-1 flex items-center border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-md overflow-hidden h-[38px]">
+      <div className="mb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex-1 w-full flex items-center border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-md overflow-hidden h-[38px]">
           <div className="px-4 flex items-center text-gray-700 dark:text-[#E0E0E0] font-medium whitespace-nowrap h-full">
             {totalChunks > 999999
               ? `${(totalChunks / 1000000).toFixed(2)}M`
@@ -206,7 +206,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           </div>
         </div>
         <button
-          className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white shrink-0"
+          className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white shrink-0"
           title={t('settings.documents.addNew')}
           onClick={() => setAddModal('ACTIVE')}
         >
@@ -214,28 +214,26 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         </button>
       </div>
       {loading ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="col-span-2 mt-24 flex h-32 items-center justify-center lg:col-span-3">
-            <Spinner />
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-4">
-          {filteredChunks.length === 0 ? (
-            <div className="w-full flex flex-col items-center justify-center mt-24 text-center text-gray-500 dark:text-gray-400">
-              <img
-                src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                alt={t('settings.documents.noChunksAlt')}
-                className="mx-auto mb-2 h-24 w-24"
-              />
-              {t('settings.documents.noChunks')}
-            </div>
-          ) : (
-            filteredChunks.map((chunk, index) => (
-              <div
-                key={index}
-                className="relative flex h-[208px] w-[400px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden"
-              >
+  <div className="w-full mt-24 flex justify-center">
+    <Spinner />
+  </div>
+) : (
+  <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+    {filteredChunks.length === 0 ? (
+      <div className="col-span-full flex flex-col items-center justify-center mt-24 text-center text-gray-500 dark:text-gray-400">
+        <img
+          src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+          alt={t('settings.documents.noChunksAlt')}
+          className="mx-auto mb-2 h-24 w-24"
+        />
+        {t('settings.documents.noChunks')}
+      </div>
+    ) : (
+      filteredChunks.map((chunk, index) => (
+        <div
+          key={index}
+          className="relative flex h-[208px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden w-full"
+        >
                 <div className="w-full">
                   <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
                     <div className="text-[#59636E] text-sm dark:text-[#E0E0E0]">
