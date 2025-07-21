@@ -473,7 +473,7 @@ class DeleteByIds(Resource):
 @user_ns.route("/api/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
-        description="Deletes old indexes",
+        description="Deletes old indexes and associated files",
         params={"source_id": "The source ID to delete"},
     )
     def get(self):
@@ -490,21 +490,40 @@ class DeleteOldIndexes(Resource):
         )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
+        
+        storage = StorageCreator.get_storage()
+        
         try:
+            # Delete vector index
             if settings.VECTOR_STORE == "faiss":
-                shutil.rmtree(os.path.join(current_dir, "indexes", str(doc["_id"])))
+                index_path = f"indexes/{str(doc['_id'])}"
+                if storage.file_exists(f"{index_path}/index.faiss"):
+                    storage.delete_file(f"{index_path}/index.faiss")
+                if storage.file_exists(f"{index_path}/index.pkl"):
+                    storage.delete_file(f"{index_path}/index.pkl")
             else:
                 vectorstore = VectorCreator.create_vectorstore(
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
                 )
                 vectorstore.delete_index()
+                
+            if "file_path" in doc and doc["file_path"]:
+                file_path = doc["file_path"]
+                if storage.is_directory(file_path):
+                    files = storage.list_files(file_path)
+                    for f in files:
+                        storage.delete_file(f)
+                else:
+                    storage.delete_file(file_path)
+                    
         except FileNotFoundError:
             pass
         except Exception as err:
             current_app.logger.error(
-                f"Error deleting old indexes: {err}", exc_info=True
+                f"Error deleting files and indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+            
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
