@@ -272,7 +272,6 @@ export default function Documents({
           documentId={documentToView.id || ''}
           documentName={documentToView.name}
           handleGoBack={() => setDocumentToView(undefined)}
-          showHeader={true}
         />
       )}
     </div>

@@ -12,6 +12,7 @@ import EyeView from '../assets/eye-view.svg';
 import OutlineSource from '../assets/outline-source.svg';
 import Trash from '../assets/red-trash.svg';
 import SearchIcon from '../assets/search.svg';
+import { useOutsideAlerter } from '../hooks';
 
 interface FileNode {
   type?: string;
@@ -58,6 +59,17 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
+  
+  useOutsideAlerter(
+    searchDropdownRef,
+    () => {
+      setSearchQuery('');
+      setSearchResults([]);
+    },
+    [],
+    false
+  );
 
   const handleFileClick = (fileName: string) => {
     const fullPath = [...currentPath, fileName].join('/');
@@ -435,103 +447,115 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     setSearchQuery('');
     setSearchResults([]);
   };
+  const renderFileSearch = () => {
+    return (
+      <div className="w-[283px]" ref={searchDropdownRef}>
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (directoryStructure) {
+                setSearchResults(searchFiles(e.target.value, directoryStructure));
+              }
+            }}
+            placeholder={t('settings.documents.searchFiles')}
+            className={`w-full px-4 py-2 pl-10 border border-[#D1D9E0] dark:border-[#6A6A6A] ${
+              searchQuery ? 'rounded-t-md rounded-b-none border-b-0' : 'rounded-md'
+            } bg-transparent dark:text-[#E0E0E0] focus:outline-none`}
+          />
 
+          <img
+            src={SearchIcon}
+            alt="Search"
+            className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 opacity-60"
+          />
+
+          {searchQuery && (
+            <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto">
+              {searchResults.length === 0 ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                  {t('settings.documents.noResults')}
+                </div>
+              ) : (
+                searchResults.map((result, index) => (
+                  <div
+                    key={index}
+                    onClick={() => handleSearchSelect(result)}
+                    title={result.path}
+                    className={`flex items-center px-3 py-2 cursor-pointer hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                      index !== searchResults.length - 1 ? "border-b border-[#D1D9E0] dark:border-[#6A6A6A]" : ""
+                    }`}
+                  >
+                    <img
+                      src={result.isFile ? FileIcon : FolderIcon}
+                      alt={result.isFile ? "File" : "Folder"}
+                      className="flex-shrink-0 w-4 h-4 mr-2"
+                    />
+                    <span className="text-sm dark:text-[#E0E0E0]">
+                      {result.path.split('/').pop() || result.path}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
-      <div className="mb-4">{renderPathNavigation()}</div>
       {selectedFile ? (
         <div className="flex">
-          {/* Search Panel */}
-          <div className="w-[283px] min-w-[283px] pr-4">
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (directoryStructure) {
-                    setSearchResults(searchFiles(e.target.value, directoryStructure));
-                  }
-                }}
-                placeholder={t('settings.documents.searchFiles')}
-                className={`w-full px-4 py-2 pl-10 border border-[#D1D9E0] dark:border-[#6A6A6A] ${searchQuery ? 'rounded-t-md rounded-b-none border-b-0' : 'rounded-md'
-                  } bg-transparent dark:text-[#E0E0E0] focus:outline-none`}
-              />
-
-              <img
-                src={SearchIcon}
-                alt="Search"
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 opacity-60"
-              />
-
-              {searchQuery && (
-                <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto">
-                  {searchResults.map((result, index) => {
-                    const name = result.path.split('/').pop() || result.path;
-
-                    return (
-                      <div
-                        key={index}
-                        onClick={() => handleSearchSelect(result)}
-                        title={result.path}
-                        className={`flex items-center px-3 py-2 cursor-pointer hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${index !== searchResults.length - 1 ? "border-b border-[#D1D9E0] dark:border-[#6A6A6A]" : ""
-                          }`}
-                      >
-                        <img
-                          src={result.isFile ? FileIcon : FolderIcon}
-                          alt={result.isFile ? "File" : "Folder"}
-                          className="flex-shrink-0 w-4 h-4 mr-2"
-                        />
-                        <span className="text-sm dark:text-[#E0E0E0]">
-                          {name}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {searchResults.length === 0 && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-                      {t('settings.documents.noResults')}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
           <div className="flex-1 pl-4 pt-0">
             <DocumentChunks
               documentId={docId}
               documentName={sourceName}
               handleGoBack={() => setSelectedFile(null)}
               path={selectedFile.id}
-              showHeader={false}
+              renderFileSearch={renderFileSearch}
             />
           </div>
         </div>
       ) : (
-        <div className="mt-8 flex flex-col">
-          <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-            <table className="min-w-full table-fixed bg-transparent">
-              <thead className="bg-gray-100 dark:bg-[#27282D]">
-                <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-                  <th className="w-3/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                    Name
-                  </th>
-                  <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                    Tokens
-                  </th>
-                  <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                    Size
-                  </th>
-                  <th className="w-[60px] px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:last-child]:border-b-0">
-                {renderFileTree(currentDirectory)}
-              </tbody>
-            </table>
+        <div className="flex flex-col">
+          <div className="mb-4">
+            {renderPathNavigation()}
+          </div>
+
+          <div className="flex gap-4">
+            {/* Left side: Search dropdown */}
+            {renderFileSearch()}
+            
+            {/* Right side: File table */}
+            <div className="flex-1">
+              <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
+                <table className="min-w-full table-fixed bg-transparent">
+                  <thead className="bg-gray-100 dark:bg-[#27282D]">
+                    <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
+                      <th className="w-3/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                        Name
+                      </th>
+                      <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                        Tokens
+                      </th>
+                      <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                        Size
+                      </th>
+                      <th className="w-[60px] px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="[&>tr:last-child]:border-b-0">
+                    {renderFileTree(currentDirectory)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       )}
