@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -14,6 +14,67 @@ import { ActiveState } from '../models/misc';
 import { ChunkType } from '../settings/types';
 import EditIcon from '../assets/edit.svg';
 import Pagination from './DocumentPagination';
+
+interface LineNumberedTextareaProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  ariaLabel?: string;
+  className?: string;
+}
+
+const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  className = ''
+}) => {
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange(e.target.value);
+  };
+
+  const lineHeight = 19.93;
+  const contentLines = value.split('\n').length;
+  const minLinesForDisplay = Math.ceil((typeof window !== 'undefined' ? window.innerHeight - 300 : 600) / lineHeight);
+  const totalLines = Math.max(contentLines, minLinesForDisplay);
+
+  return (
+    <div className={`relative w-full ${className}`}>
+      <div
+        className="absolute left-0 top-0 w-12 text-right text-gray-500 dark:text-gray-400 text-sm font-mono leading-[19.93px] select-none pr-3 pointer-events-none"
+        style={{
+          height: `${totalLines * lineHeight}px`
+        }}
+      >
+        {Array.from({ length: totalLines }, (_, i) => (
+          <div
+            key={i + 1}
+            className="flex items-center justify-end"
+            style={{
+              height: `${lineHeight}px`,
+              lineHeight: `${lineHeight}px`
+            }}
+          >
+            {i + 1}
+          </div>
+        ))}
+      </div>
+      <textarea
+        className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-12 overflow-hidden`}
+        value={value}
+        onChange={handleChange}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        rows={totalLines}
+        style={{
+          height: `${totalLines * lineHeight}px`,
+          minHeight: 'calc(100vh - 300px)'
+        }}
+      />
+    </div>
+  );
+};
 
 interface DocumentChunksProps {
   documentId: string;
@@ -156,7 +217,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         <div className="flex items-center">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] flex-shrink-0"
-            onClick={editingChunk ? () => setEditingChunk(null) : handleGoBack}
+            onClick={editingChunk ? () => setEditingChunk(null) : isAddingChunk ? () => setIsAddingChunk(false) : handleGoBack}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
@@ -210,6 +271,26 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
             >
               {t('modals.chunk.update')}
+            </button>
+          </div>
+        )}
+
+        {isAddingChunk && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsAddingChunk(false)}
+              className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+            >
+              {t('modals.chunk.close')}
+            </button>
+            <button
+              onClick={() => {
+                handleAddChunk(editingTitle, editingText);
+                setIsAddingChunk(false);
+              }}
+              className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
+            >
+              {t('modals.chunk.add')}
             </button>
           </div>
         )}
@@ -314,47 +395,12 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           ) : isAddingChunk ? (
             // Add new chunk view
             <div className="w-full">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center">
-                  <button
-                    className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] flex-shrink-0"
-                    onClick={() => setIsAddingChunk(false)}
-                  >
-                    <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-                  </button>
-                  <span className="text-gray-700 dark:text-gray-300 font-medium">
-                    {t('settings.documents.addNewChunk')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="relative">
-                <div className="border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-lg pt-3 pb-1">
-                  <textarea
-                    className="h-60 max-h-60 w-full resize-none px-3 outline-hidden dark:bg-transparent dark:text-white"
-                    value={editingText}
-                    onChange={(e) => setEditingText(e.target.value)}
-                    aria-label={t('modals.chunk.promptText')}
-                  ></textarea>
-                </div>
-              </div>
-
-              <div className="mt-8 flex flex-row-reverse gap-1">
-                <button
-                  onClick={() => {
-                    handleAddChunk(editingTitle, editingText);
-                    setIsAddingChunk(false);
-                  }}
-                  className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all"
-                >
-                  {t('modals.chunk.add')}
-                </button>
-                <button
-                  onClick={() => setIsAddingChunk(false)}
-                  className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
-                >
-                  {t('modals.chunk.close')}
-                </button>
+              <div className="relative border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-lg overflow-hidden">
+                <LineNumberedTextarea
+                  value={editingText}
+                  onChange={setEditingText}
+                  ariaLabel={t('modals.chunk.promptText')}
+                />
               </div>
             </div>
           ) : editingChunk && (
@@ -365,13 +411,12 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                     {editingChunk.metadata.token_count ? editingChunk.metadata.token_count.toLocaleString() : '-'} tokens
                   </div>
                 </div>
-                <div className="p-4">
-                  <textarea
-                    className="w-full h-[400px] resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none"
+                <div className="p-4 overflow-hidden">
+                  <LineNumberedTextarea
                     value={editingText}
-                    onChange={(e) => setEditingText(e.target.value)}
-                    aria-label={t('modals.chunk.promptText')}
-                  ></textarea>
+                    onChange={setEditingText}
+                    ariaLabel={t('modals.chunk.promptText')}
+                  />
                 </div>
               </div>
             </div>
