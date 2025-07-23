@@ -6,6 +6,7 @@ import uuid
 import tiktoken
 from flask import jsonify, make_response
 from werkzeug.utils import secure_filename
+
 from application.core.settings import settings
 
 
@@ -17,6 +18,17 @@ def get_encoding():
     if _encoding is None:
         _encoding = tiktoken.get_encoding("cl100k_base")
     return _encoding
+
+
+def get_gpt_model() -> str:
+    """Get the appropriate GPT model based on provider"""
+    model_map = {
+        "openai": "gpt-4o-mini",
+        "anthropic": "claude-2",
+        "groq": "llama3-8b-8192",
+        "novita": "deepseek/deepseek-r1",
+    }
+    return settings.LLM_NAME or model_map.get(settings.LLM_PROVIDER, "")
 
 
 def safe_filename(filename):
@@ -32,15 +44,14 @@ def safe_filename(filename):
     """
     if not filename:
         return str(uuid.uuid4())
-
     _, extension = os.path.splitext(filename)
 
     safe_name = secure_filename(filename)
 
     # If secure_filename returns just the extension or an empty string
+
     if not safe_name or safe_name == extension.lstrip("."):
         return f"{str(uuid.uuid4())}{extension}"
-
     return safe_name
 
 
@@ -68,7 +79,6 @@ def count_tokens_docs(docs):
     docs_content = ""
     for doc in docs:
         docs_content += doc.page_content
-
     tokens = num_tokens_from_string(docs_content)
     return tokens
 
@@ -97,13 +107,11 @@ def validate_required_fields(data, required_fields):
             missing_fields.append(field)
         elif not data[field]:
             empty_fields.append(field)
-
     errors = []
     if missing_fields:
         errors.append(f"Missing required fields: {', '.join(missing_fields)}")
     if empty_fields:
         errors.append(f"Empty values in required fields: {', '.join(empty_fields)}")
-
     if errors:
         return make_response(
             jsonify({"success": False, "message": " | ".join(errors)}), 400
@@ -132,7 +140,6 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
 
     if not history:
         return []
-
     trimmed_history = []
     tokens_current_history = 0
 
@@ -141,18 +148,15 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
         if "prompt" in message and "response" in message:
             tokens_batch += num_tokens_from_string(message["prompt"])
             tokens_batch += num_tokens_from_string(message["response"])
-
         if "tool_calls" in message:
             for tool_call in message["tool_calls"]:
                 tool_call_string = f"Tool: {tool_call.get('tool_name')} | Action: {tool_call.get('action_name')} | Args: {tool_call.get('arguments')} | Response: {tool_call.get('result')}"
                 tokens_batch += num_tokens_from_string(tool_call_string)
-
         if tokens_current_history + tokens_batch < max_token_limit:
             tokens_current_history += tokens_batch
             trimmed_history.insert(0, message)
         else:
             break
-
     return trimmed_history
 
 

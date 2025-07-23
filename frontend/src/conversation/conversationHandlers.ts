@@ -8,7 +8,6 @@ export function handleFetchAnswer(
   signal: AbortSignal,
   token: string | null,
   selectedDocs: Doc | null,
-  history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -37,16 +36,8 @@ export function handleFetchAnswer(
       title: any;
     }
 > {
-  history = history.map((item) => {
-    return {
-      prompt: item.prompt,
-      response: item.response,
-      tool_calls: item.tool_calls,
-    };
-  });
   const payload: RetrievalPayload = {
     question: question,
-    history: JSON.stringify(history),
     conversation_id: conversationId,
     prompt_id: promptId,
     chunks: chunks,
@@ -94,7 +85,6 @@ export function handleFetchAnswerSteaming(
   signal: AbortSignal,
   token: string | null,
   selectedDocs: Doc | null,
-  history: Array<any> = [],
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -105,17 +95,8 @@ export function handleFetchAnswerSteaming(
   attachments?: string[],
   save_conversation = true,
 ): Promise<Answer> {
-  history = history.map((item) => {
-    return {
-      prompt: item.prompt,
-      response: item.response,
-      thought: item.thought,
-      tool_calls: item.tool_calls,
-    };
-  });
   const payload: RetrievalPayload = {
     question: question,
-    history: JSON.stringify(history),
     conversation_id: conversationId,
     prompt_id: promptId,
     chunks: chunks,
@@ -192,20 +173,11 @@ export function handleSearch(
   token: string | null,
   selectedDocs: Doc | null,
   conversation_id: string | null,
-  history: Array<any> = [],
   chunks: string,
   token_limit: number,
 ) {
-  history = history.map((item) => {
-    return {
-      prompt: item.prompt,
-      response: item.response,
-      tool_calls: item.tool_calls,
-    };
-  });
   const payload: RetrievalPayload = {
     question: question,
-    history: JSON.stringify(history),
     conversation_id: conversation_id,
     chunks: chunks,
     token_limit: token_limit,
