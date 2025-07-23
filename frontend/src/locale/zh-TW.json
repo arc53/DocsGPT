@@ -79,7 +79,18 @@
       "noChunks": "未找到文本塊",
       "noChunksAlt": "未找到文本塊",
       "goToDocuments": "前往文件",
-      "uploadNew": "上傳新文件"
+      "uploadNew": "上傳新文件",
+      "searchFiles": "搜尋檔案...",
+      "noResults": "未找到結果",
+      "fileName": "名稱",
+      "tokens": "Token",
+      "size": "大小",
+      "fileAlt": "檔案",
+      "folderAlt": "資料夾",
+      "parentFolderAlt": "上層資料夾",
+      "menuAlt": "選單",
+      "tokensUnit": "Token",
+      "editAlt": "編輯"
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -257,6 +268,7 @@
       "promptText": "提示文字",
       "update": "更新",
       "close": "關閉",
+      "cancel": "取消",
       "delete": "刪除",
       "deleteConfirmation": "您確定要刪除此區塊嗎？"
     }

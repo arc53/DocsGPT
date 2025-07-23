@@ -79,7 +79,18 @@
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
       "goToDocuments": "ドキュメントへ移動",
-      "uploadNew": "新規アップロード"
+      "uploadNew": "新規アップロード",
+      "searchFiles": "ファイルを検索...",
+      "noResults": "結果が見つかりません",
+      "fileName": "名前",
+      "tokens": "トークン",
+      "size": "サイズ",
+      "fileAlt": "ファイル",
+      "folderAlt": "フォルダ",
+      "parentFolderAlt": "親フォルダ",
+      "menuAlt": "メニュー",
+      "tokensUnit": "トークン",
+      "editAlt": "編集"
     },
     "apiKeys": {
       "label": "チャットボット",
@@ -257,6 +268,7 @@
       "promptText": "プロンプトテキスト",
       "update": "更新",
       "close": "閉じる",
+      "cancel": "キャンセル",
       "delete": "削除",
       "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
     }

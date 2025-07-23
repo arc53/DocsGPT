@@ -10,6 +10,7 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import OutlineSource from '../assets/outline-source.svg';
 import Spinner from '../components/Spinner';
 import ChunkModal from '../modals/ChunkModal';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { ChunkType } from '../settings/types';
 import EditIcon from '../assets/edit.svg';
@@ -104,6 +105,8 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   const [editingTitle, setEditingTitle] = useState('');
   const [editingText, setEditingText] = useState('');
   const [isAddingChunk, setIsAddingChunk] = useState(false);
+  const [deleteModalState, setDeleteModalState] = useState<ActiveState>('INACTIVE');
+  const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
 
 
 
@@ -200,6 +203,24 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
     }
   };
 
+  const confirmDeleteChunk = (chunk: ChunkType) => {
+    setChunkToDelete(chunk);
+    setDeleteModalState('ACTIVE');
+  };
+
+  const handleConfirmedDelete = () => {
+    if (chunkToDelete) {
+      handleDeleteChunk(chunkToDelete);
+      setDeleteModalState('INACTIVE');
+      setChunkToDelete(null);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteModalState('INACTIVE');
+    setChunkToDelete(null);
+  };
+
   useEffect(() => {
     fetchChunks();
   }, [page, perPage, path]);
@@ -251,8 +272,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
             <button
               className="rounded-full border border-solid border-red-500 px-3 py-1 text-sm text-nowrap text-red-500 hover:bg-red-500 hover:text-white"
               onClick={() => {
-                handleDeleteChunk(editingChunk);
-                setEditingChunk(null);
+                confirmDeleteChunk(editingChunk);
               }}
             >
               {t('modals.chunk.delete')}
@@ -281,7 +301,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               onClick={() => setIsAddingChunk(false)}
               className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
             >
-              {t('modals.chunk.close')}
+              {t('modals.chunk.cancel')}
             </button>
             <button
               onClick={() => {
@@ -366,10 +386,10 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                         <div className="w-full">
                           <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
                             <div className="text-[#59636E] text-sm dark:text-[#E0E0E0]">
-                              {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} tokens
+                              {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} {t('settings.documents.tokensUnit')}
                             </div>
                             <button
-                              aria-label={'edit'}
+                              aria-label={t('settings.documents.editAlt')}
                               onClick={() => {
                                 setEditingChunk(chunk);
                                 setEditingTitle(chunk.metadata?.title || '');
@@ -408,7 +428,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               <div className="relative flex flex-col rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden w-full">
                 <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
                   <div className="text-[#59636E] text-sm dark:text-[#E0E0E0]">
-                    {editingChunk.metadata.token_count ? editingChunk.metadata.token_count.toLocaleString() : '-'} tokens
+                    {editingChunk.metadata.token_count ? editingChunk.metadata.token_count.toLocaleString() : '-'} {t('settings.documents.tokensUnit')}
                   </div>
                 </div>
                 <div className="p-4 overflow-hidden">
@@ -436,6 +456,17 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        message={t('modals.chunk.deleteConfirmation')}
+        modalState={deleteModalState}
+        setModalState={setDeleteModalState}
+        handleSubmit={handleConfirmedDelete}
+        handleCancel={handleCancelDelete}
+        submitLabel={t('modals.chunk.delete')}
+        variant="danger"
+      />
     </div>
   );
 };

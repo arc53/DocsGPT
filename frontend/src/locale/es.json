@@ -79,7 +79,18 @@
       "noChunks": "No se encontraron fragmentos",
       "noChunksAlt": "No se encontraron fragmentos",
       "goToDocuments": "Ir a Documentos",
-      "uploadNew": "Subir nuevo"
+      "uploadNew": "Subir nuevo",
+      "searchFiles": "Buscar archivos...",
+      "noResults": "No se encontraron resultados",
+      "fileName": "Nombre",
+      "tokens": "Tokens",
+      "size": "Tamaño",
+      "fileAlt": "Archivo",
+      "folderAlt": "Carpeta",
+      "parentFolderAlt": "Carpeta padre",
+      "menuAlt": "Menú",
+      "tokensUnit": "tokens",
+      "editAlt": "Editar"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -257,6 +268,7 @@
       "promptText": "Texto del prompt",
       "update": "Actualizar",
       "close": "Cerrar",
+      "cancel": "Cancelar",
       "delete": "Eliminar",
       "deleteConfirmation": "¿Estás seguro de que deseas eliminar este fragmento?"
     }

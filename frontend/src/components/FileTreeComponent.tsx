@@ -283,7 +283,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               <div className="flex items-center">
                 <img
                   src={FolderIcon}
-                  alt="Parent folder"
+                  alt={t('settings.documents.parentFolderAlt')}
                   className="mr-2 h-4 w-4"
                 />
                 <span className="text-sm dark:text-[#E0E0E0]">..</span>
@@ -312,7 +312,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           >
             <td className="px-4 py-2">
               <div className="flex items-center">
-                <img src={FolderIcon} alt="Folder" className="mr-2 h-4 w-4" />
+                <img src={FolderIcon} alt={t('settings.documents.folderAlt')} className="mr-2 h-4 w-4" />
                 <span className="text-sm dark:text-[#E0E0E0]">{name}</span>
               </div>
             </td>
@@ -333,7 +333,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 >
                   <img
                     src={ThreeDots}
-                    alt="Menu"
+                    alt={t('settings.documents.menuAlt')}
                     className="opacity-60 hover:opacity-100"
                   />
                 </button>
@@ -364,7 +364,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           >
             <td className="px-4 py-2">
               <div className="flex items-center">
-                <img src={FileIcon} alt="File" className="mr-2 h-4 w-4" />
+                <img src={FileIcon} alt={t('settings.documents.fileAlt')} className="mr-2 h-4 w-4" />
                 <span className="text-sm dark:text-[#E0E0E0]">{name}</span>
               </div>
             </td>
@@ -383,7 +383,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 >
                   <img
                     src={ThreeDots}
-                    alt="Menu"
+                    alt={t('settings.documents.menuAlt')}
                     className="opacity-60 hover:opacity-100"
                   />
                 </button>
@@ -490,7 +490,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   >
                     <img
                       src={result.isFile ? FileIcon : FolderIcon}
-                      alt={result.isFile ? "File" : "Folder"}
+                      alt={result.isFile ? t('settings.documents.fileAlt') : t('settings.documents.folderAlt')}
                       className="flex-shrink-0 w-4 h-4 mr-2"
                     />
                     <span className="text-sm dark:text-[#E0E0E0]">
@@ -537,16 +537,16 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   <thead className="bg-gray-100 dark:bg-[#27282D]">
                     <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
                       <th className="w-3/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        Name
+                        {t('settings.documents.fileName')}
                       </th>
                       <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        Tokens
+                        {t('settings.documents.tokens')}
                       </th>
                       <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        Size
+                        {t('settings.documents.size')}
                       </th>
                       <th className="w-[60px] px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t('settings.documents.actions')}</span>
                       </th>
                     </tr>
                   </thead>
