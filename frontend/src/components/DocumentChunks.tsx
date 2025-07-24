@@ -116,7 +116,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
     setLoading(true);
     try {
       userService
-        .getDocumentChunks(documentId, page, perPage, token, path)
+        .getDocumentChunks(documentId, page, perPage, token, path, searchTerm)
         .then((response) => {
           if (!response.ok) {
             setLoading(false);
@@ -131,10 +131,14 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           setTotalChunks(data.total);
           setPaginatedChunks(data.chunks);
           setLoading(false);
+        })
+        .catch((error) => {
+          setLoading(false);
+          setPaginatedChunks([]);
         });
     } catch (e) {
-      console.log(e);
       setLoading(false);
+      setPaginatedChunks([]);
     }
   };
 
@@ -222,15 +226,33 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   };
 
   useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        fetchChunks();
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+  useEffect(() => {
     fetchChunks();
   }, [page, perPage, path]);
+  useEffect(() => {
+    setSearchTerm('');
+    setPage(1);
+  }, [path]);
+  // Remove the client-side filtering
+  // const filteredChunks = paginatedChunks.filter((chunk) => {
+  //   if (!chunk.metadata?.title) return true;
+  //   return chunk.metadata.title
+  //     .toLowerCase()
+  //     .includes(searchTerm.toLowerCase());
+  // });
 
-  const filteredChunks = paginatedChunks.filter((chunk) => {
-    if (!chunk.metadata?.title) return true;
-    return chunk.metadata.title
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-  });
+  // Use the server-filtered chunks directly
+  const filteredChunks = paginatedChunks;
 
   const renderPathNavigation = () => {
     return (
@@ -367,7 +389,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                   <Spinner />
                 </div>
               ) : (
-                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="w-full grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredChunks.length === 0 ? (
                     <div className="col-span-full flex flex-col items-center justify-center mt-24 text-center text-gray-500 dark:text-gray-400">
                       <img
@@ -442,7 +464,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
             </div>
           )}
 
-          {!loading && filteredChunks.length > 0 && !editingChunk && !isAddingChunk && (
+          {!loading && totalChunks > perPage && !editingChunk && !isAddingChunk && (
             <Pagination
               currentPage={page}
               totalPages={Math.ceil(totalChunks / perPage)}

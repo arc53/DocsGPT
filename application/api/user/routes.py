@@ -3265,12 +3265,13 @@ class DeleteTool(Resource):
 @user_ns.route("/api/get_chunks")
 class GetChunks(Resource):
     @api.doc(
-        description="Retrieves chunks from a document, optionally filtered by file path",
+        description="Retrieves chunks from a document, optionally filtered by file path and search term",
         params={
             "id": "The document ID",
             "page": "Page number for pagination",
             "per_page": "Number of chunks per page",
-            "path": "Optional: Filter chunks by relative file path"
+            "path": "Optional: Filter chunks by relative file path",
+            "search": "Optional: Search term to filter chunks by title or content"
         },
     )
     def get(self):
@@ -3282,6 +3283,7 @@ class GetChunks(Resource):
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 10))
         path = request.args.get("path")
+        search_term = request.args.get("search", "").strip().lower()
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
@@ -3294,20 +3296,35 @@ class GetChunks(Resource):
             store = get_vector_store(doc_id)
             chunks = store.get_chunks()
             
-            if path:
-                filtered_chunks = []
-                for chunk in chunks:
-                    metadata = chunk.get("metadata", {})
+            filtered_chunks = []
+            for chunk in chunks:
+                metadata = chunk.get("metadata", {})
+                
+                if path:
                     source = metadata.get("source", "")
+                    path_match = False
                     
                     if isinstance(source, str) and source.endswith(path):
-                        filtered_chunks.append(chunk)
+                        path_match = True
                     elif isinstance(source, list):
                         for src in source:
                             if isinstance(src, str) and src.endswith(path):
-                                filtered_chunks.append(chunk)
+                                path_match = True
                                 break
-                chunks = filtered_chunks
+                    
+                    if not path_match:
+                        continue
+                
+                if search_term:
+                    text_match = search_term in chunk.get("text", "").lower()
+                    title_match = search_term in metadata.get("title", "").lower()
+                    
+                    if not (text_match or title_match):
+                        continue
+                    
+                filtered_chunks.append(chunk)
+            
+            chunks = filtered_chunks
             
             total_chunks = len(chunks)
             start = (page - 1) * per_page
@@ -3321,7 +3338,8 @@ class GetChunks(Resource):
                         "per_page": per_page,
                         "total": total_chunks,
                         "chunks": paginated_chunks,
-                        "path": path if path else None
+                        "path": path if path else None,
+                        "search": search_term if search_term else None
                     }
                 ),
                 200,
@@ -3329,7 +3347,6 @@ class GetChunks(Resource):
         except Exception as e:
             current_app.logger.error(f"Error getting chunks: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
-
 
 @user_ns.route("/api/add_chunk")
 class AddChunk(Resource):

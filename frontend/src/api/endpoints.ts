@@ -43,8 +43,11 @@ const endpoints = {
       page: number,
       per_page: number,
       path?: string,
+      search?: string,
     ) =>
-      `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}${path ? `&path=${encodeURIComponent(path)}` : ''}`,
+      `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}${
+        path ? `&path=${encodeURIComponent(path)}` : ''
+      }${search ? `&search=${encodeURIComponent(search)}` : ''}`,
     ADD_CHUNK: '/api/add_chunk',
     DELETE_CHUNK: (docId: string, chunkId: string) =>
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,

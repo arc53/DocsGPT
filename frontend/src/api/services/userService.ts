@@ -87,8 +87,9 @@ const userService = {
     perPage: number,
     token: string | null,
     path?: string,
+    search?: string,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage, path), token),
+    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search), token),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (
