@@ -41,7 +41,7 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
         except FileNotFoundError:
             raise FileNotFoundError(f"Prompt file not found: {file_path}")
     try:
-        if not prompts_collection:
+        if prompts_collection is None:
             mongo = MongoDB.get_client()
             db = mongo[settings.MONGO_DB_NAME]
             prompts_collection = db["prompts"]

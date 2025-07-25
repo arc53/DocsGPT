@@ -70,8 +70,6 @@ class StreamResource(Resource, BaseAnswerResource):
         if error := self.validate_request(data, "index" in data):
             return error
         decoded_token = getattr(request, "decoded_token", None)
-        if not decoded_token:
-            return make_response({"error": "Unauthorized"}, 401)
         processor = StreamProcessor(data, decoded_token)
         try:
             processor.initialize()

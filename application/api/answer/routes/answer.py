@@ -63,7 +63,8 @@ class AnswerResource(Resource, BaseAnswerResource):
         data = request.get_json()
         if error := self.validate_request(data):
             return error
-        processor = StreamProcessor(data, None)
+        decoded_token = getattr(request, "decoded_token", None)
+        processor = StreamProcessor(data, decoded_token)
         try:
             processor.initialize()
             if not processor.decoded_token:
