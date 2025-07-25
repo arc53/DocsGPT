@@ -19,10 +19,10 @@
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
   <a href="https://twitter.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
 
-  <a href="https://docs.docsgpt.cloud/quickstart">⚡️ Quickstart</a> • <a href="https://app.docsgpt.cloud/">☁️ Cloud Version</a> • <a href="https://discord.gg/n5BX8dh8rU">💬 Discord</a>
-  <br>
-  <a href="https://docs.docsgpt.cloud/">📖 Documentation</a> • <a href="https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md">👫 Contribute</a> • <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
-  <br>
+<a href="https://docs.docsgpt.cloud/quickstart">⚡️ Quickstart</a> • <a href="https://app.docsgpt.cloud/">☁️ Cloud Version</a> • <a href="https://discord.gg/n5BX8dh8rU">💬 Discord</a>
+<br>
+<a href="https://docs.docsgpt.cloud/">📖 Documentation</a> • <a href="https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md">👫 Contribute</a> • <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
+<br>
 
 </div>
 <div align="center">
@@ -71,10 +71,9 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 
 ## Join the Lighthouse Program 🌟
 
-Calling all developers and GenAI innovators! The **DocsGPT Lighthouse Program** connects technical leaders actively deploying or extending DocsGPT in real-world scenarios. Collaborate directly with our team to shape the roadmap, access priority support, and build enterprise-ready solutions with exclusive community insights.  
+Calling all developers and GenAI innovators! The **DocsGPT Lighthouse Program** connects technical leaders actively deploying or extending DocsGPT in real-world scenarios. Collaborate directly with our team to shape the roadmap, access priority support, and build enterprise-ready solutions with exclusive community insights.
 
 [Learn More & Apply →](https://docs.google.com/forms/d/1KAADiJinUJ8EMQyfTXUIGyFbqINNClNR3jBNWq7DgTE)
-
 
 ## QuickStart
 
@@ -106,7 +105,7 @@ A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available
    PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
    ```
 
-Either script will guide you through setting up DocsGPT. Four options available: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider.  Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
+Either script will guide you through setting up DocsGPT. Four options available: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider. Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
 
 **Navigate to http://localhost:5173/**
 
@@ -115,6 +114,7 @@ To stop DocsGPT, open a terminal in the `DocsGPT` directory and run:
 ```bash
 docker compose -f deployment/docker-compose.yaml down
 ```
+
 (or use the specific `docker compose down` command shown after running the setup script).
 
 > [!Note]
@@ -141,7 +141,6 @@ Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information abou
 ## Code Of Conduct
 
 We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
-
 
 ## Many Thanks To Our Contributors⚡
 
