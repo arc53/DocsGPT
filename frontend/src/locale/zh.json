@@ -79,7 +79,18 @@
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
       "goToDocuments": "前往文档",
-      "uploadNew": "上传新文档"
+      "uploadNew": "上传新文档",
+      "searchFiles": "搜索文件...",
+      "noResults": "未找到结果",
+      "fileName": "名称",
+      "tokens": "令牌",
+      "size": "大小",
+      "fileAlt": "文件",
+      "folderAlt": "文件夹",
+      "parentFolderAlt": "父文件夹",
+      "menuAlt": "菜单",
+      "tokensUnit": "令牌",
+      "editAlt": "编辑"
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -257,6 +268,7 @@
       "promptText": "提示文本",
       "update": "更新",
       "close": "关闭",
+      "cancel": "取消",
       "delete": "删除",
       "deleteConfirmation": "您确定要删除此块吗？"
     }

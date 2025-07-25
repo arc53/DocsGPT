@@ -79,7 +79,18 @@
       "noChunks": "Фрагменты не найдены",
       "noChunksAlt": "Фрагменты не найдены",
       "goToDocuments": "Перейти к документам",
-      "uploadNew": "Загрузить новый"
+      "uploadNew": "Загрузить новый",
+      "searchFiles": "Поиск файлов...",
+      "noResults": "Результаты не найдены",
+      "fileName": "Имя",
+      "tokens": "Токены",
+      "size": "Размер",
+      "fileAlt": "Файл",
+      "folderAlt": "Папка",
+      "parentFolderAlt": "Родительская папка",
+      "menuAlt": "Меню",
+      "tokensUnit": "токенов",
+      "editAlt": "Редактировать"
     },
     "apiKeys": {
       "label": "API ключи",
@@ -257,6 +268,7 @@
       "promptText": "Текст подсказки",
       "update": "Обновить",
       "close": "Закрыть",
+      "cancel": "Отмена",
       "delete": "Удалить",
       "deleteConfirmation": "Вы уверены, что хотите удалить этот фрагмент?"
     }

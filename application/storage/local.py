@@ -101,3 +101,16 @@ class LocalStorage(BaseStorage):
             raise FileNotFoundError(f"File not found: {full_path}")
 
         return processor_func(local_path=full_path, **kwargs)
+
+    def is_directory(self, path: str) -> bool:
+        """
+        Check if a path is a directory in local storage.
+        
+        Args:
+            path: Path to check
+        
+        Returns:
+            bool: True if the path is a directory, False otherwise
+        """
+        full_path = self._get_full_path(path)
+        return os.path.isdir(full_path)
