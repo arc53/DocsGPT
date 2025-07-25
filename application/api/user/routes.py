@@ -9,7 +9,6 @@ from functools import wraps
 from typing import Optional, Tuple
 import tempfile
 import zipfile
-
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
@@ -46,6 +45,7 @@ from application.utils import (
     validate_function_name,
     validate_required_fields,
 )
+from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
 storage = StorageCreator.get_storage()
@@ -3379,6 +3379,8 @@ class AddChunk(Resource):
         doc_id = data.get("id")
         text = data.get("text")
         metadata = data.get("metadata", {})
+        token_count = num_tokens_from_string(text)
+        metadata["token_count"] = token_count
 
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
@@ -3475,6 +3477,12 @@ class UpdateChunk(Resource):
         text = data.get("text")
         metadata = data.get("metadata")
 
+        if text is not None:
+            token_count = num_tokens_from_string(text)
+            if metadata is None:
+                metadata = {}
+            metadata["token_count"] = token_count
+
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
@@ -3497,6 +3505,10 @@ class UpdateChunk(Resource):
             new_metadata = (
                 metadata if metadata is not None else existing_chunk["metadata"]
             )
+
+            if text is not None and metadata is None:
+                token_count = num_tokens_from_string(new_text)
+                new_metadata["token_count"] = token_count
 
             new_chunk_id = store.add_chunk(new_text, new_metadata)
 
