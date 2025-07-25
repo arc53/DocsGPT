@@ -156,14 +156,18 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
   const handleAddChunk = (title: string, text: string) => {
     try {
+      const metadata = {
+        source: path || documentName,
+        source_id: documentId,
+        title: title,
+      };
+
       userService
         .addChunk(
           {
             id: documentId,
             text: text,
-            metadata: {
-              title: title,
-            },
+            metadata: metadata,
           },
           token,
         )
