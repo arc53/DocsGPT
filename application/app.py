@@ -12,19 +12,18 @@ from application.core.logging_config import setup_logging
 
 setup_logging()
 
-from application.api.answer.routes import answer  # noqa: E402
+from application.api import api  # noqa: E402
+from application.api.answer import answer  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.settings import settings  # noqa: E402
-from application.extensions import api  # noqa: E402
 
 
 if platform.system() == "Windows":
     import pathlib
 
     pathlib.PosixPath = pathlib.WindowsPath
-
 dotenv.load_dotenv()
 
 app = Flask(__name__)
@@ -52,7 +51,6 @@ if settings.AUTH_TYPE in ("simple_jwt", "session_jwt") and not settings.JWT_SECR
         settings.JWT_SECRET_KEY = new_key
     except Exception as e:
         raise RuntimeError(f"Failed to setup JWT_SECRET_KEY: {e}")
-
 SIMPLE_JWT_TOKEN = None
 if settings.AUTH_TYPE == "simple_jwt":
     payload = {"sub": "local"}
@@ -92,7 +90,6 @@ def generate_token():
 def authenticate_request():
     if request.method == "OPTIONS":
         return "", 200
-
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None

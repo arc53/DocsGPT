@@ -52,7 +52,6 @@ export interface RetrievalPayload {
   question: string;
   active_docs?: string;
   retriever?: string;
-  history: string;
   conversation_id: string | null;
   prompt_id?: string | null;
   chunks: string;
