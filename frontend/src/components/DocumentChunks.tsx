@@ -154,6 +154,10 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   };
 
   const handleAddChunk = (title: string, text: string) => {
+    if (!text.trim()) {
+      return;
+    }
+
     try {
       const metadata = {
         source: path || documentName,
@@ -182,6 +186,18 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   };
 
   const handleUpdateChunk = (title: string, text: string, chunk: ChunkType) => {
+
+    if (!text.trim()) {
+      return;
+    }
+
+    const originalTitle = chunk.metadata?.title || '';
+    const originalText = chunk.text || '';
+
+    if (title === originalTitle && text === originalText) {
+      return;
+    }
+
     try {
       userService
         .updateChunk(
@@ -326,11 +342,23 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    handleUpdateChunk(editingTitle, editingText, editingChunk);
-                    setIsEditing(false);
-                    setEditingChunk(null);
+                    if (editingText.trim()) {
+                      const hasChanges = editingTitle !== (editingChunk?.metadata?.title || '') ||
+                                       editingText !== (editingChunk?.text || '');
+
+                      if (hasChanges) {
+                        handleUpdateChunk(editingTitle, editingText, editingChunk);
+                      }
+                      setIsEditing(false);
+                      setEditingChunk(null);
+                    }
                   }}
-                  className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
+                  disabled={!editingText.trim() || (editingTitle === (editingChunk?.metadata?.title || '') && editingText === (editingChunk?.text || ''))}
+                  className={`rounded-full px-3 py-1 text-sm text-white transition-all ${
+                    editingText.trim() && (editingTitle !== (editingChunk?.metadata?.title || '') || editingText !== (editingChunk?.text || ''))
+                      ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
+                      : 'bg-gray-400 cursor-not-allowed'
+                  }`}
                 >
                   {t('modals.chunk.update')}
                 </button>
@@ -349,10 +377,17 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
             </button>
             <button
               onClick={() => {
-                handleAddChunk(editingTitle, editingText);
-                setIsAddingChunk(false);
+                if (editingText.trim()) {
+                  handleAddChunk(editingTitle, editingText);
+                  setIsAddingChunk(false);
+                }
               }}
-              className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
+              disabled={!editingText.trim()}
+              className={`rounded-full px-3 py-1 text-sm text-white transition-all ${
+                editingText.trim()
+                  ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
+                  : 'bg-gray-400 cursor-not-allowed'
+              }`}
             >
               {t('modals.chunk.add')}
             </button>
