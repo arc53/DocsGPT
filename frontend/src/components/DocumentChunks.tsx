@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { selectToken } from '../preferences/preferenceSlice';
-import { useDarkTheme, useLoaderState } from '../hooks';
+import { useDarkTheme, useLoaderState, useMediaQuery } from '../hooks';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -33,19 +33,23 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
   className = '',
   editable = true
 }) => {
+  const { isMobile } = useMediaQuery();
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
   };
 
   const lineHeight = 19.93;
   const contentLines = value.split('\n').length;
-  const minLinesForDisplay = Math.ceil((typeof window !== 'undefined' ? window.innerHeight - 300 : 600) / lineHeight);
+  
+  const heightOffset = isMobile ? 200 : 300;
+  const minLinesForDisplay = Math.ceil((typeof window !== 'undefined' ? window.innerHeight - heightOffset : 600) / lineHeight);
   const totalLines = Math.max(contentLines, minLinesForDisplay);
 
   return (
     <div className={`relative w-full ${className}`}>
       <div
-        className="absolute left-0 top-0 w-12 text-right text-gray-500 dark:text-gray-400 text-sm font-mono leading-[19.93px] select-none pr-3 pointer-events-none"
+        className="absolute left-0 top-0 w-8 lg:w-12 text-right text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-mono leading-[19.93px] select-none pr-2 lg:pr-3 pointer-events-none"
         style={{
           height: `${totalLines * lineHeight}px`
         }}
@@ -53,11 +57,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
         {Array.from({ length: totalLines }, (_, i) => (
           <div
             key={i + 1}
-            className="flex items-center justify-end"
-            style={{
-              height: `${lineHeight}px`,
-              lineHeight: `${lineHeight}px`
-            }}
+            className="flex items-center justify-end h-[19.93px] leading-[19.93px]"
           >
             {i + 1}
           </div>
@@ -65,20 +65,19 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
       </div>
       {editable ? (
         <textarea
-          className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-12 overflow-hidden`}
+          className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-8 lg:pl-12 overflow-hidden ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'}`}
           value={value}
           onChange={handleChange}
           placeholder={placeholder}
           aria-label={ariaLabel}
           rows={totalLines}
           style={{
-            height: `${totalLines * lineHeight}px`,
-            minHeight: 'calc(100vh - 300px)'
+            height: `${totalLines * lineHeight}px`
           }}
         />
       ) : (
         <div
-          className={`w-full bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] pl-12 whitespace-pre-wrap`}
+          className={`w-full bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] pl-8 lg:pl-12 whitespace-pre-wrap`}
           style={{
             minHeight: `${totalLines * lineHeight}px`
           }}
@@ -259,20 +258,12 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
     setSearchTerm('');
     setPage(1);
   }, [path]);
-  // Remove the client-side filtering
-  // const filteredChunks = paginatedChunks.filter((chunk) => {
-  //   if (!chunk.metadata?.title) return true;
-  //   return chunk.metadata.title
-  //     .toLowerCase()
-  //     .includes(searchTerm.toLowerCase());
-  // });
 
-  // Use the server-filtered chunks directly
   const filteredChunks = paginatedChunks;
 
   const renderPathNavigation = () => {
     return (
-      <div className="flex items-center justify-between w-full">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between w-full gap-3">
         <div className="flex items-center">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] flex-shrink-0"
@@ -281,9 +272,9 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
 
-          <div className="flex items-center overflow-hidden">
+          <div className="flex items-center flex-wrap">
             <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
-            <span className="text-[#7D54D1] font-semibold text-base leading-6 whitespace-nowrap">
+            <span className="text-[#7D54D1] font-semibold text-base leading-6 break-words">
               {documentName}
             </span>
 
@@ -292,7 +283,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                 <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
                 {pathParts.map((part, index) => (
                   <React.Fragment key={index}>
-                    <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                    <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300 break-words">
                       {part}
                     </span>
                     {index < pathParts.length - 1 && (
@@ -306,7 +297,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         </div>
 
         {editingChunk && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
             {!isEditing ? (
               <button
                 className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
@@ -349,7 +340,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         )}
 
         {isAddingChunk && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
             <button
               onClick={() => setIsAddingChunk(false)}
               className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
@@ -377,7 +368,9 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
         {renderPathNavigation()}
       </div>
       <div className="flex gap-4">
-        {renderFileSearch && renderFileSearch()}
+        <div className="hidden lg:block">
+          {renderFileSearch && renderFileSearch()}
+        </div>
 
         {/* Right side: Chunks content */}
         <div className="flex-1">

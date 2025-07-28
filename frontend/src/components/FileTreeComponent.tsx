@@ -211,19 +211,19 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
 
-        <div className="flex items-center">
-          <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5" />
-          <span className="text-purple-30 font-medium">{sourceName}</span>
+        <div className="flex items-center flex-wrap">
+          <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
+          <span className="text-purple-30 font-medium break-words">{sourceName}</span>
           {currentPath.length > 0 && (
             <>
-              <span className="mx-1 text-gray-500">/</span>
+              <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
               {currentPath.map((dir, index) => (
                 <React.Fragment key={index}>
-                  <span className="text-gray-700 dark:text-gray-300">
+                  <span className="text-gray-700 dark:text-gray-300 break-words">
                     {dir}
                   </span>
                   {index < currentPath.length - 1 && (
-                    <span className="mx-1 text-gray-500">/</span>
+                    <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
                   )}
                 </React.Fragment>
               ))}
@@ -231,8 +231,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           )}
           {selectedFile && (
             <>
-              <span className="mx-1 text-gray-500">/</span>
-              <span className="text-gray-700 dark:text-gray-300">
+              <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
+              <span className="text-gray-700 dark:text-gray-300 break-words">
                 {selectedFile.name}
               </span>
             </>
@@ -279,19 +279,19 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={navigateUp}
           >
-            <td className="px-4 py-2">
+            <td className="px-2 lg:px-4 py-2">
               <div className="flex items-center">
                 <img
                   src={FolderIcon}
                   alt={t('settings.documents.parentFolderAlt')}
-                  className="mr-2 h-4 w-4"
+                  className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="text-sm dark:text-[#E0E0E0]">..</span>
+                <span className="text-sm dark:text-[#E0E0E0] truncate">..</span>
               </div>
             </td>
-            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
-            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
-            <td className="w-10 px-4 py-2 text-sm"></td>
+            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
+            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
+            <td className="w-10 px-2 lg:px-4 py-2 text-sm"></td>
           </tr>,
         ]
         : [];
@@ -310,21 +310,21 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => navigateToDirectory(name)}
           >
-            <td className="px-4 py-2">
-              <div className="flex items-center">
-                <img src={FolderIcon} alt={t('settings.documents.folderAlt')} className="mr-2 h-4 w-4" />
-                <span className="text-sm dark:text-[#E0E0E0]">{name}</span>
+            <td className="px-2 lg:px-4 py-2">
+              <div className="flex items-center min-w-0">
+                <img src={FolderIcon} alt={t('settings.documents.folderAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
+                <span className="text-sm dark:text-[#E0E0E0] truncate">{name}</span>
               </div>
             </td>
-            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">
               {dirStats.totalTokens > 0
                 ? dirStats.totalTokens.toLocaleString()
                 : '-'}
             </td>
-            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">
               {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
             </td>
-            <td className="w-10 px-4 py-2 text-sm">
+            <td className="w-10 px-2 lg:px-4 py-2 text-sm">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -362,19 +362,19 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => handleFileClick(name)}
           >
-            <td className="px-4 py-2">
-              <div className="flex items-center">
-                <img src={FileIcon} alt={t('settings.documents.fileAlt')} className="mr-2 h-4 w-4" />
-                <span className="text-sm dark:text-[#E0E0E0]">{name}</span>
+            <td className="px-2 lg:px-4 py-2">
+              <div className="flex items-center min-w-0">
+                <img src={FileIcon} alt={t('settings.documents.fileAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
+                <span className="text-sm dark:text-[#E0E0E0] truncate">{name}</span>
               </div>
             </td>
-            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">
               {node.token_count?.toLocaleString() || '-'}
             </td>
-            <td className="px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 md:px-4 py-2 text-sm dark:text-[#E0E0E0]">
               {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
             </td>
-            <td className="w-10 px-4 py-2 text-sm">
+            <td className="w-10 px-2 lg:px-4 py-2 text-sm">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -521,31 +521,33 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex flex-col">
+        <div className="flex flex-col w-full max-w-full overflow-hidden">
           <div className="mb-4">
             {renderPathNavigation()}
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex gap-4 min-w-0">
             {/* Left side: Search dropdown */}
-            {renderFileSearch()}
-            
+            <div className="hidden lg:block flex-shrink-0">
+              {renderFileSearch()}
+            </div>
+
             {/* Right side: File table */}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-                <table className="min-w-full table-fixed bg-transparent">
+                <table className="w-full table-auto bg-transparent min-w-[600px]">
                   <thead className="bg-gray-100 dark:bg-[#27282D]">
                     <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-                      <th className="w-3/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="min-w-[200px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
                         {t('settings.documents.fileName')}
                       </th>
-                      <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="min-w-[80px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
                         {t('settings.documents.tokens')}
                       </th>
-                      <th className="w-1/5 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="min-w-[80px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
                         {t('settings.documents.size')}
                       </th>
-                      <th className="w-[60px] px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="w-[60px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
                         <span className="sr-only">{t('settings.documents.actions')}</span>
                       </th>
                     </tr>
