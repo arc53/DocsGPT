@@ -1,0 +1,56 @@
+---
+title: Port Conflicts & Solutions
+description: How to detect and resolve port conflicts when running DocsGPT locally with Docker Compose.
+---
+
+import { Callout } from 'nextra/components';
+
+# Port Conflicts & Solutions
+
+<Callout type="warning">If you cannot access DocsGPT on the expected port, you may have a port conflict. See below for solutions.</Callout>
+
+When running DocsGPT locally, you may encounter port conflicts if another application is already using a required port (e.g., 5173, 7091, 6379, 27017).
+
+## How to Detect a Port Conflict
+
+- **On Windows:**  
+  `netstat -ano | findstr :5173`
+- **On Mac/Linux:**  
+  `lsof -i :5173`
+
+If you see output, another process is using the port.
+
+## How to Change the Port
+
+In your `docker-compose.yaml`, change the left side of the port mapping:
+```yaml
+ports:
+  - "5174:5173"
+```
+Now, access the app at `http://localhost:5174`.
+
+> **Note:** In the port mapping (`5174:5173`), the number on the right (`5173`) is the internal port used by the Docker container (DocsGPT app), while the number on the left (`5174`) is the external port exposed on your computer (host). You can change the left side to any available port if you have a conflict. The right side should match the port the app listens to inside the container.
+
+## Common Ports Used
+
+| Service   | Default Port |
+|-----------|--------------|
+| Frontend  | 5173         |
+| Backend   | 7091         |
+| Redis     | 6379         |
+| MongoDB   | 27017        |
+
+## FAQ
+
+**Q: I changed the port but still can't access the app?**  
+A: Make sure to use the new port in your browser and restart Docker Compose.
+
+**Q: How do I know which process is using a port?**  
+A: Use the commands above to find the process ID, then stop or change that process.
+
+**Q: Can I use any port number?**  
+A: Yes, as long as it is not already in use and is allowed by your firewall/security settings.
+
+---
+
+If you encounter persistent issues, feel free to open an issue on GitHub or ask for help in the DocsGPT Discord community. 

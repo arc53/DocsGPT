@@ -83,6 +83,8 @@ Calling all developers and GenAI innovators! The **DocsGPT Lighthouse Program** 
 
 A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available in our documentation
 
+**If you encounter port conflicts (e.g., "address already in use" errors), see our new guide: [Port Conflicts & Solutions](docs/pages/Deploying/Port-Conflicts.mdx)**
+
 1. **Clone the repository:**
 
    ```bash
