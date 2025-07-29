@@ -23,6 +23,13 @@ def ingest_remote(self, source_data, job_name, user, loader):
 
 
 @celery.task(bind=True)
+def reingest_source_task(self, source_id, user):
+    from application.worker import reingest_source_worker
+    resp = reingest_source_worker(self, source_id, user)
+    return resp
+
+
+@celery.task(bind=True)
 def schedule_syncs(self, frequency):
     resp = sync_worker(self, frequency)
     return resp

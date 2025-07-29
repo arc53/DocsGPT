@@ -627,6 +627,145 @@ class UploadFile(Resource):
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
+@user_ns.route("/api/manage_source_files")
+class ManageSourceFiles(Resource):
+    @api.expect(
+        api.model(
+            "ManageSourceFilesModel",
+            {
+                "source_id": fields.String(required=True, description="Source ID to modify"),
+                "operation": fields.String(required=True, description="Operation: 'add' or 'remove'"),
+                "file_paths": fields.List(fields.String, required=False, description="File paths to remove (for remove operation)"),
+                "file": fields.Raw(required=False, description="Files to add (for add operation)"),
+                "parent_dir": fields.String(required=False, description="Parent directory path relative to source root"),
+            },
+        )
+    )
+    @api.doc(
+        description="Add or remove files from an existing source",
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False, "message": "Unauthorized"}), 401)
+
+        user = decoded_token.get("sub")
+        source_id = request.form.get("source_id")
+        operation = request.form.get("operation")
+
+        if not source_id or not operation:
+            return make_response(
+                jsonify({"success": False, "message": "source_id and operation are required"}), 400
+            )
+
+        if operation not in ["add", "remove"]:
+            return make_response(
+                jsonify({"success": False, "message": "operation must be 'add' or 'remove'"}), 400
+            )
+
+        try:
+            ObjectId(source_id)
+        except Exception:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid source ID format"}), 400
+            )
+
+        try:
+            source = sources_collection.find_one({"_id": ObjectId(source_id), "user": user})
+            if not source:
+                return make_response(
+                    jsonify({"success": False, "message": "Source not found or access denied"}), 404
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error finding source: {err}", exc_info=True)
+            return make_response(jsonify({"success": False, "message": "Database error"}), 500)
+
+        try:
+            storage = StorageCreator.get_storage()
+            source_file_path = source.get("file_path", "")
+            parent_dir = request.form.get("parent_dir", "") 
+            
+            if parent_dir and (parent_dir.startswith("/") or ".." in parent_dir):
+                return make_response(
+                    jsonify({"success": False, "message": "Invalid parent directory path"}), 400
+                )
+
+            if operation == "add":
+                files = request.files.getlist("file")
+                if not files or all(file.filename == "" for file in files):
+                    return make_response(
+                        jsonify({"success": False, "message": "No files provided for add operation"}), 400
+                    )
+
+                added_files = []
+                
+                target_dir = source_file_path
+                if parent_dir:
+                    target_dir = f"{source_file_path}/{parent_dir}"
+
+                for file in files:
+                    if file.filename:
+                        safe_filename_str = safe_filename(file.filename)
+                        file_path = f"{target_dir}/{safe_filename_str}"
+
+                        # Save file to storage
+                        storage.save_file(file, file_path)
+                        added_files.append(safe_filename_str)
+
+                # Trigger re-ingestion pipeline
+                from application.api.user.tasks import reingest_source_task
+
+                task = reingest_source_task.delay(source_id=source_id, user=user)
+
+                return make_response(jsonify({
+                    "success": True,
+                    "message": f"Added {len(added_files)} files",
+                    "added_files": added_files,
+                    "parent_dir": parent_dir,
+                    "reingest_task_id": task.id
+                }), 200)
+
+            elif operation == "remove":
+                file_paths_str = request.form.get("file_paths")
+                if not file_paths_str:
+                    return make_response(
+                        jsonify({"success": False, "message": "file_paths required for remove operation"}), 400
+                    )
+
+                try:
+                    file_paths = json.loads(file_paths_str) if isinstance(file_paths_str, str) else file_paths_str
+                except:
+                    return make_response(
+                        jsonify({"success": False, "message": "Invalid file_paths format"}), 400
+                    )
+
+                # Remove files from storage and directory structure
+                removed_files = []
+                for file_path in file_paths:
+                    full_path = f"{source_file_path}/{file_path}"
+
+                    # Remove from storage
+                    if storage.file_exists(full_path):
+                        storage.delete_file(full_path)
+                        removed_files.append(file_path)
+
+                # Trigger re-ingestion pipeline
+                from application.api.user.tasks import reingest_source_task
+
+                task = reingest_source_task.delay(source_id=source_id, user=user)
+
+                return make_response(jsonify({
+                    "success": True,
+                    "message": f"Removed {len(removed_files)} files",
+                    "removed_files": removed_files,
+                    "reingest_task_id": task.id
+                }), 200)
+
+        except Exception as err:
+            current_app.logger.error(f"Error managing source files: {err}", exc_info=True)
+            return make_response(jsonify({"success": False, "message": "Operation failed"}), 500)
+
+
 @user_ns.route("/api/remote")
 class UploadRemote(Resource):
     @api.expect(
