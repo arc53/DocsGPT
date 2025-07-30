@@ -32,38 +32,7 @@ class Chunker:
             header, body = "", text  # No header, treat entire text as body
         return header, body
 
-    def combine_documents(self, doc: Document, next_doc: Document) -> Document:
-        combined_text = doc.text + " " + next_doc.text
-        combined_token_count = len(self.encoding.encode(combined_text))
-        
-        combined_extra_info = {**(doc.extra_info or {}), "token_count": combined_token_count}
-        
-        sources = []
-        if doc.extra_info and 'source' in doc.extra_info:
-            sources.append(doc.extra_info['source'])
-        if next_doc.extra_info and 'source' in next_doc.extra_info:
-            sources.append(next_doc.extra_info['source'])
-        
-        if sources:
-            combined_extra_info['source'] = sources
-    
-        titles = []
-        if doc.extra_info and 'title' in doc.extra_info:
-            titles.append(doc.extra_info['title'])
-        if next_doc.extra_info and 'title' in next_doc.extra_info:
-            titles.append(next_doc.extra_info['title'])
-        
-        # Store combined title
-        if titles:
-            combined_extra_info['title'] = ", ".join(titles)
-        
-        new_doc = Document(
-            text=combined_text,
-            doc_id=doc.doc_id,
-            embedding=doc.embedding,
-            extra_info=combined_extra_info
-        )
-        return new_doc
+
     
     def split_document(self, doc: Document) -> List[Document]:
         split_docs = []
@@ -104,26 +73,11 @@ class Chunker:
                 processed_docs.append(doc)
                 i += 1
             elif token_count < self.min_tokens:
-                if i + 1 < len(documents):
-                    next_doc = documents[i + 1]
-                    next_tokens = self.encoding.encode(next_doc.text)
-                    if token_count + len(next_tokens) <= self.max_tokens:
-                        # Combine small documents
-                        combined_doc = self.combine_documents(doc, next_doc)
-                        processed_docs.append(combined_doc)
-                        i += 2
-                    else:
-                        # Keep the small document as is if adding next_doc would exceed max_tokens
-                        doc.extra_info = doc.extra_info or {}
-                        doc.extra_info["token_count"] = token_count
-                        processed_docs.append(doc)
-                        i += 1
-                else:
-                    # No next document to combine with; add the small document as is
-                    doc.extra_info = doc.extra_info or {}
-                    doc.extra_info["token_count"] = token_count
-                    processed_docs.append(doc)
-                    i += 1
+  
+                doc.extra_info = doc.extra_info or {}
+                doc.extra_info["token_count"] = token_count
+                processed_docs.append(doc)
+                i += 1
             else:
                 # Split large documents
                 processed_docs.extend(self.split_document(doc))
