@@ -41,7 +41,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
 
   const lineHeight = 19.93;
   const contentLines = value.split('\n').length;
-  
+
   const heightOffset = isMobile ? 200 : 300;
   const minLinesForDisplay = Math.ceil((typeof window !== 'undefined' ? window.innerHeight - heightOffset : 600) / lineHeight);
   const totalLines = Math.max(contentLines, minLinesForDisplay);
@@ -63,28 +63,18 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
           </div>
         ))}
       </div>
-      {editable ? (
-        <textarea
-          className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-8 lg:pl-12 overflow-hidden ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'}`}
-          value={value}
-          onChange={handleChange}
-          placeholder={placeholder}
-          aria-label={ariaLabel}
-          rows={totalLines}
-          style={{
-            height: `${totalLines * lineHeight}px`
-          }}
-        />
-      ) : (
-        <div
-          className={`w-full bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] pl-8 lg:pl-12 whitespace-pre-wrap`}
-          style={{
-            minHeight: `${totalLines * lineHeight}px`
-          }}
-        >
-          {value}
-        </div>
-      )}
+      <textarea
+        className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-8 lg:pl-12 overflow-hidden ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'}`}
+        value={value}
+        onChange={editable ? handleChange : undefined}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        rows={totalLines}
+        readOnly={!editable}
+        style={{
+          height: `${totalLines * lineHeight}px`
+        }}
+      />
     </div>
   );
 };
