@@ -257,9 +257,11 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
+
   useEffect(() => {
-    fetchChunks();
+    !loading && fetchChunks();
   }, [page, perPage, path]);
+  
   useEffect(() => {
     setSearchTerm('');
     setPage(1);

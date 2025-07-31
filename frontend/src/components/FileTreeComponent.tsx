@@ -13,6 +13,7 @@ import OutlineSource from '../assets/outline-source.svg';
 import Trash from '../assets/red-trash.svg';
 import SearchIcon from '../assets/search.svg';
 import { useOutsideAlerter } from '../hooks';
+import ConfirmationModal from '../modals/ConfirmationModal';
 
 interface FileNode {
   type?: string;
@@ -59,7 +60,11 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
+  
+  const [deleteModalState, setDeleteModalState] = useState<'ACTIVE' | 'INACTIVE'>('INACTIVE');
+  const [itemToDelete, setItemToDelete] = useState<{ name: string; isFile: boolean } | null>(null);
   
   useOutsideAlerter(
     searchDropdownRef,
@@ -123,9 +128,23 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const getCurrentDirectory = (): DirectoryStructure => {
     if (!directoryStructure) return {};
 
-    let current: any = directoryStructure;
+    let structure = directoryStructure;
+    if (typeof structure === 'string') {
+      try {
+        structure = JSON.parse(structure);
+      } catch (e) {
+        console.error('Error parsing directory structure in getCurrentDirectory:', e);
+        return {};
+      }
+    }
+
+    if (typeof structure !== 'object' || structure === null) {
+      return {};
+    }
+
+    let current: any = structure;
     for (const dir of currentPath) {
-      if (current[dir] && !current[dir].type) {
+      if (current[dir] && typeof current[dir] === 'object' && !current[dir].type) {
         current = current[dir];
       } else {
         return {};
@@ -190,8 +209,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       label: t('convTile.delete'),
       onClick: (event: React.SyntheticEvent) => {
         event.stopPropagation();
-        console.log('Delete item:', name);
-        // Delete action will be implemented later
+        confirmDeleteItem(name, isFile);
       },
       iconWidth: 18,
       iconHeight: 18,
@@ -200,44 +218,175 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
     return options;
   };
+  
+  const confirmDeleteItem = (name: string, isFile: boolean) => {
+    setItemToDelete({ name, isFile });
+    setDeleteModalState('ACTIVE');
+    setActiveMenuId(null); 
+  };
+  
+  const handleConfirmedDelete = async () => {
+    if (itemToDelete) {
+      await handleDeleteFile(itemToDelete.name, itemToDelete.isFile);
+      setDeleteModalState('INACTIVE');
+      setItemToDelete(null);
+    }
+  };
+  
+  const handleCancelDelete = () => {
+    setDeleteModalState('INACTIVE');
+    setItemToDelete(null);
+  };
+  
+  const manageSource = async (operation: 'add' | 'remove', files?: FileList | null, filePath?: string) => {
+    setIsUploading(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('source_id', docId);
+      formData.append('operation', operation);
+      
+      if (operation === 'add' && files) {
+        formData.append('parent_dir', currentPath.join('/'));
+        
+        for (let i = 0; i < files.length; i++) {
+          formData.append('file', files[i]);
+        }
+      } else if (operation === 'remove' && filePath) {
+        const filePaths = JSON.stringify([filePath]);
+        formData.append('file_paths', filePaths);
+      }
+      
+      const response = await userService.manageSourceFiles(formData, token);
+      const result = await response.json();
+      
+      if (result.success && result.reingest_task_id) {
+        console.log(`Files ${operation === 'add' ? 'uploaded' : 'deleted'} successfully:`, 
+          operation === 'add' ? result.added_files : result.removed_files);
+        console.log('Reingest task started:', result.reingest_task_id);
+        
+        const maxAttempts = 30;
+        const pollInterval = 2000;
+        
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const statusResponse = await userService.getTaskStatus(result.reingest_task_id, token);
+            const statusData = await statusResponse.json();
+            
+            console.log(`Task status (attempt ${attempt + 1}):`, statusData.status);
+            
+            if (statusData.status === 'SUCCESS') {
+              console.log('Task completed successfully');
+              
+              const structureResponse = await userService.getDirectoryStructure(docId, token);
+              const structureData = await structureResponse.json();
+              
+              if (structureData && structureData.directory_structure) {
+                setDirectoryStructure(structureData.directory_structure);
+                setIsUploading(false);
+                return true;
+              }
+              break;
+            } else if (statusData.status === 'FAILURE') {
+              console.error('Task failed');
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+          } catch (error) {
+            console.error('Error polling task status:', error);
+            break;
+          }
+        }
+      } else {
+        throw new Error(`Failed to ${operation} file(s)`);
+      }
+    } catch (error) {
+      console.error(`Error ${operation === 'add' ? 'uploading' : 'deleting'} file(s):`, error);
+      setError(`Failed to ${operation === 'add' ? 'upload' : 'delete'} file(s)`);
+    } finally {
+      setIsUploading(false);
+    }
+    
+    return false;
+  };
+
+  const handleAddFile = () => {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.accept = '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
+    
+    fileInput.onchange = async (event) => {
+      const files = (event.target as HTMLInputElement).files;
+      if (!files || files.length === 0) return;
+      
+      await manageSource('add', files);
+    };
+    
+    fileInput.click();
+  };
+  
+  const handleDeleteFile = async (name: string, isFile: boolean) => {
+    // Construct the full path to the file
+    const filePath = [...currentPath, name].join('/');
+    await manageSource('remove', null, filePath);
+  };
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex items-center text-sm">
-        <button
-          className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
-          onClick={handleBackNavigation}
-        >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </button>
+      <div className="mb-4 flex items-center justify-between text-sm">
+        <div className="flex items-center">
+          <button
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            onClick={handleBackNavigation}
+          >
+            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+          </button>
 
-        <div className="flex items-center flex-wrap">
-          <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
-          <span className="text-purple-30 font-medium break-words">{sourceName}</span>
-          {currentPath.length > 0 && (
-            <>
-              <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
-              {currentPath.map((dir, index) => (
-                <React.Fragment key={index}>
-                  <span className="text-gray-700 dark:text-gray-300 break-words">
-                    {dir}
-                  </span>
-                  {index < currentPath.length - 1 && (
-                    <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
-                  )}
-                </React.Fragment>
-              ))}
-            </>
-          )}
-          {selectedFile && (
-            <>
-              <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
-              <span className="text-gray-700 dark:text-gray-300 break-words">
-                {selectedFile.name}
-              </span>
-            </>
-          )}
+          <div className="flex items-center flex-wrap">
+            <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
+            <span className="text-purple-30 font-medium break-words">{sourceName}</span>
+            {currentPath.length > 0 && (
+              <>
+                <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
+                {currentPath.map((dir, index) => (
+                  <React.Fragment key={index}>
+                    <span className="text-gray-700 dark:text-gray-300 break-words">
+                      {dir}
+                    </span>
+                    {index < currentPath.length - 1 && (
+                      <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </>
+            )}
+            {selectedFile && (
+              <>
+                <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
+                <span className="text-gray-700 dark:text-gray-300 break-words">
+                  {selectedFile.name}
+                </span>
+              </>
+            )}
+          </div>
         </div>
+
+        {!selectedFile && (
+          <button
+            onClick={handleAddFile}
+            disabled={isUploading}
+            className={`flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white ${
+              isUploading
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-purple-30 hover:bg-violets-are-blue'
+            }`}
+            title={isUploading ? "Uploading files..." : "Add file"}
+          >
+            {isUploading ? 'Uploading...' : 'Add file'}
+          </button>
+        )}
       </div>
     );
   };
@@ -507,7 +656,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   };
 
   return (
-    <>
+    <div>
       {selectedFile ? (
         <div className="flex">
           <div className="flex-1 pl-4 pt-0">
@@ -561,7 +710,16 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           </div>
         </div>
       )}
-    </>
+      <ConfirmationModal
+        message={t('settings.documents.confirmDelete')}
+        modalState={deleteModalState}
+        setModalState={setDeleteModalState}
+        handleSubmit={handleConfirmedDelete}
+        handleCancel={handleCancelDelete}
+        submitLabel={t('convTile.delete')}
+        variant="danger"
+      />
+    </div>
   );
 };
 

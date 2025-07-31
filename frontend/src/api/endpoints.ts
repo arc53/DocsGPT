@@ -55,6 +55,7 @@ const endpoints = {
     STORE_ATTACHMENT: '/api/store_attachment',
     DIRECTORY_STRUCTURE: (docId: string) =>
       `/api/directory_structure?id=${docId}`,
+    MANAGE_SOURCE_FILES: '/api/manage_source_files',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

@@ -102,6 +102,8 @@ const userService = {
     apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
   getDirectoryStructure: (docId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
+  manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
+    apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
 };
 
 export default userService;
