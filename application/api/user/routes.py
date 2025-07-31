@@ -3438,21 +3438,7 @@ class GetChunks(Resource):
             filtered_chunks = []
             for chunk in chunks:
                 metadata = chunk.get("metadata", {})
-                
-                if path:
-                    source = metadata.get("source", "")
-                    path_match = False
-                    
-                    if isinstance(source, str) and source.endswith(path):
-                        path_match = True
-                    elif isinstance(source, list):
-                        for src in source:
-                            if isinstance(src, str) and src.endswith(path):
-                                path_match = True
-                                break
-                    
-                    if not path_match:
-                        continue
+            
                 
                 if search_term:
                     text_match = search_term in chunk.get("text", "").lower()
