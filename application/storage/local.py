@@ -114,3 +114,27 @@ class LocalStorage(BaseStorage):
         """
         full_path = self._get_full_path(path)
         return os.path.isdir(full_path)
+
+    def remove_directory(self, directory: str) -> bool:
+        """
+        Remove a directory and all its contents from local storage.
+
+        Args:
+            directory: Directory path to remove
+
+        Returns:
+            bool: True if removal was successful, False otherwise
+        """
+        full_path = self._get_full_path(directory)
+
+        if not os.path.exists(full_path):
+            return False
+
+        if not os.path.isdir(full_path):
+            return False
+
+        try:
+            shutil.rmtree(full_path)
+            return True
+        except (OSError, PermissionError) as e:
+            return False
