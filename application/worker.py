@@ -98,11 +98,23 @@ def download_file(url, params, dest_path):
 
 
 def upload_index(full_path, file_data):
+    files = None
     try:
         if settings.VECTOR_STORE == "faiss":
+            faiss_path = full_path + "/index.faiss"
+            pkl_path = full_path + "/index.pkl"
+
+            if not os.path.exists(faiss_path):
+                logging.error(f"FAISS index file not found: {faiss_path}")
+                raise FileNotFoundError(f"FAISS index file not found: {faiss_path}")
+
+            if not os.path.exists(pkl_path):
+                logging.error(f"FAISS pickle file not found: {pkl_path}")
+                raise FileNotFoundError(f"FAISS pickle file not found: {pkl_path}")
+
             files = {
-                "file_faiss": open(full_path + "/index.faiss", "rb"),
-                "file_pkl": open(full_path + "/index.pkl", "rb"),
+                "file_faiss": open(faiss_path, "rb"),
+                "file_pkl": open(pkl_path, "rb"),
             }
             response = requests.post(
                 urljoin(settings.API_URL, "/api/upload_index"),
@@ -114,11 +126,11 @@ def upload_index(full_path, file_data):
                 urljoin(settings.API_URL, "/api/upload_index"), data=file_data
             )
         response.raise_for_status()
-    except requests.RequestException as e:
+    except (requests.RequestException, FileNotFoundError) as e:
         logging.error(f"Error uploading index: {e}")
         raise
     finally:
-        if settings.VECTOR_STORE == "faiss":
+        if settings.VECTOR_STORE == "faiss" and files is not None:
             for file in files.values():
                 file.close()
 
@@ -552,7 +564,7 @@ def reingest_source_worker(self, source_id, user):
                         {"_id": ObjectId(source_id)},
                         {
                             "$set": {
-                                "directory_structure": json.dumps(directory_structure),
+                                "directory_structure": directory_structure,
                                 "date": datetime.datetime.now(),
                                 "tokens": total_tokens
                             }
