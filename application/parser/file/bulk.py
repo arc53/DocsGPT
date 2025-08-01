@@ -196,7 +196,7 @@ class SimpleDirectoryReader(BaseReader):
         
         # Build directory structure if input_dir is provided
         if hasattr(self, 'input_dir'):
-            self.directory_structure = self._build_directory_structure(self.input_dir)
+            self.directory_structure = self.build_directory_structure(self.input_dir)
             logging.info(f"Directory structure built successfully")
         else:
             self.directory_structure = {}
@@ -208,48 +208,47 @@ class SimpleDirectoryReader(BaseReader):
         else:
             return [Document(d) for d in data_list]
 
-    def _build_directory_structure(self, base_path):
+    def build_directory_structure(self, base_path):
         """Build a dictionary representing the directory structure.
-        
+
         Args:
             base_path: The base path to start building the structure from.
-            
+
         Returns:
             dict: A nested dictionary representing the directory structure.
         """
-        structure = {}
-        base_path = Path(base_path)
+        import mimetypes
         
-        def _build_tree(path, current_dict):
+        def build_tree(path):
+            """Helper function to recursively build the directory tree."""
+            result = {}
+            
             for item in path.iterdir():
+                if self.exclude_hidden and item.name.startswith('.'):
+                    continue
+                    
                 if item.is_dir():
-                    if self.exclude_hidden and item.name.startswith('.'):
-                        continue
-                    current_dict[item.name] = {}
-                    _build_tree(item, current_dict[item.name])
+                    subtree = build_tree(item)
+                    if subtree:
+                        result[item.name] = subtree
                 else:
-                    if self.exclude_hidden and item.name.startswith('.'):
-                        continue
                     if self.required_exts is not None and item.suffix not in self.required_exts:
                         continue
                     
                     full_path = str(item.resolve())
                     file_size_bytes = item.stat().st_size
-                    
-                    import mimetypes
                     mime_type = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
                     
+                    file_info = {
+                        "type": mime_type,
+                        "size_bytes": file_size_bytes
+                    }
+                    
                     if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:
-                        current_dict[item.name] = {
-                            "type": mime_type,
-                            "token_count": self.file_token_counts[full_path],
-                            "size_bytes": file_size_bytes
-                        }
-                    else:
-                        current_dict[item.name] = {
-                            "type": mime_type,
-                            "size_bytes": file_size_bytes
-                        }
+                        file_info["token_count"] = self.file_token_counts[full_path]
+                        
+                    result[item.name] = file_info
+                    
+            return result
         
-        _build_tree(base_path, structure)
-        return structure
+        return build_tree(Path(base_path))
