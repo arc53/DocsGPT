@@ -103,7 +103,7 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-auto p-4 md:p-12">
-      <p className="text-2xl font-bold text-eerie-black dark:text-bright-gray">
+      <p className="text-eerie-black dark:text-bright-gray text-2xl font-bold">
         {t('settings.label')}
       </p>
       <SettingsBar

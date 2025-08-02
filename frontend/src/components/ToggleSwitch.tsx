@@ -46,7 +46,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
 
   return (
     <label
-      className={`flex cursor-pointer select-none flex-row items-center ${
+      className={`flex cursor-pointer flex-row items-center select-none ${
         labelPosition === 'right' ? 'flex-row-reverse' : ''
       } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${className}`}
     >

@@ -50,7 +50,7 @@ const Widgets: React.FC<{
   return (
     <div>
       <div className="mt-[59px]">
-        <p className="font-bold text-jet">Widget Source</p>
+        <p className="text-jet font-bold">Widget Source</p>
         <Dropdown
           options={widgetSources}
           selectedValue={selectedWidgetSource}
@@ -58,7 +58,7 @@ const Widgets: React.FC<{
         />
       </div>
       <div className="mt-5">
-        <p className="font-bold text-jet">Widget Method</p>
+        <p className="text-jet font-bold">Widget Method</p>
         <Dropdown
           options={widgetMethods}
           selectedValue={selectedWidgetMethod}
@@ -66,7 +66,7 @@ const Widgets: React.FC<{
         />
       </div>
       <div className="mt-5">
-        <p className="font-bold text-jet">Widget Type</p>
+        <p className="text-jet font-bold">Widget Type</p>
         <Dropdown
           options={widgetTypes}
           selectedValue={selectedWidgetType}
@@ -74,7 +74,7 @@ const Widgets: React.FC<{
         />
       </div>
       <div className="mt-6">
-        <p className="font-bold text-jet">Widget Code Snippet</p>
+        <p className="text-jet font-bold">Widget Code Snippet</p>
         <textarea
           rows={4}
           value={widgetCode}

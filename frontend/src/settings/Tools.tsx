@@ -171,7 +171,7 @@ export default function Tools() {
                 />
               </div>
               <button
-                className="flex h-[32px] min-w-[108px] items-center justify-center whitespace-normal rounded-full bg-purple-30 px-4 text-sm text-white hover:bg-violets-are-blue"
+                className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
@@ -179,7 +179,7 @@ export default function Tools() {
                 {t('settings.tools.addTool')}
               </button>
             </div>
-            <div className="mb-8 mt-5 border-b border-light-silver dark:border-dim-gray" />
+            <div className="border-light-silver dark:border-dim-gray mt-5 mb-8 border-b" />
             {loading ? (
               <div className="grid grid-cols-2 gap-6 lg:grid-cols-3">
                 <div className="col-span-2 mt-24 flex h-32 items-center justify-center lg:col-span-3">
@@ -219,7 +219,7 @@ export default function Tools() {
                               activeMenuId === tool.id ? null : tool.id,
                             );
                           }}
-                          className="absolute right-4 top-4 z-10 cursor-pointer"
+                          className="absolute top-4 right-4 z-10 cursor-pointer"
                         >
                           <img
                             src={ThreeDotsIcon}
@@ -248,16 +248,16 @@ export default function Tools() {
                           <div className="mt-[9px]">
                             <p
                               title={tool.customName || tool.displayName}
-                              className="truncate px-1 text-[13px] font-semibold capitalize leading-relaxed text-raisin-black-light dark:text-bright-gray"
+                              className="text-raisin-black-light dark:text-bright-gray truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
                             >
                               {tool.customName || tool.displayName}
                             </p>
-                            <p className="mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed text-old-silver dark:text-sonic-silver-light">
+                            <p className="text-old-silver dark:text-sonic-silver-light mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
                               {tool.description}
                             </p>
                           </div>
                         </div>
-                        <div className="absolute bottom-4 right-4">
+                        <div className="absolute right-4 bottom-4">
                           <ToggleSwitch
                             checked={tool.status}
                             onChange={(checked) =>

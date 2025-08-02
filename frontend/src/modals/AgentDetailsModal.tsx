@@ -85,19 +85,19 @@ export default function AgentDetailsModal({
       }}
     >
       <div>
-        <h2 className="text-xl font-semibold text-jet dark:text-bright-gray">
+        <h2 className="text-jet dark:text-bright-gray text-xl font-semibold">
           Access Details
         </h2>
         <div className="mt-8 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+              <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
                 Public Link
               </h2>
             </div>
             {sharedToken ? (
               <div className="flex flex-col gap-2">
-                <p className="inline break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                <p className="font-roboto inline text-[14px] leading-normal font-medium break-all text-gray-700 dark:text-[#ECECF1]">
                   <a
                     href={`${baseURL}/shared/agent/${sharedToken}`}
                     target="_blank"
@@ -113,7 +113,7 @@ export default function AgentDetailsModal({
                 </p>
                 <a
                   href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                  className="flex w-fit items-center gap-1 text-purple-30 hover:underline"
+                  className="text-purple-30 flex w-fit items-center gap-1 hover:underline"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -127,7 +127,7 @@ export default function AgentDetailsModal({
               </div>
             ) : (
               <button
-                className="flex w-28 items-center justify-center rounded-3xl border border-solid border-purple-30 px-5 py-2 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white"
+                className="border-purple-30 text-purple-30 hover:bg-purple-30 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
                 onClick={handleGeneratePublicLink}
               >
                 {loadingStates.publicLink ? (
@@ -139,13 +139,13 @@ export default function AgentDetailsModal({
             )}
           </div>
           <div className="flex flex-col gap-3">
-            <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+            <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
               API Key
             </h2>
             {apiKey ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                  <div className="font-roboto text-[14px] leading-normal font-medium break-all text-gray-700 dark:text-[#ECECF1]">
                     {apiKey}
                     {!apiKey.includes('...') && (
                       <CopyButton
@@ -158,7 +158,7 @@ export default function AgentDetailsModal({
                   {!apiKey.includes('...') && (
                     <a
                       href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
-                      className="group ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border border-purple-30 py-1.5 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white"
+                      className="group border-purple-30 text-purple-30 hover:bg-purple-30 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border py-1.5 text-sm font-medium transition-colors hover:text-white"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -173,20 +173,20 @@ export default function AgentDetailsModal({
                 </div>
               </div>
             ) : (
-              <button className="w-28 rounded-3xl border border-solid border-purple-30 px-5 py-2 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white">
+              <button className="border-purple-30 text-purple-30 hover:bg-purple-30 w-28 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white">
                 Generate
               </button>
             )}
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+              <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
                 Webhook URL
               </h2>
             </div>
             {webhookUrl ? (
               <div className="flex flex-col gap-2">
-                <p className="break-all font-roboto text-[14px] font-medium leading-normal text-gray-700 dark:text-[#ECECF1]">
+                <p className="font-roboto text-[14px] leading-normal font-medium break-all text-gray-700 dark:text-[#ECECF1]">
                   <a href={webhookUrl} target="_blank" rel="noreferrer">
                     {webhookUrl}
                   </a>
@@ -198,7 +198,7 @@ export default function AgentDetailsModal({
                 </p>
                 <a
                   href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                  className="flex w-fit items-center gap-1 text-purple-30 hover:underline"
+                  className="text-purple-30 flex w-fit items-center gap-1 hover:underline"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -212,7 +212,7 @@ export default function AgentDetailsModal({
               </div>
             ) : (
               <button
-                className="flex w-28 items-center justify-center rounded-3xl border border-solid border-purple-30 px-5 py-2 text-sm font-medium text-purple-30 transition-colors hover:bg-purple-30 hover:text-white"
+                className="border-purple-30 text-purple-30 hover:bg-purple-30 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
                 onClick={handleGenerateWebhook}
               >
                 {loadingStates.webhook ? (

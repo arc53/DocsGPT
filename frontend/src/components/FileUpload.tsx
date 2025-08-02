@@ -159,7 +159,7 @@ export const FileUpload = ({
           e.stopPropagation();
           handleRemove();
         }}
-        className="absolute -right-2 -top-2 rounded-full bg-[#7D54D1] p-1 transition-colors hover:bg-[#714cbc]"
+        className="absolute -top-2 -right-2 rounded-full bg-[#7D54D1] p-1 transition-colors hover:bg-[#714cbc]"
       >
         <img src={Cross} alt="remove" className="h-3 w-3" />
       </button>
@@ -215,7 +215,7 @@ export const FileUpload = ({
         <input {...getInputProps()} />
         {children || defaultContent}
         {errors.length > 0 && (
-          <div className="absolute left-0 right-0 mt-[2px] px-4 text-xs text-red-600">
+          <div className="absolute right-0 left-0 mt-[2px] px-4 text-xs text-red-600">
             {errors.map((error, i) => (
               <p key={i} className="truncate">
                 {error}

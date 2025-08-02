@@ -41,13 +41,13 @@ export default function ActionButtons({
     navigate('/');
   };
   return (
-    <div className="fixed right-4 top-0 z-10 flex h-16 flex-col justify-center">
+    <div className="fixed top-0 right-4 z-10 flex h-16 flex-col justify-center">
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
           <button
             title="Open New Chat"
             onClick={newChat}
-            className="flex items-center gap-1 rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E] lg:hidden"
+            className="hover:bg-bright-gray flex items-center gap-1 rounded-full p-2 lg:hidden dark:hover:bg-[#28292E]"
           >
             <img
               className="filter dark:invert"
@@ -64,7 +64,7 @@ export default function ActionButtons({
             <button
               title="Share"
               onClick={() => setShareModalState(true)}
-              className="rounded-full p-2 hover:bg-bright-gray dark:hover:bg-[#28292E]"
+              className="hover:bg-bright-gray rounded-full p-2 dark:hover:bg-[#28292E]"
             >
               <img
                 className="filter dark:invert"

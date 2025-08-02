@@ -43,7 +43,7 @@ export default function AddActionModal({
       className="sm:w-[512px]"
     >
       <div>
-        <h2 className="px-3 text-xl font-semibold text-jet dark:text-bright-gray">
+        <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
           New Action
         </h2>
         <div className="relative mt-6 px-3">
@@ -61,7 +61,7 @@ export default function AddActionModal({
             required={true}
           />
           <p
-            className={`ml-1 mt-2 text-xs italic ${
+            className={`mt-2 ml-1 text-xs italic ${
               functionNameError ? 'text-red-500' : 'text-gray-500'
             }`}
           >
@@ -73,7 +73,7 @@ export default function AddActionModal({
         <div className="mt-3 flex flex-row-reverse gap-1 px-3">
           <button
             onClick={handleAddAction}
-            className="rounded-3xl bg-purple-30 px-5 py-2 text-sm text-white transition-all hover:bg-violets-are-blue"
+            className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all"
           >
             Add
           </button>
@@ -83,7 +83,7 @@ export default function AddActionModal({
               setModalState('INACTIVE');
               setActionName('');
             }}
-            className="cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:text-light-gray dark:hover:bg-[#767183]/50"
+            className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
           >
             {t('modals.configTool.closeButton')}
           </button>
