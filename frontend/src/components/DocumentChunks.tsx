@@ -438,7 +438,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               ) : (
                 <div className="w-full grid grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(400px,1fr))] gap-4 justify-items-start">
                   {filteredChunks.length === 0 ? (
-                    <div className="col-span-full flex flex-col items-center justify-center mt-24 text-center text-gray-500 dark:text-gray-400">
+                    <div className="col-span-full w-full min-h-[50vh] flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
                       <img
                         src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
                         alt={t('settings.documents.noChunksAlt')}

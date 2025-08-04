@@ -394,8 +394,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex flex-col sm:flex-row items-center justify-between text-sm">
-        <div className="flex items-center">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm gap-3">
+        <div className="flex items-center w-full sm:w-auto">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={handleBackNavigation}
@@ -433,7 +433,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         </div>
 
         {!selectedFile && (
-          <div className="flex items-center gap-2 m-2 sm:m-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             {(processingRef.current || queueLength > 0) && (
               <span className="text-xs text-gray-600 dark:text-gray-400">
                 {processingRef.current ? (currentOpRef.current === 'add' ? 'Uploading…' : 'Deleting…') : null}
