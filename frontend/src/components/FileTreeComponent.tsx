@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import DocumentChunks from './DocumentChunks';
+import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
 import userService from '../api/services/userService';
 import FileIcon from '../assets/file.svg';
@@ -201,19 +201,21 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   ): MenuOption[] => {
     const options: MenuOption[] = [];
 
-    if (isFile) {
-      options.push({
-        icon: EyeView,
-        label: t('settings.documents.view'),
-        onClick: (event: React.SyntheticEvent) => {
-          event.stopPropagation();
+    options.push({
+      icon: EyeView,
+      label: t('settings.sources.view'),
+      onClick: (event: React.SyntheticEvent) => {
+        event.stopPropagation();
+        if (isFile) {
           handleFileClick(name);
-        },
-        iconWidth: 18,
-        iconHeight: 18,
-        variant: 'primary',
-      });
-    }
+        } else {
+          navigateToDirectory(name);
+        }
+      },
+      iconWidth: 18,
+      iconHeight: 18,
+      variant: 'primary',
+    });
 
     options.push({
       icon: Trash,
@@ -494,7 +496,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               <div className="flex items-center">
                 <img
                   src={FolderIcon}
-                  alt={t('settings.documents.parentFolderAlt')}
+                  alt={t('settings.sources.parentFolderAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
                 <span className="text-sm dark:text-[#E0E0E0] truncate">..</span>
@@ -523,7 +525,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           >
             <td className="px-2 lg:px-4 py-2">
               <div className="flex items-center min-w-0">
-                <img src={FolderIcon} alt={t('settings.documents.folderAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
+                <img src={FolderIcon} alt={t('settings.sources.folderAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
                 <span className="text-sm dark:text-[#E0E0E0] truncate">{name}</span>
               </div>
             </td>
@@ -544,7 +546,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 >
                   <img
                     src={ThreeDots}
-                    alt={t('settings.documents.menuAlt')}
+                    alt={t('settings.sources.menuAlt')}
                     className="opacity-60 hover:opacity-100"
                   />
                 </button>
@@ -575,7 +577,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           >
             <td className="px-2 lg:px-4 py-2">
               <div className="flex items-center min-w-0">
-                <img src={FileIcon} alt={t('settings.documents.fileAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
+                <img src={FileIcon} alt={t('settings.sources.fileAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
                 <span className="text-sm dark:text-[#E0E0E0] truncate">{name}</span>
               </div>
             </td>
@@ -594,7 +596,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 >
                   <img
                     src={ThreeDots}
-                    alt={t('settings.documents.menuAlt')}
+                    alt={t('settings.sources.menuAlt')}
                     className="opacity-60 hover:opacity-100"
                   />
                 </button>
@@ -671,7 +673,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 setSearchResults(searchFiles(e.target.value, directoryStructure));
               }
             }}
-            placeholder={t('settings.documents.searchFiles')}
+            placeholder={t('settings.sources.searchFiles')}
             className={`w-full px-4 py-2 pl-10 border border-[#D1D9E0] dark:border-[#6A6A6A] ${
               searchQuery ? 'rounded-t-md rounded-b-none border-b-0' : 'rounded-md'
             } bg-transparent dark:text-[#E0E0E0] focus:outline-none`}
@@ -687,7 +689,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto">
               {searchResults.length === 0 ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-                  {t('settings.documents.noResults')}
+                  {t('settings.sources.noResults')}
                 </div>
               ) : (
                 searchResults.map((result, index) => (
@@ -701,7 +703,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   >
                     <img
                       src={result.isFile ? FileIcon : FolderIcon}
-                      alt={result.isFile ? t('settings.documents.fileAlt') : t('settings.documents.folderAlt')}
+                      alt={result.isFile ? t('settings.sources.fileAlt') : t('settings.sources.folderAlt')}
                       className="flex-shrink-0 w-4 h-4 mr-2"
                     />
                     <span className="text-sm dark:text-[#E0E0E0]">
@@ -722,7 +724,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       {selectedFile ? (
         <div className="flex">
           <div className="flex-1">
-            <DocumentChunks
+            <Chunks
               documentId={docId}
               documentName={sourceName}
               handleGoBack={() => setSelectedFile(null)}
@@ -750,16 +752,16 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   <thead className="bg-gray-100 dark:bg-[#27282D]">
                     <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
                       <th className="min-w-[200px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        {t('settings.documents.fileName')}
+                        {t('settings.sources.fileName')}
                       </th>
                       <th className="min-w-[80px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        {t('settings.documents.tokens')}
+                        {t('settings.sources.tokens')}
                       </th>
                       <th className="min-w-[80px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        {t('settings.documents.size')}
+                        {t('settings.sources.size')}
                       </th>
                       <th className="w-[60px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        <span className="sr-only">{t('settings.documents.actions')}</span>
+                        <span className="sr-only">{t('settings.sources.actions')}</span>
                       </th>
                     </tr>
                   </thead>
@@ -775,7 +777,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       <ConfirmationModal
         message={
           itemToDelete?.isFile
-            ? t('settings.documents.confirmDelete')
+            ? t('settings.sources.confirmDelete')
             : `Are you sure you want to delete the directory "${itemToDelete?.name}" and all its contents? This action cannot be undone.`
         }
         modalState={deleteModalState}

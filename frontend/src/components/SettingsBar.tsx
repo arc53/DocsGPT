@@ -10,7 +10,7 @@ const useTabs = () => {
   const { t } = useTranslation();
   const tabs = [
     t('settings.general.label'),
-    t('settings.documents.label'),
+    t('settings.sources.label'),
     t('settings.analytics.label'),
     t('settings.logs.label'),
     t('settings.tools.label'),

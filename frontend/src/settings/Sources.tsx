@@ -28,7 +28,7 @@ import {
 import Upload from '../upload/Upload';
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTreeComponent from '../components/FileTreeComponent';
-import DocumentChunks from '../components/DocumentChunks';
+import Chunks from '../components/Chunks';
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -46,7 +46,7 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
-export default function Documents({
+export default function Sources({
   paginatedDocuments,
   handleDeleteDocument,
 }: DocumentsProps) {
@@ -97,10 +97,10 @@ export default function Documents({
 
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
-    { label: t('settings.documents.syncFrequency.never'), value: 'never' },
-    { label: t('settings.documents.syncFrequency.daily'), value: 'daily' },
-    { label: t('settings.documents.syncFrequency.weekly'), value: 'weekly' },
-    { label: t('settings.documents.syncFrequency.monthly'), value: 'monthly' },
+    { label: t('settings.sources.syncFrequency.never'), value: 'never' },
+    { label: t('settings.sources.syncFrequency.daily'), value: 'daily' },
+    { label: t('settings.sources.syncFrequency.weekly'), value: 'weekly' },
+    { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -215,7 +215,7 @@ export default function Documents({
     const actions: MenuOption[] = [
       {
         icon: EyeView,
-        label: t('settings.documents.view'),
+        label: t('settings.sources.view'),
         onClick: () => {
           setDocumentToView(document);
         },
@@ -228,7 +228,7 @@ export default function Documents({
     if (document.syncFrequency) {
       actions.push({
         icon: SyncIcon,
-        label: t('settings.documents.sync'),
+        label: t('settings.sources.sync'),
         onClick: () => {
           setSyncMenuState({
             isOpen: true,
@@ -268,7 +268,7 @@ export default function Documents({
           onBackToDocuments={() => setDocumentToView(undefined)}
         />
       ) : (
-        <DocumentChunks
+        <Chunks
           documentId={documentToView.id || ''}
           documentName={documentToView.name}
           handleGoBack={() => setDocumentToView(undefined)}
@@ -280,17 +280,17 @@ export default function Documents({
       <div className="relative flex grow flex-col">
         <div className="mb-6">
           <h2 className="text-sonic-silver text-base font-medium">
-            {t('settings.documents.title')}
+            {t('settings.sources.title')}
           </h2>
         </div>
         <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <div className="w-full sm:w-auto">
             <label htmlFor="document-search-input" className="sr-only">
-              {t('settings.documents.searchPlaceholder')}
+              {t('settings.sources.searchPlaceholder')}
             </label>
             <Input
               maxLength={256}
-              placeholder={t('settings.documents.searchPlaceholder')}
+              placeholder={t('settings.sources.searchPlaceholder')}
               name="Document-search-input"
               type="text"
               id="document-search-input"
@@ -304,13 +304,13 @@ export default function Documents({
           </div>
           <button
             className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
-            title={t('settings.documents.addNew')}
+            title={t('settings.sources.addNew')}
             onClick={() => {
               setIsOnboarding(false);
               setModalState('ACTIVE');
             }}
           >
-            {t('settings.documents.addNew')}
+            {t('settings.sources.addNew')}
           </button>
         </div>
         <div className="relative w-full">
@@ -322,11 +322,11 @@ export default function Documents({
             <div className="flex flex-col items-center justify-center py-12">
               <img
                 src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                alt={t('settings.documents.noData')}
+                alt={t('settings.sources.noData')}
                 className="mx-auto mb-6 h-32 w-32"
               />
               <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                {t('settings.documents.noData')}
+                {t('settings.sources.noData')}
               </p>
             </div>
           ) : (
@@ -357,7 +357,7 @@ export default function Documents({
                           >
                             {document.syncFrequency && (
                               <DropdownMenu
-                                name={t('settings.documents.sync')}
+                                name={t('settings.sources.sync')}
                                 options={syncOptions}
                                 onSelect={(value: string) => {
                                   handleManageSync(document, value);
@@ -407,7 +407,7 @@ export default function Documents({
                         </div>
                         <div className="font-inter text-[12px] leading-[18px]">
                           <span className="dark:text-bright-gray font-[400] text-[#18181B]">
-                            {t('settings.documents.tokenUsage')}:
+                            {t('settings.sources.tokenUsage')}:
                           </span>
                           <span className="ml-1 font-[400] text-[#848484] dark:text-[#848484]">
                             {document.tokens
@@ -470,7 +470,7 @@ export default function Documents({
 
       {deleteModalState === 'ACTIVE' && documentToDelete && (
         <ConfirmationModal
-          message={t('settings.documents.deleteWarning', {
+          message={t('settings.sources.deleteWarning', {
             name: documentToDelete.document.name,
           })}
           modalState={deleteModalState}

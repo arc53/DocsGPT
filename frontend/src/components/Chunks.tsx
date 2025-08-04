@@ -77,7 +77,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
   );
 };
 
-interface DocumentChunksProps {
+interface ChunksProps {
   documentId: string;
   documentName?: string;
   handleGoBack: () => void;
@@ -85,7 +85,7 @@ interface DocumentChunksProps {
   renderFileSearch?: () => React.ReactNode;
 }
 
-const DocumentChunks: React.FC<DocumentChunksProps> = ({
+const Chunks: React.FC<ChunksProps> = ({
   documentId,
   documentName,
   handleGoBack,
@@ -406,13 +406,13 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                       ? `${(totalChunks / 1000000).toFixed(2)}M`
                       : totalChunks > 999
                         ? `${(totalChunks / 1000).toFixed(2)}K`
-                        : totalChunks} {t('settings.documents.chunks')}
+                        : totalChunks} {t('settings.sources.chunks')}
                   </div>
                   <div className="h-full w-[1px] bg-[#D1D9E0] dark:bg-[#6A6A6A]"></div>
                   <div className="flex-1 h-full">
                     <input
                       type="text"
-                      placeholder={t('settings.documents.searchPlaceholder')}
+                      placeholder={t('settings.sources.searchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full h-full px-3 py-2 bg-transparent border-none outline-none font-normal text-[13.56px] leading-[100%] dark:text-[#E0E0E0]"
@@ -421,14 +421,14 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                 </div>
                 <button
                   className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white shrink-0"
-                  title={t('settings.documents.addNew')}
+                  title={t('settings.sources.addNew')}
                   onClick={() => {
                     setIsAddingChunk(true);
                     setEditingTitle('');
                     setEditingText('');
                   }}
                 >
-                  {t('settings.documents.addNew')}
+                  {t('settings.sources.addNew')}
                 </button>
               </div>
               {loading ? (
@@ -441,10 +441,10 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                     <div className="col-span-full w-full min-h-[50vh] flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
                       <img
                         src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                        alt={t('settings.documents.noChunksAlt')}
+                        alt={t('settings.sources.noChunksAlt')}
                         className="mx-auto mb-2 h-24 w-24"
                       />
-                      {t('settings.documents.noChunks')}
+                      {t('settings.sources.noChunks')}
                     </div>
                   ) : (
                     filteredChunks.map((chunk, index) => (
@@ -460,7 +460,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                         <div className="w-full">
                           <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
                             <div className="text-[#59636E] text-sm dark:text-[#E0E0E0]">
-                              {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} {t('settings.documents.tokensUnit')}
+                              {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} {t('settings.sources.tokensUnit')}
                             </div>
                           </div>
                           <div className="px-4 pt-3 pb-6">
@@ -491,7 +491,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               <div className="relative flex flex-col rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden w-full">
                 <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
                   <div className="text-[#59636E] text-sm dark:text-[#E0E0E0]">
-                    {editingChunk.metadata.token_count ? editingChunk.metadata.token_count.toLocaleString() : '-'} {t('settings.documents.tokensUnit')}
+                    {editingChunk.metadata.token_count ? editingChunk.metadata.token_count.toLocaleString() : '-'} {t('settings.sources.tokensUnit')}
                   </div>
                 </div>
                 <div className="p-4 overflow-hidden">
@@ -535,4 +535,4 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
   );
 };
 
-export default DocumentChunks;
+export default Chunks;
