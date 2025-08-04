@@ -8,12 +8,10 @@ import ArrowLeft from '../assets/arrow-left.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import OutlineSource from '../assets/outline-source.svg';
-import Spinner from '../components/Spinner';
-import ChunkModal from '../modals/ChunkModal';
+import SkeletonLoader from './SkeletonLoader';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { ChunkType } from '../settings/types';
-import EditIcon from '../assets/edit.svg';
 import Pagination from './DocumentPagination';
 
 interface LineNumberedTextareaProps {
@@ -271,10 +269,10 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between w-full gap-3">
+      <div className="mb-4 flex items-center justify-between text-sm">
         <div className="flex items-center">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] flex-shrink-0"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={editingChunk ? () => setEditingChunk(null) : isAddingChunk ? () => setIsAddingChunk(false) : handleGoBack}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -282,7 +280,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
           <div className="flex items-center flex-wrap">
             <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
-            <span className="text-[#7D54D1] font-semibold text-base leading-6 break-words">
+            <span className="text-purple-30 font-medium break-words">
               {documentName}
             </span>
 
@@ -291,7 +289,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                 <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
                 {pathParts.map((part, index) => (
                   <React.Fragment key={index}>
-                    <span className="font-normal text-base leading-6 text-gray-700 dark:text-gray-300 break-words">
+                    <span className="text-gray-700 dark:text-gray-300 break-words">
                       {part}
                     </span>
                     {index < pathParts.length - 1 && (
@@ -304,9 +302,9 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           </div>
         </div>
 
-        {editingChunk && (
-          <div className="flex flex-wrap gap-2 justify-end">
-            {!isEditing ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {editingChunk ? (
+            !isEditing ? (
               <button
                 className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
                 onClick={() => setIsEditing(true)}
@@ -355,36 +353,34 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                   {t('modals.chunk.update')}
                 </button>
               </>
-            )}
-          </div>
-        )}
-
-        {isAddingChunk && (
-          <div className="flex flex-wrap gap-2 justify-end">
-            <button
-              onClick={() => setIsAddingChunk(false)}
-              className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
-            >
-              {t('modals.chunk.cancel')}
-            </button>
-            <button
-              onClick={() => {
-                if (editingText.trim()) {
-                  handleAddChunk(editingTitle, editingText);
-                  setIsAddingChunk(false);
-                }
-              }}
-              disabled={!editingText.trim()}
-              className={`rounded-full px-3 py-1 text-sm text-white transition-all ${
-                editingText.trim()
-                  ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
-                  : 'bg-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {t('modals.chunk.add')}
-            </button>
-          </div>
-        )}
+            )
+          ) : isAddingChunk ? (
+            <>
+              <button
+                onClick={() => setIsAddingChunk(false)}
+                className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+              >
+                {t('modals.chunk.cancel')}
+              </button>
+              <button
+                onClick={() => {
+                  if (editingText.trim()) {
+                    handleAddChunk(editingTitle, editingText);
+                    setIsAddingChunk(false);
+                  }
+                }}
+                disabled={!editingText.trim()}
+                className={`rounded-full px-3 py-1 text-sm text-white transition-all ${
+                  editingText.trim()
+                    ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
+                    : 'bg-gray-400 cursor-not-allowed'
+                }`}
+              >
+                {t('modals.chunk.add')}
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
     );
   };
@@ -436,11 +432,11 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                 </button>
               </div>
               {loading ? (
-                <div className="w-full mt-24 flex justify-center">
-                  <Spinner />
+                <div className="w-full grid grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(400px,1fr))] gap-4 justify-items-start">
+                  <SkeletonLoader component="chunkCards" count={perPage} />
                 </div>
               ) : (
-                <div className="w-full grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="w-full grid grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(400px,1fr))] gap-4 justify-items-start">
                   {filteredChunks.length === 0 ? (
                     <div className="col-span-full flex flex-col items-center justify-center mt-24 text-center text-gray-500 dark:text-gray-400">
                       <img
@@ -454,7 +450,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                     filteredChunks.map((chunk, index) => (
                       <div
                         key={index}
-                        className="transform transition-transform duration-200 hover:scale-105 relative flex h-[208px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden w-full"
+                        className="transform transition-transform duration-200 hover:scale-105 relative flex h-[197px] flex-col justify-between rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden cursor-pointer w-full max-w-[487px]"
                         onClick={() => {
                           setEditingChunk(chunk);
                           setEditingTitle(chunk.metadata?.title || '');
@@ -467,7 +463,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                               {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} {t('settings.documents.tokensUnit')}
                             </div>
                           </div>
-                          <div className="p-4">
+                          <div className="px-4 pt-4 pb-6">
                             <p className="font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] dark:text-[#E0E0E0] line-clamp-7 font-normal">
                               {chunk.text}
                             </p>
@@ -480,7 +476,6 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
               )}
             </>
           ) : isAddingChunk ? (
-            // Add new chunk view
             <div className="w-full">
               <div className="relative border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-lg overflow-hidden">
                 <LineNumberedTextarea

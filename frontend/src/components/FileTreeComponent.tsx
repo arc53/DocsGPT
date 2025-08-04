@@ -238,31 +238,38 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     setItemToDelete(null);
   };
   
-  const manageSource = async (operation: 'add' | 'remove', files?: FileList | null, filePath?: string) => {
+  const manageSource = async (operation: 'add' | 'remove' | 'remove_directory', files?: FileList | null, filePath?: string, directoryPath?: string) => {
     setIsUploading(true);
-    
+
     try {
       const formData = new FormData();
       formData.append('source_id', docId);
       formData.append('operation', operation);
-      
+
       if (operation === 'add' && files) {
         formData.append('parent_dir', currentPath.join('/'));
-        
+
         for (let i = 0; i < files.length; i++) {
           formData.append('file', files[i]);
         }
       } else if (operation === 'remove' && filePath) {
         const filePaths = JSON.stringify([filePath]);
         formData.append('file_paths', filePaths);
+      } else if (operation === 'remove_directory' && directoryPath) {
+        formData.append('directory_path', directoryPath);
       }
       
       const response = await userService.manageSourceFiles(formData, token);
       const result = await response.json();
       
       if (result.success && result.reingest_task_id) {
-        console.log(`Files ${operation === 'add' ? 'uploaded' : 'deleted'} successfully:`, 
-          operation === 'add' ? result.added_files : result.removed_files);
+        if (operation === 'add') {
+          console.log('Files uploaded successfully:', result.added_files);
+        } else if (operation === 'remove') {
+          console.log('Files deleted successfully:', result.removed_files);
+        } else if (operation === 'remove_directory') {
+          console.log('Directory deleted successfully:', result.removed_directory);
+        }
         console.log('Reingest task started:', result.reingest_task_id);
         
         const maxAttempts = 30;
@@ -299,11 +306,13 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           }
         }
       } else {
-        throw new Error(`Failed to ${operation} file(s)`);
+        throw new Error(`Failed to ${operation} ${operation === 'remove_directory' ? 'directory' : 'file(s)'}`);
       }
     } catch (error) {
-      console.error(`Error ${operation === 'add' ? 'uploading' : 'deleting'} file(s):`, error);
-      setError(`Failed to ${operation === 'add' ? 'upload' : 'delete'} file(s)`);
+      const actionText = operation === 'add' ? 'uploading' : operation === 'remove_directory' ? 'deleting directory' : 'deleting file(s)';
+      const errorText = operation === 'add' ? 'upload' : operation === 'remove_directory' ? 'delete directory' : 'delete file(s)';
+      console.error(`Error ${actionText}:`, error);
+      setError(`Failed to ${errorText}`);
     } finally {
       setIsUploading(false);
     }
@@ -328,14 +337,21 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   };
   
   const handleDeleteFile = async (name: string, isFile: boolean) => {
-    // Construct the full path to the file
-    const filePath = [...currentPath, name].join('/');
-    await manageSource('remove', null, filePath);
+    // Construct the full path to the file or directory
+    const itemPath = [...currentPath, name].join('/');
+
+    if (isFile) {
+      // Delete individual file
+      await manageSource('remove', null, itemPath);
+    } else {
+      // Delete entire directory
+      await manageSource('remove_directory', null, undefined, itemPath);
+    }
   };
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex items-center justify-between text-sm">
+      <div className="mb-4 flex flex-col sm:flex-row items-center justify-between text-sm">
         <div className="flex items-center">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
@@ -377,7 +393,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           <button
             onClick={handleAddFile}
             disabled={isUploading}
-            className={`flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white ${
+            className={`flex h-[32px] w-full m-2 sm:m-0 sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white ${
               isUploading
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-purple-30 hover:bg-violets-are-blue'
@@ -494,7 +510,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   options={getActionOptions(name, false, itemId)}
                   anchorRef={menuRef}
                   position="bottom-left"
-                  offset={{ x: 0, y: 8 }}
+                  offset={{ x: -8, y: 8 }}
                 />
               </div>
             </td>
@@ -544,7 +560,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   options={getActionOptions(name, true, itemId)}
                   anchorRef={menuRef}
                   position="bottom-left"
-                  offset={{ x: 0, y: 8 }}
+                  offset={{ x: -8, y: 8 }}
                 />
               </div>
             </td>
@@ -659,7 +675,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     <div>
       {selectedFile ? (
         <div className="flex">
-          <div className="flex-1 pl-4 pt-0">
+          <div className="flex-1">
             <DocumentChunks
               documentId={docId}
               documentName={sourceName}
@@ -711,7 +727,11 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         </div>
       )}
       <ConfirmationModal
-        message={t('settings.documents.confirmDelete')}
+        message={
+          itemToDelete?.isFile
+            ? t('settings.documents.confirmDelete')
+            : `Are you sure you want to delete the directory "${itemToDelete?.name}" and all its contents? This action cannot be undone.`
+        }
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={handleConfirmedDelete}

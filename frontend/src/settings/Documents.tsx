@@ -315,7 +315,9 @@ export default function Documents({
         </div>
         <div className="relative w-full">
           {loading ? (
-            <SkeletonLoader />
+            <div className="w-full grid grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(308px,1fr))] gap-6 justify-items-start">
+              <SkeletonLoader component="sourceCards" count={rowsPerPage} />
+            </div>
           ) : !currentDocuments?.length ? (
             <div className="flex flex-col items-center justify-center py-12">
               <img
@@ -376,7 +378,7 @@ export default function Documents({
                                 }}
                                 anchorRef={getMenuRef(docId)}
                                 position="bottom-left"
-                                offset={{ x: 24, y: -24 }}
+                                offset={{ x: -8, y: 8 }}
                                 className="min-w-[120px]"
                               />
                             )}
@@ -391,7 +393,7 @@ export default function Documents({
                             >
                               <img
                                 src={ThreeDots}
-                                alt={t('convTile.menu')}
+                                alt={t('Open menu')}
                                 className="opacity-60 hover:opacity-100"
                               />
                             </button>
@@ -423,7 +425,7 @@ export default function Documents({
                       options={getActionOptions(index, document)}
                       anchorRef={getMenuRef(docId)}
                       position="bottom-left"
-                      offset={{ x: 48, y: 0 }}
+                      offset={{ x: -8, y: 8 }}
                       className="z-50"
                     />
                   </div>
@@ -434,22 +436,24 @@ export default function Documents({
         </div>
       </div>
 
-      <div className="mt-auto pt-4">
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          rowsPerPage={rowsPerPage}
-          onPageChange={(page) => {
-            setCurrentPage(page);
-            refreshDocs(undefined, page, rowsPerPage);
-          }}
-          onRowsPerPageChange={(rows) => {
-            setRowsPerPage(rows);
-            setCurrentPage(1);
-            refreshDocs(undefined, 1, rows);
-          }}
-        />
-      </div>
+      {currentDocuments.length > 0 && totalPages > 1 && (
+        <div className="mt-auto pt-4">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            rowsPerPage={rowsPerPage}
+            onPageChange={(page) => {
+              setCurrentPage(page);
+              refreshDocs(undefined, page, rowsPerPage);
+            }}
+            onRowsPerPageChange={(rows) => {
+              setRowsPerPage(rows);
+              setCurrentPage(1);
+              refreshDocs(undefined, 1, rows);
+            }}
+          />
+        </div>
+      )}
 
       {modalState === 'ACTIVE' && (
         <Upload
