@@ -269,7 +269,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex items-center justify-between text-sm">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm gap-2">
         <div className="flex items-center">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
@@ -302,11 +302,11 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0 overflow-x-auto">
           {editingChunk ? (
             !isEditing ? (
               <button
-                className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all"
+                className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all text-nowrap"
                 onClick={() => setIsEditing(true)}
               >
                 {t('modals.chunk.edit')}
@@ -326,7 +326,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                     setIsEditing(false);
                     setEditingChunk(null);
                   }}
-                  className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+                  className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50 text-nowrap"
                 >
                   {t('modals.chunk.cancel')}
                 </button>
@@ -344,7 +344,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                     }
                   }}
                   disabled={!editingText.trim() || (editingTitle === (editingChunk?.metadata?.title || '') && editingText === (editingChunk?.text || ''))}
-                  className={`rounded-full px-3 py-1 text-sm text-white transition-all ${
+                  className={`text-nowrap rounded-full px-3 py-1 text-sm text-white transition-all ${
                     editingText.trim() && (editingTitle !== (editingChunk?.metadata?.title || '') || editingText !== (editingChunk?.text || ''))
                       ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
                       : 'bg-gray-400 cursor-not-allowed'
@@ -358,7 +358,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
             <>
               <button
                 onClick={() => setIsAddingChunk(false)}
-                className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+                className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50 text-nowrap"
               >
                 {t('modals.chunk.cancel')}
               </button>
@@ -370,7 +370,7 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                   }
                 }}
                 disabled={!editingText.trim()}
-                className={`rounded-full px-3 py-1 text-sm text-white transition-all ${
+                className={`text-nowrap rounded-full px-3 py-1 text-sm text-white transition-all ${
                   editingText.trim()
                     ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
                     : 'bg-gray-400 cursor-not-allowed'
@@ -463,8 +463,8 @@ const DocumentChunks: React.FC<DocumentChunksProps> = ({
                               {chunk.metadata.token_count ? chunk.metadata.token_count.toLocaleString() : '-'} {t('settings.documents.tokensUnit')}
                             </div>
                           </div>
-                          <div className="px-4 pt-4 pb-6">
-                            <p className="font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] dark:text-[#E0E0E0] line-clamp-7 font-normal">
+                          <div className="px-4 pt-3 pb-6">
+                            <p className="font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] dark:text-[#E0E0E0] line-clamp-6 font-normal">
                               {chunk.text}
                             </p>
                           </div>
