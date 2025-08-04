@@ -106,3 +106,19 @@ class BaseStorage(ABC):
             bool: True if the path is a directory
         """
         pass
+
+    @abstractmethod
+    def remove_directory(self, directory: str) -> bool:
+        """
+        Remove a directory and all its contents.
+
+        For local storage, this removes the directory and all files/subdirectories within it.
+        For S3 storage, this removes all objects with the directory path as a prefix.
+
+        Args:
+            directory: Directory path to remove
+
+        Returns:
+            bool: True if removal was successful, False otherwise
+        """
+        pass
