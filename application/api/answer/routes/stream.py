@@ -94,9 +94,12 @@ class StreamResource(Resource, BaseAnswerResource):
                 ),
                 mimetype="text/event-stream",
             )
-        except ValueError:
+        except ValueError as e:
             message = "Malformed request body"
-            logger.error(f"/stream - error: {message}")
+            logger.error(
+                f"/stream - error: {message} - specific error: {str(e)} - traceback: {traceback.format_exc()}",
+                extra={"error": str(e), "traceback": traceback.format_exc()},
+            )
             return Response(
                 self.error_stream_generate(message),
                 status=400,
