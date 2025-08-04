@@ -60,12 +60,23 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
-  
+  const currentOpRef = useRef<null | 'add' | 'remove' | 'remove_directory'>(null);
+
   const [deleteModalState, setDeleteModalState] = useState<'ACTIVE' | 'INACTIVE'>('INACTIVE');
   const [itemToDelete, setItemToDelete] = useState<{ name: string; isFile: boolean } | null>(null);
-  
+
+  type QueuedOperation = {
+    operation: 'add' | 'remove' | 'remove_directory';
+    files?: File[];
+    filePath?: string;
+    directoryPath?: string;
+    parentDirPath?: string;
+  };
+  const opQueueRef = useRef<QueuedOperation[]>([]);
+  const processingRef = useRef(false);
+  const [queueLength, setQueueLength] = useState(0);
+
   useOutsideAlerter(
     searchDropdownRef,
     () => {
@@ -186,7 +197,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const getActionOptions = (
     name: string,
     isFile: boolean,
-    itemId: string,
+    _itemId: string,
   ): MenuOption[] => {
     const options: MenuOption[] = [];
 
@@ -238,16 +249,22 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     setItemToDelete(null);
   };
   
-  const manageSource = async (operation: 'add' | 'remove' | 'remove_directory', files?: FileList | null, filePath?: string, directoryPath?: string) => {
-    setIsUploading(true);
+  const manageSource = async (
+    operation: 'add' | 'remove' | 'remove_directory',
+    files?: File[] | null,
+    filePath?: string,
+    directoryPath?: string,
+    parentDirPath?: string,
+  ) => {
+    currentOpRef.current = operation;
 
     try {
       const formData = new FormData();
       formData.append('source_id', docId);
       formData.append('operation', operation);
 
-      if (operation === 'add' && files) {
-        formData.append('parent_dir', currentPath.join('/'));
+      if (operation === 'add' && files && files.length) {
+        formData.append('parent_dir', parentDirPath ?? currentPath.join('/'));
 
         for (let i = 0; i < files.length; i++) {
           formData.append('file', files[i]);
@@ -290,7 +307,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               
               if (structureData && structureData.directory_structure) {
                 setDirectoryStructure(structureData.directory_structure);
-                setIsUploading(false);
+                currentOpRef.current = null;
                 return true;
               }
               break;
@@ -314,10 +331,38 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       console.error(`Error ${actionText}:`, error);
       setError(`Failed to ${errorText}`);
     } finally {
-      setIsUploading(false);
+      currentOpRef.current = null;
     }
-    
+
     return false;
+  };
+
+  const processQueue = async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    try {
+      while (opQueueRef.current.length > 0) {
+        const nextOp = opQueueRef.current.shift()!;
+        setQueueLength(opQueueRef.current.length);
+        await manageSource(
+          nextOp.operation,
+          nextOp.files,
+          nextOp.filePath,
+          nextOp.directoryPath,
+          nextOp.parentDirPath,
+        );
+      }
+    } finally {
+      processingRef.current = false;
+    }
+  };
+
+  const enqueueOperation = (op: QueuedOperation) => {
+    opQueueRef.current.push(op);
+    setQueueLength(opQueueRef.current.length);
+    if (!processingRef.current) {
+      void processQueue();
+    }
   };
 
   const handleAddFile = () => {
@@ -325,27 +370,25 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     fileInput.type = 'file';
     fileInput.multiple = true;
     fileInput.accept = '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
-    
+
     fileInput.onchange = async (event) => {
-      const files = (event.target as HTMLInputElement).files;
-      if (!files || files.length === 0) return;
-      
-      await manageSource('add', files);
+      const fileList = (event.target as HTMLInputElement).files;
+      if (!fileList || fileList.length === 0) return;
+      const files = Array.from(fileList);
+      enqueueOperation({ operation: 'add', files, parentDirPath: currentPath.join('/') });
     };
-    
+
     fileInput.click();
   };
-  
+
   const handleDeleteFile = async (name: string, isFile: boolean) => {
     // Construct the full path to the file or directory
     const itemPath = [...currentPath, name].join('/');
 
     if (isFile) {
-      // Delete individual file
-      await manageSource('remove', null, itemPath);
+      enqueueOperation({ operation: 'remove', filePath: itemPath });
     } else {
-      // Delete entire directory
-      await manageSource('remove_directory', null, undefined, itemPath);
+      enqueueOperation({ operation: 'remove_directory', directoryPath: itemPath });
     }
   };
 
@@ -390,18 +433,21 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         </div>
 
         {!selectedFile && (
-          <button
-            onClick={handleAddFile}
-            disabled={isUploading}
-            className={`flex h-[32px] w-full m-2 sm:m-0 sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white ${
-              isUploading
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-purple-30 hover:bg-violets-are-blue'
-            }`}
-            title={isUploading ? "Uploading files..." : "Add file"}
-          >
-            {isUploading ? 'Uploading...' : 'Add file'}
-          </button>
+          <div className="flex items-center gap-2 m-2 sm:m-0">
+            {(processingRef.current || queueLength > 0) && (
+              <span className="text-xs text-gray-600 dark:text-gray-400">
+                {processingRef.current ? (currentOpRef.current === 'add' ? 'Uploading…' : 'Deleting…') : null}
+                {queueLength > 0 ? `${processingRef.current ? ' • ' : ''}Queued: ${queueLength}` : ''}
+              </span>
+            )}
+            <button
+              onClick={handleAddFile}
+              className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+              title={processingRef.current ? (currentOpRef.current === 'add' ? 'Uploading files...' : 'Deleting...') : 'Add file'}
+            >
+              Add file
+            </button>
+          </div>
         )}
       </div>
     );
