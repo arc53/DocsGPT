@@ -1,7 +1,7 @@
 import logging
 import traceback
 
-from flask import make_response, request, Response
+from flask import request, Response
 from flask_restx import fields, Resource
 
 from application.api import api

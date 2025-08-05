@@ -81,7 +81,6 @@ class QdrantStore(BaseVectorStore):
 
     def get_chunks(self):
         try:
-            from qdrant_client import models
 
             chunks = []
             offset = None
