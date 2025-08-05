@@ -35,7 +35,7 @@ from application.api.user.tasks import (
 )
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.extensions import api
+from application.api import api
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
 from application.utils import (
@@ -3746,14 +3746,18 @@ class StoreAttachment(Resource):
             "AttachmentModel",
             {
                 "file": fields.Raw(required=True, description="File to upload"),
+                "api_key": fields.String(
+                    required=False, description="API key (optional)"
+                ),
             },
         )
     )
-    @api.doc(description="Stores a single attachment without vectorization or training")
+    @api.doc(
+        description="Stores a single attachment without vectorization or training. Supports user or API key authentication."
+    )
     def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
+        decoded_token = getattr(request, "decoded_token", None)
+        api_key = request.form.get("api_key") or request.args.get("api_key")
         file = request.files.get("file")
 
         if not file or file.filename == "":
@@ -3761,7 +3765,21 @@ class StoreAttachment(Resource):
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
-        user = safe_filename(decoded_token.get("sub"))
+
+        user = None
+        if decoded_token:
+            user = safe_filename(decoded_token.get("sub"))
+        elif api_key:
+            agent = agents_collection.find_one({"key": api_key})
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Invalid API key"}), 401
+                )
+            user = safe_filename(agent.get("user"))
+        else:
+            return make_response(
+                jsonify({"success": False, "message": "Authentication required"}), 401
+            )
 
         try:
             attachment_id = ObjectId()

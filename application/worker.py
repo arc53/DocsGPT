@@ -16,7 +16,7 @@ from bson.dbref import DBRef
 from bson.objectid import ObjectId
 
 from application.agents.agent_creator import AgentCreator
-from application.api.answer.routes import get_prompt
+from application.api.answer.services.stream_processor import get_prompt
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
@@ -35,17 +35,22 @@ db = mongo[settings.MONGO_DB_NAME]
 sources_collection = db["sources"]
 
 # Constants
+
 MIN_TOKENS = 150
 MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
 
 
 # Define a function to extract metadata from a given filename.
+
+
 def metadata_from_filename(title):
     return {"title": title}
 
 
 # Define a function to generate a random string of a given length.
+
+
 def generate_random_string(length):
     return "".join([string.ascii_letters[i % 52] for i in range(length)])
 
@@ -68,7 +73,6 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
     if current_depth > max_depth:
         logging.warning(f"Reached maximum recursion depth of {max_depth}")
         return
-
     try:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(extract_to)
@@ -76,12 +80,13 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
     except Exception as e:
         logging.error(f"Error extracting zip file {zip_path}: {e}", exc_info=True)
         return
-
     # Check for nested zip files and extract them
+
     for root, dirs, files in os.walk(extract_to):
         for file in files:
             if file.endswith(".zip"):
                 # If a nested zip file is found, extract it recursively
+
                 file_path = os.path.join(root, file)
                 extract_zip_recursive(file_path, root, current_depth + 1, max_depth)
 
@@ -151,7 +156,7 @@ def run_agent_logic(agent_config, input_data):
         user_api_key = agent_config["key"]
         agent_type = agent_config.get("agent_type", "classic")
         decoded_token = {"sub": agent_config.get("user")}
-        prompt = get_prompt(prompt_id)
+        prompt = get_prompt(prompt_id, db["prompts"])
         agent = AgentCreator.create_agent(
             agent_type,
             endpoint="webhook",
@@ -190,7 +195,6 @@ def run_agent_logic(agent_config, input_data):
                 tool_calls.extend(line["tool_calls"])
             elif "thought" in line:
                 thought += line["thought"]
-
         result = {
             "answer": response_full,
             "sources": source_log_docs,
@@ -205,6 +209,8 @@ def run_agent_logic(agent_config, input_data):
 
 
 # Define the main function for ingesting and processing documents.
+
+
 def ingest_worker(
     self, directory, formats, job_name, file_path, filename, user, 
     retriever="classic"
@@ -230,12 +236,13 @@ def ingest_worker(
     limit = None
     exclude = True
     sample = False
-    
+
     storage = StorageCreator.get_storage()
     
     logging.info(f"Ingest path: {file_path}", extra={"user": user, "job": job_name})
 
     # Create temporary working directory
+
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             os.makedirs(temp_dir, exist_ok=True)
@@ -282,7 +289,6 @@ def ingest_worker(
             self.update_state(state="PROGRESS", meta={"current": 1})
             if sample:
                 logging.info(f"Sample mode enabled. Using {limit} documents.")
-
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
                 input_files=input_files,
@@ -333,11 +339,9 @@ def ingest_worker(
             }
 
             upload_index(vector_store_path, file_data)
-
         except Exception as e:
             logging.error(f"Error in ingest_worker: {e}", exc_info=True)
             raise
-
     return {
         "directory": directory,
         "formats": formats,
@@ -609,7 +613,6 @@ def remote_worker(
     full_path = os.path.join(directory, user, name_job)
     if not os.path.exists(full_path):
         os.makedirs(full_path)
-
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
         logging.info("Initializing remote loader with type: %s", loader)
@@ -636,7 +639,6 @@ def remote_worker(
                 raise ValueError("doc_id must be provided for sync operation.")
             id = ObjectId(doc_id)
             embed_and_store_documents(docs, full_path, id, self)
-
         self.update_state(state="PROGRESS", meta={"current": 100})
 
         file_data = {
@@ -650,15 +652,12 @@ def remote_worker(
             "sync_frequency": sync_frequency,
         }
         upload_index(full_path, file_data)
-
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         raise
-
     finally:
         if os.path.exists(full_path):
             shutil.rmtree(full_path)
-
     logging.info("remote_worker task completed successfully")
     return {"urls": source_data, "name_job": name_job, "user": user, "limited": False}
 
@@ -711,7 +710,6 @@ def sync_worker(self, frequency):
             sync_counts[
                 "sync_success" if resp["status"] == "success" else "sync_failure"
             ] += 1
-
     return {
         key: sync_counts[key]
         for key in ["total_sync_count", "sync_success", "sync_failure"]
@@ -786,7 +784,6 @@ def attachment_worker(self, file_info, user):
             "mime_type": mime_type,
             "metadata": metadata,
         }
-
     except Exception as e:
         logging.error(
             f"Error processing file {filename}: {e}",
@@ -822,7 +819,6 @@ def agent_webhook_worker(self, agent_id, payload):
     except Exception as e:
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
-
     self.update_state(state="PROGRESS", meta={"current": 50})
     try:
         result = run_agent_logic(agent_config, input_data)
