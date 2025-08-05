@@ -197,7 +197,7 @@ class SimpleDirectoryReader(BaseReader):
         # Build directory structure if input_dir is provided
         if hasattr(self, 'input_dir'):
             self.directory_structure = self.build_directory_structure(self.input_dir)
-            logging.info(f"Directory structure built successfully")
+            logging.info("Directory structure built successfully")
         else:
             self.directory_structure = {}
 

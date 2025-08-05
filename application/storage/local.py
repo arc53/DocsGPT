@@ -136,5 +136,5 @@ class LocalStorage(BaseStorage):
         try:
             shutil.rmtree(full_path)
             return True
-        except (OSError, PermissionError) as e:
+        except (OSError, PermissionError):
             return False

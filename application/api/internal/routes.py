@@ -55,7 +55,7 @@ def upload_index_files():
     if directory_structure:
         try:
             directory_structure = json.loads(directory_structure)
-        except:
+        except Exception:
             logger.error("Error parsing directory_structure")
             directory_structure = {}
     else:

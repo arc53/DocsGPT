@@ -3,7 +3,6 @@ import json
 import math
 import os
 import secrets
-import shutil
 import uuid
 from functools import wraps
 from typing import Optional, Tuple
@@ -735,7 +734,7 @@ class ManageSourceFiles(Resource):
 
                 try:
                     file_paths = json.loads(file_paths_str) if isinstance(file_paths_str, str) else file_paths_str
-                except:
+                except Exception:
                     return make_response(
                         jsonify({"success": False, "message": "Invalid file_paths format"}), 400
                     )
