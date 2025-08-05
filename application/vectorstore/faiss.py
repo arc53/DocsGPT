@@ -67,25 +67,36 @@ class FaissStore(BaseVectorStore):
     def add_texts(self, *args, **kwargs):
         return self.docsearch.add_texts(*args, **kwargs)
 
-    def save_local(self, path):
+    def _save_to_storage(self):
         """
-        Save the FAISS index to disk and upload to storage.
-        
-        Args:
-            path: Path where the index should be stored
+        Save the FAISS index to storage using temporary directory pattern.
+        Works consistently for both local and S3 storage.
         """
         with tempfile.TemporaryDirectory() as temp_dir:
             self.docsearch.save_local(temp_dir)
-            
-            with open(os.path.join(temp_dir, "index.faiss"), "rb") as f_faiss:
+
+            faiss_path = os.path.join(temp_dir, "index.faiss")
+            pkl_path = os.path.join(temp_dir, "index.pkl")
+
+            with open(faiss_path, "rb") as f_faiss:
                 faiss_data = f_faiss.read()
-            
-            with open(os.path.join(temp_dir, "index.pkl"), "rb") as f_pkl:
+
+            with open(pkl_path, "rb") as f_pkl:
                 pkl_data = f_pkl.read()
-    
-            self.storage.save_file(io.BytesIO(faiss_data), f"{path}/index.faiss")
-            self.storage.save_file(io.BytesIO(pkl_data), f"{path}/index.pkl")
-        
+
+            storage_path = get_vectorstore(self.source_id)
+            self.storage.save_file(io.BytesIO(faiss_data), f"{storage_path}/index.faiss")
+            self.storage.save_file(io.BytesIO(pkl_data), f"{storage_path}/index.pkl")
+
+        return True
+
+    def save_local(self, path=None):
+        if path:
+            os.makedirs(path, exist_ok=True)
+            self.docsearch.save_local(path)
+
+        self._save_to_storage()
+
         return True
 
     def delete_index(self, *args, **kwargs):
@@ -122,13 +133,17 @@ class FaissStore(BaseVectorStore):
         return chunks
 
     def add_chunk(self, text, metadata=None):
+        """Add a new chunk and save to storage."""
         metadata = metadata or {}
         doc = Document(text=text, extra_info=metadata).to_langchain_format()
         doc_id = self.docsearch.add_documents([doc])
-        self.save_local(self.path)
+        self._save_to_storage()
         return doc_id
 
+
+
     def delete_chunk(self, chunk_id):
+        """Delete a chunk and save to storage."""
         self.delete_index([chunk_id])
-        self.save_local(self.path)
+        self._save_to_storage()
         return True

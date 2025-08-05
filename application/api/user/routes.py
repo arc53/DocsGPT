@@ -3695,35 +3695,45 @@ class UpdateChunk(Resource):
             )
         try:
             store = get_vector_store(doc_id)
+
             chunks = store.get_chunks()
             existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
             if not existing_chunk:
                 return make_response(jsonify({"error": "Chunk not found"}), 404)
-            deleted = store.delete_chunk(chunk_id)
-            if not deleted:
-                return make_response(
-                    jsonify({"error": "Failed to delete existing chunk"}), 500
-                )
+
             new_text = text if text is not None else existing_chunk["text"]
-            new_metadata = (
-                metadata if metadata is not None else existing_chunk["metadata"]
-            )
 
-            if text is not None and metadata is None:
-                token_count = num_tokens_from_string(new_text)
-                new_metadata["token_count"] = token_count
+            if metadata is not None:
+                new_metadata = existing_chunk["metadata"].copy()
+                new_metadata.update(metadata)
+            else:
+                new_metadata = existing_chunk["metadata"].copy()
 
-            new_chunk_id = store.add_chunk(new_text, new_metadata)
+            if text is not None:
+                new_metadata["token_count"] = num_tokens_from_string(new_text)
 
-            return make_response(
-                jsonify(
-                    {
-                        "message": "Chunk updated successfully",
-                        "new_chunk_id": new_chunk_id,
-                    }
-                ),
-                200,
-            )
+            try:
+                new_chunk_id = store.add_chunk(new_text, new_metadata)
+
+                deleted = store.delete_chunk(chunk_id)
+                if not deleted:
+                    current_app.logger.warning(f"Failed to delete old chunk {chunk_id}, but new chunk {new_chunk_id} was created")
+
+                return make_response(
+                    jsonify(
+                        {
+                            "message": "Chunk updated successfully",
+                            "chunk_id": new_chunk_id,
+                            "original_chunk_id": chunk_id,
+                        }
+                    ),
+                    200,
+                )
+            except Exception as add_error:
+                current_app.logger.error(f"Failed to add updated chunk: {add_error}")
+                return make_response(
+                    jsonify({"error": "Failed to update chunk - addition failed"}), 500
+                )
         except Exception as e:
             current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
