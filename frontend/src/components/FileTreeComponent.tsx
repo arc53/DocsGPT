@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { selectToken } from '../preferences/preferenceSlice';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
 import userService from '../api/services/userService';
@@ -49,7 +50,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const [directoryStructure, setDirectoryStructure] =
     useState<DirectoryStructure | null>(null);
   const [currentPath, setCurrentPath] = useState<string[]>([]);
-  const token = useSelector((state: any) => state.auth?.token);
+  const token = useSelector(selectToken);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRefs = useRef<{
     [key: string]: React.RefObject<HTMLDivElement | null>;
@@ -61,10 +62,17 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
-  const currentOpRef = useRef<null | 'add' | 'remove' | 'remove_directory'>(null);
+  const currentOpRef = useRef<null | 'add' | 'remove' | 'remove_directory'>(
+    null,
+  );
 
-  const [deleteModalState, setDeleteModalState] = useState<'ACTIVE' | 'INACTIVE'>('INACTIVE');
-  const [itemToDelete, setItemToDelete] = useState<{ name: string; isFile: boolean } | null>(null);
+  const [deleteModalState, setDeleteModalState] = useState<
+    'ACTIVE' | 'INACTIVE'
+  >('INACTIVE');
+  const [itemToDelete, setItemToDelete] = useState<{
+    name: string;
+    isFile: boolean;
+  } | null>(null);
 
   type QueuedOperation = {
     operation: 'add' | 'remove' | 'remove_directory';
@@ -84,7 +92,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       setSearchResults([]);
     },
     [],
-    false
+    false,
   );
 
   const handleFileClick = (fileName: string) => {
@@ -144,7 +152,10 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       try {
         structure = JSON.parse(structure);
       } catch (e) {
-        console.error('Error parsing directory structure in getCurrentDirectory:', e);
+        console.error(
+          'Error parsing directory structure in getCurrentDirectory:',
+          e,
+        );
         return {};
       }
     }
@@ -155,7 +166,11 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
     let current: any = structure;
     for (const dir of currentPath) {
-      if (current[dir] && typeof current[dir] === 'object' && !current[dir].type) {
+      if (
+        current[dir] &&
+        typeof current[dir] === 'object' &&
+        !current[dir].type
+      ) {
         current = current[dir];
       } else {
         return {};
@@ -231,13 +246,13 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
     return options;
   };
-  
+
   const confirmDeleteItem = (name: string, isFile: boolean) => {
     setItemToDelete({ name, isFile });
     setDeleteModalState('ACTIVE');
-    setActiveMenuId(null); 
+    setActiveMenuId(null);
   };
-  
+
   const handleConfirmedDelete = async () => {
     if (itemToDelete) {
       await handleDeleteFile(itemToDelete.name, itemToDelete.isFile);
@@ -245,12 +260,12 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       setItemToDelete(null);
     }
   };
-  
+
   const handleCancelDelete = () => {
     setDeleteModalState('INACTIVE');
     setItemToDelete(null);
   };
-  
+
   const manageSource = async (
     operation: 'add' | 'remove' | 'remove_directory',
     files?: File[] | null,
@@ -277,36 +292,48 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       } else if (operation === 'remove_directory' && directoryPath) {
         formData.append('directory_path', directoryPath);
       }
-      
+
       const response = await userService.manageSourceFiles(formData, token);
       const result = await response.json();
-      
+
       if (result.success && result.reingest_task_id) {
         if (operation === 'add') {
           console.log('Files uploaded successfully:', result.added_files);
         } else if (operation === 'remove') {
           console.log('Files deleted successfully:', result.removed_files);
         } else if (operation === 'remove_directory') {
-          console.log('Directory deleted successfully:', result.removed_directory);
+          console.log(
+            'Directory deleted successfully:',
+            result.removed_directory,
+          );
         }
         console.log('Reingest task started:', result.reingest_task_id);
-        
+
         const maxAttempts = 30;
         const pollInterval = 2000;
-        
+
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
-            const statusResponse = await userService.getTaskStatus(result.reingest_task_id, token);
+            const statusResponse = await userService.getTaskStatus(
+              result.reingest_task_id,
+              token,
+            );
             const statusData = await statusResponse.json();
-            
-            console.log(`Task status (attempt ${attempt + 1}):`, statusData.status);
-            
+
+            console.log(
+              `Task status (attempt ${attempt + 1}):`,
+              statusData.status,
+            );
+
             if (statusData.status === 'SUCCESS') {
               console.log('Task completed successfully');
-              
-              const structureResponse = await userService.getDirectoryStructure(docId, token);
+
+              const structureResponse = await userService.getDirectoryStructure(
+                docId,
+                token,
+              );
               const structureData = await structureResponse.json();
-              
+
               if (structureData && structureData.directory_structure) {
                 setDirectoryStructure(structureData.directory_structure);
                 currentOpRef.current = null;
@@ -317,19 +344,31 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               console.error('Task failed');
               break;
             }
-            
-            await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            await new Promise((resolve) => setTimeout(resolve, pollInterval));
           } catch (error) {
             console.error('Error polling task status:', error);
             break;
           }
         }
       } else {
-        throw new Error(`Failed to ${operation} ${operation === 'remove_directory' ? 'directory' : 'file(s)'}`);
+        throw new Error(
+          `Failed to ${operation} ${operation === 'remove_directory' ? 'directory' : 'file(s)'}`,
+        );
       }
     } catch (error) {
-      const actionText = operation === 'add' ? 'uploading' : operation === 'remove_directory' ? 'deleting directory' : 'deleting file(s)';
-      const errorText = operation === 'add' ? 'upload' : operation === 'remove_directory' ? 'delete directory' : 'delete file(s)';
+      const actionText =
+        operation === 'add'
+          ? 'uploading'
+          : operation === 'remove_directory'
+            ? 'deleting directory'
+            : 'deleting file(s)';
+      const errorText =
+        operation === 'add'
+          ? 'upload'
+          : operation === 'remove_directory'
+            ? 'delete directory'
+            : 'delete file(s)';
       console.error(`Error ${actionText}:`, error);
       setError(`Failed to ${errorText}`);
     } finally {
@@ -371,13 +410,18 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.multiple = true;
-    fileInput.accept = '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
+    fileInput.accept =
+      '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
 
     fileInput.onchange = async (event) => {
       const fileList = (event.target as HTMLInputElement).files;
       if (!fileList || fileList.length === 0) return;
       const files = Array.from(fileList);
-      enqueueOperation({ operation: 'add', files, parentDirPath: currentPath.join('/') });
+      enqueueOperation({
+        operation: 'add',
+        files,
+        parentDirPath: currentPath.join('/'),
+      });
     };
 
     fileInput.click();
@@ -390,14 +434,17 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     if (isFile) {
       enqueueOperation({ operation: 'remove', filePath: itemPath });
     } else {
-      enqueueOperation({ operation: 'remove_directory', directoryPath: itemPath });
+      enqueueOperation({
+        operation: 'remove_directory',
+        directoryPath: itemPath,
+      });
     }
   };
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm gap-3">
-        <div className="flex items-center w-full sm:w-auto">
+      <div className="mb-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full items-center sm:w-auto">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={handleBackNavigation}
@@ -405,19 +452,27 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
 
-          <div className="flex items-center flex-wrap">
-            <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
-            <span className="text-purple-30 font-medium break-words">{sourceName}</span>
+          <div className="flex flex-wrap items-center">
+            <img
+              src={OutlineSource}
+              alt="source"
+              className="mr-2 h-5 w-5 flex-shrink-0"
+            />
+            <span className="text-purple-30 font-medium break-words">
+              {sourceName}
+            </span>
             {currentPath.length > 0 && (
               <>
-                <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
+                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
                 {currentPath.map((dir, index) => (
                   <React.Fragment key={index}>
-                    <span className="text-gray-700 dark:text-gray-300 break-words">
+                    <span className="break-words text-gray-700 dark:text-gray-300">
                       {dir}
                     </span>
                     {index < currentPath.length - 1 && (
-                      <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
+                      <span className="mx-1 flex-shrink-0 text-gray-500">
+                        /
+                      </span>
                     )}
                   </React.Fragment>
                 ))}
@@ -425,8 +480,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             )}
             {selectedFile && (
               <>
-                <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
-                <span className="text-gray-700 dark:text-gray-300 break-words">
+                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
+                <span className="break-words text-gray-700 dark:text-gray-300">
                   {selectedFile.name}
                 </span>
               </>
@@ -435,17 +490,29 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         </div>
 
         {!selectedFile && (
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             {(processingRef.current || queueLength > 0) && (
               <span className="text-xs text-gray-600 dark:text-gray-400">
-                {processingRef.current ? (currentOpRef.current === 'add' ? 'Uploading…' : 'Deleting…') : null}
-                {queueLength > 0 ? `${processingRef.current ? ' • ' : ''}Queued: ${queueLength}` : ''}
+                {processingRef.current
+                  ? currentOpRef.current === 'add'
+                    ? 'Uploading…'
+                    : 'Deleting…'
+                  : null}
+                {queueLength > 0
+                  ? `${processingRef.current ? ' • ' : ''}Queued: ${queueLength}`
+                  : ''}
               </span>
             )}
             <button
               onClick={handleAddFile}
-              className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
-              title={processingRef.current ? (currentOpRef.current === 'add' ? 'Uploading files...' : 'Deleting...') : 'Add file'}
+              className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] w-full min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white sm:w-auto"
+              title={
+                processingRef.current
+                  ? currentOpRef.current === 'add'
+                    ? 'Uploading files...'
+                    : 'Deleting...'
+                  : 'Add file'
+              }
             >
               Add file
             </button>
@@ -487,26 +554,32 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-          <tr
-            key="parent-dir"
-            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
-            onClick={navigateUp}
-          >
-            <td className="px-2 lg:px-4 py-2">
-              <div className="flex items-center">
-                <img
-                  src={FolderIcon}
-                  alt={t('settings.sources.parentFolderAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
-                />
-                <span className="text-sm dark:text-[#E0E0E0] truncate">..</span>
-              </div>
-            </td>
-            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
-            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">-</td>
-            <td className="w-10 px-2 lg:px-4 py-2 text-sm"></td>
-          </tr>,
-        ]
+            <tr
+              key="parent-dir"
+              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+              onClick={navigateUp}
+            >
+              <td className="px-2 py-2 lg:px-4">
+                <div className="flex items-center">
+                  <img
+                    src={FolderIcon}
+                    alt={t('settings.sources.parentFolderAlt')}
+                    className="mr-2 h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="truncate text-sm dark:text-[#E0E0E0]">
+                    ..
+                  </span>
+                </div>
+              </td>
+              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+                -
+              </td>
+              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+                -
+              </td>
+              <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
+            </tr>,
+          ]
         : [];
 
     // Render directories first, then files
@@ -523,21 +596,27 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => navigateToDirectory(name)}
           >
-            <td className="px-2 lg:px-4 py-2">
-              <div className="flex items-center min-w-0">
-                <img src={FolderIcon} alt={t('settings.sources.folderAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
-                <span className="text-sm dark:text-[#E0E0E0] truncate">{name}</span>
+            <td className="px-2 py-2 lg:px-4">
+              <div className="flex min-w-0 items-center">
+                <img
+                  src={FolderIcon}
+                  alt={t('settings.sources.folderAlt')}
+                  className="mr-2 h-4 w-4 flex-shrink-0"
+                />
+                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                  {name}
+                </span>
               </div>
             </td>
-            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
               {dirStats.totalTokens > 0
                 ? dirStats.totalTokens.toLocaleString()
                 : '-'}
             </td>
-            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
               {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
             </td>
-            <td className="w-10 px-2 lg:px-4 py-2 text-sm">
+            <td className="w-10 px-2 py-2 text-sm lg:px-4">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -575,19 +654,25 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => handleFileClick(name)}
           >
-            <td className="px-2 lg:px-4 py-2">
-              <div className="flex items-center min-w-0">
-                <img src={FileIcon} alt={t('settings.sources.fileAlt')} className="mr-2 h-4 w-4 flex-shrink-0" />
-                <span className="text-sm dark:text-[#E0E0E0] truncate">{name}</span>
+            <td className="px-2 py-2 lg:px-4">
+              <div className="flex min-w-0 items-center">
+                <img
+                  src={FileIcon}
+                  alt={t('settings.sources.fileAlt')}
+                  className="mr-2 h-4 w-4 flex-shrink-0"
+                />
+                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                  {name}
+                </span>
               </div>
             </td>
-            <td className="px-2 lg:px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
               {node.token_count?.toLocaleString() || '-'}
             </td>
-            <td className="px-2 md:px-4 py-2 text-sm dark:text-[#E0E0E0]">
+            <td className="px-2 py-2 text-sm md:px-4 dark:text-[#E0E0E0]">
               {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
             </td>
-            <td className="w-10 px-2 lg:px-4 py-2 text-sm">
+            <td className="w-10 px-2 py-2 text-sm lg:px-4">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -619,7 +704,11 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   };
   const currentDirectory = getCurrentDirectory();
 
-  const searchFiles = (query: string, structure: DirectoryStructure, currentPath: string[] = []): SearchResult[] => {
+  const searchFiles = (
+    query: string,
+    structure: DirectoryStructure,
+    currentPath: string[] = [],
+  ): SearchResult[] => {
     let results: SearchResult[] = [];
 
     Object.entries(structure).forEach(([name, node]) => {
@@ -629,29 +718,34 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         results.push({
           name,
           path: fullPath,
-          isFile: !!node.type
+          isFile: !!node.type,
         });
       }
 
       if (!node.type) {
         // If it's a directory, search recursively
-        results = [...results, ...searchFiles(query, node as DirectoryStructure, [...currentPath, name])];
+        results = [
+          ...results,
+          ...searchFiles(query, node as DirectoryStructure, [
+            ...currentPath,
+            name,
+          ]),
+        ];
       }
     });
 
     return results;
   };
 
-
   const handleSearchSelect = (result: SearchResult) => {
     if (result.isFile) {
       const pathParts = result.path.split('/');
       const fileName = pathParts.pop() || '';
       setCurrentPath(pathParts);
-      
+
       setSelectedFile({
         id: result.path,
-        name: fileName
+        name: fileName,
       });
     } else {
       setCurrentPath(result.path.split('/'));
@@ -670,25 +764,29 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             onChange={(e) => {
               setSearchQuery(e.target.value);
               if (directoryStructure) {
-                setSearchResults(searchFiles(e.target.value, directoryStructure));
+                setSearchResults(
+                  searchFiles(e.target.value, directoryStructure),
+                );
               }
             }}
             placeholder={t('settings.sources.searchFiles')}
-            className={`w-full px-4 py-2 pl-10 border border-[#D1D9E0] dark:border-[#6A6A6A] ${
-              searchQuery ? 'rounded-t-md rounded-b-none border-b-0' : 'rounded-md'
-            } bg-transparent dark:text-[#E0E0E0] focus:outline-none`}
+            className={`w-full border border-[#D1D9E0] px-4 py-2 pl-10 dark:border-[#6A6A6A] ${
+              searchQuery
+                ? 'rounded-t-md rounded-b-none border-b-0'
+                : 'rounded-md'
+            } bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
           />
 
           <img
             src={SearchIcon}
             alt="Search"
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 opacity-60"
+            className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform opacity-60"
           />
 
           {searchQuery && (
-            <div className="absolute z-10 w-full border border-[#D1D9E0] dark:border-[#6A6A6A] rounded-b-md bg-white dark:bg-[#1F2023] shadow-lg max-h-[calc(100vh-200px)] overflow-y-auto">
+            <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-y-auto rounded-b-md border border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023]">
               {searchResults.length === 0 ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
                   {t('settings.sources.noResults')}
                 </div>
               ) : (
@@ -697,14 +795,20 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                     key={index}
                     onClick={() => handleSearchSelect(result)}
                     title={result.path}
-                    className={`flex items-center px-3 py-2 cursor-pointer hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
-                      index !== searchResults.length - 1 ? "border-b border-[#D1D9E0] dark:border-[#6A6A6A]" : ""
+                    className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                      index !== searchResults.length - 1
+                        ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                        : ''
                     }`}
                   >
                     <img
                       src={result.isFile ? FileIcon : FolderIcon}
-                      alt={result.isFile ? t('settings.sources.fileAlt') : t('settings.sources.folderAlt')}
-                      className="flex-shrink-0 w-4 h-4 mr-2"
+                      alt={
+                        result.isFile
+                          ? t('settings.sources.fileAlt')
+                          : t('settings.sources.folderAlt')
+                      }
+                      className="mr-2 h-4 w-4 flex-shrink-0"
                     />
                     <span className="text-sm dark:text-[#E0E0E0]">
                       {result.path.split('/').pop() || result.path}
@@ -734,34 +838,34 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex flex-col w-full max-w-full overflow-hidden">
-          <div className="mb-4">
-            {renderPathNavigation()}
-          </div>
+        <div className="flex w-full max-w-full flex-col overflow-hidden">
+          <div className="mb-4">{renderPathNavigation()}</div>
 
-          <div className="flex gap-4 min-w-0">
+          <div className="flex min-w-0 gap-4">
             {/* Left side: Search dropdown */}
-            <div className="hidden lg:block flex-shrink-0">
+            <div className="hidden flex-shrink-0 lg:block">
               {renderFileSearch()}
             </div>
 
             {/* Right side: File table */}
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-                <table className="w-full table-auto bg-transparent min-w-[600px]">
+                <table className="w-full min-w-[600px] table-auto bg-transparent">
                   <thead className="bg-gray-100 dark:bg-[#27282D]">
                     <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-                      <th className="min-w-[200px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="min-w-[200px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
                         {t('settings.sources.fileName')}
                       </th>
-                      <th className="min-w-[80px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
                         {t('settings.sources.tokens')}
                       </th>
-                      <th className="min-w-[80px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
+                      <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
                         {t('settings.sources.size')}
                       </th>
-                      <th className="w-[60px] px-2 lg:px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-[#59636E]">
-                        <span className="sr-only">{t('settings.sources.actions')}</span>
+                      <th className="w-[60px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                        <span className="sr-only">
+                          {t('settings.sources.actions')}
+                        </span>
                       </th>
                     </tr>
                   </thead>
@@ -792,4 +896,3 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 };
 
 export default FileTreeComponent;
-
