@@ -29,6 +29,7 @@ export default function General() {
   ];
 
   const languageOptions = [
+    { label: 'Português (Brasil)', value: 'ptbr' },
     { label: 'English', value: 'en' },
     { label: 'Español', value: 'es' },
     { label: '日本語', value: 'jp' },

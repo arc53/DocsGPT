@@ -1,0 +1,306 @@
+{
+  "language": "Português (Brasil)",
+  "chat": "Chat",
+  "chats": "Conversas",
+  "newChat": "Nova Conversa",
+  "inputPlaceholder": "Como o DocsGPT pode te ajudar?",
+  "tagline": "O DocsGPT usa GenAI, revise informações críticas usando as fontes.",
+  "sourceDocs": "Fonte",
+  "none": "Nenhum",
+  "cancel": "Cancelar",
+  "help": "Ajuda",
+  "emailUs": "Envie-nos um e-mail",
+  "documentation": "Documentação",
+  "manageAgents": "Gerenciar Agentes",
+  "demo": [
+    {
+      "header": "Saiba mais sobre o DocsGPT",
+      "query": "O que é o DocsGPT?"
+    },
+    {
+      "header": "Resumir documentação",
+      "query": "Resumir o contexto atual"
+    },
+    {
+      "header": "Escrever Código",
+      "query": "Escreva código para requisição na API /api/answer"
+    },
+    {
+      "header": "Assistência de Aprendizagem",
+      "query": "Escreva perguntas potenciais para o contexto"
+    }
+  ],
+  "settings": {
+    "label": "Configurações",
+    "general": {
+      "label": "Geral",
+      "selectTheme": "Selecionar Tema",
+      "light": "Claro",
+      "dark": "Escuro",
+      "selectLanguage": "Selecionar Idioma",
+      "chunks": "Chunks processados por consulta",
+      "prompt": "Prompt Ativo",
+      "deleteAllLabel": "Excluir Todas as Conversas",
+      "deleteAllBtn": "Excluir Tudo",
+      "addNew": "Adicionar Novo",
+      "convHistory": "Histórico de Conversas",
+      "none": "Nenhum",
+      "low": "Baixo",
+      "medium": "Médio",
+      "high": "Alto",
+      "unlimited": "Ilimitado",
+      "default": "Padrão",
+      "add": "Adicionar"
+    },
+    "documents": {
+      "title": "Esta tabela contém todos os documentos disponíveis para você e aqueles que você enviou",
+      "label": "Documentos",
+      "name": "Nome do Documento",
+      "date": "Data do Vetor",
+      "type": "Tipo",
+      "tokenUsage": "Uso de Tokens",
+      "noData": "Nenhum Documento existente",
+      "searchPlaceholder": "Pesquisar...",
+      "addNew": "Adicionar Novo",
+      "preLoaded": "Pré-carregado",
+      "private": "Privado",
+      "sync": "Sincronizar",
+      "syncFrequency": {
+        "never": "Nunca",
+        "daily": "Diário",
+        "weekly": "Semanal",
+        "monthly": "Mensal"
+      },
+      "actions": "Ações",
+      "view": "Visualizar",
+      "deleteWarning": "Tem certeza que deseja excluir \"{{name}}\"?",
+      "backToAll": "Voltar para todos os documentos",
+      "chunks": "Chunks",
+      "noChunks": "Nenhum chunk encontrado",
+      "noChunksAlt": "Nenhum chunk encontrado",
+      "goToDocuments": "Ir para Documentos",
+      "uploadNew": "Enviar novo"
+    },
+    "apiKeys": {
+      "label": "Chatbots",
+      "name": "Nome",
+      "key": "Chave da API",
+      "sourceDoc": "Documento Fonte",
+      "createNew": "Criar Novo",
+      "noData": "Nenhum Chatbot existente",
+      "deleteConfirmation": "Tem certeza que deseja excluir a chave de API '{{name}}'?",
+      "description": "Aqui você pode criar e gerenciar seus chatbots. Chatbots podem ser implantados em sites como widgets ou usados em suas aplicações."
+    },
+    "analytics": {
+      "label": "Análises",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Selecionar chatbot",
+      "filterOptions": {
+        "hour": "Hora",
+        "last24Hours": "24 Horas",
+        "last7Days": "7 Dias",
+        "last15Days": "15 Dias",
+        "last30Days": "30 Dias"
+      },
+      "messages": "Mensagens",
+      "tokenUsage": "Uso de Tokens",
+      "userFeedback": "Feedback do Usuário",
+      "filterPlaceholder": "Filtrar",
+      "none": "Nenhum",
+      "positiveFeedback": "Feedback Positivo",
+      "negativeFeedback": "Feedback Negativo"
+    },
+    "logs": {
+      "label": "Logs",
+      "filterByChatbot": "Filtrar por chatbot",
+      "selectChatbot": "Selecionar chatbot",
+      "none": "Nenhum",
+      "tableHeader": "Conversas geradas pela API / chatbot"
+    },
+    "tools": {
+      "label": "Ferramentas",
+      "searchPlaceholder": "Pesquisar ferramentas...",
+      "addTool": "Adicionar Ferramenta",
+      "noToolsFound": "Nenhuma ferramenta encontrada",
+      "selectToolSetup": "Selecione uma ferramenta para configurar",
+      "settingsIconAlt": "Ícone de configurações",
+      "configureToolAria": "Configurar {{toolName}}",
+      "toggleToolAria": "Alternar {{toolName}}",
+      "manageTools": "Ir para Ferramentas",
+      "edit": "Editar",
+      "delete": "Excluir",
+      "deleteWarning": "Tem certeza que deseja excluir a ferramenta \"{{toolName}}\" ?",
+      "unsavedChanges": "Você tem alterações não salvas que serão perdidas se sair sem salvar.",
+      "leaveWithoutSaving": "Sair sem Salvar",
+      "saveAndLeave": "Salvar e Sair",
+      "customName": "Nome Personalizado",
+      "customNamePlaceholder": "Digite um nome personalizado (opcional)",
+      "authentication": "Autenticação",
+      "actions": "Ações",
+      "addAction": "Adicionar ação",
+      "noActionsFound": "Nenhuma ação encontrada",
+      "url": "URL",
+      "urlPlaceholder": "Digite a URL",
+      "method": "Método",
+      "description": "Descrição",
+      "descriptionPlaceholder": "Digite a descrição",
+      "headers": "Cabeçalhos",
+      "queryParameters": "Parâmetros de consulta",
+      "body": "Corpo",
+      "deleteActionWarning": "Tem certeza que deseja excluir a ação \"{{name}}\"?",
+      "backToAllTools": "Voltar para todas as ferramentas",
+      "save": "Salvar",
+      "fieldName": "Nome do Campo",
+      "fieldType": "Tipo do Campo",
+      "filledByLLM": "Preenchido pela LLM",
+      "fieldDescription": "Descrição do campo",
+      "value": "Valor",
+      "addProperty": "Adicionar propriedade",
+      "propertyName": "Nova chave de propriedade",
+      "add": "Adicionar",
+      "cancel": "Cancelar",
+      "addNew": "Adicionar Novo",
+      "name": "Nome",
+      "type": "Tipo"
+    }
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "Enviar novo documento",
+      "select": "Escolha como enviar seu documento para o DocsGPT",
+      "file": "Enviar do dispositivo",
+      "back": "Voltar",
+      "wait": "Por favor, aguarde ...",
+      "remote": "Coletar de site",
+      "start": "Começar Conversa",
+      "name": "Nome",
+      "choose": "Escolher Arquivos",
+      "info": "Por favor, envie .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitado a 25mb",
+      "uploadedFiles": "Arquivos Enviados",
+      "cancel": "Cancelar",
+      "train": "Treinar",
+      "link": "Link",
+      "urlLink": "Link da URL",
+      "repoUrl": "URL do Repositório",
+      "reddit": {
+        "id": "Client ID",
+        "secret": "Client Secret",
+        "agent": "User agent",
+        "searchQueries": "Consultas de busca",
+        "numberOfPosts": "Número de posts",
+        "addQuery": "Adicionar Consulta"
+      },
+      "drag": {
+        "title": "Enviar um arquivo fonte",
+        "description": "Solte seu arquivo aqui para adicioná-lo como fonte"
+      },
+      "progress": {
+        "upload": "Envio em andamento",
+        "training": "Treinamento em andamento",
+        "completed": "Treinamento concluído",
+        "wait": "Isso pode levar alguns minutos",
+        "tokenLimit": "Acima do limite de tokens, considere enviar um documento menor"
+      },
+      "showAdvanced": "Mostrar opções avançadas",
+      "hideAdvanced": "Ocultar opções avançadas"
+    },
+    "createAPIKey": {
+      "label": "Criar Nova Chave de API",
+      "apiKeyName": "Nome da Chave de API",
+      "chunks": "Chunks processados por consulta",
+      "prompt": "Selecionar prompt ativo",
+      "sourceDoc": "Documento fonte",
+      "create": "Criar"
+    },
+    "saveKey": {
+      "note": "Por favor, salve sua Chave",
+      "disclaimer": "Esta é a única vez que sua chave será exibida.",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "confirm": "Eu salvei a Chave"
+    },
+    "deleteConv": {
+      "confirm": "Tem certeza que deseja excluir todas as conversas?",
+      "delete": "Excluir"
+    },
+    "shareConv": {
+      "label": "Criar uma página pública para compartilhar",
+      "note": "Documento fonte, informações pessoais e conversas futuras permanecerão privadas",
+      "create": "Criar",
+      "option": "Permitir que usuários enviem prompts adicionais"
+    },
+    "configTool": {
+      "title": "Configuração da Ferramenta",
+      "type": "Tipo",
+      "apiKeyLabel": "Chave de API / OAuth",
+      "apiKeyPlaceholder": "Digite a Chave de API / OAuth",
+      "addButton": "Adicionar Ferramenta",
+      "closeButton": "Fechar"
+    },
+    "prompts": {
+      "addPrompt": "Adicionar Prompt",
+      "addDescription": "Adicione seu prompt personalizado e salve no DocsGPT",
+      "editPrompt": "Editar Prompt",
+      "editDescription": "Edite seu prompt personalizado e salve no DocsGPT",
+      "promptName": "Nome do Prompt",
+      "promptText": "Texto do Prompt",
+      "save": "Salvar",
+      "nameExists": "Nome já existe",
+      "deleteConfirmation": "Tem certeza que deseja excluir o prompt '{{name}}'?"
+    },
+    "chunk": {
+      "add": "Adicionar Chunk",
+      "edit": "Editar Chunk",
+      "title": "Título",
+      "enterTitle": "Digite o título",
+      "bodyText": "Texto do corpo",
+      "promptText": "Texto do Prompt",
+      "update": "Atualizar",
+      "close": "Fechar",
+      "delete": "Excluir",
+      "deleteConfirmation": "Tem certeza que deseja excluir este chunk?"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "Criado com",
+    "button": "Comece a usar o DocsGPT",
+    "meta": "O DocsGPT usa GenAI, revise informações críticas usando as fontes."
+  },
+  "convTile": {
+    "share": "Compartilhar",
+    "delete": "Excluir",
+    "rename": "Renomear",
+    "deleteWarning": "Tem certeza que deseja excluir esta conversa?"
+  },
+  "pagination": {
+    "rowsPerPage": "Linhas por página",
+    "pageOf": "Página {{currentPage}} de {{totalPages}}",
+    "firstPage": "Primeira página",
+    "previousPage": "Página anterior",
+    "nextPage": "Próxima página",
+    "lastPage": "Última página"
+  },
+  "conversation": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "speak": "Falar",
+    "answer": "Responder",
+    "edit": {
+      "update": "Atualizar",
+      "cancel": "Cancelar",
+      "placeholder": "Digite a nova pergunta..."
+    },
+    "sources": {
+      "title": "Fontes",
+      "text": "Escolha suas Fontes",
+      "link": "Link da fonte",
+      "view_more": "{{count}} fontes a mais"
+    },
+    "attachments": {
+      "attach": "Anexar",
+      "remove": "Remover anexo",
+      "uploadFailed": "Falha no envio"
+    },
+    "retry": "Tentar novamente"
+  }
+}
