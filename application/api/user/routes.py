@@ -70,7 +70,7 @@ try:
     )
     users_collection.create_index("user_id", unique=True)
 except Exception as e:
-    current_app.logger.warning(f"Can't create indexes: {e}", )
+    print("Error creating indexes:", e)
 
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
