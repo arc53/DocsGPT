@@ -34,6 +34,7 @@ export default function General() {
     { label: '日本語', value: 'jp' },
     { label: '普通话', value: 'zh' },
     { label: '繁體中文（臺灣）', value: 'zhTW' },
+    { label: 'Português (Brasil)', value: 'ptbr' },
     { label: 'Русский', value: 'ru' },
   ];
   const chunks = ['0', '2', '4', '6', '8', '10'];

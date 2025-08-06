@@ -68,7 +68,7 @@ export default function SpeakButton({
     <div
       className={`flex items-center justify-center rounded-full p-2 ${
         isSpeakHovered
-          ? `bg-[#EEEEEE] dark:bg-purple-taupe`
+          ? `dark:bg-purple-taupe bg-[#EEEEEE]`
           : `bg-[${colorLight ? colorLight : '#FFFFFF'}] dark:bg-[${colorDark ? colorDark : 'transparent'}]`
       }`}
     >

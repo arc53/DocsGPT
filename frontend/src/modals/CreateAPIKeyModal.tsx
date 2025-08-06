@@ -76,11 +76,11 @@ export default function CreateAPIKeyModal({
   return (
     <WrapperModal close={close} className="p-4">
       <div className="mb-6">
-        <span className="text-xl text-jet dark:text-bright-gray">
+        <span className="text-jet dark:text-bright-gray text-xl">
           {t('modals.createAPIKey.label')}
         </span>
       </div>
-      <div className="relative mb-4 mt-5">
+      <div className="relative mt-5 mb-4">
         <Input
           type="text"
           className="rounded-md"
@@ -117,7 +117,7 @@ export default function CreateAPIKeyModal({
         />
       </div>
       <div className="my-4">
-        <p className="mb-2 ml-2 font-semibold text-jet dark:text-bright-gray">
+        <p className="text-jet dark:text-bright-gray mb-2 ml-2 font-semibold">
           {t('modals.createAPIKey.chunks')}
         </p>
         <Dropdown
@@ -146,7 +146,7 @@ export default function CreateAPIKeyModal({
             createAPIKey(payload);
           }
         }}
-        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-violets-are-blue disabled:opacity-50"
+        className="bg-purple-30 hover:bg-violets-are-blue float-right mt-4 rounded-full px-5 py-2 text-sm text-white disabled:opacity-50"
       >
         {t('modals.createAPIKey.create')}
       </button>

@@ -88,7 +88,7 @@ export default function DropdownMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className={`w-28 transform rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-200 ease-in-out dark:bg-dark-charcoal ${className}`}
+        className={`ring-opacity-5 dark:bg-dark-charcoal w-28 transform rounded-md bg-white shadow-lg ring-1 ring-black transition-all duration-200 ease-in-out ${className}`}
       >
         <div
           role="menu"
@@ -99,10 +99,10 @@ export default function DropdownMenu({
           {options.map((option, idx) => (
             <div
               id={`option-${idx}`}
-              className={`cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 dark:text-light-gray dark:hover:bg-purple-taupe ${
+              className={`dark:text-light-gray dark:hover:bg-purple-taupe cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 ${
                 selectedOption.value === option.value
-                  ? 'bg-gray-100 dark:bg-purple-taupe'
-                  : 'bg-white dark:bg-dark-charcoal'
+                  ? 'dark:bg-purple-taupe bg-gray-100'
+                  : 'dark:bg-dark-charcoal bg-white'
               }`}
               role="menuitem"
               key={option.value}
