@@ -495,11 +495,11 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               <span className="text-xs text-gray-600 dark:text-gray-400">
                 {processingRef.current
                   ? currentOpRef.current === 'add'
-                    ? 'Uploading…'
-                    : 'Deleting…'
+                    ? t('settings.sources.uploading')
+                    : t('settings.sources.deleting')
                   : null}
                 {queueLength > 0
-                  ? `${processingRef.current ? ' • ' : ''}Queued: ${queueLength}`
+                  ? `${processingRef.current ? ' • ' : ''}${t('settings.sources.queued', { count: queueLength })}`
                   : ''}
               </span>
             )}
@@ -509,12 +509,12 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               title={
                 processingRef.current
                   ? currentOpRef.current === 'add'
-                    ? 'Uploading files...'
-                    : 'Deleting...'
-                  : 'Add file'
+                    ? t('settings.sources.uploadingFilesTitle')
+                    : t('settings.sources.deletingTitle')
+                  : t('settings.sources.addFile')
               }
             >
-              Add file
+              {t('settings.sources.addFile')}
             </button>
           </div>
         )}
@@ -621,7 +621,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
                   className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
-                  aria-label="Open menu"
+                  aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
                     src={ThreeDots}
@@ -677,7 +677,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
                   className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
-                  aria-label="Open menu"
+                  aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
                     src={ThreeDots}
@@ -779,7 +779,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
           <img
             src={SearchIcon}
-            alt="Search"
+            alt={t('settings.sources.searchAlt')}
             className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform opacity-60"
           />
 
@@ -882,7 +882,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         message={
           itemToDelete?.isFile
             ? t('settings.sources.confirmDelete')
-            : `Are you sure you want to delete the directory "${itemToDelete?.name}" and all its contents? This action cannot be undone.`
+            : t('settings.sources.deleteDirectoryWarning', { name: itemToDelete?.name })
         }
         modalState={deleteModalState}
         setModalState={setDeleteModalState}

@@ -388,12 +388,12 @@ export default function Sources({
                                 handleMenuClick(e, docId);
                               }}
                               className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
-                              aria-label="Open menu"
+                              aria-label={t('settings.sources.menuAlt')}
                               data-testid={`menu-button-${docId}`}
                             >
                               <img
                                 src={ThreeDots}
-                                alt={t('Open menu')}
+                                alt={t('settings.sources.menuAlt')}
                                 className="opacity-60 hover:opacity-100"
                               />
                             </button>

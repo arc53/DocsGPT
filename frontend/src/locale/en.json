@@ -90,9 +90,16 @@
       "folderAlt": "Folder",
       "parentFolderAlt": "Parent folder",
       "menuAlt": "Menu",
-      "menuAlt": "Menu",
       "tokensUnit": "tokens",
-      "editAlt": "Edit"
+      "editAlt": "Edit",
+      "uploading": "Uploading…",
+      "deleting": "Deleting…",
+      "queued": "Queued: {{count}}",
+      "addFile": "Add file",
+      "uploadingFilesTitle": "Uploading files...",
+      "deletingTitle": "Deleting...",
+      "deleteDirectoryWarning": "Are you sure you want to delete the directory \"{{name}}\" and all its contents? This action cannot be undone.",
+      "searchAlt": "Search"
     },
     "apiKeys": {
       "label": "Chatbots",

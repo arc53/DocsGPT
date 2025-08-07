@@ -91,7 +91,15 @@
       "parentFolderAlt": "Родительская папка",
       "menuAlt": "Меню",
       "tokensUnit": "токенов",
-      "editAlt": "Редактировать"
+      "editAlt": "Редактировать",
+      "uploading": "Загрузка…",
+      "deleting": "Удаление…",
+      "queued": "В очереди: {{count}}",
+      "addFile": "Добавить файл",
+      "uploadingFilesTitle": "Загрузка файлов...",
+      "deletingTitle": "Удаление...",
+      "deleteDirectoryWarning": "Вы уверены, что хотите удалить каталог \"{{name}}\" и все его содержимое? Это действие нельзя отменить.",
+      "searchAlt": "Поиск"
     },
     "apiKeys": {
       "label": "API ключи",

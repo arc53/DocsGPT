@@ -91,7 +91,15 @@
       "parentFolderAlt": "Carpeta padre",
       "menuAlt": "Menú",
       "tokensUnit": "tokens",
-      "editAlt": "Editar"
+      "editAlt": "Editar",
+      "uploading": "Subiendo…",
+      "deleting": "Eliminando…",
+      "queued": "En cola: {{count}}",
+      "addFile": "Añadir archivo",
+      "uploadingFilesTitle": "Subiendo archivos...",
+      "deletingTitle": "Eliminando...",
+      "deleteDirectoryWarning": "¿Está seguro de que desea eliminar el directorio \"{{name}}\" y todo su contenido? Esta acción no se puede deshacer.",
+      "searchAlt": "Buscar"
     },
     "apiKeys": {
       "label": "Chatbots",

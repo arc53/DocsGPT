@@ -91,7 +91,15 @@
       "parentFolderAlt": "親フォルダ",
       "menuAlt": "メニュー",
       "tokensUnit": "トークン",
-      "editAlt": "編集"
+      "editAlt": "編集",
+      "uploading": "アップロード中…",
+      "deleting": "削除中…",
+      "queued": "キュー: {{count}}",
+      "addFile": "ファイルを追加",
+      "uploadingFilesTitle": "ファイルをアップロード中...",
+      "deletingTitle": "削除中...",
+      "deleteDirectoryWarning": "ディレクトリ \"{{name}}\" とその内容をすべて削除してもよろしいですか？この操作は元に戻せません。",
+      "searchAlt": "検索"
     },
     "apiKeys": {
       "label": "チャットボット",
