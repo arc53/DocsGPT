@@ -23,7 +23,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
-import { Agent } from './types';
+import { Agent, ToolSummary } from './types';
 
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
@@ -62,9 +62,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<
     Set<string | number>
   >(new Set());
-  const [selectedToolIds, setSelectedToolIds] = useState<Set<string | number>>(
-    new Set(),
-  );
+  const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
@@ -233,7 +231,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
         id: tool.id,
-        label: tool.displayName,
+        label: tool.customName ? tool.customName : tool.displayName,
         icon: `/toolIcons/tool_${tool.name}.svg`,
       }));
       setUserTools(tools);
@@ -262,7 +260,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         if (data.source) setSelectedSourceIds(new Set([data.source]));
         else if (data.retriever)
           setSelectedSourceIds(new Set([data.retriever]));
-        if (data.tools) setSelectedToolIds(new Set(data.tools));
+        if (data.tool_details) setSelectedTools(data.tool_details);
         if (data.status === 'draft') setEffectiveMode('draft');
         setAgent(data);
         initialAgentRef.current = data;
@@ -295,16 +293,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedSourceIds]);
 
   useEffect(() => {
-    const selectedTool = Array.from(selectedToolIds).map((id) =>
-      userTools.find((tool) => tool.id === id),
-    );
     setAgent((prev) => ({
       ...prev,
-      tools: selectedTool
+      tools: Array.from(selectedTools)
         .map((tool) => tool?.id)
         .filter((id): id is string => typeof id === 'string'),
     }));
-  }, [selectedToolIds]);
+  }, [selectedTools]);
 
   useEffect(() => {
     if (isPublishable()) dispatch(setSelectedAgent(agent));
@@ -450,15 +445,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 >
                   {selectedSourceIds.size > 0
                     ? Array.from(selectedSourceIds)
-                        .map(
-                          (id) =>
-                            sourceDocs?.find(
-                              (source) =>
-                                source.id === id ||
-                                source.name === id ||
-                                source.retriever === id,
-                            )?.name,
-                        )
+                        .map((id) => {
+                          const matchedDoc = sourceDocs?.find(
+                            (source) =>
+                              source.id === id ||
+                              source.name === id ||
+                              source.retriever === id,
+                          );
+                          return matchedDoc?.name || `External KB`;
+                        })
                         .filter(Boolean)
                         .join(', ')
                     : 'Select source'}
@@ -548,16 +543,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
                 className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
-                  selectedToolIds.size > 0
+                  selectedTools.length > 0
                     ? 'text-jet dark:text-bright-gray'
                     : 'dark:text-silver text-gray-400'
                 }`}
               >
-                {selectedToolIds.size > 0
-                  ? Array.from(selectedToolIds)
-                      .map(
-                        (id) => userTools.find((tool) => tool.id === id)?.label,
-                      )
+                {selectedTools.length > 0
+                  ? selectedTools
+                      .map((tool) => tool.display_name || tool.name)
                       .filter(Boolean)
                       .join(', ')
                   : 'Select tools'}
@@ -567,9 +560,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onClose={() => setIsToolsPopupOpen(false)}
                 anchorRef={toolAnchorButtonRef}
                 options={userTools}
-                selectedIds={selectedToolIds}
+                selectedIds={new Set(selectedTools.map((tool) => tool.id))}
                 onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedToolIds(newSelectedIds)
+                  setSelectedTools(
+                    userTools
+                      .filter((tool) => newSelectedIds.has(tool.id))
+                      .map((tool) => ({
+                        id: String(tool.id),
+                        name: tool.label,
+                        display_name: tool.label,
+                      })),
+                  )
                 }
                 title="Select Tools"
                 searchPlaceholder="Search tools..."

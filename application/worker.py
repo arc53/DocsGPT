@@ -36,6 +36,7 @@ sources_collection = db["sources"]
 
 # Constants
 
+
 MIN_TOKENS = 150
 MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
@@ -384,7 +385,13 @@ def remote_worker(
         if os.path.exists(full_path):
             shutil.rmtree(full_path)
     logging.info("remote_worker task completed successfully")
-    return {"urls": source_data, "name_job": name_job, "user": user, "limited": False}
+    return {
+        "id": str(id),
+        "urls": source_data,
+        "name_job": name_job,
+        "user": user,
+        "limited": False,
+    }
 
 
 def sync(
