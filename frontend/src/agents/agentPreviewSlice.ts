@@ -1,19 +1,20 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+
+import {
+  handleFetchAnswer,
+  handleFetchAnswerSteaming,
+} from '../conversation/conversationHandlers';
 import {
   Answer,
   ConversationState,
   Query,
   Status,
 } from '../conversation/conversationModels';
-import {
-  handleFetchAnswer,
-  handleFetchAnswerSteaming,
-} from '../conversation/conversationHandlers';
-import {
-  selectCompletedAttachments,
-  clearAttachments,
-} from '../upload/uploadSlice';
 import store from '../store';
+import {
+  clearAttachments,
+  selectCompletedAttachments,
+} from '../upload/uploadSlice';
 
 const initialState: ConversationState = {
   queries: [],
@@ -57,7 +58,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           signal,
           state.preference.token,
           state.preference.selectedDocs!,
-          state.agentPreview.queries,
           null, // No conversation ID for previews
           state.preference.prompt.id,
           state.preference.chunks,
@@ -118,7 +118,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           signal,
           state.preference.token,
           state.preference.selectedDocs!,
-          state.agentPreview.queries,
           null, // No conversation ID for previews
           state.preference.prompt.id,
           state.preference.chunks,

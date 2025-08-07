@@ -43,6 +43,10 @@ const userService = {
     apiClient.put(endpoints.USER.SHARE_AGENT, data, token),
   removeSharedAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.REMOVE_SHARED_AGENT(id), token),
+  getTemplateAgents: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.TEMPLATE_AGENTS, token),
+  adoptAgent: (id: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.ADOPT_AGENT(id), {}, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_WEBHOOK(id), token),
   getPrompts: (token: string | null): Promise<any> =>

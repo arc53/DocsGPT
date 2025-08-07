@@ -1087,6 +1087,70 @@ class UpdatePrompt(Resource):
         return make_response(jsonify({"success": True}), 200)
 
 
+@user_ns.route("/api/template_agents")
+@api.doc(description="Get template/premade agents")
+class GetTemplateAgents(Resource):
+    def get(self):
+        try:
+            template_agents = agents_collection.find({"user": "system"})
+            template_agents = [
+                {
+                    "id": str(agent["_id"]),
+                    "name": agent["name"],
+                    "description": agent["description"],
+                    "image": agent.get("image", ""),
+                }
+                for agent in template_agents
+            ]
+            return make_response(jsonify(template_agents), 200)
+        except Exception as e:
+            current_app.logger.error(f"Template agents fetch error: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+
+
+@user_ns.route("/api/adopt_agent")
+class AdoptAgent(Resource):
+    @api.doc(params={"id": "Agent ID"}, description="Adopt an agent by ID")
+    def post(self):
+        if not (decoded_token := request.decoded_token):
+            return make_response(jsonify({"success": False}), 401)
+
+        if not (agent_id := request.args.get("id")):
+            return make_response(
+                jsonify({"success": False, "message": "ID required"}), 400
+            )
+
+        try:
+            agent = agents_collection.find_one(
+                {"_id": ObjectId(agent_id), "user": "system"}
+            )
+            if not agent:
+                return make_response(jsonify({"status": "Not found"}), 404)
+
+            new_agent = agent.copy()
+            new_agent.pop("_id", None)
+            new_agent["user"] = decoded_token["sub"]
+            new_agent["status"] = "published"
+            new_agent["lastUsedAt"] = datetime.datetime.now(datetime.timezone.utc)
+            new_agent["key"] = str(uuid.uuid4())
+            insert_result = agents_collection.insert_one(new_agent)
+
+            response_agent = new_agent.copy()
+            response_agent.pop("_id", None)
+            response_agent["id"] = str(insert_result.inserted_id)
+            response_agent["tool_details"] = resolve_tool_details(
+                response_agent.get("tools", [])
+            )
+            if isinstance(response_agent.get("source"), DBRef):
+                response_agent["source"] = str(response_agent["source"].id)
+            return make_response(
+                jsonify({"success": True, "agent": response_agent}), 200
+            )
+        except Exception as e:
+            current_app.logger.error(f"Agent adopt error: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+
+
 @user_ns.route("/api/get_agent")
 class GetAgent(Resource):
     @api.doc(params={"id": "Agent ID"}, description="Get agent by ID")
