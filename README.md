@@ -53,9 +53,10 @@
 - [x] New input box in the conversation menu (April 2025)
 - [x] Add triggerable actions / tools (webhook) (April 2025)
 - [x] Agent optimisations (May 2025)
-- [ ] Filesystem sources update (July 2025)
-- [ ] Anthropic Tool compatibility (July 2025)
-- [ ] MCP support (July 2025)
+- [x] Filesystem sources update (July 2025)
+- [x] Json Responses (August 2025)
+- [ ] Sharepoint integration (August 2025)
+- [ ] MCP support (August 2025)
 - [ ] Add OAuth 2.0 authentication for tools and sources (August 2025)
 - [ ] Agent scheduling
 
