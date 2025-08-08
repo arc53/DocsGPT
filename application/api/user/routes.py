@@ -63,12 +63,15 @@ user_logs_collection = db["user_logs"]
 user_tools_collection = db["user_tools"]
 attachments_collection = db["attachments"]
 
-agents_collection.create_index(
-    [("shared", 1)],
-    name="shared_index",
-    background=True,
-)
-users_collection.create_index("user_id", unique=True)
+try:
+    agents_collection.create_index(
+        [("shared_publicly", 1)],
+        name="shared_index",
+        background=True,
+    )
+    users_collection.create_index("user_id", unique=True)
+except Exception as e:
+    print("Error creating indexes:", e)
 
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
