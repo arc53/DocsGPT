@@ -1789,6 +1789,10 @@ class SharedAgent(Resource):
                     else ""
                 ),
                 "description": shared_agent.get("description", ""),
+                "source": shared_agent.get("source", ""),
+                "chunks": shared_agent.get("chunks", "0"),
+                "retriever": shared_agent.get("retriever", "classic"),
+                "prompt_id": shared_agent.get("prompt_id", "default"),
                 "tools": shared_agent.get("tools", []),
                 "tool_details": resolve_tool_details(shared_agent.get("tools", [])),
                 "agent_type": shared_agent.get("agent_type", ""),
