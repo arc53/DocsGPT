@@ -38,13 +38,24 @@ const endpoints = {
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
     DELETE_TOOL: '/api/delete_tool',
-    GET_CHUNKS: (docId: string, page: number, per_page: number) =>
-      `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}`,
+    GET_CHUNKS: (
+      docId: string,
+      page: number,
+      per_page: number,
+      path?: string,
+      search?: string,
+    ) =>
+      `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}${
+        path ? `&path=${encodeURIComponent(path)}` : ''
+      }${search ? `&search=${encodeURIComponent(search)}` : ''}`,
     ADD_CHUNK: '/api/add_chunk',
     DELETE_CHUNK: (docId: string, chunkId: string) =>
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
+    DIRECTORY_STRUCTURE: (docId: string) =>
+      `/api/directory_structure?id=${docId}`,
+    MANAGE_SOURCE_FILES: '/api/manage_source_files',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

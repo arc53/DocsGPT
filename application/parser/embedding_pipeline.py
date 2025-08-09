@@ -46,7 +46,7 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
             docs_init=docs_init,
-            source_id=folder_name,
+            source_id=source_id,
             embeddings_key=os.getenv("EMBEDDINGS_KEY"),
         )
     else:

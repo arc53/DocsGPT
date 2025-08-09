@@ -21,7 +21,7 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Analytics from './Analytics';
-import Documents from './Documents';
+import Sources from './Sources';
 import General from './General';
 import Logs from './Logs';
 import Tools from './Tools';
@@ -38,8 +38,8 @@ export default function Settings() {
 
   const getActiveTabFromPath = () => {
     const path = location.pathname;
-    if (path.includes('/settings/documents'))
-      return t('settings.documents.label');
+    if (path.includes('/settings/sources'))
+      return t('settings.sources.label');
     if (path.includes('/settings/analytics'))
       return t('settings.analytics.label');
     if (path.includes('/settings/logs')) return t('settings.logs.label');
@@ -53,8 +53,8 @@ export default function Settings() {
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     if (tab === t('settings.general.label')) navigate('/settings');
-    else if (tab === t('settings.documents.label'))
-      navigate('/settings/documents');
+    else if (tab === t('settings.sources.label'))
+      navigate('/settings/sources');
     else if (tab === t('settings.analytics.label'))
       navigate('/settings/analytics');
     else if (tab === t('settings.logs.label')) navigate('/settings/logs');
@@ -113,9 +113,9 @@ export default function Settings() {
       <Routes>
         <Route index element={<General />} />
         <Route
-          path="documents"
+          path="sources"
           element={
-            <Documents
+            <Sources
               paginatedDocuments={paginatedDocuments}
               handleDeleteDocument={handleDeleteClick}
             />

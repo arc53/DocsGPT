@@ -1,6 +1,6 @@
 import React from 'react';
 
-interface DocumentHeadProps {
+interface HeadProps {
   title?: string;
   description?: string;
   keywords?: string;
@@ -13,7 +13,7 @@ interface DocumentHeadProps {
   children?: React.ReactNode;
 }
 
-export function DocumentHead({
+export function Head({
   title,
   description,
   keywords,
@@ -24,7 +24,7 @@ export function DocumentHead({
   twitterTitle,
   twitterDescription,
   children,
-}: DocumentHeadProps) {
+}: HeadProps) {
   return (
     <>
       {title && <title>{title}</title>}

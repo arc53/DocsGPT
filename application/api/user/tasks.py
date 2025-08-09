@@ -11,14 +11,21 @@ from application.worker import (
 
 
 @celery.task(bind=True)
-def ingest(self, directory, formats, job_name, filename, user, dir_name, user_dir):
-    resp = ingest_worker(self, directory, formats, job_name, filename, user, dir_name, user_dir)
+def ingest(self, directory, formats, job_name, user, file_path, filename):
+    resp = ingest_worker(self, directory, formats, job_name, file_path, filename, user)
     return resp
 
 
 @celery.task(bind=True)
 def ingest_remote(self, source_data, job_name, user, loader):
     resp = remote_worker(self, source_data, job_name, user, loader)
+    return resp
+
+
+@celery.task(bind=True)
+def reingest_source_task(self, source_id, user):
+    from application.worker import reingest_source_worker
+    resp = reingest_source_worker(self, source_id, user)
     return resp
 
 

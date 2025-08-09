@@ -61,7 +61,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
           state.preference.prompt.id,
           state.preference.chunks,
           state.preference.token_limit,
-          (event) => {
+          (event: MessageEvent) => {
             const data = JSON.parse(event.data);
             const targetIndex = indx ?? state.agentPreview.queries.length - 1;
 

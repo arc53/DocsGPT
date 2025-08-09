@@ -135,7 +135,7 @@ export default function SourcesPopup({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={t('settings.documents.searchPlaceholder')}
+            placeholder={t('settings.sources.searchPlaceholder')}
             borderVariant="thin"
             className="mb-4"
             labelBgClassName="bg-lotion dark:bg-charleston-green-2"
@@ -203,11 +203,11 @@ export default function SourcesPopup({
 
         <div className="shrink-0 px-4 py-4 opacity-75 transition-opacity duration-200 hover:opacity-100 md:px-6">
           <a
-            href="/settings/documents"
+            href="/settings/sources"
             className="text-violets-are-blue inline-flex items-center gap-2 text-base font-medium"
             onClick={onClose}
           >
-            {t('settings.documents.goToDocuments')}
+            {t('settings.sources.goToSources')}
             <img src={RedirectIcon} alt="Redirect" className="h-3 w-3" />
           </a>
         </div>
@@ -217,7 +217,7 @@ export default function SourcesPopup({
             onClick={handleUploadClick}
             className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-auto rounded-full border px-4 py-2 text-[14px] font-medium transition-colors duration-200 hover:text-white"
           >
-            {t('settings.documents.uploadNew')}
+            {t('settings.sources.uploadNew')}
           </button>
         </div>
       </div>
