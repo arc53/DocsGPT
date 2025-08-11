@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { selectToken } from '../preferences/preferenceSlice';
-import { useDarkTheme, useLoaderState, useMediaQuery } from '../hooks';
+import { useDarkTheme, useLoaderState, useMediaQuery, useOutsideAlerter } from '../hooks';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -13,7 +13,9 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { ChunkType } from '../settings/types';
 import Pagination from './DocumentPagination';
-
+import FileIcon from '../assets/file.svg';
+import FolderIcon from '../assets/folder.svg';
+import SearchIcon from '../assets/search.svg';
 interface LineNumberedTextareaProps {
   value: string;
   onChange: (value: string) => void;
@@ -21,6 +23,7 @@ interface LineNumberedTextareaProps {
   ariaLabel?: string;
   className?: string;
   editable?: boolean;
+  onDoubleClick?: () => void;
 }
 
 const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
@@ -29,7 +32,8 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
   placeholder,
   ariaLabel,
   className = '',
-  editable = true
+  editable = true,
+  onDoubleClick
 }) => {
   const { isMobile } = useMediaQuery();
 
@@ -62,9 +66,10 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
         ))}
       </div>
       <textarea
-        className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-8 lg:pl-12 overflow-hidden ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'}`}
+        className={`w-full resize-none bg-transparent dark:text-white font-['Inter'] text-[13.68px] leading-[19.93px] text-[#18181B] outline-none border-none pl-8 lg:pl-12 overflow-hidden ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'} ${!editable ? 'select-none' : ''}`}
         value={value}
         onChange={editable ? handleChange : undefined}
+        onDoubleClick={onDoubleClick}
         placeholder={placeholder}
         aria-label={ariaLabel}
         rows={totalLines}
@@ -77,12 +82,18 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
   );
 };
 
+interface SearchResult {
+  path: string;
+  isFile: boolean;
+}
+
 interface ChunksProps {
   documentId: string;
   documentName?: string;
   handleGoBack: () => void;
   path?: string;
-  renderFileSearch?: () => React.ReactNode;
+  onFileSearch?: (query: string) => SearchResult[];
+  onFileSelect?: (path: string) => void;
 }
 
 const Chunks: React.FC<ChunksProps> = ({
@@ -90,8 +101,12 @@ const Chunks: React.FC<ChunksProps> = ({
   documentName,
   handleGoBack,
   path,
-  renderFileSearch
+  onFileSearch,
+  onFileSelect,
 }) => {
+  const [fileSearchQuery, setFileSearchQuery] = useState('');
+  const [fileSearchResults, setFileSearchResults] = useState<SearchResult[]>([]);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [isDarkTheme] = useDarkTheme();
@@ -269,18 +284,18 @@ const Chunks: React.FC<ChunksProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm gap-2">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-base gap-2">
         <div className="flex items-center">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] transition-all duration-200 font-medium"
             onClick={editingChunk ? () => setEditingChunk(null) : isAddingChunk ? () => setIsAddingChunk(false) : handleGoBack}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
 
           <div className="flex items-center flex-wrap">
-            <img src={OutlineSource} alt="source" className="mr-2 h-5 w-5 flex-shrink-0" />
-            <span className="text-purple-30 font-medium break-words">
+            {/* Removed the directory icon */}
+            <span className="text-[#7D54D1] font-semibold break-words">
               {documentName}
             </span>
 
@@ -289,7 +304,11 @@ const Chunks: React.FC<ChunksProps> = ({
                 <span className="mx-1 text-gray-500 flex-shrink-0">/</span>
                 {pathParts.map((part, index) => (
                   <React.Fragment key={index}>
-                    <span className="text-gray-700 dark:text-gray-300 break-words">
+                    <span className={`break-words ${
+                      index < pathParts.length - 1 
+                        ? 'text-[#7D54D1] font-medium' 
+                        : 'text-gray-700 dark:text-gray-300'
+                    }`}>
                       {part}
                     </span>
                     {index < pathParts.length - 1 && (
@@ -305,28 +324,29 @@ const Chunks: React.FC<ChunksProps> = ({
         <div className="flex flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0 overflow-x-auto">
           {editingChunk ? (
             !isEditing ? (
-              <button
-                className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-1 text-sm text-white transition-all text-nowrap"
-                onClick={() => setIsEditing(true)}
-              >
-                {t('modals.chunk.edit')}
-              </button>
-            ) : (
               <>
                 <button
-                  className="rounded-full border border-solid border-red-500 px-3 py-1 text-sm text-nowrap text-red-500 hover:bg-red-500 hover:text-white"
+                  className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-nowrap text-white font-medium"
+                  onClick={() => setIsEditing(true)}
+                >
+                  {t('modals.chunk.edit')}
+                </button>
+                <button
+                  className="rounded-full border border-solid border-red-500 px-4 py-1 text-[14px] text-nowrap text-red-500 hover:bg-red-500 hover:text-white h-[38px] min-w-[108px] flex items-center justify-center font-medium"
                   onClick={() => {
                     confirmDeleteChunk(editingChunk);
                   }}
                 >
                   {t('modals.chunk.delete')}
                 </button>
+              </>
+            ) : (
+              <>
                 <button
                   onClick={() => {
                     setIsEditing(false);
-                    setEditingChunk(null);
                   }}
-                  className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50 text-nowrap"
+                  className="dark:text-light-gray cursor-pointer rounded-full px-4 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50 text-nowrap h-[38px] min-w-[108px] flex items-center justify-center"
                 >
                   {t('modals.chunk.cancel')}
                 </button>
@@ -344,13 +364,13 @@ const Chunks: React.FC<ChunksProps> = ({
                     }
                   }}
                   disabled={!editingText.trim() || (editingTitle === (editingChunk?.metadata?.title || '') && editingText === (editingChunk?.text || ''))}
-                  className={`text-nowrap rounded-full px-3 py-1 text-sm text-white transition-all ${
+                  className={`text-nowrap rounded-full px-4 py-1 text-[14px] text-white transition-all flex items-center justify-center h-[38px] min-w-[108px] font-medium ${
                     editingText.trim() && (editingTitle !== (editingChunk?.metadata?.title || '') || editingText !== (editingChunk?.text || ''))
                       ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
                       : 'bg-gray-400 cursor-not-allowed'
                   }`}
                 >
-                  {t('modals.chunk.update')}
+                  {t('modals.chunk.save')}
                 </button>
               </>
             )
@@ -358,7 +378,7 @@ const Chunks: React.FC<ChunksProps> = ({
             <>
               <button
                 onClick={() => setIsAddingChunk(false)}
-                className="dark:text-light-gray cursor-pointer rounded-full px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50 text-nowrap"
+                className="dark:text-light-gray cursor-pointer rounded-full px-4 py-1 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50 text-nowrap h-[38px] min-w-[108px] flex items-center justify-center"
               >
                 {t('modals.chunk.cancel')}
               </button>
@@ -370,7 +390,7 @@ const Chunks: React.FC<ChunksProps> = ({
                   }
                 }}
                 disabled={!editingText.trim()}
-                className={`text-nowrap rounded-full px-3 py-1 text-sm text-white transition-all ${
+                className={`text-nowrap rounded-full px-4 py-1 text-[14px] text-white transition-all flex items-center justify-center h-[38px] min-w-[108px] font-medium ${
                   editingText.trim()
                     ? 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer'
                     : 'bg-gray-400 cursor-not-allowed'
@@ -385,15 +405,107 @@ const Chunks: React.FC<ChunksProps> = ({
     );
   };
 
+  // File search handling
+  const handleFileSearchChange = (query: string) => {
+    setFileSearchQuery(query);
+    if (query.trim() && onFileSearch) {
+      const results = onFileSearch(query);
+      setFileSearchResults(results);
+    } else {
+      setFileSearchResults([]);
+    }
+  };
+
+  const handleSearchResultClick = (result: SearchResult) => {
+    if (!onFileSelect) return;
+
+    if (result.isFile) {
+      onFileSelect(result.path);
+    } else {
+      // For directories, navigate to the directory and return to file tree
+      onFileSelect(result.path);
+      handleGoBack();
+    }
+    setFileSearchQuery('');
+    setFileSearchResults([]);
+  };
+
+  useOutsideAlerter(
+    searchDropdownRef,
+    () => {
+      setFileSearchQuery('');
+      setFileSearchResults([]);
+    },
+    [], // No additional dependencies
+    false // Don't handle escape key
+  );
+
+  const renderFileSearch = () => {
+    return (
+      <div className="relative" ref={searchDropdownRef}>
+        <div className="relative flex items-center">
+          <div className="absolute left-3 pointer-events-none">
+            <img src={SearchIcon} alt="Search" className="w-4 h-4" />
+          </div>
+          <input
+            type="text"
+            value={fileSearchQuery}
+            onChange={(e) => handleFileSearchChange(e.target.value)}
+            placeholder={t('settings.sources.searchFiles')}
+            className={`w-full h-[38px] border border-[#D1D9E0] pl-10 pr-4 py-2 dark:border-[#6A6A6A] 
+              ${fileSearchQuery 
+                ? 'rounded-t-[6px]' 
+                : 'rounded-[6px]'
+              } 
+              bg-transparent focus:outline-none dark:text-[#E0E0E0] transition-all duration-200`}
+          />
+        </div>
+
+        {fileSearchQuery && (
+          <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-y-auto rounded-b-[6px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023]">
+            {fileSearchResults.length === 0 ? (
+              <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                {t('settings.sources.noResults')}
+              </div>
+            ) : (
+              fileSearchResults.map((result, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSearchResultClick(result)}
+                  className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                    index !== fileSearchResults.length - 1
+                      ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                      : ''
+                  }`}
+                >
+                  <img
+                    src={result.isFile ? FileIcon : FolderIcon}
+                    alt={result.isFile ? 'File' : 'Folder'}
+                    className="mr-2 h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="text-sm dark:text-[#E0E0E0]">
+                    {result.path.split('/').pop() || result.path}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col">
-      <div className="mb-4">
+      <div className="mb-2">
         {renderPathNavigation()}
       </div>
       <div className="flex gap-4">
-        <div className="hidden lg:block">
-          {renderFileSearch && renderFileSearch()}
-        </div>
+        {onFileSearch && onFileSelect && (
+          <div className="hidden lg:block w-[198px]">
+            {renderFileSearch()}
+          </div>
+        )}
 
         {/* Right side: Chunks content */}
         <div className="flex-1">
@@ -420,7 +532,7 @@ const Chunks: React.FC<ChunksProps> = ({
                   </div>
                 </div>
                 <button
-                  className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white shrink-0"
+                  className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white shrink-0 font-medium"
                   title={t('settings.sources.addNew')}
                   onClick={() => {
                     setIsAddingChunk(true);
@@ -500,6 +612,13 @@ const Chunks: React.FC<ChunksProps> = ({
                     onChange={setEditingText}
                     ariaLabel={t('modals.chunk.promptText')}
                     editable={isEditing}
+                    onDoubleClick={() => {
+                      if (!isEditing) {
+                        setIsEditing(true);
+                        setEditingTitle(editingChunk.metadata.title || '');
+                        setEditingText(editingChunk.text);
+                      }
+                    }}
                   />
                 </div>
               </div>

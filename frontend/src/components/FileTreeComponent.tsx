@@ -30,7 +30,7 @@ interface DirectoryStructure {
 interface FileTreeComponentProps {
   docId: string;
   sourceName: string;
-  onBackToDocuments?: () => void;
+  onBackToDocuments: () => void;
 }
 
 interface SearchResult {
@@ -444,14 +444,15 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const renderPathNavigation = () => {
     return (
       <div className="mb-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        {/* Left side with path navigation */}
         <div className="flex w-full items-center sm:w-auto">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] font-medium"
             onClick={handleBackNavigation}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-
+  
           <div className="flex flex-wrap items-center">
             <img
               src={OutlineSource}
@@ -489,39 +490,36 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           </div>
         </div>
 
-        {!selectedFile && (
-          <div className="flex w-full items-center gap-2 sm:w-auto">
-            {(processingRef.current || queueLength > 0) && (
-              <span className="text-xs text-gray-600 dark:text-gray-400">
-                {processingRef.current
-                  ? currentOpRef.current === 'add'
-                    ? t('settings.sources.uploading')
-                    : t('settings.sources.deleting')
-                  : null}
-                {queueLength > 0
-                  ? `${processingRef.current ? ' • ' : ''}${t('settings.sources.queued', { count: queueLength })}`
-                  : ''}
-              </span>
-            )}
+        {/* Right side with search and add button */}
+        <div className="flex items-center space-x-4">
+          {/* Upload status indicator */}
+          {processingRef.current && (
+            <div className="text-sm text-gray-500">
+              {currentOpRef.current === 'add' 
+                ? t('settings.sources.uploadingFilesTitle') 
+                : t('settings.sources.deletingTitle')}
+            </div>
+          )}
+          
+          {/* Search element with fixed width matching Figma specs */}
+          <div className="w-[198px]">
+            {renderFileSearch()}
+          </div>
+          
+          {/* Add file button */}
+          {!processingRef.current && (
             <button
               onClick={handleAddFile}
-              className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] w-full min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white sm:w-auto"
-              title={
-                processingRef.current
-                  ? currentOpRef.current === 'add'
-                    ? t('settings.sources.uploadingFilesTitle')
-                    : t('settings.sources.deletingTitle')
-                  : t('settings.sources.addFile')
-              }
+              className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-nowrap text-white font-medium"
+              title={t('settings.sources.addFile')}
             >
               {t('settings.sources.addFile')}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   };
-
   const calculateDirectoryStats = (
     structure: DirectoryStructure,
   ): { totalSize: number; totalTokens: number } => {
@@ -620,7 +618,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E] font-medium"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -637,7 +635,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   options={getActionOptions(name, false, itemId)}
                   anchorRef={menuRef}
                   position="bottom-left"
-                  offset={{ x: -8, y: 8 }}
+                  offset={{ x: -4, y: 4 }}
                 />
               </div>
             </td>
@@ -676,7 +674,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E] font-medium"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -693,7 +691,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   options={getActionOptions(name, true, itemId)}
                   anchorRef={menuRef}
                   position="bottom-left"
-                  offset={{ x: -8, y: 8 }}
+                  offset={{ x: -4, y: 4 }}
                 />
               </div>
             </td>
@@ -754,73 +752,79 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     setSearchQuery('');
     setSearchResults([]);
   };
+
   const renderFileSearch = () => {
     return (
-      <div className="w-[283px]" ref={searchDropdownRef}>
-        <div className="relative">
+      <div className="relative" ref={searchDropdownRef}>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               if (directoryStructure) {
-                setSearchResults(
-                  searchFiles(e.target.value, directoryStructure),
-                );
+                setSearchResults(searchFiles(e.target.value, directoryStructure));
               }
             }}
             placeholder={t('settings.sources.searchFiles')}
-            className={`w-full border border-[#D1D9E0] px-4 py-2 pl-10 dark:border-[#6A6A6A] ${
-              searchQuery
-                ? 'rounded-t-md rounded-b-none border-b-0'
-                : 'rounded-md'
-            } bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
+            className={`w-full h-[38px] border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] 
+              ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} 
+              bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
           />
 
-          <img
-            src={SearchIcon}
-            alt={t('settings.sources.searchAlt')}
-            className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform opacity-60"
-          />
-
-          {searchQuery && (
-            <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-y-auto rounded-b-md border border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023]">
-              {searchResults.length === 0 ? (
-                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
-                  {t('settings.sources.noResults')}
+        {searchQuery && (
+          <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-y-auto rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023] transition-all duration-200">
+            {searchResults.length === 0 ? (
+              <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                {t('settings.sources.noResults')}
+              </div>
+            ) : (
+              searchResults.map((result, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSearchSelect(result)}
+                  title={result.path}
+                  className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                    index !== searchResults.length - 1
+                      ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                      : ''
+                  }`}
+                >
+                  <img
+                    src={result.isFile ? FileIcon : FolderIcon}
+                    alt={
+                      result.isFile
+                        ? t('settings.sources.fileAlt')
+                        : t('settings.sources.folderAlt')
+                    }
+                    className="mr-2 h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="text-sm dark:text-[#E0E0E0]">
+                    {result.path.split('/').pop() || result.path}
+                  </span>
                 </div>
-              ) : (
-                searchResults.map((result, index) => (
-                  <div
-                    key={index}
-                    onClick={() => handleSearchSelect(result)}
-                    title={result.path}
-                    className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
-                      index !== searchResults.length - 1
-                        ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
-                        : ''
-                    }`}
-                  >
-                    <img
-                      src={result.isFile ? FileIcon : FolderIcon}
-                      alt={
-                        result.isFile
-                          ? t('settings.sources.fileAlt')
-                          : t('settings.sources.folderAlt')
-                      }
-                      className="mr-2 h-4 w-4 flex-shrink-0"
-                    />
-                    <span className="text-sm dark:text-[#E0E0E0]">
-                      {result.path.split('/').pop() || result.path}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     );
+  };
+
+  const handleFileSearch = (searchQuery: string) => {
+    if (directoryStructure) {
+      return searchFiles(searchQuery, directoryStructure);
+    }
+    return [];
+  };
+
+  const handleFileSelect = (path: string) => {
+    const pathParts = path.split('/');
+      const fileName = pathParts.pop() || '';
+      setCurrentPath(pathParts);
+      setSelectedFile({
+        id: path,
+        name: fileName,
+      });
   };
 
   return (
@@ -833,47 +837,40 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
               documentName={sourceName}
               handleGoBack={() => setSelectedFile(null)}
               path={selectedFile.id}
-              renderFileSearch={renderFileSearch}
+              onFileSearch={handleFileSearch}
+              onFileSelect={handleFileSelect}
             />
           </div>
         </div>
       ) : (
         <div className="flex w-full max-w-full flex-col overflow-hidden">
-          <div className="mb-4">{renderPathNavigation()}</div>
+          <div className="mb-2">{renderPathNavigation()}</div>
 
-          <div className="flex min-w-0 gap-4">
-            {/* Left side: Search dropdown */}
-            <div className="hidden flex-shrink-0 lg:block">
-              {renderFileSearch()}
-            </div>
-
-            {/* Right side: File table */}
-            <div className="min-w-0 flex-1">
-              <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-                <table className="w-full min-w-[600px] table-auto bg-transparent">
-                  <thead className="bg-gray-100 dark:bg-[#27282D]">
-                    <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-                      <th className="min-w-[200px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
-                        {t('settings.sources.fileName')}
-                      </th>
-                      <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
-                        {t('settings.sources.tokens')}
-                      </th>
-                      <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
-                        {t('settings.sources.size')}
-                      </th>
-                      <th className="w-[60px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
-                        <span className="sr-only">
-                          {t('settings.sources.actions')}
-                        </span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="[&>tr:last-child]:border-b-0">
-                    {renderFileTree(currentDirectory)}
-                  </tbody>
-                </table>
-              </div>
+          <div className="w-full">
+            <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
+              <table className="w-full min-w-[600px] table-auto bg-transparent">
+                <thead className="bg-gray-100 dark:bg-[#27282D]">
+                  <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
+                    <th className="min-w-[200px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                      {t('settings.sources.fileName')}
+                    </th>
+                    <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                      {t('settings.sources.tokens')}
+                    </th>
+                    <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                      {t('settings.sources.size')}
+                    </th>
+                    <th className="w-[60px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                      <span className="sr-only">
+                        {t('settings.sources.actions')}
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:last-child]:border-b-0">
+                  {renderFileTree(currentDirectory)}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

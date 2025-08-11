@@ -303,7 +303,7 @@ export default function Sources({
             />
           </div>
           <button
-            className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+            className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white"
             title={t('settings.sources.addNew')}
             onClick={() => {
               setIsOnboarding(false);
