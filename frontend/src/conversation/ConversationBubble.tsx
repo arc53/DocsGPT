@@ -550,20 +550,16 @@ const ConversationBubble = forwardRef<
         )}
         {message && (
           <div className="my-2 ml-2 flex justify-start">
-            <div
-              className={`relative mr-2 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'lg:group-hover:visible' : 'hidden'}`}
-            >
-              <div>
-                <CopyButton textToCopy={message} />
-              </div>
-            </div>
-            <div
-              className={`relative mr-2 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'lg:group-hover:visible' : 'hidden'}`}
-            >
-              <div>
-                <SpeakButton text={message} />
-              </div>
-            </div>
+            {type !== 'ERROR' && (
+              <>
+                <div className="relative mr-2 block items-center justify-center">
+                  <CopyButton textToCopy={message} />
+                </div>
+                <div className="relative mr-2 block items-center justify-center">
+                  <SpeakButton text={message} />
+                </div>
+              </>
+            )}
             {type === 'ERROR' && (
               <div className="relative mr-2 block items-center justify-center">
                 <div>{retryBtn}</div>
@@ -573,10 +569,11 @@ const ConversationBubble = forwardRef<
               <>
                 <div
                   className={`relative mr-2 flex items-center justify-center ${
-                    feedback === 'LIKE' || isLikeClicked
-                      ? 'visible'
-                      : 'lg:invisible'
-                  } ${type !== 'ERROR' ? 'lg:group-hover:visible' : ''} ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
+                    (feedback === 'DISLIKE' || isDislikeClicked) &&
+                    type !== 'ERROR'
+                      ? 'hidden'
+                      : 'visible'
+                  }`}
                 >
                   <div>
                     <div
@@ -612,10 +609,10 @@ const ConversationBubble = forwardRef<
 
                 <div
                   className={`relative mr-2 flex items-center justify-center ${
-                    feedback === 'DISLIKE' || isLikeClicked
-                      ? 'visible'
-                      : 'lg:invisible'
-                  } ${type !== 'ERROR' ? 'lg:group-hover:visible' : ''} ${feedback === 'LIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
+                    (feedback === 'LIKE' || isLikeClicked) && type !== 'ERROR'
+                      ? 'hidden'
+                      : 'visible'
+                  }`}
                 >
                   <div>
                     <div
