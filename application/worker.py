@@ -471,9 +471,13 @@ def attachment_worker(self, file_info, user):
             .load_data()[0]
             .text,
         )
-
+        
+        
         token_count = num_tokens_from_string(content)
-
+        if token_count > 100000:
+            content = content[:250000]
+            token_count = num_tokens_from_string(content)
+        
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
         )

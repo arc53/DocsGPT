@@ -136,6 +136,8 @@ def _log_to_mongodb(
         mongo = MongoDB.get_client()
         db = mongo[settings.MONGO_DB_NAME]
         user_logs_collection = db["stack_logs"]
+        
+
 
         log_entry = {
             "endpoint": endpoint,
@@ -147,6 +149,11 @@ def _log_to_mongodb(
             "stacks": stacks,
             "timestamp": datetime.datetime.now(datetime.timezone.utc),
         }
+        # clean up text fields to be no longer than 10000 characters
+        for key, value in log_entry.items():
+            if isinstance(value, str) and len(value) > 10000:
+                log_entry[key] = value[:10000]
+    
         user_logs_collection.insert_one(log_entry)
         logging.debug(f"Logged activity to MongoDB: {activity_id}")
 
