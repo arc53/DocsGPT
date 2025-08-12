@@ -443,7 +443,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-0 min-h-[38px] flex flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
         {/* Left side with path navigation */}
         <div className="flex w-full items-center sm:w-auto">
           <button
@@ -454,12 +454,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           </button>
   
           <div className="flex flex-wrap items-center">
-            <img
-              src={OutlineSource}
-              alt="source"
-              className="mr-2 h-5 w-5 flex-shrink-0"
-            />
-            <span className="text-purple-30 font-medium break-words">
+            <span className="text-[#7D54D1] font-semibold break-words">
               {sourceName}
             </span>
             {currentPath.length > 0 && (
@@ -491,7 +486,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         </div>
 
         {/* Right side with search and add button */}
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0 overflow-x-auto">
           {/* Upload status indicator */}
           {processingRef.current && (
             <div className="text-sm text-gray-500">
@@ -502,7 +497,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           )}
           
           {/* Search element with fixed width matching Figma specs */}
-          <div className="w-[198px]">
+          <div className="hidden lg:block w-[198px]">
             {renderFileSearch()}
           </div>
           

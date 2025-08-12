@@ -284,8 +284,8 @@ const Chunks: React.FC<ChunksProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between text-base gap-2">
-        <div className="flex items-center">
+      <div className="mb-0 min-h-[38px] flex flex-col sm:flex-row sm:items-center sm:justify-between text-base gap-2">
+        <div className="flex w-full items-center sm:w-auto">
           <button
             className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] transition-all duration-200 font-medium"
             onClick={editingChunk ? () => setEditingChunk(null) : isAddingChunk ? () => setIsAddingChunk(false) : handleGoBack}
