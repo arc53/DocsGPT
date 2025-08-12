@@ -92,8 +92,7 @@ const ConversationBubble = forwardRef<
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
-  const [isLikeClicked, setIsLikeClicked] = useState(false);
-  const [isDislikeClicked, setIsDislikeClicked] = useState(false);
+
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement>(null);
@@ -550,104 +549,71 @@ const ConversationBubble = forwardRef<
         )}
         {message && (
           <div className="my-2 ml-2 flex justify-start">
-            <div
-              className={`relative mr-2 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'lg:group-hover:visible' : 'hidden'}`}
-            >
-              <div>
-                <CopyButton textToCopy={message} />
-              </div>
-            </div>
-            <div
-              className={`relative mr-2 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'lg:group-hover:visible' : 'hidden'}`}
-            >
-              <div>
-                <SpeakButton text={message} />
-              </div>
-            </div>
-            {type === 'ERROR' && (
+            {type === 'ERROR' ? (
               <div className="relative mr-2 block items-center justify-center">
                 <div>{retryBtn}</div>
               </div>
-            )}
-            {handleFeedback && (
+            ) : (
               <>
-                <div
-                  className={`relative mr-2 flex items-center justify-center ${
-                    feedback === 'LIKE' || isLikeClicked
-                      ? 'visible'
-                      : 'lg:invisible'
-                  } ${type !== 'ERROR' ? 'lg:group-hover:visible' : ''} ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
-                >
-                  <div>
-                    <div
-                      className={`flex items-center justify-center rounded-full p-2 ${
-                        isLikeHovered
-                          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                          : 'bg-white-3000 dark:bg-transparent'
-                      }`}
-                    >
-                      <Like
-                        className={`cursor-pointer ${
-                          isLikeClicked || feedback === 'LIKE'
-                            ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
-                            : 'stroke-gray-4000 fill-none'
-                        }`}
-                        onClick={() => {
-                          if (feedback === undefined || feedback === null) {
-                            handleFeedback?.('LIKE');
-                            setIsLikeClicked(true);
-                            setIsDislikeClicked(false);
-                          } else if (feedback === 'LIKE') {
-                            handleFeedback?.(null);
-                            setIsLikeClicked(false);
-                            setIsDislikeClicked(false);
-                          }
-                        }}
-                        onMouseEnter={() => setIsLikeHovered(true)}
-                        onMouseLeave={() => setIsLikeHovered(false)}
-                      ></Like>
-                    </div>
-                  </div>
+                <div className="relative mr-2 block items-center justify-center">
+                  <CopyButton textToCopy={message} />
                 </div>
+                <div className="relative mr-2 block items-center justify-center">
+                  <SpeakButton text={message} />
+                </div>
+                {handleFeedback && (
+                  <>
+                    <div className="relative mr-2 flex items-center justify-center">
+                      <div>
+                        <div
+                          className={`flex items-center justify-center rounded-full p-2 ${
+                            isLikeHovered
+                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                              : 'bg-white-3000 dark:bg-transparent'
+                          }`}
+                        >
+                          <Like
+                            className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            onClick={() => {
+                              if (feedback === 'LIKE') {
+                                handleFeedback?.(null);
+                              } else {
+                                handleFeedback?.('LIKE');
+                              }
+                            }}
+                            onMouseEnter={() => setIsLikeHovered(true)}
+                            onMouseLeave={() => setIsLikeHovered(false)}
+                          ></Like>
+                        </div>
+                      </div>
+                    </div>
 
-                <div
-                  className={`relative mr-2 flex items-center justify-center ${
-                    feedback === 'DISLIKE' || isLikeClicked
-                      ? 'visible'
-                      : 'lg:invisible'
-                  } ${type !== 'ERROR' ? 'lg:group-hover:visible' : ''} ${feedback === 'LIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
-                >
-                  <div>
-                    <div
-                      className={`flex items-center justify-center rounded-full p-2 ${
-                        isDislikeHovered
-                          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                          : 'bg-white-3000 dark:bg-transparent'
-                      }`}
-                    >
-                      <Dislike
-                        className={`cursor-pointer ${
-                          isDislikeClicked || feedback === 'DISLIKE'
-                            ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
-                            : 'stroke-gray-4000 fill-none'
-                        }`}
-                        onClick={() => {
-                          if (feedback === undefined || feedback === null) {
-                            handleFeedback?.('DISLIKE');
-                            setIsDislikeClicked(true);
-                            setIsLikeClicked(false);
-                          } else if (feedback === 'DISLIKE') {
-                            handleFeedback?.(null);
-                            setIsLikeClicked(false);
-                            setIsDislikeClicked(false);
-                          }
-                        }}
-                        onMouseEnter={() => setIsDislikeHovered(true)}
-                        onMouseLeave={() => setIsDislikeHovered(false)}
-                      ></Dislike>
+                    <div className="relative mr-2 flex items-center justify-center">
+                      <div>
+                        <div
+                          className={`flex items-center justify-center rounded-full p-2 ${
+                            isDislikeHovered
+                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                              : 'bg-white-3000 dark:bg-transparent'
+                          }`}
+                        >
+                          <Dislike
+                            className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            onClick={() => {
+                              if (feedback === 'DISLIKE') {
+                                handleFeedback?.(null);
+                              } else {
+                                handleFeedback?.('DISLIKE');
+                              }
+                            }}
+                            onMouseEnter={() => setIsDislikeHovered(true)}
+                            onMouseLeave={() => setIsDislikeHovered(false)}
+                          ></Dislike>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </>
             )}
           </div>
