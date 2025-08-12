@@ -533,14 +533,14 @@ const Chunks: React.FC<ChunksProps> = ({
                 </div>
                 <button
                   className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] w-full sm:w-auto min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white shrink-0 font-medium"
-                  title={t('settings.sources.addNew')}
+                  title={t('settings.sources.addChunk')}
                   onClick={() => {
                     setIsAddingChunk(true);
                     setEditingTitle('');
                     setEditingText('');
                   }}
                 >
-                  {t('settings.sources.addNew')}
+                  {t('settings.sources.addChunk')}
                 </button>
               </div>
               {loading ? (

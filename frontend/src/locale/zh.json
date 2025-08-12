@@ -62,6 +62,8 @@
       "noData": "没有现有的来源",
       "searchPlaceholder": "搜索...",
       "addNew": "添加新文档",
+      "addSource": "添加来源",
+      "addChunk": "添加块",
       "preLoaded": "预加载",
       "private": "私有",
       "sync": "同步",

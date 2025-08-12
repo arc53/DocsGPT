@@ -62,6 +62,8 @@
       "noData": "既存のソースがありません",
       "searchPlaceholder": "検索...",
       "addNew": "新規追加",
+      "addSource": "ソースを追加",
+      "addChunk": "チャンクを追加",
       "preLoaded": "プリロード済み",
       "private": "プライベート",
       "sync": "同期",

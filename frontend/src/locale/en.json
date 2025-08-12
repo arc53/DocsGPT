@@ -62,6 +62,8 @@
       "noData": "No existing Sources",
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
+      "addSource": "Add Source",
+      "addChunk": "Add Chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
       "sync": "Sync",

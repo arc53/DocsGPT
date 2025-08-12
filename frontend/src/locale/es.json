@@ -62,6 +62,8 @@
       "noData": "No hay fuentes existentes",
       "searchPlaceholder": "Buscar...",
       "addNew": "Agregar Nuevo",
+      "addSource": "Agregar Fuente",
+      "addChunk": "Agregar Fragmento",
       "preLoaded": "Precargado",
       "private": "Privado",
       "sync": "Sincronizar",

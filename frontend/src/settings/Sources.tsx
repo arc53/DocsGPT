@@ -11,6 +11,8 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import Trash from '../assets/red-trash.svg';
 import SyncIcon from '../assets/sync.svg';
 import ThreeDots from '../assets/three-dots.svg';
+import CalendarIcon from '../assets/calendar.svg';
+import DiscIcon from '../assets/disc.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
@@ -304,13 +306,13 @@ export default function Sources({
           </div>
           <button
             className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white"
-            title={t('settings.sources.addNew')}
+            title={t('settings.sources.addSource')}
             onClick={() => {
               setIsOnboarding(false);
               setModalState('ACTIVE');
             }}
           >
-            {t('settings.sources.addNew')}
+            {t('settings.sources.addSource')}
           </button>
         </div>
         <div className="relative w-full">
@@ -337,13 +339,13 @@ export default function Sources({
               return (
                 <div key={docId} className="relative">
                   <div
-                    className={`flex h-[123px] w-[308px] flex-col justify-between rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
+                    className={`flex h-[123px] w-[308px] flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
                       activeMenuId === docId || syncMenuState.docId === docId
                         ? 'scale-[1.02]'
                         : 'hover:scale-[1.02]'
                     }`}
                   >
-                      <div className="w-full">
+                      <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
                             className="font-inter dark:text-bright-gray line-clamp-3 text-[13px] leading-[18px] font-semibold break-words text-[#18181B]"
@@ -401,15 +403,24 @@ export default function Sources({
                         </div>
                       </div>
 
-                      <div className="mt-auto flex items-center justify-between pt-3">
-                        <div className="font-inter text-[12px] leading-[18px] font-[500] text-[#848484] dark:text-[#848484]">
-                          {document.date ? formatDate(document.date) : ''}
-                        </div>
-                        <div className="font-inter text-[12px] leading-[18px]">
-                          <span className="dark:text-bright-gray font-[400] text-[#18181B]">
-                            {t('settings.sources.tokenUsage')}:
+                      <div className="flex flex-col items-start justify-start gap-1">
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={CalendarIcon}
+                            alt=""
+                            className="w-[14px] h-[14px]"
+                          />
+                          <span className="font-inter text-[12px] leading-[18px] font-[500] text-[#848484] dark:text-[#848484]">
+                            {document.date ? formatDate(document.date) : ''}
                           </span>
-                          <span className="ml-1 font-[400] text-[#848484] dark:text-[#848484]">
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={DiscIcon}
+                            alt=""
+                            className="w-[14px] h-[14px]"
+                          />
+                          <span className="font-inter text-[12px] leading-[18px] font-[500] text-[#848484] dark:text-[#848484]">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}

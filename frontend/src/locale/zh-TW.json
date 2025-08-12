@@ -62,6 +62,8 @@
       "noData": "沒有現有的來源",
       "searchPlaceholder": "搜尋...",
       "addNew": "新增文件",
+      "addSource": "新增來源",
+      "addChunk": "新增區塊",
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
