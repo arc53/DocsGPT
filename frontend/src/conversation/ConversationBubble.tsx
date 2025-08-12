@@ -92,8 +92,7 @@ const ConversationBubble = forwardRef<
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
-  const [isLikeClicked, setIsLikeClicked] = useState(false);
-  const [isDislikeClicked, setIsDislikeClicked] = useState(false);
+
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement>(null);
@@ -574,20 +573,12 @@ const ConversationBubble = forwardRef<
                           }`}
                         >
                           <Like
-                            className={`${isLikeClicked || feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
                             onClick={() => {
-                              if (feedback === undefined || feedback === null) {
-                                handleFeedback?.('LIKE');
-                                setIsLikeClicked(true);
-                                setIsDislikeClicked(false);
-                              } else if (feedback === 'LIKE') {
+                              if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
-                                setIsLikeClicked(false);
-                                setIsDislikeClicked(false);
-                              } else if (feedback === 'DISLIKE') {
+                              } else {
                                 handleFeedback?.('LIKE');
-                                setIsDislikeClicked(false);
-                                setIsLikeClicked(true);
                               }
                             }}
                             onMouseEnter={() => setIsLikeHovered(true)}
@@ -607,20 +598,12 @@ const ConversationBubble = forwardRef<
                           }`}
                         >
                           <Dislike
-                            className={`${isDislikeClicked || feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
                             onClick={() => {
-                              if (feedback === undefined || feedback === null) {
-                                handleFeedback?.('DISLIKE');
-                                setIsDislikeClicked(true);
-                                setIsLikeClicked(false);
-                              } else if (feedback === 'DISLIKE') {
+                              if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
-                                setIsLikeClicked(false);
-                                setIsDislikeClicked(false);
-                              } else if (feedback === 'LIKE') {
+                              } else {
                                 handleFeedback?.('DISLIKE');
-                                setIsDislikeClicked(true);
-                                setIsLikeClicked(false);
                               }
                             }}
                             onMouseEnter={() => setIsDislikeHovered(true)}
