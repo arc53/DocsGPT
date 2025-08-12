@@ -565,16 +565,9 @@ const ConversationBubble = forwardRef<
                 <div>{retryBtn}</div>
               </div>
             )}
-            {handleFeedback && (
+            {handleFeedback && type !== 'ERROR' && (
               <>
-                <div
-                  className={`relative mr-2 flex items-center justify-center ${
-                    (feedback === 'DISLIKE' || isDislikeClicked) &&
-                    type !== 'ERROR'
-                      ? 'hidden'
-                      : 'visible'
-                  }`}
-                >
+                <div className="relative mr-2 flex items-center justify-center">
                   <div>
                     <div
                       className={`flex items-center justify-center rounded-full p-2 ${
@@ -584,11 +577,7 @@ const ConversationBubble = forwardRef<
                       }`}
                     >
                       <Like
-                        className={`cursor-pointer ${
-                          isLikeClicked || feedback === 'LIKE'
-                            ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
-                            : 'stroke-gray-4000 fill-none'
-                        }`}
+                        className={`${isLikeClicked || feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
                         onClick={() => {
                           if (feedback === undefined || feedback === null) {
                             handleFeedback?.('LIKE');
@@ -598,6 +587,10 @@ const ConversationBubble = forwardRef<
                             handleFeedback?.(null);
                             setIsLikeClicked(false);
                             setIsDislikeClicked(false);
+                          } else if (feedback === 'DISLIKE') {
+                            handleFeedback?.('LIKE');
+                            setIsDislikeClicked(false);
+                            setIsLikeClicked(true);
                           }
                         }}
                         onMouseEnter={() => setIsLikeHovered(true)}
@@ -607,13 +600,7 @@ const ConversationBubble = forwardRef<
                   </div>
                 </div>
 
-                <div
-                  className={`relative mr-2 flex items-center justify-center ${
-                    (feedback === 'LIKE' || isLikeClicked) && type !== 'ERROR'
-                      ? 'hidden'
-                      : 'visible'
-                  }`}
-                >
+                <div className="relative mr-2 flex items-center justify-center">
                   <div>
                     <div
                       className={`flex items-center justify-center rounded-full p-2 ${
@@ -623,11 +610,7 @@ const ConversationBubble = forwardRef<
                       }`}
                     >
                       <Dislike
-                        className={`cursor-pointer ${
-                          isDislikeClicked || feedback === 'DISLIKE'
-                            ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
-                            : 'stroke-gray-4000 fill-none'
-                        }`}
+                        className={`${isDislikeClicked || feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
                         onClick={() => {
                           if (feedback === undefined || feedback === null) {
                             handleFeedback?.('DISLIKE');
@@ -637,6 +620,10 @@ const ConversationBubble = forwardRef<
                             handleFeedback?.(null);
                             setIsLikeClicked(false);
                             setIsDislikeClicked(false);
+                          } else if (feedback === 'LIKE') {
+                            handleFeedback?.('DISLIKE');
+                            setIsDislikeClicked(true);
+                            setIsLikeClicked(false);
                           }
                         }}
                         onMouseEnter={() => setIsDislikeHovered(true)}
