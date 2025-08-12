@@ -16,7 +16,6 @@ import DiscIcon from '../assets/disc.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
-import Input from '../components/Input';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -58,6 +57,7 @@ export default function Sources({
   const token = useSelector(selectToken);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
@@ -116,6 +116,14 @@ export default function Sources({
     document: null,
   });
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const refreshDocs = useCallback(
     (
       field: 'date' | 'tokens' | undefined,
@@ -148,7 +156,7 @@ export default function Sources({
         newSortOrder,
         page,
         rowsPerPg,
-        searchTerm,
+        debouncedSearchTerm,
         token,
       )
         .then((data) => {
@@ -160,7 +168,7 @@ export default function Sources({
           setLoading(false);
         });
     },
-    [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
+    [currentPage, rowsPerPage, sortField, sortOrder, debouncedSearchTerm],
   );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
@@ -259,7 +267,7 @@ export default function Sources({
   };
   useEffect(() => {
     refreshDocs(undefined, 1, rowsPerPage);
-  }, [searchTerm]);
+  }, [debouncedSearchTerm]);
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
@@ -290,19 +298,21 @@ export default function Sources({
             <label htmlFor="document-search-input" className="sr-only">
               {t('settings.sources.searchPlaceholder')}
             </label>
-            <Input
-              maxLength={256}
-              placeholder={t('settings.sources.searchPlaceholder')}
-              name="Document-search-input"
-              type="text"
-              id="document-search-input"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-              borderVariant="thin"
-            />
+            <div className="relative w-[280px]">
+              <input
+                maxLength={256}
+                placeholder={t('settings.sources.searchPlaceholder')}
+                name="Document-search-input"
+                type="text"
+                id="document-search-input"
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full h-[32px] rounded-full border border-silver dark:border-silver/40 bg-transparent px-3 text-sm text-jet dark:text-bright-gray placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:border-silver dark:focus:border-silver/60"
+              />
+            </div>
           </div>
           <button
             className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white"
@@ -317,7 +327,7 @@ export default function Sources({
         </div>
         <div className="relative w-full">
           {loading ? (
-            <div className="w-full grid grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(308px,1fr))] gap-6 justify-items-start">
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-2 py-4">
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : !currentDocuments?.length ? (
@@ -332,17 +342,17 @@ export default function Sources({
               </p>
             </div>
           ) : (
-            <div className="flex flex-wrap justify-center md:justify-start gap-6 mx-1">
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-2 py-4">
             {currentDocuments.map((document, index) => {
               const docId = document.id ? document.id.toString() : '';
 
               return (
                 <div key={docId} className="relative">
                   <div
-                    className={`flex h-[123px] w-[308px] flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
+                    className={`flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200  dark:bg-[#383838] ${
                       activeMenuId === docId || syncMenuState.docId === docId
-                        ? 'scale-[1.02]'
-                        : 'hover:scale-[1.02]'
+                        ? 'scale-[1.05]'
+                        : 'hover:scale-[1.05]'
                     }`}
                   >
                       <div className="w-full flex-1">

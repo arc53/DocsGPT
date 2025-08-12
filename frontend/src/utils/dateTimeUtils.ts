@@ -42,7 +42,6 @@ export function formatDate(dateString: string): string {
     // Format: "Fri, 08 Jul 2025 06:00:00 GMT"
     const dateTime = new Date(dateString);
     return dateTime.toLocaleDateString('en-US', {
-      weekday: 'short',
       month: 'short',
       day: 'numeric',
       year: 'numeric',

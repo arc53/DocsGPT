@@ -214,15 +214,26 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, idx) => (
         <div
           key={`source-skel-${idx}`}
-          className="flex h-[123px] w-[308px] flex-col justify-between rounded-2xl bg-[#F9F9F9] p-3 dark:bg-[#383838] animate-pulse"
+          className="flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] dark:bg-[#383838] p-3 animate-pulse"
         >
-          <div className="flex w-full items-center justify-between gap-2">
-            <div className="h-4 w-3/5 rounded bg-gray-300 dark:bg-gray-600"></div>
-            <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-600"></div>
+          <div className="w-full flex-1">
+            <div className="flex w-full items-center justify-between gap-2">
+              <div className="flex-1">
+                <div className="h-[13px] w-full rounded bg-gray-200 dark:bg-gray-700"></div>
+              </div>
+              <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
           </div>
-          <div className="mt-auto flex items-center justify-between pt-3">
-            <div className="h-3 w-24 rounded bg-gray-300 dark:bg-gray-600"></div>
-            <div className="h-3 w-20 rounded bg-gray-300 dark:bg-gray-600"></div>
+
+          <div className="flex flex-col items-start justify-start gap-1 pt-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-3 h-3 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-[12px] w-20 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-[12px] w-16 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
           </div>
         </div>
       ))}
