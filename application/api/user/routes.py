@@ -65,7 +65,7 @@ attachments_collection = db["attachments"]
 
 try:
     agents_collection.create_index(
-        [("shared_publicly", 1)],
+        [("shared", 1)],
         name="shared_index",
         background=True,
     )
