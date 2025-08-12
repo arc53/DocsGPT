@@ -550,7 +550,11 @@ const ConversationBubble = forwardRef<
         )}
         {message && (
           <div className="my-2 ml-2 flex justify-start">
-            {type !== 'ERROR' && (
+            {type === 'ERROR' ? (
+              <div className="relative mr-2 block items-center justify-center">
+                <div>{retryBtn}</div>
+              </div>
+            ) : (
               <>
                 <div className="relative mr-2 block items-center justify-center">
                   <CopyButton textToCopy={message} />
@@ -558,80 +562,75 @@ const ConversationBubble = forwardRef<
                 <div className="relative mr-2 block items-center justify-center">
                   <SpeakButton text={message} />
                 </div>
-              </>
-            )}
-            {type === 'ERROR' && (
-              <div className="relative mr-2 block items-center justify-center">
-                <div>{retryBtn}</div>
-              </div>
-            )}
-            {handleFeedback && type !== 'ERROR' && (
-              <>
-                <div className="relative mr-2 flex items-center justify-center">
-                  <div>
-                    <div
-                      className={`flex items-center justify-center rounded-full p-2 ${
-                        isLikeHovered
-                          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                          : 'bg-white-3000 dark:bg-transparent'
-                      }`}
-                    >
-                      <Like
-                        className={`${isLikeClicked || feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
-                        onClick={() => {
-                          if (feedback === undefined || feedback === null) {
-                            handleFeedback?.('LIKE');
-                            setIsLikeClicked(true);
-                            setIsDislikeClicked(false);
-                          } else if (feedback === 'LIKE') {
-                            handleFeedback?.(null);
-                            setIsLikeClicked(false);
-                            setIsDislikeClicked(false);
-                          } else if (feedback === 'DISLIKE') {
-                            handleFeedback?.('LIKE');
-                            setIsDislikeClicked(false);
-                            setIsLikeClicked(true);
-                          }
-                        }}
-                        onMouseEnter={() => setIsLikeHovered(true)}
-                        onMouseLeave={() => setIsLikeHovered(false)}
-                      ></Like>
+                {handleFeedback && (
+                  <>
+                    <div className="relative mr-2 flex items-center justify-center">
+                      <div>
+                        <div
+                          className={`flex items-center justify-center rounded-full p-2 ${
+                            isLikeHovered
+                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                              : 'bg-white-3000 dark:bg-transparent'
+                          }`}
+                        >
+                          <Like
+                            className={`${isLikeClicked || feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            onClick={() => {
+                              if (feedback === undefined || feedback === null) {
+                                handleFeedback?.('LIKE');
+                                setIsLikeClicked(true);
+                                setIsDislikeClicked(false);
+                              } else if (feedback === 'LIKE') {
+                                handleFeedback?.(null);
+                                setIsLikeClicked(false);
+                                setIsDislikeClicked(false);
+                              } else if (feedback === 'DISLIKE') {
+                                handleFeedback?.('LIKE');
+                                setIsDislikeClicked(false);
+                                setIsLikeClicked(true);
+                              }
+                            }}
+                            onMouseEnter={() => setIsLikeHovered(true)}
+                            onMouseLeave={() => setIsLikeHovered(false)}
+                          ></Like>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="relative mr-2 flex items-center justify-center">
-                  <div>
-                    <div
-                      className={`flex items-center justify-center rounded-full p-2 ${
-                        isDislikeHovered
-                          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                          : 'bg-white-3000 dark:bg-transparent'
-                      }`}
-                    >
-                      <Dislike
-                        className={`${isDislikeClicked || feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
-                        onClick={() => {
-                          if (feedback === undefined || feedback === null) {
-                            handleFeedback?.('DISLIKE');
-                            setIsDislikeClicked(true);
-                            setIsLikeClicked(false);
-                          } else if (feedback === 'DISLIKE') {
-                            handleFeedback?.(null);
-                            setIsLikeClicked(false);
-                            setIsDislikeClicked(false);
-                          } else if (feedback === 'LIKE') {
-                            handleFeedback?.('DISLIKE');
-                            setIsDislikeClicked(true);
-                            setIsLikeClicked(false);
-                          }
-                        }}
-                        onMouseEnter={() => setIsDislikeHovered(true)}
-                        onMouseLeave={() => setIsDislikeHovered(false)}
-                      ></Dislike>
+                    <div className="relative mr-2 flex items-center justify-center">
+                      <div>
+                        <div
+                          className={`flex items-center justify-center rounded-full p-2 ${
+                            isDislikeHovered
+                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                              : 'bg-white-3000 dark:bg-transparent'
+                          }`}
+                        >
+                          <Dislike
+                            className={`${isDislikeClicked || feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            onClick={() => {
+                              if (feedback === undefined || feedback === null) {
+                                handleFeedback?.('DISLIKE');
+                                setIsDislikeClicked(true);
+                                setIsLikeClicked(false);
+                              } else if (feedback === 'DISLIKE') {
+                                handleFeedback?.(null);
+                                setIsLikeClicked(false);
+                                setIsDislikeClicked(false);
+                              } else if (feedback === 'LIKE') {
+                                handleFeedback?.('DISLIKE');
+                                setIsDislikeClicked(true);
+                                setIsLikeClicked(false);
+                              }
+                            }}
+                            onMouseEnter={() => setIsDislikeHovered(true)}
+                            onMouseLeave={() => setIsDislikeHovered(false)}
+                          ></Dislike>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </>
             )}
           </div>
