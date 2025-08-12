@@ -147,20 +147,25 @@ class BaseAnswerResource:
             # Log the interaction
 
             retriever_params = retriever.get_params()
-            self.user_logs_collection.insert_one(
-                {
-                    "action": "stream_answer",
-                    "level": "info",
-                    "user": decoded_token.get("sub"),
-                    "api_key": user_api_key,
-                    "question": question,
-                    "response": response_full,
-                    "sources": source_log_docs,
-                    "retriever_params": retriever_params,
-                    "attachments": attachment_ids,
-                    "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                }
-            )
+            log_entry = {
+                "action": "stream_answer",
+                "level": "info",
+                "user": decoded_token.get("sub"),
+                "api_key": user_api_key,
+                "question": question,
+                "response": response_full,
+                "sources": source_log_docs,
+                "retriever_params": retriever_params,
+                "attachments": attachment_ids,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
+            
+            # clean up text fields to be no longer than 10000 characters
+            for key, value in log_entry.items():
+                if isinstance(value, str) and len(value) > 10000:
+                    log_entry[key] = value[:10000]
+            
+            self.user_logs_collection.insert_one(log_entry)
 
             # End of stream
 
