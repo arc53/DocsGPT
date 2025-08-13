@@ -192,6 +192,7 @@ class StreamProcessor:
                     "prompt_id": data_key.get("prompt_id", "default"),
                     "agent_type": data_key.get("agent_type", settings.AGENT_NAME),
                     "user_api_key": api_key,
+                    "json_schema": data_key.get("json_schema"),
                 }
             )
             self.initial_user_id = data_key.get("user")
@@ -203,6 +204,7 @@ class StreamProcessor:
                     "prompt_id": data_key.get("prompt_id", "default"),
                     "agent_type": data_key.get("agent_type", settings.AGENT_NAME),
                     "user_api_key": self.agent_key,
+                    "json_schema": data_key.get("json_schema"),
                 }
             )
             self.decoded_token = (
@@ -216,6 +218,7 @@ class StreamProcessor:
                     "prompt_id": self.data.get("prompt_id", "default"),
                     "agent_type": settings.AGENT_NAME,
                     "user_api_key": None,
+                    "json_schema": None,
                 }
             )
 
@@ -243,6 +246,7 @@ class StreamProcessor:
             chat_history=self.history,
             decoded_token=self.decoded_token,
             attachments=self.attachments,
+            json_schema=self.agent_config.get("json_schema"),
         )
 
     def create_retriever(self):
