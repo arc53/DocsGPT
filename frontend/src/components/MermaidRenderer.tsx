@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import mermaid from 'mermaid';
 import CopyButton from './CopyButton';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -16,7 +17,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   isLoading,
 }) => {
   const [isDarkTheme] = useDarkTheme();
-  const diagramId = useRef(`mermaid-${crypto.randomUUID()}`);
+  const diagramId = useRef(`mermaid-${uuidv4()}`);
   const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
