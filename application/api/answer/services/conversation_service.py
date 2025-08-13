@@ -66,6 +66,11 @@ class ConversationService:
         if not user_id:
             raise ValueError("User ID not found in token")
         current_time = datetime.now(timezone.utc)
+        
+        # clean up in sources array such that we save max 1k characters for text part
+        for source in sources:
+            if "text" in source and isinstance(source["text"], str):
+                source["text"] = source["text"][:1000]
 
         if conversation_id is not None and index is not None:
             # Update existing conversation with new query

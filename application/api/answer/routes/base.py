@@ -179,6 +179,12 @@ class BaseAnswerResource:
                 log_data["structured_output"] = True
                 if schema_info:
                     log_data["schema"] = schema_info
+  
+            # clean up text fields to be no longer than 10000 characters
+            for key, value in log_data.items():
+                if isinstance(value, str) and len(value) > 10000:
+                    log_data[key] = value[:10000]
+            
             self.user_logs_collection.insert_one(log_data)
 
             # End of stream
