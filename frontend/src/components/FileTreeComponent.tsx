@@ -452,7 +452,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-  
+
           <div className="flex flex-wrap items-center">
             <span className="text-[#7D54D1] font-semibold break-words">
               {sourceName}
@@ -485,22 +485,18 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           </div>
         </div>
 
-        {/* Right side with search and add button */}
-        <div className="flex flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0 overflow-x-auto">
-          {/* Upload status indicator */}
+        <div className="flex relative flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0">
+
           {processingRef.current && (
             <div className="text-sm text-gray-500">
-              {currentOpRef.current === 'add' 
-                ? t('settings.sources.uploadingFilesTitle') 
+              {currentOpRef.current === 'add'
+                ? t('settings.sources.uploadingFilesTitle')
                 : t('settings.sources.deletingTitle')}
             </div>
           )}
-          
-          {/* Search element with fixed width matching Figma specs */}
-          <div className="hidden lg:block w-[198px]">
+
             {renderFileSearch()}
-          </div>
-          
+
           {/* Add file button */}
           {!processingRef.current && (
             <button
@@ -547,32 +543,32 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-            <tr
-              key="parent-dir"
-              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
-              onClick={navigateUp}
-            >
-              <td className="px-2 py-2 lg:px-4">
-                <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 flex-shrink-0"
-                  />
-                  <span className="truncate text-sm dark:text-[#E0E0E0]">
-                    ..
-                  </span>
-                </div>
-              </td>
-              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-                -
-              </td>
-              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-                -
-              </td>
-              <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
-            </tr>,
-          ]
+          <tr
+            key="parent-dir"
+            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+            onClick={navigateUp}
+          >
+            <td className="px-2 py-2 lg:px-4">
+              <div className="flex items-center">
+                <img
+                  src={FolderIcon}
+                  alt={t('settings.sources.parentFolderAlt')}
+                  className="mr-2 h-4 w-4 flex-shrink-0"
+                />
+                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                  ..
+                </span>
+              </div>
+            </td>
+            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+              -
+            </td>
+            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+              -
+            </td>
+            <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
+          </tr>,
+        ]
         : [];
 
     // Render directories first, then files
@@ -750,55 +746,56 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
   const renderFileSearch = () => {
     return (
-      <div className="relative" ref={searchDropdownRef}>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              if (directoryStructure) {
-                setSearchResults(searchFiles(e.target.value, directoryStructure));
-              }
-            }}
-            placeholder={t('settings.sources.searchFiles')}
-            className={`w-full h-[38px] border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] 
+      <div className="relative w-52" ref={searchDropdownRef}>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            if (directoryStructure) {
+              setSearchResults(searchFiles(e.target.value, directoryStructure));
+            }
+          }}
+          placeholder={t('settings.sources.searchFiles')}
+          className={`w-full h-[38px] border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] 
               ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} 
               bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
-          />
+        />
 
         {searchQuery && (
-          <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-y-auto rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023] transition-all duration-200">
-            {searchResults.length === 0 ? (
-              <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
-                {t('settings.sources.noResults')}
-              </div>
-            ) : (
-              searchResults.map((result, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleSearchSelect(result)}
-                  title={result.path}
-                  className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
-                    index !== searchResults.length - 1
-                      ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
-                      : ''
-                  }`}
-                >
-                  <img
-                    src={result.isFile ? FileIcon : FolderIcon}
-                    alt={
-                      result.isFile
-                        ? t('settings.sources.fileAlt')
-                        : t('settings.sources.folderAlt')
-                    }
-                    className="mr-2 h-4 w-4 flex-shrink-0"
-                  />
-                  <span className="text-sm dark:text-[#E0E0E0]">
-                    {result.path.split('/').pop() || result.path}
-                  </span>
+          <div className="absolute top-full left-0 right-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023] transition-all duration-200">
+            <div className="max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden overscroll-contain">
+              {searchResults.length === 0 ? (
+                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                  {t('settings.sources.noResults')}
                 </div>
-              ))
-            )}
+              ) : (
+                searchResults.map((result, index) => (
+                  <div
+                    key={index}
+                    onClick={() => handleSearchSelect(result)}
+                    title={result.path}
+                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${index !== searchResults.length - 1
+                        ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                        : ''
+                      }`}
+                  >
+                    <img
+                      src={result.isFile ? FileIcon : FolderIcon}
+                      alt={
+                        result.isFile
+                          ? t('settings.sources.fileAlt')
+                          : t('settings.sources.folderAlt')
+                      }
+                      className="mr-2 h-4 w-4 flex-shrink-0"
+                    />
+                    <span className="text-sm dark:text-[#E0E0E0] truncate flex-1">
+                      {result.path.split('/').pop() || result.path}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -814,12 +811,12 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
 
   const handleFileSelect = (path: string) => {
     const pathParts = path.split('/');
-      const fileName = pathParts.pop() || '';
-      setCurrentPath(pathParts);
-      setSelectedFile({
-        id: path,
-        name: fileName,
-      });
+    const fileName = pathParts.pop() || '';
+    setCurrentPath(pathParts);
+    setSelectedFile({
+      id: path,
+      name: fileName,
+    });
   };
 
   return (

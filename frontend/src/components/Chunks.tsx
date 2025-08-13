@@ -462,33 +462,36 @@ const Chunks: React.FC<ChunksProps> = ({
         </div>
 
         {fileSearchQuery && (
-          <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-y-auto rounded-b-[6px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023]">
-            {fileSearchResults.length === 0 ? (
-              <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
-                {t('settings.sources.noResults')}
-              </div>
-            ) : (
-              fileSearchResults.map((result, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleSearchResultClick(result)}
-                  className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
-                    index !== fileSearchResults.length - 1
-                      ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
-                      : ''
-                  }`}
-                >
-                  <img
-                    src={result.isFile ? FileIcon : FolderIcon}
-                    alt={result.isFile ? 'File' : 'Folder'}
-                    className="mr-2 h-4 w-4 flex-shrink-0"
-                  />
-                  <span className="text-sm dark:text-[#E0E0E0]">
-                    {result.path.split('/').pop() || result.path}
-                  </span>
+          <div className="absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[6px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023]">
+            <div className="max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden">
+              {fileSearchResults.length === 0 ? (
+                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                  {t('settings.sources.noResults')}
                 </div>
-              ))
-            )}
+              ) : (
+                fileSearchResults.map((result, index) => (
+                  <div
+                    key={index}
+                    title={result.path}
+                    onClick={() => handleSearchResultClick(result)}
+                    className={`flex cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                      index !== fileSearchResults.length - 1
+                        ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                        : ''
+                    }`}
+                  >
+                    <img
+                      src={result.isFile ? FileIcon : FolderIcon}
+                      alt={result.isFile ? 'File' : 'Folder'}
+                      className="mr-2 h-4 w-4 flex-shrink-0"
+                    />
+                    <span className="text-sm dark:text-[#E0E0E0] truncate">
+                      {result.path.split('/').pop() || result.path}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
