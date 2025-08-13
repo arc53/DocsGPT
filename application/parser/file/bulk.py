@@ -15,6 +15,7 @@ from application.parser.file.json_parser import JSONParser
 from application.parser.file.pptx_parser import PPTXParser
 from application.parser.file.image_parser import ImageParser
 from application.parser.schema.base import Document
+from application.utils import num_tokens_from_string
 
 DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
     ".pdf": PDFParser(),
@@ -141,11 +142,12 @@ class SimpleDirectoryReader(BaseReader):
 
         Returns:
             List[Document]: A list of documents.
-
         """
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
+        self.file_token_counts = {}
+        
         for input_file in self.input_files:
             if input_file.suffix in self.file_extractor:
                 parser = self.file_extractor[input_file.suffix]
@@ -156,24 +158,48 @@ class SimpleDirectoryReader(BaseReader):
                 # do standard read
                 with open(input_file, "r", errors=self.errors) as f:
                     data = f.read()
-            # Prepare metadata for this file
-            if self.file_metadata is not None:
-                file_metadata = self.file_metadata(input_file.name)
+            
+            # Calculate token count for this file
+            if isinstance(data, List):
+                file_tokens = sum(num_tokens_from_string(str(d)) for d in data)
             else:
-                # Provide a default empty metadata
-                file_metadata = {'title': '', 'store': ''}
-                # TODO: Find a case with no metadata and check if breaks anything 
+                file_tokens = num_tokens_from_string(str(data))
+            
+            full_path = str(input_file.resolve())
+            self.file_token_counts[full_path] = file_tokens
+            
+            base_metadata = {
+                'title': input_file.name,
+                'token_count': file_tokens,
+            }
+            
+            if hasattr(self, 'input_dir'):
+                try:
+                    relative_path = str(input_file.relative_to(self.input_dir))
+                    base_metadata['source'] = relative_path
+                except ValueError:
+                    base_metadata['source'] = str(input_file)
+            else:
+                base_metadata['source'] = str(input_file)
+
+            if self.file_metadata is not None:
+                custom_metadata = self.file_metadata(input_file.name)
+                base_metadata.update(custom_metadata)
 
             if isinstance(data, List):
                 # Extend data_list with each item in the data list
                 data_list.extend([str(d) for d in data])
-                # For each item in the data list, add the file's metadata to metadata_list
-                metadata_list.extend([file_metadata for _ in data])
+                metadata_list.extend([base_metadata for _ in data])
             else:
-                # Add the single piece of data to data_list
                 data_list.append(str(data))
-                # Add the file's metadata to metadata_list
-                metadata_list.append(file_metadata)
+                metadata_list.append(base_metadata)
+        
+        # Build directory structure if input_dir is provided
+        if hasattr(self, 'input_dir'):
+            self.directory_structure = self.build_directory_structure(self.input_dir)
+            logging.info("Directory structure built successfully")
+        else:
+            self.directory_structure = {}
 
         if concatenate:
             return [Document("\n".join(data_list))]
@@ -181,3 +207,48 @@ class SimpleDirectoryReader(BaseReader):
             return [Document(d, extra_info=m) for d, m in zip(data_list, metadata_list)]
         else:
             return [Document(d) for d in data_list]
+
+    def build_directory_structure(self, base_path):
+        """Build a dictionary representing the directory structure.
+
+        Args:
+            base_path: The base path to start building the structure from.
+
+        Returns:
+            dict: A nested dictionary representing the directory structure.
+        """
+        import mimetypes
+        
+        def build_tree(path):
+            """Helper function to recursively build the directory tree."""
+            result = {}
+            
+            for item in path.iterdir():
+                if self.exclude_hidden and item.name.startswith('.'):
+                    continue
+                    
+                if item.is_dir():
+                    subtree = build_tree(item)
+                    if subtree:
+                        result[item.name] = subtree
+                else:
+                    if self.required_exts is not None and item.suffix not in self.required_exts:
+                        continue
+                    
+                    full_path = str(item.resolve())
+                    file_size_bytes = item.stat().st_size
+                    mime_type = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
+                    
+                    file_info = {
+                        "type": mime_type,
+                        "size_bytes": file_size_bytes
+                    }
+                    
+                    if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:
+                        file_info["token_count"] = self.file_token_counts[full_path]
+                        
+                    result[item.name] = file_info
+                    
+            return result
+        
+        return build_tree(Path(base_path))

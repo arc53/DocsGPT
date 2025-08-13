@@ -8,7 +8,9 @@ interface SkeletonLoaderProps {
     | 'logs'
     | 'table'
     | 'chatbot'
-    | 'dropdown';
+    | 'dropdown'
+    | 'chunkCards'
+    | 'sourceCards';
 }
 
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
@@ -182,6 +184,62 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
+  const renderChunkCards = () => (
+    <>
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={`chunk-skel-${index}`}
+          className="relative flex h-[197px] flex-col rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A] overflow-hidden w-full max-w-[487px] animate-pulse"
+        >
+          <div className="w-full">
+            <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] dark:bg-[#27282D] dark:border-[#6A6A6A] px-4 py-3">
+              <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-20"></div>
+            </div>
+            <div className="px-4 pt-4 pb-6 space-y-3">
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-11/12"></div>
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-5/6"></div>
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-4/5"></div>
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-2/3"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
+  const renderSourceCards = () => (
+    <>
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={`source-skel-${idx}`}
+          className="flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] dark:bg-[#383838] p-3 animate-pulse"
+        >
+          <div className="w-full flex-1">
+            <div className="flex w-full items-center justify-between gap-2">
+              <div className="flex-1">
+                <div className="h-[13px] w-full rounded bg-gray-200 dark:bg-gray-700"></div>
+              </div>
+              <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-start justify-start gap-1 pt-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-3 h-3 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-[12px] w-20 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-[12px] w-16 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
   const componentMap = {
     table: renderTable,
     chatbot: renderChatbot,
@@ -189,7 +247,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     logs: renderLogs,
     default: renderDefault,
     analysis: renderAnalysis,
+    chunkCards: renderChunkCards,
+    sourceCards: renderSourceCards,
   };
+
 
   const render = componentMap[component] || componentMap.default;
 

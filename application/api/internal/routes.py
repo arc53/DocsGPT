@@ -1,5 +1,6 @@
 import os
 import datetime
+import json
 from flask import Blueprint, request, send_from_directory
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
@@ -48,7 +49,17 @@ def upload_index_files():
     remote_data = request.form["remote_data"] if "remote_data" in request.form else None
     sync_frequency = request.form["sync_frequency"] if "sync_frequency" in request.form else None
     
-    original_file_path = request.form.get("original_file_path")
+    file_path = request.form.get("file_path")
+    directory_structure = request.form.get("directory_structure")
+    
+    if directory_structure:
+        try:
+            directory_structure = json.loads(directory_structure)
+        except Exception:
+            logger.error("Error parsing directory_structure")
+            directory_structure = {}
+    else:
+        directory_structure = {}
 
     storage = StorageCreator.get_storage()
     index_base_path = f"indexes/{id}"
@@ -66,10 +77,13 @@ def upload_index_files():
         file_pkl = request.files["file_pkl"]
         if file_pkl.filename == "":
             return {"status": "no file name"}
-        
+
         # Save index files to storage
-        storage.save_file(file_faiss, f"{index_base_path}/index.faiss")
-        storage.save_file(file_pkl, f"{index_base_path}/index.pkl")
+        faiss_storage_path = f"{index_base_path}/index.faiss"
+        pkl_storage_path = f"{index_base_path}/index.pkl"
+        storage.save_file(file_faiss, faiss_storage_path)
+        storage.save_file(file_pkl, pkl_storage_path)
+
 
     existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
     if existing_entry:
@@ -87,7 +101,8 @@ def upload_index_files():
                     "retriever": retriever,
                     "remote_data": remote_data,
                     "sync_frequency": sync_frequency,
-                    "file_path": original_file_path,
+                    "file_path": file_path,
+                    "directory_structure": directory_structure,
                 }
             },
         )
@@ -105,7 +120,8 @@ def upload_index_files():
                 "retriever": retriever,
                 "remote_data": remote_data,
                 "sync_frequency": sync_frequency,
-                "file_path": original_file_path,
+                "file_path": file_path,
+                "directory_structure": directory_structure,
             }
         )
     return {"status": "ok"}

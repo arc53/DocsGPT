@@ -86,8 +86,10 @@ const userService = {
     page: number,
     perPage: number,
     token: string | null,
+    path?: string,
+    search?: string,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage), token),
+    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search), token),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (
@@ -98,6 +100,10 @@ const userService = {
     apiClient.delete(endpoints.USER.DELETE_CHUNK(docId, chunkId), token),
   updateChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
+  getDirectoryStructure: (docId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
+  manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
+    apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
 };
 
 export default userService;
