@@ -51,6 +51,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     tools: [],
     agent_type: '',
     status: '',
+    json_schema: undefined,
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [prompts, setPrompts] = useState<
@@ -72,6 +73,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [jsonSchemaText, setJsonSchemaText] = useState('');
+  const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
+  const [isJsonSchemaExpanded, setIsJsonSchemaExpanded] = useState(false);
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -113,9 +117,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   ];
 
   const isPublishable = () => {
-    return (
-      agent.name && agent.description && agent.prompt_id && agent.agent_type
-    );
+    const hasRequiredFields =
+      agent.name && agent.description && agent.prompt_id && agent.agent_type;
+    const isJsonSchemaValidOrEmpty =
+      jsonSchemaText.trim() === '' || jsonSchemaValid;
+    return hasRequiredFields && isJsonSchemaValidOrEmpty;
+  };
+
+  const isJsonSchemaInvalid = () => {
+    return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -152,6 +162,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.tools && agent.tools.length > 0)
       formData.append('tools', JSON.stringify(agent.tools));
     else formData.append('tools', '[]');
+
+    if (agent.json_schema) {
+      formData.append('json_schema', JSON.stringify(agent.json_schema));
+    }
 
     try {
       setDraftLoading(true);
@@ -194,6 +208,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('tools', JSON.stringify(agent.tools));
     else formData.append('tools', '[]');
 
+    if (agent.json_schema) {
+      formData.append('json_schema', JSON.stringify(agent.json_schema));
+    }
+
     try {
       setPublishLoading(true);
       const response =
@@ -223,6 +241,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       throw new Error('Failed to publish agent');
     } finally {
       setPublishLoading(false);
+    }
+  };
+
+  const validateAndSetJsonSchema = (text: string) => {
+    setJsonSchemaText(text);
+    if (text.trim() === '') {
+      setAgent({ ...agent, json_schema: undefined });
+      setJsonSchemaValid(true);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      setAgent({ ...agent, json_schema: parsed });
+      setJsonSchemaValid(true);
+    } catch (error) {
+      setJsonSchemaValid(false);
     }
   };
 
@@ -264,6 +298,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setSelectedSourceIds(new Set([data.retriever]));
         if (data.tools) setSelectedToolIds(new Set(data.tools));
         if (data.status === 'draft') setEffectiveMode('draft');
+        if (data.json_schema) {
+          const jsonText = JSON.stringify(data.json_schema, null, 2);
+          setJsonSchemaText(jsonText);
+          setJsonSchemaValid(true);
+        }
         setAgent(data);
         initialAgentRef.current = data;
       };
@@ -317,10 +356,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setHasChanges(false);
       return;
     }
+
+    const initialJsonSchemaText = initialAgentRef.current.json_schema
+      ? JSON.stringify(initialAgentRef.current.json_schema, null, 2)
+      : '';
+
     const isChanged =
-      !isEqual(agent, initialAgentRef.current) || imageFile !== null;
+      !isEqual(agent, initialAgentRef.current) ||
+      imageFile !== null ||
+      jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile]);
+  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
   return (
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
@@ -356,7 +402,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
             <button
-              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-28 rounded-3xl border border-solid py-2 text-sm font-medium transition-colors hover:text-white"
+              disabled={isJsonSchemaInvalid()}
+              className={`border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-28 rounded-3xl border border-solid py-2 text-sm font-medium transition-colors hover:text-white ${
+                isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
+              }`}
               onClick={handleSaveDraft}
             >
               <span className="flex items-center justify-center transition-all duration-200">
@@ -601,6 +650,78 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 contentSize="text-sm"
               />
             </div>
+          </div>
+          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+            <button
+              onClick={() => setIsJsonSchemaExpanded(!isJsonSchemaExpanded)}
+              className="flex w-full items-center justify-between text-left focus:outline-none"
+            >
+              <div>
+                <h2 className="text-lg font-semibold">Advanced</h2>
+              </div>
+              <div className="ml-4 flex items-center">
+                <svg
+                  className={`h-5 w-5 transform transition-transform duration-200 ${
+                    isJsonSchemaExpanded ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+            </button>
+            {isJsonSchemaExpanded && (
+              <div className="mt-3">
+                <div>
+                  <h2 className="text-sm font-medium">JSON response schema</h2>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                    Define a JSON schema to enforce structured output format
+                  </p>
+                </div>
+                <textarea
+                  value={jsonSchemaText}
+                  onChange={(e) => validateAndSetJsonSchema(e.target.value)}
+                  placeholder={`{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "email": {"type": "string"}
+  },
+  "required": ["name", "email"],
+  "additionalProperties": false
+}`}
+                  rows={9}
+                  className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray mt-2 w-full rounded-2xl border bg-white px-4 py-3 font-mono text-sm outline-hidden dark:border-[#7E7E7E]`}
+                />
+                {jsonSchemaText.trim() !== '' && (
+                  <div
+                    className={`mt-2 flex items-center gap-2 text-sm ${
+                      jsonSchemaValid
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    }`}
+                  >
+                    <span
+                      className={`h-4 w-4 bg-contain bg-center bg-no-repeat ${
+                        jsonSchemaValid
+                          ? "bg-[url('/src/assets/circle-check.svg')]"
+                          : "bg-[url('/src/assets/circle-x.svg')]"
+                      }`}
+                    />
+                    {jsonSchemaValid
+                      ? 'Valid JSON'
+                      : 'Invalid JSON - fix to enable saving'}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="col-span-3 flex flex-col gap-3 rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">

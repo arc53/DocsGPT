@@ -79,12 +79,20 @@ class BaseAnswerResource:
         """
         try:
             response_full, thought, source_log_docs, tool_calls = "", "", [], []
+            is_structured = False
+            schema_info = None
+            structured_chunks = []
 
             for line in agent.gen(query=question, retriever=retriever):
                 if "answer" in line:
                     response_full += str(line["answer"])
-                    data = json.dumps({"type": "answer", "answer": line["answer"]})
-                    yield f"data: {data}\n\n"
+                    if line.get("structured"):
+                        is_structured = True
+                        schema_info = line.get("schema")
+                        structured_chunks.append(line["answer"])
+                    else:
+                        data = json.dumps({"type": "answer", "answer": line["answer"]})
+                        yield f"data: {data}\n\n"
                 elif "sources" in line:
                     truncated_sources = []
                     source_log_docs = line["sources"]
@@ -109,6 +117,17 @@ class BaseAnswerResource:
                 elif "type" in line:
                     data = json.dumps(line)
                     yield f"data: {data}\n\n"
+
+            if is_structured and structured_chunks:
+                structured_data = {
+                    "type": "structured_answer",
+                    "answer": response_full,
+                    "structured": True,
+                    "schema": schema_info,
+                }
+                data = json.dumps(structured_data)
+                yield f"data: {data}\n\n"
+
             if isNoneDoc:
                 for doc in source_log_docs:
                     doc["source"] = "None"
@@ -139,28 +158,28 @@ class BaseAnswerResource:
                 )
             else:
                 conversation_id = None
-            # Send conversation ID
-
-            data = json.dumps({"type": "id", "id": str(conversation_id)})
+            id_data = {"type": "id", "id": str(conversation_id)}
+            data = json.dumps(id_data)
             yield f"data: {data}\n\n"
 
-            # Log the interaction
-
             retriever_params = retriever.get_params()
-            self.user_logs_collection.insert_one(
-                {
-                    "action": "stream_answer",
-                    "level": "info",
-                    "user": decoded_token.get("sub"),
-                    "api_key": user_api_key,
-                    "question": question,
-                    "response": response_full,
-                    "sources": source_log_docs,
-                    "retriever_params": retriever_params,
-                    "attachments": attachment_ids,
-                    "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                }
-            )
+            log_data = {
+                "action": "stream_answer",
+                "level": "info",
+                "user": decoded_token.get("sub"),
+                "api_key": user_api_key,
+                "question": question,
+                "response": response_full,
+                "sources": source_log_docs,
+                "retriever_params": retriever_params,
+                "attachments": attachment_ids,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
+            if is_structured:
+                log_data["structured_output"] = True
+                if schema_info:
+                    log_data["schema"] = schema_info
+            self.user_logs_collection.insert_one(log_data)
 
             # End of stream
 
@@ -185,6 +204,8 @@ class BaseAnswerResource:
         tool_calls = []
         thought = ""
         stream_ended = False
+        is_structured = False
+        schema_info = None
 
         for line in stream:
             try:
@@ -195,6 +216,10 @@ class BaseAnswerResource:
                     conversation_id = event["id"]
                 elif event["type"] == "answer":
                     response_full += event["answer"]
+                elif event["type"] == "structured_answer":
+                    response_full = event["answer"]
+                    is_structured = True
+                    schema_info = event.get("schema")
                 elif event["type"] == "source":
                     source_log_docs = event["source"]
                 elif event["type"] == "tool_calls":
@@ -212,7 +237,8 @@ class BaseAnswerResource:
         if not stream_ended:
             logger.error("Stream ended unexpectedly without an 'end' event.")
             return None, None, None, None, "Stream ended unexpectedly"
-        return (
+
+        result = (
             conversation_id,
             response_full,
             source_log_docs,
@@ -220,6 +246,11 @@ class BaseAnswerResource:
             thought,
             None,
         )
+
+        if is_structured:
+            result = result + ({"structured": True, "schema": schema_info},)
+
+        return result
 
     def error_stream_generate(self, err_response):
         data = json.dumps({"type": "error", "error": err_response})

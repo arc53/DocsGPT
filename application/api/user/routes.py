@@ -1127,6 +1127,7 @@ class GetAgent(Resource):
                 "tool_details": resolve_tool_details(agent.get("tools", [])),
                 "agent_type": agent.get("agent_type", ""),
                 "status": agent.get("status", ""),
+                "json_schema": agent.get("json_schema"),
                 "created_at": agent.get("createdAt", ""),
                 "updated_at": agent.get("updatedAt", ""),
                 "last_used_at": agent.get("lastUsedAt", ""),
@@ -1181,6 +1182,7 @@ class GetAgents(Resource):
                     "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
+                    "json_schema": agent.get("json_schema"),
                     "created_at": agent.get("createdAt", ""),
                     "updated_at": agent.get("updatedAt", ""),
                     "last_used_at": agent.get("lastUsedAt", ""),
@@ -1226,6 +1228,9 @@ class CreateAgent(Resource):
             "status": fields.String(
                 required=True, description="Status of the agent (draft or published)"
             ),
+            "json_schema": fields.Raw(
+                required=False, description="JSON schema for enforcing structured output format"
+            ),
         },
     )
 
@@ -1244,7 +1249,35 @@ class CreateAgent(Resource):
                     data["tools"] = json.loads(data["tools"])
                 except json.JSONDecodeError:
                     data["tools"] = []
+            if "json_schema" in data:
+                try:
+                    data["json_schema"] = json.loads(data["json_schema"])
+                except json.JSONDecodeError:
+                    data["json_schema"] = None
         print(f"Received data: {data}")
+        
+        # Validate JSON schema if provided
+        if data.get("json_schema"):
+            try:
+                # Basic validation - ensure it's a valid JSON structure
+                json_schema = data.get("json_schema")
+                if not isinstance(json_schema, dict):
+                    return make_response(
+                        jsonify({"success": False, "message": "JSON schema must be a valid JSON object"}), 
+                        400
+                    )
+                
+                # Validate that it has either a 'schema' property or is itself a schema
+                if "schema" not in json_schema and "type" not in json_schema:
+                    return make_response(
+                        jsonify({"success": False, "message": "JSON schema must contain either a 'schema' property or be a valid JSON schema with 'type' property"}), 
+                        400
+                    )
+            except Exception as e:
+                return make_response(
+                    jsonify({"success": False, "message": f"Invalid JSON schema: {str(e)}"}), 
+                    400
+                )
 
         if data.get("status") not in ["draft", "published"]:
             return make_response(
@@ -1302,6 +1335,7 @@ class CreateAgent(Resource):
                 "tools": data.get("tools", []),
                 "agent_type": data.get("agent_type", ""),
                 "status": data.get("status"),
+                "json_schema": data.get("json_schema"),
                 "createdAt": datetime.datetime.now(datetime.timezone.utc),
                 "updatedAt": datetime.datetime.now(datetime.timezone.utc),
                 "lastUsedAt": None,
@@ -1342,6 +1376,9 @@ class UpdateAgent(Resource):
             "status": fields.String(
                 required=True, description="Status of the agent (draft or published)"
             ),
+            "json_schema": fields.Raw(
+                required=False, description="JSON schema for enforcing structured output format"
+            ),
         },
     )
 
@@ -1360,6 +1397,11 @@ class UpdateAgent(Resource):
                     data["tools"] = json.loads(data["tools"])
                 except json.JSONDecodeError:
                     data["tools"] = []
+            if "json_schema" in data:
+                try:
+                    data["json_schema"] = json.loads(data["json_schema"])
+                except json.JSONDecodeError:
+                    data["json_schema"] = None
 
         if not ObjectId.is_valid(agent_id):
             return make_response(
@@ -1405,6 +1447,7 @@ class UpdateAgent(Resource):
             "tools",
             "agent_type",
             "status",
+            "json_schema",
         ]
 
         for field in allowed_fields:
@@ -1797,6 +1840,7 @@ class SharedAgent(Resource):
                 "tool_details": resolve_tool_details(shared_agent.get("tools", [])),
                 "agent_type": shared_agent.get("agent_type", ""),
                 "status": shared_agent.get("status", ""),
+                "json_schema": shared_agent.get("json_schema"),
                 "created_at": shared_agent.get("createdAt", ""),
                 "updated_at": shared_agent.get("updatedAt", ""),
                 "shared": shared_agent.get("shared_publicly", False),
@@ -1874,6 +1918,7 @@ class SharedAgents(Resource):
                     "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
+                    "json_schema": agent.get("json_schema"),
                     "created_at": agent.get("createdAt", ""),
                     "updated_at": agent.get("updatedAt", ""),
                     "pinned": str(agent["_id"]) in pinned_ids,

@@ -28,6 +28,7 @@ class BaseAgent(ABC):
         chat_history: Optional[List[Dict]] = None,
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
+        json_schema: Optional[Dict] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -51,6 +52,7 @@ class BaseAgent(ABC):
             llm_name if llm_name else "default"
         )
         self.attachments = attachments or []
+        self.json_schema = json_schema
 
     @log_activity()
     def gen(
@@ -283,6 +285,21 @@ class BaseAgent(ABC):
             and self.tools
         ):
             gen_kwargs["tools"] = self.tools
+
+        if (
+            self.json_schema
+            and hasattr(self.llm, "_supports_structured_output")
+            and self.llm._supports_structured_output()
+        ):
+            structured_format = self.llm.prepare_structured_output_format(
+                self.json_schema
+            )
+            if structured_format:
+                if self.llm_name == "openai":
+                    gen_kwargs["response_format"] = structured_format
+                elif self.llm_name == "google":
+                    gen_kwargs["response_schema"] = structured_format
+
         resp = self.llm.gen_stream(**gen_kwargs)
 
         if log_context:
@@ -307,11 +324,25 @@ class BaseAgent(ABC):
         return resp
 
     def _handle_response(self, response, tools_dict, messages, log_context):
+        is_structured_output = (
+            self.json_schema is not None
+            and hasattr(self.llm, "_supports_structured_output")
+            and self.llm._supports_structured_output()
+        )
+
         if isinstance(response, str):
-            yield {"answer": response}
+            answer_data = {"answer": response}
+            if is_structured_output:
+                answer_data["structured"] = True
+                answer_data["schema"] = self.json_schema
+            yield answer_data
             return
         if hasattr(response, "message") and getattr(response.message, "content", None):
-            yield {"answer": response.message.content}
+            answer_data = {"answer": response.message.content}
+            if is_structured_output:
+                answer_data["structured"] = True
+                answer_data["schema"] = self.json_schema
+            yield answer_data
             return
         processed_response_gen = self._llm_handler(
             response, tools_dict, messages, log_context, self.attachments
@@ -319,8 +350,16 @@ class BaseAgent(ABC):
 
         for event in processed_response_gen:
             if isinstance(event, str):
-                yield {"answer": event}
+                answer_data = {"answer": event}
+                if is_structured_output:
+                    answer_data["structured"] = True
+                    answer_data["schema"] = self.json_schema
+                yield answer_data
             elif hasattr(event, "message") and getattr(event.message, "content", None):
-                yield {"answer": event.message.content}
+                answer_data = {"answer": event.message.content}
+                if is_structured_output:
+                    answer_data["structured"] = True
+                    answer_data["schema"] = self.json_schema
+                yield answer_data
             elif isinstance(event, dict) and "type" in event:
                 yield event
