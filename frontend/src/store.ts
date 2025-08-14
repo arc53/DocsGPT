@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import agentPreviewReducer from './agents/agentPreviewSlice';
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import {
@@ -8,7 +9,6 @@ import {
   prefSlice,
 } from './preferences/preferenceSlice';
 import uploadReducer from './upload/uploadSlice';
-import agentPreviewReducer from './agents/agentPreviewSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
 const prompt = localStorage.getItem('DocsGPTPrompt');
@@ -43,6 +43,7 @@ const preloadedState: { preference: Preference } = {
     ],
     modalState: 'INACTIVE',
     paginatedDocuments: null,
+    templateAgents: null,
     agents: null,
     sharedAgents: null,
     selectedAgent: null,
