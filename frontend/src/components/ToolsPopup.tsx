@@ -207,7 +207,7 @@ export default function ToolsPopup({
                     </div>
                     <div className="flex shrink-0 items-center">
                       <div
-                        className={`flex h-4 w-4 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                        className={`flex h-4 w-4 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
                       >
                         {tool.status && (
                           <img
