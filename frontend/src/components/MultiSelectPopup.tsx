@@ -248,7 +248,7 @@ export default function MultiSelectPopup({
                     </div>
                     <div className="shrink-0">
                       <div
-                        className={`dark:bg-charleston-green-2 flex h-4 w-4 items-center justify-center rounded-xs border border-[#C6C6C6] bg-white dark:border-[#757783]`}
+                        className={`dark:bg-charleston-green-2 flex h-4 w-4 items-center justify-center rounded-xs border-2 border-[#C6C6C6] bg-white dark:border-[#757783]`}
                         aria-hidden="true"
                       >
                         {isSelected && (
