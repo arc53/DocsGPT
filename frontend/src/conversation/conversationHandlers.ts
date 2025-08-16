@@ -7,7 +7,7 @@ export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
   token: string | null,
-  selectedDocs: Doc | null,
+  selectedDocs: Doc | Doc[] | null,
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -52,10 +52,17 @@ export function handleFetchAnswer(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs && 'id' in selectedDocs) {
-    payload.active_docs = selectedDocs.id as string;
+  if (selectedDocs) {
+    if (Array.isArray(selectedDocs)) {
+      // Handle multiple documents
+      payload.active_docs = selectedDocs.map(doc => doc.id).join(',');
+      payload.retriever = selectedDocs[0]?.retriever as string;
+    } else if ('id' in selectedDocs) {
+      // Handle single document (backward compatibility)
+      payload.active_docs = selectedDocs.id as string;
+      payload.retriever = selectedDocs.retriever as string;
+    }
   }
-  payload.retriever = selectedDocs?.retriever as string;
   return conversationService
     .answer(payload, token, signal)
     .then((response) => {
@@ -84,7 +91,7 @@ export function handleFetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
   token: string | null,
-  selectedDocs: Doc | null,
+  selectedDocs: Doc | Doc[] | null,
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -112,10 +119,17 @@ export function handleFetchAnswerSteaming(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs && 'id' in selectedDocs) {
-    payload.active_docs = selectedDocs.id as string;
+  if (selectedDocs) {
+    if (Array.isArray(selectedDocs)) {
+      // Handle multiple documents
+      payload.active_docs = selectedDocs.map(doc => doc.id).join(',');
+      payload.retriever = selectedDocs[0]?.retriever as string;
+    } else if ('id' in selectedDocs) {
+      // Handle single document (backward compatibility)
+      payload.active_docs = selectedDocs.id as string;
+      payload.retriever = selectedDocs.retriever as string;
+    }
   }
-  payload.retriever = selectedDocs?.retriever as string;
 
   return new Promise<Answer>((resolve, reject) => {
     conversationService
@@ -171,7 +185,7 @@ export function handleFetchAnswerSteaming(
 export function handleSearch(
   question: string,
   token: string | null,
-  selectedDocs: Doc | null,
+  selectedDocs: Doc | Doc[] | null,
   conversation_id: string | null,
   chunks: string,
   token_limit: number,
@@ -183,9 +197,17 @@ export function handleSearch(
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
   };
-  if (selectedDocs && 'id' in selectedDocs)
-    payload.active_docs = selectedDocs.id as string;
-  payload.retriever = selectedDocs?.retriever as string;
+  if (selectedDocs) {
+    if (Array.isArray(selectedDocs)) {
+      // Handle multiple documents
+      payload.active_docs = selectedDocs.map(doc => doc.id).join(',');
+      payload.retriever = selectedDocs[0]?.retriever as string;
+    } else if ('id' in selectedDocs) {
+      // Handle single document (backward compatibility)
+      payload.active_docs = selectedDocs.id as string;
+      payload.retriever = selectedDocs.retriever as string;
+    }
+  }
   return conversationService
     .search(payload, token)
     .then((response) => response.json())

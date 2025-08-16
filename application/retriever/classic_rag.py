@@ -20,7 +20,7 @@ class ClassicRAG(BaseRetriever):
         api_key=settings.API_KEY,
         decoded_token=None,
     ):
-        self.original_question = ""
+        self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
         self.prompt = prompt
         self.chunks = chunks
@@ -44,7 +44,18 @@ class ClassicRAG(BaseRetriever):
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
         )
-        self.vectorstore = source["active_docs"] if "active_docs" in source else None
+        if "active_docs" in source:
+            if isinstance(source["active_docs"], list):
+                self.vectorstores = source["active_docs"]
+            elif isinstance(source["active_docs"], str) and "," in source["active_docs"]:
+                # ✅ split multiple IDs from comma string
+                self.vectorstores = [doc_id.strip() for doc_id in source["active_docs"].split(",") if doc_id.strip()]
+            else:
+                self.vectorstores = [source["active_docs"]]
+        else:
+            self.vectorstores = []
+
+        self.vectorstore = None
         self.question = self._rephrase_query()
         self.decoded_token = decoded_token
 
@@ -79,29 +90,30 @@ class ClassicRAG(BaseRetriever):
             return self.original_question
 
     def _get_data(self):
-        if self.chunks == 0 or self.vectorstore is None:
-            docs = []
-        else:
-            docsearch = VectorCreator.create_vectorstore(
-                settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
-            )
-            docs_temp = docsearch.search(self.question, k=self.chunks)
-            docs = [
-                {
-                    "title": i.metadata.get(
-                        "title", i.metadata.get("post_title", i.page_content)
-                    ).split("/")[-1],
-                    "text": i.page_content,
-                    "source": (
-                        i.metadata.get("source")
-                        if i.metadata.get("source")
-                        else "local"
-                    ),
-                }
-                for i in docs_temp
-            ]
+        if self.chunks == 0 or not self.vectorstores:
+            return []
 
-        return docs
+        all_docs = []
+        chunks_per_source = max(1, self.chunks // len(self.vectorstores))
+
+        for vectorstore in self.vectorstores:
+            if vectorstore:
+                try:
+                    docsearch = VectorCreator.create_vectorstore(
+                        settings.VECTOR_STORE, vectorstore, settings.EMBEDDINGS_KEY
+                    )
+                    docs_temp = docsearch.search(self.question, k=chunks_per_source)
+                    for i in docs_temp:
+                        all_docs.append({
+                            "title": i.metadata.get("title", i.metadata.get("post_title", i.page_content)).split("/")[-1],
+                            "text": i.page_content,
+                            "source": i.metadata.get("source") or vectorstore,
+                        })
+                except Exception as e:
+                    logging.error(f"Error searching vectorstore {vectorstore}: {e}")
+                    continue
+
+        return all_docs
 
     def gen():
         pass
@@ -116,7 +128,7 @@ class ClassicRAG(BaseRetriever):
         return {
             "question": self.original_question,
             "rephrased_question": self.question,
-            "source": self.vectorstore,
+            "sources": self.vectorstores,
             "chunks": self.chunks,
             "token_limit": self.token_limit,
             "gpt_model": self.gpt_model,
