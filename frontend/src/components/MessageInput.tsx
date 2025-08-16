@@ -368,8 +368,8 @@ export default function MessageInput({
                 className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 sm:max-w-[150px] dark:hover:bg-[#2C2E3C]"
                 onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
                 title={
-                  selectedDocs
-                    ? selectedDocs.name
+                  selectedDocs && selectedDocs.length > 0
+                    ? selectedDocs.map(doc => doc.name).join(', ')
                     : t('conversation.sources.title')
                 }
               >
@@ -379,8 +379,10 @@ export default function MessageInput({
                   className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
                 />
                 <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
-                  {selectedDocs
-                    ? selectedDocs.name
+                  {selectedDocs && selectedDocs.length > 0
+                    ? selectedDocs.length === 1 
+                      ? selectedDocs[0].name
+                      : `${selectedDocs.length} sources selected`
                     : t('conversation.sources.title')}
                 </span>
                 {!isTouch && (

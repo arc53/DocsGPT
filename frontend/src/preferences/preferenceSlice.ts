@@ -15,7 +15,7 @@ export interface Preference {
   prompt: { name: string; id: string; type: string };
   chunks: string;
   token_limit: number;
-  selectedDocs: Doc | null;
+  selectedDocs: Doc[] | null;
   sourceDocs: Doc[] | null;
   conversations: {
     data: { name: string; id: string }[] | null;
@@ -34,7 +34,7 @@ const initialState: Preference = {
   prompt: { name: 'default', id: 'default', type: 'public' },
   chunks: '2',
   token_limit: 2000,
-  selectedDocs: {
+  selectedDocs: [{
     id: 'default',
     name: 'default',
     type: 'remote',
@@ -42,7 +42,7 @@ const initialState: Preference = {
     docLink: 'default',
     model: 'openai_text-embedding-ada-002',
     retriever: 'classic',
-  } as Doc,
+  }] as Doc[],
   sourceDocs: null,
   conversations: {
     data: null,
