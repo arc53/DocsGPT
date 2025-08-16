@@ -25,6 +25,20 @@
 <br>
 
 </div>
+
+<div align="center">
+  <!-- Keep these links. Translations will automatically update with the README. -->
+  <a href="https://zdoc.app/de/arc53/DocsGPT">Deutsch</a> | 
+  <a href="https://zdoc.app/es/arc53/DocsGPT">Español</a> | 
+  <a href="https://zdoc.app/fr/arc53/DocsGPT">français</a> | 
+  <a href="https://zdoc.app/ja/arc53/DocsGPT">日本語</a> | 
+  <a href="https://zdoc.app/ko/arc53/DocsGPT">한국어</a> | 
+  <a href="https://zdoc.app/pt/arc53/DocsGPT">Português</a> | 
+  <a href="https://zdoc.app/ru/arc53/DocsGPT">Русский</a> | 
+  <a href="https://zdoc.app/zh/arc53/DocsGPT">中文</a>
+</div>
+<br>
+
 <div align="center">
 <img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov7.gif" alt="video-example-of-docs-gpt" width="800" height="450">
 </div>
