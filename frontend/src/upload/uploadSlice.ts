@@ -63,7 +63,11 @@ export const {
 } = uploadSlice.actions;
 
 export const selectAttachments = (state: RootState) => state.upload.attachments;
-export const selectCompletedAttachments = (state: RootState) =>
-  state.upload.attachments.filter((att) => att.status === 'completed');
+import { createSelector } from '@reduxjs/toolkit';
+
+export const selectCompletedAttachments = createSelector(
+  [(state: RootState) => state.upload.attachments],
+  (attachments) => attachments.filter((att) => att.status === 'completed'),
+);
 
 export default uploadSlice.reducer;
