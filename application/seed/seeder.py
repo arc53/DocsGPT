@@ -81,7 +81,9 @@ class DatabaseSeeder:
                     "name": agent_config["name"],
                     "description": agent_config["description"],
                     "image": agent_config.get("image", ""),
-                    "source": DBRef("sources", source_id) if source_id else None,
+                    "source": (
+                        DBRef("sources", ObjectId(source_id)) if source_id else None
+                    ),
                     "tools": [str(tid) for tid in tool_ids],
                     "agent_type": agent_config["agent_type"],
                     "prompt_id": agent_config.get("prompt_id", "default"),
