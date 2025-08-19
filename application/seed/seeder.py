@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import yaml
 from bson import ObjectId
@@ -24,6 +24,7 @@ class DatabaseSeeder:
         self.tools_collection = self.db["user_tools"]
         self.sources_collection = self.db["sources"]
         self.agents_collection = self.db["agents"]
+        self.prompts_collection = self.db["prompts"]
         self.system_user_id = "system"
         self.logger = logging.getLogger(__name__)
 
@@ -75,7 +76,11 @@ class DatabaseSeeder:
                     )
                 used_tool_ids.update(tool_ids)
 
-                # 3. Create Agent
+                # 3. Handle Prompt
+
+                prompt_id = self._handle_prompt(agent_config)
+
+                # 4. Create Agent
 
                 agent_data = {
                     "user": self.system_user_id,
@@ -87,7 +92,7 @@ class DatabaseSeeder:
                     ),
                     "tools": [str(tid) for tid in tool_ids],
                     "agent_type": agent_config["agent_type"],
-                    "prompt_id": agent_config.get("prompt_id", "default"),
+                    "prompt_id": prompt_id or agent_config.get("prompt_id", "default"),
                     "chunks": agent_config.get("chunks", "0"),
                     "retriever": agent_config.get("retriever", ""),
                     "status": "template",
@@ -198,6 +203,50 @@ class DatabaseSeeder:
                 self.logger.error(f"Failed to process tool {tool_name}: {str(e)}")
                 continue
         return tool_ids
+
+    def _handle_prompt(self, agent_config: Dict) -> Optional[str]:
+        """Handle prompt creation and return prompt ID"""
+        if not agent_config.get("prompt"):
+            return None
+
+        prompt_config = agent_config["prompt"]
+        prompt_name = prompt_config.get("name", f"{agent_config['name']} Prompt")
+        prompt_content = prompt_config.get("content", "")
+
+        if not prompt_content:
+            self.logger.warning(
+                f"No prompt content provided for agent {agent_config['name']}"
+            )
+            return None
+
+        self.logger.info(f"Processing prompt: {prompt_name}")
+
+        try:
+            existing = self.prompts_collection.find_one(
+                {
+                    "user": self.system_user_id,
+                    "name": prompt_name,
+                    "content": prompt_content,
+                }
+            )
+            if existing:
+                self.logger.info(f"Prompt already exists: {existing['_id']}")
+                return str(existing["_id"])
+
+            prompt_data = {
+                "name": prompt_name,
+                "content": prompt_content,
+                "user": self.system_user_id,
+            }
+
+            result = self.prompts_collection.insert_one(prompt_data)
+            prompt_id = str(result.inserted_id)
+            self.logger.info(f"Created new prompt: {prompt_id}")
+            return prompt_id
+
+        except Exception as e:
+            self.logger.error(f"Failed to process prompt {prompt_name}: {str(e)}")
+            return None
 
     def _process_config(self, config: Dict) -> Dict:
         """Process config values to replace environment variables"""
