@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False
     VECTOR_STORE: str = (
-        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
+        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "oracle"
     )
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     LANCEDB_TABLE_NAME: Optional[str] = (
         "docsgpts"  # Name of the table to use for storing vectors
     )
+
+    # ==> ADD THESE LINES FOR ORACLE DB <==
+    ORACLE_USER: Optional[str] = None
+    ORACLE_PASSWORD: Optional[str] = None
+    ORACLE_DSN: Optional[str] = None
+    ORACLE_TABLE_NAME: Optional[str] = None
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
