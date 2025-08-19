@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Union
 
 import yaml
 from bson import ObjectId
@@ -59,12 +59,13 @@ class DatabaseSeeder:
 
                 # 1. Handle Source
 
-                source_id = self._handle_source(agent_config)
-                if not source_id:
+                source_result = self._handle_source(agent_config)
+                if source_result is False:
                     self.logger.error(
                         f"Skipping agent {agent_config['name']} due to source ingestion failure"
                     )
                     continue
+                source_id = source_result
                 # 2. Handle Tools
 
                 tool_ids = self._handle_tools(agent_config)
@@ -82,7 +83,7 @@ class DatabaseSeeder:
                     "description": agent_config["description"],
                     "image": agent_config.get("image", ""),
                     "source": (
-                        DBRef("sources", ObjectId(source_id)) if source_id else None
+                        DBRef("sources", ObjectId(source_id)) if source_id else ""
                     ),
                     "tools": [str(tid) for tid in tool_ids],
                     "agent_type": agent_config["agent_type"],
@@ -117,9 +118,12 @@ class DatabaseSeeder:
                 continue
         self.logger.info("✅ Database seeding completed")
 
-    def _handle_source(self, agent_config: Dict) -> Optional[ObjectId]:
+    def _handle_source(self, agent_config: Dict) -> Union[ObjectId, None, bool]:
         """Handle source ingestion and return source ID"""
         if not agent_config.get("source"):
+            self.logger.info(
+                "No source provided for agent - will create agent without source"
+            )
             return None
         source_config = agent_config["source"]
         self.logger.info(f"Ingesting source: {source_config['url']}")
@@ -153,7 +157,7 @@ class DatabaseSeeder:
             return source_id
         except Exception as e:
             self.logger.error(f"Failed to ingest source: {str(e)}")
-            return None
+            return False
 
     def _handle_tools(self, agent_config: Dict) -> List[ObjectId]:
         """Handle tool creation and return list of tool IDs"""
@@ -163,14 +167,14 @@ class DatabaseSeeder:
         for tool_config in agent_config["tools"]:
             try:
                 tool_name = tool_config["name"]
-                tool_config = self._process_config(tool_config.get("config", {}))
+                processed_config = self._process_config(tool_config.get("config", {}))
                 self.logger.info(f"Processing tool: {tool_name}")
 
                 existing = self.tools_collection.find_one(
                     {
                         "user": self.system_user_id,
                         "name": tool_name,
-                        "config": tool_config,
+                        "config": processed_config,
                     }
                 )
                 if existing:
@@ -183,7 +187,7 @@ class DatabaseSeeder:
                     "displayName": tool_config.get("display_name", tool_name),
                     "description": tool_config.get("description", ""),
                     "actions": tool_manager.tools[tool_name].get_actions_metadata(),
-                    "config": tool_config,
+                    "config": processed_config,
                     "status": True,
                 }
 
