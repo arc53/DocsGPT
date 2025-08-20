@@ -3,11 +3,11 @@
 </h1>
 
 <p align="center">
-  <strong>Open-Source RAG Assistant</strong>
+  <strong>Private AI for agents, assistants and enterprise search</strong>
 </p>
 
 <p align="left">
-  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is an open-source genAI tool that helps users get reliable answers from any knowledge source, while avoiding hallucinations. It enables quick and reliable information retrieval, with tooling and agentic system capability built in.
+  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is an open-source AI platform for building intelligent agents and assistants. Features Agent Builder, deep research tools, document analysis (PDF, Office, web content), Multi-model support (choose your provider or run locally), and rich API connectivity for agents with actionable tools and integrations. Deploy anywhere with complete privacy control.
 </p>
 
 <div align="center">
