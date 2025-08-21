@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm
     FALLBACK_LLM_API_KEY: Optional[str] = None  # api key for fallback llm
 
+    # Google Drive integration
+    GOOGLE_CLIENT_ID: Optional[str] = None # Replace with your actual Google OAuth client ID
+    GOOGLE_CLIENT_SECRET: Optional[str] = None# Replace with your actual Google OAuth client secret
+    GOOGLE_REDIRECT_URI: Optional[str] = None
+
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
