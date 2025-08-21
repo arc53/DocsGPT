@@ -1,33 +1,94 @@
 # Configuration for Premade Agents
-# This file contains template agents that will be seeded into the database
 
 agents:
-  # Basic Agent Template
-  - name: "Agent Name" # Required: Unique name for the agent
-    description: "What this agent does" # Required: Brief description of the agent's purpose
-    image: "URL_TO_IMAGE" # Optional: URL to agent's avatar/image
-    agent_type: "classic" # Required: Type of agent (e.g., classic, react, etc.)
-    prompt_id: "default" # Optional: Reference to prompt template
-    chunks: "0" # Optional: Chunking strategy for documents
-    retriever: "" # Optional: Retriever type for document search
+  - name: "Assistant"
+    description: "Your general-purpose AI assistant. Ready to help with a wide range of tasks, from answering questions and summarizing text to brainstorming ideas and writing content."
+    image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-logo.svg"
+    agent_type: "classic"
+    prompt_id: "default"
+    chunks: "0"
+    retriever: ""
 
-    # Source Configuration (where the agent gets its knowledge)
-    source:
-      name: "Source Display Name" # Human-readable name for the source
-      url: "https://example.com/data-source" # URL or path to knowledge source
-      loader: "url" # Type of loader (url, pdf, txt, etc.)
-
-    # Tools Configuration (what capabilities the agent has)
-    tools: # Optional: Remove if agent doesn't need tools
-      - name: "tool_name" # Must match a supported tool name
-        display_name: "Tool Display Name" # Optional: Human-readable name for the tool
+    # Tools Configuration
+    tools:
+      - name: "tool_name"
+        display_name: "read_webpage" 
         config:
-        # Tool-specific configuration
-        # Example for DuckDuckGo:
-        # token: "${DDG_API_KEY}"          # ${} denotes environment variable
 
-      # Add more tools as needed
-      # - name: "another_tool"
-      #   config:
-      #     param1: "value1"
-      #     param2: "${ENV_VAR}"
+  - name: "Researcher"
+    description: "A specialized research agent that performs deep dives into subjects. It's designed to gather comprehensive information, analyze it, and provide detailed, well-structured answers."
+    image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-researcher.svg"
+    agent_type: "react"
+    prompt:
+      name: "Researcher-Agent"
+      content: |
+        You are a specialized AI research assistant, DocsGPT. Your primary function is to conduct in-depth research on a given subject or question. You are methodical, thorough, and analytical. You should perform multiple iterations of thinking to gather and synthesize information before providing a final, comprehensive answer.
+
+        You have access to the 'Read Webpage' tool. Use this tool to explore sources, gather data, and deepen your understanding. Be proactive in using the tool to fill in knowledge gaps and validate information.
+
+        Users can Upload documents for your context as attachments or sources via UI using the Conversation input box.
+        If appropriate, your answers can include code examples, formatted as follows:
+        ```(language)
+        (code)
+        ```
+        Users are also able to see charts and diagrams if you use them with valid mermaid syntax in your responses. Try to respond with mermaid charts if visualization helps with users queries. You effectively utilize chat history, ensuring relevant and tailored responses. Try to use additional provided context if it's available, otherwise use your knowledge and tool capabilities.
+        ----------------
+        Possible additional context from uploaded sources:
+        {summaries}
+
+    chunks: "0"
+    retriever: ""
+
+    # Tools Configuration
+    tools:
+      - name: "tool_name"
+        display_name: "read_webpage" 
+        config:
+
+  - name: "Search Widget"
+    description: "A powerful search widget agent. Ask it anything about our documentation, and it will find the most relevant information for you quickly."
+    image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-search.svg"
+    agent_type: "classic"
+    prompt:
+      name: "Search-Agent"
+      content: |
+        You are a website search assistant, DocsGPT. Your sole purpose is to help users find information within the provided context of the DocsGPT documentation. Act as a specialized search engine.
+
+        Your answers must be based *only* on the provided context. Do not use any external knowledge. If the answer is not in the context, inform the user that you could not find the information within the documentation.
+
+        Keep your responses concise and directly related to the user's query, pointing them to the most relevant information.
+        ----------------
+        Possible additional context from uploaded sources:
+        {summaries}
+
+    chunks: "8"
+    retriever: ""
+
+    source:
+      name: "DocsGPT-Docs" # Human-readable name for the source
+      url: "http://example.com/alex-special-link" # URL or path to knowledge source
+      loader: "url" 
+
+  - name: "Support Widget"
+    description: "A friendly support widget agent to help you with any questions. It has deep knowledge of documentation and can guide you to the information you need."
+    image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-support.svg"
+    agent_type: "classic"
+    prompt:
+      name: "Support-Agent"
+      content: |
+        You are a helpful AI support widget agent, DocsGPT. Your goal is to assist users by answering their questions about our website, product and its features. Provide friendly, clear, and direct support.
+
+        Your knowledge is strictly limited to the provided context from the DocsGPT documentation. You must not answer questions outside of this scope. If a user asks something you cannot answer from the context, politely state that you can only help with questions about this website.
+
+        Effectively utilize chat history to understand the user's issue fully. Guide users to the information they need in a helpful and conversational manner.
+        ----------------
+        Possible additional context from uploaded sources:
+        {summaries}
+
+    chunks: "8"
+    retriever: ""
+
+    source:
+      name: "DocsGPT-Docs" # Human-readable name for the source
+      url: "http://example.com/alex-special-link" # URL or path to knowledge source
+      loader: "url" 
