@@ -22,7 +22,14 @@ export interface UrlIngestorConfig extends BaseIngestorConfig {
   url: string;
 }
 
-export type IngestorType = 'crawler' | 'github' | 'reddit' | 'url';
+export interface GoogleDriveIngestorConfig extends BaseIngestorConfig {
+  folder_id?: string;
+  file_ids?: string;
+  recursive?: boolean;
+  token_info?: any;
+}
+
+export type IngestorType = 'crawler' | 'github' | 'reddit' | 'url' | 'google_drive';
 
 export interface IngestorConfig {
   type: IngestorType;
@@ -31,7 +38,8 @@ export interface IngestorConfig {
     | RedditIngestorConfig
     | GithubIngestorConfig
     | CrawlerIngestorConfig
-    | UrlIngestorConfig;
+    | UrlIngestorConfig
+    | GoogleDriveIngestorConfig;
 }
 
 export type IngestorFormData = {
@@ -109,6 +117,14 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       required: true,
     },
   ],
+  google_drive: [
+    {
+      name: 'recursive',
+      label: 'Include subfolders',
+      type: 'boolean',
+      required: false,
+    },
+  ],
 };
 
 export const IngestorDefaultConfigs: Record<
@@ -142,5 +158,13 @@ export const IngestorDefaultConfigs: Record<
     config: {
       repo_url: '',
     } as GithubIngestorConfig,
+  },
+  google_drive: {
+    name: '',
+    config: {
+      folder_id: '',
+      file_ids: '',
+      recursive: true,
+    } as GoogleDriveIngestorConfig,
   },
 };

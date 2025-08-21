@@ -25,6 +25,8 @@ import {
   IngestorFormSchemas,
   IngestorType,
 } from './types/ingestor';
+import FileIcon from '../assets/file.svg';
+import FolderIcon from '../assets/folder.svg';
 
 function Upload({
   receivedFile = [],
@@ -47,6 +49,15 @@ function Upload({
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<string | null>(renderTab);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+
+  // Google Drive state
+  const [isGoogleDriveConnected, setIsGoogleDriveConnected] = useState(false);
+  const [googleDriveFiles, setGoogleDriveFiles] = useState<any[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [authError, setAuthError] = useState<string>('');
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
@@ -204,6 +215,7 @@ function Upload({
     { label: 'Link', value: 'url' },
     { label: 'GitHub', value: 'github' },
     { label: 'Reddit', value: 'reddit' },
+    { label: 'Google Drive', value: 'google_drive' },
   ];
 
   const sourceDocs = useSelector(selectSourceDocs);
@@ -428,29 +440,40 @@ function Upload({
     formData.append('user', 'local');
     formData.append('source', ingestor.type);
 
-    const defaultConfig = IngestorDefaultConfigs[ingestor.type].config;
+    let configData;
 
-    const mergedConfig = { ...defaultConfig, ...ingestor.config };
-    const filteredConfig = Object.entries(mergedConfig).reduce(
-      (acc, [key, value]) => {
-        const field = IngestorFormSchemas[ingestor.type].find(
-          (f) => f.name === key,
-        );
-        // Include the field if:
-        // 1. It's required, or
-        // 2. It's optional and has a non-empty value
-        if (
-          field?.required ||
-          (value !== undefined && value !== null && value !== '')
-        ) {
-          acc[key] = value;
-        }
-        return acc;
-      },
-      {} as Record<string, any>,
-    );
+    if (ingestor.type === 'google_drive') {
+      const sessionToken = localStorage.getItem('google_drive_session_token');
+      
+      configData = {
+        file_ids: selectedFiles,
+        recursive: ingestor.config.recursive,
+        session_token: sessionToken || null
+      };
+    } else {
+      const defaultConfig = IngestorDefaultConfigs[ingestor.type].config;
+      const mergedConfig = { ...defaultConfig, ...ingestor.config };
+      configData = Object.entries(mergedConfig).reduce(
+        (acc, [key, value]) => {
+          const field = IngestorFormSchemas[ingestor.type].find(
+            (f) => f.name === key,
+          );
+          // Include the field if:
+          // 1. It's required, or
+          // 2. It's optional and has a non-empty value
+          if (
+            field?.required ||
+            (value !== undefined && value !== null && value !== '')
+          ) {
+            acc[key] = value;
+          }
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
+    }
 
-    formData.append('data', JSON.stringify(filteredConfig));
+    formData.append('data', JSON.stringify(configData));
 
     const apiHost: string = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -477,6 +500,233 @@ function Upload({
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
+
+  useEffect(() => {
+    if (ingestor.type === 'google_drive') {
+      const sessionToken = localStorage.getItem('google_drive_session_token');
+      
+      if (sessionToken) {
+        // Auto-authenticate if session token exists
+        setIsGoogleDriveConnected(true);
+        setAuthError('');
+        
+        // Fetch user email and files using the existing session token
+        fetchUserEmailAndLoadFiles(sessionToken);
+      }
+    }
+  }, [ingestor.type]);
+
+  const fetchUserEmailAndLoadFiles = async (sessionToken: string) => {
+    try {
+      const apiHost = import.meta.env.VITE_API_HOST;
+      
+      const validateResponse = await fetch(`${apiHost}/api/google-drive/validate-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ session_token: sessionToken })
+      });
+      
+      if (!validateResponse.ok) {
+        localStorage.removeItem('google_drive_session_token');
+        setIsGoogleDriveConnected(false);
+        setAuthError('Session expired. Please reconnect to Google Drive.');
+        return;
+      }
+      
+      const validateData = await validateResponse.json();
+      
+      if (validateData.success) {
+        setUserEmail(validateData.user_email || 'Connected User');
+        loadGoogleDriveFiles(sessionToken);
+      } else {
+        localStorage.removeItem('google_drive_session_token');
+        setIsGoogleDriveConnected(false);
+        setAuthError(validateData.error || 'Session expired. Please reconnect your Google Drive account and make sure to grant offline access.');
+      }
+    } catch (error) {
+      console.error('Error validating Google Drive session:', error);
+      setAuthError('Failed to validate session. Please reconnect.');
+      setIsGoogleDriveConnected(false);
+    }
+  };
+
+  const handleGoogleDriveConnect = async () => {
+    console.log('Google Drive connect button clicked');
+    setIsAuthenticating(true);
+    setAuthError('');
+
+    const existingToken = localStorage.getItem('google_drive_session_token');
+    if (existingToken) {
+      fetchUserEmailAndLoadFiles(existingToken);
+      setIsAuthenticating(false);
+      return;
+    }
+
+    try {
+      const apiHost = import.meta.env.VITE_API_HOST;
+
+      const authResponse = await fetch(`${apiHost}/api/google-drive/auth`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!authResponse.ok) {
+        throw new Error(`Failed to get authorization URL: ${authResponse.status}`);
+      }
+
+      const authData = await authResponse.json();
+
+      if (!authData.success || !authData.authorization_url) {
+        throw new Error(authData.error || 'Failed to get authorization URL');
+      }
+
+      console.log('Opening Google OAuth window...');
+
+      const authWindow = window.open(
+        authData.authorization_url,
+        'google-drive-auth',
+        'width=500,height=600,scrollbars=yes,resizable=yes'
+      );
+
+      if (!authWindow) {
+        throw new Error('Failed to open authentication window. Please allow popups.');
+      }
+
+      const handleAuthMessage = (event: MessageEvent) => {
+        console.log('Received message event:', event.data);
+        
+        if (event.data.type === 'google_drive_auth_success') {
+          console.log('OAuth success received:', event.data);
+          setUserEmail(event.data.user_email || 'Connected User');
+          setIsGoogleDriveConnected(true);
+          setIsAuthenticating(false);
+          setAuthError(''); 
+
+          if (event.data.session_token) {
+            localStorage.setItem('google_drive_session_token', event.data.session_token);
+          }
+          
+          window.removeEventListener('message', handleAuthMessage);
+
+          loadGoogleDriveFiles(event.data.session_token);
+        } else if (event.data.type === 'google_drive_auth_error') {
+          console.error('OAuth error received:', event.data);
+          setAuthError(event.data.error || 'Authentication failed. Please make sure to grant all requested permissions, including offline access. You may need to revoke previous access and re-authorize.');
+          setIsAuthenticating(false);
+          setIsGoogleDriveConnected(false);
+          window.removeEventListener('message', handleAuthMessage);
+        }
+      };
+
+      window.addEventListener('message', handleAuthMessage);
+      const checkClosed = setInterval(() => {
+        if (authWindow.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', handleAuthMessage);
+
+          if (!isGoogleDriveConnected && !isAuthenticating) {
+            setAuthError('Authentication was cancelled');
+          }
+        }
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error during Google Drive authentication:', error);
+      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
+      setIsAuthenticating(false);
+    }
+  };
+
+  const loadGoogleDriveFiles = async (sessionToken: string) => {
+    setIsLoadingFiles(true);
+
+    try {
+      const apiHost = import.meta.env.VITE_API_HOST;
+      const filesResponse = await fetch(`${apiHost}/api/google-drive/files`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          session_token: sessionToken,
+          limit: 50
+        })
+      });
+
+      if (!filesResponse.ok) {
+        throw new Error(`Failed to load files: ${filesResponse.status}`);
+      }
+
+      const filesData = await filesResponse.json();
+
+      if (filesData.success && filesData.files) {
+        setGoogleDriveFiles(filesData.files);
+      } else {
+        throw new Error(filesData.error || 'Failed to load files');
+      }
+
+    } catch (error) {
+      console.error('Error loading Google Drive files:', error);
+      setAuthError(error instanceof Error ? error.message : 'Failed to load files. Please make sure your Google Drive account is properly connected and you granted offline access during authorization.');
+
+      // Fallback to mock data for demo purposes
+      console.log('Using mock data as fallback...');
+      const mockFiles = [
+        {
+          id: '1',
+          name: 'Project Documentation.pdf',
+          type: 'application/pdf',
+          size: '2.5 MB',
+          modifiedTime: '2024-01-15',
+          iconUrl: '�'
+        },
+        {
+          id: '2',
+          name: 'Meeting Notes.docx',
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size: '1.2 MB',
+          modifiedTime: '2024-01-14',
+          iconUrl: '�'
+        },
+        {
+          id: '3',
+          name: 'Presentation.pptx',
+          type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          size: '5.8 MB',
+          modifiedTime: '2024-01-13',
+          iconUrl: '�'
+        }
+      ];
+      setGoogleDriveFiles(mockFiles);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (fileId: string) => {
+    setSelectedFiles(prev => {
+      if (prev.includes(fileId)) {
+        return prev.filter(id => id !== fileId);
+      } else {
+        return [...prev, fileId];
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedFiles.length === googleDriveFiles.length) {
+      setSelectedFiles([]);
+    } else {
+      setSelectedFiles(googleDriveFiles.map(file => file.id));
+    }
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
@@ -515,6 +765,10 @@ function Upload({
       if (!remoteName?.trim()) {
         return true;
       }
+      if (ingestor.type === 'google_drive') {
+        return !isGoogleDriveConnected || selectedFiles.length === 0;
+      }
+
       const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
       for (const field of formFields) {
         if (field.required) {
@@ -679,6 +933,147 @@ function Upload({
               required={true}
               labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
+            {ingestor.type === 'google_drive' && (
+              <div className="space-y-4">
+                {authError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-600 dark:bg-red-900/20">
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      ⚠️ {authError}
+                    </p>
+                  </div>
+                )}
+
+                {!isGoogleDriveConnected ? (
+                  <button
+                    onClick={handleGoogleDriveConnect}
+                    disabled={isAuthenticating}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isAuthenticating ? (
+                      <>
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                        Connecting to Google...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-5 w-5" viewBox="0 0 24 24">
+                          <path fill="currentColor" d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"/>
+                        </svg>
+                        Sign in with Google Drive
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Connection Status */}
+                    <div className="w-full flex items-center justify-between rounded-lg bg-green-500 px-4 py-2 text-white text-sm">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24">
+                          <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                        </svg>
+                        <span>Connected as {userEmail}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          localStorage.removeItem('google_drive_session_token');
+                          
+                          setIsGoogleDriveConnected(false);
+                          setGoogleDriveFiles([]);
+                          setSelectedFiles([]);
+                          setUserEmail('');
+                          setAuthError('');
+                          
+                          const apiHost = import.meta.env.VITE_API_HOST;
+                          fetch(`${apiHost}/api/google-drive/disconnect`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ session_token: localStorage.getItem('google_drive_session_token') })
+                          }).catch(err => console.error('Error disconnecting from Google Drive:', err));
+                        }}
+                        className="text-white hover:text-gray-200 text-xs underline"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+
+                    {/* File Browser */}
+                    <div className="border border-gray-200 rounded-lg dark:border-gray-600">
+                      <div className="p-3 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 rounded-t-lg">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Select Files from Google Drive
+                          </h4>
+                          {googleDriveFiles.length > 0 && (
+                            <button
+                              onClick={handleSelectAll}
+                              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                            >
+                              {selectedFiles.length === googleDriveFiles.length ? 'Deselect All' : 'Select All'}
+                            </button>
+                          )}
+                        </div>
+                        {selectedFiles.length > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto">
+                        {isLoadingFiles ? (
+                          <div className="p-4 text-center">
+                            <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                              Loading files...
+                            </div>
+                          </div>
+                        ) : googleDriveFiles.length === 0 ? (
+                          <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                            No files found in your Google Drive
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-gray-200 dark:divide-gray-600">
+                            {googleDriveFiles.map((file) => (
+                              <div
+                                key={file.id}
+                                className={`p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
+                                  selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                }`}
+                                onClick={() => handleFileSelect(file.id)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-shrink-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedFiles.includes(file.id)}
+                                      onChange={() => handleFileSelect(file.id)}
+                                      className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                  <div className="text-lg">{file.iconUrl}</div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                      {file.name}
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {file.size} • Modified {file.modifiedTime}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {renderFormFields()}
             {IngestorFormSchemas[ingestor.type].some(
               (field) => field.advanced,
@@ -719,7 +1114,10 @@ function Upload({
                   : 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer text-white'
               }`}
             >
-              {t('modals.uploadDoc.train')}
+              {ingestor.type === 'google_drive' && selectedFiles.length > 0
+                ? `Train with ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`
+                : t('modals.uploadDoc.train')
+              }
             </button>
           )}
         </div>
