@@ -65,8 +65,8 @@ agents:
     retriever: ""
 
     source:
-      name: "DocsGPT-Docs" # Human-readable name for the source
-      url: "http://example.com/alex-special-link" # URL or path to knowledge source
+      name: "DocsGPT-Docs"
+      url: "https://d3dg1063dc54p9.cloudfront.net/agent-source/docsgpt-documentation.md" # URL to DocsGPT documentation
       loader: "url" 
 
   - name: "Support Widget"
@@ -89,6 +89,6 @@ agents:
     retriever: ""
 
     source:
-      name: "DocsGPT-Docs" # Human-readable name for the source
-      url: "http://example.com/alex-special-link" # URL or path to knowledge source
+      name: "DocsGPT-Docs"
+      url: "https://d3dg1063dc54p9.cloudfront.net/agent-source/docsgpt-documentation.md" # URL to DocsGPT documentation
       loader: "url" 
