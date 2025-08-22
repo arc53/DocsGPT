@@ -85,8 +85,8 @@ class StreamProcessor:
 
     def initialize(self):
         """Initialize all required components for processing"""
-        self._configure_agent()
         self._configure_retriever()
+        self._configure_agent()
         self._load_conversation_history()
         self._process_attachments()
 
@@ -173,8 +173,9 @@ class StreamProcessor:
             source_doc = self.db.dereference(source)
             data["source"] = str(source_doc["_id"])
             data["retriever"] = source_doc.get("retriever", data.get("retriever"))
+            data["chunks"] = source_doc.get("chunks", data.get("chunks"))
         else:
-            data["source"] = {}
+            data["source"] = None
         return data
 
     def _configure_agent(self):
@@ -197,6 +198,12 @@ class StreamProcessor:
             )
             self.initial_user_id = data_key.get("user")
             self.decoded_token = {"sub": data_key.get("user")}
+            if data_key.get("source"):
+                self.source = {"active_docs": data_key["source"]}
+            if data_key.get("retriever"):
+                self.retriever_config["retriever_name"] = data_key["retriever"]
+            if data_key.get("chunks") is not None:
+                self.retriever_config["chunks"] = data_key["chunks"]
         elif self.agent_key:
             data_key = self._get_data_from_api_key(self.agent_key)
             self.agent_config.update(
@@ -212,6 +219,12 @@ class StreamProcessor:
                 if self.is_shared_usage
                 else {"sub": data_key.get("user")}
             )
+            if data_key.get("source"):
+                self.source = {"active_docs": data_key["source"]}
+            if data_key.get("retriever"):
+                self.retriever_config["retriever_name"] = data_key["retriever"]
+            if data_key.get("chunks") is not None:
+                self.retriever_config["chunks"] = data_key["chunks"]
         else:
             self.agent_config.update(
                 {
