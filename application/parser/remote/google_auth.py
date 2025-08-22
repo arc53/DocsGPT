@@ -1,5 +1,4 @@
 import logging
-import time
 import datetime
 from typing import Optional, Dict, Any
 
@@ -28,7 +27,9 @@ class GoogleDriveAuth:
         
         if not self.client_id or not self.client_secret:
             raise ValueError("Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in settings.")
-    
+
+
+
     def get_authorization_url(self, state: Optional[str] = None) -> str:
         """
         Generate Google OAuth authorization URL.
@@ -99,21 +100,6 @@ class GoogleDriveAuth:
 
             credentials = flow.credentials
 
-            if credentials.expiry:
-                try:
-                    expiry = credentials.expiry
-                    if expiry.tzinfo is None:
-                        # If expiry is offset-naive, make it offset-aware
-                        expiry = expiry.replace(tzinfo=datetime.timezone.utc)
-
-                    current_time = datetime.datetime.now(datetime.timezone.utc)
-                    time_until_expiry = expiry - current_time
-                    logging.info(f"Token expires in: {time_until_expiry}")
-                except Exception as e:
-                    logging.warning(f"Error calculating token expiry: {e}")
-            else:
-                logging.info("Token has no expiry information")
-
             if not credentials.refresh_token:
                 logging.warning("OAuth flow did not return a refresh_token.")
             if not credentials.token:
@@ -128,26 +114,10 @@ class GoogleDriveAuth:
             if not credentials.client_secret:
                 credentials.client_secret = self.client_secret
 
-            if credentials.expiry:
-                try:
-                    expiry_dt = credentials.expiry
-                    if expiry_dt.tzinfo is None: # Ensure UTC timezone
-                        expiry_dt = expiry_dt.replace(tzinfo=datetime.timezone.utc)
-
-                    current_time = datetime.datetime.now(datetime.timezone.utc)
-                    time_until_expiry = expiry_dt - current_time
-                    logging.info(f"Access token expires in {time_until_expiry}")
-                except Exception as e:
-                    logging.warning(f"Error calculating token expiry: {e}")
-
             if not credentials.refresh_token:
                 raise ValueError(
                     "No refresh token received. This typically happens when offline access wasn't granted. "
                 )
-
-            expiry_iso = None
-            if credentials.expiry:
-                expiry_iso = credentials.expiry.isoformat()
 
             return {
                 'access_token': credentials.token,
@@ -156,7 +126,7 @@ class GoogleDriveAuth:
                 'client_id': credentials.client_id,
                 'client_secret': credentials.client_secret,
                 'scopes': credentials.scopes,
-                'expiry': expiry_iso
+                'expiry': credentials.expiry.isoformat() if credentials.expiry else None
             }
 
         except Exception as e:
@@ -179,18 +149,14 @@ class GoogleDriveAuth:
             from google.auth.transport.requests import Request
             credentials.refresh(Request())
 
-            expiry_iso = None
-            if credentials.expiry:
-                expiry_iso = credentials.expiry.isoformat()
-
             return {
                 'access_token': credentials.token,
-                'refresh_token': refresh_token, 
+                'refresh_token': refresh_token,
                 'token_uri': credentials.token_uri,
                 'client_id': credentials.client_id,
                 'client_secret': credentials.client_secret,
                 'scopes': credentials.scopes,
-                'expiry': expiry_iso
+                'expiry': credentials.expiry.isoformat() if credentials.expiry else None
             }
         except Exception as e:
             logging.error(f"Error refreshing access token: {e}", exc_info=True)
@@ -246,28 +212,11 @@ class GoogleDriveAuth:
     def is_token_expired(self, token_info):
         if 'expiry' in token_info and token_info['expiry']:
             try:
-                import datetime as dt
                 from dateutil import parser
-
-                expiry_input = token_info['expiry']
-
-                if isinstance(expiry_input, str):
-                    # Parse ISO format string
-                    expiry_dt = parser.parse(expiry_input)
-                elif isinstance(expiry_input, dt.datetime):
-                    expiry_dt = expiry_input
-                else:
-                    logging.warning(f"Unexpected expiry format: {type(expiry_input)}")
-                    return True
-
-                # Ensure UTC timezone
-                if expiry_dt.tzinfo is None:
-                    expiry_dt = expiry_dt.replace(tzinfo=dt.timezone.utc)
-
-                current_time = dt.datetime.now(dt.timezone.utc)
-
-                return current_time >= expiry_dt - dt.timedelta(seconds=60)
-
+                # Google Drive provides timezone-aware ISO8601 dates
+                expiry_dt = parser.parse(token_info['expiry'])
+                current_time = datetime.datetime.now(datetime.timezone.utc)
+                return current_time >= expiry_dt - datetime.timedelta(seconds=60)
             except Exception:
                 return True
 
