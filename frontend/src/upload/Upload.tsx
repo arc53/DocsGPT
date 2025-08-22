@@ -447,32 +447,24 @@ function Upload({
     if (ingestor.type === 'google_drive') {
       const sessionToken = localStorage.getItem('google_drive_session_token');
       
+      const selectedItems = googleDriveFiles.filter(file => selectedFiles.includes(file.id));
+      const selectedFolderIds = selectedItems
+        .filter(item => item.type === 'application/vnd.google-apps.folder' || item.isFolder)
+        .map(folder => folder.id);
+      
+      const selectedFileIds = selectedItems
+        .filter(item => item.type !== 'application/vnd.google-apps.folder' && !item.isFolder)
+        .map(file => file.id);
+      
       configData = {
-        file_ids: selectedFiles,
+        file_ids: selectedFileIds,
+        folder_ids: selectedFolderIds,
         recursive: ingestor.config.recursive,
         session_token: sessionToken || null
       };
     } else {
-      const defaultConfig = IngestorDefaultConfigs[ingestor.type].config;
-      const mergedConfig = { ...defaultConfig, ...ingestor.config };
-      configData = Object.entries(mergedConfig).reduce(
-        (acc, [key, value]) => {
-          const field = IngestorFormSchemas[ingestor.type].find(
-            (f) => f.name === key,
-          );
-          // Include the field if:
-          // 1. It's required, or
-          // 2. It's optional and has a non-empty value
-          if (
-            field?.required ||
-            (value !== undefined && value !== null && value !== '')
-          ) {
-            acc[key] = value;
-          }
-          return acc;
-        },
-        {} as Record<string, any>,
-      );
+    
+      configData = { ...ingestor.config };
     }
 
     formData.append('data', JSON.stringify(configData));

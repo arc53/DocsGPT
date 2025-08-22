@@ -404,37 +404,58 @@ class GoogleDriveLoader(BaseRemote):
 
     def _download_folder_recursive(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
         files_downloaded = 0
-        query = f"'{folder_id}' in parents and trashed=false"
-
-        page_token = None
-        while True:
-            results = self.service.files().list(
-                q=query,
-                fields='nextPageToken,files(id,name,mimeType)',
-                pageToken=page_token
-            ).execute()
-
-            files = results.get('files', [])
-
-            for file_metadata in files:
-                if file_metadata['mimeType'] == 'application/vnd.google-apps.folder':
-                    if recursive:
-                        subfolder_path = os.path.join(local_dir, file_metadata['name'])
-                        os.makedirs(subfolder_path, exist_ok=True)
-                        files_downloaded += self._download_folder_recursive(
-                            file_metadata['id'],
-                            subfolder_path,
-                            recursive
-                        )
-                else:
-                    if self._download_single_file(file_metadata['id'], local_dir):
-                        files_downloaded += 1
-
-            page_token = results.get('nextPageToken')
-            if not page_token:
-                break
-
-        return files_downloaded
+        try:
+            os.makedirs(local_dir, exist_ok=True)
+            
+            query = f"'{folder_id}' in parents and trashed=false"
+            page_token = None
+            
+            while True:
+                results = self.service.files().list(
+                    q=query,
+                    fields='nextPageToken, files(id, name, mimeType)',
+                    pageToken=page_token,
+                    pageSize=1000
+                ).execute()
+                
+                items = results.get('files', [])
+                logging.info(f"Found {len(items)} items in folder {folder_id}")
+                
+                for item in items:
+                    item_name = item['name']
+                    item_id = item['id']
+                    mime_type = item['mimeType']
+                    
+                    if mime_type == 'application/vnd.google-apps.folder':
+                        if recursive:
+                            # Create subfolder and recurse
+                            subfolder_path = os.path.join(local_dir, item_name)
+                            os.makedirs(subfolder_path, exist_ok=True)
+                            subfolder_files = self._download_folder_recursive(
+                                item_id,
+                                subfolder_path,
+                                recursive
+                            )
+                            files_downloaded += subfolder_files
+                            logging.info(f"Downloaded {subfolder_files} files from subfolder {item_name}")
+                    else:
+                        # Download file
+                        success = self._download_single_file(item_id, local_dir)
+                        if success:
+                            files_downloaded += 1
+                            logging.info(f"Downloaded file: {item_name}")
+                        else:
+                            logging.warning(f"Failed to download file: {item_name}")
+                
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+                    
+            return files_downloaded
+            
+        except Exception as e:
+            logging.error(f"Error in _download_folder_recursive for folder {folder_id}: {e}", exc_info=True)
+            return files_downloaded
 
     def _get_extension_for_mime_type(self, mime_type: str) -> str:
         extensions = {
@@ -461,13 +482,14 @@ class GoogleDriveLoader(BaseRemote):
             source_config = {}
 
         config = source_config if source_config else getattr(self, 'config', {})
-
         files_downloaded = 0
 
         try:
-            folder_id = config.get('folder_id')
+            folder_ids = config.get('folder_ids', [])
             file_ids = config.get('file_ids', [])
             recursive = config.get('recursive', True)
+
+            self._ensure_service()
 
             if file_ids:
                 if isinstance(file_ids, str):
@@ -477,11 +499,33 @@ class GoogleDriveLoader(BaseRemote):
                     if self._download_file_to_directory(file_id, local_dir):
                         files_downloaded += 1
 
-            elif folder_id:
-                files_downloaded = self._download_folder_contents(folder_id, local_dir, recursive)
+            # Process folders
+            if folder_ids:
+                if isinstance(folder_ids, str):
+                    folder_ids = [folder_ids]
 
-            else:
-                raise ValueError("No folder_id or file_ids provided for download")
+                for folder_id in folder_ids:
+                    try:
+                        folder_metadata = self.service.files().get(
+                            fileId=folder_id,
+                            fields='name'
+                        ).execute()
+                        folder_name = folder_metadata.get('name', '')
+                        folder_path = os.path.join(local_dir, folder_name)
+                        os.makedirs(folder_path, exist_ok=True)
+                        
+                        folder_files = self._download_folder_recursive(
+                            folder_id,
+                            folder_path,
+                            recursive
+                        )
+                        files_downloaded += folder_files
+                        logging.info(f"Downloaded {folder_files} files from folder {folder_name}")
+                    except Exception as e:
+                        logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
+
+            if not file_ids and not folder_ids:
+                raise ValueError("No folder_ids or file_ids provided for download")
 
             return {
                 "files_downloaded": files_downloaded,
@@ -493,9 +537,10 @@ class GoogleDriveLoader(BaseRemote):
 
         except Exception as e:
             return {
-                "files_downloaded": 0,
+                "files_downloaded": files_downloaded,
                 "directory_path": local_dir,
                 "empty_result": True,
-                "error": str(e),
-                "source_type": "google_drive"
+                "source_type": "google_drive",
+                "config_used": config,
+                "error": str(e)
             }

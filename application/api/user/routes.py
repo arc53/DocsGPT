@@ -887,28 +887,33 @@ class UploadRemote(Resource):
                 
                 session_token = config.get("session_token")
                 
+                # Process file_ids
                 file_ids = config.get("file_ids", [])
                 if isinstance(file_ids, str):
                     file_ids = [id.strip() for id in file_ids.split(',') if id.strip()]
                 elif not isinstance(file_ids, list):
                     file_ids = []
                 
-                folder_id = config.get("folder_id", "")
-                if not isinstance(folder_id, str):
-                    folder_id = str(folder_id) if folder_id else ""
+
+                folder_ids = config.get("folder_ids", [])
+                if isinstance(folder_ids, str):
+                    folder_ids = [id.strip() for id in folder_ids.split(',') if id.strip()]
+                elif not isinstance(folder_ids, list):
+                    folder_ids = []
                 
-                recursive = bool(config.get("recursive", False))
+                # Ensure at least one file or folder is selected
+                if not file_ids and not folder_ids:
+                    return make_response(jsonify({
+                        "success": False,
+                        "error": "No files or folders selected"
+                    }), 400)
                 
-                clean_config = {
-                    "session_token": session_token,
-                    "file_ids": file_ids,
-                    "folder_id": folder_id,
-                    "recursive": recursive
-                }
+                config["file_ids"] = file_ids
+                config["folder_ids"] = folder_ids
                 
                 from application.api.user.tasks import ingest_connector_task
                 task = ingest_connector_task.delay(
-                    source_config=clean_config,
+                    source_config=config,
                     job_name=data["name"],
                     user=decoded_token.get("sub"),
                     source_type="google_drive"

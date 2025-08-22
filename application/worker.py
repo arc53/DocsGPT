@@ -854,11 +854,11 @@ def ingest_connector(
     """
     logging.info(f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}")
     self.update_state(state="PROGRESS", meta={"current": 1})
-
+    
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
-            # Step 1: Get the appropriate remote loader
-            logging.info(f"source_config {source_config}")
+            # Step 1: Initialize the appropriate loader
+            self.update_state(state="PROGRESS", meta={"current": 10, "status": "Initializing connector"})
             
             if source_type == "google_drive":
                 session_token = source_config.get("session_token")
@@ -871,11 +871,10 @@ def ingest_connector(
                 # Create a clean config for storage that excludes the session token
                 api_source_config = {
                     "file_ids": source_config.get("file_ids", []),
-                    "folder_id": source_config.get("folder_id", ""),
+                    "folder_ids": source_config.get("folder_ids", []),
+                    "recursive": source_config.get("recursive", True)
                 }
                 
-                if source_config.get("recursive") is not None:
-                    api_source_config["recursive"] = source_config.get("recursive")
             else:
                 remote_loader = RemoteCreator.create_loader(source_type, source_config)
                 api_source_config = source_config
