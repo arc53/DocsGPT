@@ -3,6 +3,7 @@ from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.remote.web_loader import WebLoader
 from application.parser.remote.reddit_loader import RedditPostsLoaderRemote
 from application.parser.remote.github_loader import GitHubLoader
+from application.parser.remote.google_drive_loader import GoogleDriveLoader
 
 
 class RemoteCreator:
@@ -12,11 +13,12 @@ class RemoteCreator:
         "crawler": CrawlerLoader,
         "reddit": RedditPostsLoaderRemote,
         "github": GitHubLoader,
+        "google_drive": GoogleDriveLoader,
     }
 
     @classmethod
     def create_loader(cls, type, *args, **kwargs):
         loader_class = cls.loaders.get(type.lower())
         if not loader_class:
-            raise ValueError(f"No LLM class found for type {type}")
+            raise ValueError(f"No loader class found for type {type}")
         return loader_class(*args, **kwargs)
