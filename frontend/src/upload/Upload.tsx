@@ -58,6 +58,8 @@ function Upload({
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'My Drive'}]);
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
@@ -540,7 +542,7 @@ function Upload({
       
       if (validateData.success) {
         setUserEmail(validateData.user_email || 'Connected User');
-        loadGoogleDriveFiles(sessionToken);
+        loadGoogleDriveFiles(sessionToken, null);
       } else {
         localStorage.removeItem('google_drive_session_token');
         setIsGoogleDriveConnected(false);
@@ -612,7 +614,7 @@ function Upload({
           
           window.removeEventListener('message', handleAuthMessage);
 
-          loadGoogleDriveFiles(event.data.session_token);
+          loadGoogleDriveFiles(event.data.session_token, null);
         } else if (event.data.type === 'google_drive_auth_error') {
           console.error('OAuth error received:', event.data);
           setAuthError(event.data.error || 'Authentication failed. Please make sure to grant all requested permissions, including offline access. You may need to revoke previous access and re-authorize.');
@@ -641,21 +643,26 @@ function Upload({
     }
   };
 
-  const loadGoogleDriveFiles = async (sessionToken: string) => {
+  const loadGoogleDriveFiles = async (sessionToken: string, folderId?: string | null) => {
     setIsLoadingFiles(true);
 
     try {
       const apiHost = import.meta.env.VITE_API_HOST;
+      const requestBody: any = {
+        session_token: sessionToken,
+        limit: 50
+      };
+      if (folderId) {
+        requestBody.folder_id = folderId;
+      }
+
       const filesResponse = await fetch(`${apiHost}/api/google-drive/files`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          session_token: sessionToken,
-          limit: 50
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!filesResponse.ok) {
@@ -700,6 +707,15 @@ function Upload({
           size: '5.8 MB',
           modifiedTime: '2024-01-13',
           iconUrl: '�'
+        },
+        {
+          id: 'folder1',
+          name: 'Documents',
+          type: 'application/vnd.google-apps.folder',
+          size: '0 bytes',
+          modifiedTime: '2024-01-13',
+          iconUrl: '📁',
+          isFolder: true
         }
       ];
       setGoogleDriveFiles(mockFiles);
@@ -717,6 +733,27 @@ function Upload({
         return [...prev, fileId];
       }
     });
+  };
+
+  const handleFolderClick = (folderId: string, folderName: string) => {
+    const sessionToken = localStorage.getItem('google_drive_session_token');
+    if (sessionToken) {
+      setCurrentFolderId(folderId);
+      setFolderPath(prev => [...prev, {id: folderId, name: folderName}]);
+      loadGoogleDriveFiles(sessionToken, folderId);
+    }
+  };
+
+  const navigateBack = (index: number) => {
+    const sessionToken = localStorage.getItem('google_drive_session_token');
+    if (sessionToken) {
+      const newPath = folderPath.slice(0, index + 1);
+      const targetFolderId = newPath[newPath.length - 1]?.id;
+
+      setCurrentFolderId(targetFolderId);
+      setFolderPath(newPath);
+      loadGoogleDriveFiles(sessionToken, targetFolderId);
+    }
   };
 
   const handleSelectAll = () => {
@@ -1002,6 +1039,22 @@ function Upload({
                     {/* File Browser */}
                     <div className="border border-gray-200 rounded-lg dark:border-gray-600">
                       <div className="p-3 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 rounded-t-lg">
+                        {/* Breadcrumb navigation */}
+                        <div className="flex items-center gap-1 mb-2">
+                          {folderPath.map((path, index) => (
+                            <div key={path.id || 'root'} className="flex items-center gap-1">
+                              {index > 0 && <span className="text-gray-400">/</span>}
+                              <button
+                                onClick={() => navigateBack(index)}
+                                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:underline"
+                                disabled={index === folderPath.length - 1}
+                              >
+                                {path.name}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
                         <div className="flex items-center justify-between">
                           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Select Files from Google Drive
@@ -1039,10 +1092,9 @@ function Upload({
                             {googleDriveFiles.map((file) => (
                               <div
                                 key={file.id}
-                                className={`p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors ${
+                                className={`p-3 transition-colors ${
                                   selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                                 }`}
-                                onClick={() => handleFileSelect(file.id)}
                               >
                                 <div className="flex items-center gap-3">
                                   <div className="flex-shrink-0">
@@ -1053,9 +1105,31 @@ function Upload({
                                       className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                                     />
                                   </div>
-                                  <div className="text-lg">{file.iconUrl}</div>
+                                  {file.type === 'application/vnd.google-apps.folder' || file.isFolder ? (
+                                    <div
+                                      className="text-lg cursor-pointer hover:text-blue-600"
+                                      onClick={() => handleFolderClick(file.id, file.name)}
+                                    >
+                                      <img src={FolderIcon} alt="Folder" className="h-6 w-6" />
+                                    </div>
+                                  ) : (
+                                    <div className="text-lg">
+                                      <img src={FileIcon} alt="File" className="h-6 w-6" />
+                                    </div>
+                                  )}
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                    <p
+                                      className={`text-sm font-medium truncate ${
+                                        file.type === 'application/vnd.google-apps.folder' || file.isFolder
+                                          ? 'cursor-pointer hover:text-blue-600'
+                                          : ''
+                                      }`}
+                                      onClick={() => {
+                                        if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
+                                          handleFolderClick(file.id, file.name);
+                                        }
+                                      }}
+                                    >
                                       {file.name}
                                     </p>
                                     <p className="text-xs text-gray-500 dark:text-gray-400">
