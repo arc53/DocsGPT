@@ -47,6 +47,13 @@ def process_agent_webhook(self, agent_id, payload):
     return resp
 
 
+@celery.task(bind=True)
+def ingest_connector_task(self, source_config, job_name, user, source_type, retriever="classic"):
+    from application.worker import ingest_connector
+    resp = ingest_connector(self, job_name, user, source_type, source_config, retriever)
+    return resp
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(
