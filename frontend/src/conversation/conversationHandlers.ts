@@ -7,7 +7,7 @@ export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
   token: string | null,
-  selectedDocs: Doc | Doc[] | null,
+  selectedDocs: Doc[] | null,
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -52,15 +52,15 @@ export function handleFetchAnswer(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs) {
-    if (Array.isArray(selectedDocs)) {
+  if (selectedDocs && Array.isArray(selectedDocs)) {
+    if (selectedDocs.length > 1) {
       // Handle multiple documents
-      payload.active_docs = selectedDocs.map(doc => doc.id).join(',');
+      payload.active_docs = selectedDocs.map((doc) => doc.id!);
       payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if ('id' in selectedDocs) {
+    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
       // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs.id as string;
-      payload.retriever = selectedDocs.retriever as string;
+      payload.active_docs = selectedDocs[0].id as string;
+      payload.retriever = selectedDocs[0].retriever as string;
     }
   }
   return conversationService
@@ -91,7 +91,7 @@ export function handleFetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
   token: string | null,
-  selectedDocs: Doc | Doc[] | null,
+  selectedDocs: Doc[] | null,
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -119,15 +119,15 @@ export function handleFetchAnswerSteaming(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs) {
-    if (Array.isArray(selectedDocs)) {
+  if (selectedDocs && Array.isArray(selectedDocs)) {
+    if (selectedDocs.length > 1) {
       // Handle multiple documents
-      payload.active_docs = selectedDocs.map(doc => doc.id).join(',');
+      payload.active_docs = selectedDocs.map((doc) => doc.id!);
       payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if ('id' in selectedDocs) {
+    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
       // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs.id as string;
-      payload.retriever = selectedDocs.retriever as string;
+      payload.active_docs = selectedDocs[0].id as string;
+      payload.retriever = selectedDocs[0].retriever as string;
     }
   }
 
@@ -185,7 +185,7 @@ export function handleFetchAnswerSteaming(
 export function handleSearch(
   question: string,
   token: string | null,
-  selectedDocs: Doc | Doc[] | null,
+  selectedDocs: Doc[] | null,
   conversation_id: string | null,
   chunks: string,
   token_limit: number,
@@ -197,15 +197,15 @@ export function handleSearch(
     token_limit: token_limit,
     isNoneDoc: selectedDocs === null,
   };
-  if (selectedDocs) {
-    if (Array.isArray(selectedDocs)) {
+  if (selectedDocs && Array.isArray(selectedDocs)) {
+    if (selectedDocs.length > 1) {
       // Handle multiple documents
-      payload.active_docs = selectedDocs.map(doc => doc.id).join(',');
+      payload.active_docs = selectedDocs.map((doc) => doc.id!);
       payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if ('id' in selectedDocs) {
+    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
       // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs.id as string;
-      payload.retriever = selectedDocs.retriever as string;
+      payload.active_docs = selectedDocs[0].id as string;
+      payload.retriever = selectedDocs[0].retriever as string;
     }
   }
   return conversationService

@@ -46,17 +46,10 @@ class ClassicRAG(BaseRetriever):
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
         )
-        if "active_docs" in source:
+        
+        if "active_docs" in source and source["active_docs"] is not None:
             if isinstance(source["active_docs"], list):
                 self.vectorstores = source["active_docs"]
-            elif (
-                isinstance(source["active_docs"], str) and "," in source["active_docs"]
-            ):
-                self.vectorstores = [
-                    doc_id.strip()
-                    for doc_id in source["active_docs"].split(",")
-                    if doc_id.strip()
-                ]
             else:
                 self.vectorstores = [source["active_docs"]]
         else:
