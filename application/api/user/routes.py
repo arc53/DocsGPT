@@ -2026,7 +2026,12 @@ class SharedAgent(Resource):
                     else ""
                 ),
                 "description": shared_agent.get("description", ""),
-                "source": shared_agent.get("source", ""),
+                "source": (
+                    str(source_doc["_id"])
+                    if isinstance(shared_agent.get("source"), DBRef)
+                    and (source_doc := db.dereference(shared_agent.get("source")))
+                    else ""
+                ),
                 "chunks": shared_agent.get("chunks", "0"),
                 "retriever": shared_agent.get("retriever", "classic"),
                 "prompt_id": shared_agent.get("prompt_id", "default"),
