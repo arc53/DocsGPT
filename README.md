@@ -23,6 +23,16 @@
 <br>
 <a href="https://docs.docsgpt.cloud/">📖 Documentation</a> • <a href="https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md">👫 Contribute</a> • <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
 <br>
+<a href="https://readme-i18n.com/de/arc53/DocsGPT">Deutsch</a> | 
+<a href="https://readme-i18n.com/es/arc53/DocsGPT">Español</a> | 
+<a href="https://readme-i18n.com/fr/arc53/DocsGPT">français</a> | 
+<a href="https://readme-i18n.com/ja/arc53/DocsGPT">日本語</a> | 
+<a href="https://readme-i18n.com/ko/arc53/DocsGPT">한국어</a> | 
+<a href="https://readme-i18n.com/pt/arc53/DocsGPT">Português</a> | 
+<a href="https://readme-i18n.com/ru/arc53/DocsGPT">Русский</a> | 
+<a href="https://readme-i18n.com/zh/arc53/DocsGPT">中文</a>
+<br>
+<a href="https://docsgpt-zh.readme-i18n.com">📖 中文文档</a>
 
 </div>
 <div align="center">
