@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 # Get current script directory
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$COMPOSE_FILE = Join-Path -Path $SCRIPT_DIR -ChildPath "deployment\docker-compose.yaml"
+$COMPOSE_FILE = Join-Path -Path $SCRIPT_DIR -ChildPath "deployment\docker-compose-hub.yaml"
 $ENV_FILE = Join-Path -Path $SCRIPT_DIR -ChildPath ".env"
 
 # Function to write colored text
@@ -304,9 +304,9 @@ function Use-DocsPublicAPIEndpoint {
     
     # Run Docker compose commands
     try {
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
         & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
@@ -415,10 +415,10 @@ function Serve-LocalOllama {
         Write-Host ""
         Write-ColorText "Starting Docker Compose with Ollama ($docker_compose_file_suffix)..." -ForegroundColor "White"
         
-        # Build the containers
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$optional_compose" build
+        # Pull the containers
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$optional_compose" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
         # Start the containers
@@ -575,10 +575,10 @@ function Connect-LocalInferenceEngine {
         Write-Host ""
         Write-ColorText "Starting Docker Compose..." -ForegroundColor "White"
         
-        # Build the containers
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+        # Pull the containers
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
         # Start the containers
@@ -706,10 +706,12 @@ function Connect-CloudAPIProvider {
         Write-ColorText "Starting Docker Compose..." -ForegroundColor "White"
         
         # Run Docker compose commands
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build or up failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
+ 
+         & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
         
         Write-Host ""
         Write-ColorText "DocsGPT is now configured to use $provider_name on http://localhost:5173" -ForegroundColor "Green"

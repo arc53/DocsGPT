@@ -9,7 +9,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Base Compose file (relative to script location)
-COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/deployment/docker-compose.yaml"
+COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/deployment/docker-compose-hub.yaml"
 ENV_FILE="$(dirname "$(readlink -f "$0")")/.env"
 
 # Animation function
@@ -176,7 +176,7 @@ use_docs_public_api_endpoint() {
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build && docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
     docker_compose_status=$? # Capture exit status of docker compose
 
     echo "Docker Compose Exit Status: $docker_compose_status"
@@ -252,7 +252,7 @@ serve_local_ollama() {
     )
 
     echo -e "\n${NC}Starting Docker Compose with Ollama (${docker_compose_file_suffix})...${NC}"
-    docker compose --env-file "${ENV_FILE}" "${compose_files[@]}" build
+    docker compose --env-file "${ENV_FILE}" "${compose_files[@]}" pull
     docker compose --env-file "${ENV_FILE}" "${compose_files[@]}" up -d
     docker_compose_status=$?
 
@@ -360,7 +360,7 @@ connect_local_inference_engine() {
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build && docker compose -f "${COMPOSE_FILE}" up -d
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose -f "${COMPOSE_FILE}" up -d
     docker_compose_status=$?
 
     echo "Docker Compose Exit Status: $docker_compose_status" # Debug output
@@ -449,7 +449,7 @@ connect_cloud_api_provider() {
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
     docker_compose_status=$?
 
     echo "Docker Compose Exit Status: $docker_compose_status" # Debug output
