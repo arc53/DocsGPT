@@ -8,9 +8,10 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from application.core.settings import settings
+from application.parser.connectors.base import BaseConnectorAuth
 
 
-class GoogleDriveAuth:
+class GoogleDriveAuth(BaseConnectorAuth):
     """
     Handles Google OAuth 2.0 authentication for Google Drive access.
     """
@@ -31,15 +32,6 @@ class GoogleDriveAuth:
 
 
     def get_authorization_url(self, state: Optional[str] = None) -> str:
-        """
-        Generate Google OAuth authorization URL.
-        
-        Args:
-            state: Optional state parameter for CSRF protection
-            
-        Returns:
-            Authorization URL for Google OAuth flow
-        """
         try:
             flow = Flow.from_client_config(
                 {
@@ -69,15 +61,6 @@ class GoogleDriveAuth:
             raise
     
     def exchange_code_for_tokens(self, authorization_code: str) -> Dict[str, Any]:
-        """
-        Exchange authorization code for access and refresh tokens.
-
-        Args:
-            authorization_code: Authorization code from OAuth callback
-
-        Returns:
-            Dictionary containing token information
-        """
         try:
             if not authorization_code:
                 raise ValueError("Authorization code is required")

@@ -3995,9 +3995,9 @@ class GoogleDriveAuth(Resource):
     def get(self):
         """Get Google Drive OAuth authorization URL"""
         try:
-            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+            from application.parser.connectors.connector_creator import ConnectorCreator
 
-            auth = GoogleDriveAuth()
+            auth = ConnectorCreator.create_auth("google_drive")
 
             # Generate state parameter for CSRF protection
             import uuid
@@ -4029,7 +4029,7 @@ class GoogleDriveCallback(Resource):
     def get(self):
         """Handle Google Drive OAuth callback"""
         try:
-            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+            from application.parser.connectors.connector_creator import ConnectorCreator
             from flask import request
             import uuid
 
@@ -4050,7 +4050,7 @@ class GoogleDriveCallback(Resource):
 
             # Exchange code for tokens
             try:
-                auth = GoogleDriveAuth()
+                auth = ConnectorCreator.create_auth("google_drive")
                 token_info = auth.exchange_code_for_tokens(authorization_code)
 
                 # Log detailed information about the token_info we received
@@ -4193,7 +4193,7 @@ class GoogleDriveRefresh(Resource):
     def post(self):
         """Refresh Google Drive access token"""
         try:
-            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+            from application.parser.connectors.connector_creator import ConnectorCreator
 
             data = request.get_json()
             refresh_token = data.get('refresh_token')
@@ -4203,7 +4203,7 @@ class GoogleDriveRefresh(Resource):
                     jsonify({"success": False, "error": "Refresh token not provided"}), 400
                 )
 
-            auth = GoogleDriveAuth()
+            auth = ConnectorCreator.create_auth("google_drive")
             token_info = auth.refresh_access_token(refresh_token)
 
             return make_response(
@@ -4241,7 +4241,7 @@ class GoogleDriveFiles(Resource):
     def post(self):
         """Get list of files from Google Drive"""
         try:
-            from application.parser.connectors.google_drive.loader import GoogleDriveLoader
+            from application.parser.connectors.connector_creator import ConnectorCreator
 
             data = request.get_json()
             session_token = data.get('session_token')
@@ -4254,7 +4254,7 @@ class GoogleDriveFiles(Resource):
                 )
 
             # Create Google Drive loader with session token only
-            loader = GoogleDriveLoader(session_token)
+            loader = ConnectorCreator.create_connector("google_drive", session_token)
 
             # Get files from Google Drive (limit to first N files, metadata only)
             files_config = {
@@ -4329,7 +4329,7 @@ class GoogleDriveValidateSession(Resource):
         """Validate Google Drive session token and return user info"""
         try:
             from application.core.mongo_db import MongoDB
-            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+            from application.parser.connectors.connector_creator import ConnectorCreator
 
             data = request.get_json()
             session_token = data.get('session_token')
@@ -4352,8 +4352,8 @@ class GoogleDriveValidateSession(Resource):
             
             # Get token info and check if it's expired
             token_info = session["token_info"]
-            auth = GoogleDriveAuth()
-            
+            auth = ConnectorCreator.create_auth("google_drive")
+
             # Check if token is expired using our improved method
             is_expired = auth.is_token_expired(token_info)
             

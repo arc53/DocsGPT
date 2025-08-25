@@ -11,12 +11,12 @@ from typing import List, Dict, Any, Optional
 from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
-from application.parser.remote.base import BaseRemote
+from application.parser.connectors.base import BaseConnectorLoader
 from application.parser.connectors.google_drive.auth import GoogleDriveAuth
 from application.parser.schema.base import Document
 
 
-class GoogleDriveLoader(BaseRemote):
+class GoogleDriveLoader(BaseConnectorLoader):
 
     SUPPORTED_MIME_TYPES = {
         'application/pdf': '.pdf',
@@ -104,25 +104,6 @@ class GoogleDriveLoader(BaseRemote):
             return None
 
     def load_data(self, inputs: Dict[str, Any]) -> List[Document]:
-        """
-        Load items from Google Drive according to simple browsing semantics.
-
-        Behavior:
-        - If file_ids are provided: return those files (optionally with content).
-        - If folder_id is provided: return the immediate children (folders and files) of that folder.
-        - If no folder_id: return the immediate children (folders and files) of Drive 'root'.
-
-        Args:
-            inputs: Dictionary containing configuration:
-                - folder_id: Optional Google Drive folder ID whose direct children to list
-                - file_ids: Optional list of specific file IDs to load
-                - limit: Maximum number of items to return
-                - list_only: If True, only return metadata without content
-                - session_token: Optional session token to use for authentication (backward compatibility)
-
-        Returns:
-            List of Document objects (folders are returned as metadata-only documents)
-        """
         session_token = inputs.get('session_token')
         if session_token and session_token != self.session_token:
             logging.warning("Session token in inputs differs from loader's session token. Using loader's session token.")
