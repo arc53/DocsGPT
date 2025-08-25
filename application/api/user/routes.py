@@ -913,10 +913,14 @@ class UploadRemote(Resource):
                 
                 from application.api.user.tasks import ingest_connector_task
                 task = ingest_connector_task.delay(
-                    source_config=config,
                     job_name=data["name"],
                     user=decoded_token.get("sub"),
-                    source_type="google_drive"
+                    source_type="google_drive",
+                    session_token=session_token,
+                    file_ids=file_ids,
+                    folder_ids=folder_ids,
+                    recursive=config.get("recursive", False),
+                    retriever=config.get("retriever", "classic")
                 )
                 return make_response(jsonify({"success": True, "task_id": task.id}), 200)
             task = ingest_remote.delay(
