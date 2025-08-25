@@ -3995,7 +3995,7 @@ class GoogleDriveAuth(Resource):
     def get(self):
         """Get Google Drive OAuth authorization URL"""
         try:
-            from application.parser.remote.google_auth import GoogleDriveAuth
+            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
 
             auth = GoogleDriveAuth()
 
@@ -4029,7 +4029,7 @@ class GoogleDriveCallback(Resource):
     def get(self):
         """Handle Google Drive OAuth callback"""
         try:
-            from application.parser.remote.google_auth import GoogleDriveAuth
+            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
             from flask import request
             import uuid
 
@@ -4193,7 +4193,7 @@ class GoogleDriveRefresh(Resource):
     def post(self):
         """Refresh Google Drive access token"""
         try:
-            from application.parser.remote.google_auth import GoogleDriveAuth
+            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
 
             data = request.get_json()
             refresh_token = data.get('refresh_token')
@@ -4241,7 +4241,7 @@ class GoogleDriveFiles(Resource):
     def post(self):
         """Get list of files from Google Drive"""
         try:
-            from application.parser.remote.google_drive_loader import GoogleDriveLoader
+            from application.parser.connectors.google_drive.loader import GoogleDriveLoader
 
             data = request.get_json()
             session_token = data.get('session_token')
@@ -4329,7 +4329,7 @@ class GoogleDriveValidateSession(Resource):
         """Validate Google Drive session token and return user info"""
         try:
             from application.core.mongo_db import MongoDB
-            from application.parser.remote.google_auth import GoogleDriveAuth
+            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
 
             data = request.get_json()
             session_token = data.get('session_token')

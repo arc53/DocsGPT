@@ -874,8 +874,8 @@ def ingest_connector(
                 if not session_token:
                     raise ValueError("Google Drive connector requires session_token")
 
-                from application.parser.remote.google_drive_loader import GoogleDriveLoader
-                remote_loader = GoogleDriveLoader(session_token)
+                from application.parser.connectors.connector_creator import ConnectorCreator
+                remote_loader = ConnectorCreator.create_connector("google_drive", session_token)
                 
                 # Create a clean config for storage that excludes the session token
                 api_source_config = {
@@ -895,19 +895,25 @@ def ingest_connector(
                     }
                 )
             else:
-                # For other connectors, maintain backward compatibility
-                source_config = {
-                    "session_token": session_token
+                # For other external knowledge base connectors (future: dropbox, onedrive, etc.)
+                from application.parser.connectors.connector_creator import ConnectorCreator
+
+                if not ConnectorCreator.is_supported(source_type):
+                    raise ValueError(f"Unsupported connector type: {source_type}. Supported types: {ConnectorCreator.get_supported_connectors()}")
+
+                # Create connector with session token and other parameters
+                remote_loader = ConnectorCreator.create_connector(source_type, session_token)
+
+                api_source_config = {
+                    "file_ids": file_ids or [],
+                    "folder_ids": folder_ids or [],
+                    "recursive": recursive
                 }
-                if file_ids:
-                    source_config["file_ids"] = file_ids
-                if folder_ids:
-                    source_config["folder_ids"] = folder_ids
-                source_config["recursive"] = recursive
-                
-                remote_loader = RemoteCreator.create_loader(source_type, source_config)
-                api_source_config = source_config
-                download_info = remote_loader.download_to_directory(temp_dir)
+
+                download_info = remote_loader.download_to_directory(
+                    temp_dir,
+                    api_source_config
+                )
             
             if download_info.get("empty_result", False) or not download_info.get("files_downloaded", 0):
                 logging.warning(f"No files were downloaded from {source_type}")
@@ -917,7 +923,7 @@ def ingest_connector(
                     "user": user,
                     "tokens": 0,
                     "type": source_type,
-                    "source_config": source_config,
+                    "source_config": api_source_config,
                     "directory_structure": "{}",
                 }
             

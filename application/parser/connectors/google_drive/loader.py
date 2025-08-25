@@ -12,7 +12,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
 from application.parser.remote.base import BaseRemote
-from application.parser.remote.google_auth import GoogleDriveAuth
+from application.parser.connectors.google_drive.auth import GoogleDriveAuth
 from application.parser.schema.base import Document
 
 
@@ -329,7 +329,7 @@ class GoogleDriveLoader(BaseRemote):
 
             if e.resp.status in [401, 403]:
                 logging.error(f"Authentication error downloading file {file_id}")
-              
+
                 if hasattr(self.credentials, 'refresh_token') and self.credentials.refresh_token:
                     logging.info(f"Attempting to refresh credentials for file {file_id}")
                     try:
@@ -406,10 +406,10 @@ class GoogleDriveLoader(BaseRemote):
         files_downloaded = 0
         try:
             os.makedirs(local_dir, exist_ok=True)
-            
+
             query = f"'{folder_id}' in parents and trashed=false"
             page_token = None
-            
+
             while True:
                 results = self.service.files().list(
                     q=query,
@@ -417,15 +417,15 @@ class GoogleDriveLoader(BaseRemote):
                     pageToken=page_token,
                     pageSize=1000
                 ).execute()
-                
+
                 items = results.get('files', [])
                 logging.info(f"Found {len(items)} items in folder {folder_id}")
-                
+
                 for item in items:
                     item_name = item['name']
                     item_id = item['id']
                     mime_type = item['mimeType']
-                    
+
                     if mime_type == 'application/vnd.google-apps.folder':
                         if recursive:
                             # Create subfolder and recurse
@@ -446,13 +446,13 @@ class GoogleDriveLoader(BaseRemote):
                             logging.info(f"Downloaded file: {item_name}")
                         else:
                             logging.warning(f"Failed to download file: {item_name}")
-                
+
                 page_token = results.get('nextPageToken')
                 if not page_token:
                     break
-                    
+
             return files_downloaded
-            
+
         except Exception as e:
             logging.error(f"Error in _download_folder_recursive for folder {folder_id}: {e}", exc_info=True)
             return files_downloaded
@@ -513,7 +513,7 @@ class GoogleDriveLoader(BaseRemote):
                         folder_name = folder_metadata.get('name', '')
                         folder_path = os.path.join(local_dir, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
-                        
+
                         folder_files = self._download_folder_recursive(
                             folder_id,
                             folder_path,
