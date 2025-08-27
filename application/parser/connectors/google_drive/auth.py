@@ -215,9 +215,9 @@ class GoogleDriveAuth(BaseConnectorAuth):
 
             mongo = MongoDB.get_client()
             db = mongo[settings.MONGO_DB_NAME]
-            sessions_collection = db["drive_sessions"]
-
-            session = sessions_collection.find_one({"session_token": session_token})
+            
+            sessions_collection = db["connector_sessions"]
+            session = sessions_collection.find_one({"session_token": session_token})   
             if not session:
                 raise ValueError(f"Invalid session token: {session_token}")
 
