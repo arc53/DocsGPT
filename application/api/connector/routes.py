@@ -35,6 +35,7 @@ from application.parser.connectors.connector_creator import ConnectorCreator
 mongo = MongoDB.get_client()
 db = mongo[settings.MONGO_DB_NAME]
 sources_collection = db["sources"]
+sessions_collection = db["connector_sessions"]
 
 connector = Blueprint("connector", __name__)
 connectors_ns = Namespace("connectors", description="Connector operations", path="/")
@@ -344,10 +345,7 @@ class ConnectorsCallback(Resource):
 
             session_token = str(uuid.uuid4())
 
-            from application.core.mongo_db import MongoDB
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            sessions_collection = db["connector_sessions"]
+
 
             sanitized_token_info = {
                 "access_token": token_info.get("access_token"),
@@ -357,8 +355,10 @@ class ConnectorsCallback(Resource):
                 "scopes": token_info.get("scopes")
             }
 
+            user_id = request.decoded_token.get("sub") if getattr(request, "decoded_token", None) else None
             sessions_collection.insert_one({
                 "session_token": session_token,
+                "user": user_id,
                 "token_info": sanitized_token_info,
                 "created_at": datetime.datetime.now(datetime.timezone.utc),
                 "user_email": user_email
@@ -419,6 +419,15 @@ class ConnectorFiles(Resource):
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
 
+
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
+            user = decoded_token.get('sub')
+            session = sessions_collection.find_one({"session_token": session_token, "user": user})
+            if not session:
+                return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
+
             loader = ConnectorCreator.create_connector(provider, session_token)
             documents = loader.load_data({
                 'limit': limit,
@@ -450,19 +459,19 @@ class ConnectorValidateSession(Resource):
     @api.doc(description="Validate connector session token and return user info")
     def post(self):
         try:
-            from application.core.mongo_db import MongoDB
             data = request.get_json()
             provider = data.get('provider')
             session_token = data.get('session_token')
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
 
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            collection_name = "connector_sessions"
-            sessions_collection = db[collection_name]
 
-            session = sessions_collection.find_one({"session_token": session_token})
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
+            user = decoded_token.get('sub')
+
+            session = sessions_collection.find_one({"session_token": session_token, "user": user})
             if not session or "token_info" not in session:
                 return make_response(jsonify({"success": False, "error": "Invalid or expired session"}), 401)
 
@@ -486,17 +495,12 @@ class ConnectorDisconnect(Resource):
     @api.doc(description="Disconnect a connector session")
     def post(self):
         try:
-            from application.core.mongo_db import MongoDB
             data = request.get_json()
             provider = data.get('provider')
             session_token = data.get('session_token')
             if not provider:
                 return make_response(jsonify({"success": False, "error": "provider is required"}), 400)
 
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            collection_name = "connector_sessions"
-            sessions_collection = db[collection_name]
 
             if session_token:
                 sessions_collection.delete_one({"session_token": session_token})
