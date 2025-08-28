@@ -10,6 +10,7 @@ BOLD='\033[1m'
 
 # Base Compose file (relative to script location)
 COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/deployment/docker-compose-hub.yaml"
+COMPOSE_FILE_LOCAL="$(dirname "$(readlink -f "$0")")/deployment/docker-compose.yaml"
 ENV_FILE="$(dirname "$(readlink -f "$0")")/.env"
 
 # Animation function
@@ -111,12 +112,15 @@ check_and_start_docker() {
 prompt_main_menu() {
     echo -e "\n${DEFAULT_FG}${BOLD}Welcome to DocsGPT Setup!${NC}"
     echo -e "${DEFAULT_FG}How would you like to proceed?${NC}"
-    echo -e "${YELLOW}1) Use DocsGPT Public API Endpoint (simple and free)${NC}"
+    echo -e "${YELLOW}1) Use DocsGPT Public API Endpoint (simple and free, uses pre-built Docker images from Docker Hub for fastest setup)${NC}"
     echo -e "${YELLOW}2) Serve Local (with Ollama)${NC}"
     echo -e "${YELLOW}3) Connect Local Inference Engine${NC}"
     echo -e "${YELLOW}4) Connect Cloud API Provider${NC}"
+    echo -e "${YELLOW}5) Advanced: Build images locally (for developers)${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-4): ${NC}")" main_choice
+    echo -e "${DEFAULT_FG}By default, DocsGPT uses pre-built images from Docker Hub for a fast, reliable, and consistent experience. This avoids local build errors and speeds up onboarding. Advanced users can choose to build images locally if needed.${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-5): ${NC}")" main_choice
 }
 
 # Function to prompt for Local Inference Engine options
@@ -468,12 +472,14 @@ connect_cloud_api_provider() {
 # Main script execution
 animate_dino
 
+
 while true; do # Main menu loop
     clear # Clear screen before showing main menu again
     prompt_main_menu
 
     case $main_choice in
-        1) # Use DocsGPT Public API Endpoint
+        1) # Use DocsGPT Public API Endpoint (Docker Hub images)
+            COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/deployment/docker-compose-hub.yaml"
             use_docs_public_api_endpoint
             break ;;
         2) # Serve Local (with Ollama)
@@ -485,8 +491,13 @@ while true; do # Main menu loop
         4) # Connect Cloud API Provider
             connect_cloud_api_provider
             break ;;
+        5) # Advanced: Build images locally
+            echo -e "\n${YELLOW}You have selected to build images locally. This is recommended for developers or if you want to test local changes.${NC}"
+            COMPOSE_FILE="$COMPOSE_FILE_LOCAL"
+            use_docs_public_api_endpoint
+            break ;;
         *)
-            echo -e "\n${RED}Invalid choice. Please choose 1-4.${NC}" ; sleep 1 ;;
+            echo -e "\n${RED}Invalid choice. Please choose 1-5.${NC}" ; sleep 1 ;;
     esac
 done
 
