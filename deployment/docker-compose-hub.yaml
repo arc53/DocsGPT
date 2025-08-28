@@ -1,7 +1,7 @@
 name: docsgpt-oss
 services:
   frontend:
-    image: arc53/docsgpt:latest
+    image: arc53/docsgpt:develop
     environment:
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
@@ -12,7 +12,7 @@ services:
 
   backend:
     user: root
-    image: arc53/docsgpt:latest
+    image: arc53/docsgpt:develop
     environment:
       - API_KEY=$API_KEY
       - EMBEDDINGS_KEY=$API_KEY
@@ -35,7 +35,7 @@ services:
 
   worker:
     user: root
-    image: arc53/docsgpt:latest
+    image: arc53/docsgpt:develop
     command: celery -A application.app.celery worker -l INFO -B
     environment:
       - API_KEY=$API_KEY
