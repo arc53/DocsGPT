@@ -1,7 +1,7 @@
 import datetime
 import json
-import os
-from functools import wraps
+
+
 from bson.objectid import ObjectId
 from flask import (
     Blueprint,
@@ -13,7 +13,7 @@ from flask import (
 from flask_restx import fields, Namespace, Resource
 
 
-from application.agents.tools.tool_manager import ToolManager
+
 
 from application.api.user.tasks import (
     ingest_connector_task,
@@ -21,16 +21,16 @@ from application.api.user.tasks import (
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.api import api
-from application.storage.storage_creator import StorageCreator
-from application.tts.google_tts import GoogleTTS
+
+
 from application.utils import (
     check_required_fields
 )
-from application.utils import num_tokens_from_string
-from application.vectorstore.vector_creator import VectorCreator
+
+
 from application.parser.connectors.connector_creator import ConnectorCreator
 
-storage = StorageCreator.get_storage()
+
 
 mongo = MongoDB.get_client()
 db = mongo[settings.MONGO_DB_NAME]
@@ -40,9 +40,6 @@ connector = Blueprint("connector", __name__)
 connectors_ns = Namespace("connectors", description="Connector operations", path="/")
 api.add_namespace(connectors_ns)
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
 
 
 @connectors_ns.route("/api/connectors/upload")
@@ -438,8 +435,7 @@ class ConnectorFiles(Resource):
                     'name': metadata.get('file_name', 'Unknown File'),
                     'type': metadata.get('mime_type', 'unknown'),
                     'size': metadata.get('size', 'Unknown'),
-                    'modifiedTime': metadata.get('modified_time', 'Unknown'),
-                    'iconUrl': get_file_icon(metadata.get('mime_type', ''))
+                    'modifiedTime': metadata.get('modified_time', 'Unknown')
                 })
 
             return make_response(jsonify({"success": True, "files": files, "total": len(files)}), 200)
@@ -511,25 +507,3 @@ class ConnectorDisconnect(Resource):
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
 
-def get_file_icon(mime_type):
-    """Return appropriate icon URL based on file MIME type"""
-    icon_map = {
-        'application/vnd.google-apps.document': '/icons/google-docs.png',
-        'application/vnd.google-apps.spreadsheet': '/icons/google-sheets.png',
-        'application/vnd.google-apps.presentation': '/icons/google-slides.png',
-        'application/pdf': '/icons/pdf.png',
-        'text/plain': '/icons/text.png',
-        'application/msword': '/icons/word.png',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '/icons/word.png',
-        'application/vnd.ms-excel': '/icons/excel.png',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '/icons/excel.png',
-        'application/vnd.ms-powerpoint': '/icons/powerpoint.png',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation': '/icons/powerpoint.png',
-        'image/jpeg': '/icons/image.png',
-        'image/png': '/icons/image.png',
-        'image/gif': '/icons/image.png',
-        'video/mp4': '/icons/video.png',
-        'application/zip': '/icons/archive.png',
-        'application/x-zip-compressed': '/icons/archive.png',
-    }
-    return icon_map.get(mime_type, '/icons/generic-file.png')

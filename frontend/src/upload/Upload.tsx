@@ -27,6 +27,7 @@ import {
 } from './types/ingestor';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
+import ConnectorAuth from '../components/ConnectorAuth';
 
 function Upload({
   receivedFile = [],
@@ -329,8 +330,7 @@ function Upload({
                           data?.find(
                             (d: Doc) => d.type?.toLowerCase() === 'local',
                           ),
-                      ),
-                    );
+                    ));
                   });
                   setProgress(
                     (progress) =>
@@ -514,13 +514,13 @@ function Upload({
     try {
       const apiHost = import.meta.env.VITE_API_HOST;
       
-      const validateResponse = await fetch(`${apiHost}/api/google-drive/validate-session`, {
+      const validateResponse = await fetch(`${apiHost}/api/connectors/validate-session`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ session_token: sessionToken })
+        body: JSON.stringify({ provider: 'google_drive', session_token: sessionToken })
       });
       
       if (!validateResponse.ok) {
@@ -547,94 +547,6 @@ function Upload({
     }
   };
 
-  const handleGoogleDriveConnect = async () => {
-    console.log('Google Drive connect button clicked');
-    setIsAuthenticating(true);
-    setAuthError('');
-
-    const existingToken = localStorage.getItem('google_drive_session_token');
-    if (existingToken) {
-      fetchUserEmailAndLoadFiles(existingToken);
-      setIsAuthenticating(false);
-      return;
-    }
-
-    try {
-      const apiHost = import.meta.env.VITE_API_HOST;
-
-      const authResponse = await fetch(`${apiHost}/api/google-drive/auth`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!authResponse.ok) {
-        throw new Error(`Failed to get authorization URL: ${authResponse.status}`);
-      }
-
-      const authData = await authResponse.json();
-
-      if (!authData.success || !authData.authorization_url) {
-        throw new Error(authData.error || 'Failed to get authorization URL');
-      }
-
-      console.log('Opening Google OAuth window...');
-
-      const authWindow = window.open(
-        authData.authorization_url,
-        'google-drive-auth',
-        'width=500,height=600,scrollbars=yes,resizable=yes'
-      );
-
-      if (!authWindow) {
-        throw new Error('Failed to open authentication window. Please allow popups.');
-      }
-
-      const handleAuthMessage = (event: MessageEvent) => {
-        console.log('Received message event:', event.data);
-        
-        if (event.data.type === 'google_drive_auth_success') {
-          console.log('OAuth success received:', event.data);
-          setUserEmail(event.data.user_email || 'Connected User');
-          setIsGoogleDriveConnected(true);
-          setIsAuthenticating(false);
-          setAuthError(''); 
-
-          if (event.data.session_token) {
-            localStorage.setItem('google_drive_session_token', event.data.session_token);
-          }
-          
-          window.removeEventListener('message', handleAuthMessage);
-
-          loadGoogleDriveFiles(event.data.session_token, null);
-        } else if (event.data.type === 'google_drive_auth_error') {
-          console.error('OAuth error received:', event.data);
-          setAuthError(event.data.error || 'Authentication failed. Please make sure to grant all requested permissions, including offline access. You may need to revoke previous access and re-authorize.');
-          setIsAuthenticating(false);
-          setIsGoogleDriveConnected(false);
-          window.removeEventListener('message', handleAuthMessage);
-        }
-      };
-
-      window.addEventListener('message', handleAuthMessage);
-      const checkClosed = setInterval(() => {
-        if (authWindow.closed) {
-          clearInterval(checkClosed);
-          window.removeEventListener('message', handleAuthMessage);
-
-          if (!isGoogleDriveConnected && !isAuthenticating) {
-            setAuthError('Authentication was cancelled');
-          }
-        }
-      }, 1000);
-
-    } catch (error) {
-      console.error('Error during Google Drive authentication:', error);
-      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-      setIsAuthenticating(false);
-    }
-  };
-
   const loadGoogleDriveFiles = async (sessionToken: string, folderId?: string | null) => {
     setIsLoadingFiles(true);
 
@@ -648,13 +560,13 @@ function Upload({
         requestBody.folder_id = folderId;
       }
 
-      const filesResponse = await fetch(`${apiHost}/api/google-drive/files`, {
+      const filesResponse = await fetch(`${apiHost}/api/connectors/files`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({ ...requestBody, provider: 'google_drive' })
       });
 
       if (!filesResponse.ok) {
@@ -919,7 +831,7 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-gray-6000 truncate overflow-hidden text-ellipsis"
+                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
                     title={file.name}
                   >
                     {file.name}
@@ -973,25 +885,25 @@ function Upload({
                 )}
 
                 {!isGoogleDriveConnected ? (
-                  <button
-                    onClick={handleGoogleDriveConnect}
-                    disabled={isAuthenticating}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isAuthenticating ? (
-                      <>
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                        Connecting to Google...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="h-5 w-5" viewBox="0 0 24 24">
-                          <path fill="currentColor" d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"/>
-                        </svg>
-                        Sign in with Google Drive
-                      </>
-                    )}
-                  </button>
+                  <ConnectorAuth
+                    provider="google_drive"
+                    onSuccess={(data) => {
+                      setUserEmail(data.user_email);
+                      setIsGoogleDriveConnected(true);
+                      setIsAuthenticating(false);
+                      setAuthError('');
+                      
+                      if (data.session_token) {
+                        localStorage.setItem('google_drive_session_token', data.session_token);
+                        loadGoogleDriveFiles(data.session_token, null);
+                      }
+                    }}
+                    onError={(error) => {
+                      setAuthError(error);
+                      setIsAuthenticating(false);
+                      setIsGoogleDriveConnected(false);
+                    }}
+                  />
                 ) : (
                   <div className="space-y-4">
                     {/* Connection Status */}
@@ -1013,13 +925,13 @@ function Upload({
                           setAuthError('');
                           
                           const apiHost = import.meta.env.VITE_API_HOST;
-                          fetch(`${apiHost}/api/google-drive/disconnect`, {
+                          fetch(`${apiHost}/api/connectors/disconnect`, {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
                               'Authorization': `Bearer ${token}`
                             },
-                            body: JSON.stringify({ session_token: localStorage.getItem('google_drive_session_token') })
+                            body: JSON.stringify({ provider: 'google_drive', session_token: localStorage.getItem('google_drive_session_token') })
                           }).catch(err => console.error('Error disconnecting from Google Drive:', err));
                         }}
                         className="text-white hover:text-gray-200 text-xs underline"
@@ -1111,7 +1023,7 @@ function Upload({
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <p
-                                      className={`text-sm font-medium truncate ${
+                                      className={`text-sm font-medium truncate dark:text-[#ececf1] ${
                                         file.type === 'application/vnd.google-apps.folder' || file.isFolder
                                           ? 'cursor-pointer hover:text-blue-600'
                                           : ''
