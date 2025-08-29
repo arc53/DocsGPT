@@ -1022,7 +1022,8 @@ class PaginatedSources(Resource):
                     "tokens": doc.get("tokens", ""),
                     "retriever": doc.get("retriever", "classic"),
                     "syncFrequency": doc.get("sync_frequency", ""),
-                    "isNested": bool(doc.get("directory_structure"))
+                    "isNested": bool(doc.get("directory_structure")),
+                    "type": doc.get("type", "file")
                 }
                 paginated_docs.append(doc_data)
             response = {
@@ -1070,7 +1071,8 @@ class CombinedJson(Resource):
                         "tokens": index.get("tokens", ""),
                         "retriever": index.get("retriever", "classic"),
                         "syncFrequency": index.get("sync_frequency", ""),
-                        "is_nested": bool(index.get("directory_structure"))
+                        "is_nested": bool(index.get("directory_structure")),
+                        "type": index.get("type", "file")  # Add type field with default "file"
                     }
                 )
         except Exception as err:
