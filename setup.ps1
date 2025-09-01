@@ -9,7 +9,9 @@ $ErrorActionPreference = "Stop"
 
 # Get current script directory
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$COMPOSE_FILE = Join-Path -Path $SCRIPT_DIR -ChildPath "deployment\docker-compose.yaml"
+$COMPOSE_FILE_HUB = Join-Path -Path $SCRIPT_DIR -ChildPath "deployment\docker-compose-hub.yaml"
+$COMPOSE_FILE_LOCAL = Join-Path -Path $SCRIPT_DIR -ChildPath "deployment\docker-compose.yaml"
+$COMPOSE_FILE = $COMPOSE_FILE_HUB
 $ENV_FILE = Join-Path -Path $SCRIPT_DIR -ChildPath ".env"
 
 # Function to write colored text
@@ -223,12 +225,15 @@ function Prompt-MainMenu {
     Write-Host ""
     Write-ColorText "Welcome to DocsGPT Setup!" -ForegroundColor "White" -Bold
     Write-ColorText "How would you like to proceed?" -ForegroundColor "White"
-    Write-ColorText "1) Use DocsGPT Public API Endpoint (simple and free)" -ForegroundColor "Yellow"
+    Write-ColorText "1) Use DocsGPT Public API Endpoint (simple and free, uses pre-built Docker images from Docker Hub for fastest setup)" -ForegroundColor "Yellow"
     Write-ColorText "2) Serve Local (with Ollama)" -ForegroundColor "Yellow"
     Write-ColorText "3) Connect Local Inference Engine" -ForegroundColor "Yellow"
     Write-ColorText "4) Connect Cloud API Provider" -ForegroundColor "Yellow"
+    Write-ColorText "5) Advanced: Build images locally (for developers)" -ForegroundColor "Yellow"
     Write-Host ""
-    $script:main_choice = Read-Host "Choose option (1-4)"
+    Write-ColorText "By default, DocsGPT uses pre-built images from Docker Hub for a fast, reliable, and consistent experience. This avoids local build errors and speeds up onboarding. Advanced users can choose to build images locally if needed." -ForegroundColor "White"
+    Write-Host ""
+    $script:main_choice = Read-Host "Choose option (1-5)"
 }
 
 # Function to prompt for Local Inference Engine options
@@ -304,9 +309,9 @@ function Use-DocsPublicAPIEndpoint {
     
     # Run Docker compose commands
     try {
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
         & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
@@ -415,10 +420,10 @@ function Serve-LocalOllama {
         Write-Host ""
         Write-ColorText "Starting Docker Compose with Ollama ($docker_compose_file_suffix)..." -ForegroundColor "White"
         
-        # Build the containers
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$optional_compose" build
+        # Pull the containers
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$optional_compose" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
         # Start the containers
@@ -575,10 +580,10 @@ function Connect-LocalInferenceEngine {
         Write-Host ""
         Write-ColorText "Starting Docker Compose..." -ForegroundColor "White"
         
-        # Build the containers
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+        # Pull the containers
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
         # Start the containers
@@ -706,10 +711,12 @@ function Connect-CloudAPIProvider {
         Write-ColorText "Starting Docker Compose..." -ForegroundColor "White"
         
         # Run Docker compose commands
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
         if ($LASTEXITCODE -ne 0) {
-            throw "Docker compose build or up failed with exit code $LASTEXITCODE"
+            throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
+ 
+         & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
         
         Write-Host ""
         Write-ColorText "DocsGPT is now configured to use $provider_name on http://localhost:5173" -ForegroundColor "Green"
@@ -735,13 +742,13 @@ while ($true) {
     
     switch ($main_choice) {
         "1" { 
+            $COMPOSE_FILE = $COMPOSE_FILE_HUB
             Use-DocsPublicAPIEndpoint
             $exitLoop = $true  # Set flag to true on completion
             break 
         }
         "2" { 
             Serve-LocalOllama
-            # Only exit the loop if user didn't press "b" to go back
             if ($ollama_choice -ne "b" -and $ollama_choice -ne "B") {
                 $exitLoop = $true
             }
@@ -749,7 +756,6 @@ while ($true) {
         }
         "3" { 
             Connect-LocalInferenceEngine
-            # Only exit the loop if user didn't press "b" to go back
             if ($engine_choice -ne "b" -and $engine_choice -ne "B") {
                 $exitLoop = $true
             }
@@ -757,20 +763,25 @@ while ($true) {
         }
         "4" { 
             Connect-CloudAPIProvider
-            # Only exit the loop if user didn't press "b" to go back
             if ($provider_choice -ne "b" -and $provider_choice -ne "B") {
                 $exitLoop = $true
             }
             break 
         }
+        "5" {
+            Write-Host ""
+            Write-ColorText "You have selected to build images locally. This is recommended for developers or if you want to test local changes." -ForegroundColor "Yellow"
+            $COMPOSE_FILE = $COMPOSE_FILE_LOCAL
+            Use-DocsPublicAPIEndpoint
+            $exitLoop = $true
+            break
+        }
         default {
             Write-Host ""
-            Write-ColorText "Invalid choice. Please choose 1-4." -ForegroundColor "Red"
+            Write-ColorText "Invalid choice. Please choose 1-5." -ForegroundColor "Red"
             Start-Sleep -Seconds 1
         }
     }
-    
-    # Only break out of the loop if a function completed successfully
     if ($exitLoop) {
         break
     }
