@@ -29,6 +29,7 @@ import {
 import Upload from '../upload/Upload';
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTreeComponent from '../components/FileTreeComponent';
+import ConnectorTreeComponent from '../components/ConnectorTreeComponent';
 import Chunks from '../components/Chunks';
 
 const formatTokens = (tokens: number): string => {
@@ -271,19 +272,27 @@ export default function Sources({
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
-      {documentToView.isNested ? (
-        <FileTreeComponent
+ {documentToView.isNested ? (
+      documentToView.type === 'connector' ? (
+        <ConnectorTreeComponent
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
           onBackToDocuments={() => setDocumentToView(undefined)}
         />
       ) : (
-        <Chunks
-          documentId={documentToView.id || ''}
-          documentName={documentToView.name}
-          handleGoBack={() => setDocumentToView(undefined)}
+        <FileTreeComponent
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
+          onBackToDocuments={() => setDocumentToView(undefined)}
         />
-      )}
+      )
+    ) : (
+      <Chunks
+        documentId={documentToView.id || ''}
+        documentName={documentToView.name}
+        handleGoBack={() => setDocumentToView(undefined)}
+      />
+    )}
     </div>
   ) : (
     <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
