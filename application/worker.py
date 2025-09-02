@@ -22,6 +22,7 @@ from application.api.answer.services.stream_processor import get_prompt
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.chunking import Chunker
+from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import embed_and_store_documents
 from application.parser.file.bulk import SimpleDirectoryReader
 from application.parser.remote.remote_creator import RemoteCreator
@@ -879,98 +880,27 @@ def ingest_connector(
             # Step 1: Initialize the appropriate loader
             self.update_state(state="PROGRESS", meta={"current": 10, "status": "Initializing connector"})
 
-            # Handle incremental sync using Google Drive API directly
-            current_sync_time = datetime.datetime.now().isoformat() + 'Z'
+            if not session_token:
+                raise ValueError(f"{source_type} connector requires session_token")
 
-            if operation_mode == "sync":
-                if source_type == "google_drive":
-                    from application.parser.connectors.connector_creator import ConnectorCreator
-                    remote_loader = ConnectorCreator.create_connector("google_drive", session_token)
+            if not ConnectorCreator.is_supported(source_type):
+                raise ValueError(f"Unsupported connector type: {source_type}. Supported types: {ConnectorCreator.get_supported_connectors()}")
 
-                    source = sources_collection.find_one({"_id": ObjectId(doc_id)})
-                    
-                    last_sync_time = source.get("last_sync")
-                    if not last_sync_time:
-                        last_sync_time = source.get("date")
-                    
+            remote_loader = ConnectorCreator.create_connector(source_type, session_token)
 
-                    scan_results = remote_loader.scan_drive_contents(
-                        file_ids or [],
-                        folder_ids or [],
-                        modified_after=last_sync_time
-                    )
+            # Create a clean config for storage
+            api_source_config = {
+                "file_ids": file_ids or [],
+                "folder_ids": folder_ids or [],
+                "recursive": recursive
+            }
 
-                    modified_files = scan_results.get('modified_files', [])
-                    modified_folders = scan_results.get('modified_folders', [])
-
-                    # Log atomic changes detected via Google Drive API
-                    if modified_files:
-                        logging.info(f"Files modified since last sync: {len(modified_files)} files")
-                        for f in modified_files:
-                            logging.info(f"  - {f['name']} (ID: {f['id']}, Modified: {f['modifiedTime']})")
-
-                    if modified_folders:
-                        logging.info(f"Folders modified since last sync: {len(modified_folders)} folders")
-                        for f in modified_folders:
-                            logging.info(f"  - {f['name']} (ID: {f['id']}, Modified: {f['modifiedTime']})")
-
-                    if not modified_files and not modified_folders:
-                        logging.info("No changes detected via Google Drive API")
-                        return {
-                            "user": user,
-                            "name": job_name,
-                            "tokens": 0,
-                            "type": source_type,
-                            "status": "no_changes"
-                        }
-
-                    file_ids = [f['id'] for f in modified_files]
-                    folder_ids = [f['id'] for f in modified_folders]
-
-            if source_type == "google_drive":
-                if not session_token:
-                    raise ValueError("Google Drive connector requires session_token")
-
-                from application.parser.connectors.connector_creator import ConnectorCreator
-                remote_loader = ConnectorCreator.create_connector("google_drive", session_token)
-
-                # Create a clean config for storage that excludes the session token
-                api_source_config = {
-                    "file_ids": file_ids or [],
-                    "folder_ids": folder_ids or [],
-                    "recursive": recursive
-                }
-
-                # Step 2: Download files to temp directory
-                self.update_state(state="PROGRESS", meta={"current": 20, "status": "Downloading files"})
-                download_info = remote_loader.download_to_directory(
-                    temp_dir,
-                    {
-                        "file_ids": file_ids or [],
-                        "folder_ids": folder_ids or [],
-                        "recursive": recursive
-                    }
-                )
-            else:
-                # For other external knowledge base connectors (future: dropbox, onedrive, etc.)
-                from application.parser.connectors.connector_creator import ConnectorCreator
-
-                if not ConnectorCreator.is_supported(source_type):
-                    raise ValueError(f"Unsupported connector type: {source_type}. Supported types: {ConnectorCreator.get_supported_connectors()}")
-
-                # Create connector with session token and other parameters
-                remote_loader = ConnectorCreator.create_connector(source_type, session_token)
-
-                api_source_config = {
-                    "file_ids": file_ids or [],
-                    "folder_ids": folder_ids or [],
-                    "recursive": recursive
-                }
-
-                download_info = remote_loader.download_to_directory(
-                    temp_dir,
-                    api_source_config
-                )
+            # Step 2: Download files to temp directory
+            self.update_state(state="PROGRESS", meta={"current": 20, "status": "Downloading files"})
+            download_info = remote_loader.download_to_directory(
+                temp_dir,
+                api_source_config
+            )
             
             if download_info.get("empty_result", False) or not download_info.get("files_downloaded", 0):
                 logging.warning(f"No files were downloaded from {source_type}")

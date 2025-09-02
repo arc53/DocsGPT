@@ -67,6 +67,7 @@
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
+      "syncing": "同步中...",
       "syncFrequency": {
         "never": "從不",
         "daily": "每天",

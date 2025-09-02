@@ -10,7 +10,7 @@ import FolderIcon from '../assets/folder.svg';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
-import SearchIcon from '../assets/search.svg';
+import SyncIcon from '../assets/sync.svg';
 import { useOutsideAlerter } from '../hooks';
 
 interface FileNode {
@@ -59,6 +59,8 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncProgress, setSyncProgress] = useState<number>(0);
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -76,6 +78,71 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
       id: fullPath,
       name: fileName,
     });
+  };
+
+  const handleSync = async () => {
+    if (isSyncing) return;
+
+    setIsSyncing(true);
+    setSyncProgress(0);
+
+    try {
+      const response = await userService.syncConnector(docId, token);
+      const data = await response.json();
+
+      if (data.success) {
+        console.log('Sync started successfully:', data.task_id);
+        setSyncProgress(10);
+
+        // Poll task status using userService
+        const maxAttempts = 30;
+        const pollInterval = 2000;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const statusResponse = await userService.getTaskStatus(data.task_id, token);
+            const statusData = await statusResponse.json();
+
+            console.log(`Task status (attempt ${attempt + 1}):`, statusData.status);
+
+            if (statusData.status === 'SUCCESS') {
+              setSyncProgress(100);
+              console.log('Sync completed successfully');
+
+              // Refresh directory structure
+              try {
+                const refreshResponse = await userService.getDirectoryStructure(docId, token);
+                const refreshData = await refreshResponse.json();
+                if (refreshData && refreshData.directory_structure) {
+                  setDirectoryStructure(refreshData.directory_structure);
+                }
+              } catch (err) {
+                console.error('Error refreshing directory structure:', err);
+              }
+              break;
+            } else if (statusData.status === 'FAILURE') {
+              console.error('Sync task failed:', statusData.result);
+              break;
+            } else if (statusData.status === 'PROGRESS') {
+              const progress = statusData.meta?.current || 0;
+              setSyncProgress(Math.max(10, progress)); // Ensure minimum 10% after start
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          } catch (error) {
+            console.error('Error polling task status:', error);
+            break;
+          }
+        }
+      } else {
+        console.error('Sync failed:', data.error);
+      }
+    } catch (err) {
+      console.error('Error syncing connector:', err);
+    } finally {
+      setIsSyncing(false);
+      setSyncProgress(0);
+    }
   };
 
   useEffect(() => {
@@ -247,7 +314,27 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
         </div>
 
         <div className="flex relative flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0">
+
           {renderFileSearch()}
+
+          {/* Sync button */}
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-nowrap font-medium transition-colors ${
+              isSyncing
+                ? 'bg-gray-300 text-gray-600 cursor-not-allowed dark:bg-gray-600 dark:text-gray-400'
+                : 'bg-purple-30 hover:bg-violets-are-blue text-white'
+            }`}
+            title={isSyncing ? `${t('settings.sources.syncing')} ${syncProgress}%` : t('settings.sources.sync')}
+          >
+            <img
+              src={SyncIcon}
+              alt={t('settings.sources.sync')}
+              className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''} ${!isSyncing ? 'filter invert' : ''}`}
+            />
+            {isSyncing ? `${syncProgress}%` : t('settings.sources.sync')}
+          </button>
         </div>
       </div>
     );
