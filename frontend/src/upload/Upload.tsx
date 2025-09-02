@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import { getSessionToken, setSessionToken, removeSessionToken } from '../utils/providerUtils';
 import FileUpload from '../assets/file_upload.svg';
 import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
@@ -61,6 +62,8 @@ function Upload({
   const [authError, setAuthError] = useState<string>('');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'My Drive'}]);
+
+
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
@@ -445,7 +448,7 @@ function Upload({
     let configData;
 
     if (ingestor.type === 'google_drive') {
-      const sessionToken = localStorage.getItem('google_drive_session_token');
+      const sessionToken = getSessionToken(ingestor.type);
       
       const selectedItems = googleDriveFiles.filter(file => selectedFiles.includes(file.id));
       const selectedFolderIds = selectedItems
@@ -497,7 +500,7 @@ function Upload({
 
   useEffect(() => {
     if (ingestor.type === 'google_drive') {
-      const sessionToken = localStorage.getItem('google_drive_session_token');
+      const sessionToken = getSessionToken(ingestor.type);
       
       if (sessionToken) {
         // Auto-authenticate if session token exists
@@ -524,7 +527,7 @@ function Upload({
       });
       
       if (!validateResponse.ok) {
-        localStorage.removeItem('google_drive_session_token');
+        removeSessionToken(ingestor.type);
         setIsGoogleDriveConnected(false);
         setAuthError('Session expired. Please reconnect to Google Drive.');
         return;
@@ -536,7 +539,7 @@ function Upload({
         setUserEmail(validateData.user_email || 'Connected User');
         loadGoogleDriveFiles(sessionToken, null);
       } else {
-        localStorage.removeItem('google_drive_session_token');
+        removeSessionToken(ingestor.type);
         setIsGoogleDriveConnected(false);
         setAuthError(validateData.error || 'Session expired. Please reconnect your Google Drive account and make sure to grant offline access.');
       }
@@ -640,7 +643,7 @@ function Upload({
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {
-    const sessionToken = localStorage.getItem('google_drive_session_token');
+    const sessionToken = getSessionToken(ingestor.type);
     if (sessionToken) {
       setCurrentFolderId(folderId);
       setFolderPath(prev => [...prev, {id: folderId, name: folderName}]);
@@ -649,7 +652,7 @@ function Upload({
   };
 
   const navigateBack = (index: number) => {
-    const sessionToken = localStorage.getItem('google_drive_session_token');
+    const sessionToken = getSessionToken(ingestor.type);
     if (sessionToken) {
       const newPath = folderPath.slice(0, index + 1);
       const targetFolderId = newPath[newPath.length - 1]?.id;
@@ -894,7 +897,7 @@ function Upload({
                       setAuthError('');
                       
                       if (data.session_token) {
-                        localStorage.setItem('google_drive_session_token', data.session_token);
+                        setSessionToken(ingestor.type, data.session_token);
                         loadGoogleDriveFiles(data.session_token, null);
                       }
                     }}
@@ -916,7 +919,7 @@ function Upload({
                       </div>
                       <button
                         onClick={() => {
-                          localStorage.removeItem('google_drive_session_token');
+                          removeSessionToken(ingestor.type);
                           
                           setIsGoogleDriveConnected(false);
                           setGoogleDriveFiles([]);
@@ -931,7 +934,7 @@ function Upload({
                               'Content-Type': 'application/json',
                               'Authorization': `Bearer ${token}`
                             },
-                            body: JSON.stringify({ provider: 'google_drive', session_token: localStorage.getItem('google_drive_session_token') })
+                            body: JSON.stringify({ provider: ingestor.type, session_token: getSessionToken(ingestor.type) })
                           }).catch(err => console.error('Error disconnecting from Google Drive:', err));
                         }}
                         className="text-white hover:text-gray-200 text-xs underline"

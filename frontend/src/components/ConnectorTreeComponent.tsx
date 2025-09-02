@@ -61,6 +61,9 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<number>(0);
+  const [sourceProvider, setSourceProvider] = useState<string>('');
+  const [syncDone, setSyncDone] = useState<boolean>(false);
+
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -81,13 +84,16 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   };
 
   const handleSync = async () => {
+
     if (isSyncing) return;
+
+    const provider = sourceProvider;
 
     setIsSyncing(true);
     setSyncProgress(0);
 
     try {
-      const response = await userService.syncConnector(docId, token);
+      const response = await userService.syncConnector(docId, provider, token);
       const data = await response.json();
 
       if (data.success) {
@@ -115,7 +121,14 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                 const refreshData = await refreshResponse.json();
                 if (refreshData && refreshData.directory_structure) {
                   setDirectoryStructure(refreshData.directory_structure);
+                  setCurrentPath([]);
                 }
+                if (refreshData && refreshData.provider) {
+                  setSourceProvider(refreshData.provider);
+                }
+
+                setSyncDone(true);
+                setTimeout(() => setSyncDone(false), 5000);
               } catch (err) {
                 console.error('Error refreshing directory structure:', err);
               }
@@ -124,8 +137,13 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
               console.error('Sync task failed:', statusData.result);
               break;
             } else if (statusData.status === 'PROGRESS') {
-              const progress = statusData.meta?.current || 0;
-              setSyncProgress(Math.max(10, progress)); // Ensure minimum 10% after start
+
+              const progress = Number((statusData.result && statusData.result.current != null)
+                ? statusData.result.current
+                : (statusData.meta && statusData.meta.current != null)
+                  ? statusData.meta.current
+                  : 0);
+              setSyncProgress(Math.max(10, progress));
             }
 
             await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -149,16 +167,21 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     const fetchDirectoryStructure = async () => {
       try {
         setLoading(true);
-        const response = await userService.getDirectoryStructure(docId, token);
-        const data = await response.json();
 
-        if (data && data.directory_structure) {
-          setDirectoryStructure(data.directory_structure);
+        const directoryResponse = await userService.getDirectoryStructure(docId, token);
+        const directoryData = await directoryResponse.json();
+
+        if (directoryData && directoryData.directory_structure) {
+          setDirectoryStructure(directoryData.directory_structure);
         } else {
           setError('Invalid response format');
         }
+
+        if (directoryData && directoryData.provider) {
+          setSourceProvider(directoryData.provider);
+        }
       } catch (err) {
-        setError('Failed to load directory structure');
+        setError('Failed to load source information');
         console.error(err);
       } finally {
         setLoading(false);
@@ -247,7 +270,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   ): { totalSize: number; totalTokens: number } => {
     let totalSize = 0;
     let totalTokens = 0;
-  
+
     Object.entries(structure).forEach(([_, node]) => {
       if (node.type) {
         // It's a file
@@ -260,10 +283,10 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
         totalTokens += stats.totalTokens;
       }
     });
-  
+
     return { totalSize, totalTokens };
   };
-  
+
   const handleBackNavigation = () => {
     if (selectedFile) {
       setSelectedFile(null);
@@ -287,24 +310,21 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-          
-          <div className="flex items-center">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+
+          <div className="flex flex-wrap items-center">
+            <span className="text-[#7D54D1] font-semibold break-words">
               {sourceName}
             </span>
             {currentPath.length > 0 && (
               <>
-                <span className="mx-1 text-gray-400">/</span>
+                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
                 {currentPath.map((dir, index) => (
                   <React.Fragment key={index}>
-                    <button
-                      className="text-sm font-medium text-gray-700 hover:underline dark:text-gray-300"
-                      onClick={() => navigateToPath(index)}
-                    >
+                    <span className="break-words text-gray-700 dark:text-[#E0E0E0]">
                       {dir}
-                    </button>
+                    </span>
                     {index < currentPath.length - 1 && (
-                      <span className="mx-1 text-gray-400">/</span>
+                      <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
                     )}
                   </React.Fragment>
                 ))}
@@ -326,14 +346,16 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                 ? 'bg-gray-300 text-gray-600 cursor-not-allowed dark:bg-gray-600 dark:text-gray-400'
                 : 'bg-purple-30 hover:bg-violets-are-blue text-white'
             }`}
-            title={isSyncing ? `${t('settings.sources.syncing')} ${syncProgress}%` : t('settings.sources.sync')}
+            title={isSyncing
+              ? `${t('settings.sources.syncing')} ${syncProgress}%`
+              : (syncDone ? 'Done' : t('settings.sources.sync'))}
           >
             <img
               src={SyncIcon}
               alt={t('settings.sources.sync')}
-              className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''} ${!isSyncing ? 'filter invert' : ''}`}
+              className={`h-4 w-4 mr-2 filter invert contrast-200 ${isSyncing ? 'animate-spin' : ''}`}
             />
-            {isSyncing ? `${syncProgress}%` : t('settings.sources.sync')}
+            {isSyncing ? `${syncProgress}%` : (syncDone ? 'Done' : t('settings.sources.sync'))}
           </button>
         </div>
       </div>
@@ -379,25 +401,25 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     const sortedEntries = Object.entries(directory).sort(([nameA, nodeA], [nameB, nodeB]) => {
       const isFileA = !!nodeA.type;
       const isFileB = !!nodeB.type;
-      
+
       if (isFileA !== isFileB) {
         return isFileA ? 1 : -1; // Directories first
       }
-      
+
       return nameA.localeCompare(nameB); // Alphabetical within each group
     });
 
-    
+
     // Process directories
     const directoryRows = sortedEntries
       .filter(([_, node]) => !node.type)
       .map(([name, node]) => {
         const itemId = `dir-${name}`;
         const menuRef = getMenuRef(itemId);
-        
+
         // Calculate directory stats
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
-        
+
         return (
           <tr
             key={itemId}
@@ -459,7 +481,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
       .map(([name, node]) => {
         const itemId = `file-${name}`;
         const menuRef = getMenuRef(itemId);
-        
+
         return (
           <tr
             key={itemId}
@@ -580,8 +602,8 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`w-full h-[38px] border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] 
-              ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} 
+          className={`w-full h-[38px] border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A]
+              ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'}
               bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
         />
 

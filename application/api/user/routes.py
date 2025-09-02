@@ -3965,12 +3965,24 @@ class DirectoryStructure(Resource):
                 )
 
             directory_structure = doc.get("directory_structure", {})
+            base_path = doc.get("file_path", "")
+
+            provider = None
+            remote_data = doc.get("remote_data")
+            try:
+                if isinstance(remote_data, str) and remote_data:
+                    remote_data_obj = json.loads(remote_data)
+                    provider = remote_data_obj.get("provider")
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to parse remote_data for doc {doc_id}: {e}")
 
             return make_response(
                 jsonify({
                     "success": True,
                     "directory_structure": directory_structure,
-                    "base_path": doc.get("file_path", "")
+                    "base_path": base_path,
+                    "provider": provider,
                 }), 200
             )
 
