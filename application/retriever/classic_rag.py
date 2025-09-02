@@ -91,7 +91,7 @@ class ClassicRAG(BaseRetriever):
                     "title": i.metadata.get(
                         "title", i.metadata.get("post_title", i.page_content)
                     ).split("/")[-1],
-                    "text": i.page_content,
+                    "text": f"File: {i.metadata.get('title', 'Unknown')}\n{i.page_content}",
                     "source": (
                         i.metadata.get("source")
                         if i.metadata.get("source")
