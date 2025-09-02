@@ -74,6 +74,7 @@ class UploadConnector(Resource):
         try:
             config = json.loads(data["data"])
             source_data = None
+            sync_frequency = config.get("sync_frequency", "never")
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
@@ -112,7 +113,8 @@ class UploadConnector(Resource):
                     file_ids=file_ids,
                     folder_ids=folder_ids,
                     recursive=config.get("recursive", False),
-                    retriever=config.get("retriever", "classic")
+                    retriever=config.get("retriever", "classic"),
+                    sync_frequency=sync_frequency
                 )
                 return make_response(jsonify({"success": True, "task_id": task.id}), 200)
             task = ingest_connector_task.delay(
@@ -120,6 +122,7 @@ class UploadConnector(Resource):
                 job_name=data["name"],
                 user=decoded_token.get("sub"),
                 loader=data["source"],
+                sync_frequency=sync_frequency
             )
         except Exception as err:
             current_app.logger.error(
@@ -509,5 +512,115 @@ class ConnectorDisconnect(Resource):
         except Exception as e:
             current_app.logger.error(f"Error disconnecting connector session: {e}")
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+
+@connectors_ns.route("/api/connectors/sync")
+class ConnectorSync(Resource):
+    @api.expect(
+        api.model(
+            "ConnectorSyncModel",
+            {
+                "source_id": fields.String(required=True, description="Source ID to sync"),
+                "session_token": fields.String(required=True, description="Authentication token")
+            },
+        )
+    )
+    @api.doc(description="Sync connector source to check for modifications")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+
+        try:
+            data = request.get_json()
+            source_id = data.get('source_id')
+            session_token = data.get('session_token')
+
+            if not all([source_id, session_token]):
+                return make_response(
+                    jsonify({
+                        "success": False,
+                        "error": "source_id and session_token are required"
+                    }), 
+                    400
+                )
+            source = sources_collection.find_one({"_id": ObjectId(source_id)})
+            if not source:
+                return make_response(
+                    jsonify({
+                        "success": False,
+                        "error": "Source not found"
+                    }), 
+                    404
+                )
+
+            if source.get('user') != decoded_token.get('sub'):
+                return make_response(
+                    jsonify({
+                        "success": False,
+                        "error": "Unauthorized access to source"
+                    }), 
+                    403
+                )
+
+            remote_data = {}
+            try:
+                if source.get('remote_data'):
+                    remote_data = json.loads(source.get('remote_data'))
+            except json.JSONDecodeError:
+                current_app.logger.error(f"Invalid remote_data format for source {source_id}")
+                remote_data = {}
+
+            source_type = remote_data.get('provider')
+            if not source_type:
+                return make_response(
+                    jsonify({
+                        "success": False,
+                        "error": "Source provider not found in remote_data"
+                    }), 
+                    400
+                )
+
+            # Extract configuration from remote_data
+            file_ids = remote_data.get('file_ids', [])
+            folder_ids = remote_data.get('folder_ids', [])
+            recursive = remote_data.get('recursive', True)
+
+            # Start the sync task
+            task = ingest_connector_task.delay(
+                job_name=source.get('name'),
+                user=decoded_token.get('sub'),
+                source_type=source_type,
+                session_token=session_token,
+                file_ids=file_ids,
+                folder_ids=folder_ids,
+                recursive=recursive,
+                retriever=source.get('retriever', 'classic'),
+                operation_mode="sync",
+                doc_id=source_id,
+                sync_frequency=source.get('sync_frequency', 'never')
+            )
+
+            return make_response(
+                jsonify({
+                    "success": True,
+                    "task_id": task.id
+                }), 
+                200
+            )
+
+        except Exception as err:
+            current_app.logger.error(
+                f"Error syncing connector source: {err}",
+                exc_info=True
+            )
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "error": str(err)
+                }), 
+                400
+            )
+
 
 

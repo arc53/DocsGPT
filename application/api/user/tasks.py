@@ -49,27 +49,33 @@ def process_agent_webhook(self, agent_id, payload):
 
 @celery.task(bind=True)
 def ingest_connector_task(
-    self, 
-    job_name, 
-    user, 
-    source_type, 
-    session_token=None, 
-    file_ids=None, 
-    folder_ids=None, 
+    self,
+    job_name,
+    user,
+    source_type,
+    session_token=None,
+    file_ids=None,
+    folder_ids=None,
     recursive=True,
-    retriever="classic"
+    retriever="classic",
+    operation_mode="upload",
+    doc_id=None,
+    sync_frequency="never"
 ):
     from application.worker import ingest_connector
     resp = ingest_connector(
-        self, 
-        job_name, 
-        user, 
-        source_type, 
+        self,
+        job_name,
+        user,
+        source_type,
         session_token=session_token,
         file_ids=file_ids,
         folder_ids=folder_ids,
         recursive=recursive,
-        retriever=retriever
+        retriever=retriever,
+        operation_mode=operation_mode,
+        doc_id=doc_id,
+        sync_frequency=sync_frequency
     )
     return resp
 
