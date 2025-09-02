@@ -171,7 +171,6 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
       variant: 'primary',
     });
 
-    // No delete option for connector files
 
     return options;
   };

@@ -104,6 +104,18 @@ const userService = {
     apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
   manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
+  syncConnector: (docId: string, token: string | null): Promise<any> => {
+    const sessionToken = localStorage.getItem('google_drive_session_token');
+    return apiClient.post(
+      endpoints.USER.SYNC_CONNECTOR,
+      { 
+        source_id: docId, 
+        session_token: sessionToken,
+        provider: 'google_drive'
+      },
+      token
+    );
+  },
 };
 
 export default userService;
