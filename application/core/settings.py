@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     # Google Drive integration
     GOOGLE_CLIENT_ID: Optional[str] = None # Replace with your actual Google OAuth client ID
     GOOGLE_CLIENT_SECRET: Optional[str] = None# Replace with your actual Google OAuth client secret
-    GOOGLE_REDIRECT_URI: Optional[str] = None
+    CONNECTOR_REDIRECT_BASE_URI: Optional[str] = "http://127.0.0.1:7091/api/connectors/callback" 
+    ##append ?provider={provider_name} in your Provider console like http://127.0.0.1:7091/api/connectors/callback?provider=google_drive
+
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"

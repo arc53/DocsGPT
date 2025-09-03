@@ -255,136 +255,64 @@ class ConnectorsCallback(Resource):
         """Handle OAuth callback for external connectors"""
         try:
             from application.parser.connectors.connector_creator import ConnectorCreator
-            from flask import request
+            from flask import request, redirect
             import uuid
 
+            provider = request.args.get('provider', 'google_drive')
             authorization_code = request.args.get('code')
             _ = request.args.get('state')
             error = request.args.get('error')
 
             if error:
-                return make_response(
-                    jsonify({"success": False, "error": f"OAuth error: {error}. Please try again and make sure to grant all requested permissions, including offline access."}), 400
-                )
+                return redirect(f"/api/connectors/callback-status?status=error&message=OAuth+error:+{error}.+Please+try+again+and+make+sure+to+grant+all+requested+permissions,+including+offline+access.&provider={provider}")
 
             if not authorization_code:
-                return make_response(
-                    jsonify({"success": False, "error": "Authorization code not provided. Please complete the authorization process and make sure to grant offline access."}), 400
-                )
+                return redirect(f"/api/connectors/callback-status?status=error&message=Authorization+code+not+provided.+Please+complete+the+authorization+process+and+make+sure+to+grant+offline+access.&provider={provider}")
 
             try:
-                auth = ConnectorCreator.create_auth("google_drive")
+                auth = ConnectorCreator.create_auth(provider)
                 token_info = auth.exchange_code_for_tokens(authorization_code)
-                current_app.logger.info(f"Token info received from OAuth callback - has refresh_token: {bool(token_info.get('refresh_token'))}, "
-                           f"has access_token: {bool(token_info.get('access_token'))}, "
-                           f"expiry: {token_info.get('expiry')}")
 
-                safe_token_info = {k: v for k, v in token_info.items() if k not in ['access_token', 'refresh_token', 'client_secret']}
-                current_app.logger.info(f"Full token info structure: {safe_token_info}")
+                session_token = str(uuid.uuid4())
+                
 
-                # Validate that we got token info
-                if not token_info:
-                    current_app.logger.error("exchange_code_for_tokens returned None or empty result")
-                    return make_response(
-                        jsonify({"success": False, "error": "Failed to exchange authorization code for tokens. Please try again and make sure to grant all requested permissions, including offline access."}), 400
-                    )
+                try:
+                    credentials = auth.create_credentials_from_token_info(token_info)
+                    service = auth.build_drive_service(credentials)
+                    user_info = service.about().get(fields="user").execute()
+                    user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
+                except Exception as e:
+                    current_app.logger.warning(f"Could not get user info: {e}")
+                    user_email = 'Connected User'
 
-                # Validate required fields in token_info
-                required_fields = ['access_token', 'token_uri', 'client_id', 'client_secret']
-                missing_fields = [field for field in required_fields if not token_info.get(field)]
-                if missing_fields:
-                    current_app.logger.error(f"Token info missing required fields: {missing_fields}")
-                    return make_response(
-                        jsonify({"success": False, "error": f"Token information incomplete. Missing fields: {missing_fields}. Please try again and make sure to grant all requested permissions."}), 400
-                    )
+                sanitized_token_info = {
+                    "access_token": token_info.get("access_token"),
+                    "refresh_token": token_info.get("refresh_token"),
+                    "token_uri": token_info.get("token_uri"),
+                    "expiry": token_info.get("expiry"),
+                    "scopes": token_info.get("scopes")
+                }
 
-                if not token_info.get('refresh_token'):
-                    current_app.logger.warning("OAuth flow did not return a refresh token - user will need to re-authenticate when token expires")
-         
-                required_fields = ['access_token', 'token_uri', 'client_id', 'client_secret']
-                missing_fields = [field for field in required_fields if not token_info.get(field)]
-                if missing_fields:
-                    current_app.logger.error(f"Token info missing required fields: {missing_fields}")
-                    return make_response(
-                        jsonify({"success": False, "error": f"Token info missing required fields: {missing_fields}"}), 400
-                    )
+                user_id = request.decoded_token.get("sub") if getattr(request, "decoded_token", None) else None
+                sessions_collection.insert_one({
+                    "session_token": session_token,
+                    "user": user_id,
+                    "token_info": sanitized_token_info,
+                    "created_at": datetime.datetime.now(datetime.timezone.utc),
+                    "user_email": user_email,
+                    "provider": provider
+                })
+
+                # Redirect to success page with session token and user email
+                return redirect(f"/api/connectors/callback-status?status=success&message=Authentication+successful&provider={provider}&session_token={session_token}&user_email={user_email}")
 
             except Exception as e:
                 current_app.logger.error(f"Error exchanging code for tokens: {str(e)}", exc_info=True)
-
-                if 'refresh' in str(e).lower():
-                    current_app.logger.warning(f"Missing refresh token but continuing: {str(e)}")
-
-                else:
-                    return make_response(
-                        jsonify({"success": False, "error": f"Failed to exchange authorization code for tokens: {str(e)}"}), 400
-                    )
-
-            try:
-                credentials = auth.create_credentials_from_token_info(token_info)
-                service = auth.build_drive_service(credentials)
-                user_info = service.about().get(fields="user").execute()
-                user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
-            except Exception as e:
-                current_app.logger.warning(f"Could not get user info: {e}")
-                if token_info.get('access_token'):
-                    try:
-                        import requests
-                        headers = {'Authorization': f'Bearer {token_info["access_token"]}'}
-                        response = requests.get(
-                            'https://www.googleapis.com/drive/v3/about?fields=user',
-                            headers=headers
-                        )
-                        if response.status_code == 200:
-                            user_info = response.json()
-                            user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
-                        else:
-                            user_email = 'Connected User'
-                    except Exception as request_error:
-                        current_app.logger.warning(f"Could not get user info via direct request: {request_error}")
-                        user_email = 'Connected User'
-                else:
-                    user_email = 'Connected User'
-
-            session_token = str(uuid.uuid4())
-
-
-
-            sanitized_token_info = {
-                "access_token": token_info.get("access_token"),
-                "refresh_token": token_info.get("refresh_token"),
-                "token_uri": token_info.get("token_uri"),
-                "expiry": token_info.get("expiry"),
-                "scopes": token_info.get("scopes")
-            }
-
-            user_id = request.decoded_token.get("sub") if getattr(request, "decoded_token", None) else None
-            sessions_collection.insert_one({
-                "session_token": session_token,
-                "user": user_id,
-                "token_info": sanitized_token_info,
-                "created_at": datetime.datetime.now(datetime.timezone.utc),
-                "user_email": user_email
-            })
-
-            return make_response(
-                jsonify({
-                    "success": True,
-                    "message": "Google Drive authentication successful",
-                    "session_token": session_token,
-                    "user_email": user_email
-                }),
-                200
-            )
+                return redirect(f"/api/connectors/callback-status?status=error&message=Failed+to+exchange+authorization+code+for+tokens:+{str(e)}&provider={provider}")
 
         except Exception as e:
             current_app.logger.error(f"Error handling connector callback: {e}")
-            return make_response(
-                jsonify({
-                    "success": False,
-                    "error": f"Failed to complete connector authentication: {str(e)}. Please try again and make sure to grant all requested permissions, including offline access."
-                }), 500
-            )
+            return redirect(f"/api/connectors/callback-status?status=error&message=Failed+to+complete+connector+authentication:+{str(e)}.+Please+try+again+and+make+sure+to+grant+all+requested+permissions,+including+offline+access.")
 
 
 @connectors_ns.route("/api/connectors/refresh")
@@ -622,5 +550,64 @@ class ConnectorSync(Resource):
                 400
             )
 
+
+@connectors_ns.route("/api/connectors/callback-status")
+class ConnectorCallbackStatus(Resource):
+    @api.doc(description="Return HTML page with connector authentication status")
+    def get(self):
+        """Return HTML page with connector authentication status"""
+        try:
+            status = request.args.get('status', 'error')
+            message = request.args.get('message', '')
+            provider = request.args.get('provider', 'connector')
+            session_token = request.args.get('session_token', '')
+            user_email = request.args.get('user_email', '')
+            
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>{provider.replace('_', ' ').title()} Authentication</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
+                    .container {{ max-width: 600px; margin: 0 auto; }}
+                    .success {{ color: #4CAF50; }}
+                    .error {{ color: #F44336; }}
+                </style>
+                <script>
+                    window.onload = function() {{
+                        const status = "{status}";
+                        const sessionToken = "{session_token}";
+                        const userEmail = "{user_email}";
+                        
+                        if (status === "success" && window.opener) {{
+                            window.opener.postMessage({{
+                                type: '{provider}_auth_success',
+                                session_token: sessionToken,
+                                user_email: userEmail
+                            }}, '*');
+                            
+                            setTimeout(() => window.close(), 3000);
+                        }}
+                    }};
+                </script>
+            </head>
+            <body>
+                <div class="container">
+                    <h2>{provider.replace('_', ' ').title()} Authentication</h2>
+                    <div class="{status}">
+                        <p>{message}</p>
+                        {f'<p>Connected as: {user_email}</p>' if status == 'success' else ''}
+                    </div>
+                    <p><small>You can close this window. {f"Your {provider.replace('_', ' ').title()} is now connected and ready to use." if status == 'success' else ''}</small></p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            return make_response(html_content, 200, {'Content-Type': 'text/html'})
+        except Exception as e:
+            current_app.logger.error(f"Error rendering callback status page: {e}")
+            return make_response("Authentication error occurred", 500, {'Content-Type': 'text/html'})
 
 

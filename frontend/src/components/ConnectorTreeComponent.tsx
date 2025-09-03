@@ -64,7 +64,6 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   const [sourceProvider, setSourceProvider] = useState<string>('');
   const [syncDone, setSyncDone] = useState<boolean>(false);
 
-
   useOutsideAlerter(
     searchDropdownRef,
     () => {
@@ -84,7 +83,6 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   };
 
   const handleSync = async () => {
-
     if (isSyncing) return;
 
     const provider = sourceProvider;
@@ -106,10 +104,16 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
-            const statusResponse = await userService.getTaskStatus(data.task_id, token);
+            const statusResponse = await userService.getTaskStatus(
+              data.task_id,
+              token,
+            );
             const statusData = await statusResponse.json();
 
-            console.log(`Task status (attempt ${attempt + 1}):`, statusData.status);
+            console.log(
+              `Task status (attempt ${attempt + 1}):`,
+              statusData.status,
+            );
 
             if (statusData.status === 'SUCCESS') {
               setSyncProgress(100);
@@ -117,7 +121,10 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
 
               // Refresh directory structure
               try {
-                const refreshResponse = await userService.getDirectoryStructure(docId, token);
+                const refreshResponse = await userService.getDirectoryStructure(
+                  docId,
+                  token,
+                );
                 const refreshData = await refreshResponse.json();
                 if (refreshData && refreshData.directory_structure) {
                   setDirectoryStructure(refreshData.directory_structure);
@@ -137,12 +144,13 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
               console.error('Sync task failed:', statusData.result);
               break;
             } else if (statusData.status === 'PROGRESS') {
-
-              const progress = Number((statusData.result && statusData.result.current != null)
-                ? statusData.result.current
-                : (statusData.meta && statusData.meta.current != null)
-                  ? statusData.meta.current
-                  : 0);
+              const progress = Number(
+                statusData.result && statusData.result.current != null
+                  ? statusData.result.current
+                  : statusData.meta && statusData.meta.current != null
+                    ? statusData.meta.current
+                    : 0,
+              );
               setSyncProgress(Math.max(10, progress));
             }
 
@@ -168,7 +176,10 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
       try {
         setLoading(true);
 
-        const directoryResponse = await userService.getDirectoryStructure(docId, token);
+        const directoryResponse = await userService.getDirectoryStructure(
+          docId,
+          token,
+        );
         const directoryData = await directoryResponse.json();
 
         if (directoryData && directoryData.directory_structure) {
@@ -261,7 +272,6 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
       variant: 'primary',
     });
 
-
     return options;
   };
 
@@ -301,18 +311,18 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
 
   const renderPathNavigation = () => {
     return (
-      <div className="mb-0 min-h-[38px] flex flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
         {/* Left side with path navigation */}
         <div className="flex w-full items-center sm:w-auto">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34] font-medium"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             onClick={handleBackNavigation}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
 
           <div className="flex flex-wrap items-center">
-            <span className="text-[#7D54D1] font-semibold break-words">
+            <span className="font-semibold break-words text-[#7D54D1]">
               {sourceName}
             </span>
             {currentPath.length > 0 && (
@@ -324,7 +334,9 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                       {dir}
                     </span>
                     {index < currentPath.length - 1 && (
-                      <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
+                      <span className="mx-1 flex-shrink-0 text-gray-500">
+                        /
+                      </span>
                     )}
                   </React.Fragment>
                 ))}
@@ -333,29 +345,36 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
           </div>
         </div>
 
-        <div className="flex relative flex-row flex-nowrap items-center gap-2 w-full sm:w-auto justify-end mt-2 sm:mt-0">
-
+        <div className="relative mt-2 flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:mt-0 sm:w-auto">
           {renderFileSearch()}
 
           {/* Sync button */}
           <button
             onClick={handleSync}
             disabled={isSyncing}
-            className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-nowrap font-medium transition-colors ${
+            className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors ${
               isSyncing
-                ? 'bg-gray-300 text-gray-600 cursor-not-allowed dark:bg-gray-600 dark:text-gray-400'
+                ? 'cursor-not-allowed bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
                 : 'bg-purple-30 hover:bg-violets-are-blue text-white'
             }`}
-            title={isSyncing
-              ? `${t('settings.sources.syncing')} ${syncProgress}%`
-              : (syncDone ? 'Done' : t('settings.sources.sync'))}
+            title={
+              isSyncing
+                ? `${t('settings.sources.syncing')} ${syncProgress}%`
+                : syncDone
+                  ? 'Done'
+                  : t('settings.sources.sync')
+            }
           >
             <img
               src={SyncIcon}
               alt={t('settings.sources.sync')}
-              className={`h-4 w-4 mr-2 filter invert contrast-200 ${isSyncing ? 'animate-spin' : ''}`}
+              className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
             />
-            {isSyncing ? `${syncProgress}%` : (syncDone ? 'Done' : t('settings.sources.sync'))}
+            {isSyncing
+              ? `${syncProgress}%`
+              : syncDone
+                ? 'Done'
+                : t('settings.sources.sync')}
           </button>
         </div>
       </div>
@@ -369,46 +388,47 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-          <tr
-            key="parent-dir"
-            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
-            onClick={navigateUp}
-          >
-            <td className="px-2 py-2 lg:px-4">
-              <div className="flex items-center">
-                <img
-                  src={FolderIcon}
-                  alt={t('settings.sources.parentFolderAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
-                />
-                <span className="truncate text-sm dark:text-[#E0E0E0]">
-                  ..
-                </span>
-              </div>
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-              -
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-              -
-            </td>
-            <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
-          </tr>,
-        ]
+            <tr
+              key="parent-dir"
+              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
+              onClick={navigateUp}
+            >
+              <td className="px-2 py-2 lg:px-4">
+                <div className="flex items-center">
+                  <img
+                    src={FolderIcon}
+                    alt={t('settings.sources.parentFolderAlt')}
+                    className="mr-2 h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="truncate text-sm dark:text-[#E0E0E0]">
+                    ..
+                  </span>
+                </div>
+              </td>
+              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+                -
+              </td>
+              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+                -
+              </td>
+              <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
+            </tr>,
+          ]
         : [];
 
     // Sort entries: directories first, then files, both alphabetically
-    const sortedEntries = Object.entries(directory).sort(([nameA, nodeA], [nameB, nodeB]) => {
-      const isFileA = !!nodeA.type;
-      const isFileB = !!nodeB.type;
+    const sortedEntries = Object.entries(directory).sort(
+      ([nameA, nodeA], [nameB, nodeB]) => {
+        const isFileA = !!nodeA.type;
+        const isFileB = !!nodeB.type;
 
-      if (isFileA !== isFileB) {
-        return isFileA ? 1 : -1; // Directories first
-      }
+        if (isFileA !== isFileB) {
+          return isFileA ? 1 : -1; // Directories first
+        }
 
-      return nameA.localeCompare(nameB); // Alphabetical within each group
-    });
-
+        return nameA.localeCompare(nameB); // Alphabetical within each group
+      },
+    );
 
     // Process directories
     const directoryRows = sortedEntries
@@ -450,7 +470,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E] font-medium"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -510,7 +530,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E] font-medium"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -602,14 +622,12 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`w-full h-[38px] border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A]
-              ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'}
-              bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
+          className={`h-[38px] w-full border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
         />
 
         {searchQuery && (
-          <div className="absolute top-full left-0 right-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg dark:border-[#6A6A6A] dark:bg-[#1F2023] transition-all duration-200">
-            <div className="max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden overscroll-contain">
+          <div className="absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg transition-all duration-200 dark:border-[#6A6A6A] dark:bg-[#1F2023]">
+            <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
               {searchResults.length === 0 ? (
                 <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
                   {t('settings.sources.noResults')}
@@ -620,10 +638,11 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                     key={index}
                     onClick={() => handleSearchSelect(result)}
                     title={result.path}
-                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${index !== searchResults.length - 1
+                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                      index !== searchResults.length - 1
                         ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
                         : ''
-                      }`}
+                    }`}
                   >
                     <img
                       src={result.isFile ? FileIcon : FolderIcon}
@@ -634,7 +653,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                       }
                       className="mr-2 h-4 w-4 flex-shrink-0"
                     />
-                    <span className="text-sm dark:text-[#E0E0E0] truncate flex-1">
+                    <span className="flex-1 truncate text-sm dark:text-[#E0E0E0]">
                       {result.path.split('/').pop() || result.path}
                     </span>
                   </div>
@@ -706,9 +725,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                     <th className="w-10 px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]"></th>
                   </tr>
                 </thead>
-                <tbody>
-                  {renderFileTree(getCurrentDirectory())}
-                </tbody>
+                <tbody>{renderFileTree(getCurrentDirectory())}</tbody>
               </table>
             </div>
           </div>
