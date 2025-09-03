@@ -86,22 +86,56 @@ class ClassicRAG(BaseRetriever):
                 settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
             )
             docs_temp = docsearch.search(self.question, k=self.chunks)
-            docs = [
-                {
-                    "title": i.metadata.get(
-                        "title", i.metadata.get("post_title", i.page_content)
-                    ).split("/")[-1],
-                    "text": f"File: {i.metadata.get('title', 'Unknown')}\n{i.page_content}",
-                    "source": (
-                        i.metadata.get("source")
-                        if i.metadata.get("source")
-                        else "local"
-                    ),
+
+            docs = []
+            for i in docs_temp:
+                # Extract filename from metadata, handling various edge cases
+                raw_title = i.metadata.get("title") or i.metadata.get("post_title") or ""
+                filename = self._extract_filename(raw_title)
+
+                # Format the text with filename context for better LLM understanding
+                formatted_text = self._format_chunk_with_filename(filename, i.page_content)
+
+                doc_entry = {
+                    "title": filename,
+                    "text": formatted_text,
+                    "source": i.metadata.get("source") or "local",
                 }
-                for i in docs_temp
-            ]
+                docs.append(doc_entry)
 
         return docs
+
+    def _extract_filename(self, title):
+        """
+        Extract clean filename from title, handling various formats.
+        """
+        if not title or title.strip() == "":
+            return "Unknown"
+
+        # Handle cases where title might be a full path
+        if "/" in title:
+            title = title.split("/")[-1]
+        elif "\\" in title:
+            title = title.split("\\")[-1]
+
+        # Clean up the filename
+        filename = title.strip()
+        if not filename:
+            return "Unknown"
+
+        return filename
+
+    def _format_chunk_with_filename(self, filename, content):
+        """
+        Format chunk content with filename context for LLM consumption.
+        """
+        if not content or content.strip() == "":
+            return content
+
+        # Add filename context at the beginning of the chunk
+        formatted = f"File: {filename}\n{content}"
+
+        return formatted
 
     def gen():
         pass
