@@ -227,6 +227,7 @@ class BaseAgent(ABC):
                 if tool_data["name"] == "api_tool"
                 else tool_data["config"]
             ),
+            user_id=self.user,  # Pass user ID for MCP tools credential decryption
         )
         if tool_data["name"] == "api_tool":
             print(

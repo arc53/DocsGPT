@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: Optional[str] = None
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
-    
+
     # PGVector vectorstore config
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
     # Milvus vectorstore config
