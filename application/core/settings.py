@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: Optional[str] = None
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
-    
+
     # PGVector vectorstore config
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
     # Milvus vectorstore config
@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     URL_STRATEGY: str = "backend"  # backend or s3
 
     JWT_SECRET_KEY: str = ""
+
+    # Encryption settings
+    ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
 
 path = Path(__file__).parent.parent.absolute()

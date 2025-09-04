@@ -89,7 +89,10 @@ const userService = {
     path?: string,
     search?: string,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search), token),
+    apiClient.get(
+      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
+      token,
+    ),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (
@@ -104,6 +107,10 @@ const userService = {
     apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
   manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
+  testMCPConnection: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
+  saveMCPServer: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
 };
 
 export default userService;
