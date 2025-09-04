@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
+import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
 import userService from '../api/services/userService';
@@ -128,13 +129,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     }
   }, [docId, token]);
 
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  
 
   const navigateToDirectory = (dirName: string) => {
     setCurrentPath((prev) => [...prev, dirName]);

@@ -57,6 +57,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
             logging.warning(f"Could not build Google Drive service: {e}")
             self.service = None
 
+        self.next_page_token = None
+
 
 
     def _process_file(self, file_metadata: Dict[str, Any], load_content: bool = True) -> Optional[Document]:
@@ -74,7 +76,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
             doc_metadata = {
                 'file_name': file_name,
                 'mime_type': mime_type,
-                'size': file_metadata.get('size', 'Unknown'),
+                'size': file_metadata.get('size', None),
                 'created_time': file_metadata.get('createdTime'),
                 'modified_time': file_metadata.get('modifiedTime'),
                 'parents': file_metadata.get('parents', []),
@@ -117,6 +119,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
             limit = inputs.get('limit', 100)
             list_only = inputs.get('list_only', False)
             load_content = not list_only
+            page_token = inputs.get('page_token')
+            self.next_page_token = None
 
             if file_ids:
                 # Specific files requested: load them
@@ -137,7 +141,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
             else:
                 # Browsing mode: list immediate children of provided folder or root
                 parent_id = folder_id if folder_id else 'root'
-                documents = self._list_items_in_parent(parent_id, limit=limit, load_content=load_content)
+                documents = self._list_items_in_parent(parent_id, limit=limit, load_content=load_content, page_token=page_token)
 
             logging.info(f"Loaded {len(documents)} documents from Google Drive")
             return documents
@@ -180,14 +184,14 @@ class GoogleDriveLoader(BaseConnectorLoader):
             return None
 
 
-    def _list_items_in_parent(self, parent_id: str, limit: int = 100, load_content: bool = False) -> List[Document]:
+    def _list_items_in_parent(self, parent_id: str, limit: int = 100, load_content: bool = False, page_token: Optional[str] = None) -> List[Document]:
         self._ensure_service()
 
         documents: List[Document] = []
 
         try:
             query = f"'{parent_id}' in parents and trashed=false"
-            page_token = None
+            next_token_out: Optional[str] = None
 
             while True:
                 page_size = 100
@@ -211,7 +215,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                         doc_metadata = {
                             'file_name': item.get('name', 'Unknown'),
                             'mime_type': mime_type,
-                            'size': item.get('size', 'Unknown'),
+                            'size': item.get('size', None),
                             'created_time': item.get('createdTime'),
                             'modified_time': item.get('modifiedTime'),
                             'parents': item.get('parents', []),
@@ -225,12 +229,15 @@ class GoogleDriveLoader(BaseConnectorLoader):
                             documents.append(doc)
 
                     if limit and len(documents) >= limit:
+                        self.next_page_token = results.get('nextPageToken')
                         return documents
 
                 page_token = results.get('nextPageToken')
+                next_token_out = page_token
                 if not page_token:
                     break
 
+            self.next_page_token = next_token_out
             return documents
         except Exception as e:
             logging.error(f"Error listing items under parent {parent_id}: {e}")

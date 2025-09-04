@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 
 
 from bson.objectid import ObjectId
@@ -338,15 +339,16 @@ class ConnectorRefresh(Resource):
 
 @connectors_ns.route("/api/connectors/files")
 class ConnectorFiles(Resource):
-    @api.expect(api.model("ConnectorFilesModel", {"provider": fields.String(required=True), "session_token": fields.String(required=True), "folder_id": fields.String(required=False), "limit": fields.Integer(required=False)}))
-    @api.doc(description="List files from a connector provider")
+    @api.expect(api.model("ConnectorFilesModel", {"provider": fields.String(required=True), "session_token": fields.String(required=True), "folder_id": fields.String(required=False), "limit": fields.Integer(required=False), "page_token": fields.String(required=False)}))
+    @api.doc(description="List files from a connector provider (supports pagination)")
     def post(self):
         try:
             data = request.get_json()
             provider = data.get('provider')
             session_token = data.get('session_token')
             folder_id = data.get('folder_id')
-            limit = data.get('limit', 50)
+            limit = data.get('limit', 10)
+            page_token = data.get('page_token')
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
 
@@ -364,21 +366,33 @@ class ConnectorFiles(Resource):
                 'limit': limit,
                 'list_only': True,
                 'session_token': session_token,
-                'folder_id': folder_id
+                'folder_id': folder_id,
+                'page_token': page_token
             })
 
             files = []
             for doc in documents[:limit]:
                 metadata = doc.extra_info
+                modified_time = metadata.get('modified_time')
+                if modified_time:
+                    date_part = modified_time.split('T')[0]
+                    time_part = modified_time.split('T')[1].split('.')[0].split('Z')[0]
+                    formatted_time = f"{date_part} {time_part}"
+                else:
+                    formatted_time = None
+
                 files.append({
                     'id': doc.doc_id,
                     'name': metadata.get('file_name', 'Unknown File'),
                     'type': metadata.get('mime_type', 'unknown'),
-                    'size': metadata.get('size', 'Unknown'),
-                    'modifiedTime': metadata.get('modified_time', 'Unknown')
+                    'size': metadata.get('size', None),
+                    'modifiedTime': formatted_time
                 })
 
-            return make_response(jsonify({"success": True, "files": files, "total": len(files)}), 200)
+            next_token = getattr(loader, 'next_page_token', None)
+            has_more = bool(next_token)
+
+            return make_response(jsonify({"success": True, "files": files, "total": len(files), "next_page_token": next_token, "has_more": has_more}), 200)
         except Exception as e:
             current_app.logger.error(f"Error loading connector files: {e}")
             return make_response(jsonify({"success": False, "error": f"Failed to load files: {str(e)}"}), 500)

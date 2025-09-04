@@ -5,6 +5,8 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import { getSessionToken, setSessionToken, removeSessionToken } from '../utils/providerUtils';
+import { formatDate } from '../utils/dateTimeUtils';
+import { formatBytes } from '../utils/stringUtils';
 import FileUpload from '../assets/file_upload.svg';
 import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
@@ -63,7 +65,9 @@ function Upload({
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'My Drive'}]);
 
-
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [hasMoreFiles, setHasMoreFiles] = useState<boolean>(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
@@ -449,16 +453,16 @@ function Upload({
 
     if (ingestor.type === 'google_drive') {
       const sessionToken = getSessionToken(ingestor.type);
-      
+
       const selectedItems = googleDriveFiles.filter(file => selectedFiles.includes(file.id));
       const selectedFolderIds = selectedItems
         .filter(item => item.type === 'application/vnd.google-apps.folder' || item.isFolder)
         .map(folder => folder.id);
-      
+
       const selectedFileIds = selectedItems
         .filter(item => item.type !== 'application/vnd.google-apps.folder' && !item.isFolder)
         .map(file => file.id);
-      
+
       configData = {
         file_ids: selectedFileIds,
         folder_ids: selectedFolderIds,
@@ -466,7 +470,7 @@ function Upload({
         session_token: sessionToken || null
       };
     } else {
-    
+
       configData = { ...ingestor.config };
     }
 
@@ -501,13 +505,14 @@ function Upload({
   useEffect(() => {
     if (ingestor.type === 'google_drive') {
       const sessionToken = getSessionToken(ingestor.type);
-      
+
       if (sessionToken) {
         // Auto-authenticate if session token exists
         setIsGoogleDriveConnected(true);
         setAuthError('');
-        
+
         // Fetch user email and files using the existing session token
+
         fetchUserEmailAndLoadFiles(sessionToken);
       }
     }
@@ -516,7 +521,7 @@ function Upload({
   const fetchUserEmailAndLoadFiles = async (sessionToken: string) => {
     try {
       const apiHost = import.meta.env.VITE_API_HOST;
-      
+
       const validateResponse = await fetch(`${apiHost}/api/connectors/validate-session`, {
         method: 'POST',
         headers: {
@@ -525,19 +530,26 @@ function Upload({
         },
         body: JSON.stringify({ provider: 'google_drive', session_token: sessionToken })
       });
-      
+
       if (!validateResponse.ok) {
         removeSessionToken(ingestor.type);
         setIsGoogleDriveConnected(false);
         setAuthError('Session expired. Please reconnect to Google Drive.');
         return;
       }
-      
+
       const validateData = await validateResponse.json();
-      
+
       if (validateData.success) {
         setUserEmail(validateData.user_email || 'Connected User');
-        loadGoogleDriveFiles(sessionToken, null);
+        // reset pagination state and files
+        setGoogleDriveFiles([]);
+
+
+
+        setNextPageToken(null);
+        setHasMoreFiles(false);
+        loadGoogleDriveFiles(sessionToken, null, null, false);
       } else {
         removeSessionToken(ingestor.type);
         setIsGoogleDriveConnected(false);
@@ -550,17 +562,25 @@ function Upload({
     }
   };
 
-  const loadGoogleDriveFiles = async (sessionToken: string, folderId?: string | null) => {
+  const loadGoogleDriveFiles = async (
+    sessionToken: string,
+    folderId?: string | null,
+    pageToken?: string | null,
+    append: boolean = false,
+  ) => {
     setIsLoadingFiles(true);
 
     try {
       const apiHost = import.meta.env.VITE_API_HOST;
       const requestBody: any = {
         session_token: sessionToken,
-        limit: 50
+        limit: 10,
       };
       if (folderId) {
         requestBody.folder_id = folderId;
+      }
+      if (pageToken) {
+        requestBody.page_token = pageToken;
       }
 
       const filesResponse = await fetch(`${apiHost}/api/connectors/files`, {
@@ -578,8 +598,10 @@ function Upload({
 
       const filesData = await filesResponse.json();
 
-      if (filesData.success && filesData.files) {
-        setGoogleDriveFiles(filesData.files);
+      if (filesData.success && Array.isArray(filesData.files)) {
+        setGoogleDriveFiles(prev => append ? [...prev, ...filesData.files] : filesData.files);
+        setNextPageToken(filesData.next_page_token || null);
+        setHasMoreFiles(Boolean(filesData.has_more));
       } else {
         throw new Error(filesData.error || 'Failed to load files');
       }
@@ -587,49 +609,12 @@ function Upload({
     } catch (error) {
       console.error('Error loading Google Drive files:', error);
       setAuthError(error instanceof Error ? error.message : 'Failed to load files. Please make sure your Google Drive account is properly connected and you granted offline access during authorization.');
-
-      // Fallback to mock data for demo purposes
-      console.log('Using mock data as fallback...');
-      const mockFiles = [
-        {
-          id: '1',
-          name: 'Project Documentation.pdf',
-          type: 'application/pdf',
-          size: '2.5 MB',
-          modifiedTime: '2024-01-15',
-          iconUrl: '�'
-        },
-        {
-          id: '2',
-          name: 'Meeting Notes.docx',
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          size: '1.2 MB',
-          modifiedTime: '2024-01-14',
-          iconUrl: '�'
-        },
-        {
-          id: '3',
-          name: 'Presentation.pptx',
-          type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-          size: '5.8 MB',
-          modifiedTime: '2024-01-13',
-          iconUrl: '�'
-        },
-        {
-          id: 'folder1',
-          name: 'Documents',
-          type: 'application/vnd.google-apps.folder',
-          size: '0 bytes',
-          modifiedTime: '2024-01-13',
-          iconUrl: '📁',
-          isFolder: true
-        }
-      ];
-      setGoogleDriveFiles(mockFiles);
     } finally {
       setIsLoadingFiles(false);
     }
   };
+
+
 
   // Handle file selection
   const handleFileSelect = (fileId: string) => {
@@ -647,7 +632,12 @@ function Upload({
     if (sessionToken) {
       setCurrentFolderId(folderId);
       setFolderPath(prev => [...prev, {id: folderId, name: folderName}]);
-      loadGoogleDriveFiles(sessionToken, folderId);
+
+      setGoogleDriveFiles([]);
+      setNextPageToken(null);
+      setHasMoreFiles(false);
+      setSelectedFiles([]);
+      loadGoogleDriveFiles(sessionToken, folderId, null, false);
     }
   };
 
@@ -657,9 +647,14 @@ function Upload({
       const newPath = folderPath.slice(0, index + 1);
       const targetFolderId = newPath[newPath.length - 1]?.id;
 
-      setCurrentFolderId(targetFolderId);
+      setCurrentFolderId(targetFolderId as string | null);
       setFolderPath(newPath);
-      loadGoogleDriveFiles(sessionToken, targetFolderId);
+
+      setGoogleDriveFiles([]);
+      setNextPageToken(null);
+      setHasMoreFiles(false);
+      setSelectedFiles([]);
+      loadGoogleDriveFiles(sessionToken, targetFolderId ?? null, null, false);
     }
   };
 
@@ -895,7 +890,7 @@ function Upload({
                       setIsGoogleDriveConnected(true);
                       setIsAuthenticating(false);
                       setAuthError('');
-                      
+
                       if (data.session_token) {
                         setSessionToken(ingestor.type, data.session_token);
                         loadGoogleDriveFiles(data.session_token, null);
@@ -920,13 +915,13 @@ function Upload({
                       <button
                         onClick={() => {
                           removeSessionToken(ingestor.type);
-                          
+
                           setIsGoogleDriveConnected(false);
                           setGoogleDriveFiles([]);
                           setSelectedFiles([]);
                           setUserEmail('');
                           setAuthError('');
-                          
+
                           const apiHost = import.meta.env.VITE_API_HOST;
                           fetch(`${apiHost}/api/connectors/disconnect`, {
                             method: 'POST',
@@ -982,8 +977,8 @@ function Upload({
                         )}
                       </div>
 
-                      <div className="max-h-64 overflow-y-auto">
-                        {isLoadingFiles ? (
+                      <div className="max-h-72 overflow-y-auto" ref={scrollContainerRef}>
+                        {isLoadingFiles && googleDriveFiles.length === 0 ? (
                           <div className="p-4 text-center">
                             <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                               <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
@@ -995,60 +990,96 @@ function Upload({
                             No files found in your Google Drive
                           </div>
                         ) : (
-                          <div className="divide-y divide-gray-200 dark:divide-gray-600">
-                            {googleDriveFiles.map((file) => (
-                              <div
-                                key={file.id}
-                                className={`p-3 transition-colors ${
-                                  selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                                }`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="flex-shrink-0">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedFiles.includes(file.id)}
-                                      onChange={() => handleFileSelect(file.id)}
-                                      className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                                    />
-                                  </div>
-                                  {file.type === 'application/vnd.google-apps.folder' || file.isFolder ? (
-                                    <div
-                                      className="text-lg cursor-pointer hover:text-blue-600"
-                                      onClick={() => handleFolderClick(file.id, file.name)}
-                                    >
-                                      <img src={FolderIcon} alt="Folder" className="h-6 w-6" />
+                          <>
+                            <div className="divide-y divide-gray-200 dark:divide-gray-600">
+                              {googleDriveFiles.map((file) => (
+                                <div
+                                  key={file.id}
+                                  className={`p-3 transition-colors ${
+                                    selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-shrink-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedFiles.includes(file.id)}
+                                        onChange={() => handleFileSelect(file.id)}
+                                        className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                      />
                                     </div>
-                                  ) : (
-                                    <div className="text-lg">
-                                      <img src={FileIcon} alt="File" className="h-6 w-6" />
+                                    {file.type === 'application/vnd.google-apps.folder' || file.isFolder ? (
+                                      <div
+                                        className="text-lg cursor-pointer hover:text-blue-600"
+                                        onClick={() => handleFolderClick(file.id, file.name)}
+                                      >
+                                        <img src={FolderIcon} alt="Folder" className="h-6 w-6" />
+                                      </div>
+                                    ) : (
+                                      <div className="text-lg">
+                                        <img src={FileIcon} alt="File" className="h-6 w-6" />
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p
+                                        className={`text-sm font-medium truncate dark:text-[#ececf1] ${
+                                          file.type === 'application/vnd.google-apps.folder' || file.isFolder
+                                            ? 'cursor-pointer hover:text-blue-600'
+                                            : ''
+                                        }`}
+                                        onClick={() => {
+                                          if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
+                                            handleFolderClick(file.id, file.name);
+                                          }
+                                        }}
+                                      >
+                                        {file.name}
+                                      </p>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        {file.size && `${formatBytes(file.size)} • `}Modified {formatDate(file.modifiedTime)}
+                                      </p>
                                     </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <p
-                                      className={`text-sm font-medium truncate dark:text-[#ececf1] ${
-                                        file.type === 'application/vnd.google-apps.folder' || file.isFolder
-                                          ? 'cursor-pointer hover:text-blue-600'
-                                          : ''
-                                      }`}
-                                      onClick={() => {
-                                        if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
-                                          handleFolderClick(file.id, file.name);
-                                        }
-                                      }}
-                                    >
-                                      {file.name}
-                                    </p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                      {file.size} • Modified {file.modifiedTime}
-                                    </p>
                                   </div>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+
+                            <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
+                              {hasMoreFiles && !isLoadingFiles && (
+                                <button
+                                  onClick={() => {
+                                    const sessionToken = getSessionToken(ingestor.type);
+                                    if (sessionToken) {
+                                      loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken, true);
+                                    }
+                                  }}
+                                  className="text-sm px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md transition-colors flex items-center gap-2"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                  </svg>
+                                  Load more files
+                                </button>
+                              )}
+                              {isLoadingFiles && (
+                                <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                                  Loading more files...
+                                </div>
+                              )}
+{!hasMoreFiles && !isLoadingFiles && (
+                                <span className="text-sm text-gray-500 dark:text-gray-400">All files loaded</span>
+                              )}
+                            </div>
+
+
+                          </>
                         )}
                       </div>
+
+                                <div className="hidden" aria-hidden="true">
+                                </div>
+
                     </div>
                   </div>
                 )}

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { formatBytes } from '../utils/stringUtils';
 import { selectToken } from '../preferences/preferenceSlice';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
@@ -226,13 +227,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     return current;
   };
 
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+
 
   const getMenuRef = (id: string) => {
     if (!menuRefs.current[id]) {
