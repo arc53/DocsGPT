@@ -1045,34 +1045,16 @@ function Upload({
                             </div>
 
                             <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
-                              {hasMoreFiles && !isLoadingFiles && (
-                                <button
-                                  onClick={() => {
-                                    const sessionToken = getSessionToken(ingestor.type);
-                                    if (sessionToken) {
-                                      loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken, true);
-                                    }
-                                  }}
-                                  className="text-sm px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md transition-colors flex items-center gap-2"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                                  </svg>
-                                  Load more files
-                                </button>
-                              )}
                               {isLoadingFiles && (
                                 <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
                                   Loading more files...
                                 </div>
                               )}
-{!hasMoreFiles && !isLoadingFiles && (
+                              {!hasMoreFiles && !isLoadingFiles && (
                                 <span className="text-sm text-gray-500 dark:text-gray-400">All files loaded</span>
                               )}
                             </div>
-
-
                           </>
                         )}
                       </div>
@@ -1136,6 +1118,30 @@ function Upload({
       </div>
     );
   }
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    
+    const handleScroll = () => {
+      if (!scrollContainer) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
+      
+      if (isNearBottom && hasMoreFiles && !isLoadingFiles && nextPageToken) {
+        const sessionToken = getSessionToken(ingestor.type);
+        if (sessionToken) {
+          loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken, true);
+        }
+      }
+    };
+    
+    scrollContainer?.addEventListener('scroll', handleScroll);
+    
+    return () => {
+      scrollContainer?.removeEventListener('scroll', handleScroll);
+    };
+  }, [hasMoreFiles, isLoadingFiles, nextPageToken, currentFolderId, ingestor.type]);
 
   return (
     <WrapperModal
