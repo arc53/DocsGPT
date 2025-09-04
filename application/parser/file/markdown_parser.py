@@ -136,10 +136,7 @@ class MarkdownParser(BaseParser):
         """Parse file into string."""
         tups = self.parse_tups(filepath, errors=errors)
         results = []
-        # TODO: don't include headers right now
         for header, value in tups:
-            if header is None:
-                results.append(value)
-            else:
-                results.append(f"\n\n{header}\n{value}")
+            # Don't include headers in output - only include content
+            results.append(value)
         return results

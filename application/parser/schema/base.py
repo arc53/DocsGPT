@@ -14,21 +14,21 @@ class Document(BaseDocument):
     """
 
     def __post_init__(self) -> None:
-        """Post init."""
-        if self.text is None:
-            raise ValueError("text field not set.")
+        """post init."""
+        if self.page_content is None:
+            raise ValueError("page_content field not set.")
 
     @classmethod
     def get_type(cls) -> str:
-        """Get Document type."""
+        """get document type."""
         return "Document"
 
     def to_langchain_format(self) -> LCDocument:
-        """Convert struct to LangChain document format."""
-        metadata = self.extra_info or {}
-        return LCDocument(page_content=self.text, metadata=metadata)
+        """convert struct to langchain document format."""
+        metadata = self.metadata or {}
+        return LCDocument(page_content=self.page_content, metadata=metadata)
 
     @classmethod
     def from_langchain_format(cls, doc: LCDocument) -> "Document":
-        """Convert struct from LangChain document format."""
-        return cls(text=doc.page_content, extra_info=doc.metadata)
+        """convert struct from langchain document format."""
+        return cls(page_content=doc.page_content, metadata=doc.metadata)
