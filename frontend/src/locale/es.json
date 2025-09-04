@@ -67,6 +67,7 @@
       "preLoaded": "Precargado",
       "private": "Privado",
       "sync": "Sincronizar",
+      "syncing": "Sincronizando...",
       "syncFrequency": {
         "never": "Nunca",
         "daily": "Diario",

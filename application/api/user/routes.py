@@ -28,6 +28,7 @@ from application.agents.tools.tool_manager import ToolManager
 
 from application.api.user.tasks import (
     ingest,
+    ingest_connector_task,
     ingest_remote,
     process_agent_webhook,
     store_attachment,
@@ -46,6 +47,7 @@ from application.utils import (
 )
 from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
+from application.parser.connectors.connector_creator import ConnectorCreator
 
 storage = StorageCreator.get_storage()
 
@@ -492,9 +494,9 @@ class DeleteOldIndexes(Resource):
         )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
-        
+
         storage = StorageCreator.get_storage()
-        
+
         try:
             # Delete vector index
             if settings.VECTOR_STORE == "faiss":
@@ -508,7 +510,7 @@ class DeleteOldIndexes(Resource):
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
                 )
                 vectorstore.delete_index()
-                
+
             if "file_path" in doc and doc["file_path"]:
                 file_path = doc["file_path"]
                 if storage.is_directory(file_path):
@@ -517,7 +519,7 @@ class DeleteOldIndexes(Resource):
                         storage.delete_file(f)
                 else:
                     storage.delete_file(file_path)
-                    
+
         except FileNotFoundError:
             pass
         except Exception as err:
@@ -525,7 +527,7 @@ class DeleteOldIndexes(Resource):
                 f"Error deleting files and indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-            
+
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
@@ -573,30 +575,30 @@ class UploadFile(Resource):
 
         try:
             storage = StorageCreator.get_storage()
-            
-            
+
+
             for file in files:
                 original_filename = file.filename
                 safe_file = safe_filename(original_filename)
-                
+
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_file_path = os.path.join(temp_dir, safe_file)
                     file.save(temp_file_path)
-                    
+
                     if zipfile.is_zipfile(temp_file_path):
                         try:
                             with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
                                 zip_ref.extractall(path=temp_dir)
-                                
+
                                 # Walk through extracted files and upload them
                                 for root, _, files in os.walk(temp_dir):
                                     for extracted_file in files:
                                         if os.path.join(root, extracted_file) == temp_file_path:
                                             continue
-                                            
+
                                         rel_path = os.path.relpath(os.path.join(root, extracted_file), temp_dir)
                                         storage_path = f"{base_path}/{rel_path}"
-                                        
+
                                         with open(os.path.join(root, extracted_file), 'rb') as f:
                                             storage.save_file(f, storage_path)
                         except Exception as e:
@@ -610,7 +612,7 @@ class UploadFile(Resource):
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, 'rb') as f:
                             storage.save_file(f, file_path)
-            
+
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
                 [
@@ -686,8 +688,8 @@ class ManageSourceFiles(Resource):
         try:
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
-            parent_dir = request.form.get("parent_dir", "") 
-            
+            parent_dir = request.form.get("parent_dir", "")
+
             if parent_dir and (parent_dir.startswith("/") or ".." in parent_dir):
                 return make_response(
                     jsonify({"success": False, "message": "Invalid parent directory path"}), 400
@@ -701,7 +703,7 @@ class ManageSourceFiles(Resource):
                     )
 
                 added_files = []
-                
+
                 target_dir = source_file_path
                 if parent_dir:
                     target_dir = f"{source_file_path}/{parent_dir}"
@@ -877,6 +879,42 @@ class UploadRemote(Resource):
                 source_data = config.get("url")
             elif data["source"] == "reddit":
                 source_data = config
+            elif data["source"] in ConnectorCreator.get_supported_connectors():
+                session_token = config.get("session_token")
+                if not session_token:
+                    return make_response(jsonify({
+                        "success": False,
+                        "error": f"Missing session_token in {data['source']} configuration"
+                    }), 400)
+
+                # Process file_ids
+                file_ids = config.get("file_ids", [])
+                if isinstance(file_ids, str):
+                    file_ids = [id.strip() for id in file_ids.split(',') if id.strip()]
+                elif not isinstance(file_ids, list):
+                    file_ids = []
+
+                # Process folder_ids
+                folder_ids = config.get("folder_ids", [])
+                if isinstance(folder_ids, str):
+                    folder_ids = [id.strip() for id in folder_ids.split(',') if id.strip()]
+                elif not isinstance(folder_ids, list):
+                    folder_ids = []
+
+                config["file_ids"] = file_ids
+                config["folder_ids"] = folder_ids
+
+                task = ingest_connector_task.delay(
+                    job_name=data["name"],
+                    user=decoded_token.get("sub"),
+                    source_type=data["source"],
+                    session_token=session_token,
+                    file_ids=file_ids,
+                    folder_ids=folder_ids,
+                    recursive=config.get("recursive", False),
+                    retriever=config.get("retriever", "classic")
+                )
+                return make_response(jsonify({"success": True, "task_id": task.id}), 200)
             task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
@@ -984,7 +1022,8 @@ class PaginatedSources(Resource):
                     "tokens": doc.get("tokens", ""),
                     "retriever": doc.get("retriever", "classic"),
                     "syncFrequency": doc.get("sync_frequency", ""),
-                    "isNested": bool(doc.get("directory_structure"))
+                    "isNested": bool(doc.get("directory_structure")),
+                    "type": doc.get("type", "file")
                 }
                 paginated_docs.append(doc_data)
             response = {
@@ -1032,7 +1071,8 @@ class CombinedJson(Resource):
                         "tokens": index.get("tokens", ""),
                         "retriever": index.get("retriever", "classic"),
                         "syncFrequency": index.get("sync_frequency", ""),
-                        "is_nested": bool(index.get("directory_structure"))
+                        "is_nested": bool(index.get("directory_structure")),
+                        "type": index.get("type", "file")  # Add type field with default "file"
                     }
                 )
         except Exception as err:
@@ -1407,7 +1447,7 @@ class CreateAgent(Resource):
                 except json.JSONDecodeError:
                     data["json_schema"] = None
         print(f"Received data: {data}")
-        
+
         # Validate JSON schema if provided
         if data.get("json_schema"):
             try:
@@ -1415,19 +1455,19 @@ class CreateAgent(Resource):
                 json_schema = data.get("json_schema")
                 if not isinstance(json_schema, dict):
                     return make_response(
-                        jsonify({"success": False, "message": "JSON schema must be a valid JSON object"}), 
+                        jsonify({"success": False, "message": "JSON schema must be a valid JSON object"}),
                         400
                     )
-                
+
                 # Validate that it has either a 'schema' property or is itself a schema
                 if "schema" not in json_schema and "type" not in json_schema:
                     return make_response(
-                        jsonify({"success": False, "message": "JSON schema must contain either a 'schema' property or be a valid JSON schema with 'type' property"}), 
+                        jsonify({"success": False, "message": "JSON schema must contain either a 'schema' property or be a valid JSON schema with 'type' property"}),
                         400
                     )
             except Exception as e:
                 return make_response(
-                    jsonify({"success": False, "message": f"Invalid JSON schema: {str(e)}"}), 
+                    jsonify({"success": False, "message": f"Invalid JSON schema: {str(e)}"}),
                     400
                 )
 
@@ -3561,7 +3601,7 @@ class GetChunks(Resource):
         try:
             store = get_vector_store(doc_id)
             chunks = store.get_chunks()
-            
+
             filtered_chunks = []
             for chunk in chunks:
                 metadata = chunk.get("metadata", {})
@@ -3582,9 +3622,9 @@ class GetChunks(Resource):
                         continue
 
                 filtered_chunks.append(chunk)
-            
+
             chunks = filtered_chunks
-            
+
             total_chunks = len(chunks)
             start = (page - 1) * per_page
             end = start + per_page
@@ -3905,35 +3945,47 @@ class DirectoryStructure(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-        
+
         user = decoded_token.get("sub")
         doc_id = request.args.get("id")
-        
+
         if not doc_id:
             return make_response(
                 jsonify({"error": "Document ID is required"}), 400
             )
-            
+
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid document ID"}), 400)
-            
+
         try:
             doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
             if not doc:
                 return make_response(
                     jsonify({"error": "Document not found or access denied"}), 404
                 )
-                
+
             directory_structure = doc.get("directory_structure", {})
-            
+            base_path = doc.get("file_path", "")
+
+            provider = None
+            remote_data = doc.get("remote_data")
+            try:
+                if isinstance(remote_data, str) and remote_data:
+                    remote_data_obj = json.loads(remote_data)
+                    provider = remote_data_obj.get("provider")
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to parse remote_data for doc {doc_id}: {e}")
+
             return make_response(
                 jsonify({
                     "success": True,
                     "directory_structure": directory_structure,
-                    "base_path": doc.get("file_path", "")
+                    "base_path": base_path,
+                    "provider": provider,
                 }), 200
             )
-            
+
         except Exception as e:
             current_app.logger.error(
                 f"Error retrieving directory structure: {e}", exc_info=True
@@ -3941,3 +3993,6 @@ class DirectoryStructure(Resource):
             return make_response(
                 jsonify({"success": False, "error": str(e)}), 500
             )
+
+
+
