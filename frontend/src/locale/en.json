@@ -184,8 +184,6 @@
       "addNew": "Add New",
       "name": "Name",
       "type": "Type",
-      "regularTools": "Regular Tools",
-      "mcpTools": "MCP Tools",
       "mcp": {
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
