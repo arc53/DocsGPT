@@ -5,7 +5,7 @@ celery==5.4.0
 dataclasses-json==0.6.7
 docx2txt==0.8
 duckduckgo-search==7.5.2
-ebooklib==0.18
+ebooklib==0.19
 escodegen==1.0.11
 esprima==4.0.1
 esutils==1.0.1
