@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import apiClient from '../api/client';
 import userService from '../api/services/userService';
+import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import Spinner from '../components/Spinner';
 import { useOutsideAlerter } from '../hooks';
@@ -19,10 +19,10 @@ interface MCPServerModalProps {
 }
 
 const authTypes = [
-  { value: 'none', label: 'No Authentication' },
-  { value: 'api_key', label: 'API Key' },
-  { value: 'bearer', label: 'Bearer Token' },
-  { value: 'basic', label: 'Basic Authentication' },
+  { label: 'No Authentication', value: 'none' },
+  { label: 'API Key', value: 'api_key' },
+  { label: 'Bearer Token', value: 'bearer' },
+  // { label: 'Basic Authentication', value: 'basic' },
 ];
 
 export default function MCPServerModal({
@@ -36,7 +36,7 @@ export default function MCPServerModal({
   const modalRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
-    name: server?.name || 'My MCP Server',
+    name: server?.displayName || 'My MCP Server',
     server_url: server?.server_url || '',
     auth_type: server?.auth_type || 'none',
     api_key: '',
@@ -44,7 +44,7 @@ export default function MCPServerModal({
     bearer_token: '',
     username: '',
     password: '',
-    timeout: 30,
+    timeout: server?.timeout || 30,
   });
 
   const [loading, setLoading] = useState(false);
@@ -79,15 +79,37 @@ export default function MCPServerModal({
   };
 
   const validateForm = () => {
+    const requiredFields: { [key: string]: boolean } = {
+      name: !formData.name.trim(),
+      server_url: !formData.server_url.trim(),
+    };
+
+    const authFieldChecks: { [key: string]: () => void } = {
+      api_key: () => {
+        if (!formData.api_key.trim())
+          newErrors.api_key = t('settings.tools.mcp.errors.apiKeyRequired');
+      },
+      bearer: () => {
+        if (!formData.bearer_token.trim())
+          newErrors.bearer_token = t('settings.tools.mcp.errors.tokenRequired');
+      },
+      basic: () => {
+        if (!formData.username.trim())
+          newErrors.username = t('settings.tools.mcp.errors.usernameRequired');
+        if (!formData.password.trim())
+          newErrors.password = t('settings.tools.mcp.errors.passwordRequired');
+      },
+    };
+
     const newErrors: { [key: string]: string } = {};
+    Object.entries(requiredFields).forEach(([field, isEmpty]) => {
+      if (isEmpty)
+        newErrors[field] = t(
+          `settings.tools.mcp.errors.${field === 'name' ? 'nameRequired' : 'urlRequired'}`,
+        );
+    });
 
-    if (!formData.name.trim()) {
-      newErrors.name = t('settings.tools.mcp.errors.nameRequired');
-    }
-
-    if (!formData.server_url.trim()) {
-      newErrors.server_url = t('settings.tools.mcp.errors.urlRequired');
-    } else {
+    if (formData.server_url.trim()) {
       try {
         new URL(formData.server_url);
       } catch {
@@ -95,22 +117,15 @@ export default function MCPServerModal({
       }
     }
 
-    if (formData.auth_type === 'api_key' && !formData.api_key.trim()) {
-      newErrors.api_key = t('settings.tools.mcp.errors.apiKeyRequired');
-    }
+    const timeoutValue = formData.timeout === '' ? 30 : formData.timeout;
+    if (
+      typeof timeoutValue === 'number' &&
+      (timeoutValue < 1 || timeoutValue > 300)
+    )
+      newErrors.timeout = 'Timeout must be between 1 and 300 seconds';
 
-    if (formData.auth_type === 'bearer' && !formData.bearer_token.trim()) {
-      newErrors.bearer_token = t('settings.tools.mcp.errors.tokenRequired');
-    }
-
-    if (formData.auth_type === 'basic') {
-      if (!formData.username.trim()) {
-        newErrors.username = t('settings.tools.mcp.errors.usernameRequired');
-      }
-      if (!formData.password.trim()) {
-        newErrors.password = t('settings.tools.mcp.errors.passwordRequired');
-      }
-    }
+    if (authFieldChecks[formData.auth_type])
+      authFieldChecks[formData.auth_type]();
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -128,10 +143,9 @@ export default function MCPServerModal({
     const config: any = {
       server_url: formData.server_url.trim(),
       auth_type: formData.auth_type,
-      timeout: formData.timeout,
+      timeout: formData.timeout === '' ? 30 : formData.timeout,
     };
 
-    // Add credentials directly to config for encryption
     if (formData.auth_type === 'api_key') {
       config.api_key = formData.api_key.trim();
       config.api_key_header = formData.header_name.trim() || 'X-API-Key';
@@ -141,59 +155,19 @@ export default function MCPServerModal({
       config.username = formData.username.trim();
       config.password = formData.password.trim();
     }
-
     return config;
   };
 
   const testConnection = async () => {
     if (!validateForm()) return;
-
     setTesting(true);
     setTestResult(null);
-
     try {
-      // Create a temporary tool to test
       const config = buildToolConfig();
-
-      const testData = {
-        name: 'mcp_tool',
-        displayName: formData.name,
-        description: 'MCP Server Connection',
-        config,
-        actions: [],
-        status: false,
-      };
-
-      const response = await userService.createTool(testData, token);
+      const response = await userService.testMCPConnection({ config }, token);
       const result = await response.json();
 
-      if (response.ok && result.id) {
-        // Test the connection
-        try {
-          const testResponse = await apiClient.post(
-            `/api/mcp_server/${result.id}/test`,
-            {},
-            token,
-          );
-          const testData = await testResponse.json();
-          setTestResult(testData);
-
-          // Clean up the temporary tool
-          await userService.deleteTool({ id: result.id }, token);
-        } catch (error) {
-          setTestResult({
-            success: false,
-            message: t('settings.tools.mcp.errors.testFailed'),
-          });
-          // Clean up the temporary tool
-          await userService.deleteTool({ id: result.id }, token);
-        }
-      } else {
-        setTestResult({
-          success: false,
-          message: t('settings.tools.mcp.errors.testFailed'),
-        });
-      }
+      setTestResult(result);
     } catch (error) {
       setTestResult({
         success: false,
@@ -206,73 +180,32 @@ export default function MCPServerModal({
 
   const handleSave = async () => {
     if (!validateForm()) return;
-
     setLoading(true);
-
     try {
       const config = buildToolConfig();
-
-      const toolData = {
-        name: 'mcp_tool',
+      const serverData = {
         displayName: formData.name,
-        description: `MCP Server: ${formData.server_url}`,
         config,
-        actions: [], // Will be populated after tool creation
         status: true,
+        ...(server?.id && { id: server.id }),
       };
 
-      let toolId: string;
+      const response = await userService.saveMCPServer(serverData, token);
+      const result = await response.json();
 
-      if (server) {
-        // Update existing server
-        await userService.updateTool({ id: server.id, ...toolData }, token);
-        toolId = server.id;
+      if (response.ok && result.success) {
+        setTestResult({
+          success: true,
+          message: result.message,
+        });
+        onServerSaved();
+        setModalState('INACTIVE');
+        resetForm();
       } else {
-        // Create new server
-        const response = await userService.createTool(toolData, token);
-        const result = await response.json();
-        toolId = result.id;
+        setErrors({
+          general: result.error || t('settings.tools.mcp.errors.saveFailed'),
+        });
       }
-
-      // Now fetch the MCP tools and update the actions
-      try {
-        const toolsResponse = await apiClient.get(
-          `/api/mcp_server/${toolId}/tools`,
-          token,
-        );
-
-        if (toolsResponse.success && toolsResponse.actions) {
-          // Update the tool with discovered actions (already formatted by backend)
-          await userService.updateTool(
-            {
-              id: toolId,
-              ...toolData,
-              actions: toolsResponse.actions,
-            },
-            token,
-          );
-
-          console.log(
-            `Successfully discovered and saved ${toolsResponse.actions.length} MCP tools`,
-          );
-
-          // Show success message with tool count
-          setTestResult({
-            success: true,
-            message: `MCP server saved successfully! Discovered ${toolsResponse.actions.length} tools.`,
-          });
-        }
-      } catch (error) {
-        console.warn(
-          'Warning: Could not fetch MCP tools immediately after creation:',
-          error,
-        );
-        // Don't fail the save operation if tool discovery fails
-      }
-
-      onServerSaved();
-      setModalState('INACTIVE');
-      resetForm();
     } catch (error) {
       console.error('Error saving MCP server:', error);
       setErrors({ general: t('settings.tools.mcp.errors.saveFailed') });
@@ -285,52 +218,52 @@ export default function MCPServerModal({
     switch (formData.auth_type) {
       case 'api_key':
         return (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {t('settings.tools.mcp.apiKey')}
-              </label>
+          <div className="mb-10">
+            <div className="mt-6">
               <Input
                 name="api_key"
                 type="text"
+                className="rounded-md"
                 value={formData.api_key}
                 onChange={(e) => handleInputChange('api_key', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.apiKey')}
+                borderVariant="thin"
+                labelBgClassName="bg-white dark:bg-charleston-green-2"
               />
               {errors.api_key && (
                 <p className="mt-1 text-sm text-red-600">{errors.api_key}</p>
               )}
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {t('settings.tools.mcp.headerName')}
-              </label>
+            <div className="mt-5">
               <Input
                 name="header_name"
                 type="text"
+                className="rounded-md"
                 value={formData.header_name}
                 onChange={(e) =>
                   handleInputChange('header_name', e.target.value)
                 }
-                placeholder="X-API-Key"
+                placeholder={t('settings.tools.mcp.headerName')}
+                borderVariant="thin"
+                labelBgClassName="bg-white dark:bg-charleston-green-2"
               />
             </div>
           </div>
         );
       case 'bearer':
         return (
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              {t('settings.tools.mcp.bearerToken')}
-            </label>
+          <div className="mb-10">
             <Input
               name="bearer_token"
               type="text"
+              className="rounded-md"
               value={formData.bearer_token}
               onChange={(e) =>
                 handleInputChange('bearer_token', e.target.value)
               }
               placeholder={t('settings.tools.mcp.placeholders.bearerToken')}
+              borderVariant="thin"
+              labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
             {errors.bearer_token && (
               <p className="mt-1 text-sm text-red-600">{errors.bearer_token}</p>
@@ -339,32 +272,32 @@ export default function MCPServerModal({
         );
       case 'basic':
         return (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {t('settings.tools.mcp.username')}
-              </label>
+          <div className="mb-10">
+            <div className="mt-6">
               <Input
                 name="username"
                 type="text"
+                className="rounded-md"
                 value={formData.username}
                 onChange={(e) => handleInputChange('username', e.target.value)}
-                placeholder={t('settings.tools.mcp.placeholders.username')}
+                placeholder={t('settings.tools.mcp.username')}
+                borderVariant="thin"
+                labelBgClassName="bg-white dark:bg-charleston-green-2"
               />
               {errors.username && (
                 <p className="mt-1 text-sm text-red-600">{errors.username}</p>
               )}
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {t('settings.tools.mcp.password')}
-              </label>
+            <div className="mt-5">
               <Input
                 name="password"
                 type="text"
+                className="rounded-md"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
-                placeholder={t('settings.tools.mcp.placeholders.password')}
+                placeholder={t('settings.tools.mcp.password')}
+                borderVariant="thin"
+                labelBgClassName="bg-white dark:bg-charleston-green-2"
               />
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password}</p>
@@ -394,17 +327,17 @@ export default function MCPServerModal({
                 : t('settings.tools.mcp.addServer')}
             </h2>
           </div>
-
-          <div className="flex-1 overflow-auto px-6">
-            <div className="space-y-6">
+          <div className="flex-1 px-6">
+            <div className="space-y-6 py-6">
               <div>
                 <Input
                   name="name"
                   type="text"
+                  className="rounded-md"
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
                   borderVariant="thin"
-                  placeholder={t('settings.tools.mcp.placeholders.serverName')}
+                  placeholder={t('settings.tools.mcp.serverName')}
                   labelBgClassName="bg-white dark:bg-charleston-green-2"
                 />
                 {errors.name && (
@@ -413,17 +346,17 @@ export default function MCPServerModal({
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('settings.tools.mcp.serverUrl')}
-                </label>
                 <Input
                   name="server_url"
                   type="text"
+                  className="rounded-md"
                   value={formData.server_url}
                   onChange={(e) =>
                     handleInputChange('server_url', e.target.value)
                   }
-                  placeholder={t('settings.tools.mcp.placeholders.serverUrl')}
+                  placeholder={t('settings.tools.mcp.serverUrl')}
+                  borderVariant="thin"
+                  labelBgClassName="bg-white dark:bg-charleston-green-2"
                 />
                 {errors.server_url && (
                   <p className="mt-1 text-sm text-red-600">
@@ -432,106 +365,114 @@ export default function MCPServerModal({
                 )}
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('settings.tools.mcp.authType')}
-                </label>
-                <select
-                  value={formData.auth_type}
-                  onChange={(e) =>
-                    handleInputChange('auth_type', e.target.value)
-                  }
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                >
-                  {authTypes.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Dropdown
+                placeholder={t('settings.tools.mcp.authType')}
+                selectedValue={
+                  authTypes.find((type) => type.value === formData.auth_type)
+                    ?.label || null
+                }
+                onSelect={(selection: { label: string; value: string }) => {
+                  handleInputChange('auth_type', selection.value);
+                }}
+                options={authTypes}
+                size="w-full"
+                rounded="3xl"
+                border="border"
+              />
 
               {renderAuthFields()}
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('settings.tools.mcp.timeout')}
-                </label>
                 <Input
                   name="timeout"
                   type="number"
+                  className="rounded-md"
                   value={formData.timeout}
-                  onChange={(e) =>
-                    handleInputChange('timeout', parseInt(e.target.value) || 30)
-                  }
-                  placeholder="30"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      handleInputChange('timeout', '');
+                    } else {
+                      const numValue = parseInt(value);
+                      if (!isNaN(numValue) && numValue >= 1) {
+                        handleInputChange('timeout', numValue);
+                      }
+                    }
+                  }}
+                  placeholder={t('settings.tools.mcp.timeout')}
+                  borderVariant="thin"
+                  labelBgClassName="bg-white dark:bg-charleston-green-2"
                 />
+                {errors.timeout && (
+                  <p className="mt-2 text-sm text-red-600">{errors.timeout}</p>
+                )}
               </div>
 
               {testResult && (
                 <div
-                  className={`rounded-lg p-4 ${
+                  className={`rounded-md p-5 ${
                     testResult.success
-                      ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300'
+                      ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                       : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
                   }`}
                 >
                   {testResult.message}
                 </div>
               )}
-
               {errors.general && (
-                <div className="rounded-lg bg-red-50 p-4 text-red-700 dark:bg-red-900 dark:text-red-300">
+                <div className="rounded-2xl bg-red-50 p-5 text-red-700 dark:bg-red-900 dark:text-red-300">
                   {errors.general}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex justify-between gap-4 px-6 py-4">
-            <button
-              onClick={testConnection}
-              disabled={testing}
-              className="flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-            >
-              {testing ? (
-                <div className="flex items-center">
-                  <Spinner />
-                  <span className="ml-2">
-                    {t('settings.tools.mcp.testing')}
-                  </span>
-                </div>
-              ) : (
-                t('settings.tools.mcp.testConnection')
-              )}
-            </button>
-
-            <div className="flex gap-2">
+          <div className="px-6 py-2">
+            <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
               <button
-                onClick={() => {
-                  setModalState('INACTIVE');
-                  resetForm();
-                }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                onClick={testConnection}
+                disabled={testing}
+                className="border-silver dark:border-dim-gray dark:text-light-gray w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all hover:bg-gray-100 disabled:opacity-50 sm:w-auto dark:hover:bg-[#767183]/50"
               >
-                {t('settings.tools.mcp.cancel')}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={loading}
-                className="bg-purple-30 hover:bg-violets-are-blue flex items-center justify-center rounded-lg px-6 py-2 text-white disabled:opacity-50"
-              >
-                {loading ? (
-                  <div className="flex items-center">
-                    <Spinner />
+                {testing ? (
+                  <div className="flex items-center justify-center">
+                    <Spinner size="small" />
                     <span className="ml-2">
-                      {t('settings.tools.mcp.saving')}
+                      {t('settings.tools.mcp.testing')}
                     </span>
                   </div>
                 ) : (
-                  t('settings.tools.mcp.save')
+                  t('settings.tools.mcp.testConnection')
                 )}
               </button>
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
+                <button
+                  onClick={() => {
+                    setModalState('INACTIVE');
+                    resetForm();
+                  }}
+                  className="dark:text-light-gray w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium hover:bg-gray-100 sm:w-auto dark:bg-transparent dark:hover:bg-[#767183]/50"
+                >
+                  {t('settings.tools.mcp.cancel')}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={loading}
+                  className="bg-purple-30 hover:bg-violets-are-blue w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
+                >
+                  {loading ? (
+                    <div className="flex items-center justify-center">
+                      <Spinner size="small" />
+                      <span className="ml-2">
+                        {t('settings.tools.mcp.saving')}
+                      </span>
+                    </div>
+                  ) : (
+                    t('settings.tools.mcp.save')
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

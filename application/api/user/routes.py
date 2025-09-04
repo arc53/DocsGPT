@@ -3,11 +3,12 @@ import json
 import math
 import os
 import secrets
+import tempfile
 import uuid
+import zipfile
 from functools import wraps
 from typing import Optional, Tuple
-import tempfile
-import zipfile
+
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
 from bson.objectid import ObjectId
@@ -24,7 +25,10 @@ from flask_restx import fields, inputs, Namespace, Resource
 from pymongo import ReturnDocument
 from werkzeug.utils import secure_filename
 
+from application.agents.tools.mcp_tool import MCPTool
+
 from application.agents.tools.tool_manager import ToolManager
+from application.api import api
 
 from application.api.user.tasks import (
     ingest,
@@ -34,17 +38,17 @@ from application.api.user.tasks import (
 )
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.api import api
+from application.security.encryption import encrypt_credentials, decrypt_credentials
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
 from application.utils import (
     check_required_fields,
     generate_image_url,
+    num_tokens_from_string,
     safe_filename,
     validate_function_name,
     validate_required_fields,
 )
-from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
 storage = StorageCreator.get_storage()
@@ -3435,31 +3439,6 @@ class CreateTool(Resource):
                         param_details["value"] = ""
             transformed_actions.append(action)
         try:
-            # Process config to encrypt credentials for MCP tools
-            config = data["config"]
-            if data["name"] == "mcp_tool":
-                from application.security.encryption import encrypt_credentials
-
-                # Extract credentials from config
-                credentials = {}
-                if config.get("auth_type") == "bearer":
-                    credentials["bearer_token"] = config.get("bearer_token", "")
-                elif config.get("auth_type") == "api_key":
-                    credentials["api_key"] = config.get("api_key", "")
-                    credentials["api_key_header"] = config.get("api_key_header", "")
-                elif config.get("auth_type") == "basic":
-                    credentials["username"] = config.get("username", "")
-                    credentials["password"] = config.get("password", "")
-
-                # Encrypt credentials if any exist
-                if credentials:
-                    config["encrypted_credentials"] = encrypt_credentials(
-                        credentials, user
-                    )
-                    # Remove plaintext credentials from config
-                    for key in credentials.keys():
-                        config.pop(key, None)
-
             new_tool = {
                 "user": user,
                 "name": data["name"],
@@ -3467,7 +3446,7 @@ class CreateTool(Resource):
                 "description": data["description"],
                 "customName": data.get("customName", ""),
                 "actions": transformed_actions,
-                "config": config,
+                "config": data["config"],
                 "status": data["status"],
             }
             resp = user_tools_collection.insert_one(new_tool)
@@ -3534,41 +3513,7 @@ class UpdateTool(Resource):
                                 ),
                                 400,
                             )
-
-                # Handle MCP tool credential encryption
-                config = data["config"]
-                tool_name = data.get("name")
-                if not tool_name:
-                    # Get the tool name from the database
-                    existing_tool = user_tools_collection.find_one(
-                        {"_id": ObjectId(data["id"]), "user": user}
-                    )
-                    tool_name = existing_tool.get("name") if existing_tool else None
-
-                if tool_name == "mcp_tool":
-                    from application.security.encryption import encrypt_credentials
-
-                    # Extract credentials from config
-                    credentials = {}
-                    if config.get("auth_type") == "bearer":
-                        credentials["bearer_token"] = config.get("bearer_token", "")
-                    elif config.get("auth_type") == "api_key":
-                        credentials["api_key"] = config.get("api_key", "")
-                        credentials["api_key_header"] = config.get("api_key_header", "")
-                    elif config.get("auth_type") == "basic":
-                        credentials["username"] = config.get("username", "")
-                        credentials["password"] = config.get("password", "")
-
-                    # Encrypt credentials if any exist
-                    if credentials:
-                        config["encrypted_credentials"] = encrypt_credentials(
-                            credentials, user
-                        )
-                        # Remove plaintext credentials from config
-                        for key in credentials.keys():
-                            config.pop(key, None)
-
-                update_data["config"] = config
+                update_data["config"] = data["config"]
             if "status" in data:
                 update_data["status"] = data["status"]
             user_tools_collection.update_one(
@@ -4142,74 +4087,55 @@ class DirectoryStructure(Resource):
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
 
 
-@user_ns.route("/api/mcp_servers")
-class MCPServers(Resource):
-    @api.doc(description="Get all MCP servers configured by the user")
-    def get(self):
+@user_ns.route("/api/mcp_server/test")
+class TestMCPServerConfig(Resource):
+    @api.expect(
+        api.model(
+            "MCPServerTestModel",
+            {
+                "config": fields.Raw(
+                    required=True, description="MCP server configuration to test"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Test MCP server connection with provided configuration")
+    def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         user = decoded_token.get("sub")
+        data = request.get_json()
+
+        required_fields = ["config"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
         try:
-            # Find all MCP tools for this user
-            mcp_tools = user_tools_collection.find({"user": user, "name": "mcp_tool"})
+            config = data["config"]
 
-            servers = []
-            for tool in mcp_tools:
-                config = tool.get("config", {})
-                servers.append(
-                    {
-                        "id": str(tool["_id"]),
-                        "name": tool.get("displayName", "MCP Server"),
-                        "server_url": config.get("server_url", ""),
-                        "auth_type": config.get("auth_type", "none"),
-                        "status": tool.get("status", False),
-                        "created_at": (
-                            tool.get("_id").generation_time.isoformat()
-                            if tool.get("_id")
-                            else None
-                        ),
-                    }
-                )
+            auth_credentials = {}
+            auth_type = config.get("auth_type", "none")
 
-            return make_response(jsonify({"success": True, "servers": servers}), 200)
+            if auth_type == "api_key" and "api_key" in config:
+                auth_credentials["api_key"] = config["api_key"]
+                if "api_key_header" in config:
+                    auth_credentials["api_key_header"] = config["api_key_header"]
+            elif auth_type == "bearer" and "bearer_token" in config:
+                auth_credentials["bearer_token"] = config["bearer_token"]
+            elif auth_type == "basic":
+                if "username" in config:
+                    auth_credentials["username"] = config["username"]
+                if "password" in config:
+                    auth_credentials["password"] = config["password"]
 
-        except Exception as e:
-            current_app.logger.error(
-                f"Error retrieving MCP servers: {e}", exc_info=True
-            )
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+            test_config = config.copy()
+            test_config["auth_credentials"] = auth_credentials
 
-
-@user_ns.route("/api/mcp_server/<string:server_id>/test")
-class TestMCPServer(Resource):
-    @api.doc(description="Test connection to an MCP server")
-    def post(self, server_id):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-
-        user = decoded_token.get("sub")
-        try:
-            # Find the MCP tool
-            mcp_tool_doc = user_tools_collection.find_one(
-                {"_id": ObjectId(server_id), "user": user, "name": "mcp_tool"}
-            )
-
-            if not mcp_tool_doc:
-                return make_response(
-                    jsonify({"success": False, "error": "MCP server not found"}), 404
-                )
-
-            # Load the tool and test connection
-            from application.agents.tools.mcp_tool import MCPTool
-
-            mcp_tool = MCPTool(mcp_tool_doc.get("config", {}), user)
+            mcp_tool = MCPTool(test_config, user)
             result = mcp_tool.test_connection()
 
             return make_response(jsonify(result), 200)
-
         except Exception as e:
             current_app.logger.error(f"Error testing MCP server: {e}", exc_info=True)
             return make_response(
@@ -4220,38 +4146,86 @@ class TestMCPServer(Resource):
             )
 
 
-@user_ns.route("/api/mcp_server/<string:server_id>/tools")
-class MCPServerTools(Resource):
-    @api.doc(description="Discover and get tools from an MCP server")
-    def get(self, server_id):
+@user_ns.route("/api/mcp_server/save")
+class MCPServerSave(Resource):
+    @api.expect(
+        api.model(
+            "MCPServerSaveModel",
+            {
+                "id": fields.String(
+                    required=False, description="Tool ID for updates (optional)"
+                ),
+                "displayName": fields.String(
+                    required=True, description="Display name for the MCP server"
+                ),
+                "config": fields.Raw(
+                    required=True, description="MCP server configuration"
+                ),
+                "status": fields.Boolean(
+                    required=False, default=True, description="Tool status"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Create or update MCP server with automatic tool discovery")
+    def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         user = decoded_token.get("sub")
-        try:
-            # Find the MCP tool
-            mcp_tool_doc = user_tools_collection.find_one(
-                {"_id": ObjectId(server_id), "user": user, "name": "mcp_tool"}
-            )
+        data = request.get_json()
 
-            if not mcp_tool_doc:
-                return make_response(
-                    jsonify({"success": False, "error": "MCP server not found"}), 404
+        required_fields = ["displayName", "config"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+        try:
+            config = data["config"]
+
+            auth_credentials = {}
+            auth_type = config.get("auth_type", "none")
+            if auth_type == "api_key":
+                if "api_key" in config and config["api_key"]:
+                    auth_credentials["api_key"] = config["api_key"]
+                if "api_key_header" in config:
+                    auth_credentials["api_key_header"] = config["api_key_header"]
+            elif auth_type == "bearer":
+                if "bearer_token" in config and config["bearer_token"]:
+                    auth_credentials["bearer_token"] = config["bearer_token"]
+            elif auth_type == "basic":
+                if "username" in config and config["username"]:
+                    auth_credentials["username"] = config["username"]
+                if "password" in config and config["password"]:
+                    auth_credentials["password"] = config["password"]
+            mcp_config = config.copy()
+            mcp_config["auth_credentials"] = auth_credentials
+
+            if auth_type == "none" or auth_credentials:
+                mcp_tool = MCPTool(mcp_config, user)
+                mcp_tool.discover_tools()
+                actions_metadata = mcp_tool.get_actions_metadata()
+            else:
+                raise Exception(
+                    "No valid credentials provided for the selected authentication type"
                 )
 
-            # Load the tool and discover tools
-            from application.agents.tools.mcp_tool import MCPTool
+            storage_config = config.copy()
+            if auth_credentials:
+                encrypted_credentials_string = encrypt_credentials(
+                    auth_credentials, user
+                )
+                storage_config["encrypted_credentials"] = encrypted_credentials_string
 
-            mcp_tool = MCPTool(mcp_tool_doc.get("config", {}), user)
-            tools = mcp_tool.discover_tools()
-
-            # Get actions metadata and transform to match other tools format
-            actions_metadata = mcp_tool.get_actions_metadata()
+            for field in [
+                "api_key",
+                "bearer_token",
+                "username",
+                "password",
+                "api_key_header",
+            ]:
+                storage_config.pop(field, None)
             transformed_actions = []
-
             for action in actions_metadata:
-                # Add active flag and transform parameters
                 action["active"] = True
                 if "parameters" in action:
                     if "properties" in action["parameters"]:
@@ -4261,77 +4235,53 @@ class MCPServerTools(Resource):
                             param_details["filled_by_llm"] = True
                             param_details["value"] = ""
                 transformed_actions.append(action)
+            tool_data = {
+                "name": "mcp_tool",
+                "displayName": data["displayName"],
+                "description": f"MCP Server: {storage_config.get('server_url', 'Unknown')}",
+                "config": storage_config,
+                "actions": transformed_actions,
+                "status": data.get("status", True),
+                "user": user,
+            }
 
-            # Update the stored actions in the database
-            user_tools_collection.update_one(
-                {"_id": ObjectId(server_id)}, {"$set": {"actions": transformed_actions}}
-            )
-
-            return make_response(
-                jsonify(
-                    {"success": True, "tools": tools, "actions": transformed_actions}
-                ),
-                200,
-            )
-
-        except Exception as e:
-            current_app.logger.error(f"Error discovering MCP tools: {e}", exc_info=True)
-            return make_response(
-                jsonify(
-                    {"success": False, "error": f"Tool discovery failed: {str(e)}"}
-                ),
-                500,
-            )
-
-
-@user_ns.route("/api/mcp_server/<string:server_id>/tools/<string:action_name>")
-class MCPServerToolAction(Resource):
-    @api.expect(
-        api.model(
-            "MCPToolActionModel",
-            {
-                "parameters": fields.Raw(
-                    required=False, description="Parameters for the tool action"
+            tool_id = data.get("id")
+            if tool_id:
+                result = user_tools_collection.update_one(
+                    {"_id": ObjectId(tool_id), "user": user, "name": "mcp_tool"},
+                    {"$set": {k: v for k, v in tool_data.items() if k != "user"}},
                 )
-            },
-        )
-    )
-    @api.doc(description="Execute a specific tool action on an MCP server")
-    def post(self, server_id, action_name):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-
-        user = decoded_token.get("sub")
-        data = request.get_json() or {}
-        parameters = data.get("parameters", {})
-
-        try:
-            # Find the MCP tool
-            mcp_tool_doc = user_tools_collection.find_one(
-                {"_id": ObjectId(server_id), "user": user, "name": "mcp_tool"}
-            )
-
-            if not mcp_tool_doc:
-                return make_response(
-                    jsonify({"success": False, "error": "MCP server not found"}), 404
-                )
-
-            # Load the tool and execute action
-            from application.agents.tools.mcp_tool import MCPTool
-
-            mcp_tool = MCPTool(mcp_tool_doc.get("config", {}), user)
-            result = mcp_tool.execute_action(action_name, **parameters)
-
-            return make_response(jsonify({"success": True, "result": result}), 200)
-
+                if result.matched_count == 0:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "Tool not found or access denied",
+                            }
+                        ),
+                        404,
+                    )
+                response_data = {
+                    "success": True,
+                    "id": tool_id,
+                    "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
+                    "tools_count": len(transformed_actions),
+                }
+            else:
+                result = user_tools_collection.insert_one(tool_data)
+                tool_id = str(result.inserted_id)
+                response_data = {
+                    "success": True,
+                    "id": tool_id,
+                    "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
+                    "tools_count": len(transformed_actions),
+                }
+            return make_response(jsonify(response_data), 200)
         except Exception as e:
-            current_app.logger.error(
-                f"Error executing MCP tool action: {e}", exc_info=True
-            )
+            current_app.logger.error(f"Error saving MCP server: {e}", exc_info=True)
             return make_response(
                 jsonify(
-                    {"success": False, "error": f"Action execution failed: {str(e)}"}
+                    {"success": False, "error": f"Failed to save MCP server: {str(e)}"}
                 ),
                 500,
             )
