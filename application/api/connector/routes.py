@@ -339,8 +339,15 @@ class ConnectorRefresh(Resource):
 
 @connectors_ns.route("/api/connectors/files")
 class ConnectorFiles(Resource):
-    @api.expect(api.model("ConnectorFilesModel", {"provider": fields.String(required=True), "session_token": fields.String(required=True), "folder_id": fields.String(required=False), "limit": fields.Integer(required=False), "page_token": fields.String(required=False)}))
-    @api.doc(description="List files from a connector provider (supports pagination)")
+    @api.expect(api.model("ConnectorFilesModel", {
+        "provider": fields.String(required=True), 
+        "session_token": fields.String(required=True), 
+        "folder_id": fields.String(required=False), 
+        "limit": fields.Integer(required=False), 
+        "page_token": fields.String(required=False),
+        "search_query": fields.String(required=False)
+    }))
+    @api.doc(description="List files from a connector provider (supports pagination and search)")
     def post(self):
         try:
             data = request.get_json()
@@ -349,9 +356,10 @@ class ConnectorFiles(Resource):
             folder_id = data.get('folder_id')
             limit = data.get('limit', 10)
             page_token = data.get('page_token')
+            search_query = data.get('search_query')
+            
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
-
 
             decoded_token = request.decoded_token
             if not decoded_token:
@@ -362,13 +370,17 @@ class ConnectorFiles(Resource):
                 return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
 
             loader = ConnectorCreator.create_connector(provider, session_token)
-            documents = loader.load_data({
+            input_config = {
                 'limit': limit,
                 'list_only': True,
                 'session_token': session_token,
                 'folder_id': folder_id,
                 'page_token': page_token
-            })
+            }
+            if search_query:
+                input_config['search_query'] = search_query
+                
+            documents = loader.load_data(input_config)
 
             files = []
             for doc in documents[:limit]:
@@ -386,13 +398,20 @@ class ConnectorFiles(Resource):
                     'name': metadata.get('file_name', 'Unknown File'),
                     'type': metadata.get('mime_type', 'unknown'),
                     'size': metadata.get('size', None),
-                    'modifiedTime': formatted_time
+                    'modifiedTime': formatted_time,
+                    'isFolder': metadata.get('is_folder', False)
                 })
 
             next_token = getattr(loader, 'next_page_token', None)
             has_more = bool(next_token)
 
-            return make_response(jsonify({"success": True, "files": files, "total": len(files), "next_page_token": next_token, "has_more": has_more}), 200)
+            return make_response(jsonify({
+                "success": True, 
+                "files": files, 
+                "total": len(files), 
+                "next_page_token": next_token, 
+                "has_more": has_more
+            }), 200)
         except Exception as e:
             current_app.logger.error(f"Error loading connector files: {e}")
             return make_response(jsonify({"success": False, "error": f"Failed to load files: {str(e)}"}), 500)

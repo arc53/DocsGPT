@@ -120,6 +120,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
             list_only = inputs.get('list_only', False)
             load_content = not list_only
             page_token = inputs.get('page_token')
+            search_query = inputs.get('search_query')
             self.next_page_token = None
 
             if file_ids:
@@ -128,12 +129,18 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     try:
                         doc = self._load_file_by_id(file_id, load_content=load_content)
                         if doc:
-                            documents.append(doc)
+                            if not search_query or (
+                                search_query.lower() in doc.extra_info.get('file_name', '').lower()
+                            ):
+                                documents.append(doc)
                         elif hasattr(self, '_credential_refreshed') and self._credential_refreshed:
                             self._credential_refreshed = False
                             logging.info(f"Retrying load of file {file_id} after credential refresh")
                             doc = self._load_file_by_id(file_id, load_content=load_content)
-                            if doc:
+                            if doc and (
+                                not search_query or 
+                                search_query.lower() in doc.extra_info.get('file_name', '').lower()
+                            ):
                                 documents.append(doc)
                     except Exception as e:
                         logging.error(f"Error loading file {file_id}: {e}")
@@ -141,7 +148,13 @@ class GoogleDriveLoader(BaseConnectorLoader):
             else:
                 # Browsing mode: list immediate children of provided folder or root
                 parent_id = folder_id if folder_id else 'root'
-                documents = self._list_items_in_parent(parent_id, limit=limit, load_content=load_content, page_token=page_token)
+                documents = self._list_items_in_parent(
+                    parent_id, 
+                    limit=limit, 
+                    load_content=load_content, 
+                    page_token=page_token,
+                    search_query=search_query
+                )
 
             logging.info(f"Loaded {len(documents)} documents from Google Drive")
             return documents
@@ -184,13 +197,18 @@ class GoogleDriveLoader(BaseConnectorLoader):
             return None
 
 
-    def _list_items_in_parent(self, parent_id: str, limit: int = 100, load_content: bool = False, page_token: Optional[str] = None) -> List[Document]:
+    def _list_items_in_parent(self, parent_id: str, limit: int = 100, load_content: bool = False, page_token: Optional[str] = None, search_query: Optional[str] = None) -> List[Document]:
         self._ensure_service()
 
         documents: List[Document] = []
 
         try:
             query = f"'{parent_id}' in parents and trashed=false"
+
+            if search_query:
+                safe_search = search_query.replace("'", "\\'")
+                query += f" and name contains '{safe_search}'"
+
             next_token_out: Optional[str] = None
 
             while True:
@@ -205,7 +223,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     q=query,
                     fields='nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime,parents)',
                     pageToken=page_token,
-                    pageSize=page_size
+                    pageSize=page_size,
+                    orderBy='name'
                 ).execute()
 
                 items = results.get('files', [])

@@ -64,6 +64,7 @@ function Upload({
   const [authError, setAuthError] = useState<string>('');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'My Drive'}]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [hasMoreFiles, setHasMoreFiles] = useState<boolean>(false);
@@ -549,7 +550,7 @@ function Upload({
 
         setNextPageToken(null);
         setHasMoreFiles(false);
-        loadGoogleDriveFiles(sessionToken, null, null, false);
+        loadGoogleDriveFiles(sessionToken, null, undefined, '');
       } else {
         removeSessionToken(ingestor.type);
         setIsGoogleDriveConnected(false);
@@ -562,57 +563,63 @@ function Upload({
     }
   };
 
-  const loadGoogleDriveFiles = async (
-    sessionToken: string,
-    folderId?: string | null,
-    pageToken?: string | null,
-    append: boolean = false,
-  ) => {
-    setIsLoadingFiles(true);
+  const loadGoogleDriveFiles = useCallback(
+    (
+      sessionToken: string, 
+      folderId: string | null, 
+      pageToken?: string, 
+      searchQuery: string = ''
+    ) => {
 
-    try {
+      setIsLoadingFiles(true);
+      
       const apiHost = import.meta.env.VITE_API_HOST;
-      const requestBody: any = {
-        session_token: sessionToken,
-        limit: 10,
-      };
-      if (folderId) {
-        requestBody.folder_id = folderId;
-      }
-      if (pageToken) {
-        requestBody.page_token = pageToken;
+      if (!pageToken) {
+        setGoogleDriveFiles([]);
       }
 
-      const filesResponse = await fetch(`${apiHost}/api/connectors/files`, {
+      fetch(`${apiHost}/api/connectors/files`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ ...requestBody, provider: 'google_drive' })
-      });
-
-      if (!filesResponse.ok) {
-        throw new Error(`Failed to load files: ${filesResponse.status}`);
-      }
-
-      const filesData = await filesResponse.json();
-
-      if (filesData.success && Array.isArray(filesData.files)) {
-        setGoogleDriveFiles(prev => append ? [...prev, ...filesData.files] : filesData.files);
-        setNextPageToken(filesData.next_page_token || null);
-        setHasMoreFiles(Boolean(filesData.has_more));
-      } else {
-        throw new Error(filesData.error || 'Failed to load files');
-      }
-
-    } catch (error) {
-      console.error('Error loading Google Drive files:', error);
-      setAuthError(error instanceof Error ? error.message : 'Failed to load files. Please make sure your Google Drive account is properly connected and you granted offline access during authorization.');
-    } finally {
-      setIsLoadingFiles(false);
-    }
-  };
+        body: JSON.stringify({
+          provider: 'google_drive',
+          session_token: sessionToken,
+          folder_id: folderId,
+          limit: 10,
+          page_token: pageToken,
+          search_query: searchQuery
+        })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            setGoogleDriveFiles(prev => 
+              pageToken ? [...prev, ...data.files] : data.files
+            );
+            setNextPageToken(data.next_page_token);
+            setHasMoreFiles(!!data.next_page_token);
+          } else {
+            console.error('Error loading files:', data.error);
+            if (!pageToken) {
+              setGoogleDriveFiles([]);
+            }
+          }
+        })
+        .catch(err => {
+          console.error('Error loading files:', err);
+          if (!pageToken) {
+            setGoogleDriveFiles([]);
+          }
+        })
+        .finally(() => {
+          setIsLoadingFiles(false);
+        });
+    },
+    [token]
+  );
 
 
 
@@ -628,33 +635,38 @@ function Upload({
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {
+    if (folderId === currentFolderId) {
+      return;
+    }
+    
+    setIsLoadingFiles(true);
+    
+    setCurrentFolderId(folderId);
+    setFolderPath(prev => [...prev, { id: folderId, name: folderName }]);
+ 
+    setSearchQuery('');
+    
     const sessionToken = getSessionToken(ingestor.type);
     if (sessionToken) {
-      setCurrentFolderId(folderId);
-      setFolderPath(prev => [...prev, {id: folderId, name: folderName}]);
-
-      setGoogleDriveFiles([]);
-      setNextPageToken(null);
-      setHasMoreFiles(false);
-      setSelectedFiles([]);
-      loadGoogleDriveFiles(sessionToken, folderId, null, false);
+      loadGoogleDriveFiles(sessionToken, folderId, undefined, '');
     }
   };
 
   const navigateBack = (index: number) => {
-    const sessionToken = getSessionToken(ingestor.type);
-    if (sessionToken) {
+    if (index < folderPath.length - 1) {
       const newPath = folderPath.slice(0, index + 1);
-      const targetFolderId = newPath[newPath.length - 1]?.id;
-
-      setCurrentFolderId(targetFolderId as string | null);
+      const targetFolderId = newPath[newPath.length - 1].id;
+      
+      setIsLoadingFiles(true);
+      
       setFolderPath(newPath);
-
-      setGoogleDriveFiles([]);
-      setNextPageToken(null);
-      setHasMoreFiles(false);
-      setSelectedFiles([]);
-      loadGoogleDriveFiles(sessionToken, targetFolderId ?? null, null, false);
+      setCurrentFolderId(targetFolderId);
+   
+      setSearchQuery('');
+      const sessionToken = getSessionToken(ingestor.type);
+      if (sessionToken) {
+        loadGoogleDriveFiles(sessionToken, targetFolderId, undefined, '');
+      }
     }
   };
 
@@ -957,6 +969,40 @@ function Upload({
                           ))}
                         </div>
 
+                        {/* Search input */}
+                        <div className="mb-3">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="Search files and folders..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const sessionToken = getSessionToken(ingestor.type);
+                                  if (sessionToken) {
+                                    loadGoogleDriveFiles(sessionToken, currentFolderId, undefined, searchQuery);
+                                  }
+                                }
+                              }}
+                              className="w-full px-3 py-2 pr-10 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                            <button
+                              onClick={() => {
+                                const sessionToken = getSessionToken(ingestor.type);
+                                if (sessionToken) {
+                                  loadGoogleDriveFiles(sessionToken, currentFolderId, undefined, searchQuery);
+                                }
+                              }}
+                              className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 dark:text-gray-400"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+
                         <div className="flex items-center justify-between">
                           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Select Files from Google Drive
@@ -1131,7 +1177,7 @@ function Upload({
       if (isNearBottom && hasMoreFiles && !isLoadingFiles && nextPageToken) {
         const sessionToken = getSessionToken(ingestor.type);
         if (sessionToken) {
-          loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken, true);
+          loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken);
         }
       }
     };
