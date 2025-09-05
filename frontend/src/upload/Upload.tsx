@@ -30,6 +30,8 @@ import {
 } from './types/ingestor';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
+import SearchIcon from '../assets/search.svg';
+import CheckIcon from '../assets/checkmark.svg';
 import ConnectorAuth from '../components/ConnectorAuth';
 
 function Upload({
@@ -69,6 +71,7 @@ function Upload({
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [hasMoreFiles, setHasMoreFiles] = useState<boolean>(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchTimeoutRef = useRef<number | null>(null);
 
   const renderFormFields = () => {
     const schema = IngestorFormSchemas[ingestor.type];
@@ -192,7 +195,8 @@ function Upload({
                 checked,
               );
             }}
-            className="mt-2"
+            size="small"
+            className={`mt-2 text-base`}
           />
         );
       default:
@@ -621,7 +625,18 @@ function Upload({
     [token]
   );
 
+  const debouncedSearch = useCallback((query: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
+    searchTimeoutRef.current = window.setTimeout(() => {
+      const sessionToken = getSessionToken(ingestor.type);
+      if (sessionToken) {
+        loadGoogleDriveFiles(sessionToken, currentFolderId, undefined, query);
+      }
+    }, 300);
+  }, [ingestor.type, currentFolderId, loadGoogleDriveFiles]);
 
   // Handle file selection
   const handleFileSelect = (fileId: string) => {
@@ -667,14 +682,6 @@ function Upload({
       if (sessionToken) {
         loadGoogleDriveFiles(sessionToken, targetFolderId, undefined, '');
       }
-    }
-  };
-
-  const handleSelectAll = () => {
-    if (selectedFiles.length === googleDriveFiles.length) {
-      setSelectedFiles([]);
-    } else {
-      setSelectedFiles(googleDriveFiles.map(file => file.id));
     }
   };
 
@@ -888,7 +895,7 @@ function Upload({
               <div className="space-y-4">
                 {authError && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-600 dark:bg-red-900/20">
-                    <p className="text-sm text-red-600 dark:text-red-400">
+                    <p className={`text-red-600 dark:text-red-400 ${authError === 'Authentication was cancelled' ? 'text-[18px]' : 'text-sm'}`}>
                       ⚠️ {authError}
                     </p>
                   </div>
@@ -917,7 +924,7 @@ function Upload({
                 ) : (
                   <div className="space-y-4">
                     {/* Connection Status */}
-                    <div className="w-full flex items-center justify-between rounded-lg bg-green-500 px-4 py-2 text-white text-sm">
+                    <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] text-sm">
                       <div className="flex items-center gap-2">
                         <svg className="h-4 w-4" viewBox="0 0 24 24">
                           <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
@@ -944,7 +951,7 @@ function Upload({
                             body: JSON.stringify({ provider: ingestor.type, session_token: getSessionToken(ingestor.type) })
                           }).catch(err => console.error('Error disconnecting from Google Drive:', err));
                         }}
-                        className="text-white hover:text-gray-200 text-xs underline"
+                        className="text-[#212121] hover:text-gray-700 text-xs underline"
                       >
                         Disconnect
                       </button>
@@ -952,7 +959,7 @@ function Upload({
 
                     {/* File Browser */}
                     <div className="border border-gray-200 rounded-lg dark:border-gray-600">
-                      <div className="p-3 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 rounded-t-lg">
+                      <div className="p-3 border-b border-gray-200 dark:border-gray-600 rounded-t-lg">
                         {/* Breadcrumb navigation */}
                         <div className="flex items-center gap-1 mb-2">
                           {folderPath.map((path, index) => (
@@ -960,7 +967,7 @@ function Upload({
                               {index > 0 && <span className="text-gray-400">/</span>}
                               <button
                                 onClick={() => navigateBack(index)}
-                                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:underline"
+                                className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
                                 disabled={index === folderPath.length - 1}
                               >
                                 {path.name}
@@ -976,29 +983,17 @@ function Upload({
                               type="text"
                               placeholder="Search files and folders..."
                               value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  const sessionToken = getSessionToken(ingestor.type);
-                                  if (sessionToken) {
-                                    loadGoogleDriveFiles(sessionToken, currentFolderId, undefined, searchQuery);
-                                  }
-                                }
+                              onChange={(e) => {
+                                const newQuery = e.target.value;
+                                setSearchQuery(newQuery);
+                                debouncedSearch(newQuery);
                               }}
                               className="w-full px-3 py-2 pr-10 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                             />
                             <button
-                              onClick={() => {
-                                const sessionToken = getSessionToken(ingestor.type);
-                                if (sessionToken) {
-                                  loadGoogleDriveFiles(sessionToken, currentFolderId, undefined, searchQuery);
-                                }
-                              }}
                               className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 dark:text-gray-400"
                             >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                              </svg>
+                              <img src={SearchIcon} alt="Search" className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
@@ -1007,23 +1002,16 @@ function Upload({
                           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Select Files from Google Drive
                           </h4>
-                          {googleDriveFiles.length > 0 && (
-                            <button
-                              onClick={handleSelectAll}
-                              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                            >
-                              {selectedFiles.length === googleDriveFiles.length ? 'Deselect All' : 'Select All'}
-                            </button>
-                          )}
+                          <span className="text-xs text-gray-500">
+                            {selectedFiles.length > 0
+                              ? `${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''} selected`
+                              : ''
+                            }
+                          </span>
                         </div>
-                        {selectedFiles.length > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
-                          </p>
-                        )}
                       </div>
 
-                      <div className="max-h-72 overflow-y-auto" ref={scrollContainerRef}>
+                      <div className="h-72 overflow-y-auto" ref={scrollContainerRef}>
                         {isLoadingFiles && googleDriveFiles.length === 0 ? (
                           <div className="p-4 text-center">
                             <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
@@ -1041,66 +1029,69 @@ function Upload({
                               {googleDriveFiles.map((file) => (
                                 <div
                                   key={file.id}
-                                  className={`p-3 transition-colors ${
+                                  className={`transition-colors ${
                                     selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                                   }`}
                                 >
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex-shrink-0">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedFiles.includes(file.id)}
-                                        onChange={() => handleFileSelect(file.id)}
-                                        className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                                      />
-                                    </div>
-                                    {file.type === 'application/vnd.google-apps.folder' || file.isFolder ? (
+                                  <div className="flex items-center gap-3 p-3">
+                                    <div
+                                      className="flex-shrink-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleFileSelect(file.id);
+                                      }}
+                                    >
                                       <div
-                                        className="text-lg cursor-pointer hover:text-blue-600"
-                                        onClick={() => handleFolderClick(file.id, file.name)}
+                                        className="flex h-5 w-5 shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783] cursor-pointer"
                                       >
-                                        <img src={FolderIcon} alt="Folder" className="h-6 w-6" />
+                                        {selectedFiles.includes(file.id) && (
+                                          <img
+                                            src={CheckIcon}
+                                            alt="Selected"
+                                            className="h-4 w-4"
+                                          />
+                                        )}
                                       </div>
-                                    ) : (
-                                      <div className="text-lg">
-                                        <img src={FileIcon} alt="File" className="h-6 w-6" />
+                                    </div>
+                                    <div
+                                      className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer hover:text-blue-600"
+                                      onClick={() => {
+                                        if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
+                                          handleFolderClick(file.id, file.name);
+                                        } else {
+                                          handleFileSelect(file.id);
+                                        }
+                                      }}
+                                    >
+                                      <div className="flex-shrink-0">
+                                        <img
+                                          src={file.type === 'application/vnd.google-apps.folder' || file.isFolder ? FolderIcon : FileIcon}
+                                          alt={file.type === 'application/vnd.google-apps.folder' || file.isFolder ? "Folder" : "File"}
+                                          className="h-6 w-6"
+                                        />
                                       </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <p
-                                        className={`text-sm font-medium truncate dark:text-[#ececf1] ${
-                                          file.type === 'application/vnd.google-apps.folder' || file.isFolder
-                                            ? 'cursor-pointer hover:text-blue-600'
-                                            : ''
-                                        }`}
-                                        onClick={() => {
-                                          if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
-                                            handleFolderClick(file.id, file.name);
-                                          }
-                                        }}
-                                      >
-                                        {file.name}
-                                      </p>
-                                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        {file.size && `${formatBytes(file.size)} • `}Modified {formatDate(file.modifiedTime)}
-                                      </p>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate dark:text-[#ececf1]">
+                                          {file.name}
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                          {file.size && `${formatBytes(file.size)} • `}Modified {formatDate(file.modifiedTime)}
+                                        </p>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
                               ))}
                             </div>
 
-                            <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
-                              {isLoadingFiles && (
+                            {isLoadingFiles && (
+                              <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
                                 <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
                                   Loading more files...
                                 </div>
-                              )}
-                              {!hasMoreFiles && !isLoadingFiles && (
-                                <span className="text-sm text-gray-500 dark:text-gray-400">All files loaded</span>
-                              )}
-                            </div>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -1154,10 +1145,7 @@ function Upload({
                   : 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer text-white'
               }`}
             >
-              {ingestor.type === 'google_drive' && selectedFiles.length > 0
-                ? `Train with ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`
-                : t('modals.uploadDoc.train')
-              }
+              {t('modals.uploadDoc.train')}
             </button>
           )}
         </div>
@@ -1188,6 +1176,14 @@ function Upload({
       scrollContainer?.removeEventListener('scroll', handleScroll);
     };
   }, [hasMoreFiles, isLoadingFiles, nextPageToken, currentFolderId, ingestor.type]);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <WrapperModal

@@ -42,10 +42,10 @@ export default function WrapperModal({
   }, [close, isPerformingTask]);
 
   const modalContent = (
-    <div className="bg-gray-alpha bg-opacity-50 fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center">
+    <div className="bg-gray-alpha bg-opacity-50 fixed inset-0 z-30 flex items-center justify-center">
       <div
         ref={modalRef}
-        className={`relative w-11/12 rounded-2xl bg-white p-8 sm:w-[512px] dark:bg-[#26272E] ${className}`}
+        className={`relative w-11/12 sm:w-[512px] rounded-2xl bg-white p-4 sm:p-8 max-h-[90vh] overflow-hidden flex flex-col dark:bg-[#26272E] ${className}`}
       >
         {!isPerformingTask && (
           <button
@@ -55,7 +55,7 @@ export default function WrapperModal({
             <img className="filter dark:invert" src={Exit} alt="Close" />
           </button>
         )}
-        <div className={`${contentClassName}`}>{children}</div>
+        <div className={`overflow-y-auto no-scrollbar ${contentClassName}`}>{children}</div>
       </div>
     </div>
   );
