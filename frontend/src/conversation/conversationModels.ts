@@ -54,7 +54,7 @@ export interface Query {
 
 export interface RetrievalPayload {
   question: string;
-  active_docs?: string;
+  active_docs?: string | string[];
   retriever?: string;
   conversation_id: string | null;
   prompt_id?: string | null;
