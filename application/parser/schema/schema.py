@@ -29,18 +29,18 @@ class BaseDocument(DataClassJsonMixin):
         """Get Document type."""
 
     def get_page_content(self) -> str:
-        """get page content."""
+        """Get page content."""
         if self.page_content is None:
             raise ValueError("page_content field not set.")
         return self.page_content
 
     # backward compatibility method
     def get_text(self) -> str:
-        """get text (legacy method for backward compatibility)."""
+        """Get text (legacy method for backward compatibility)."""
         return self.get_page_content()
 
     def get_doc_id(self) -> str:
-        """get doc_id."""
+        """Get doc_id."""
         if self.doc_id is None:
             raise ValueError("doc_id not set.")
         return self.doc_id
@@ -62,7 +62,7 @@ class BaseDocument(DataClassJsonMixin):
 
     @property
     def metadata_str(self) -> Optional[str]:
-        """metadata string representation."""
+        """Metadata string representation."""
         if self.metadata is None:
             return None
 
@@ -71,15 +71,15 @@ class BaseDocument(DataClassJsonMixin):
     # backward compatibility property
     @property
     def extra_info_str(self) -> Optional[str]:
-        """extra info string (legacy property for backward compatibility)."""
+        """Extra info string (legacy property for backward compatibility)."""
         return self.metadata_str
 
     @property
     def extra_info(self) -> Optional[Dict[str, Any]]:
-        """extra info (legacy property for backward compatibility)."""
+        """Extra info (legacy property for backward compatibility)."""
         return self.metadata
 
     @extra_info.setter
     def extra_info(self, value: Optional[Dict[str, Any]]) -> None:
-        """set extra info (legacy setter for backward compatibility)."""
+        """Set extra info (legacy setter for backward compatibility)."""
         self.metadata = value
