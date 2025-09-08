@@ -36,7 +36,7 @@ class Chunker:
     
     def split_document(self, doc: Document) -> List[Document]:
         split_docs = []
-        header, body = self.separate_header_and_body(doc.text)
+        header, body = self.separate_header_and_body(doc.page_content)
         header_tokens = self.encoding.encode(header) if header else []
         body_tokens = self.encoding.encode(body)
 
@@ -48,10 +48,10 @@ class Chunker:
                             if self.duplicate_headers or part_index == 0 else body_tokens[current_position:end_position])
             chunk_text = self.encoding.decode(chunk_tokens)
             new_doc = Document(
-                text=chunk_text,
+                page_content=chunk_text,
                 doc_id=f"{doc.doc_id}-{part_index}",
                 embedding=doc.embedding,
-                extra_info={**(doc.extra_info or {}), "token_count": len(chunk_tokens)}
+                metadata={**(doc.metadata or {}), "token_count": len(chunk_tokens)}
             )
             split_docs.append(new_doc)
             current_position = end_position
@@ -64,18 +64,18 @@ class Chunker:
         i = 0
         while i < len(documents):
             doc = documents[i]
-            tokens = self.encoding.encode(doc.text)
+            tokens = self.encoding.encode(doc.page_content)
             token_count = len(tokens)
 
             if self.min_tokens <= token_count <= self.max_tokens:
-                doc.extra_info = doc.extra_info or {}
-                doc.extra_info["token_count"] = token_count
+                doc.metadata = doc.metadata or {}
+                doc.metadata["token_count"] = token_count
                 processed_docs.append(doc)
                 i += 1
             elif token_count < self.min_tokens:
   
-                doc.extra_info = doc.extra_info or {}
-                doc.extra_info["token_count"] = token_count
+                doc.metadata = doc.metadata or {}
+                doc.metadata["token_count"] = token_count
                 processed_docs.append(doc)
                 i += 1
             else:
