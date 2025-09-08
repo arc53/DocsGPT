@@ -173,7 +173,7 @@ class ConnectorSources(Resource):
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         try:
-            sources = sources_collection.find({"user": user, "type": "connector"}).sort("date", -1)
+            sources = sources_collection.find({"user": user, "type": {"$regex": "^connector:"}}).sort("date", -1)
             connector_sources = []
             for source in sources:
                 connector_sources.append({
