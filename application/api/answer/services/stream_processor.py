@@ -69,11 +69,8 @@ class StreamProcessor:
             self.decoded_token.get("sub") if self.decoded_token is not None else None
         )
         self.conversation_id = self.data.get("conversation_id")
-        self.source = (
-            {"active_docs": self.data["active_docs"]}
-            if "active_docs" in self.data
-            else {}
-        )
+        self.source = {}
+        self.all_sources = []
         self.attachments = []
         self.history = []
         self.agent_config = {}
@@ -86,6 +83,7 @@ class StreamProcessor:
     def initialize(self):
         """Initialize all required components for processing"""
         self._configure_agent()
+        self._configure_source()
         self._configure_retriever()
         self._load_conversation_history()
         self._process_attachments()
@@ -171,11 +169,76 @@ class StreamProcessor:
         source = data.get("source")
         if isinstance(source, DBRef):
             source_doc = self.db.dereference(source)
-            data["source"] = str(source_doc["_id"])
-            data["retriever"] = source_doc.get("retriever", data.get("retriever"))
+            if source_doc:
+                data["source"] = str(source_doc["_id"])
+                data["retriever"] = source_doc.get("retriever", data.get("retriever"))
+                data["chunks"] = source_doc.get("chunks", data.get("chunks"))
+            else:
+                data["source"] = None
+        elif source == "default":
+            data["source"] = "default"
         else:
-            data["source"] = {}
+            data["source"] = None
+        # Handle multiple sources
+
+        sources = data.get("sources", [])
+        if sources and isinstance(sources, list):
+            sources_list = []
+            for i, source_ref in enumerate(sources):
+                if source_ref == "default":
+                    processed_source = {
+                        "id": "default",
+                        "retriever": "classic",
+                        "chunks": data.get("chunks", "2"),
+                    }
+                    sources_list.append(processed_source)
+                elif isinstance(source_ref, DBRef):
+                    source_doc = self.db.dereference(source_ref)
+                    if source_doc:
+                        processed_source = {
+                            "id": str(source_doc["_id"]),
+                            "retriever": source_doc.get("retriever", "classic"),
+                            "chunks": source_doc.get("chunks", data.get("chunks", "2")),
+                        }
+                        sources_list.append(processed_source)
+            data["sources"] = sources_list
+        else:
+            data["sources"] = []
         return data
+
+    def _configure_source(self):
+        """Configure the source based on agent data"""
+        api_key = self.data.get("api_key") or self.agent_key
+
+        if api_key:
+            agent_data = self._get_data_from_api_key(api_key)
+
+            if agent_data.get("sources") and len(agent_data["sources"]) > 0:
+                source_ids = [
+                    source["id"] for source in agent_data["sources"] if source.get("id")
+                ]
+                if source_ids:
+                    self.source = {"active_docs": source_ids}
+                else:
+                    self.source = {}
+                self.all_sources = agent_data["sources"]
+            elif agent_data.get("source"):
+                self.source = {"active_docs": agent_data["source"]}
+                self.all_sources = [
+                    {
+                        "id": agent_data["source"],
+                        "retriever": agent_data.get("retriever", "classic"),
+                    }
+                ]
+            else:
+                self.source = {}
+                self.all_sources = []
+            return
+        if "active_docs" in self.data:
+            self.source = {"active_docs": self.data["active_docs"]}
+            return
+        self.source = {}
+        self.all_sources = []
 
     def _configure_agent(self):
         """Configure the agent based on request data"""
@@ -230,7 +293,8 @@ class StreamProcessor:
             "token_limit": self.data.get("token_limit", settings.DEFAULT_MAX_HISTORY),
         }
 
-        if "isNoneDoc" in self.data and self.data["isNoneDoc"]:
+        api_key = self.data.get("api_key") or self.agent_key
+        if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
 
     def create_agent(self):

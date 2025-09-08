@@ -46,7 +46,7 @@ class ClassicRAG(BaseRetriever):
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
         )
-        
+
         if "active_docs" in source and source["active_docs"] is not None:
             if isinstance(source["active_docs"], list):
                 self.vectorstores = source["active_docs"]
@@ -54,7 +54,6 @@ class ClassicRAG(BaseRetriever):
                 self.vectorstores = [source["active_docs"]]
         else:
             self.vectorstores = []
-
         self.question = self._rephrase_query()
         self.decoded_token = decoded_token
         self._validate_vectorstore_config()
@@ -64,7 +63,6 @@ class ClassicRAG(BaseRetriever):
         if not self.vectorstores:
             logging.warning("No vectorstores configured for retrieval")
             return
-
         invalid_ids = [
             vs_id for vs_id in self.vectorstores if not vs_id or not vs_id.strip()
         ]
@@ -84,12 +82,16 @@ class ClassicRAG(BaseRetriever):
             or not self.vectorstores
         ):
             return self.original_question
-
         prompt = f"""Given the following conversation history:
+
         {self.chat_history}
 
+
+
         Rephrase the following user question to be a standalone search query 
+
         that captures all relevant context from the conversation:
+
         """
 
         messages = [
@@ -109,7 +111,6 @@ class ClassicRAG(BaseRetriever):
         """Retrieve relevant documents from configured vectorstores"""
         if self.chunks == 0 or not self.vectorstores:
             return []
-
         all_docs = []
         chunks_per_source = max(1, self.chunks // len(self.vectorstores))
 
@@ -128,7 +129,6 @@ class ClassicRAG(BaseRetriever):
                         else:
                             page_content = doc.get("text", doc.get("page_content", ""))
                             metadata = doc.get("metadata", {})
-
                         title = metadata.get(
                             "title", metadata.get("post_title", page_content)
                         )
@@ -136,7 +136,6 @@ class ClassicRAG(BaseRetriever):
                             title = title.split("/")[-1]
                         else:
                             title = str(title).split("/")[-1]
-
                         all_docs.append(
                             {
                                 "title": title,
@@ -150,7 +149,6 @@ class ClassicRAG(BaseRetriever):
                         exc_info=True,
                     )
                     continue
-
         return all_docs
 
     def search(self, query: str = ""):

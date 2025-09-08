@@ -45,6 +45,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     description: '',
     image: '',
     source: '',
+    sources: [],
     chunks: '',
     retriever: '',
     prompt_id: 'default',
@@ -150,7 +151,41 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
-    formData.append('source', agent.source);
+
+    if (selectedSourceIds.size > 1) {
+      const sourcesArray = Array.from(selectedSourceIds)
+        .map((id) => {
+          const sourceDoc = sourceDocs?.find(
+            (source) =>
+              source.id === id || source.retriever === id || source.name === id,
+          );
+          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
+            return 'default';
+          }
+          return sourceDoc?.id || id;
+        })
+        .filter(Boolean);
+      formData.append('sources', JSON.stringify(sourcesArray));
+      formData.append('source', '');
+    } else if (selectedSourceIds.size === 1) {
+      const singleSourceId = Array.from(selectedSourceIds)[0];
+      const sourceDoc = sourceDocs?.find(
+        (source) =>
+          source.id === singleSourceId ||
+          source.retriever === singleSourceId ||
+          source.name === singleSourceId,
+      );
+      let finalSourceId;
+      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
+        finalSourceId = 'default';
+      else finalSourceId = sourceDoc?.id || singleSourceId;
+      formData.append('source', String(finalSourceId));
+      formData.append('sources', JSON.stringify([]));
+    } else {
+      formData.append('source', '');
+      formData.append('sources', JSON.stringify([]));
+    }
+
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
@@ -196,7 +231,41 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
-    formData.append('source', agent.source);
+
+    if (selectedSourceIds.size > 1) {
+      const sourcesArray = Array.from(selectedSourceIds)
+        .map((id) => {
+          const sourceDoc = sourceDocs?.find(
+            (source) =>
+              source.id === id || source.retriever === id || source.name === id,
+          );
+          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
+            return 'default';
+          }
+          return sourceDoc?.id || id;
+        })
+        .filter(Boolean);
+      formData.append('sources', JSON.stringify(sourcesArray));
+      formData.append('source', '');
+    } else if (selectedSourceIds.size === 1) {
+      const singleSourceId = Array.from(selectedSourceIds)[0];
+      const sourceDoc = sourceDocs?.find(
+        (source) =>
+          source.id === singleSourceId ||
+          source.retriever === singleSourceId ||
+          source.name === singleSourceId,
+      );
+      let finalSourceId;
+      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
+        finalSourceId = 'default';
+      else finalSourceId = sourceDoc?.id || singleSourceId;
+      formData.append('source', String(finalSourceId));
+      formData.append('sources', JSON.stringify([]));
+    } else {
+      formData.append('source', '');
+      formData.append('sources', JSON.stringify([]));
+    }
+
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
@@ -293,9 +362,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           throw new Error('Failed to fetch agent');
         }
         const data = await response.json();
-        if (data.source) setSelectedSourceIds(new Set([data.source]));
-        else if (data.retriever)
+
+        if (data.sources && data.sources.length > 0) {
+          const mappedSources = data.sources.map((sourceId: string) => {
+            if (sourceId === 'default') {
+              const defaultSource = sourceDocs?.find(
+                (source) => source.name === 'Default',
+              );
+              return defaultSource?.retriever || 'classic';
+            }
+            return sourceId;
+          });
+          setSelectedSourceIds(new Set(mappedSources));
+        } else if (data.source) {
+          if (data.source === 'default') {
+            const defaultSource = sourceDocs?.find(
+              (source) => source.name === 'Default',
+            );
+            setSelectedSourceIds(
+              new Set([defaultSource?.retriever || 'classic']),
+            );
+          } else {
+            setSelectedSourceIds(new Set([data.source]));
+          }
+        } else if (data.retriever) {
           setSelectedSourceIds(new Set([data.retriever]));
+        }
+
         if (data.tools) setSelectedToolIds(new Set(data.tools));
         if (data.status === 'draft') setEffectiveMode('draft');
         if (data.json_schema) {
@@ -311,25 +404,57 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [agentId, mode, token]);
 
   useEffect(() => {
-    const selectedSource = Array.from(selectedSourceIds).map((id) =>
-      sourceDocs?.find(
-        (source) =>
-          source.id === id || source.retriever === id || source.name === id,
-      ),
-    );
-    if (selectedSource[0]?.model === embeddingsName) {
-      if (selectedSource[0] && 'id' in selectedSource[0]) {
+    const selectedSources = Array.from(selectedSourceIds)
+      .map((id) =>
+        sourceDocs?.find(
+          (source) =>
+            source.id === id || source.retriever === id || source.name === id,
+        ),
+      )
+      .filter(Boolean);
+
+    if (selectedSources.length > 0) {
+      // Handle multiple sources
+      if (selectedSources.length > 1) {
+        // Multiple sources selected - store in sources array
+        const sourceIds = selectedSources
+          .map((source) => source?.id)
+          .filter((id): id is string => Boolean(id));
         setAgent((prev) => ({
           ...prev,
-          source: selectedSource[0]?.id || 'default',
+          sources: sourceIds,
+          source: '', // Clear single source for multiple sources
           retriever: '',
         }));
-      } else
-        setAgent((prev) => ({
-          ...prev,
-          source: '',
-          retriever: selectedSource[0]?.retriever || 'classic',
-        }));
+      } else {
+        // Single source selected - maintain backward compatibility
+        const selectedSource = selectedSources[0];
+        if (selectedSource?.model === embeddingsName) {
+          if (selectedSource && 'id' in selectedSource) {
+            setAgent((prev) => ({
+              ...prev,
+              source: selectedSource?.id || 'default',
+              sources: [], // Clear sources array for single source
+              retriever: '',
+            }));
+          } else {
+            setAgent((prev) => ({
+              ...prev,
+              source: '',
+              sources: [], // Clear sources array
+              retriever: selectedSource?.retriever || 'classic',
+            }));
+          }
+        }
+      }
+    } else {
+      // No sources selected
+      setAgent((prev) => ({
+        ...prev,
+        source: '',
+        sources: [],
+        retriever: '',
+      }));
     }
   }, [selectedSourceIds]);
 
@@ -510,7 +635,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         )
                         .filter(Boolean)
                         .join(', ')
-                    : 'Select source'}
+                    : 'Select sources'}
                 </button>
                 <MultiSelectPopup
                   isOpen={isSourcePopupOpen}
@@ -526,12 +651,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   selectedIds={selectedSourceIds}
                   onSelectionChange={(newSelectedIds: Set<string | number>) => {
                     setSelectedSourceIds(newSelectedIds);
-                    setIsSourcePopupOpen(false);
                   }}
-                  title="Select Source"
+                  title="Select Sources"
                   searchPlaceholder="Search sources..."
-                  noOptionsMessage="No source available"
-                  singleSelect={true}
+                  noOptionsMessage="No sources available"
                 />
               </div>
               <div className="mt-3">

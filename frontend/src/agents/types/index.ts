@@ -10,6 +10,7 @@ export type Agent = {
   description: string;
   image: string;
   source: string;
+  sources?: string[];
   chunks: string;
   retriever: string;
   prompt_id: string;
