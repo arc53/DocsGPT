@@ -60,6 +60,8 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
 
     # Initialize vector store
     if settings.VECTOR_STORE == "faiss":
+        if not docs:
+            raise ValueError("No documents to embed - document processing failed")
         docs_init = [docs.pop(0)]
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
