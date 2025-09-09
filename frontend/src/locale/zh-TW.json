@@ -68,6 +68,7 @@
       "private": "私人",
       "sync": "同步",
       "syncing": "同步中...",
+      "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
       "syncFrequency": {
         "never": "從不",
         "daily": "每天",
