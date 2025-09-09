@@ -51,14 +51,9 @@ function Upload({
   const [activeTab, setActiveTab] = useState<string | null>(renderTab);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
-  // Connector state
+  // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
-
-  // Helper function to check if ingestor type is a connector
-  const isConnectorType = (type: string) => {
-    return type === 'google_drive' || type === 'onedrive' || type === 'sharepoint';
-  };
 
 
   
@@ -189,6 +184,52 @@ function Upload({
             className={`mt-2 text-base`}
           />
         );
+      case 'file_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider={ingestor.type}
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
+          />
+        );
+      case 'local_file_picker':
+        return (
+          <div key={field.name}>
+            <div className="my-2" {...getRootProps()}>
+              <span className="text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
+                <input type="button" {...getInputProps()} />
+                Choose Files
+              </span>
+            </div>
+            <div className="mt-0 max-w-full">
+              <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
+                Selected Files
+              </p>
+              <div className="max-w-full overflow-hidden">
+                {files.map((file) => (
+                  <p
+                    key={file.name}
+                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
+                    title={file.name}
+                  >
+                    {file.name}
+                  </p>
+                ))}
+                {files.length === 0 && (
+                  <p className="text-gray-6000 dark:text-light-gray text-[14px]">
+                    No files selected
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
       default:
         return null;
     }
@@ -221,6 +262,7 @@ function Upload({
     { label: 'GitHub', value: 'github' },
     { label: 'Reddit', value: 'reddit' },
     { label: 'Google Drive', value: 'google_drive' },
+    { label: 'Upload File', value: 'local_file' },
   ];
 
   const sourceDocs = useSelector(selectSourceDocs);
@@ -409,7 +451,18 @@ function Upload({
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setfiles(acceptedFiles);
     setDocName(acceptedFiles[0]?.name || '');
-  }, []);
+
+    // If we're in local_file mode, update the ingestor config
+    if (ingestor.type === 'local_file') {
+      setIngestor((prevState) => ({
+        ...prevState,
+        config: {
+          ...prevState.config,
+          files: acceptedFiles,
+        },
+      }));
+    }
+  }, [ingestor.type]);
 
   const doNothing = () => undefined;
 
@@ -446,7 +499,15 @@ function Upload({
 
     let configData;
 
-    if (isConnectorType(ingestor.type)) {
+    const filePickerField = IngestorFormSchemas[ingestor.type].find(
+      (field) => field.type === 'file_picker'
+    );
+
+    const localFilePickerField = IngestorFormSchemas[ingestor.type].find(
+      (field) => field.type === 'local_file_picker'
+    );
+
+    if (filePickerField) {
       const sessionToken = getSessionToken(ingestor.type);
 
       configData = {
@@ -455,6 +516,13 @@ function Upload({
         file_ids: selectedFiles,
         folder_ids: selectedFolders,
       };
+    } else if (localFilePickerField) {
+      // For local files, we need to handle them differently
+      // Instead of sending config data, we'll append the files directly to formData
+      files.forEach((file) => {
+        formData.append('file', file);
+      });
+      configData = { ...ingestor.config };
     } else {
       configData = { ...ingestor.config };
     }
@@ -482,7 +550,11 @@ function Upload({
         });
       }, 3000);
     };
-    xhr.open('POST', `${apiHost}/api/remote`);
+
+    // Use different endpoints based on ingestor type
+    const endpoint = ingestor.type === 'local_file' ? `${apiHost}/api/upload` : `${apiHost}/api/remote`;
+
+    xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
@@ -542,8 +614,21 @@ function Upload({
       if (!remoteName?.trim()) {
         return true;
       }
-      if (isConnectorType(ingestor.type)) {
-        return selectedFiles.length === 0;
+      const filePickerField = IngestorFormSchemas[ingestor.type].find(
+        (field) => field.type === 'file_picker'
+      );
+
+      if (filePickerField?.required && selectedFiles.length === 0 && selectedFolders.length === 0) {
+        return true;
+      }
+
+      // Check for local file picker
+      const localFilePickerField = IngestorFormSchemas[ingestor.type].find(
+        (field) => field.type === 'local_file_picker'
+      );
+
+      if (localFilePickerField?.required && files.length === 0) {
+        return true;
       }
 
       const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
@@ -594,6 +679,14 @@ function Upload({
       name: defaultConfig.name,
       config: defaultConfig.config,
     });
+
+    // Sync remoteName with ingestor name
+    setRemoteName(defaultConfig.name);
+
+    // Clear files if switching away from local_file
+    if (type !== 'local_file') {
+      setfiles([]);
+    }
   };
 
   let view;
@@ -704,25 +797,19 @@ function Upload({
               type="text"
               colorVariant="silver"
               value={remoteName}
-              onChange={(e) => setRemoteName(e.target.value)}
+              onChange={(e) => {
+                setRemoteName(e.target.value);
+                // Also update the ingestor name
+                setIngestor((prevState) => ({
+                  ...prevState,
+                  name: e.target.value,
+                }));
+              }}
               borderVariant="thin"
               placeholder="Name"
               required={true}
               labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
-            {isConnectorType(ingestor.type) && (
-              <FilePicker
-                onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
-                  setSelectedFiles(selectedFileIds);
-                  setSelectedFolders(selectedFolderIds);
-                }}
-                provider={ingestor.type}
-                token={token}
-                initialSelectedFiles={selectedFiles}
-                initialSelectedFolders={selectedFolders}
-              />
-            )}
-
             {renderFormFields()}
             {IngestorFormSchemas[ingestor.type].some(
               (field) => field.advanced,

@@ -1,5 +1,5 @@
 export interface BaseIngestorConfig {
-  [key: string]: string | number | boolean | undefined;
+  [key: string]: string | number | boolean | undefined | File[];
 }
 
 export interface RedditIngestorConfig extends BaseIngestorConfig {
@@ -29,7 +29,11 @@ export interface GoogleDriveIngestorConfig extends BaseIngestorConfig {
   token_info?: any;
 }
 
-export type IngestorType = 'crawler' | 'github' | 'reddit' | 'url' | 'google_drive';
+export interface LocalFileIngestorConfig extends BaseIngestorConfig {
+  files: File[];
+}
+
+export type IngestorType = 'crawler' | 'github' | 'reddit' | 'url' | 'google_drive' | 'local_file';
 
 export interface IngestorConfig {
   type: IngestorType;
@@ -39,7 +43,8 @@ export interface IngestorConfig {
     | GithubIngestorConfig
     | CrawlerIngestorConfig
     | UrlIngestorConfig
-    | GoogleDriveIngestorConfig;
+    | GoogleDriveIngestorConfig
+    | LocalFileIngestorConfig;
 }
 
 export type IngestorFormData = {
@@ -49,7 +54,7 @@ export type IngestorFormData = {
   data: string;
 };
 
-export type FieldType = 'string' | 'number' | 'enum' | 'boolean';
+export type FieldType = 'string' | 'number' | 'enum' | 'boolean' | 'file_picker' | 'local_file_picker';
 
 export interface FormField {
   name: string;
@@ -119,10 +124,24 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
   ],
   google_drive: [
     {
+      name: 'file_picker',
+      label: 'Select files',
+      type: 'file_picker',
+      required: true,
+    },
+    {
       name: 'recursive',
       label: 'Include subfolders',
       type: 'boolean',
       required: false,
+    },
+  ],
+  local_file: [
+    {
+      name: 'files',
+      label: 'Select files',
+      type: 'local_file_picker',
+      required: true,
     },
   ],
 };
@@ -166,5 +185,11 @@ export const IngestorDefaultConfigs: Record<
       file_ids: '',
       recursive: true,
     } as GoogleDriveIngestorConfig,
+  },
+  local_file: {
+    name: '',
+    config: {
+      files: [],
+    } as LocalFileIngestorConfig,
   },
 };
