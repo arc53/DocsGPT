@@ -18,11 +18,11 @@ export default function useDefaultDocument() {
   const fetchDocs = () => {
     getDocs(token).then((data) => {
       dispatch(setSourceDocs(data));
-      if (!selectedDoc)
+      if (!selectedDoc || (Array.isArray(selectedDoc) && selectedDoc.length === 0))
         Array.isArray(data) &&
           data?.forEach((doc: Doc) => {
             if (doc.model && doc.name === 'default') {
-              dispatch(setSelectedDocs(doc));
+              dispatch(setSelectedDocs([doc]));
             }
           });
     });

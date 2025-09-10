@@ -29,7 +29,12 @@ export interface GoogleDriveIngestorConfig extends BaseIngestorConfig {
   token_info?: any;
 }
 
-export type IngestorType = 'crawler' | 'github' | 'reddit' | 'url' | 'google_drive';
+export type IngestorType =
+  | 'crawler'
+  | 'github'
+  | 'reddit'
+  | 'url'
+  | 'google_drive';
 
 export interface IngestorConfig {
   type: IngestorType;

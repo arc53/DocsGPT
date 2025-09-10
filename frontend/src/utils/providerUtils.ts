@@ -3,7 +3,6 @@
  * Follows the convention: {provider}_session_token
  */
 
-
 export const getSessionToken = (provider: string): string | null => {
   return localStorage.getItem(`${provider}_session_token`);
 };

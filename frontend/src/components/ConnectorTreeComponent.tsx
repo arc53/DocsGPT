@@ -227,8 +227,6 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     return current;
   };
 
-
-
   const getMenuRef = (id: string) => {
     if (!menuRefs.current[id]) {
       menuRefs.current[id] = React.createRef();

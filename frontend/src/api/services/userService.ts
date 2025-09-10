@@ -90,7 +90,10 @@ const userService = {
     path?: string,
     search?: string,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search), token),
+    apiClient.get(
+      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
+      token,
+    ),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (
@@ -105,16 +108,20 @@ const userService = {
     apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
   manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
-  syncConnector: (docId: string, provider: string, token: string | null): Promise<any> => {
+  syncConnector: (
+    docId: string,
+    provider: string,
+    token: string | null,
+  ): Promise<any> => {
     const sessionToken = getSessionToken(provider);
     return apiClient.post(
       endpoints.USER.SYNC_CONNECTOR,
       {
         source_id: docId,
         session_token: sessionToken,
-        provider: provider
+        provider: provider,
       },
-      token
+      token,
     );
   },
 };

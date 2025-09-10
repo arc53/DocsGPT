@@ -16,7 +16,12 @@ const providerLabel = (provider: string) => {
   return map[provider] || provider.replace(/_/g, ' ');
 };
 
-const ConnectorAuth: React.FC<ConnectorAuthProps> = ({ provider, onSuccess, onError, label }) => {
+const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
+  provider,
+  onSuccess,
+  onError,
+  label,
+}) => {
   const token = useSelector(selectToken);
   const completedRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
@@ -31,8 +36,12 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({ provider, onSuccess, onEr
 
   const handleAuthMessage = (event: MessageEvent) => {
     const successGeneric = event.data?.type === 'connector_auth_success';
-    const successProvider = event.data?.type === `${provider}_auth_success` || event.data?.type === 'google_drive_auth_success';
-    const errorProvider = event.data?.type === `${provider}_auth_error` || event.data?.type === 'google_drive_auth_error';
+    const successProvider =
+      event.data?.type === `${provider}_auth_success` ||
+      event.data?.type === 'google_drive_auth_success';
+    const errorProvider =
+      event.data?.type === `${provider}_auth_error` ||
+      event.data?.type === 'google_drive_auth_error';
 
     if (successGeneric || successProvider) {
       completedRef.current = true;
@@ -54,12 +63,17 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({ provider, onSuccess, onEr
       cleanup();
 
       const apiHost = import.meta.env.VITE_API_HOST;
-      const authResponse = await fetch(`${apiHost}/api/connectors/auth?provider=${provider}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const authResponse = await fetch(
+        `${apiHost}/api/connectors/auth?provider=${provider}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       if (!authResponse.ok) {
-        throw new Error(`Failed to get authorization URL: ${authResponse.status}`);
+        throw new Error(
+          `Failed to get authorization URL: ${authResponse.status}`,
+        );
       }
 
       const authData = await authResponse.json();
@@ -70,10 +84,12 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({ provider, onSuccess, onEr
       const authWindow = window.open(
         authData.authorization_url,
         `${provider}-auth`,
-        'width=500,height=600,scrollbars=yes,resizable=yes'
+        'width=500,height=600,scrollbars=yes,resizable=yes',
       );
       if (!authWindow) {
-        throw new Error('Failed to open authentication window. Please allow popups.');
+        throw new Error(
+          'Failed to open authentication window. Please allow popups.',
+        );
       }
 
       window.addEventListener('message', handleAuthMessage as any);
@@ -98,10 +114,13 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({ provider, onSuccess, onEr
   return (
     <button
       onClick={handleAuth}
-      className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white hover:bg-blue-600 transition-colors"
+      className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white transition-colors hover:bg-blue-600"
     >
       <svg className="h-5 w-5" viewBox="0 0 24 24">
-        <path fill="currentColor" d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"/>
+        <path
+          fill="currentColor"
+          d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"
+        />
       </svg>
       {buttonLabel}
     </button>
@@ -109,4 +128,3 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({ provider, onSuccess, onEr
 };
 
 export default ConnectorAuth;
-

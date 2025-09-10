@@ -6,10 +6,6 @@ class BaseRetriever(ABC):
         pass
 
     @abstractmethod
-    def gen(self, *args, **kwargs):
-        pass
-
-    @abstractmethod
     def search(self, *args, **kwargs):
         pass
 

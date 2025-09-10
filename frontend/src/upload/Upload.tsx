@@ -4,7 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { getSessionToken, setSessionToken, removeSessionToken } from '../utils/providerUtils';
+import {
+  getSessionToken,
+  setSessionToken,
+  removeSessionToken,
+} from '../utils/providerUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import { formatBytes } from '../utils/stringUtils';
 import FileUpload from '../assets/file_upload.svg';
@@ -63,7 +67,9 @@ function Upload({
   const [userEmail, setUserEmail] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'My Drive'}]);
+  const [folderPath, setFolderPath] = useState<
+    Array<{ id: string | null; name: string }>
+  >([{ id: null, name: 'My Drive' }]);
 
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [hasMoreFiles, setHasMoreFiles] = useState<boolean>(false);
@@ -337,7 +343,8 @@ function Upload({
                           data?.find(
                             (d: Doc) => d.type?.toLowerCase() === 'local',
                           ),
-                    ));
+                      ),
+                    );
                   });
                   setProgress(
                     (progress) =>
@@ -454,23 +461,31 @@ function Upload({
     if (ingestor.type === 'google_drive') {
       const sessionToken = getSessionToken(ingestor.type);
 
-      const selectedItems = googleDriveFiles.filter(file => selectedFiles.includes(file.id));
+      const selectedItems = googleDriveFiles.filter((file) =>
+        selectedFiles.includes(file.id),
+      );
       const selectedFolderIds = selectedItems
-        .filter(item => item.type === 'application/vnd.google-apps.folder' || item.isFolder)
-        .map(folder => folder.id);
+        .filter(
+          (item) =>
+            item.type === 'application/vnd.google-apps.folder' || item.isFolder,
+        )
+        .map((folder) => folder.id);
 
       const selectedFileIds = selectedItems
-        .filter(item => item.type !== 'application/vnd.google-apps.folder' && !item.isFolder)
-        .map(file => file.id);
+        .filter(
+          (item) =>
+            item.type !== 'application/vnd.google-apps.folder' &&
+            !item.isFolder,
+        )
+        .map((file) => file.id);
 
       configData = {
         file_ids: selectedFileIds,
         folder_ids: selectedFolderIds,
         recursive: ingestor.config.recursive,
-        session_token: sessionToken || null
+        session_token: sessionToken || null,
       };
     } else {
-
       configData = { ...ingestor.config };
     }
 
@@ -522,14 +537,20 @@ function Upload({
     try {
       const apiHost = import.meta.env.VITE_API_HOST;
 
-      const validateResponse = await fetch(`${apiHost}/api/connectors/validate-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+      const validateResponse = await fetch(
+        `${apiHost}/api/connectors/validate-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            provider: 'google_drive',
+            session_token: sessionToken,
+          }),
         },
-        body: JSON.stringify({ provider: 'google_drive', session_token: sessionToken })
-      });
+      );
 
       if (!validateResponse.ok) {
         removeSessionToken(ingestor.type);
@@ -545,15 +566,16 @@ function Upload({
         // reset pagination state and files
         setGoogleDriveFiles([]);
 
-
-
         setNextPageToken(null);
         setHasMoreFiles(false);
         loadGoogleDriveFiles(sessionToken, null, null, false);
       } else {
         removeSessionToken(ingestor.type);
         setIsGoogleDriveConnected(false);
-        setAuthError(validateData.error || 'Session expired. Please reconnect your Google Drive account and make sure to grant offline access.');
+        setAuthError(
+          validateData.error ||
+            'Session expired. Please reconnect your Google Drive account and make sure to grant offline access.',
+        );
       }
     } catch (error) {
       console.error('Error validating Google Drive session:', error);
@@ -566,7 +588,7 @@ function Upload({
     sessionToken: string,
     folderId?: string | null,
     pageToken?: string | null,
-    append: boolean = false,
+    append = false,
   ) => {
     setIsLoadingFiles(true);
 
@@ -587,9 +609,9 @@ function Upload({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ ...requestBody, provider: 'google_drive' })
+        body: JSON.stringify({ ...requestBody, provider: 'google_drive' }),
       });
 
       if (!filesResponse.ok) {
@@ -599,28 +621,31 @@ function Upload({
       const filesData = await filesResponse.json();
 
       if (filesData.success && Array.isArray(filesData.files)) {
-        setGoogleDriveFiles(prev => append ? [...prev, ...filesData.files] : filesData.files);
+        setGoogleDriveFiles((prev) =>
+          append ? [...prev, ...filesData.files] : filesData.files,
+        );
         setNextPageToken(filesData.next_page_token || null);
         setHasMoreFiles(Boolean(filesData.has_more));
       } else {
         throw new Error(filesData.error || 'Failed to load files');
       }
-
     } catch (error) {
       console.error('Error loading Google Drive files:', error);
-      setAuthError(error instanceof Error ? error.message : 'Failed to load files. Please make sure your Google Drive account is properly connected and you granted offline access during authorization.');
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to load files. Please make sure your Google Drive account is properly connected and you granted offline access during authorization.',
+      );
     } finally {
       setIsLoadingFiles(false);
     }
   };
 
-
-
   // Handle file selection
   const handleFileSelect = (fileId: string) => {
-    setSelectedFiles(prev => {
+    setSelectedFiles((prev) => {
       if (prev.includes(fileId)) {
-        return prev.filter(id => id !== fileId);
+        return prev.filter((id) => id !== fileId);
       } else {
         return [...prev, fileId];
       }
@@ -631,7 +656,7 @@ function Upload({
     const sessionToken = getSessionToken(ingestor.type);
     if (sessionToken) {
       setCurrentFolderId(folderId);
-      setFolderPath(prev => [...prev, {id: folderId, name: folderName}]);
+      setFolderPath((prev) => [...prev, { id: folderId, name: folderName }]);
 
       setGoogleDriveFiles([]);
       setNextPageToken(null);
@@ -662,7 +687,7 @@ function Upload({
     if (selectedFiles.length === googleDriveFiles.length) {
       setSelectedFiles([]);
     } else {
-      setSelectedFiles(googleDriveFiles.map(file => file.id));
+      setSelectedFiles(googleDriveFiles.map((file) => file.id));
     }
   };
 
@@ -829,7 +854,7 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
+                    className="text-gray-6000 truncate overflow-hidden text-ellipsis dark:text-[#ececf1]"
                     title={file.name}
                   >
                     {file.name}
@@ -905,10 +930,13 @@ function Upload({
                 ) : (
                   <div className="space-y-4">
                     {/* Connection Status */}
-                    <div className="w-full flex items-center justify-between rounded-lg bg-green-500 px-4 py-2 text-white text-sm">
+                    <div className="flex w-full items-center justify-between rounded-lg bg-green-500 px-4 py-2 text-sm text-white">
                       <div className="flex items-center gap-2">
                         <svg className="h-4 w-4" viewBox="0 0 24 24">
-                          <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                          <path
+                            fill="currentColor"
+                            d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                          />
                         </svg>
                         <span>Connected as {userEmail}</span>
                       </div>
@@ -927,28 +955,41 @@ function Upload({
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
-                              'Authorization': `Bearer ${token}`
+                              Authorization: `Bearer ${token}`,
                             },
-                            body: JSON.stringify({ provider: ingestor.type, session_token: getSessionToken(ingestor.type) })
-                          }).catch(err => console.error('Error disconnecting from Google Drive:', err));
+                            body: JSON.stringify({
+                              provider: ingestor.type,
+                              session_token: getSessionToken(ingestor.type),
+                            }),
+                          }).catch((err) =>
+                            console.error(
+                              'Error disconnecting from Google Drive:',
+                              err,
+                            ),
+                          );
                         }}
-                        className="text-white hover:text-gray-200 text-xs underline"
+                        className="text-xs text-white underline hover:text-gray-200"
                       >
                         Disconnect
                       </button>
                     </div>
 
                     {/* File Browser */}
-                    <div className="border border-gray-200 rounded-lg dark:border-gray-600">
-                      <div className="p-3 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 rounded-t-lg">
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-600">
+                      <div className="rounded-t-lg border-b border-gray-200 bg-gray-50 p-3 dark:border-gray-600 dark:bg-gray-800">
                         {/* Breadcrumb navigation */}
-                        <div className="flex items-center gap-1 mb-2">
+                        <div className="mb-2 flex items-center gap-1">
                           {folderPath.map((path, index) => (
-                            <div key={path.id || 'root'} className="flex items-center gap-1">
-                              {index > 0 && <span className="text-gray-400">/</span>}
+                            <div
+                              key={path.id || 'root'}
+                              className="flex items-center gap-1"
+                            >
+                              {index > 0 && (
+                                <span className="text-gray-400">/</span>
+                              )}
                               <button
                                 onClick={() => navigateBack(index)}
-                                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:underline"
+                                className="text-sm text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400"
                                 disabled={index === folderPath.length - 1}
                               >
                                 {path.name}
@@ -966,18 +1007,24 @@ function Upload({
                               onClick={handleSelectAll}
                               className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400"
                             >
-                              {selectedFiles.length === googleDriveFiles.length ? 'Deselect All' : 'Select All'}
+                              {selectedFiles.length === googleDriveFiles.length
+                                ? 'Deselect All'
+                                : 'Select All'}
                             </button>
                           )}
                         </div>
                         {selectedFiles.length > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+                          <p className="mt-1 text-xs text-gray-500">
+                            {selectedFiles.length} file
+                            {selectedFiles.length !== 1 ? 's' : ''} selected
                           </p>
                         )}
                       </div>
 
-                      <div className="max-h-72 overflow-y-auto" ref={scrollContainerRef}>
+                      <div
+                        className="max-h-72 overflow-y-auto"
+                        ref={scrollContainerRef}
+                      >
                         {isLoadingFiles && googleDriveFiles.length === 0 ? (
                           <div className="p-4 text-center">
                             <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
@@ -996,47 +1043,76 @@ function Upload({
                                 <div
                                   key={file.id}
                                   className={`p-3 transition-colors ${
-                                    selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                    selectedFiles.includes(file.id)
+                                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                                      : ''
                                   }`}
                                 >
                                   <div className="flex items-center gap-3">
                                     <div className="flex-shrink-0">
                                       <input
                                         type="checkbox"
-                                        checked={selectedFiles.includes(file.id)}
-                                        onChange={() => handleFileSelect(file.id)}
-                                        className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                        checked={selectedFiles.includes(
+                                          file.id,
+                                        )}
+                                        onChange={() =>
+                                          handleFileSelect(file.id)
+                                        }
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                       />
                                     </div>
-                                    {file.type === 'application/vnd.google-apps.folder' || file.isFolder ? (
+                                    {file.type ===
+                                      'application/vnd.google-apps.folder' ||
+                                    file.isFolder ? (
                                       <div
-                                        className="text-lg cursor-pointer hover:text-blue-600"
-                                        onClick={() => handleFolderClick(file.id, file.name)}
+                                        className="cursor-pointer text-lg hover:text-blue-600"
+                                        onClick={() =>
+                                          handleFolderClick(file.id, file.name)
+                                        }
                                       >
-                                        <img src={FolderIcon} alt="Folder" className="h-6 w-6" />
+                                        <img
+                                          src={FolderIcon}
+                                          alt="Folder"
+                                          className="h-6 w-6"
+                                        />
                                       </div>
                                     ) : (
                                       <div className="text-lg">
-                                        <img src={FileIcon} alt="File" className="h-6 w-6" />
+                                        <img
+                                          src={FileIcon}
+                                          alt="File"
+                                          className="h-6 w-6"
+                                        />
                                       </div>
                                     )}
-                                    <div className="flex-1 min-w-0">
+                                    <div className="min-w-0 flex-1">
                                       <p
-                                        className={`text-sm font-medium truncate dark:text-[#ececf1] ${
-                                          file.type === 'application/vnd.google-apps.folder' || file.isFolder
+                                        className={`truncate text-sm font-medium dark:text-[#ececf1] ${
+                                          file.type ===
+                                            'application/vnd.google-apps.folder' ||
+                                          file.isFolder
                                             ? 'cursor-pointer hover:text-blue-600'
                                             : ''
                                         }`}
                                         onClick={() => {
-                                          if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
-                                            handleFolderClick(file.id, file.name);
+                                          if (
+                                            file.type ===
+                                              'application/vnd.google-apps.folder' ||
+                                            file.isFolder
+                                          ) {
+                                            handleFolderClick(
+                                              file.id,
+                                              file.name,
+                                            );
                                           }
                                         }}
                                       >
                                         {file.name}
                                       </p>
                                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        {file.size && `${formatBytes(file.size)} • `}Modified {formatDate(file.modifiedTime)}
+                                        {file.size &&
+                                          `${formatBytes(file.size)} • `}
+                                        Modified {formatDate(file.modifiedTime)}
                                       </p>
                                     </div>
                                   </div>
@@ -1044,7 +1120,7 @@ function Upload({
                               ))}
                             </div>
 
-                            <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
+                            <div className="flex items-center justify-center border-t border-gray-100 p-4 dark:border-gray-800">
                               {isLoadingFiles && (
                                 <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
@@ -1052,16 +1128,16 @@ function Upload({
                                 </div>
                               )}
                               {!hasMoreFiles && !isLoadingFiles && (
-                                <span className="text-sm text-gray-500 dark:text-gray-400">All files loaded</span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                  All files loaded
+                                </span>
                               )}
                             </div>
                           </>
                         )}
                       </div>
 
-                                <div className="hidden" aria-hidden="true">
-                                </div>
-
+                      <div className="hidden" aria-hidden="true"></div>
                     </div>
                   </div>
                 )}
@@ -1110,8 +1186,7 @@ function Upload({
             >
               {ingestor.type === 'google_drive' && selectedFiles.length > 0
                 ? `Train with ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`
-                : t('modals.uploadDoc.train')
-              }
+                : t('modals.uploadDoc.train')}
             </button>
           )}
         </div>
@@ -1121,27 +1196,38 @@ function Upload({
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
-    
+
     const handleScroll = () => {
       if (!scrollContainer) return;
-      
+
       const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
-      
+
       if (isNearBottom && hasMoreFiles && !isLoadingFiles && nextPageToken) {
         const sessionToken = getSessionToken(ingestor.type);
         if (sessionToken) {
-          loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken, true);
+          loadGoogleDriveFiles(
+            sessionToken,
+            currentFolderId,
+            nextPageToken,
+            true,
+          );
         }
       }
     };
-    
+
     scrollContainer?.addEventListener('scroll', handleScroll);
-    
+
     return () => {
       scrollContainer?.removeEventListener('scroll', handleScroll);
     };
-  }, [hasMoreFiles, isLoadingFiles, nextPageToken, currentFolderId, ingestor.type]);
+  }, [
+    hasMoreFiles,
+    isLoadingFiles,
+    nextPageToken,
+    currentFolderId,
+    ingestor.type,
+  ]);
 
   return (
     <WrapperModal
