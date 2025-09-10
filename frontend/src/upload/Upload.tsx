@@ -5,8 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import { getSessionToken } from '../utils/providerUtils';
-import FileUpload from '../assets/file_upload.svg';
-import WebsiteCollect from '../assets/website_collect.svg';
+
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -45,10 +44,9 @@ function Upload({
   onSuccessfulUpload?: () => void;
 }) {
   const token = useSelector(selectToken);
-  const [docName, setDocName] = useState(receivedFile[0]?.name);
-  const [remoteName, setRemoteName] = useState('');
+  
   const [files, setfiles] = useState<File[]>(receivedFile);
-  const [activeTab, setActiveTab] = useState<string | null>(renderTab);
+  const [activeTab, setActiveTab] = useState<boolean>(true);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   // File picker state
@@ -59,11 +57,11 @@ function Upload({
   
 
   const renderFormFields = () => {
-    const schema = IngestorFormSchemas[ingestor.type];
-    if (!schema) return null;
+    if (!ingestor.type) return null;
+    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
 
-    const generalFields = schema.filter((field) => !field.advanced);
-    const advancedFields = schema.filter((field) => field.advanced);
+    const generalFields = schema.filter((field: FormField) => !field.advanced);
+    const advancedFields = schema.filter((field: FormField) => field.advanced);
 
     return (
       <div className="flex flex-col gap-4">
@@ -184,30 +182,16 @@ function Upload({
             className={`mt-2 text-base`}
           />
         );
-      case 'file_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            provider={ingestor.type}
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
       case 'local_file_picker':
         return (
           <div key={field.name}>
-            <div className="my-2" {...getRootProps()}>
-              <span className="text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
+            <div className="mb-3" {...getRootProps()}>
+              <span className="inline-block text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
                 Choose Files
               </span>
             </div>
-            <div className="mt-0 max-w-full">
+            <div className="mt-4 max-w-full">
               <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
                 Selected Files
               </p>
@@ -230,21 +214,31 @@ function Upload({
             </div>
           </div>
         );
+      case 'remote_file_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider={ingestor.type as unknown as string}
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
+          />
+        );
       default:
         return null;
     }
   };
 
   // New unified ingestor state
-  const [ingestor, setIngestor] = useState<IngestorConfig>(() => {
-    const defaultType: IngestorType = 'crawler';
-    const defaultConfig = IngestorDefaultConfigs[defaultType];
-    return {
-      type: defaultType,
-      name: defaultConfig.name,
-      config: defaultConfig.config,
-    };
-  });
+  const [ingestor, setIngestor] = useState<IngestorConfig>(() => ({
+    type: null,
+    name: '',
+    config: {},
+  }));
 
   const [progress, setProgress] = useState<{
     type: 'UPLOAD' | 'TRAINING';
@@ -327,7 +321,7 @@ function Upload({
           (progress?.percentage === 100 ? (
             <button
               onClick={() => {
-                setDocName('');
+                setIngestor({ type: null, name: '', config: {} });
                 setfiles([]);
                 setProgress(undefined);
                 setModalState('INACTIVE');
@@ -412,7 +406,7 @@ function Upload({
                         failed: false,
                       },
                   );
-                  setDocName('');
+                  setIngestor({ type: null, name: '', config: {} });
                   setfiles([]);
                   setProgress(undefined);
                   setModalState('INACTIVE');
@@ -450,7 +444,7 @@ function Upload({
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setfiles(acceptedFiles);
-    setDocName(acceptedFiles[0]?.name || '');
+    setIngestor(prev => ({ ...prev, name: acceptedFiles[0]?.name || '' }));
 
     // If we're in local_file mode, update the ingestor config
     if (ingestor.type === 'local_file') {
@@ -472,7 +466,7 @@ function Upload({
       formData.append('file', file);
     });
 
-    formData.append('name', docName);
+    formData.append('name', ingestor.name);
     formData.append('user', 'local');
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -492,37 +486,31 @@ function Upload({
   };
 
   const uploadRemote = () => {
+    if (!ingestor.type) return;
     const formData = new FormData();
-    formData.append('name', remoteName);
+    formData.append('name', ingestor.name);
     formData.append('user', 'local');
-    formData.append('source', ingestor.type);
+    formData.append('source', ingestor.type as string);
 
     let configData;
 
-    const filePickerField = IngestorFormSchemas[ingestor.type].find(
-      (field) => field.type === 'file_picker'
-    );
+    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+    const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
 
-    const localFilePickerField = IngestorFormSchemas[ingestor.type].find(
-      (field) => field.type === 'local_file_picker'
-    );
-
-    if (filePickerField) {
-      const sessionToken = getSessionToken(ingestor.type);
-
-      configData = {
-        provider: ingestor.type,
-        session_token: sessionToken,
-        file_ids: selectedFiles,
-        folder_ids: selectedFolders,
-      };
-    } else if (localFilePickerField) {
-      // For local files, we need to handle them differently
-      // Instead of sending config data, we'll append the files directly to formData
+    if (hasLocalFilePicker) {
       files.forEach((file) => {
         formData.append('file', file);
       });
       configData = { ...ingestor.config };
+    } else if (hasRemoteFilePicker) {
+      const sessionToken = getSessionToken(ingestor.type as string);
+      configData = {
+        provider: ingestor.type as string,
+        session_token: sessionToken,
+        file_ids: selectedFiles,
+        folder_ids: selectedFolders,
+      };
     } else {
       configData = { ...ingestor.config };
     }
@@ -551,7 +539,6 @@ function Upload({
       }, 3000);
     };
 
-    // Use different endpoints based on ingestor type
     const endpoint = ingestor.type === 'local_file' ? `${apiHost}/api/upload` : `${apiHost}/api/remote`;
 
     xhr.open('POST', endpoint);
@@ -607,56 +594,51 @@ function Upload({
   });
 
   const isUploadDisabled = (): boolean => {
-    if (activeTab === 'file') {
-      return !docName?.trim() || files.length === 0;
+    if (!activeTab) return true;
+
+    if (!ingestor.name?.trim()) {
+      return true;
     }
-    if (activeTab === 'remote') {
-      if (!remoteName?.trim()) {
+
+    if (!ingestor.type) return true;
+    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+    const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
+
+    if (hasLocalFilePicker) {
+      if (files.length === 0) {
         return true;
       }
-      const filePickerField = IngestorFormSchemas[ingestor.type].find(
-        (field) => field.type === 'file_picker'
-      );
-
-      if (filePickerField?.required && selectedFiles.length === 0 && selectedFolders.length === 0) {
+    } else if (hasRemoteFilePicker) {
+      if (selectedFiles.length === 0 && selectedFolders.length === 0) {
         return true;
       }
+    }
 
-      // Check for local file picker
-      const localFilePickerField = IngestorFormSchemas[ingestor.type].find(
-        (field) => field.type === 'local_file_picker'
-      );
+    const formFields: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    for (const field of formFields) {
+      if (field.required) {
+        // Validate only required fields
+        const value =
+          ingestor.config[field.name as keyof typeof ingestor.config];
 
-      if (localFilePickerField?.required && files.length === 0) {
-        return true;
-      }
+        if (typeof value === 'string' && !value.trim()) {
+          return true;
+        }
 
-      const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
-      for (const field of formFields) {
-        if (field.required) {
-          // Validate only required fields
-          const value =
-            ingestor.config[field.name as keyof typeof ingestor.config];
+        if (
+          typeof value === 'number' &&
+          (value === null || value === undefined || value <= 0)
+        ) {
+          return true;
+        }
 
-          if (typeof value === 'string' && !value.trim()) {
-            return true;
-          }
-
-          if (
-            typeof value === 'number' &&
-            (value === null || value === undefined || value <= 0)
-          ) {
-            return true;
-          }
-
-          if (typeof value === 'boolean' && value === undefined) {
-            return true;
-          }
+        if (typeof value === 'boolean' && value === undefined) {
+          return true;
         }
       }
-      return false;
     }
-    return true;
+    return false;
   };
   const handleIngestorChange = (
     key: keyof IngestorConfig['config'],
@@ -680,8 +662,7 @@ function Upload({
       config: defaultConfig.config,
     });
 
-    // Sync remoteName with ingestor name
-    setRemoteName(defaultConfig.name);
+    
 
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
@@ -701,81 +682,10 @@ function Upload({
         <p className="text-jet dark:text-bright-gray text-center text-2xl font-semibold">
           {t('modals.uploadDoc.label')}
         </p>
-        {!activeTab && (
-          <div>
-            <p className="dark text-gray-6000 dark:text-bright-gray text-center text-sm font-medium">
-              {t('modals.uploadDoc.select')}
-            </p>
-            <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-4 md:flex-row md:gap-4">
-              <button
-                onClick={() => setActiveTab('file')}
-                className="hover:border-purple-30 hover:shadow-purple-30/30 flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:opacity-100 hover:shadow-lg md:h-52 md:w-52 dark:bg-transparent dark:text-[#c3c3c3]"
-              >
-                <img
-                  src={FileUpload}
-                  className="mr-2 h-12 w-12 dark:brightness-50 dark:invert dark:filter"
-                />
-                {t('modals.uploadDoc.file')}
-              </button>
-              <button
-                onClick={() => setActiveTab('remote')}
-                className="hover:border-purple-30 hover:shadow-purple-30/30 flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:opacity-100 hover:shadow-lg md:h-52 md:w-52 dark:bg-transparent dark:text-[#c3c3c3]"
-              >
-                <img
-                  src={WebsiteCollect}
-                  className="mr-2 h-14 w-14 dark:brightness-50 dark:invert dark:filter"
-                />
-                {t('modals.uploadDoc.remote')}
-              </button>
-            </div>
-          </div>
-        )}
+        
 
-        {activeTab === 'file' && (
-          <>
-            <Input
-              type="text"
-              colorVariant="silver"
-              value={docName}
-              onChange={(e) => setDocName(e.target.value)}
-              borderVariant="thin"
-              placeholder={t('modals.uploadDoc.name')}
-              labelBgClassName="bg-white dark:bg-charleston-green-2"
-              required={true}
-            />
-            <div className="my-2" {...getRootProps()}>
-              <span className="text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
-                <input type="button" {...getInputProps()} />
-                {t('modals.uploadDoc.choose')}
-              </span>
-            </div>
-            <p className="text-gray-4000 mb-0 text-xs italic">
-              {t('modals.uploadDoc.info')}
-            </p>
-            <div className="mt-0 max-w-full">
-              <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
-                {t('modals.uploadDoc.uploadedFiles')}
-              </p>
-              <div className="max-w-full overflow-hidden">
-                {files.map((file) => (
-                  <p
-                    key={file.name}
-                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
-                    title={file.name}
-                  >
-                    {file.name}
-                  </p>
-                ))}
-                {files.length === 0 && (
-                  <p className="text-gray-6000 dark:text-light-gray text-[14px]">
-                    {t('none')}
-                  </p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-        {activeTab === 'remote' && (
+        
+        {activeTab && (
           <>
             <Dropdown
               options={urlOptions}
@@ -796,10 +706,8 @@ function Upload({
             <Input
               type="text"
               colorVariant="silver"
-              value={remoteName}
+              value={ingestor.name}
               onChange={(e) => {
-                setRemoteName(e.target.value);
-                // Also update the ingestor name
                 setIngestor((prevState) => ({
                   ...prevState,
                   name: e.target.value,
@@ -811,8 +719,8 @@ function Upload({
               labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
             {renderFormFields()}
-            {IngestorFormSchemas[ingestor.type].some(
-              (field) => field.advanced,
+            {ingestor.type && IngestorFormSchemas[ingestor.type as IngestorType].some(
+              (field: FormField) => field.advanced,
             ) && (
               <button
                 onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
@@ -828,16 +736,12 @@ function Upload({
         <div className="flex justify-end gap-4">
           {activeTab && (
             <button
-              onClick={() => setActiveTab(null)}
-              className="text-purple-30 dark:text-silver rounded-3xl bg-transparent px-4 py-2 text-[14px] font-medium hover:cursor-pointer"
-            >
-              {t('modals.uploadDoc.back')}
-            </button>
-          )}
-          {activeTab && (
-            <button
               onClick={() => {
-                if (activeTab === 'file') {
+                if (!ingestor.type) return;
+                const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+                const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+
+                if (hasLocalFilePicker) {
                   uploadFile();
                 } else {
                   uploadRemote();
@@ -867,10 +771,9 @@ function Upload({
       isPerformingTask={progress !== undefined && progress.percentage < 100}
       close={() => {
         close();
-        setDocName('');
+        setIngestor({ type: null, name: '', config: {} });
         setfiles([]);
         setModalState('INACTIVE');
-        setActiveTab(null);
       }}
     >
       {view}
