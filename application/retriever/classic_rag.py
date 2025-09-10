@@ -25,7 +25,16 @@ class ClassicRAG(BaseRetriever):
         self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
         self.prompt = prompt
-        self.chunks = chunks
+        if isinstance(chunks, str):
+            try:
+                self.chunks = int(chunks)
+            except ValueError:
+                logging.warning(
+                    f"Invalid chunks value '{chunks}', using default value 2"
+                )
+                self.chunks = 2
+        else:
+            self.chunks = chunks
         self.gpt_model = gpt_model
         self.token_limit = (
             token_limit

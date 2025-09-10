@@ -266,7 +266,13 @@ class StreamProcessor:
             if data_key.get("retriever"):
                 self.retriever_config["retriever_name"] = data_key["retriever"]
             if data_key.get("chunks") is not None:
-                self.retriever_config["chunks"] = data_key["chunks"]
+                try:
+                    self.retriever_config["chunks"] = int(data_key["chunks"])
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Invalid chunks value: {data_key['chunks']}, using default value 2"
+                    )
+                    self.retriever_config["chunks"] = 2
         elif self.agent_key:
             data_key = self._get_data_from_api_key(self.agent_key)
             self.agent_config.update(
@@ -287,7 +293,13 @@ class StreamProcessor:
             if data_key.get("retriever"):
                 self.retriever_config["retriever_name"] = data_key["retriever"]
             if data_key.get("chunks") is not None:
-                self.retriever_config["chunks"] = data_key["chunks"]
+                try:
+                    self.retriever_config["chunks"] = int(data_key["chunks"])
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Invalid chunks value: {data_key['chunks']}, using default value 2"
+                    )
+                    self.retriever_config["chunks"] = 2
         else:
             self.agent_config.update(
                 {
