@@ -53,7 +53,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
       {label && (
         <span
           className={`text-eerie-black dark:text-white ${
-            labelPosition === 'left' ? 'mr-1' : 'ml-1'
+            labelPosition === 'left' ? 'mr-3' : 'ml-3'
           }`}
         >
           {label}

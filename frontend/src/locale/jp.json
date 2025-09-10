@@ -68,6 +68,7 @@
       "private": "プライベート",
       "sync": "同期",
       "syncing": "同期中...",
+      "syncConfirmation": "\"{{sourceName}}\"を同期してもよろしいですか？これにより、コンテンツがクラウドストレージで更新され、個々のチャンクに加えた編集が上書きされる可能性があります。",
       "syncFrequency": {
         "never": "なし",
         "daily": "毎日",

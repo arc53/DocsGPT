@@ -55,7 +55,7 @@ export default function WrapperModal({
             <img className="filter dark:invert" src={Exit} alt="Close" />
           </button>
         )}
-        <div className={`${contentClassName}`}>{children}</div>
+        <div className={`overflow-y-auto no-scrollbar ${contentClassName}`}>{children}</div>
       </div>
     </div>
   );

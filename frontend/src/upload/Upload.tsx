@@ -1,14 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { getSessionToken, setSessionToken, removeSessionToken } from '../utils/providerUtils';
-import { formatDate } from '../utils/dateTimeUtils';
-import { formatBytes } from '../utils/stringUtils';
-import FileUpload from '../assets/file_upload.svg';
-import WebsiteCollect from '../assets/website_collect.svg';
+import { getSessionToken } from '../utils/providerUtils';
+
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -28,9 +25,8 @@ import {
   IngestorFormSchemas,
   IngestorType,
 } from './types/ingestor';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
-import ConnectorAuth from '../components/ConnectorAuth';
+
+import {FilePicker}  from '../components/FilePicker';
 
 function Upload({
   receivedFile = [],
@@ -48,33 +44,24 @@ function Upload({
   onSuccessfulUpload?: () => void;
 }) {
   const token = useSelector(selectToken);
-  const [docName, setDocName] = useState(receivedFile[0]?.name);
-  const [remoteName, setRemoteName] = useState('');
+  
   const [files, setfiles] = useState<File[]>(receivedFile);
-  const [activeTab, setActiveTab] = useState<string | null>(renderTab);
+  const [activeTab, setActiveTab] = useState<boolean>(true);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
-  // Google Drive state
-  const [isGoogleDriveConnected, setIsGoogleDriveConnected] = useState(false);
-  const [googleDriveFiles, setGoogleDriveFiles] = useState<any[]>([]);
+  // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [authError, setAuthError] = useState<string>('');
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{id: null, name: 'My Drive'}]);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
 
-  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-  const [hasMoreFiles, setHasMoreFiles] = useState<boolean>(false);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  
 
   const renderFormFields = () => {
-    const schema = IngestorFormSchemas[ingestor.type];
-    if (!schema) return null;
+    if (!ingestor.type) return null;
+    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
 
-    const generalFields = schema.filter((field) => !field.advanced);
-    const advancedFields = schema.filter((field) => field.advanced);
+    const generalFields = schema.filter((field: FormField) => !field.advanced);
+    const advancedFields = schema.filter((field: FormField) => field.advanced);
 
     return (
       <div className="flex flex-col gap-4">
@@ -191,7 +178,54 @@ function Upload({
                 checked,
               );
             }}
-            className="mt-2"
+            size="small"
+            className={`mt-2 text-base`}
+          />
+        );
+      case 'local_file_picker':
+        return (
+          <div key={field.name}>
+            <div className="mb-3" {...getRootProps()}>
+              <span className="inline-block text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
+                <input type="button" {...getInputProps()} />
+                Choose Files
+              </span>
+            </div>
+            <div className="mt-4 max-w-full">
+              <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
+                Selected Files
+              </p>
+              <div className="max-w-full overflow-hidden">
+                {files.map((file) => (
+                  <p
+                    key={file.name}
+                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
+                    title={file.name}
+                  >
+                    {file.name}
+                  </p>
+                ))}
+                {files.length === 0 && (
+                  <p className="text-gray-6000 dark:text-light-gray text-[14px]">
+                    No files selected
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      case 'remote_file_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider={ingestor.type as unknown as string}
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
           />
         );
       default:
@@ -200,15 +234,11 @@ function Upload({
   };
 
   // New unified ingestor state
-  const [ingestor, setIngestor] = useState<IngestorConfig>(() => {
-    const defaultType: IngestorType = 'crawler';
-    const defaultConfig = IngestorDefaultConfigs[defaultType];
-    return {
-      type: defaultType,
-      name: defaultConfig.name,
-      config: defaultConfig.config,
-    };
-  });
+  const [ingestor, setIngestor] = useState<IngestorConfig>(() => ({
+    type: null,
+    name: '',
+    config: {},
+  }));
 
   const [progress, setProgress] = useState<{
     type: 'UPLOAD' | 'TRAINING';
@@ -226,6 +256,7 @@ function Upload({
     { label: 'GitHub', value: 'github' },
     { label: 'Reddit', value: 'reddit' },
     { label: 'Google Drive', value: 'google_drive' },
+    { label: 'Upload File', value: 'local_file' },
   ];
 
   const sourceDocs = useSelector(selectSourceDocs);
@@ -290,7 +321,7 @@ function Upload({
           (progress?.percentage === 100 ? (
             <button
               onClick={() => {
-                setDocName('');
+                setIngestor({ type: null, name: '', config: {} });
                 setfiles([]);
                 setProgress(undefined);
                 setModalState('INACTIVE');
@@ -375,7 +406,7 @@ function Upload({
                         failed: false,
                       },
                   );
-                  setDocName('');
+                  setIngestor({ type: null, name: '', config: {} });
                   setfiles([]);
                   setProgress(undefined);
                   setModalState('INACTIVE');
@@ -413,8 +444,19 @@ function Upload({
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setfiles(acceptedFiles);
-    setDocName(acceptedFiles[0]?.name || '');
-  }, []);
+    setIngestor(prev => ({ ...prev, name: acceptedFiles[0]?.name || '' }));
+
+    // If we're in local_file mode, update the ingestor config
+    if (ingestor.type === 'local_file') {
+      setIngestor((prevState) => ({
+        ...prevState,
+        config: {
+          ...prevState.config,
+          files: acceptedFiles,
+        },
+      }));
+    }
+  }, [ingestor.type]);
 
   const doNothing = () => undefined;
 
@@ -424,7 +466,7 @@ function Upload({
       formData.append('file', file);
     });
 
-    formData.append('name', docName);
+    formData.append('name', ingestor.name);
     formData.append('user', 'local');
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -444,33 +486,32 @@ function Upload({
   };
 
   const uploadRemote = () => {
+    if (!ingestor.type) return;
     const formData = new FormData();
-    formData.append('name', remoteName);
+    formData.append('name', ingestor.name);
     formData.append('user', 'local');
-    formData.append('source', ingestor.type);
+    formData.append('source', ingestor.type as string);
 
     let configData;
 
-    if (ingestor.type === 'google_drive') {
-      const sessionToken = getSessionToken(ingestor.type);
+    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+    const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
 
-      const selectedItems = googleDriveFiles.filter(file => selectedFiles.includes(file.id));
-      const selectedFolderIds = selectedItems
-        .filter(item => item.type === 'application/vnd.google-apps.folder' || item.isFolder)
-        .map(folder => folder.id);
-
-      const selectedFileIds = selectedItems
-        .filter(item => item.type !== 'application/vnd.google-apps.folder' && !item.isFolder)
-        .map(file => file.id);
-
+    if (hasLocalFilePicker) {
+      files.forEach((file) => {
+        formData.append('file', file);
+      });
+      configData = { ...ingestor.config };
+    } else if (hasRemoteFilePicker) {
+      const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
-        file_ids: selectedFileIds,
-        folder_ids: selectedFolderIds,
-        recursive: ingestor.config.recursive,
-        session_token: sessionToken || null
+        provider: ingestor.type as string,
+        session_token: sessionToken,
+        file_ids: selectedFiles,
+        folder_ids: selectedFolders,
       };
     } else {
-
       configData = { ...ingestor.config };
     }
 
@@ -497,176 +538,32 @@ function Upload({
         });
       }, 3000);
     };
-    xhr.open('POST', `${apiHost}/api/remote`);
+
+    const endpoint = ingestor.type === 'local_file' ? `${apiHost}/api/upload` : `${apiHost}/api/remote`;
+
+    xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
 
-  useEffect(() => {
-    if (ingestor.type === 'google_drive') {
-      const sessionToken = getSessionToken(ingestor.type);
-
-      if (sessionToken) {
-        // Auto-authenticate if session token exists
-        setIsGoogleDriveConnected(true);
-        setAuthError('');
-
-        // Fetch user email and files using the existing session token
-
-        fetchUserEmailAndLoadFiles(sessionToken);
-      }
-    }
-  }, [ingestor.type]);
-
-  const fetchUserEmailAndLoadFiles = async (sessionToken: string) => {
-    try {
-      const apiHost = import.meta.env.VITE_API_HOST;
-
-      const validateResponse = await fetch(`${apiHost}/api/connectors/validate-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ provider: 'google_drive', session_token: sessionToken })
-      });
-
-      if (!validateResponse.ok) {
-        removeSessionToken(ingestor.type);
-        setIsGoogleDriveConnected(false);
-        setAuthError('Session expired. Please reconnect to Google Drive.');
-        return;
-      }
-
-      const validateData = await validateResponse.json();
-
-      if (validateData.success) {
-        setUserEmail(validateData.user_email || 'Connected User');
-        // reset pagination state and files
-        setGoogleDriveFiles([]);
 
 
+  
 
-        setNextPageToken(null);
-        setHasMoreFiles(false);
-        loadGoogleDriveFiles(sessionToken, null, null, false);
-      } else {
-        removeSessionToken(ingestor.type);
-        setIsGoogleDriveConnected(false);
-        setAuthError(validateData.error || 'Session expired. Please reconnect your Google Drive account and make sure to grant offline access.');
-      }
-    } catch (error) {
-      console.error('Error validating Google Drive session:', error);
-      setAuthError('Failed to validate session. Please reconnect.');
-      setIsGoogleDriveConnected(false);
-    }
-  };
+      
+      
+      
+    
 
-  const loadGoogleDriveFiles = async (
-    sessionToken: string,
-    folderId?: string | null,
-    pageToken?: string | null,
-    append: boolean = false,
-  ) => {
-    setIsLoadingFiles(true);
+  
 
-    try {
-      const apiHost = import.meta.env.VITE_API_HOST;
-      const requestBody: any = {
-        session_token: sessionToken,
-        limit: 10,
-      };
-      if (folderId) {
-        requestBody.folder_id = folderId;
-      }
-      if (pageToken) {
-        requestBody.page_token = pageToken;
-      }
+  
 
-      const filesResponse = await fetch(`${apiHost}/api/connectors/files`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...requestBody, provider: 'google_drive' })
-      });
+  
 
-      if (!filesResponse.ok) {
-        throw new Error(`Failed to load files: ${filesResponse.status}`);
-      }
+  
 
-      const filesData = await filesResponse.json();
-
-      if (filesData.success && Array.isArray(filesData.files)) {
-        setGoogleDriveFiles(prev => append ? [...prev, ...filesData.files] : filesData.files);
-        setNextPageToken(filesData.next_page_token || null);
-        setHasMoreFiles(Boolean(filesData.has_more));
-      } else {
-        throw new Error(filesData.error || 'Failed to load files');
-      }
-
-    } catch (error) {
-      console.error('Error loading Google Drive files:', error);
-      setAuthError(error instanceof Error ? error.message : 'Failed to load files. Please make sure your Google Drive account is properly connected and you granted offline access during authorization.');
-    } finally {
-      setIsLoadingFiles(false);
-    }
-  };
-
-
-
-  // Handle file selection
-  const handleFileSelect = (fileId: string) => {
-    setSelectedFiles(prev => {
-      if (prev.includes(fileId)) {
-        return prev.filter(id => id !== fileId);
-      } else {
-        return [...prev, fileId];
-      }
-    });
-  };
-
-  const handleFolderClick = (folderId: string, folderName: string) => {
-    const sessionToken = getSessionToken(ingestor.type);
-    if (sessionToken) {
-      setCurrentFolderId(folderId);
-      setFolderPath(prev => [...prev, {id: folderId, name: folderName}]);
-
-      setGoogleDriveFiles([]);
-      setNextPageToken(null);
-      setHasMoreFiles(false);
-      setSelectedFiles([]);
-      loadGoogleDriveFiles(sessionToken, folderId, null, false);
-    }
-  };
-
-  const navigateBack = (index: number) => {
-    const sessionToken = getSessionToken(ingestor.type);
-    if (sessionToken) {
-      const newPath = folderPath.slice(0, index + 1);
-      const targetFolderId = newPath[newPath.length - 1]?.id;
-
-      setCurrentFolderId(targetFolderId as string | null);
-      setFolderPath(newPath);
-
-      setGoogleDriveFiles([]);
-      setNextPageToken(null);
-      setHasMoreFiles(false);
-      setSelectedFiles([]);
-      loadGoogleDriveFiles(sessionToken, targetFolderId ?? null, null, false);
-    }
-  };
-
-  const handleSelectAll = () => {
-    if (selectedFiles.length === googleDriveFiles.length) {
-      setSelectedFiles([]);
-    } else {
-      setSelectedFiles(googleDriveFiles.map(file => file.id));
-    }
-  };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps } = useDropzone({
     onDrop,
     multiple: true,
     onDragEnter: doNothing,
@@ -697,43 +594,51 @@ function Upload({
   });
 
   const isUploadDisabled = (): boolean => {
-    if (activeTab === 'file') {
-      return !docName?.trim() || files.length === 0;
+    if (!activeTab) return true;
+
+    if (!ingestor.name?.trim()) {
+      return true;
     }
-    if (activeTab === 'remote') {
-      if (!remoteName?.trim()) {
+
+    if (!ingestor.type) return true;
+    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+    const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
+
+    if (hasLocalFilePicker) {
+      if (files.length === 0) {
         return true;
       }
-      if (ingestor.type === 'google_drive') {
-        return !isGoogleDriveConnected || selectedFiles.length === 0;
+    } else if (hasRemoteFilePicker) {
+      if (selectedFiles.length === 0 && selectedFolders.length === 0) {
+        return true;
       }
+    }
 
-      const formFields: FormField[] = IngestorFormSchemas[ingestor.type];
-      for (const field of formFields) {
-        if (field.required) {
-          // Validate only required fields
-          const value =
-            ingestor.config[field.name as keyof typeof ingestor.config];
+    const formFields: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    for (const field of formFields) {
+      if (field.required) {
+        // Validate only required fields
+        const value =
+          ingestor.config[field.name as keyof typeof ingestor.config];
 
-          if (typeof value === 'string' && !value.trim()) {
-            return true;
-          }
+        if (typeof value === 'string' && !value.trim()) {
+          return true;
+        }
 
-          if (
-            typeof value === 'number' &&
-            (value === null || value === undefined || value <= 0)
-          ) {
-            return true;
-          }
+        if (
+          typeof value === 'number' &&
+          (value === null || value === undefined || value <= 0)
+        ) {
+          return true;
+        }
 
-          if (typeof value === 'boolean' && value === undefined) {
-            return true;
-          }
+        if (typeof value === 'boolean' && value === undefined) {
+          return true;
         }
       }
-      return false;
     }
-    return true;
+    return false;
   };
   const handleIngestorChange = (
     key: keyof IngestorConfig['config'],
@@ -756,6 +661,13 @@ function Upload({
       name: defaultConfig.name,
       config: defaultConfig.config,
     });
+
+    
+
+    // Clear files if switching away from local_file
+    if (type !== 'local_file') {
+      setfiles([]);
+    }
   };
 
   let view;
@@ -770,81 +682,10 @@ function Upload({
         <p className="text-jet dark:text-bright-gray text-center text-2xl font-semibold">
           {t('modals.uploadDoc.label')}
         </p>
-        {!activeTab && (
-          <div>
-            <p className="dark text-gray-6000 dark:text-bright-gray text-center text-sm font-medium">
-              {t('modals.uploadDoc.select')}
-            </p>
-            <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-4 md:flex-row md:gap-4">
-              <button
-                onClick={() => setActiveTab('file')}
-                className="hover:border-purple-30 hover:shadow-purple-30/30 flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:opacity-100 hover:shadow-lg md:h-52 md:w-52 dark:bg-transparent dark:text-[#c3c3c3]"
-              >
-                <img
-                  src={FileUpload}
-                  className="mr-2 h-12 w-12 dark:brightness-50 dark:invert dark:filter"
-                />
-                {t('modals.uploadDoc.file')}
-              </button>
-              <button
-                onClick={() => setActiveTab('remote')}
-                className="hover:border-purple-30 hover:shadow-purple-30/30 flex h-40 w-40 flex-col items-center justify-center gap-4 rounded-3xl border border-[#D7D7D7] bg-transparent p-8 text-sm font-medium text-[#777777] opacity-85 hover:opacity-100 hover:shadow-lg md:h-52 md:w-52 dark:bg-transparent dark:text-[#c3c3c3]"
-              >
-                <img
-                  src={WebsiteCollect}
-                  className="mr-2 h-14 w-14 dark:brightness-50 dark:invert dark:filter"
-                />
-                {t('modals.uploadDoc.remote')}
-              </button>
-            </div>
-          </div>
-        )}
+        
 
-        {activeTab === 'file' && (
-          <>
-            <Input
-              type="text"
-              colorVariant="silver"
-              value={docName}
-              onChange={(e) => setDocName(e.target.value)}
-              borderVariant="thin"
-              placeholder={t('modals.uploadDoc.name')}
-              labelBgClassName="bg-white dark:bg-charleston-green-2"
-              required={true}
-            />
-            <div className="my-2" {...getRootProps()}>
-              <span className="text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
-                <input type="button" {...getInputProps()} />
-                {t('modals.uploadDoc.choose')}
-              </span>
-            </div>
-            <p className="text-gray-4000 mb-0 text-xs italic">
-              {t('modals.uploadDoc.info')}
-            </p>
-            <div className="mt-0 max-w-full">
-              <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
-                {t('modals.uploadDoc.uploadedFiles')}
-              </p>
-              <div className="max-w-full overflow-hidden">
-                {files.map((file) => (
-                  <p
-                    key={file.name}
-                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
-                    title={file.name}
-                  >
-                    {file.name}
-                  </p>
-                ))}
-                {files.length === 0 && (
-                  <p className="text-gray-6000 dark:text-light-gray text-[14px]">
-                    {t('none')}
-                  </p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-        {activeTab === 'remote' && (
+        
+        {activeTab && (
           <>
             <Dropdown
               options={urlOptions}
@@ -865,212 +706,21 @@ function Upload({
             <Input
               type="text"
               colorVariant="silver"
-              value={remoteName}
-              onChange={(e) => setRemoteName(e.target.value)}
+              value={ingestor.name}
+              onChange={(e) => {
+                setIngestor((prevState) => ({
+                  ...prevState,
+                  name: e.target.value,
+                }));
+              }}
               borderVariant="thin"
               placeholder="Name"
               required={true}
               labelBgClassName="bg-white dark:bg-charleston-green-2"
             />
-            {ingestor.type === 'google_drive' && (
-              <div className="space-y-4">
-                {authError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-600 dark:bg-red-900/20">
-                    <p className="text-sm text-red-600 dark:text-red-400">
-                      ⚠️ {authError}
-                    </p>
-                  </div>
-                )}
-
-                {!isGoogleDriveConnected ? (
-                  <ConnectorAuth
-                    provider="google_drive"
-                    onSuccess={(data) => {
-                      setUserEmail(data.user_email);
-                      setIsGoogleDriveConnected(true);
-                      setIsAuthenticating(false);
-                      setAuthError('');
-
-                      if (data.session_token) {
-                        setSessionToken(ingestor.type, data.session_token);
-                        loadGoogleDriveFiles(data.session_token, null);
-                      }
-                    }}
-                    onError={(error) => {
-                      setAuthError(error);
-                      setIsAuthenticating(false);
-                      setIsGoogleDriveConnected(false);
-                    }}
-                  />
-                ) : (
-                  <div className="space-y-4">
-                    {/* Connection Status */}
-                    <div className="w-full flex items-center justify-between rounded-lg bg-green-500 px-4 py-2 text-white text-sm">
-                      <div className="flex items-center gap-2">
-                        <svg className="h-4 w-4" viewBox="0 0 24 24">
-                          <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                        <span>Connected as {userEmail}</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          removeSessionToken(ingestor.type);
-
-                          setIsGoogleDriveConnected(false);
-                          setGoogleDriveFiles([]);
-                          setSelectedFiles([]);
-                          setUserEmail('');
-                          setAuthError('');
-
-                          const apiHost = import.meta.env.VITE_API_HOST;
-                          fetch(`${apiHost}/api/connectors/disconnect`, {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({ provider: ingestor.type, session_token: getSessionToken(ingestor.type) })
-                          }).catch(err => console.error('Error disconnecting from Google Drive:', err));
-                        }}
-                        className="text-white hover:text-gray-200 text-xs underline"
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-
-                    {/* File Browser */}
-                    <div className="border border-gray-200 rounded-lg dark:border-gray-600">
-                      <div className="p-3 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 rounded-t-lg">
-                        {/* Breadcrumb navigation */}
-                        <div className="flex items-center gap-1 mb-2">
-                          {folderPath.map((path, index) => (
-                            <div key={path.id || 'root'} className="flex items-center gap-1">
-                              {index > 0 && <span className="text-gray-400">/</span>}
-                              <button
-                                onClick={() => navigateBack(index)}
-                                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:underline"
-                                disabled={index === folderPath.length - 1}
-                              >
-                                {path.name}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Select Files from Google Drive
-                          </h4>
-                          {googleDriveFiles.length > 0 && (
-                            <button
-                              onClick={handleSelectAll}
-                              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                            >
-                              {selectedFiles.length === googleDriveFiles.length ? 'Deselect All' : 'Select All'}
-                            </button>
-                          )}
-                        </div>
-                        {selectedFiles.length > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="max-h-72 overflow-y-auto" ref={scrollContainerRef}>
-                        {isLoadingFiles && googleDriveFiles.length === 0 ? (
-                          <div className="p-4 text-center">
-                            <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                              Loading files...
-                            </div>
-                          </div>
-                        ) : googleDriveFiles.length === 0 ? (
-                          <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                            No files found in your Google Drive
-                          </div>
-                        ) : (
-                          <>
-                            <div className="divide-y divide-gray-200 dark:divide-gray-600">
-                              {googleDriveFiles.map((file) => (
-                                <div
-                                  key={file.id}
-                                  className={`p-3 transition-colors ${
-                                    selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex-shrink-0">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedFiles.includes(file.id)}
-                                        onChange={() => handleFileSelect(file.id)}
-                                        className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                                      />
-                                    </div>
-                                    {file.type === 'application/vnd.google-apps.folder' || file.isFolder ? (
-                                      <div
-                                        className="text-lg cursor-pointer hover:text-blue-600"
-                                        onClick={() => handleFolderClick(file.id, file.name)}
-                                      >
-                                        <img src={FolderIcon} alt="Folder" className="h-6 w-6" />
-                                      </div>
-                                    ) : (
-                                      <div className="text-lg">
-                                        <img src={FileIcon} alt="File" className="h-6 w-6" />
-                                      </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <p
-                                        className={`text-sm font-medium truncate dark:text-[#ececf1] ${
-                                          file.type === 'application/vnd.google-apps.folder' || file.isFolder
-                                            ? 'cursor-pointer hover:text-blue-600'
-                                            : ''
-                                        }`}
-                                        onClick={() => {
-                                          if (file.type === 'application/vnd.google-apps.folder' || file.isFolder) {
-                                            handleFolderClick(file.id, file.name);
-                                          }
-                                        }}
-                                      >
-                                        {file.name}
-                                      </p>
-                                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        {file.size && `${formatBytes(file.size)} • `}Modified {formatDate(file.modifiedTime)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
-                              {isLoadingFiles && (
-                                <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                                  Loading more files...
-                                </div>
-                              )}
-                              {!hasMoreFiles && !isLoadingFiles && (
-                                <span className="text-sm text-gray-500 dark:text-gray-400">All files loaded</span>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                                <div className="hidden" aria-hidden="true">
-                                </div>
-
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             {renderFormFields()}
-            {IngestorFormSchemas[ingestor.type].some(
-              (field) => field.advanced,
+            {ingestor.type && IngestorFormSchemas[ingestor.type as IngestorType].some(
+              (field: FormField) => field.advanced,
             ) && (
               <button
                 onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
@@ -1086,16 +736,12 @@ function Upload({
         <div className="flex justify-end gap-4">
           {activeTab && (
             <button
-              onClick={() => setActiveTab(null)}
-              className="text-purple-30 dark:text-silver rounded-3xl bg-transparent px-4 py-2 text-[14px] font-medium hover:cursor-pointer"
-            >
-              {t('modals.uploadDoc.back')}
-            </button>
-          )}
-          {activeTab && (
-            <button
               onClick={() => {
-                if (activeTab === 'file') {
+                if (!ingestor.type) return;
+                const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+                const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+
+                if (hasLocalFilePicker) {
                   uploadFile();
                 } else {
                   uploadRemote();
@@ -1108,10 +754,7 @@ function Upload({
                   : 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer text-white'
               }`}
             >
-              {ingestor.type === 'google_drive' && selectedFiles.length > 0
-                ? `Train with ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`
-                : t('modals.uploadDoc.train')
-              }
+              {t('modals.uploadDoc.train')}
             </button>
           )}
         </div>
@@ -1119,39 +762,18 @@ function Upload({
     );
   }
 
-  useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    
-    const handleScroll = () => {
-      if (!scrollContainer) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-      const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
-      
-      if (isNearBottom && hasMoreFiles && !isLoadingFiles && nextPageToken) {
-        const sessionToken = getSessionToken(ingestor.type);
-        if (sessionToken) {
-          loadGoogleDriveFiles(sessionToken, currentFolderId, nextPageToken, true);
-        }
-      }
-    };
-    
-    scrollContainer?.addEventListener('scroll', handleScroll);
-    
-    return () => {
-      scrollContainer?.removeEventListener('scroll', handleScroll);
-    };
-  }, [hasMoreFiles, isLoadingFiles, nextPageToken, currentFolderId, ingestor.type]);
+  
+
+  
 
   return (
     <WrapperModal
       isPerformingTask={progress !== undefined && progress.percentage < 100}
       close={() => {
         close();
-        setDocName('');
+        setIngestor({ type: null, name: '', config: {} });
         setfiles([]);
         setModalState('INACTIVE');
-        setActiveTab(null);
       }}
     >
       {view}

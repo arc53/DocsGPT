@@ -978,13 +978,13 @@ def ingest_connector(
                 "tokens": tokens,
                 "retriever": retriever,
                 "id": str(id),
-                "type": "connector",
+                "type": "connector:file",
                 "remote_data": json.dumps({
                     "provider": source_type,
                     **api_source_config
                 }),
                 "directory_structure": json.dumps(directory_structure),
-                "sync_frequency": sync_frequency 
+                "sync_frequency": sync_frequency
             }
 
             if operation_mode == "sync":
