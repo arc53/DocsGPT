@@ -17,7 +17,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 }) => {
   const [isDarkTheme] = useDarkTheme();
   const diagramId = useRef(
-    `mermaid-${Date.now()}-${Math.random().toString(36).substring(2)}`,
+    `mermaid-${crypto.randomUUID()}`,
   );
   const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
