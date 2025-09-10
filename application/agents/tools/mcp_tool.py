@@ -156,15 +156,20 @@ class MCPTool(Tool):
     ) -> Dict:
         """Execute MCP request with optional retry on session failure."""
         try:
-            headers = {"Content-Type": "application/json", "Accept": "application/json"}
-            headers.update(self._session.headers)
+            final_headers = self._session.headers.copy()
+            final_headers.update(
+                {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                }
+            )
 
             if self._mcp_session_id:
-                headers["Mcp-Session-Id"] = self._mcp_session_id
+                final_headers["Mcp-Session-Id"] = self._mcp_session_id
             response = self._session.post(
                 self.server_url.rstrip("/"),
                 json=mcp_message,
-                headers=headers,
+                headers=final_headers,
                 timeout=self.timeout,
             )
 
@@ -175,10 +180,26 @@ class MCPTool(Tool):
 
             if method.startswith("notifications/"):
                 return {}
-            try:
-                result = response.json()
-            except json.JSONDecodeError:
-                raise Exception(f"Invalid JSON response: {response.text}")
+            response_text = response.text.strip()
+            if response_text.startswith("event:") and "data:" in response_text:
+                lines = response_text.split("\n")
+                data_line = None
+                for line in lines:
+                    if line.startswith("data:"):
+                        data_line = line[5:].strip()
+                        break
+                if data_line:
+                    try:
+                        result = json.loads(data_line)
+                    except json.JSONDecodeError:
+                        raise Exception(f"Invalid JSON in SSE data: {data_line}")
+                else:
+                    raise Exception(f"No data found in SSE response: {response_text}")
+            else:
+                try:
+                    result = response.json()
+                except json.JSONDecodeError:
+                    raise Exception(f"Invalid JSON response: {response.text}")
             if "error" in result:
                 error_msg = result["error"]
                 if isinstance(error_msg, dict):
@@ -228,15 +249,24 @@ class MCPTool(Tool):
 
             response = self._make_mcp_request("tools/list")
 
-            if isinstance(response, dict) and "tools" in response:
-                self.available_tools = response["tools"]
-                return self.available_tools
+            # Handle both formats: response with 'tools' key or response that IS the tools list
+
+            if isinstance(response, dict):
+                if "tools" in response:
+                    self.available_tools = response["tools"]
+                elif (
+                    "result" in response
+                    and isinstance(response["result"], dict)
+                    and "tools" in response["result"]
+                ):
+                    self.available_tools = response["result"]["tools"]
+                else:
+                    self.available_tools = [response] if response else []
             elif isinstance(response, list):
                 self.available_tools = response
-                return self.available_tools
             else:
                 self.available_tools = []
-                return self.available_tools
+            return self.available_tools
         except Exception as e:
             raise Exception(f"Failed to discover tools from MCP server: {str(e)}")
 
@@ -312,6 +342,8 @@ class MCPTool(Tool):
             Dictionary with connection test results including tool count
         """
         try:
+            self._mcp_session_id = None
+
             init_result = self._initialize_mcp_connection()
 
             tools = self.discover_tools()
