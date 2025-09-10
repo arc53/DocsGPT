@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { selectToken } from '../preferences/preferenceSlice';
 import { formatBytes } from '../utils/stringUtils';
+import { selectToken } from '../preferences/preferenceSlice';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
 import userService from '../api/services/userService';
@@ -11,9 +11,8 @@ import FolderIcon from '../assets/folder.svg';
 import ArrowLeft from '../assets/arrow-left.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
-import Trash from '../assets/red-trash.svg';
+import SyncIcon from '../assets/sync.svg';
 import { useOutsideAlerter } from '../hooks';
-import ConfirmationModal from '../modals/ConfirmationModal';
 
 interface FileNode {
   type?: string;
@@ -26,7 +25,7 @@ interface DirectoryStructure {
   [key: string]: FileNode;
 }
 
-interface FileTreeComponentProps {
+interface ConnectorTreeComponentProps {
   docId: string;
   sourceName: string;
   onBackToDocuments: () => void;
@@ -38,7 +37,7 @@ interface SearchResult {
   isFile: boolean;
 }
 
-const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
+const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   docId,
   sourceName,
   onBackToDocuments,
@@ -61,28 +60,10 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
-  const currentOpRef = useRef<null | 'add' | 'remove' | 'remove_directory'>(
-    null,
-  );
-
-  const [deleteModalState, setDeleteModalState] = useState<
-    'ACTIVE' | 'INACTIVE'
-  >('INACTIVE');
-  const [itemToDelete, setItemToDelete] = useState<{
-    name: string;
-    isFile: boolean;
-  } | null>(null);
-
-  type QueuedOperation = {
-    operation: 'add' | 'remove' | 'remove_directory';
-    files?: File[];
-    filePath?: string;
-    directoryPath?: string;
-    parentDirPath?: string;
-  };
-  const opQueueRef = useRef<QueuedOperation[]>([]);
-  const processingRef = useRef(false);
-  const [queueLength, setQueueLength] = useState(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncProgress, setSyncProgress] = useState<number>(0);
+  const [sourceProvider, setSourceProvider] = useState<string>('');
+  const [syncDone, setSyncDone] = useState<boolean>(false);
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -102,20 +83,117 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     });
   };
 
+  const handleSync = async () => {
+    if (isSyncing) return;
+
+    const provider = sourceProvider;
+
+    setIsSyncing(true);
+    setSyncProgress(0);
+
+    try {
+      const response = await userService.syncConnector(docId, provider, token);
+      const data = await response.json();
+
+      if (data.success) {
+        console.log('Sync started successfully:', data.task_id);
+        setSyncProgress(10);
+
+        // Poll task status using userService
+        const maxAttempts = 30;
+        const pollInterval = 2000;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const statusResponse = await userService.getTaskStatus(
+              data.task_id,
+              token,
+            );
+            const statusData = await statusResponse.json();
+
+            console.log(
+              `Task status (attempt ${attempt + 1}):`,
+              statusData.status,
+            );
+
+            if (statusData.status === 'SUCCESS') {
+              setSyncProgress(100);
+              console.log('Sync completed successfully');
+
+              // Refresh directory structure
+              try {
+                const refreshResponse = await userService.getDirectoryStructure(
+                  docId,
+                  token,
+                );
+                const refreshData = await refreshResponse.json();
+                if (refreshData && refreshData.directory_structure) {
+                  setDirectoryStructure(refreshData.directory_structure);
+                  setCurrentPath([]);
+                }
+                if (refreshData && refreshData.provider) {
+                  setSourceProvider(refreshData.provider);
+                }
+
+                setSyncDone(true);
+                setTimeout(() => setSyncDone(false), 5000);
+              } catch (err) {
+                console.error('Error refreshing directory structure:', err);
+              }
+              break;
+            } else if (statusData.status === 'FAILURE') {
+              console.error('Sync task failed:', statusData.result);
+              break;
+            } else if (statusData.status === 'PROGRESS') {
+              const progress = Number(
+                statusData.result && statusData.result.current != null
+                  ? statusData.result.current
+                  : statusData.meta && statusData.meta.current != null
+                    ? statusData.meta.current
+                    : 0,
+              );
+              setSyncProgress(Math.max(10, progress));
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          } catch (error) {
+            console.error('Error polling task status:', error);
+            break;
+          }
+        }
+      } else {
+        console.error('Sync failed:', data.error);
+      }
+    } catch (err) {
+      console.error('Error syncing connector:', err);
+    } finally {
+      setIsSyncing(false);
+      setSyncProgress(0);
+    }
+  };
+
   useEffect(() => {
     const fetchDirectoryStructure = async () => {
       try {
         setLoading(true);
-        const response = await userService.getDirectoryStructure(docId, token);
-        const data = await response.json();
 
-        if (data && data.directory_structure) {
-          setDirectoryStructure(data.directory_structure);
+        const directoryResponse = await userService.getDirectoryStructure(
+          docId,
+          token,
+        );
+        const directoryData = await directoryResponse.json();
+
+        if (directoryData && directoryData.directory_structure) {
+          setDirectoryStructure(directoryData.directory_structure);
         } else {
           setError('Invalid response format');
         }
+
+        if (directoryData && directoryData.provider) {
+          setSourceProvider(directoryData.provider);
+        }
       } catch (err) {
-        setError('Failed to load directory structure');
+        setError('Failed to load source information');
         console.error(err);
       } finally {
         setLoading(false);
@@ -128,41 +206,20 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   }, [docId, token]);
 
   const navigateToDirectory = (dirName: string) => {
-    setCurrentPath((prev) => [...prev, dirName]);
+    setCurrentPath([...currentPath, dirName]);
   };
 
   const navigateUp = () => {
-    setCurrentPath((prev) => prev.slice(0, -1));
+    setCurrentPath(currentPath.slice(0, -1));
   };
 
   const getCurrentDirectory = (): DirectoryStructure => {
     if (!directoryStructure) return {};
 
-    let structure = directoryStructure;
-    if (typeof structure === 'string') {
-      try {
-        structure = JSON.parse(structure);
-      } catch (e) {
-        console.error(
-          'Error parsing directory structure in getCurrentDirectory:',
-          e,
-        );
-        return {};
-      }
-    }
-
-    if (typeof structure !== 'object' || structure === null) {
-      return {};
-    }
-
-    let current: any = structure;
+    let current = directoryStructure;
     for (const dir of currentPath) {
-      if (
-        current[dir] &&
-        typeof current[dir] === 'object' &&
-        !current[dir].type
-      ) {
-        current = current[dir];
+      if (current[dir] && !current[dir].type) {
+        current = current[dir] as DirectoryStructure;
       } else {
         return {};
       }
@@ -170,34 +227,19 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     return current;
   };
 
-  const handleBackNavigation = () => {
-    if (selectedFile) {
-      setSelectedFile(null);
-    } else if (currentPath.length === 0) {
-      if (onBackToDocuments) {
-        onBackToDocuments();
-      }
-    } else {
-      navigateUp();
+  const getMenuRef = (id: string) => {
+    if (!menuRefs.current[id]) {
+      menuRefs.current[id] = React.createRef();
     }
+    return menuRefs.current[id];
   };
 
-  const getMenuRef = (itemId: string) => {
-    if (!menuRefs.current[itemId]) {
-      menuRefs.current[itemId] = React.createRef<HTMLDivElement>();
-    }
-    return menuRefs.current[itemId];
-  };
-
-  const handleMenuClick = (e: React.MouseEvent, itemId: string) => {
-    e.preventDefault();
+  const handleMenuClick = (
+    e: React.MouseEvent<HTMLButtonElement>,
+    id: string,
+  ) => {
     e.stopPropagation();
-
-    if (activeMenuId === itemId) {
-      setActiveMenuId(null);
-      return;
-    }
-    setActiveMenuId(itemId);
+    setActiveMenuId(activeMenuId === id ? null : id);
   };
 
   const getActionOptions = (
@@ -223,212 +265,40 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
       variant: 'primary',
     });
 
-    options.push({
-      icon: Trash,
-      label: t('convTile.delete'),
-      onClick: (event: React.SyntheticEvent) => {
-        event.stopPropagation();
-        confirmDeleteItem(name, isFile);
-      },
-      iconWidth: 18,
-      iconHeight: 18,
-      variant: 'danger',
-    });
-
     return options;
   };
 
-  const confirmDeleteItem = (name: string, isFile: boolean) => {
-    setItemToDelete({ name, isFile });
-    setDeleteModalState('ACTIVE');
-    setActiveMenuId(null);
-  };
+  const calculateDirectoryStats = (
+    structure: DirectoryStructure,
+  ): { totalSize: number; totalTokens: number } => {
+    let totalSize = 0;
+    let totalTokens = 0;
 
-  const handleConfirmedDelete = async () => {
-    if (itemToDelete) {
-      await handleDeleteFile(itemToDelete.name, itemToDelete.isFile);
-      setDeleteModalState('INACTIVE');
-      setItemToDelete(null);
-    }
-  };
-
-  const handleCancelDelete = () => {
-    setDeleteModalState('INACTIVE');
-    setItemToDelete(null);
-  };
-
-  const manageSource = async (
-    operation: 'add' | 'remove' | 'remove_directory',
-    files?: File[] | null,
-    filePath?: string,
-    directoryPath?: string,
-    parentDirPath?: string,
-  ) => {
-    currentOpRef.current = operation;
-
-    try {
-      const formData = new FormData();
-      formData.append('source_id', docId);
-      formData.append('operation', operation);
-
-      if (operation === 'add' && files && files.length) {
-        formData.append('parent_dir', parentDirPath ?? currentPath.join('/'));
-
-        for (let i = 0; i < files.length; i++) {
-          formData.append('file', files[i]);
-        }
-      } else if (operation === 'remove' && filePath) {
-        const filePaths = JSON.stringify([filePath]);
-        formData.append('file_paths', filePaths);
-      } else if (operation === 'remove_directory' && directoryPath) {
-        formData.append('directory_path', directoryPath);
-      }
-
-      const response = await userService.manageSourceFiles(formData, token);
-      const result = await response.json();
-
-      if (result.success && result.reingest_task_id) {
-        if (operation === 'add') {
-          console.log('Files uploaded successfully:', result.added_files);
-        } else if (operation === 'remove') {
-          console.log('Files deleted successfully:', result.removed_files);
-        } else if (operation === 'remove_directory') {
-          console.log(
-            'Directory deleted successfully:',
-            result.removed_directory,
-          );
-        }
-        console.log('Reingest task started:', result.reingest_task_id);
-
-        const maxAttempts = 30;
-        const pollInterval = 2000;
-
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            const statusResponse = await userService.getTaskStatus(
-              result.reingest_task_id,
-              token,
-            );
-            const statusData = await statusResponse.json();
-
-            console.log(
-              `Task status (attempt ${attempt + 1}):`,
-              statusData.status,
-            );
-
-            if (statusData.status === 'SUCCESS') {
-              console.log('Task completed successfully');
-
-              const structureResponse = await userService.getDirectoryStructure(
-                docId,
-                token,
-              );
-              const structureData = await structureResponse.json();
-
-              if (structureData && structureData.directory_structure) {
-                setDirectoryStructure(structureData.directory_structure);
-                currentOpRef.current = null;
-                return true;
-              }
-              break;
-            } else if (statusData.status === 'FAILURE') {
-              console.error('Task failed');
-              break;
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, pollInterval));
-          } catch (error) {
-            console.error('Error polling task status:', error);
-            break;
-          }
-        }
+    Object.entries(structure).forEach(([_, node]) => {
+      if (node.type) {
+        // It's a file
+        totalSize += node.size_bytes || 0;
+        totalTokens += node.token_count || 0;
       } else {
-        throw new Error(
-          `Failed to ${operation} ${operation === 'remove_directory' ? 'directory' : 'file(s)'}`,
-        );
+        // It's a directory, recurse
+        const stats = calculateDirectoryStats(node);
+        totalSize += stats.totalSize;
+        totalTokens += stats.totalTokens;
       }
-    } catch (error) {
-      const actionText =
-        operation === 'add'
-          ? 'uploading'
-          : operation === 'remove_directory'
-            ? 'deleting directory'
-            : 'deleting file(s)';
-      const errorText =
-        operation === 'add'
-          ? 'upload'
-          : operation === 'remove_directory'
-            ? 'delete directory'
-            : 'delete file(s)';
-      console.error(`Error ${actionText}:`, error);
-      setError(`Failed to ${errorText}`);
-    } finally {
-      currentOpRef.current = null;
-    }
+    });
 
-    return false;
+    return { totalSize, totalTokens };
   };
 
-  const processQueue = async () => {
-    if (processingRef.current) return;
-    processingRef.current = true;
-    try {
-      while (opQueueRef.current.length > 0) {
-        const nextOp = opQueueRef.current.shift()!;
-        setQueueLength(opQueueRef.current.length);
-        await manageSource(
-          nextOp.operation,
-          nextOp.files,
-          nextOp.filePath,
-          nextOp.directoryPath,
-          nextOp.parentDirPath,
-        );
+  const handleBackNavigation = () => {
+    if (selectedFile) {
+      setSelectedFile(null);
+    } else if (currentPath.length === 0) {
+      if (onBackToDocuments) {
+        onBackToDocuments();
       }
-    } finally {
-      processingRef.current = false;
-    }
-  };
-
-  const enqueueOperation = (op: QueuedOperation) => {
-    opQueueRef.current.push(op);
-    setQueueLength(opQueueRef.current.length);
-    if (!processingRef.current) {
-      void processQueue();
-    }
-  };
-
-  const handleAddFile = () => {
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.multiple = true;
-    fileInput.accept =
-      '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
-
-    fileInput.onchange = async (event) => {
-      const fileList = (event.target as HTMLInputElement).files;
-      if (!fileList || fileList.length === 0) return;
-      const files = Array.from(fileList);
-      enqueueOperation({
-        operation: 'add',
-        files,
-        parentDirPath: currentPath.join('/'),
-      });
-    };
-
-    fileInput.click();
-  };
-
-  const handleDeleteFile = async (name: string, isFile: boolean) => {
-    // Construct the full path to the file or directory
-    const itemPath = [...currentPath, name].join('/');
-
-    if (isFile) {
-      enqueueOperation({ operation: 'remove', filePath: itemPath });
     } else {
-      enqueueOperation({
-        operation: 'remove_directory',
-        directoryPath: itemPath,
-      });
+      navigateUp();
     }
   };
 
@@ -453,7 +323,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
                 {currentPath.map((dir, index) => (
                   <React.Fragment key={index}>
-                    <span className="break-words text-gray-700 dark:text-gray-300">
+                    <span className="break-words text-gray-700 dark:text-[#E0E0E0]">
                       {dir}
                     </span>
                     {index < currentPath.length - 1 && (
@@ -465,69 +335,47 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                 ))}
               </>
             )}
-            {selectedFile && (
-              <>
-                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
-                <span className="break-words text-gray-700 dark:text-gray-300">
-                  {selectedFile.name}
-                </span>
-              </>
-            )}
           </div>
         </div>
 
         <div className="relative mt-2 flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:mt-0 sm:w-auto">
-          {processingRef.current && (
-            <div className="text-sm text-gray-500">
-              {currentOpRef.current === 'add'
-                ? t('settings.sources.uploadingFilesTitle')
-                : t('settings.sources.deletingTitle')}
-            </div>
-          )}
-
           {renderFileSearch()}
 
-          {/* Add file button */}
-          {!processingRef.current && (
-            <button
-              onClick={handleAddFile}
-              className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap text-white"
-              title={t('settings.sources.addFile')}
-            >
-              {t('settings.sources.addFile')}
-            </button>
-          )}
+          {/* Sync button */}
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors ${
+              isSyncing
+                ? 'cursor-not-allowed bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
+                : 'bg-purple-30 hover:bg-violets-are-blue text-white'
+            }`}
+            title={
+              isSyncing
+                ? `${t('settings.sources.syncing')} ${syncProgress}%`
+                : syncDone
+                  ? 'Done'
+                  : t('settings.sources.sync')
+            }
+          >
+            <img
+              src={SyncIcon}
+              alt={t('settings.sources.sync')}
+              className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
+            />
+            {isSyncing
+              ? `${syncProgress}%`
+              : syncDone
+                ? 'Done'
+                : t('settings.sources.sync')}
+          </button>
         </div>
       </div>
     );
   };
-  const calculateDirectoryStats = (
-    structure: DirectoryStructure,
-  ): { totalSize: number; totalTokens: number } => {
-    let totalSize = 0;
-    let totalTokens = 0;
 
-    Object.entries(structure).forEach(([_, node]) => {
-      if (node.type) {
-        // It's a file
-        totalSize += node.size_bytes || 0;
-        totalTokens += node.token_count || 0;
-      } else {
-        // It's a directory, recurse
-        const stats = calculateDirectoryStats(node);
-        totalSize += stats.totalSize;
-        totalTokens += stats.totalTokens;
-      }
-    });
-
-    return { totalSize, totalTokens };
-  };
-
-  const renderFileTree = (structure: DirectoryStructure): React.ReactNode[] => {
-    // Separate directories and files
-    const entries = Object.entries(structure);
-    const directories = entries.filter(([_, node]) => !node.type);
-    const files = entries.filter(([_, node]) => node.type);
+  const renderFileTree = (directory: DirectoryStructure) => {
+    if (!directory) return [];
 
     // Create parent directory row
     const parentRow =
@@ -561,12 +409,28 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           ]
         : [];
 
-    // Render directories first, then files
-    return [
-      ...parentRow,
-      ...directories.map(([name, node]) => {
+    // Sort entries: directories first, then files, both alphabetically
+    const sortedEntries = Object.entries(directory).sort(
+      ([nameA, nodeA], [nameB, nodeB]) => {
+        const isFileA = !!nodeA.type;
+        const isFileB = !!nodeB.type;
+
+        if (isFileA !== isFileB) {
+          return isFileA ? 1 : -1; // Directories first
+        }
+
+        return nameA.localeCompare(nameB); // Alphabetical within each group
+      },
+    );
+
+    // Process directories
+    const directoryRows = sortedEntries
+      .filter(([_, node]) => !node.type)
+      .map(([name, node]) => {
         const itemId = `dir-${name}`;
         const menuRef = getMenuRef(itemId);
+
+        // Calculate directory stats
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
@@ -622,8 +486,12 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             </td>
           </tr>
         );
-      }),
-      ...files.map(([name, node]) => {
+      });
+
+    // Process files
+    const fileRows = sortedEntries
+      .filter(([_, node]) => !!node.type)
+      .map(([name, node]) => {
         const itemId = `file-${name}`;
         const menuRef = getMenuRef(itemId);
 
@@ -678,10 +546,10 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
             </td>
           </tr>
         );
-      }),
-    ];
+      });
+
+    return [...parentRow, ...directoryRows, ...fileRows];
   };
-  const currentDirectory = getCurrentDirectory();
 
   const searchFiles = (
     query: string,
@@ -808,6 +676,12 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     });
   };
 
+  const currentDirectory = getCurrentDirectory();
+
+  const navigateToPath = (index: number) => {
+    setCurrentPath(currentPath.slice(0, index + 1));
+  };
+
   return (
     <div>
       {selectedFile ? (
@@ -841,38 +715,17 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                     <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
                       {t('settings.sources.size')}
                     </th>
-                    <th className="w-[60px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
-                      <span className="sr-only">
-                        {t('settings.sources.actions')}
-                      </span>
-                    </th>
+                    <th className="w-10 px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]"></th>
                   </tr>
                 </thead>
-                <tbody className="[&>tr:last-child]:border-b-0">
-                  {renderFileTree(currentDirectory)}
-                </tbody>
+                <tbody>{renderFileTree(getCurrentDirectory())}</tbody>
               </table>
             </div>
           </div>
         </div>
       )}
-      <ConfirmationModal
-        message={
-          itemToDelete?.isFile
-            ? t('settings.sources.confirmDelete')
-            : t('settings.sources.deleteDirectoryWarning', {
-                name: itemToDelete?.name,
-              })
-        }
-        modalState={deleteModalState}
-        setModalState={setDeleteModalState}
-        handleSubmit={handleConfirmedDelete}
-        handleCancel={handleCancelDelete}
-        submitLabel={t('convTile.delete')}
-        variant="danger"
-      />
     </div>
   );
 };
 
-export default FileTreeComponent;
+export default ConnectorTreeComponent;

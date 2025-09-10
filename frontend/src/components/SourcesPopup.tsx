@@ -200,7 +200,7 @@ export default function SourcesPopup({
                         {option.name}
                       </span>
                       <div
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
                       >
                         {isSelected && (
                           <img
