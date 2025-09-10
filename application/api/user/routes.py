@@ -3513,7 +3513,60 @@ class UpdateTool(Resource):
                                 ),
                                 400,
                             )
-                update_data["config"] = data["config"]
+                tool_doc = user_tools_collection.find_one(
+                    {"_id": ObjectId(data["id"]), "user": user}
+                )
+                if tool_doc and tool_doc.get("name") == "mcp_tool":
+                    config = data["config"]
+                    existing_config = tool_doc.get("config", {})
+                    storage_config = existing_config.copy()
+
+                    storage_config.update(config)
+                    existing_credentials = {}
+                    if "encrypted_credentials" in existing_config:
+                        existing_credentials = decrypt_credentials(
+                            existing_config["encrypted_credentials"], user
+                        )
+                    auth_credentials = existing_credentials.copy()
+                    auth_type = storage_config.get("auth_type", "none")
+                    if auth_type == "api_key":
+                        if "api_key" in config and config["api_key"]:
+                            auth_credentials["api_key"] = config["api_key"]
+                        if "api_key_header" in config:
+                            auth_credentials["api_key_header"] = config[
+                                "api_key_header"
+                            ]
+                    elif auth_type == "bearer":
+                        if "bearer_token" in config and config["bearer_token"]:
+                            auth_credentials["bearer_token"] = config["bearer_token"]
+                        elif "encrypted_token" in config and config["encrypted_token"]:
+                            auth_credentials["bearer_token"] = config["encrypted_token"]
+                    elif auth_type == "basic":
+                        if "username" in config and config["username"]:
+                            auth_credentials["username"] = config["username"]
+                        if "password" in config and config["password"]:
+                            auth_credentials["password"] = config["password"]
+                    if auth_type != "none" and auth_credentials:
+                        encrypted_credentials_string = encrypt_credentials(
+                            auth_credentials, user
+                        )
+                        storage_config["encrypted_credentials"] = (
+                            encrypted_credentials_string
+                        )
+                    elif auth_type == "none":
+                        storage_config.pop("encrypted_credentials", None)
+                    for field in [
+                        "api_key",
+                        "bearer_token",
+                        "encrypted_token",
+                        "username",
+                        "password",
+                        "api_key_header",
+                    ]:
+                        storage_config.pop(field, None)
+                    update_data["config"] = storage_config
+                else:
+                    update_data["config"] = data["config"]
             if "status" in data:
                 update_data["status"] = data["status"]
             user_tools_collection.update_one(
@@ -4238,6 +4291,7 @@ class MCPServerSave(Resource):
             tool_data = {
                 "name": "mcp_tool",
                 "displayName": data["displayName"],
+                "customName": data["displayName"],
                 "description": f"MCP Server: {storage_config.get('server_url', 'Unknown')}",
                 "config": storage_config,
                 "actions": transformed_actions,

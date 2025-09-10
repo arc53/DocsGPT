@@ -30,9 +30,22 @@ export default function ToolConfig({
   handleGoBack: () => void;
 }) {
   const token = useSelector(selectToken);
-  const [authKey, setAuthKey] = React.useState<string>(
-    'token' in tool.config ? tool.config.token : '',
-  );
+  const [authKey, setAuthKey] = React.useState<string>(() => {
+    if (tool.name === 'mcp_tool') {
+      const config = tool.config as any;
+      if (config.auth_type === 'api_key') {
+        return config.api_key || '';
+      } else if (config.auth_type === 'bearer') {
+        return config.encrypted_token || '';
+      } else if (config.auth_type === 'basic') {
+        return config.password || '';
+      }
+      return '';
+    } else if ('token' in tool.config) {
+      return tool.config.token;
+    }
+    return '';
+  });
   const [customName, setCustomName] = React.useState<string>(
     tool.customName || '',
   );
@@ -97,6 +110,26 @@ export default function ToolConfig({
   };
 
   const handleSaveChanges = () => {
+    let configToSave;
+    if (tool.name === 'api_tool') {
+      configToSave = tool.config;
+    } else if (tool.name === 'mcp_tool') {
+      configToSave = { ...tool.config } as any;
+      const mcpConfig = tool.config as any;
+
+      if (authKey.trim()) {
+        if (mcpConfig.auth_type === 'api_key') {
+          configToSave.api_key = authKey;
+        } else if (mcpConfig.auth_type === 'bearer') {
+          configToSave.encrypted_token = authKey;
+        } else if (mcpConfig.auth_type === 'basic') {
+          configToSave.password = authKey;
+        }
+      }
+    } else {
+      configToSave = { token: authKey };
+    }
+
     userService
       .updateTool(
         {
@@ -105,7 +138,7 @@ export default function ToolConfig({
           displayName: tool.displayName,
           customName: customName,
           description: tool.description,
-          config: tool.name === 'api_tool' ? tool.config : { token: authKey },
+          config: configToSave,
           actions: 'actions' in tool ? tool.actions : [],
           status: tool.status,
         },
@@ -196,7 +229,15 @@ export default function ToolConfig({
       <div className="mt-1">
         {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (
           <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
-            {t('settings.tools.authentication')}
+            {tool.name === 'mcp_tool'
+              ? (tool.config as any)?.auth_type === 'bearer'
+                ? 'Bearer Token'
+                : (tool.config as any)?.auth_type === 'api_key'
+                  ? 'API Key'
+                  : (tool.config as any)?.auth_type === 'basic'
+                    ? 'Password'
+                    : t('settings.tools.authentication')
+              : t('settings.tools.authentication')}
           </p>
         )}
         <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
@@ -208,7 +249,17 @@ export default function ToolConfig({
                   value={authKey}
                   onChange={(e) => setAuthKey(e.target.value)}
                   borderVariant="thin"
-                  placeholder={t('modals.configTool.apiKeyPlaceholder')}
+                  placeholder={
+                    tool.name === 'mcp_tool'
+                      ? (tool.config as any)?.auth_type === 'bearer'
+                        ? 'Bearer Token'
+                        : (tool.config as any)?.auth_type === 'api_key'
+                          ? 'API Key'
+                          : (tool.config as any)?.auth_type === 'basic'
+                            ? 'Password'
+                            : t('modals.configTool.apiKeyPlaceholder')
+                      : t('modals.configTool.apiKeyPlaceholder')
+                  }
                 />
               </div>
             )}
@@ -450,6 +501,26 @@ export default function ToolConfig({
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
             submitLabel={t('settings.tools.saveAndLeave')}
             handleSubmit={() => {
+              let configToSave;
+              if (tool.name === 'api_tool') {
+                configToSave = tool.config;
+              } else if (tool.name === 'mcp_tool') {
+                configToSave = { ...tool.config } as any;
+                const mcpConfig = tool.config as any;
+
+                if (authKey.trim()) {
+                  if (mcpConfig.auth_type === 'api_key') {
+                    configToSave.api_key = authKey;
+                  } else if (mcpConfig.auth_type === 'bearer') {
+                    configToSave.encrypted_token = authKey;
+                  } else if (mcpConfig.auth_type === 'basic') {
+                    configToSave.password = authKey;
+                  }
+                }
+              } else {
+                configToSave = { token: authKey };
+              }
+
               userService
                 .updateTool(
                   {
@@ -458,10 +529,7 @@ export default function ToolConfig({
                     displayName: tool.displayName,
                     customName: customName,
                     description: tool.description,
-                    config:
-                      tool.name === 'api_tool'
-                        ? tool.config
-                        : { token: authKey },
+                    config: configToSave,
                     actions: 'actions' in tool ? tool.actions : [],
                     status: tool.status,
                   },
