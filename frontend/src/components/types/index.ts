@@ -22,6 +22,7 @@ export type InputProps = {
   onKeyDown?: (
     e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
   ) => void;
+  leftIcon?: React.ReactNode;
 };
 
 export type MermaidRendererProps = {

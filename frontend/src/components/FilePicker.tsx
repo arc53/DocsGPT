@@ -7,6 +7,7 @@ import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import SearchIcon from '../assets/search.svg';
+import Input from './Input';
 
 interface CloudFile {
   id: string;
@@ -361,20 +362,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
           {/* Search input */}
           <div className="mb-3">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search files and folders..."
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full px-3 py-2 pr-10 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              />
-              <button
-                className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 dark:text-gray-400"
-              >
-                <img src={SearchIcon} alt="Search" className="w-4 h-4" />
-              </button>
-            </div>
+            <Input
+              type="text"
+              placeholder="Search files and folders..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              colorVariant="silver"
+              borderVariant="thin"
+              labelBgClassName="bg-white dark:bg-charleston-green-2"
+              leftIcon={<img src={SearchIcon} alt="Search" width={16} height={16} />}
+            />
           </div>
 
           <div className="flex items-center justify-between">

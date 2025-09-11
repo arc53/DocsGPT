@@ -10,7 +10,8 @@ import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
 import WrapperModal from '../modals/WrapperModal';
-import { ActiveState, Doc } from '../models/misc';
+import { ActiveState, Doc } from '../models/misc';  
+
 import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
@@ -27,6 +28,14 @@ import {
 } from './types/ingestor';
 
 import {FilePicker}  from '../components/FilePicker';
+
+import CrawlerIcon from '../assets/crawler.svg';
+import FileUploadIcon from '../assets/file_upload.svg';
+import UrlIcon from '../assets/url.svg';
+import GithubIcon from '../assets/github.svg';
+import RedditIcon from '../assets/reddit.svg';
+import DriveIcon from '../assets/drive.svg';
+import ChevronRight from '../assets/chevron-right.svg';
 
 function Upload({
   receivedFile = [],
@@ -250,13 +259,13 @@ function Upload({
   const { t } = useTranslation();
   const setTimeoutRef = useRef<number | null>(null);
 
-  const urlOptions: { label: string; value: IngestorType }[] = [
-    { label: 'Crawler', value: 'crawler' },
-    { label: 'Link', value: 'url' },
-    { label: 'GitHub', value: 'github' },
-    { label: 'Reddit', value: 'reddit' },
-    { label: 'Google Drive', value: 'google_drive' },
-    { label: 'Upload File', value: 'local_file' },
+  const ingestorOptions: { label: string; value: IngestorType; icon: string }[] = [
+    { label: 'Upload File', value: 'local_file', icon: FileUploadIcon },
+    { label: 'Crawler', value: 'crawler', icon: CrawlerIcon },
+    { label: 'Link', value: 'url', icon: UrlIcon },
+    { label: 'GitHub', value: 'github', icon: GithubIcon },
+    { label: 'Reddit', value: 'reddit', icon: RedditIcon },
+    { label: 'Google Drive', value: 'google_drive', icon: DriveIcon },
   ];
 
   const sourceDocs = useSelector(selectSourceDocs);
@@ -546,21 +555,6 @@ function Upload({
     xhr.send(formData);
   };
 
-
-
-  
-
-      
-      
-      
-    
-
-  
-
-  
-
-  
-
   
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -652,17 +646,23 @@ function Upload({
       },
     }));
   };
-  const handleIngestorTypeChange = (type: IngestorType) => {
-    //Updates the ingestor seleced in dropdown and resets the config to the default config for that type
-    const defaultConfig = IngestorDefaultConfigs[type];
+  const handleIngestorTypeChange = (type: IngestorType | null) => {
+    if (type === null) {
+      setIngestor({
+        type: null,
+        name: '',
+        config: {},
+      });
+      setfiles([]);
+      return;
+    }
 
+    const defaultConfig = IngestorDefaultConfigs[type];
     setIngestor({
       type,
       name: defaultConfig.name,
       config: defaultConfig.config,
     });
-
-    
 
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
@@ -670,55 +670,88 @@ function Upload({
     }
   };
 
+  const renderIngestorSelection = () => {
+    return (
+      <div className="grid grid-cols-3 gap-4 w-full">
+        {ingestorOptions.map((option) => (
+          <div
+            key={option.value}
+            className={`relative flex flex-col justify-between rounded-2xl cursor-pointer w-[181px] h-[91.2px] border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] gap-[13.1px] transition-colors duration-300 ease-out ${
+              ingestor.type === option.value 
+                ? 'bg-[#7D54D1] text-white border-[#7D54D1] shadow-[0px_0px_8px_0px_#FFFFFF1A] dark:shadow-[0px_0px_8px_0px_#FFFFFF1A]' 
+                : 'bg-transparent hover:bg-[#ECECEC]/30 dark:hover:bg-[#383838]/30 border-[#D7D7D7] dark:border-[#4A4A4A] shadow-[0px_4px_40px_-3px_#0000001A]'
+            }`}
+            onClick={() => handleIngestorTypeChange(option.value as IngestorType)}
+          >
+            <div className="flex flex-col justify-between h-full">
+              <div className="w-6 h-6">
+                <img 
+                  src={option.icon} 
+                  alt={option.label} 
+                  className={`${ingestor.type === option.value ? 'filter invert' : ''} dark:filter dark:invert`}
+                />
+              </div>
+              <p className="font-inter font-semibold text-[13px] leading-[18px] self-start">
+                {option.label}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
   let view;
 
   if (progress?.type === 'UPLOAD') {
     view = <UploadProgress></UploadProgress>;
   } else if (progress?.type === 'TRAINING') {
     view = <TrainingProgress></TrainingProgress>;
-  } else {
+  }   else {
     view = (
-      <div className="flex w-full flex-col gap-4">
-        <p className="text-jet dark:text-bright-gray text-center text-2xl font-semibold">
-          {t('modals.uploadDoc.label')}
-        </p>
-        
-
+      <div className="flex w-full flex-col gap-6">
+        {!ingestor.type && (
+          <p className="text-[#18181B] dark:text-[#ECECF1] text-left font-inter font-semibold text-[20px] leading-[28px] tracking-[0.15px]">
+            Select the way to add your source
+          </p>
+        )}
         
         {activeTab && (
           <>
-            <Dropdown
-              options={urlOptions}
-              selectedValue={
-                urlOptions.find((opt) => opt.value === ingestor.type) || null
-              }
-              onSelect={(selected: { label: string; value: string }) =>
-                handleIngestorTypeChange(selected.value as IngestorType)
-              }
-              size="w-full"
-              rounded="3xl"
-              border="border"
-              placeholder="Select ingestor type"
-              placeholderClassName="text-gray-400 dark:text-silver"
-            />
-            {/* Dynamically render form fields based on schema */}
+            {!ingestor.type && renderIngestorSelection()}
+            {ingestor.type && (
+              <div className="flex flex-col gap-4">
+                <button
+                  onClick={() => handleIngestorTypeChange(null)}
+                  className="flex items-center gap-2 text-[#777777] hover:text-[#555555] w-fit"
+                >
+                  <img 
+                    src={ChevronRight} 
+                    alt="back" 
+                    className="h-3 w-3 transform rotate-180" 
+                  />
+                  <span>Back</span>
+                </button>
 
-            <Input
-              type="text"
-              colorVariant="silver"
-              value={ingestor.name}
-              onChange={(e) => {
-                setIngestor((prevState) => ({
-                  ...prevState,
-                  name: e.target.value,
-                }));
-              }}
-              borderVariant="thin"
-              placeholder="Name"
-              required={true}
-              labelBgClassName="bg-white dark:bg-charleston-green-2"
-            />
-            {renderFormFields()}
+                <Input
+                  type="text"
+                  colorVariant="silver"
+                  value={ingestor.name}
+                  onChange={(e) => {
+                    setIngestor((prevState) => ({
+                      ...prevState,
+                      name: e.target.value,
+                    }));
+                  }}
+                  borderVariant="thin"
+                  placeholder="Name"
+                  required={true}
+                  labelBgClassName="bg-white dark:bg-charleston-green-2"
+                  className="max-w-xs"
+                />
+                {renderFormFields()}
+              </div>
+            )}
+  
             {ingestor.type && IngestorFormSchemas[ingestor.type as IngestorType].some(
               (field: FormField) => field.advanced,
             ) && (
@@ -734,7 +767,7 @@ function Upload({
           </>
         )}
         <div className="flex justify-end gap-4">
-          {activeTab && (
+          {activeTab && ingestor.type && (
             <button
               onClick={() => {
                 if (!ingestor.type) return;
@@ -775,6 +808,7 @@ function Upload({
         setfiles([]);
         setModalState('INACTIVE');
       }}
+      className="w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
     >
       {view}
     </WrapperModal>
