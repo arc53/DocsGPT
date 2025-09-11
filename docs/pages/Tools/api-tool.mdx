@@ -35,6 +35,15 @@ The API Tool provides a no-code/low-code solution to make DocsGPT interact with 
     * **Query Parameters:** Specify URL query parameters, which can be static or dynamically filled by the LLM based on user input.
     * **Request Body:** Define the structure of the request body (e.g., JSON), with fields that can be static or dynamically populated by the LLM.
 
+### Proxy Support
+
+Outgoing HTTP requests from the API Tool can be routed through a proxy.
+
+- Set a proxy per-action by providing a `proxy` value in the tool configuration (advanced JSON config), or
+- Set a global environment variable `API_TOOL_PROXY` to apply to all API-based tools.
+
+If neither is set, requests go directly. See the general guidance in [Agents API – Proxy Support](/Agents/api#proxy-support).
+
 **Response Handling:**
     * The API Tool executes the request and receives the raw response from the API (typically JSON or plain text).
     * This raw response is then passed back to the LLM.

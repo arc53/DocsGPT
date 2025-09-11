@@ -29,6 +29,17 @@ the "Tools" section of the DocsGPT application settings in the user interface.
 
 DocsGPT includes a suite of pre-built tools designed to expand its capabilities out-of-the-box. Below is an overview of the currently available tools. 
 
+<Callout>
+  <p>
+    Some built-in tools perform outgoing HTTP requests (e.g., API Tool, Brave Search Tool, Read Webpage Tool, Telegram Tool, Ntfy Tool). You can route these requests through a proxy:
+
+    - Set a per-tool `proxy` value in the tool configuration (when supported), or
+    - Set a global environment variable `API_TOOL_PROXY` to apply across HTTP-based tools.
+
+    If neither is set, requests go directly.
+  </p>
+</Callout>
+
 <ToolCards
   items={[
     {
