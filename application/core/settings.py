@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         "gpt-4o-mini": 128000,
         "gpt-3.5-turbo": 4096,
         "claude-2": 1e5,
-        "gemini-2.0-flash-exp": 1e6,
+        "gemini-2.5-flash": 1e6,
     }
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False

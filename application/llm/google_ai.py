@@ -151,15 +151,8 @@ class GoogleLLM(BaseLLM):
 
             if role == "assistant":
                 role = "model"
-            elif role == "system":
-                continue
             elif role == "tool":
-                continue
-            elif role not in ["user", "model"]:
-                logging.warning(
-                    f"GoogleLLM: Converting unsupported role '{role}' to 'user'"
-                )
-                role = "user"
+                role = "model"
 
             parts = []
             if role and content is not None:

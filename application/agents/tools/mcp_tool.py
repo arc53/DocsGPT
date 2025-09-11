@@ -283,7 +283,14 @@ class MCPTool(Tool):
         """
         self._ensure_valid_session()
 
-        call_params = {"name": action_name, "arguments": kwargs}
+        # Skipping empty/None values - letting the server use defaults
+
+        cleaned_kwargs = {}
+        for key, value in kwargs.items():
+            if value == "" or value is None:
+                continue
+            cleaned_kwargs[key] = value
+        call_params = {"name": action_name, "arguments": cleaned_kwargs}
         try:
             result = self._make_mcp_request("tools/call", call_params)
             return result

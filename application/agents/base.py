@@ -142,28 +142,28 @@ class BaseAgent(ABC):
         tool_id, action_name, call_args = parser.parse_args(call)
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
-        
+
         # Check if parsing failed
         if tool_id is None or action_name is None:
             error_message = f"Error: Failed to parse LLM tool call. Tool name: {getattr(call, 'name', 'unknown')}"
             logger.error(error_message)
-            
+
             tool_call_data = {
                 "tool_name": "unknown",
                 "call_id": call_id,
-                "action_name": getattr(call, 'name', 'unknown'),
+                "action_name": getattr(call, "name", "unknown"),
                 "arguments": call_args or {},
                 "result": f"Failed to parse tool call. Invalid tool name format: {getattr(call, 'name', 'unknown')}",
             }
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return f"Failed to parse tool call.", call_id
-        
+
         # Check if tool_id exists in available tools
         if tool_id not in tools_dict:
             error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
             logger.error(error_message)
-            
+
             # Return error result
             tool_call_data = {
                 "tool_name": "unknown",
@@ -175,7 +175,7 @@ class BaseAgent(ABC):
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return f"Tool with ID {tool_id} not found.", call_id
-        
+
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
             "call_id": call_id,
