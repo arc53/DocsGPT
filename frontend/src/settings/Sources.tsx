@@ -272,27 +272,27 @@ export default function Sources({
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
- {documentToView.isNested ? (
-      documentToView.type === 'connector' ? (
-        <ConnectorTreeComponent
-          docId={documentToView.id || ''}
-          sourceName={documentToView.name}
-          onBackToDocuments={() => setDocumentToView(undefined)}
-        />
+      {documentToView.isNested ? (
+        documentToView.type === 'connector:file' ? (
+          <ConnectorTreeComponent
+            docId={documentToView.id || ''}
+            sourceName={documentToView.name}
+            onBackToDocuments={() => setDocumentToView(undefined)}
+          />
+        ) : (
+          <FileTreeComponent
+            docId={documentToView.id || ''}
+            sourceName={documentToView.name}
+            onBackToDocuments={() => setDocumentToView(undefined)}
+          />
+        )
       ) : (
-        <FileTreeComponent
-          docId={documentToView.id || ''}
-          sourceName={documentToView.name}
-          onBackToDocuments={() => setDocumentToView(undefined)}
+        <Chunks
+          documentId={documentToView.id || ''}
+          documentName={documentToView.name}
+          handleGoBack={() => setDocumentToView(undefined)}
         />
-      )
-    ) : (
-      <Chunks
-        documentId={documentToView.id || ''}
-        documentName={documentToView.name}
-        handleGoBack={() => setDocumentToView(undefined)}
-      />
-    )}
+      )}
     </div>
   ) : (
     <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
@@ -352,18 +352,17 @@ export default function Sources({
             </div>
           ) : (
             <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-2 py-4">
-            {currentDocuments.map((document, index) => {
-              const docId = document.id ? document.id.toString() : '';
+              {currentDocuments.map((document, index) => {
+                const docId = document.id ? document.id.toString() : '';
 
-              return (
-                <div key={docId} className="relative">
-                  <div
-                    className={`flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200  dark:bg-[#383838] ${
-                      activeMenuId === docId || syncMenuState.docId === docId
-                        ? 'scale-[1.05]'
-                        : 'hover:scale-[1.05]'
-                    }`}
-                  >
+                return (
+                  <div key={docId} className="relative">
+                    <div
+                      className={`flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200  dark:bg-[#383838] ${activeMenuId === docId || syncMenuState.docId === docId
+                          ? 'scale-[1.05]'
+                          : 'hover:scale-[1.05]'
+                        }`}
+                    >
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3

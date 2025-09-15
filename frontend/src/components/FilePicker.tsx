@@ -8,6 +8,15 @@ import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import SearchIcon from '../assets/search.svg';
 import Input from './Input';
+import {
+  Table,
+  TableContainer,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeader,
+  TableCell,
+} from './Table';
 
 interface CloudFile {
   id: string;
@@ -34,6 +43,20 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   token,
   initialSelectedFiles = [],
 }) => {
+  const PROVIDER_CONFIG = {
+    google_drive: {
+      displayName: 'Drive',
+      rootName: 'My Drive',
+    },
+  } as const;
+
+  const getProviderConfig = (provider: string) => {
+    return PROVIDER_CONFIG[provider as keyof typeof PROVIDER_CONFIG] || {
+      displayName: provider,
+      rootName: 'Root',
+    };
+  };
+
   const [files, setFiles] = useState<CloudFile[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>(initialSelectedFiles);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
@@ -41,29 +64,22 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [hasMoreFiles, setHasMoreFiles] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderPath, setFolderPath] = useState<Array<{id: string | null, name: string}>>([{
+  const [folderPath, setFolderPath] = useState<Array<{ id: string | null, name: string }>>([{
     id: null,
-    name: 'Drive'
+    name: getProviderConfig(provider).rootName
   }]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isFolder = (file: CloudFile) => {
     return file.isFolder ||
-           file.type === 'application/vnd.google-apps.folder' ||
-           file.type === 'folder';
-  };
-
-  const providerDisplayNames = {
-    google_drive: 'Drive',
-  };
-
-  const getConnectorDisplayName = (provider: string) => {
-    return providerDisplayNames[provider as keyof typeof providerDisplayNames] || provider;
+      file.type === 'application/vnd.google-apps.folder' ||
+      file.type === 'folder';
   };
 
   const loadCloudFiles = useCallback(
@@ -147,7 +163,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       const validateData = await validateResponse.json();
       if (validateData.success) {
-        
+        setUserEmail(validateData.user_email || 'Connected User');
         setIsConnected(true);
         setAuthError('');
 
@@ -155,9 +171,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         setNextPageToken(null);
         setHasMoreFiles(false);
         setCurrentFolderId(null);
-        setFolderPath([{id: null, name: provider === 'google_drive' ? 'My Drive' :
-          provider === 'onedrive' ? 'My OneDrive' :
-          provider === 'sharepoint' ? 'SharePoint' : 'Root'}]);
+        setFolderPath([{
+          id: null, name: getProviderConfig(provider).rootName
+        }]);
         loadCloudFiles(sessionToken, null, undefined, '');
       } else {
         removeSessionToken(provider);
@@ -273,13 +289,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   // Render authentication UI
   if (!isConnected) {
     return (
-      <div className="border border-gray-200 rounded-lg dark:border-gray-600 p-6">
+      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A] p-6">
         {authError && (
           <div className="text-red-500 text-sm mb-4 text-center">{authError}</div>
         )}
         <ConnectorAuth
           provider={provider}
           onSuccess={(data) => {
+            setUserEmail(data.user_email || 'Connected User');
             setIsConnected(true);
             setAuthError('');
 
@@ -299,15 +316,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   // Render file browser UI
   return (
-    <div>
+    <div className=''>
       {/* Connected state indicator */}
       <div className="p-3">
-        <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] text-sm">
+        <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] font-medium text-sm">
           <div className="flex items-center gap-2">
             <svg className="h-4 w-4" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
             </svg>
-            <span>Connected to {getConnectorDisplayName(provider)}</span>
+            <span>Connected as {userEmail}</span>
           </div>
           <button
             onClick={() => {
@@ -321,7 +338,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                     'Authorization': `Bearer ${token}`
                   },
                   body: JSON.stringify({ provider: provider, session_token: sessionToken })
-                }).catch(err => console.error(`Error disconnecting from ${getConnectorDisplayName(provider)}:`, err));
+                }).catch(err => console.error(`Error disconnecting from ${getProviderConfig(provider).displayName}:`, err));
               }
 
               removeSessionToken(provider);
@@ -330,146 +347,153 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               setSelectedFiles([]);
               onSelectionChange([]);
 
-              // Call the onDisconnect
               if (onDisconnect) {
                 onDisconnect();
               }
             }}
-            className="text-[#212121] hover:text-gray-700 text-xs underline"
+            className="text-[#212121] hover:text-gray-700 font-medium text-xs underline"
           >
             Disconnect
           </button>
         </div>
       </div>
 
-      <div className="border border-gray-200 rounded-lg dark:border-gray-600 mt-3">
-        <div className="p-3 border-b border-gray-200 dark:border-gray-600 rounded-t-lg">
+      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A] mt-3">
+        <div className="border-b border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
           {/* Breadcrumb navigation */}
-          <div className="flex items-center gap-1 mb-2">
-            {folderPath.map((path, index) => (
-              <div key={path.id || 'root'} className="flex items-center gap-1">
-                {index > 0 && <span className="text-gray-400">/</span>}
-                <button
-                  onClick={() => navigateBack(index)}
-                  className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
-                  disabled={index === folderPath.length - 1}
-                >
-                  {path.name}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {/* Search input */}
-          <div className="mb-3">
-            <Input
-              type="text"
-              placeholder="Search files and folders..."
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              colorVariant="silver"
-              borderVariant="thin"
-              labelBgClassName="bg-white dark:bg-charleston-green-2"
-              leftIcon={<img src={SearchIcon} alt="Search" width={16} height={16} />}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Select Files from {getConnectorDisplayName(provider)}
-            </h4>
-            <span className="text-xs text-gray-500">
-              {selectedFiles.length + selectedFolders.length > 0
-                ? `${selectedFiles.length + selectedFolders.length} item${(selectedFiles.length + selectedFolders.length) !== 1 ? 's' : ''} selected`
-                : ''
-              }
-            </span>
-          </div>
-        </div>
-
-        <div className="h-72 overflow-y-auto" ref={scrollContainerRef}>
-          {isLoading && files.length === 0 ? (
-            <div className="p-4 text-center">
-              <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                Loading files...
-              </div>
-            </div>
-          ) : files.length === 0 ? (
-            <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-              No files found in your {getConnectorDisplayName(provider)}
-            </div>
-          ) : (
-            <>
-              <div className="divide-y divide-gray-200 dark:divide-gray-600">
-                {files.map((file, index) => (
-                  <div
-                    key={`${file.id}-${index}`}
-                    className={`transition-colors ${
-                      selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                    }`}
+          <div className="px-4 pt-4 bg-[#EEE6FF78] dark:bg-[#2A262E] rounded-t-lg">
+            <div className="flex items-center gap-1 mb-2">
+              {folderPath.map((path, index) => (
+                <div key={path.id || 'root'} className="flex items-center gap-1">
+                  {index > 0 && <span className="text-gray-400">/</span>}
+                  <button
+                    onClick={() => navigateBack(index)}
+                    className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
+                    disabled={index === folderPath.length - 1}
                   >
-                    <div className="flex items-center gap-3 p-3">
-                      <div
-                        className="flex-shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleFileSelect(file.id, isFolder(file));
-                        }}
-                      >
-                        <div
-                          className="flex h-5 w-5 shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783] cursor-pointer"
-                        >
-                          {(isFolder(file) ? selectedFolders : selectedFiles).includes(file.id) && (
-                            <img
-                              src={CheckIcon}
-                              alt="Selected"
-                              className="h-4 w-4"
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div
-                        className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer hover:text-blue-600"
-                        onClick={() => {
-                          if (isFolder(file)) {
-                            handleFolderClick(file.id, file.name);
-                          } else {
-                            handleFileSelect(file.id, false);
-                          }
-                        }}
-                      >
-                        <div className="flex-shrink-0">
-                          <img
-                            src={isFolder(file) ? FolderIcon : FileIcon}
-                            alt={isFolder(file) ? "Folder" : "File"}
-                            className="h-6 w-6"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate dark:text-[#ececf1]">
-                            {file.name}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {file.size && `${formatBytes(file.size)} • `}Modified {formatDate(file.modifiedTime)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    {path.name}
+                  </button>
+                </div>
+              ))}
+            </div>
 
-              {isLoading && (
-                <div className="p-4 flex items-center justify-center border-t border-gray-100 dark:border-gray-800">
+            <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+              Select Files from {getProviderConfig(provider).displayName}
+            </div>
+
+            <div className="mb-3 max-w-md">
+              <Input
+                type="text"
+                placeholder="Search files and folders..."
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                colorVariant="silver"
+                borderVariant="thin"
+                labelBgClassName="bg-[#EEE6FF78] dark:bg-[#2A262E]"
+                leftIcon={<img src={SearchIcon} alt="Search" width={16} height={16} />}
+              />
+            </div>
+
+            {/* Selected Files Message */}
+            <div className="pb-3 text-sm text-gray-600 dark:text-gray-400">
+              {selectedFiles.length} file(s) selected
+            </div>
+          </div>
+
+          <div className="h-72">
+            <TableContainer
+              ref={scrollContainerRef}
+              height="288px"
+              className="scrollbar-thin  md:w-4xl lg:w-5xl"
+              bordered={false}
+            >
+              {isLoading && files.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
                   <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                    Loading more files...
+                    Loading files...
                   </div>
                 </div>
+              ) : files.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-sm text-gray-500 dark:text-gray-400">
+                  No files found in your {getProviderConfig(provider).displayName}
+                </div>
+              ) : (
+                <>
+                  <Table minWidth="1200px">
+                    <TableHead>
+                      <TableRow>
+                        <TableHeader width="40px"></TableHeader>
+                        <TableHeader width="60%">Name</TableHeader>
+                        <TableHeader width="20%">Last Modified</TableHeader>
+                        <TableHeader width="20%">Size</TableHeader>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {files.map((file, index) => (
+                        <TableRow
+                          key={`${file.id}-${index}`}
+                          className={selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
+                          onClick={() => {
+                            if (isFolder(file)) {
+                              handleFolderClick(file.id, file.name);
+                            } else {
+                              handleFileSelect(file.id, false);
+                            }
+                          }}
+                        >
+                          <TableCell width="40px" align="center">
+                            <div
+                              className="flex h-5 w-5 shrink-0 items-center justify-center border border-[#EEE6FF78] p-[0.5px] dark:border-[#6A6A6A] cursor-pointer mx-auto"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFileSelect(file.id, isFolder(file));
+                              }}
+                            >
+                              {(isFolder(file) ? selectedFolders : selectedFiles).includes(file.id) && (
+                                <img
+                                  src={CheckIcon}
+                                  alt="Selected"
+                                  className="h-4 w-4"
+                                />
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex-shrink-0">
+                                <img
+                                  src={isFolder(file) ? FolderIcon : FileIcon}
+                                  alt={isFolder(file) ? "Folder" : "File"}
+                                  className="h-6 w-6"
+                                />
+                              </div>
+                              <span className="truncate">{file.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {formatDate(file.modifiedTime)}
+                          </TableCell>
+                          <TableCell>
+                            {file.size ? formatBytes(file.size) : '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  {isLoading && files.length > 0 && (
+                    <div className="flex items-center justify-center p-4 border-t border-[#EEE6FF78] dark:border-[#6A6A6A]">
+                      <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                        Loading more files...
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
+            </TableContainer>
+          </div>
         </div>
       </div>
     </div>
