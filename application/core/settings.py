@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         "gpt-4o-mini": 128000,
         "gpt-3.5-turbo": 4096,
         "claude-2": 1e5,
-        "gemini-2.0-flash-exp": 1e6,
+        "gemini-2.5-flash": 1e6,
     }
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: Optional[str] = None
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
-    
+
     # PGVector vectorstore config
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
     # Milvus vectorstore config
@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     URL_STRATEGY: str = "backend"  # backend or s3
 
     JWT_SECRET_KEY: str = ""
+
+    # Encryption settings
+    ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
 
 path = Path(__file__).parent.parent.absolute()

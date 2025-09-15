@@ -92,7 +92,7 @@ export function getLocalApiKey(): string | null {
 
 export function getLocalRecentDocs(): Doc[] | null {
   const docs = localStorage.getItem('DocsGPTRecentDocs');
-  return docs ? JSON.parse(docs) as Doc[] : null;
+  return docs ? (JSON.parse(docs) as Doc[]) : null;
 }
 
 export function getLocalPrompt(): string | null {

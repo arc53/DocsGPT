@@ -25,6 +25,8 @@ from flask_restx import fields, inputs, Namespace, Resource
 from pymongo import ReturnDocument
 from werkzeug.utils import secure_filename
 
+from application.agents.tools.mcp_tool import MCPTool
+
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
 
@@ -38,6 +40,7 @@ from application.api.user.tasks import (
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.connectors.connector_creator import ConnectorCreator
+from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
 from application.utils import (
@@ -491,6 +494,7 @@ class DeleteOldIndexes(Resource):
         )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
+
         storage = StorageCreator.get_storage()
 
         try:
@@ -507,6 +511,7 @@ class DeleteOldIndexes(Resource):
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
                 )
                 vectorstore.delete_index()
+
             if "file_path" in doc and doc["file_path"]:
                 file_path = doc["file_path"]
                 if storage.is_directory(file_path):
@@ -515,6 +520,7 @@ class DeleteOldIndexes(Resource):
                         storage.delete_file(f)
                 else:
                     storage.delete_file(file_path)
+
         except FileNotFoundError:
             pass
         except Exception as err:
@@ -522,6 +528,7 @@ class DeleteOldIndexes(Resource):
                 f"Error deleting files and indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
@@ -593,6 +600,7 @@ class UploadFile(Resource):
                                             == temp_file_path
                                         ):
                                             continue
+
                                         rel_path = os.path.relpath(
                                             os.path.join(root, extracted_file), temp_dir
                                         )
@@ -617,6 +625,7 @@ class UploadFile(Resource):
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, "rb") as f:
                             storage.save_file(f, file_path)
+
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
                 [
@@ -688,6 +697,7 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Unauthorized"}), 401
             )
+
         user = decoded_token.get("sub")
         source_id = request.form.get("source_id")
         operation = request.form.get("operation")
@@ -737,6 +747,7 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Database error"}), 500
             )
+
         try:
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
@@ -793,6 +804,7 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
+
             elif operation == "remove":
                 file_paths_str = request.form.get("file_paths")
                 if not file_paths_str:
@@ -846,6 +858,7 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
+
             elif operation == "remove_directory":
                 directory_path = request.form.get("directory_path")
                 if not directory_path:
@@ -871,6 +884,7 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
+
                 full_directory_path = (
                     f"{source_file_path}/{directory_path}"
                     if directory_path
@@ -929,6 +943,7 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
+
         except Exception as err:
             error_context = f"operation={operation}, user={user}, source_id={source_id}"
             if operation == "remove_directory":
@@ -940,6 +955,7 @@ class ManageSourceFiles(Resource):
             elif operation == "add":
                 parent_dir = request.form.get("parent_dir", "")
                 error_context += f", parent_dir={parent_dir}"
+
             current_app.logger.error(
                 f"Error managing source files: {err} ({error_context})", exc_info=True
             )
@@ -1616,6 +1632,7 @@ class CreateAgent(Resource):
                         ),
                         400,
                     )
+
                 # Validate that it has either a 'schema' property or is itself a schema
 
                 if "schema" not in json_schema and "type" not in json_schema:
@@ -3625,7 +3642,60 @@ class UpdateTool(Resource):
                                 ),
                                 400,
                             )
-                update_data["config"] = data["config"]
+                tool_doc = user_tools_collection.find_one(
+                    {"_id": ObjectId(data["id"]), "user": user}
+                )
+                if tool_doc and tool_doc.get("name") == "mcp_tool":
+                    config = data["config"]
+                    existing_config = tool_doc.get("config", {})
+                    storage_config = existing_config.copy()
+
+                    storage_config.update(config)
+                    existing_credentials = {}
+                    if "encrypted_credentials" in existing_config:
+                        existing_credentials = decrypt_credentials(
+                            existing_config["encrypted_credentials"], user
+                        )
+                    auth_credentials = existing_credentials.copy()
+                    auth_type = storage_config.get("auth_type", "none")
+                    if auth_type == "api_key":
+                        if "api_key" in config and config["api_key"]:
+                            auth_credentials["api_key"] = config["api_key"]
+                        if "api_key_header" in config:
+                            auth_credentials["api_key_header"] = config[
+                                "api_key_header"
+                            ]
+                    elif auth_type == "bearer":
+                        if "bearer_token" in config and config["bearer_token"]:
+                            auth_credentials["bearer_token"] = config["bearer_token"]
+                        elif "encrypted_token" in config and config["encrypted_token"]:
+                            auth_credentials["bearer_token"] = config["encrypted_token"]
+                    elif auth_type == "basic":
+                        if "username" in config and config["username"]:
+                            auth_credentials["username"] = config["username"]
+                        if "password" in config and config["password"]:
+                            auth_credentials["password"] = config["password"]
+                    if auth_type != "none" and auth_credentials:
+                        encrypted_credentials_string = encrypt_credentials(
+                            auth_credentials, user
+                        )
+                        storage_config["encrypted_credentials"] = (
+                            encrypted_credentials_string
+                        )
+                    elif auth_type == "none":
+                        storage_config.pop("encrypted_credentials", None)
+                    for field in [
+                        "api_key",
+                        "bearer_token",
+                        "encrypted_token",
+                        "username",
+                        "password",
+                        "api_key_header",
+                    ]:
+                        storage_config.pop(field, None)
+                    update_data["config"] = storage_config
+                else:
+                    update_data["config"] = data["config"]
             if "status" in data:
                 update_data["status"] = data["status"]
             user_tools_collection.update_one(
@@ -3837,6 +3907,7 @@ class GetChunks(Resource):
                     if not (text_match or title_match):
                         continue
                 filtered_chunks.append(chunk)
+
             chunks = filtered_chunks
 
             total_chunks = len(chunks)
@@ -4027,6 +4098,7 @@ class UpdateChunk(Resource):
                     current_app.logger.warning(
                         f"Failed to delete old chunk {chunk_id}, but new chunk {new_chunk_id} was created"
                     )
+
                 return make_response(
                     jsonify(
                         {
@@ -4154,19 +4226,23 @@ class DirectoryStructure(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+
         user = decoded_token.get("sub")
         doc_id = request.args.get("id")
 
         if not doc_id:
             return make_response(jsonify({"error": "Document ID is required"}), 400)
+
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid document ID"}), 400)
+
         try:
             doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
             if not doc:
                 return make_response(
                     jsonify({"error": "Document not found or access denied"}), 404
                 )
+
             directory_structure = doc.get("directory_structure", {})
             base_path = doc.get("file_path", "")
 
@@ -4196,3 +4272,204 @@ class DirectoryStructure(Resource):
                 f"Error retrieving directory structure: {e}", exc_info=True
             )
             return make_response(jsonify({"success": False, "error": str(e)}), 500)
+
+
+@user_ns.route("/api/mcp_server/test")
+class TestMCPServerConfig(Resource):
+    @api.expect(
+        api.model(
+            "MCPServerTestModel",
+            {
+                "config": fields.Raw(
+                    required=True, description="MCP server configuration to test"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Test MCP server connection with provided configuration")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+
+        required_fields = ["config"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+        try:
+            config = data["config"]
+
+            auth_credentials = {}
+            auth_type = config.get("auth_type", "none")
+
+            if auth_type == "api_key" and "api_key" in config:
+                auth_credentials["api_key"] = config["api_key"]
+                if "api_key_header" in config:
+                    auth_credentials["api_key_header"] = config["api_key_header"]
+            elif auth_type == "bearer" and "bearer_token" in config:
+                auth_credentials["bearer_token"] = config["bearer_token"]
+            elif auth_type == "basic":
+                if "username" in config:
+                    auth_credentials["username"] = config["username"]
+                if "password" in config:
+                    auth_credentials["password"] = config["password"]
+
+            test_config = config.copy()
+            test_config["auth_credentials"] = auth_credentials
+
+            mcp_tool = MCPTool(test_config, user)
+            result = mcp_tool.test_connection()
+
+            return make_response(jsonify(result), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error testing MCP server: {e}", exc_info=True)
+            return make_response(
+                jsonify(
+                    {"success": False, "error": f"Connection test failed: {str(e)}"}
+                ),
+                500,
+            )
+
+
+@user_ns.route("/api/mcp_server/save")
+class MCPServerSave(Resource):
+    @api.expect(
+        api.model(
+            "MCPServerSaveModel",
+            {
+                "id": fields.String(
+                    required=False, description="Tool ID for updates (optional)"
+                ),
+                "displayName": fields.String(
+                    required=True, description="Display name for the MCP server"
+                ),
+                "config": fields.Raw(
+                    required=True, description="MCP server configuration"
+                ),
+                "status": fields.Boolean(
+                    required=False, default=True, description="Tool status"
+                ),
+            },
+        )
+    )
+    @api.doc(description="Create or update MCP server with automatic tool discovery")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+
+        required_fields = ["displayName", "config"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+        try:
+            config = data["config"]
+
+            auth_credentials = {}
+            auth_type = config.get("auth_type", "none")
+            if auth_type == "api_key":
+                if "api_key" in config and config["api_key"]:
+                    auth_credentials["api_key"] = config["api_key"]
+                if "api_key_header" in config:
+                    auth_credentials["api_key_header"] = config["api_key_header"]
+            elif auth_type == "bearer":
+                if "bearer_token" in config and config["bearer_token"]:
+                    auth_credentials["bearer_token"] = config["bearer_token"]
+            elif auth_type == "basic":
+                if "username" in config and config["username"]:
+                    auth_credentials["username"] = config["username"]
+                if "password" in config and config["password"]:
+                    auth_credentials["password"] = config["password"]
+            mcp_config = config.copy()
+            mcp_config["auth_credentials"] = auth_credentials
+
+            if auth_type == "none" or auth_credentials:
+                mcp_tool = MCPTool(mcp_config, user)
+                mcp_tool.discover_tools()
+                actions_metadata = mcp_tool.get_actions_metadata()
+            else:
+                raise Exception(
+                    "No valid credentials provided for the selected authentication type"
+                )
+
+            storage_config = config.copy()
+            if auth_credentials:
+                encrypted_credentials_string = encrypt_credentials(
+                    auth_credentials, user
+                )
+                storage_config["encrypted_credentials"] = encrypted_credentials_string
+
+            for field in [
+                "api_key",
+                "bearer_token",
+                "username",
+                "password",
+                "api_key_header",
+            ]:
+                storage_config.pop(field, None)
+            transformed_actions = []
+            for action in actions_metadata:
+                action["active"] = True
+                if "parameters" in action:
+                    if "properties" in action["parameters"]:
+                        for param_name, param_details in action["parameters"][
+                            "properties"
+                        ].items():
+                            param_details["filled_by_llm"] = True
+                            param_details["value"] = ""
+                transformed_actions.append(action)
+            tool_data = {
+                "name": "mcp_tool",
+                "displayName": data["displayName"],
+                "customName": data["displayName"],
+                "description": f"MCP Server: {storage_config.get('server_url', 'Unknown')}",
+                "config": storage_config,
+                "actions": transformed_actions,
+                "status": data.get("status", True),
+                "user": user,
+            }
+
+            tool_id = data.get("id")
+            if tool_id:
+                result = user_tools_collection.update_one(
+                    {"_id": ObjectId(tool_id), "user": user, "name": "mcp_tool"},
+                    {"$set": {k: v for k, v in tool_data.items() if k != "user"}},
+                )
+                if result.matched_count == 0:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "Tool not found or access denied",
+                            }
+                        ),
+                        404,
+                    )
+                response_data = {
+                    "success": True,
+                    "id": tool_id,
+                    "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
+                    "tools_count": len(transformed_actions),
+                }
+            else:
+                result = user_tools_collection.insert_one(tool_data)
+                tool_id = str(result.inserted_id)
+                response_data = {
+                    "success": True,
+                    "id": tool_id,
+                    "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
+                    "tools_count": len(transformed_actions),
+                }
+            return make_response(jsonify(response_data), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error saving MCP server: {e}", exc_info=True)
+            return make_response(
+                jsonify(
+                    {"success": False, "error": f"Failed to save MCP server: {str(e)}"}
+                ),
+                500,
+            )

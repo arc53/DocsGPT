@@ -108,6 +108,10 @@ const userService = {
     apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
   manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
+  testMCPConnection: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
+  saveMCPServer: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
   syncConnector: (
     docId: string,
     provider: string,
