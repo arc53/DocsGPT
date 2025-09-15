@@ -32,13 +32,15 @@ from application.api import api
 
 from application.api.user.tasks import (
     ingest,
+    ingest_connector_task,
     ingest_remote,
     process_agent_webhook,
     store_attachment,
 )
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.security.encryption import encrypt_credentials, decrypt_credentials
+from application.parser.connectors.connector_creator import ConnectorCreator
+from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.storage.storage_creator import StorageCreator
 from application.tts.google_tts import GoogleTTS
 from application.utils import (
@@ -76,7 +78,6 @@ try:
     users_collection.create_index("user_id", unique=True)
 except Exception as e:
     print("Error creating indexes:", e)
-
 user = Blueprint("user", __name__)
 user_ns = Namespace("user", description="User related operations", path="/")
 api.add_namespace(user_ns)
@@ -129,11 +130,9 @@ def ensure_user_doc(user_id):
         updates["agent_preferences.pinned"] = []
     if "shared_with_me" not in prefs:
         updates["agent_preferences.shared_with_me"] = []
-
     if updates:
         users_collection.update_one({"user_id": user_id}, {"$set": updates})
         user_doc = users_collection.find_one({"user_id": user_id})
-
     return user_doc
 
 
@@ -185,7 +184,6 @@ def handle_image_upload(
                     jsonify({"success": False, "message": "Image upload failed"}),
                     400,
                 )
-
     return image_url, None
 
 
@@ -299,8 +297,8 @@ class GetSingleConversation(Resource):
             )
             if not conversation:
                 return make_response(jsonify({"status": "not found"}), 404)
-
             # Process queries to include attachment names
+
             queries = conversation["queries"]
             for query in queries:
                 if "attachments" in query and query["attachments"]:
@@ -501,6 +499,7 @@ class DeleteOldIndexes(Resource):
 
         try:
             # Delete vector index
+
             if settings.VECTOR_STORE == "faiss":
                 index_path = f"indexes/{str(doc['_id'])}"
                 if storage.file_exists(f"{index_path}/index.faiss"):
@@ -571,6 +570,7 @@ class UploadFile(Resource):
         job_name = request.form["name"]
 
         # Create safe versions for filesystem operations
+
         safe_user = safe_filename(user)
         dir_name = safe_filename(job_name)
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
@@ -592,6 +592,7 @@ class UploadFile(Resource):
                                 zip_ref.extractall(path=temp_dir)
 
                                 # Walk through extracted files and upload them
+
                                 for root, _, files in os.walk(temp_dir):
                                     for extracted_file in files:
                                         if (
@@ -614,11 +615,13 @@ class UploadFile(Resource):
                                 f"Error extracting zip: {e}", exc_info=True
                             )
                             # If zip extraction fails, save the original zip file
+
                             file_path = f"{base_path}/{safe_file}"
                             with open(temp_file_path, "rb") as f:
                                 storage.save_file(f, file_path)
                     else:
                         # For non-zip files, save directly
+
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, "rb") as f:
                             storage.save_file(f, file_path)
@@ -709,7 +712,6 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
-
         if operation not in ["add", "remove", "remove_directory"]:
             return make_response(
                 jsonify(
@@ -720,14 +722,12 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
-
         try:
             ObjectId(source_id)
         except Exception:
             return make_response(
                 jsonify({"success": False, "message": "Invalid source ID format"}), 400
             )
-
         try:
             source = sources_collection.find_one(
                 {"_id": ObjectId(source_id), "user": user}
@@ -760,7 +760,6 @@ class ManageSourceFiles(Resource):
                     ),
                     400,
                 )
-
             if operation == "add":
                 files = request.files.getlist("file")
                 if not files or all(file.filename == "" for file in files):
@@ -773,23 +772,22 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-
                 added_files = []
 
                 target_dir = source_file_path
                 if parent_dir:
                     target_dir = f"{source_file_path}/{parent_dir}"
-
                 for file in files:
                     if file.filename:
                         safe_filename_str = safe_filename(file.filename)
                         file_path = f"{target_dir}/{safe_filename_str}"
 
                         # Save file to storage
+
                         storage.save_file(file, file_path)
                         added_files.append(safe_filename_str)
-
                 # Trigger re-ingestion pipeline
+
                 from application.api.user.tasks import reingest_source_task
 
                 task = reingest_source_task.delay(source_id=source_id, user=user)
@@ -819,7 +817,6 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-
                 try:
                     file_paths = (
                         json.loads(file_paths_str)
@@ -833,18 +830,19 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-
                 # Remove files from storage and directory structure
+
                 removed_files = []
                 for file_path in file_paths:
                     full_path = f"{source_file_path}/{file_path}"
 
                     # Remove from storage
+
                     if storage.file_exists(full_path):
                         storage.delete_file(full_path)
                         removed_files.append(file_path)
-
                 # Trigger re-ingestion pipeline
+
                 from application.api.user.tasks import reingest_source_task
 
                 task = reingest_source_task.delay(source_id=source_id, user=user)
@@ -873,8 +871,8 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-
                 # Validate directory path (prevent path traversal)
+
                 if directory_path.startswith("/") or ".." in directory_path:
                     current_app.logger.warning(
                         f"Invalid directory path attempted for removal. "
@@ -908,7 +906,6 @@ class ManageSourceFiles(Resource):
                         ),
                         404,
                     )
-
                 success = storage.remove_directory(full_directory_path)
 
                 if not success:
@@ -923,7 +920,6 @@ class ManageSourceFiles(Resource):
                         ),
                         500,
                     )
-
                 current_app.logger.info(
                     f"Successfully removed directory. "
                     f"User: {user}, Source ID: {source_id}, Directory path: {directory_path}, "
@@ -931,6 +927,7 @@ class ManageSourceFiles(Resource):
                 )
 
                 # Trigger re-ingestion pipeline
+
                 from application.api.user.tasks import reingest_source_task
 
                 task = reingest_source_task.delay(source_id=source_id, user=user)
@@ -1005,6 +1002,50 @@ class UploadRemote(Resource):
                 source_data = config.get("url")
             elif data["source"] == "reddit":
                 source_data = config
+            elif data["source"] in ConnectorCreator.get_supported_connectors():
+                session_token = config.get("session_token")
+                if not session_token:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": f"Missing session_token in {data['source']} configuration",
+                            }
+                        ),
+                        400,
+                    )
+                # Process file_ids
+
+                file_ids = config.get("file_ids", [])
+                if isinstance(file_ids, str):
+                    file_ids = [id.strip() for id in file_ids.split(",") if id.strip()]
+                elif not isinstance(file_ids, list):
+                    file_ids = []
+                # Process folder_ids
+
+                folder_ids = config.get("folder_ids", [])
+                if isinstance(folder_ids, str):
+                    folder_ids = [
+                        id.strip() for id in folder_ids.split(",") if id.strip()
+                    ]
+                elif not isinstance(folder_ids, list):
+                    folder_ids = []
+                config["file_ids"] = file_ids
+                config["folder_ids"] = folder_ids
+
+                task = ingest_connector_task.delay(
+                    job_name=data["name"],
+                    user=decoded_token.get("sub"),
+                    source_type=data["source"],
+                    session_token=session_token,
+                    file_ids=file_ids,
+                    folder_ids=folder_ids,
+                    recursive=config.get("recursive", False),
+                    retriever=config.get("retriever", "classic"),
+                )
+                return make_response(
+                    jsonify({"success": True, "task_id": task.id}), 200
+                )
             task = ingest_remote.delay(
                 source_data=source_data,
                 job_name=data["name"],
@@ -1113,6 +1154,7 @@ class PaginatedSources(Resource):
                     "retriever": doc.get("retriever", "classic"),
                     "syncFrequency": doc.get("sync_frequency", ""),
                     "isNested": bool(doc.get("directory_structure")),
+                    "type": doc.get("type", "file"),
                 }
                 paginated_docs.append(doc_data)
             response = {
@@ -1161,6 +1203,9 @@ class CombinedJson(Resource):
                         "retriever": index.get("retriever", "classic"),
                         "syncFrequency": index.get("sync_frequency", ""),
                         "is_nested": bool(index.get("directory_structure")),
+                        "type": index.get(
+                            "type", "file"
+                        ),  # Add type field with default "file"
                     }
                 )
         except Exception as err:
@@ -1376,17 +1421,14 @@ class GetAgent(Resource):
     def get(self):
         if not (decoded_token := request.decoded_token):
             return {"success": False}, 401
-
         if not (agent_id := request.args.get("id")):
             return {"success": False, "message": "ID required"}, 400
-
         try:
             agent = agents_collection.find_one(
                 {"_id": ObjectId(agent_id), "user": decoded_token["sub"]}
             )
             if not agent:
                 return {"status": "Not found"}, 404
-
             data = {
                 "id": str(agent["_id"]),
                 "name": agent["name"],
@@ -1400,6 +1442,16 @@ class GetAgent(Resource):
                     and (source_doc := db.dereference(agent.get("source")))
                     else ""
                 ),
+                "sources": [
+                    (
+                        str(db.dereference(source_ref)["_id"])
+                        if isinstance(source_ref, DBRef) and db.dereference(source_ref)
+                        else source_ref
+                    )
+                    for source_ref in agent.get("sources", [])
+                    if (isinstance(source_ref, DBRef) and db.dereference(source_ref))
+                    or source_ref == "default"
+                ],
                 "chunks": agent["chunks"],
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent.get("prompt_id", ""),
@@ -1422,7 +1474,6 @@ class GetAgent(Resource):
                 "shared_token": agent.get("shared_token", ""),
             }
             return make_response(jsonify(data), 200)
-
         except Exception as e:
             current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)
             return {"success": False}, 400
@@ -1434,7 +1485,6 @@ class GetAgents(Resource):
     def get(self):
         if not (decoded_token := request.decoded_token):
             return {"success": False}, 401
-
         user = decoded_token.get("sub")
         try:
             user_doc = ensure_user_doc(user)
@@ -1453,8 +1503,24 @@ class GetAgents(Resource):
                         str(source_doc["_id"])
                         if isinstance(agent.get("source"), DBRef)
                         and (source_doc := db.dereference(agent.get("source")))
-                        else ""
+                        else (
+                            agent.get("source", "")
+                            if agent.get("source") == "default"
+                            else ""
+                        )
                     ),
+                    "sources": [
+                        (
+                            source_ref
+                            if source_ref == "default"
+                            else str(db.dereference(source_ref)["_id"])
+                        )
+                        for source_ref in agent.get("sources", [])
+                        if source_ref == "default"
+                        or (
+                            isinstance(source_ref, DBRef) and db.dereference(source_ref)
+                        )
+                    ],
                     "chunks": agent["chunks"],
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
@@ -1497,7 +1563,14 @@ class CreateAgent(Resource):
             "image": fields.Raw(
                 required=False, description="Image file upload", type="file"
             ),
-            "source": fields.String(required=True, description="Source ID"),
+            "source": fields.String(
+                required=False, description="Source ID (legacy single source)"
+            ),
+            "sources": fields.List(
+                fields.String,
+                required=False,
+                description="List of source identifiers for multiple sources",
+            ),
             "chunks": fields.Integer(required=True, description="Chunks count"),
             "retriever": fields.String(required=True, description="Retriever ID"),
             "prompt_id": fields.String(required=True, description="Prompt ID"),
@@ -1530,6 +1603,11 @@ class CreateAgent(Resource):
                     data["tools"] = json.loads(data["tools"])
                 except json.JSONDecodeError:
                     data["tools"] = []
+            if "sources" in data:
+                try:
+                    data["sources"] = json.loads(data["sources"])
+                except json.JSONDecodeError:
+                    data["sources"] = []
             if "json_schema" in data:
                 try:
                     data["json_schema"] = json.loads(data["json_schema"])
@@ -1538,9 +1616,11 @@ class CreateAgent(Resource):
         print(f"Received data: {data}")
 
         # Validate JSON schema if provided
+
         if data.get("json_schema"):
             try:
                 # Basic validation - ensure it's a valid JSON structure
+
                 json_schema = data.get("json_schema")
                 if not isinstance(json_schema, dict):
                     return make_response(
@@ -1554,6 +1634,7 @@ class CreateAgent(Resource):
                     )
 
                 # Validate that it has either a 'schema' property or is itself a schema
+
                 if "schema" not in json_schema and "type" not in json_schema:
                     return make_response(
                         jsonify(
@@ -1571,7 +1652,6 @@ class CreateAgent(Resource):
                     ),
                     400,
                 )
-
         if data.get("status") not in ["draft", "published"]:
             return make_response(
                 jsonify(
@@ -1582,17 +1662,27 @@ class CreateAgent(Resource):
                 ),
                 400,
             )
-
         if data.get("status") == "published":
             required_fields = [
                 "name",
                 "description",
-                "source",
                 "chunks",
                 "retriever",
                 "prompt_id",
                 "agent_type",
             ]
+            # Require either source or sources (but not both)
+
+            if not data.get("source") and not data.get("sources"):
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Either 'source' or 'sources' field is required for published agents",
+                        }
+                    ),
+                    400,
+                )
             validate_fields = ["name", "description", "prompt_id", "agent_type"]
         else:
             required_fields = ["name"]
@@ -1603,25 +1693,37 @@ class CreateAgent(Resource):
             return missing_fields
         if invalid_fields:
             return invalid_fields
-
         image_url, error = handle_image_upload(request, "", user, storage)
         if error:
             return make_response(
                 jsonify({"success": False, "message": "Image upload failed"}), 400
             )
-
         try:
             key = str(uuid.uuid4()) if data.get("status") == "published" else ""
+
+            sources_list = []
+            if data.get("sources") and len(data.get("sources", [])) > 0:
+                for source_id in data.get("sources", []):
+                    if source_id == "default":
+                        sources_list.append("default")
+                    elif ObjectId.is_valid(source_id):
+                        sources_list.append(DBRef("sources", ObjectId(source_id)))
+                source_field = ""
+            else:
+                source_value = data.get("source", "")
+                if source_value == "default":
+                    source_field = "default"
+                elif ObjectId.is_valid(source_value):
+                    source_field = DBRef("sources", ObjectId(source_value))
+                else:
+                    source_field = ""
             new_agent = {
                 "user": user,
                 "name": data.get("name"),
                 "description": data.get("description", ""),
                 "image": image_url,
-                "source": (
-                    DBRef("sources", ObjectId(data.get("source")))
-                    if ObjectId.is_valid(data.get("source"))
-                    else ""
-                ),
+                "source": source_field,
+                "sources": sources_list,
                 "chunks": data.get("chunks", ""),
                 "retriever": data.get("retriever", ""),
                 "prompt_id": data.get("prompt_id", ""),
@@ -1636,7 +1738,11 @@ class CreateAgent(Resource):
             }
             if new_agent["chunks"] == "":
                 new_agent["chunks"] = "0"
-            if new_agent["source"] == "" and new_agent["retriever"] == "":
+            if (
+                new_agent["source"] == ""
+                and new_agent["retriever"] == ""
+                and not new_agent["sources"]
+            ):
                 new_agent["retriever"] = "classic"
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
@@ -1658,7 +1764,14 @@ class UpdateAgent(Resource):
             "image": fields.String(
                 required=False, description="New image URL or identifier"
             ),
-            "source": fields.String(required=True, description="Source ID"),
+            "source": fields.String(
+                required=False, description="Source ID (legacy single source)"
+            ),
+            "sources": fields.List(
+                fields.String,
+                required=False,
+                description="List of source identifiers for multiple sources",
+            ),
             "chunks": fields.Integer(required=True, description="Chunks count"),
             "retriever": fields.String(required=True, description="Retriever ID"),
             "prompt_id": fields.String(required=True, description="Prompt ID"),
@@ -1691,12 +1804,16 @@ class UpdateAgent(Resource):
                     data["tools"] = json.loads(data["tools"])
                 except json.JSONDecodeError:
                     data["tools"] = []
+            if "sources" in data:
+                try:
+                    data["sources"] = json.loads(data["sources"])
+                except json.JSONDecodeError:
+                    data["sources"] = []
             if "json_schema" in data:
                 try:
                     data["json_schema"] = json.loads(data["json_schema"])
                 except json.JSONDecodeError:
                     data["json_schema"] = None
-
         if not ObjectId.is_valid(agent_id):
             return make_response(
                 jsonify({"success": False, "message": "Invalid agent ID format"}), 400
@@ -1720,7 +1837,6 @@ class UpdateAgent(Resource):
                 ),
                 404,
             )
-
         image_url, error = handle_image_upload(
             request, existing_agent.get("image", ""), user, storage
         )
@@ -1728,13 +1844,13 @@ class UpdateAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Image upload failed"}), 400
             )
-
         update_fields = {}
         allowed_fields = [
             "name",
             "description",
             "image",
             "source",
+            "sources",
             "chunks",
             "retriever",
             "prompt_id",
@@ -1758,7 +1874,11 @@ class UpdateAgent(Resource):
                     update_fields[field] = new_status
                 elif field == "source":
                     source_id = data.get("source")
-                    if source_id and ObjectId.is_valid(source_id):
+                    if source_id == "default":
+                        # Handle special "default" source
+
+                        update_fields[field] = "default"
+                    elif source_id and ObjectId.is_valid(source_id):
                         update_fields[field] = DBRef("sources", ObjectId(source_id))
                     elif source_id:
                         return make_response(
@@ -1772,6 +1892,30 @@ class UpdateAgent(Resource):
                         )
                     else:
                         update_fields[field] = ""
+                elif field == "sources":
+                    sources_list = data.get("sources", [])
+                    if sources_list and isinstance(sources_list, list):
+                        valid_sources = []
+                        for source_id in sources_list:
+                            if source_id == "default":
+                                valid_sources.append("default")
+                            elif ObjectId.is_valid(source_id):
+                                valid_sources.append(
+                                    DBRef("sources", ObjectId(source_id))
+                                )
+                            else:
+                                return make_response(
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "message": f"Invalid source ID format: {source_id}",
+                                        }
+                                    ),
+                                    400,
+                                )
+                        update_fields[field] = valid_sources
+                    else:
+                        update_fields[field] = []
                 elif field == "chunks":
                     chunks_value = data.get("chunks")
                     if chunks_value == "":
@@ -1837,7 +1981,6 @@ class UpdateAgent(Resource):
                     ),
                     400,
                 )
-
             if not existing_agent.get("key"):
                 newly_generated_key = str(uuid.uuid4())
                 update_fields["key"] = newly_generated_key
@@ -1924,7 +2067,6 @@ class PinnedAgents(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         user_id = decoded_token.get("sub")
 
         try:
@@ -1933,7 +2075,6 @@ class PinnedAgents(Resource):
 
             if not pinned_ids:
                 return make_response(jsonify([]), 200)
-
             pinned_object_ids = [ObjectId(agent_id) for agent_id in pinned_ids]
 
             pinned_agents_cursor = agents_collection.find(
@@ -1943,6 +2084,7 @@ class PinnedAgents(Resource):
             existing_ids = {str(agent["_id"]) for agent in pinned_agents}
 
             # Clean up any stale pinned IDs
+
             stale_ids = [
                 agent_id for agent_id in pinned_ids if agent_id not in existing_ids
             ]
@@ -1951,7 +2093,6 @@ class PinnedAgents(Resource):
                     {"user_id": user_id},
                     {"$pullAll": {"agent_preferences.pinned": stale_ids}},
                 )
-
             list_pinned_agents = [
                 {
                     "id": str(agent["_id"]),
@@ -1988,11 +2129,9 @@ class PinnedAgents(Resource):
                 for agent in pinned_agents
                 if "source" in agent or "retriever" in agent
             ]
-
         except Exception as err:
             current_app.logger.error(f"Error retrieving pinned agents: {err}")
             return make_response(jsonify({"success": False}), 400)
-
         return make_response(jsonify(list_pinned_agents), 200)
 
 
@@ -2056,7 +2195,6 @@ class RemoveSharedAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
-
         try:
             agent = agents_collection.find_one(
                 {"_id": ObjectId(agent_id), "shared_publicly": True}
@@ -2066,7 +2204,6 @@ class RemoveSharedAgent(Resource):
                     jsonify({"success": False, "message": "Shared agent not found"}),
                     404,
                 )
-
             ensure_user_doc(user_id)
             users_collection.update_one(
                 {"user_id": user_id},
@@ -2079,7 +2216,6 @@ class RemoveSharedAgent(Resource):
             )
 
             return make_response(jsonify({"success": True, "action": "removed"}), 200)
-
         except Exception as err:
             current_app.logger.error(f"Error removing shared agent: {err}")
             return make_response(
@@ -2102,7 +2238,6 @@ class SharedAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Token or ID is required"}), 400
             )
-
         try:
             query = {
                 "shared_publicly": True,
@@ -2114,7 +2249,6 @@ class SharedAgent(Resource):
                     jsonify({"success": False, "message": "Shared agent not found"}),
                     404,
                 )
-
             agent_id = str(shared_agent["_id"])
             data = {
                 "id": agent_id,
@@ -2154,7 +2288,6 @@ class SharedAgent(Resource):
                     if tool_data:
                         enriched_tools.append(tool_data.get("name", ""))
                 data["tools"] = enriched_tools
-
             decoded_token = getattr(request, "decoded_token", None)
             if decoded_token:
                 user_id = decoded_token.get("sub")
@@ -2166,9 +2299,7 @@ class SharedAgent(Resource):
                         {"user_id": user_id},
                         {"$addToSet": {"agent_preferences.shared_with_me": agent_id}},
                     )
-
             return make_response(jsonify(data), 200)
-
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
             return make_response(jsonify({"success": False}), 400)
@@ -2202,7 +2333,6 @@ class SharedAgents(Resource):
                     {"user_id": user_id},
                     {"$pullAll": {"agent_preferences.shared_with_me": stale_ids}},
                 )
-
             pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
 
             list_shared_agents = [
@@ -2229,7 +2359,6 @@ class SharedAgents(Resource):
             ]
 
             return make_response(jsonify(list_shared_agents), 200)
-
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agents: {err}")
             return make_response(jsonify({"success": False}), 400)
@@ -3762,20 +3891,21 @@ class GetChunks(Resource):
                 metadata = chunk.get("metadata", {})
 
                 # Filter by path if provided
+
                 if path:
                     chunk_source = metadata.get("source", "")
                     # Check if the chunk's source matches the requested path
+
                     if not chunk_source or not chunk_source.endswith(path):
                         continue
-
                 # Filter by search term if provided
+
                 if search_term:
                     text_match = search_term in chunk.get("text", "").lower()
                     title_match = search_term in metadata.get("title", "").lower()
 
                     if not (text_match or title_match):
                         continue
-
                 filtered_chunks.append(chunk)
 
             chunks = filtered_chunks
@@ -3937,7 +4067,6 @@ class UpdateChunk(Resource):
             if metadata is None:
                 metadata = {}
             metadata["token_count"] = token_count
-
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
@@ -3952,7 +4081,6 @@ class UpdateChunk(Resource):
             existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
             if not existing_chunk:
                 return make_response(jsonify({"error": "Chunk not found"}), 404)
-
             new_text = text if text is not None else existing_chunk["text"]
 
             if metadata is not None:
@@ -3960,10 +4088,8 @@ class UpdateChunk(Resource):
                 new_metadata.update(metadata)
             else:
                 new_metadata = existing_chunk["metadata"].copy()
-
             if text is not None:
                 new_metadata["token_count"] = num_tokens_from_string(new_text)
-
             try:
                 new_chunk_id = store.add_chunk(new_text, new_metadata)
 
@@ -4019,7 +4145,6 @@ class StoreAttachment(Resource):
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
             )
-
         user = None
         if decoded_token:
             user = safe_filename(decoded_token.get("sub"))
@@ -4034,7 +4159,6 @@ class StoreAttachment(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Authentication required"}), 401
             )
-
         try:
             attachment_id = ObjectId()
             original_filename = safe_filename(os.path.basename(file.filename))
@@ -4076,7 +4200,6 @@ class ServeImage(Resource):
             content_type = f"image/{extension}"
             if extension == "jpg":
                 content_type = "image/jpeg"
-
             response = make_response(file_obj.read())
             response.headers.set("Content-Type", content_type)
             response.headers.set("Cache-Control", "max-age=86400")
@@ -4121,18 +4244,29 @@ class DirectoryStructure(Resource):
                 )
 
             directory_structure = doc.get("directory_structure", {})
+            base_path = doc.get("file_path", "")
 
+            provider = None
+            remote_data = doc.get("remote_data")
+            try:
+                if isinstance(remote_data, str) and remote_data:
+                    remote_data_obj = json.loads(remote_data)
+                    provider = remote_data_obj.get("provider")
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to parse remote_data for doc {doc_id}: {e}"
+                )
             return make_response(
                 jsonify(
                     {
                         "success": True,
                         "directory_structure": directory_structure,
-                        "base_path": doc.get("file_path", ""),
+                        "base_path": base_path,
+                        "provider": provider,
                     }
                 ),
                 200,
             )
-
         except Exception as e:
             current_app.logger.error(
                 f"Error retrieving directory structure: {e}", exc_info=True

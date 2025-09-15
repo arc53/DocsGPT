@@ -6,6 +6,7 @@ import os
 import shutil
 import string
 import tempfile
+from typing import Any, Dict
 import zipfile
 
 from collections import Counter
@@ -21,6 +22,7 @@ from application.api.answer.services.stream_processor import get_prompt
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.chunking import Chunker
+from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import embed_and_store_documents
 from application.parser.file.bulk import SimpleDirectoryReader
 from application.parser.remote.remote_creator import RemoteCreator
@@ -649,8 +651,11 @@ def remote_worker(
             "id": str(id),
             "type": loader,
             "remote_data": source_data,
-            "sync_frequency": sync_frequency,
+            "sync_frequency": sync_frequency
         }
+
+        if operation_mode == "sync":
+            file_data["last_sync"] = datetime.datetime.now()
         upload_index(full_path, file_data)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
@@ -707,7 +712,7 @@ def sync_worker(self, frequency):
                 self, source_data, name, user, source_type, frequency, retriever, doc_id
             )
             sync_counts["total_sync_count"] += 1
-            sync_counts[
+            sync_counts[ 
                 "sync_success" if resp["status"] == "success" else "sync_failure"
             ] += 1
     return {
@@ -744,7 +749,7 @@ def attachment_worker(self, file_info, user):
                 input_files=[local_path], exclude_hidden=True, errors="ignore"
             )
             .load_data()[0]
-            .text,
+            .text, 
         )
         
         
@@ -835,3 +840,174 @@ def agent_webhook_worker(self, agent_id, payload):
             f"Webhook processed for agent {agent_id}", extra={"agent_id": agent_id}
         )
         return {"status": "success", "result": result}
+
+
+def ingest_connector(
+    self,
+    job_name: str,
+    user: str,
+    source_type: str,
+    session_token=None,
+    file_ids=None,
+    folder_ids=None,
+    recursive=True,
+    retriever: str = "classic",
+    operation_mode: str = "upload",
+    doc_id=None,
+    sync_frequency: str = "never",
+) -> Dict[str, Any]:
+    """
+    Ingestion for internal knowledge bases (GoogleDrive, etc.).
+
+    Args:
+        job_name: Name of the ingestion job
+        user: User identifier
+        source_type: Type of remote source ("google_drive", "dropbox", etc.)
+        session_token: Authentication token for the service
+        file_ids: List of file IDs to download
+        folder_ids: List of folder IDs to download
+        recursive: Whether to recursively download folders
+        retriever: Type of retriever to use
+        operation_mode: "upload" for initial ingestion, "sync" for incremental sync
+        doc_id: Document ID for sync operations (required when operation_mode="sync")
+        sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
+    """
+    logging.info(f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}")
+    self.update_state(state="PROGRESS", meta={"current": 1})
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            # Step 1: Initialize the appropriate loader
+            self.update_state(state="PROGRESS", meta={"current": 10, "status": "Initializing connector"})
+
+            if not session_token:
+                raise ValueError(f"{source_type} connector requires session_token")
+
+            if not ConnectorCreator.is_supported(source_type):
+                raise ValueError(f"Unsupported connector type: {source_type}. Supported types: {ConnectorCreator.get_supported_connectors()}")
+
+            remote_loader = ConnectorCreator.create_connector(source_type, session_token)
+
+            # Create a clean config for storage
+            api_source_config = {
+                "file_ids": file_ids or [],
+                "folder_ids": folder_ids or [],
+                "recursive": recursive
+            }
+
+            # Step 2: Download files to temp directory
+            self.update_state(state="PROGRESS", meta={"current": 20, "status": "Downloading files"})
+            download_info = remote_loader.download_to_directory(
+                temp_dir,
+                api_source_config
+            )
+            
+            if download_info.get("empty_result", False) or not download_info.get("files_downloaded", 0):
+                logging.warning(f"No files were downloaded from {source_type}")
+                # Create empty result directly instead of calling a separate method
+                return {
+                    "name": job_name,
+                    "user": user,
+                    "tokens": 0,
+                    "type": source_type,
+                    "source_config": api_source_config,
+                    "directory_structure": "{}",
+                }
+            
+            # Step 3: Use SimpleDirectoryReader to process downloaded files
+            self.update_state(state="PROGRESS", meta={"current": 40, "status": "Processing files"})
+            reader = SimpleDirectoryReader(
+                input_dir=temp_dir,
+                recursive=True,
+                required_exts=[
+                    ".rst", ".md", ".pdf", ".txt", ".docx", ".csv", ".epub",
+                    ".html", ".mdx", ".json", ".xlsx", ".pptx", ".png",
+                    ".jpg", ".jpeg",
+                ],
+                exclude_hidden=True,
+                file_metadata=metadata_from_filename,
+            )
+            raw_docs = reader.load_data()
+            directory_structure = getattr(reader, 'directory_structure', {})
+
+
+            
+            # Step 4: Process documents (chunking, embedding, etc.)
+            self.update_state(state="PROGRESS", meta={"current": 60, "status": "Processing documents"})
+            
+            chunker = Chunker(
+                chunking_strategy="classic_chunk",
+                max_tokens=MAX_TOKENS,
+                min_tokens=MIN_TOKENS,
+                duplicate_headers=False,
+            )
+            raw_docs = chunker.chunk(documents=raw_docs)
+            
+            # Preserve source information in document metadata
+            for doc in raw_docs:
+                if hasattr(doc, 'extra_info') and doc.extra_info:
+                    source = doc.extra_info.get('source')
+                    if source and os.path.isabs(source):
+                        # Convert absolute path to relative path
+                        doc.extra_info['source'] = os.path.relpath(source, start=temp_dir)
+            
+            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            
+            if operation_mode == "upload":
+                id = ObjectId()
+            elif operation_mode == "sync":
+                if not doc_id or not ObjectId.is_valid(doc_id):
+                    logging.error("Invalid doc_id provided for sync operation: %s", doc_id)
+                    raise ValueError("doc_id must be provided for sync operation.")
+                id = ObjectId(doc_id)
+            else:
+                raise ValueError(f"Invalid operation_mode: {operation_mode}")
+
+            vector_store_path = os.path.join(temp_dir, "vector_store")
+            os.makedirs(vector_store_path, exist_ok=True)
+
+            self.update_state(state="PROGRESS", meta={"current": 80, "status": "Storing documents"})
+            embed_and_store_documents(docs, vector_store_path, id, self)
+
+            tokens = count_tokens_docs(docs)
+
+            # Step 6: Upload index files
+            file_data = {
+                "user": user,
+                "name": job_name,
+                "tokens": tokens,
+                "retriever": retriever,
+                "id": str(id),
+                "type": "connector",
+                "remote_data": json.dumps({
+                    "provider": source_type,
+                    **api_source_config
+                }),
+                "directory_structure": json.dumps(directory_structure),
+                "sync_frequency": sync_frequency 
+            }
+
+            if operation_mode == "sync":
+                file_data["last_sync"] = datetime.datetime.now()
+            else:
+                file_data["last_sync"] = datetime.datetime.now()
+
+            upload_index(vector_store_path, file_data)
+
+            # Ensure we mark the task as complete
+            self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
+
+            logging.info(f"Remote ingestion completed: {job_name}")
+
+            return {
+                "user": user,
+                "name": job_name,
+                "tokens": tokens,
+                "type": source_type,
+                "id": str(id),
+                "status": "complete"
+            }
+            
+        except Exception as e:
+            logging.error(f"Error during remote ingestion: {e}", exc_info=True)
+            raise

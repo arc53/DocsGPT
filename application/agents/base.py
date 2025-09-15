@@ -5,18 +5,16 @@ from typing import Dict, Generator, List, Optional
 
 from bson.objectid import ObjectId
 
-logger = logging.getLogger(__name__)
-
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
-
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 from application.retriever.base import BaseRetriever
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -157,7 +155,7 @@ class BaseAgent(ABC):
             }
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
-            return f"Failed to parse tool call.", call_id
+            return "Failed to parse tool call.", call_id
 
         # Check if tool_id exists in available tools
         if tool_id not in tools_dict:

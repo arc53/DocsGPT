@@ -67,6 +67,7 @@
       "preLoaded": "プリロード済み",
       "private": "プライベート",
       "sync": "同期",
+      "syncing": "同期中...",
       "syncFrequency": {
         "never": "なし",
         "daily": "毎日",

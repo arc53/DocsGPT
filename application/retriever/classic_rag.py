@@ -1,4 +1,5 @@
 import logging
+
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
@@ -20,10 +21,20 @@ class ClassicRAG(BaseRetriever):
         api_key=settings.API_KEY,
         decoded_token=None,
     ):
-        self.original_question = ""
+        """Initialize ClassicRAG retriever with vectorstore sources and LLM configuration"""
+        self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
         self.prompt = prompt
-        self.chunks = chunks
+        if isinstance(chunks, str):
+            try:
+                self.chunks = int(chunks)
+            except ValueError:
+                logging.warning(
+                    f"Invalid chunks value '{chunks}', using default value 2"
+                )
+                self.chunks = 2
+        else:
+            self.chunks = chunks
         self.gpt_model = gpt_model
         self.token_limit = (
             token_limit
@@ -44,25 +55,52 @@ class ClassicRAG(BaseRetriever):
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
         )
-        self.vectorstore = source["active_docs"] if "active_docs" in source else None
+
+        if "active_docs" in source and source["active_docs"] is not None:
+            if isinstance(source["active_docs"], list):
+                self.vectorstores = source["active_docs"]
+            else:
+                self.vectorstores = [source["active_docs"]]
+        else:
+            self.vectorstores = []
         self.question = self._rephrase_query()
         self.decoded_token = decoded_token
+        self._validate_vectorstore_config()
+
+    def _validate_vectorstore_config(self):
+        """Validate vectorstore IDs and remove any empty/invalid entries"""
+        if not self.vectorstores:
+            logging.warning("No vectorstores configured for retrieval")
+            return
+        invalid_ids = [
+            vs_id for vs_id in self.vectorstores if not vs_id or not vs_id.strip()
+        ]
+        if invalid_ids:
+            logging.warning(f"Found invalid vectorstore IDs: {invalid_ids}")
+            self.vectorstores = [
+                vs_id for vs_id in self.vectorstores if vs_id and vs_id.strip()
+            ]
 
     def _rephrase_query(self):
+        """Rephrase user query with chat history context for better retrieval"""
         if (
             not self.original_question
             or not self.chat_history
             or self.chat_history == []
             or self.chunks == 0
-            or self.vectorstore is None
+            or not self.vectorstores
         ):
             return self.original_question
-
         prompt = f"""Given the following conversation history:
+
         {self.chat_history}
 
+
+
         Rephrase the following user question to be a standalone search query 
+
         that captures all relevant context from the conversation:
+
         """
 
         messages = [
@@ -79,44 +117,62 @@ class ClassicRAG(BaseRetriever):
             return self.original_question
 
     def _get_data(self):
-        if self.chunks == 0 or self.vectorstore is None:
-            docs = []
-        else:
-            docsearch = VectorCreator.create_vectorstore(
-                settings.VECTOR_STORE, self.vectorstore, settings.EMBEDDINGS_KEY
-            )
-            docs_temp = docsearch.search(self.question, k=self.chunks)
-            docs = [
-                {
-                    "title": i.metadata.get(
-                        "title", i.metadata.get("post_title", i.page_content)
-                    ).split("/")[-1],
-                    "text": i.page_content,
-                    "source": (
-                        i.metadata.get("source")
-                        if i.metadata.get("source")
-                        else "local"
-                    ),
-                }
-                for i in docs_temp
-            ]
+        """Retrieve relevant documents from configured vectorstores"""
+        if self.chunks == 0 or not self.vectorstores:
+            return []
+        all_docs = []
+        chunks_per_source = max(1, self.chunks // len(self.vectorstores))
 
-        return docs
+        for vectorstore_id in self.vectorstores:
+            if vectorstore_id:
+                try:
+                    docsearch = VectorCreator.create_vectorstore(
+                        settings.VECTOR_STORE, vectorstore_id, settings.EMBEDDINGS_KEY
+                    )
+                    docs_temp = docsearch.search(self.question, k=chunks_per_source)
 
-    def gen():
-        pass
+                    for doc in docs_temp:
+                        if hasattr(doc, "page_content") and hasattr(doc, "metadata"):
+                            page_content = doc.page_content
+                            metadata = doc.metadata
+                        else:
+                            page_content = doc.get("text", doc.get("page_content", ""))
+                            metadata = doc.get("metadata", {})
+                        title = metadata.get(
+                            "title", metadata.get("post_title", page_content)
+                        )
+                        if isinstance(title, str):
+                            title = title.split("/")[-1]
+                        else:
+                            title = str(title).split("/")[-1]
+                        all_docs.append(
+                            {
+                                "title": title,
+                                "text": page_content,
+                                "source": metadata.get("source") or vectorstore_id,
+                            }
+                        )
+                except Exception as e:
+                    logging.error(
+                        f"Error searching vectorstore {vectorstore_id}: {e}",
+                        exc_info=True,
+                    )
+                    continue
+        return all_docs
 
     def search(self, query: str = ""):
+        """Search for documents using optional query override"""
         if query:
             self.original_question = query
             self.question = self._rephrase_query()
         return self._get_data()
 
     def get_params(self):
+        """Return current retriever configuration parameters"""
         return {
             "question": self.original_question,
             "rephrased_question": self.question,
-            "source": self.vectorstore,
+            "sources": self.vectorstores,
             "chunks": self.chunks,
             "token_limit": self.token_limit,
             "gpt_model": self.gpt_model,

@@ -17,7 +17,7 @@ type SourcesPopupProps = {
   isOpen: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLButtonElement | null>;
-  handlePostDocumentSelect: (doc: Doc | null) => void;
+  handlePostDocumentSelect: (doc: Doc[] | null) => void;
   setUploadModalState: React.Dispatch<React.SetStateAction<ActiveState>>;
 };
 
@@ -149,9 +149,13 @@ export default function SourcesPopup({
                 if (option.model === embeddingsName) {
                   const isSelected =
                     selectedDocs &&
-                    (option.id
-                      ? selectedDocs.id === option.id
-                      : selectedDocs.date === option.date);
+                    Array.isArray(selectedDocs) &&
+                    selectedDocs.length > 0 &&
+                    selectedDocs.some((doc) =>
+                      option.id
+                        ? doc.id === option.id
+                        : doc.date === option.date,
+                    );
 
                   return (
                     <div
@@ -159,11 +163,29 @@ export default function SourcesPopup({
                       className="border-opacity-80 dark:border-dim-gray flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors hover:bg-gray-100 dark:text-[14px] dark:hover:bg-[#2C2E3C]"
                       onClick={() => {
                         if (isSelected) {
-                          dispatch(setSelectedDocs(null));
-                          handlePostDocumentSelect(null);
+                          const updatedDocs =
+                            selectedDocs && Array.isArray(selectedDocs)
+                              ? selectedDocs.filter((doc) =>
+                                  option.id
+                                    ? doc.id !== option.id
+                                    : doc.date !== option.date,
+                                )
+                              : [];
+                          dispatch(
+                            setSelectedDocs(
+                              updatedDocs.length > 0 ? updatedDocs : null,
+                            ),
+                          );
+                          handlePostDocumentSelect(
+                            updatedDocs.length > 0 ? updatedDocs : null,
+                          );
                         } else {
-                          dispatch(setSelectedDocs(option));
-                          handlePostDocumentSelect(option);
+                          const updatedDocs =
+                            selectedDocs && Array.isArray(selectedDocs)
+                              ? [...selectedDocs, option]
+                              : [option];
+                          dispatch(setSelectedDocs(updatedDocs));
+                          handlePostDocumentSelect(updatedDocs);
                         }
                       }}
                     >
@@ -178,7 +200,7 @@ export default function SourcesPopup({
                         {option.name}
                       </span>
                       <div
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center border border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
                       >
                         {isSelected && (
                           <img
