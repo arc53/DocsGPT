@@ -146,7 +146,7 @@ class MCPTool(Tool):
         mcp_message = {"jsonrpc": "2.0", "method": method}
 
         if not method.startswith("notifications/"):
-            mcp_message["id"] = 1
+            mcp_message["id"] = int(time.time() * 1000000)
         if params:
             mcp_message["params"] = params
         return self._execute_mcp_request(mcp_message, method)
@@ -181,7 +181,11 @@ class MCPTool(Tool):
             if method.startswith("notifications/"):
                 return {}
             response_text = response.text.strip()
-            if response_text.startswith("event:") and "data:" in response_text:
+            if (
+                response.headers.get("content-type", "").startswith("text/event-stream")
+                or response_text.startswith("event:")
+                and "data:" in response_text
+            ):
                 lines = response_text.split("\n")
                 data_line = None
                 for line in lines:
@@ -200,12 +204,15 @@ class MCPTool(Tool):
                     result = response.json()
                 except json.JSONDecodeError:
                     raise Exception(f"Invalid JSON response: {response.text}")
+
             if "error" in result:
                 error_msg = result["error"]
                 if isinstance(error_msg, dict):
                     error_msg = error_msg.get("message", str(error_msg))
                 raise Exception(f"MCP server error: {error_msg}")
+
             return result.get("result", result)
+
         except requests.exceptions.RequestException as e:
             if not is_retry and self._should_retry_with_new_session(e):
                 self._invalidate_and_refresh_session()
