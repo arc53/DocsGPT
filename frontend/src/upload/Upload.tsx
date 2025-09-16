@@ -259,13 +259,13 @@ function Upload({
   const { t } = useTranslation();
   const setTimeoutRef = useRef<number | null>(null);
 
-  const ingestorOptions: { label: string; value: IngestorType; icon: string }[] = [
-    { label: 'Upload File', value: 'local_file', icon: FileUploadIcon },
-    { label: 'Crawler', value: 'crawler', icon: CrawlerIcon },
-    { label: 'Link', value: 'url', icon: UrlIcon },
-    { label: 'GitHub', value: 'github', icon: GithubIcon },
-    { label: 'Reddit', value: 'reddit', icon: RedditIcon },
-    { label: 'Google Drive', value: 'google_drive', icon: DriveIcon },
+  const ingestorOptions: { label: string; value: IngestorType; icon: string; heading: string }[] = [
+    { label: 'Upload File', value: 'local_file', icon: FileUploadIcon, heading: 'Upload new document' },
+    { label: 'Crawler', value: 'crawler', icon: CrawlerIcon, heading: 'Add content with Web Crawler' },
+    { label: 'Link', value: 'url', icon: UrlIcon, heading: 'Add content from URL' },
+    { label: 'GitHub', value: 'github', icon: GithubIcon, heading: 'Add content from GitHub' },
+    { label: 'Reddit', value: 'reddit', icon: RedditIcon, heading: 'Add content from Reddit' },
+    { label: 'Google Drive', value: 'google_drive', icon: DriveIcon, heading: 'Upload from Google Drive' },
   ];
 
   const sourceDocs = useSelector(selectSourceDocs);
@@ -672,11 +672,11 @@ function Upload({
 
   const renderIngestorSelection = () => {
     return (
-      <div className="grid grid-cols-3 gap-4 w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
         {ingestorOptions.map((option) => (
           <div
             key={option.value}
-            className={`relative flex flex-col justify-between rounded-2xl cursor-pointer w-[181px] h-[91.2px] border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] gap-[13.1px] transition-colors duration-300 ease-out ${
+            className={`relative flex flex-col justify-between rounded-2xl cursor-pointer w-full max-w-[181px] h-[91.2px] border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] gap-[13.1px] transition-colors duration-300 ease-out mx-auto ${
               ingestor.type === option.value 
                 ? 'bg-[#7D54D1] text-white border-[#7D54D1] shadow-[0px_0px_8px_0px_#FFFFFF1A] dark:shadow-[0px_0px_8px_0px_#FFFFFF1A]' 
                 : 'bg-transparent hover:bg-[#ECECEC]/30 dark:hover:bg-[#383838]/30 border-[#D7D7D7] dark:border-[#4A4A4A] shadow-[0px_4px_40px_-3px_#0000001A]'
@@ -732,6 +732,10 @@ function Upload({
                   <span>Back</span>
                 </button>
 
+                <h2 className="font-inter font-semibold text-[22px] leading-[28px] tracking-[0.15px] text-black dark:text-[#E0E0E0]">
+                  {ingestor.type && ingestorOptions.find(option => option.value === ingestor.type)?.heading}
+                </h2>
+
                 <Input
                   type="text"
                   colorVariant="silver"
@@ -746,7 +750,7 @@ function Upload({
                   placeholder="Name"
                   required={true}
                   labelBgClassName="bg-white dark:bg-charleston-green-2"
-                  className="max-w-xs"
+                  className={ingestor.type === 'google_drive' ? "max-w-xs" : "w-full"}
                 />
                 {renderFormFields()}
               </div>

@@ -359,7 +359,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       </div>
 
       <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A] mt-3">
-        <div className="border-b border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
+        <div className=" border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
           {/* Breadcrumb navigation */}
           <div className="px-4 pt-4 bg-[#EEE6FF78] dark:bg-[#2A262E] rounded-t-lg">
             <div className="flex items-center gap-1 mb-2">
@@ -396,7 +396,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
             {/* Selected Files Message */}
             <div className="pb-3 text-sm text-gray-600 dark:text-gray-400">
-              {selectedFiles.length} file(s) selected
+              {selectedFiles.length + selectedFolders.length} selected
             </div>
           </div>
 
@@ -407,18 +407,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               className="scrollbar-thin  md:w-4xl lg:w-5xl"
               bordered={false}
             >
-              {isLoading && files.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                    Loading files...
-                  </div>
-                </div>
-              ) : files.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-sm text-gray-500 dark:text-gray-400">
-                  No files found in your {getProviderConfig(provider).displayName}
-                </div>
-              ) : (
+              {(
                 <>
                   <Table minWidth="1200px">
                     <TableHead>
@@ -433,7 +422,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                       {files.map((file, index) => (
                         <TableRow
                           key={`${file.id}-${index}`}
-                          className={selectedFiles.includes(file.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
                           onClick={() => {
                             if (isFolder(file)) {
                               handleFolderClick(file.id, file.name);
@@ -444,7 +432,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                         >
                           <TableCell width="40px" align="center">
                             <div
-                              className="flex h-5 w-5 shrink-0 items-center justify-center border border-[#EEE6FF78] p-[0.5px] dark:border-[#6A6A6A] cursor-pointer mx-auto"
+                              className="flex h-5 w-5 text-sm shrink-0 items-center justify-center border border-[#EEE6FF78] p-[0.5px] dark:border-[#6A6A6A] cursor-pointer mx-auto"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleFileSelect(file.id, isFolder(file));
@@ -471,10 +459,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                               <span className="truncate">{file.name}</span>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className='text-xs'>
                             {formatDate(file.modifiedTime)}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className='text-xs'>
                             {file.size ? formatBytes(file.size) : '-'}
                           </TableCell>
                         </TableRow>
@@ -482,7 +470,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                     </TableBody>
                   </Table>
 
-                  {isLoading && files.length > 0 && (
+                  {isLoading && (
                     <div className="flex items-center justify-center p-4 border-t border-[#EEE6FF78] dark:border-[#6A6A6A]">
                       <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>

@@ -44,7 +44,7 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(({
     <div className={`relative rounded-[6px] ${className}`}>
       <div
         ref={ref}
-        className={`w-full overflow-x-auto rounded-[6px] bg-gray-100 dark:bg-[#27282D] ${bordered ? 'border border-[#EEE6FF78] dark:border-[#6A6A6A]' : ''}`}
+        className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border border-[#D7D7D7] dark:border-[#6A6A6A]' : ''}`}
         style={{
           maxHeight: height === 'auto' ? undefined : height,
           overflowY: height === 'auto' ? 'hidden' : 'auto'
@@ -89,7 +89,7 @@ const TableBody: React.FC<TableHeadProps> = ({ children, className = '' }) => {
 };
 
 const TableRow: React.FC<TableRowProps> = ({ children, className = '', onClick }) => {
-  const baseClasses = "border-b border-[#EEE6FF78] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]";
+  const baseClasses = "border-b border-[#D7D7D7] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]";
   const cursorClass = onClick ? "cursor-pointer" : "";
 
   return (
@@ -117,7 +117,7 @@ const TableHeader: React.FC<TableCellProps> = ({
     }
   };
 
-  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-[#59636E] border-t border-b border-[#EEE6FF78] dark:border-[#6A6A6A] relative box-border ${getAlignmentClass()}`;
+  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-[#59636E] border-t border-b border-[#D7D7D7] dark:border-[#6A6A6A] relative box-border ${getAlignmentClass()}`;
   const widthClasses = minWidth ? minWidth : '';
 
   return (
