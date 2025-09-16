@@ -24,6 +24,20 @@ For more technical details, you can explore the API swagger documentation availa
 
 ---
 
+## Proxy Support
+
+All outgoing HTTP requests from API-based tools (including API Tool, Telegram Tool, Brave Tool, Read Webpage Tool, etc.) can be routed through a proxy.
+
+Set the proxy by either:
+- Passing a `proxy` key in the tool config, or
+- Setting the `API_TOOL_PROXY` environment variable:
+
+    export API_TOOL_PROXY="http://myproxy.example.com:8080"
+
+If not set, requests will be made directly.
+
+---
+
 ## Non-Streaming API (`/api/answer`)
 
 This is a standard synchronous endpoint. It waits for the agent to fully process the request and returns a single JSON object with the complete answer. This is the simplest method and is ideal for backend processes where a real-time feed is not required.
