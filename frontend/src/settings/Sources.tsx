@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -319,7 +318,7 @@ export default function Sources({
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full h-[32px] rounded-full border border-silver dark:border-silver/40 bg-transparent px-3 text-sm text-jet dark:text-bright-gray placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:border-silver dark:focus:border-silver/60"
+                className="border-silver dark:border-silver/40 text-jet dark:text-bright-gray focus:border-silver dark:focus:border-silver/60 h-[32px] w-full rounded-full border bg-transparent px-3 text-sm outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
               />
             </div>
           </div>
@@ -336,7 +335,7 @@ export default function Sources({
         </div>
         <div className="relative w-full">
           {loading ? (
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-2 py-4">
+            <div className="grid w-full grid-cols-1 gap-6 px-2 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : !currentDocuments?.length ? (
@@ -351,17 +350,18 @@ export default function Sources({
               </p>
             </div>
           ) : (
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-2 py-4">
+            <div className="grid w-full grid-cols-1 gap-6 px-2 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {currentDocuments.map((document, index) => {
                 const docId = document.id ? document.id.toString() : '';
 
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200  dark:bg-[#383838] ${activeMenuId === docId || syncMenuState.docId === docId
+                      className={`flex h-[130px] w-full flex-col rounded-2xl bg-[#F9F9F9] p-3 transition-all duration-200 dark:bg-[#383838] ${
+                        activeMenuId === docId || syncMenuState.docId === docId
                           ? 'scale-[1.05]'
                           : 'hover:scale-[1.05]'
-                        }`}
+                      }`}
                     >
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
@@ -426,7 +426,7 @@ export default function Sources({
                           <img
                             src={CalendarIcon}
                             alt=""
-                            className="w-[14px] h-[14px]"
+                            className="h-[14px] w-[14px]"
                           />
                           <span className="font-inter text-[12px] leading-[18px] font-[500] text-[#848484] dark:text-[#848484]">
                             {document.date ? formatDate(document.date) : ''}
@@ -436,7 +436,7 @@ export default function Sources({
                           <img
                             src={DiscIcon}
                             alt=""
-                            className="w-[14px] h-[14px]"
+                            className="h-[14px] w-[14px]"
                           />
                           <span className="font-inter text-[12px] leading-[18px] font-[500] text-[#848484] dark:text-[#848484]">
                             {document.tokens

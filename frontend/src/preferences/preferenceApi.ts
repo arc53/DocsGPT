@@ -90,9 +90,9 @@ export function getLocalApiKey(): string | null {
   return key;
 }
 
-export function getLocalRecentDocs(): string | null {
-  const doc = localStorage.getItem('DocsGPTRecentDocs');
-  return doc;
+export function getLocalRecentDocs(): Doc[] | null {
+  const docs = localStorage.getItem('DocsGPTRecentDocs');
+  return docs ? (JSON.parse(docs) as Doc[]) : null;
 }
 
 export function getLocalPrompt(): string | null {
@@ -108,19 +108,20 @@ export function setLocalPrompt(prompt: string): void {
   localStorage.setItem('DocsGPTPrompt', prompt);
 }
 
-export function setLocalRecentDocs(doc: Doc | null): void {
-  localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(doc));
+export function setLocalRecentDocs(docs: Doc[] | null): void {
+  if (docs && docs.length > 0) {
+    localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(docs));
 
-  let docPath = 'default';
-  if (doc?.type === 'local') {
-    docPath = 'local' + '/' + doc.name + '/';
+    docs.forEach((doc) => {
+      let docPath = 'default';
+      if (doc.type === 'local') {
+        docPath = 'local' + '/' + doc.name + '/';
+      }
+      userService
+        .checkDocs({ docs: docPath }, null)
+        .then((response) => response.json());
+    });
+  } else {
+    localStorage.removeItem('DocsGPTRecentDocs');
   }
-  userService
-    .checkDocs(
-      {
-        docs: docPath,
-      },
-      null,
-    )
-    .then((response) => response.json());
 }

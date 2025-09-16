@@ -17,7 +17,6 @@ class GoogleLLMHandler(LLMHandler):
                 finish_reason="stop",
                 raw_response=response,
             )
-
         if hasattr(response, "candidates"):
             parts = response.candidates[0].content.parts if response.candidates else []
             tool_calls = [
@@ -41,7 +40,6 @@ class GoogleLLMHandler(LLMHandler):
                 finish_reason="tool_calls" if tool_calls else "stop",
                 raw_response=response,
             )
-
         else:
             tool_calls = []
             if hasattr(response, "function_call"):
@@ -61,14 +59,16 @@ class GoogleLLMHandler(LLMHandler):
 
     def create_tool_message(self, tool_call: ToolCall, result: Any) -> Dict:
         """Create Google-style tool message."""
-        from google.genai import types
 
         return {
-            "role": "tool",
+            "role": "model",
             "content": [
-                types.Part.from_function_response(
-                    name=tool_call.name, response={"result": result}
-                ).to_json_dict()
+                {
+                    "function_response": {
+                        "name": tool_call.name,
+                        "response": {"result": result},
+                    }
+                }
             ],
         }
 

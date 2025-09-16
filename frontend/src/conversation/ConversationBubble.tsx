@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, Fragment, useRef, useState, useEffect } from 'react';
+import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
@@ -12,12 +12,13 @@ import {
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import DocumentationDark from '../assets/documentation-dark.svg';
+
 import ChevronDown from '../assets/chevron-down.svg';
 import Cloud from '../assets/cloud.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
+import DocumentationDark from '../assets/documentation-dark.svg';
 import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
@@ -761,7 +762,11 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         Response
                       </span>{' '}
                       <CopyButton
-                        textToCopy={JSON.stringify(toolCall.result, null, 2)}
+                        textToCopy={
+                          toolCall.status === 'error'
+                            ? toolCall.error || 'Unknown error'
+                            : JSON.stringify(toolCall.result, null, 2)
+                        }
                       />
                     </p>
                     {toolCall.status === 'pending' && (
@@ -776,6 +781,16 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
                           {JSON.stringify(toolCall.result, null, 2)}
+                        </span>
+                      </p>
+                    )}
+                    {toolCall.status === 'error' && (
+                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
+                        <span
+                          className="leading-[23px] text-red-500 dark:text-red-400"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {toolCall.error}
                         </span>
                       </p>
                     )}

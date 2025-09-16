@@ -4,8 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { getSessionToken } from '../utils/providerUtils';
-
+import {
+  getSessionToken,
+  setSessionToken,
+  removeSessionToken,
+} from '../utils/providerUtils';
+import { formatDate } from '../utils/dateTimeUtils';
+import { formatBytes } from '../utils/stringUtils';
+import FileUpload from '../assets/file_upload.svg';
+import WebsiteCollect from '../assets/website_collect.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -377,7 +384,8 @@ function Upload({
                           data?.find(
                             (d: Doc) => d.type?.toLowerCase() === 'local',
                           ),
-                    ));
+                      ),
+                    );
                   });
                   setProgress(
                     (progress) =>

@@ -23,16 +23,23 @@ class ToolManager:
                     tool_config = self.config.get(name, {})
                     self.tools[name] = obj(tool_config)
 
-    def load_tool(self, tool_name, tool_config):
+    def load_tool(self, tool_name, tool_config, user_id=None):
         self.config[tool_name] = tool_config
         module = importlib.import_module(f"application.agents.tools.{tool_name}")
         for member_name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Tool) and obj is not Tool:
-                return obj(tool_config)
+                if tool_name == "mcp_tool" and user_id:
+                    return obj(tool_config, user_id)
+                else:
+                    return obj(tool_config)
 
-    def execute_action(self, tool_name, action_name, **kwargs):
+    def execute_action(self, tool_name, action_name, user_id=None, **kwargs):
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' not loaded")
+        if tool_name == "mcp_tool" and user_id:
+            tool_config = self.config.get(tool_name, {})
+            tool = self.load_tool(tool_name, tool_config, user_id)
+            return tool.execute_action(action_name, **kwargs)
         return self.tools[tool_name].execute_action(action_name, **kwargs)
 
     def get_all_actions_metadata(self):
