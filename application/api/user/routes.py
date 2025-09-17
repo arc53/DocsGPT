@@ -494,7 +494,6 @@ class DeleteOldIndexes(Resource):
         )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
-
         storage = StorageCreator.get_storage()
 
         try:
@@ -511,7 +510,6 @@ class DeleteOldIndexes(Resource):
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
                 )
                 vectorstore.delete_index()
-
             if "file_path" in doc and doc["file_path"]:
                 file_path = doc["file_path"]
                 if storage.is_directory(file_path):
@@ -520,7 +518,6 @@ class DeleteOldIndexes(Resource):
                         storage.delete_file(f)
                 else:
                     storage.delete_file(file_path)
-
         except FileNotFoundError:
             pass
         except Exception as err:
@@ -528,7 +525,6 @@ class DeleteOldIndexes(Resource):
                 f"Error deleting files and indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
@@ -600,7 +596,6 @@ class UploadFile(Resource):
                                             == temp_file_path
                                         ):
                                             continue
-
                                         rel_path = os.path.relpath(
                                             os.path.join(root, extracted_file), temp_dir
                                         )
@@ -625,7 +620,6 @@ class UploadFile(Resource):
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, "rb") as f:
                             storage.save_file(f, file_path)
-
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
                 [
@@ -697,7 +691,6 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Unauthorized"}), 401
             )
-
         user = decoded_token.get("sub")
         source_id = request.form.get("source_id")
         operation = request.form.get("operation")
@@ -747,7 +740,6 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Database error"}), 500
             )
-
         try:
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
@@ -804,7 +796,6 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-
             elif operation == "remove":
                 file_paths_str = request.form.get("file_paths")
                 if not file_paths_str:
@@ -858,7 +849,6 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-
             elif operation == "remove_directory":
                 directory_path = request.form.get("directory_path")
                 if not directory_path:
@@ -884,7 +874,6 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-
                 full_directory_path = (
                     f"{source_file_path}/{directory_path}"
                     if directory_path
@@ -943,7 +932,6 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-
         except Exception as err:
             error_context = f"operation={operation}, user={user}, source_id={source_id}"
             if operation == "remove_directory":
@@ -955,7 +943,6 @@ class ManageSourceFiles(Resource):
             elif operation == "add":
                 parent_dir = request.form.get("parent_dir", "")
                 error_context += f", parent_dir={parent_dir}"
-
             current_app.logger.error(
                 f"Error managing source files: {err} ({error_context})", exc_info=True
             )
@@ -1632,7 +1619,6 @@ class CreateAgent(Resource):
                         ),
                         400,
                     )
-
                 # Validate that it has either a 'schema' property or is itself a schema
 
                 if "schema" not in json_schema and "type" not in json_schema:
@@ -3476,7 +3462,6 @@ class AvailableTools(Resource):
                         "displayName": name,
                         "description": description,
                         "configRequirements": tool_instance.get_config_requirements(),
-                        "actions": tool_instance.get_actions_metadata(),
                     }
                 )
         except Exception as err:
@@ -3527,11 +3512,6 @@ class CreateTool(Resource):
                 "customName": fields.String(
                     required=False, description="Custom name for the tool"
                 ),
-                "actions": fields.List(
-                    fields.Raw,
-                    required=True,
-                    description="Actions the tool can perform",
-                ),
                 "status": fields.Boolean(
                     required=True, description="Status of the tool"
                 ),
@@ -3549,24 +3529,35 @@ class CreateTool(Resource):
             "name",
             "displayName",
             "description",
-            "actions",
             "config",
             "status",
         ]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-        transformed_actions = []
-        for action in data["actions"]:
-            action["active"] = True
-            if "parameters" in action:
-                if "properties" in action["parameters"]:
-                    for param_name, param_details in action["parameters"][
-                        "properties"
-                    ].items():
-                        param_details["filled_by_llm"] = True
-                        param_details["value"] = ""
-            transformed_actions.append(action)
+        try:
+            tool_instance = tool_manager.tools.get(data["name"])
+            if not tool_instance:
+                return make_response(
+                    jsonify({"success": False, "message": "Tool not found"}), 404
+                )
+            actions_metadata = tool_instance.get_actions_metadata()
+            transformed_actions = []
+            for action in actions_metadata:
+                action["active"] = True
+                if "parameters" in action:
+                    if "properties" in action["parameters"]:
+                        for param_name, param_details in action["parameters"][
+                            "properties"
+                        ].items():
+                            param_details["filled_by_llm"] = True
+                            param_details["value"] = ""
+                transformed_actions.append(action)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error getting tool actions: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
         try:
             new_tool = {
                 "user": user,
@@ -3907,7 +3898,6 @@ class GetChunks(Resource):
                     if not (text_match or title_match):
                         continue
                 filtered_chunks.append(chunk)
-
             chunks = filtered_chunks
 
             total_chunks = len(chunks)
@@ -4098,7 +4088,6 @@ class UpdateChunk(Resource):
                     current_app.logger.warning(
                         f"Failed to delete old chunk {chunk_id}, but new chunk {new_chunk_id} was created"
                     )
-
                 return make_response(
                     jsonify(
                         {
@@ -4226,23 +4215,19 @@ class DirectoryStructure(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         user = decoded_token.get("sub")
         doc_id = request.args.get("id")
 
         if not doc_id:
             return make_response(jsonify({"error": "Document ID is required"}), 400)
-
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid document ID"}), 400)
-
         try:
             doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
             if not doc:
                 return make_response(
                     jsonify({"error": "Document not found or access denied"}), 404
                 )
-
             directory_structure = doc.get("directory_structure", {})
             base_path = doc.get("file_path", "")
 
@@ -4315,7 +4300,6 @@ class TestMCPServerConfig(Resource):
                     auth_credentials["username"] = config["username"]
                 if "password" in config:
                     auth_credentials["password"] = config["password"]
-
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
 
@@ -4395,14 +4379,12 @@ class MCPServerSave(Resource):
                 raise Exception(
                     "No valid credentials provided for the selected authentication type"
                 )
-
             storage_config = config.copy()
             if auth_credentials:
                 encrypted_credentials_string = encrypt_credentials(
                     auth_credentials, user
                 )
                 storage_config["encrypted_credentials"] = encrypted_credentials_string
-
             for field in [
                 "api_key",
                 "bearer_token",
