@@ -13,7 +13,7 @@ export type IngestorFormData = {
   data: string;
 };
 
-export type FieldType = 'string' | 'number' | 'enum' | 'boolean' | 'local_file_picker' | 'remote_file_picker';
+export type FieldType = 'string' | 'number' | 'enum' | 'boolean' | 'local_file_picker' | 'remote_file_picker' | 'google_drive_picker';
 
 export interface FormField {
   name: string;
@@ -36,7 +36,12 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
   ],
   github: [{ name: 'repo_url', label: 'Repository URL', type: 'string', required: true }],
   google_drive: [
-    { name: 'file_picker', label: 'Select files', type: 'remote_file_picker', required: true },
+    {
+      name: 'files',
+      label: 'Select Files from Google Drive',
+      type: 'google_drive_picker',
+      required: true,
+    },
     { name: 'recursive', label: 'Include subfolders', type: 'boolean', required: false },
   ],
   local_file: [

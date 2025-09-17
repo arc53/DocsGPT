@@ -35,6 +35,7 @@ import {
 } from './types/ingestor';
 
 import {FilePicker}  from '../components/FilePicker';
+import GoogleDrivePicker from '../components/GoogleDrivePicker';
 
 import CrawlerIcon from '../assets/crawler.svg';
 import FileUploadIcon from '../assets/file_upload.svg';
@@ -244,6 +245,19 @@ function Upload({
             initialSelectedFolders={selectedFolders}
           />
         );
+      case 'google_drive_picker':
+        return (
+          <GoogleDrivePicker
+            key={field.name}
+            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
+          />
+        );
       default:
         return null;
     }
@@ -384,8 +398,7 @@ function Upload({
                           data?.find(
                             (d: Doc) => d.type?.toLowerCase() === 'local',
                           ),
-                      ),
-                    );
+                    ));
                   });
                   setProgress(
                     (progress) =>
@@ -509,18 +522,19 @@ function Upload({
     formData.append('user', 'local');
     formData.append('source', ingestor.type as string);
 
-    let configData;
+    let configData: any = {};
 
     const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
     const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
     const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
+    const hasGoogleDrivePicker = schema.some((field: FormField) => field.type === 'google_drive_picker');
 
     if (hasLocalFilePicker) {
       files.forEach((file) => {
         formData.append('file', file);
       });
       configData = { ...ingestor.config };
-    } else if (hasRemoteFilePicker) {
+    } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
       const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
         provider: ingestor.type as string,
@@ -606,12 +620,13 @@ function Upload({
     const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
     const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
     const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
+    const hasGoogleDrivePicker = schema.some((field: FormField) => field.type === 'google_drive_picker');
 
     if (hasLocalFilePicker) {
       if (files.length === 0) {
         return true;
       }
-    } else if (hasRemoteFilePicker) {
+    } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
       if (selectedFiles.length === 0 && selectedFolders.length === 0) {
         return true;
       }

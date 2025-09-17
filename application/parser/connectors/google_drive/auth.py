@@ -17,8 +17,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
     """
     
     SCOPES = [
-        'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/drive.metadata.readonly'
+        'https://www.googleapis.com/auth/drive.file'
     ]
     
     def __init__(self):
@@ -50,7 +49,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
             authorization_url, _ = flow.authorization_url(
                 access_type='offline',
                 prompt='consent',
-                include_granted_scopes='true',
+                include_granted_scopes='false',
                 state=state
             )
             

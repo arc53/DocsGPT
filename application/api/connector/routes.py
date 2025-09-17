@@ -419,7 +419,7 @@ class ConnectorFiles(Resource):
 @connectors_ns.route("/api/connectors/validate-session")
 class ConnectorValidateSession(Resource):
     @api.expect(api.model("ConnectorValidateSessionModel", {"provider": fields.String(required=True), "session_token": fields.String(required=True)}))
-    @api.doc(description="Validate connector session token and return user info")
+    @api.doc(description="Validate connector session token and return user info and access token")
     def post(self):
         try:
             data = request.get_json()
@@ -427,7 +427,6 @@ class ConnectorValidateSession(Resource):
             session_token = data.get('session_token')
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
-
 
             decoded_token = request.decoded_token
             if not decoded_token:
@@ -445,7 +444,8 @@ class ConnectorValidateSession(Resource):
             return make_response(jsonify({
                 "success": True,
                 "expired": is_expired,
-                "user_email": session.get('user_email', 'Connected User')
+                "user_email": session.get('user_email', 'Connected User'),
+                "access_token": token_info.get('access_token')
             }), 200)
         except Exception as e:
             current_app.logger.error(f"Error validating connector session: {e}")

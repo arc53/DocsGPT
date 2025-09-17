@@ -358,7 +358,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         </div>
       </div>
 
-      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A] mt-3">
+      <div className="border border-[#D7D7D7] rounded-lg dark:border-[#6A6A6A] mt-3">
         <div className=" border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
           {/* Breadcrumb navigation */}
           <div className="px-4 pt-4 bg-[#EEE6FF78] dark:bg-[#2A262E] rounded-t-lg">
