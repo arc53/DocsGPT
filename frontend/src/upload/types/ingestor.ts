@@ -41,8 +41,7 @@ export const IngestorFormSchemas: Record<IngestorType, FormField[]> = {
       label: 'Select Files from Google Drive',
       type: 'google_drive_picker',
       required: true,
-    },
-    { name: 'recursive', label: 'Include subfolders', type: 'boolean', required: false },
+    }
   ],
   local_file: [
     { name: 'files', label: 'Select files', type: 'local_file_picker', required: true },

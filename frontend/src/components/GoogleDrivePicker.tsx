@@ -59,7 +59,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
       if (!validateResponse.ok) {
         setIsConnected(false);
         setAuthError('Session expired. Please reconnect to Google Drive.');
-        return;
+        return false;
       }
 
       const validateData = await validateResponse.json();
@@ -68,14 +68,17 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         setIsConnected(true);
         setAuthError('');
         setAccessToken(validateData.access_token || null);
+        return true;
       } else {
         setIsConnected(false);
         setAuthError(validateData.error || 'Session expired. Please reconnect your account.');
+        return false;
       }
     } catch (error) {
       console.error('Error validating session:', error);
       setAuthError('Failed to validate session. Please reconnect.');
       setIsConnected(false);
+      return false;
     }
   };
 
@@ -97,24 +100,40 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     }
     
     try {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const developerKey = import.meta.env.VITE_GOOGLE_API_KEY;
+      const appId = import.meta.env.VITE_GOOGLE_DRIVE_APP_ID;
+
+      if (!clientId || !developerKey || !appId) {
+        console.error('Missing Google Drive configuration:', {
+          clientId: !!clientId,
+          developerKey: !!developerKey,
+          appId: !!appId
+        });
+        setAuthError('Google Drive configuration is incomplete. Please check your environment variables.');
+        setIsLoading(false);
+        return;
+      }
+
       openPicker({
-        clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        developerKey: import.meta.env.VITE_GOOGLE_API_KEY,
-        viewId: "DOCS_IMAGES_AND_VIDEOS",
+        clientId: clientId,
+        developerKey: developerKey,
+        appId: appId,
+        viewId: "DOCS",
         showUploadView: false,
         showUploadFolders: false,
-        supportDrives: true,
+        supportDrives: false,
         multiselect: true,
         token: accessToken,
-        viewMimeTypes: 'application/vnd.google-apps.folder,application/vnd.google-apps.document,application/pdf',
+        viewMimeTypes: 'application/vnd.google-apps.folder,application/vnd.google-apps.document,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.ms-powerpoint,application/vnd.ms-excel,text/plain,text/csv,text/html,application/rtf,image/jpeg,image/jpg,image/png',
         callbackFunction: (data:any) => {
           setIsLoading(false);
           if (data.action === 'picked') {
             const docs = data.docs;
-          
-            const files: PickerFile[] = [];
-            const folders: PickerFile[] = [];
-            
+
+            const newFiles: PickerFile[] = [];
+            const newFolders: PickerFile[] = [];
+
             docs.forEach((doc: any) => {
               const item = {
                 id: doc.id,
@@ -124,24 +143,29 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 description: doc.description,
                 sizeBytes: doc.sizeBytes
               };
-              
+
               if (doc.mimeType === 'application/vnd.google-apps.folder') {
-                folders.push(item);
+                newFolders.push(item);
               } else {
-                files.push(item);
+                newFiles.push(item);
               }
             });
-            
-            setSelectedFiles(files);
-            setSelectedFolders(folders);
-            
-            const fileIds = files.map(file => file.id);
-            const folderIds = folders.map(folder => folder.id);
-            
-            console.log('Selected file IDs:', fileIds);
-            console.log('Selected folder IDs:', folderIds);
-            
-            onSelectionChange(fileIds, folderIds);
+
+            setSelectedFiles(prevFiles => {
+              const existingFileIds = new Set(prevFiles.map(file => file.id));
+              const uniqueNewFiles = newFiles.filter(file => !existingFileIds.has(file.id));
+              return [...prevFiles, ...uniqueNewFiles];
+            });
+
+            setSelectedFolders(prevFolders => {
+              const existingFolderIds = new Set(prevFolders.map(folder => folder.id));
+              const uniqueNewFolders = newFolders.filter(folder => !existingFolderIds.has(folder.id));
+              return [...prevFolders, ...uniqueNewFolders];
+            });
+            onSelectionChange(
+              [...selectedFiles, ...newFiles].map(file => file.id),
+              [...selectedFolders, ...newFolders].map(folder => folder.id)
+            );
           }
         },
       });
@@ -179,7 +203,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
   if (!isConnected) {
     return (
-      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A] p-6">
+      <div>
         {authError && (
           <div className="text-red-500 text-sm mb-4 text-center">{authError}</div>
         )}
@@ -192,6 +216,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
             if (data.session_token) {
               setSessionToken('google_drive', data.session_token);
+              validateSession(data.session_token);
             }
           }}
           onError={(error) => {
@@ -204,8 +229,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   }
 
   return (
-    <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A]">
-      <div className="p-3">
+    <div>
+      <div className="mb-4">
         <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] font-medium text-sm">
           <div className="flex items-center gap-2">
             <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -222,75 +247,75 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         </div>
       </div>
 
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-medium">Selected Files</h3>
-          <button
-            onClick={() => handleOpenPicker()}
-            className="bg-[#A076F6] hover:bg-[#8A5FD4] text-white text-sm py-1 px-3 rounded-md"
-            disabled={isLoading}
-          >
-            {isLoading ? 'Loading...' : 'Select Files'}
-          </button>
-        </div>
-
-        {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
-          <p className="text-gray-600 dark:text-gray-400 text-sm">No files or folders selected</p>
-        ) : (
-          <div className="max-h-60 overflow-y-auto">
-            {/* Display folders */}
-            {selectedFolders.length > 0 && (
-              <div className="mb-2">
-                <h4 className="text-xs font-medium text-gray-500 mb-1">Folders</h4>
-                {selectedFolders.map((folder) => (
-                  <div key={folder.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
-                    <img src={folder.iconUrl} alt="Folder" className="w-5 h-5 mr-2" />
-                    <span className="text-sm truncate flex-1">{folder.name}</span>
-                    <button
-                      onClick={() => {
-                        const newSelectedFolders = selectedFolders.filter(f => f.id !== folder.id);
-                        setSelectedFolders(newSelectedFolders);
-                        onSelectionChange(
-                          selectedFiles.map(f => f.id),
-                          newSelectedFolders.map(f => f.id)
-                        );
-                      }}
-                      className="text-red-500 hover:text-red-700 text-sm ml-2"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Display files */}
-            {selectedFiles.length > 0 && (
-              <div>
-                <h4 className="text-xs font-medium text-gray-500 mb-1">Files</h4>
-                {selectedFiles.map((file) => (
-                  <div key={file.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
-                    <img src={file.iconUrl} alt="File" className="w-5 h-5 mr-2" />
-                    <span className="text-sm truncate flex-1">{file.name}</span>
-                    <button
-                      onClick={() => {
-                        const newSelectedFiles = selectedFiles.filter(f => f.id !== file.id);
-                        setSelectedFiles(newSelectedFiles);
-                        onSelectionChange(
-                          newSelectedFiles.map(f => f.id),
-                          selectedFolders.map(f => f.id)
-                        );
-                      }}
-                      className="text-red-500 hover:text-red-700 text-sm ml-2"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A]">
+        <div className="p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-sm font-medium">Selected Files</h3>
+            <button
+              onClick={() => handleOpenPicker()}
+              className="bg-[#A076F6] hover:bg-[#8A5FD4] text-white text-sm py-1 px-3 rounded-md"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Loading...' : 'Select Files'}
+            </button>
           </div>
-        )}
+
+          {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
+            <p className="text-gray-600 dark:text-gray-400 text-sm">No files or folders selected</p>
+          ) : (
+            <div className="max-h-60 overflow-y-auto">
+              {selectedFolders.length > 0 && (
+                <div className="mb-2">
+                  <h4 className="text-xs font-medium text-gray-500 mb-1">Folders</h4>
+                  {selectedFolders.map((folder) => (
+                    <div key={folder.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
+                      <img src={folder.iconUrl} alt="Folder" className="w-5 h-5 mr-2" />
+                      <span className="text-sm truncate flex-1">{folder.name}</span>
+                      <button
+                        onClick={() => {
+                          const newSelectedFolders = selectedFolders.filter(f => f.id !== folder.id);
+                          setSelectedFolders(newSelectedFolders);
+                          onSelectionChange(
+                            selectedFiles.map(f => f.id),
+                            newSelectedFolders.map(f => f.id)
+                          );
+                        }}
+                        className="text-red-500 hover:text-red-700 text-sm ml-2"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selectedFiles.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 mb-1">Files</h4>
+                  {selectedFiles.map((file) => (
+                    <div key={file.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
+                      <img src={file.iconUrl} alt="File" className="w-5 h-5 mr-2" />
+                      <span className="text-sm truncate flex-1">{file.name}</span>
+                      <button
+                        onClick={() => {
+                          const newSelectedFiles = selectedFiles.filter(f => f.id !== file.id);
+                          setSelectedFiles(newSelectedFiles);
+                          onSelectionChange(
+                            newSelectedFiles.map(f => f.id),
+                            selectedFolders.map(f => f.id)
+                          );
+                        }}
+                        className="text-red-500 hover:text-red-700 text-sm ml-2"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
