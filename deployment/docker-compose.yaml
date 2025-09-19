@@ -7,6 +7,8 @@ services:
     environment:
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
+      - VITE_GOOGLE_API_KEY=$VITE_GOOGLE_API_KEY
+      - VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
     ports:
       - "5173:5173"
     depends_on:
