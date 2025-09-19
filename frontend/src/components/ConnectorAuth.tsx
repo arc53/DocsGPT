@@ -7,20 +7,21 @@ interface ConnectorAuthProps {
   onSuccess: (data: { session_token: string; user_email: string }) => void;
   onError: (error: string) => void;
   label?: string;
+  isConnected?: boolean;
+  userEmail?: string;
+  onDisconnect?: () => void;
+  errorMessage?: string;
 }
-
-const providerLabel = (provider: string) => {
-  const map: Record<string, string> = {
-    google_drive: 'Google Drive',
-  };
-  return map[provider] || provider.replace(/_/g, ' ');
-};
 
 const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   provider,
   onSuccess,
   onError,
   label,
+  isConnected = false,
+  userEmail = '',
+  onDisconnect,
+  errorMessage,
 }) => {
   const token = useSelector(selectToken);
   const completedRef = useRef(false);
@@ -36,12 +37,8 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
 
   const handleAuthMessage = (event: MessageEvent) => {
     const successGeneric = event.data?.type === 'connector_auth_success';
-    const successProvider =
-      event.data?.type === `${provider}_auth_success` ||
-      event.data?.type === 'google_drive_auth_success';
-    const errorProvider =
-      event.data?.type === `${provider}_auth_error` ||
-      event.data?.type === 'google_drive_auth_error';
+    const successProvider = event.data?.type === `${provider}_auth_success`;
+    const errorProvider = event.data?.type === `${provider}_auth_error`;
 
     if (successGeneric || successProvider) {
       completedRef.current = true;
@@ -109,21 +106,59 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
     }
   };
 
-  const buttonLabel = label || `Connect ${providerLabel(provider)}`;
-
   return (
-    <button
-      onClick={handleAuth}
-      className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white transition-colors hover:bg-blue-600"
-    >
-      <svg className="h-5 w-5" viewBox="0 0 24 24">
-        <path
-          fill="currentColor"
-          d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"
-        />
-      </svg>
-      {buttonLabel}
-    </button>
+    <>
+      {errorMessage && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-[#E60000] bg-[#FFEBEB] p-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1-11v4h2v-4h-2zm0-6v2h2V5h-2z" fill="#E60000"/>
+          </svg>
+          <span style={{ 
+            fontFamily: 'Inter', 
+            fontWeight: 400, 
+            fontSize: '15px', 
+            lineHeight: '100%',
+            color: '#E60000'
+          }}>
+            {errorMessage}
+          </span>
+        </div>
+      )}
+      
+      {isConnected ? (
+        <div className="mb-4">
+          <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] font-medium text-sm">
+            <div className="flex items-center gap-2">
+              <svg className="h-4 w-4" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+              </svg>
+              <span>Connected as {userEmail}</span>
+            </div>
+            {onDisconnect && (
+              <button
+                onClick={onDisconnect}
+                className="text-[#212121] hover:text-gray-700 font-medium text-xs underline"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={handleAuth}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white transition-colors hover:bg-blue-600"
+        >
+          <svg className="h-5 w-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"
+            />
+          </svg>
+          {label}
+        </button>
+      )}
+    </>
   );
 };
 

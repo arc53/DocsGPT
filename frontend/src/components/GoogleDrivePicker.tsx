@@ -119,9 +119,10 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         clientId: clientId,
         developerKey: developerKey,
         appId: appId,
+        setSelectFolderEnabled: true,
         viewId: "DOCS",
         showUploadView: false,
-        showUploadFolders: false,
+        showUploadFolders: true,
         supportDrives: false,
         multiselect: true,
         token: accessToken,
@@ -201,122 +202,103 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     onSelectionChange([], []);
   };
 
-  if (!isConnected) {
-    return (
-      <div>
-        {authError && (
-          <div className="text-red-500 text-sm mb-4 text-center">{authError}</div>
-        )}
-        <ConnectorAuth
-          provider="google_drive"
-          onSuccess={(data) => {
-            setUserEmail(data.user_email || 'Connected User');
-            setIsConnected(true);
-            setAuthError('');
-
-            if (data.session_token) {
-              setSessionToken('google_drive', data.session_token);
-              validateSession(data.session_token);
-            }
-          }}
-          onError={(error) => {
-            setAuthError(error);
-            setIsConnected(false);
-          }}
-        />
-      </div>
-    );
-  }
-
   return (
     <div>
-      <div className="mb-4">
-        <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] font-medium text-sm">
-          <div className="flex items-center gap-2">
-            <svg className="h-4 w-4" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-            </svg>
-            <span>Connected as {userEmail}</span>
-          </div>
-          <button
-            onClick={handleDisconnect}
-            className="text-[#212121] hover:text-gray-700 font-medium text-xs underline"
-          >
-            Disconnect
-          </button>
-        </div>
-      </div>
+      <ConnectorAuth
+        provider="google_drive"
+        label="Connect to Google Drive"
+        onSuccess={(data) => {
+          setUserEmail(data.user_email || 'Connected User');
+          setIsConnected(true);
+          setAuthError('');
 
-      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A]">
-        <div className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-sm font-medium">Selected Files</h3>
-            <button
-              onClick={() => handleOpenPicker()}
-              className="bg-[#A076F6] hover:bg-[#8A5FD4] text-white text-sm py-1 px-3 rounded-md"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Loading...' : 'Select Files'}
-            </button>
-          </div>
+          if (data.session_token) {
+            setSessionToken('google_drive', data.session_token);
+            validateSession(data.session_token);
+          }
+        }}
+        onError={(error) => {
+          setAuthError(error);
+          setIsConnected(false);
+        }}
+        isConnected={isConnected}
+        userEmail={userEmail}
+        onDisconnect={handleDisconnect}
+        errorMessage={authError}
+      />
 
-          {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
-            <p className="text-gray-600 dark:text-gray-400 text-sm">No files or folders selected</p>
-          ) : (
-            <div className="max-h-60 overflow-y-auto">
-              {selectedFolders.length > 0 && (
-                <div className="mb-2">
-                  <h4 className="text-xs font-medium text-gray-500 mb-1">Folders</h4>
-                  {selectedFolders.map((folder) => (
-                    <div key={folder.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
-                      <img src={folder.iconUrl} alt="Folder" className="w-5 h-5 mr-2" />
-                      <span className="text-sm truncate flex-1">{folder.name}</span>
-                      <button
-                        onClick={() => {
-                          const newSelectedFolders = selectedFolders.filter(f => f.id !== folder.id);
-                          setSelectedFolders(newSelectedFolders);
-                          onSelectionChange(
-                            selectedFiles.map(f => f.id),
-                            newSelectedFolders.map(f => f.id)
-                          );
-                        }}
-                        className="text-red-500 hover:text-red-700 text-sm ml-2"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {selectedFiles.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-medium text-gray-500 mb-1">Files</h4>
-                  {selectedFiles.map((file) => (
-                    <div key={file.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
-                      <img src={file.iconUrl} alt="File" className="w-5 h-5 mr-2" />
-                      <span className="text-sm truncate flex-1">{file.name}</span>
-                      <button
-                        onClick={() => {
-                          const newSelectedFiles = selectedFiles.filter(f => f.id !== file.id);
-                          setSelectedFiles(newSelectedFiles);
-                          onSelectionChange(
-                            newSelectedFiles.map(f => f.id),
-                            selectedFolders.map(f => f.id)
-                          );
-                        }}
-                        className="text-red-500 hover:text-red-700 text-sm ml-2"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+      {isConnected && (
+        <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A]">
+          <div className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-medium">Selected Files</h3>
+              <button
+                onClick={() => handleOpenPicker()}
+                className="bg-[#A076F6] hover:bg-[#8A5FD4] text-white text-sm py-1 px-3 rounded-md"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Loading...' : 'Select Files'}
+              </button>
             </div>
-          )}
+
+            {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400 text-sm">No files or folders selected</p>
+            ) : (
+              <div className="max-h-60 overflow-y-auto">
+                {selectedFolders.length > 0 && (
+                  <div className="mb-2">
+                    <h4 className="text-xs font-medium text-gray-500 mb-1">Folders</h4>
+                    {selectedFolders.map((folder) => (
+                      <div key={folder.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
+                        <img src={folder.iconUrl} alt="Folder" className="w-5 h-5 mr-2" />
+                        <span className="text-sm truncate flex-1">{folder.name}</span>
+                        <button
+                          onClick={() => {
+                            const newSelectedFolders = selectedFolders.filter(f => f.id !== folder.id);
+                            setSelectedFolders(newSelectedFolders);
+                            onSelectionChange(
+                              selectedFiles.map(f => f.id),
+                              newSelectedFolders.map(f => f.id)
+                            );
+                          }}
+                          className="text-red-500 hover:text-red-700 text-sm ml-2"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {selectedFiles.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 mb-1">Files</h4>
+                    {selectedFiles.map((file) => (
+                      <div key={file.id} className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700">
+                        <img src={file.iconUrl} alt="File" className="w-5 h-5 mr-2" />
+                        <span className="text-sm truncate flex-1">{file.name}</span>
+                        <button
+                          onClick={() => {
+                            const newSelectedFiles = selectedFiles.filter(f => f.id !== file.id);
+                            setSelectedFiles(newSelectedFiles);
+                            onSelectionChange(
+                              newSelectedFiles.map(f => f.id),
+                              selectedFolders.map(f => f.id)
+                            );
+                          }}
+                          className="text-red-500 hover:text-red-700 text-sm ml-2"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

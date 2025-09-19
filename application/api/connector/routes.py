@@ -441,9 +441,29 @@ class ConnectorValidateSession(Resource):
             auth = ConnectorCreator.create_auth(provider)
             is_expired = auth.is_token_expired(token_info)
 
+            if is_expired and token_info.get('refresh_token'):
+                try:
+                    new_token_info = auth.refresh_access_token(token_info.get('refresh_token'))
+
+                    sessions_collection.update_one(
+                        {"session_token": session_token},
+                        {"$set": {"token_info": new_token_info}}
+                    )
+                    token_info = new_token_info
+                    is_expired = False
+                except Exception as refresh_error:
+                    current_app.logger.error(f"Failed to refresh token: {refresh_error}")
+            
+            if is_expired:
+                return make_response(jsonify({
+                    "success": False,
+                    "expired": True,
+                    "error": "Session token has expired. Please reconnect."
+                }), 401)
+
             return make_response(jsonify({
                 "success": True,
-                "expired": is_expired,
+                "expired": False,
                 "user_email": session.get('user_email', 'Connected User'),
                 "access_token": token_info.get('access_token')
             }), 200)
