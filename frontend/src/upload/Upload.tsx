@@ -241,8 +241,6 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
           />
         );
       default:

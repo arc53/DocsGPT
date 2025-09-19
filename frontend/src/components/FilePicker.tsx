@@ -286,204 +286,184 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
   };
 
-  // Render authentication UI
-  if (!isConnected) {
-    return (
-      <div className="border border-[#EEE6FF78] rounded-lg dark:border-[#6A6A6A] p-6">
-        {authError && (
-          <div className="text-red-500 text-sm mb-4 text-center">{authError}</div>
-        )}
-        <ConnectorAuth
-          provider={provider}
-          onSuccess={(data) => {
-            setUserEmail(data.user_email || 'Connected User');
-            setIsConnected(true);
-            setAuthError('');
-
-            if (data.session_token) {
-              setSessionToken(provider, data.session_token);
-              loadCloudFiles(data.session_token, null);
-            }
-          }}
-          onError={(error) => {
-            setAuthError(error);
-            setIsConnected(false);
-          }}
-        />
-      </div>
-    );
-  }
-
-  // Render file browser UI
   return (
     <div className=''>
-      {/* Connected state indicator */}
-      <div className="p-3">
-        <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] font-medium text-sm">
-          <div className="flex items-center gap-2">
-            <svg className="h-4 w-4" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-            </svg>
-            <span>Connected as {userEmail}</span>
-          </div>
-          <button
-            onClick={() => {
-              const sessionToken = getSessionToken(provider);
-              if (sessionToken) {
-                const apiHost = import.meta.env.VITE_API_HOST;
-                fetch(`${apiHost}/api/connectors/disconnect`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  },
-                  body: JSON.stringify({ provider: provider, session_token: sessionToken })
-                }).catch(err => console.error(`Error disconnecting from ${getProviderConfig(provider).displayName}:`, err));
-              }
+      {authError && (
+        <div className="text-red-500 text-sm mb-4 text-center">{authError}</div>
+      )}
+      
+      <ConnectorAuth
+        provider={provider}
+        onSuccess={(data) => {
+          setUserEmail(data.user_email || 'Connected User');
+          setIsConnected(true);
+          setAuthError('');
 
-              removeSessionToken(provider);
-              setIsConnected(false);
-              setFiles([]);
-              setSelectedFiles([]);
-              onSelectionChange([]);
+          if (data.session_token) {
+            setSessionToken(provider, data.session_token);
+            loadCloudFiles(data.session_token, null);
+          }
+        }}
+        onError={(error) => {
+          setAuthError(error);
+          setIsConnected(false);
+        }}
+        isConnected={isConnected}
+        userEmail={userEmail}
+        onDisconnect={() => {
+          const sessionToken = getSessionToken(provider);
+          if (sessionToken) {
+            const apiHost = import.meta.env.VITE_API_HOST;
+            fetch(`${apiHost}/api/connectors/disconnect`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ provider: provider, session_token: sessionToken })
+            }).catch(err => console.error(`Error disconnecting from ${getProviderConfig(provider).displayName}:`, err));
+          }
 
-              if (onDisconnect) {
-                onDisconnect();
-              }
-            }}
-            className="text-[#212121] hover:text-gray-700 font-medium text-xs underline"
-          >
-            Disconnect
-          </button>
-        </div>
-      </div>
+          removeSessionToken(provider);
+          setIsConnected(false);
+          setFiles([]);
+          setSelectedFiles([]);
+          onSelectionChange([]);
 
-      <div className="border border-[#D7D7D7] rounded-lg dark:border-[#6A6A6A] mt-3">
-        <div className=" border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
-          {/* Breadcrumb navigation */}
-          <div className="px-4 pt-4 bg-[#EEE6FF78] dark:bg-[#2A262E] rounded-t-lg">
-            <div className="flex items-center gap-1 mb-2">
-              {folderPath.map((path, index) => (
-                <div key={path.id || 'root'} className="flex items-center gap-1">
-                  {index > 0 && <span className="text-gray-400">/</span>}
-                  <button
-                    onClick={() => navigateBack(index)}
-                    className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
-                    disabled={index === folderPath.length - 1}
-                  >
-                    {path.name}
-                  </button>
-                </div>
-              ))}
+          if (onDisconnect) {
+            onDisconnect();
+          }
+        }}
+      />
+
+      {isConnected && (
+        <div className="border border-[#D7D7D7] rounded-lg dark:border-[#6A6A6A] mt-3">
+          <div className="border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
+            {/* Breadcrumb navigation */}
+            <div className="px-4 pt-4 bg-[#EEE6FF78] dark:bg-[#2A262E] rounded-t-lg">
+              <div className="flex items-center gap-1 mb-2">
+                {folderPath.map((path, index) => (
+                  <div key={path.id || 'root'} className="flex items-center gap-1">
+                    {index > 0 && <span className="text-gray-400">/</span>}
+                    <button
+                      onClick={() => navigateBack(index)}
+                      className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
+                      disabled={index === folderPath.length - 1}
+                    >
+                      {path.name}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+                Select Files from {getProviderConfig(provider).displayName}
+              </div>
+
+              <div className="mb-3 max-w-md">
+                <Input
+                  type="text"
+                  placeholder="Search files and folders..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  colorVariant="silver"
+                  borderVariant="thin"
+                  labelBgClassName="bg-[#EEE6FF78] dark:bg-[#2A262E]"
+                  leftIcon={<img src={SearchIcon} alt="Search" width={16} height={16} />}
+                />
+              </div>
+
+              {/* Selected Files Message */}
+              <div className="pb-3 text-sm text-gray-600 dark:text-gray-400">
+                {selectedFiles.length + selectedFolders.length} selected
+              </div>
             </div>
 
-            <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-              Select Files from {getProviderConfig(provider).displayName}
-            </div>
-
-            <div className="mb-3 max-w-md">
-              <Input
-                type="text"
-                placeholder="Search files and folders..."
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                colorVariant="silver"
-                borderVariant="thin"
-                labelBgClassName="bg-[#EEE6FF78] dark:bg-[#2A262E]"
-                leftIcon={<img src={SearchIcon} alt="Search" width={16} height={16} />}
-              />
-            </div>
-
-            {/* Selected Files Message */}
-            <div className="pb-3 text-sm text-gray-600 dark:text-gray-400">
-              {selectedFiles.length + selectedFolders.length} selected
-            </div>
-          </div>
-
-          <div className="h-72">
-            <TableContainer
-              ref={scrollContainerRef}
-              height="288px"
-              className="scrollbar-thin  md:w-4xl lg:w-5xl"
-              bordered={false}
-            >
-              {(
-                <>
-                  <Table minWidth="1200px">
-                    <TableHead>
-                      <TableRow>
-                        <TableHeader width="40px"></TableHeader>
-                        <TableHeader width="60%">Name</TableHeader>
-                        <TableHeader width="20%">Last Modified</TableHeader>
-                        <TableHeader width="20%">Size</TableHeader>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {files.map((file, index) => (
-                        <TableRow
-                          key={`${file.id}-${index}`}
-                          onClick={() => {
-                            if (isFolder(file)) {
-                              handleFolderClick(file.id, file.name);
-                            } else {
-                              handleFileSelect(file.id, false);
-                            }
-                          }}
-                        >
-                          <TableCell width="40px" align="center">
-                            <div
-                              className="flex h-5 w-5 text-sm shrink-0 items-center justify-center border border-[#EEE6FF78] p-[0.5px] dark:border-[#6A6A6A] cursor-pointer mx-auto"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleFileSelect(file.id, isFolder(file));
-                              }}
-                            >
-                              {(isFolder(file) ? selectedFolders : selectedFiles).includes(file.id) && (
-                                <img
-                                  src={CheckIcon}
-                                  alt="Selected"
-                                  className="h-4 w-4"
-                                />
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="flex-shrink-0">
-                                <img
-                                  src={isFolder(file) ? FolderIcon : FileIcon}
-                                  alt={isFolder(file) ? "Folder" : "File"}
-                                  className="h-6 w-6"
-                                />
-                              </div>
-                              <span className="truncate">{file.name}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className='text-xs'>
-                            {formatDate(file.modifiedTime)}
-                          </TableCell>
-                          <TableCell className='text-xs'>
-                            {file.size ? formatBytes(file.size) : '-'}
-                          </TableCell>
+            <div className="h-72">
+              <TableContainer
+                ref={scrollContainerRef}
+                height="288px"
+                className="scrollbar-thin md:w-4xl lg:w-5xl"
+                bordered={false}
+              >
+                {(
+                  <>
+                    <Table minWidth="1200px">
+                      <TableHead>
+                        <TableRow>
+                          <TableHeader width="40px"></TableHeader>
+                          <TableHeader width="60%">Name</TableHeader>
+                          <TableHeader width="20%">Last Modified</TableHeader>
+                          <TableHeader width="20%">Size</TableHeader>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHead>
+                      <TableBody>
+                        {files.map((file, index) => (
+                          <TableRow
+                            key={`${file.id}-${index}`}
+                            onClick={() => {
+                              if (isFolder(file)) {
+                                handleFolderClick(file.id, file.name);
+                              } else {
+                                handleFileSelect(file.id, false);
+                              }
+                            }}
+                          >
+                            <TableCell width="40px" align="center">
+                              <div
+                                className="flex h-5 w-5 text-sm shrink-0 items-center justify-center border border-[#EEE6FF78] p-[0.5px] dark:border-[#6A6A6A] cursor-pointer mx-auto"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleFileSelect(file.id, isFolder(file));
+                                }}
+                              >
+                                {(isFolder(file) ? selectedFolders : selectedFiles).includes(file.id) && (
+                                  <img
+                                    src={CheckIcon}
+                                    alt="Selected"
+                                    className="h-4 w-4"
+                                  />
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex-shrink-0">
+                                  <img
+                                    src={isFolder(file) ? FolderIcon : FileIcon}
+                                    alt={isFolder(file) ? "Folder" : "File"}
+                                    className="h-6 w-6"
+                                  />
+                                </div>
+                                <span className="truncate">{file.name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className='text-xs'>
+                              {formatDate(file.modifiedTime)}
+                            </TableCell>
+                            <TableCell className='text-xs'>
+                              {file.size ? formatBytes(file.size) : '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
 
-                  {isLoading && (
-                    <div className="flex items-center justify-center p-4 border-t border-[#EEE6FF78] dark:border-[#6A6A6A]">
-                      <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                        Loading more files...
+                    {isLoading && (
+                      <div className="flex items-center justify-center p-4 border-t border-[#EEE6FF78] dark:border-[#6A6A6A]">
+                        <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                          Loading more files...
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </TableContainer>
+                    )}
+                  </>
+                )}
+              </TableContainer>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
