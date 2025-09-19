@@ -4,15 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import {
-  getSessionToken,
-  setSessionToken,
-  removeSessionToken,
-} from '../utils/providerUtils';
-import { formatDate } from '../utils/dateTimeUtils';
-import { formatBytes } from '../utils/stringUtils';
-import FileUpload from '../assets/file_upload.svg';
-import WebsiteCollect from '../assets/website_collect.svg';
+import { getSessionToken } from '../utils/providerUtils';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -26,23 +18,16 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
-import { IngestorDefaultConfigs } from '../upload/types/ingestor';
+import { IngestorDefaultConfigs, IngestorFormSchemas, getIngestorSchema, IngestorOption } from '../upload/types/ingestor';
 import {
   FormField,
   IngestorConfig,
-  IngestorFormSchemas,
   IngestorType,
 } from './types/ingestor';
 
 import {FilePicker}  from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 
-import CrawlerIcon from '../assets/crawler.svg';
-import FileUploadIcon from '../assets/file_upload.svg';
-import UrlIcon from '../assets/url.svg';
-import GithubIcon from '../assets/github.svg';
-import RedditIcon from '../assets/reddit.svg';
-import DriveIcon from '../assets/drive.svg';
 import ChevronRight from '../assets/chevron-right.svg';
 
 function Upload({
@@ -75,7 +60,9 @@ function Upload({
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
-    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
+    if (!ingestorSchema) return null;
+    const schema: FormField[] = ingestorSchema.fields;
 
     const generalFields = schema.filter((field: FormField) => !field.advanced);
     const advancedFields = schema.filter((field: FormField) => field.advanced);
@@ -280,14 +267,14 @@ function Upload({
   const { t } = useTranslation();
   const setTimeoutRef = useRef<number | null>(null);
 
-  const ingestorOptions: { label: string; value: IngestorType; icon: string; heading: string }[] = [
-    { label: 'Upload File', value: 'local_file', icon: FileUploadIcon, heading: 'Upload new document' },
-    { label: 'Crawler', value: 'crawler', icon: CrawlerIcon, heading: 'Add content with Web Crawler' },
-    { label: 'Link', value: 'url', icon: UrlIcon, heading: 'Add content from URL' },
-    { label: 'GitHub', value: 'github', icon: GithubIcon, heading: 'Add content from GitHub' },
-    { label: 'Reddit', value: 'reddit', icon: RedditIcon, heading: 'Add content from Reddit' },
-    { label: 'Google Drive', value: 'google_drive', icon: DriveIcon, heading: 'Upload from Google Drive' },
-  ];
+  const ingestorOptions: IngestorOption[] = IngestorFormSchemas
+    .filter(schema => schema.validate ? schema.validate() : true)
+    .map(schema => ({
+      label: schema.label,
+      value: schema.key,
+      icon: schema.icon,
+      heading: schema.heading
+    }));
 
   const sourceDocs = useSelector(selectSourceDocs);
   useEffect(() => {
@@ -524,7 +511,9 @@ function Upload({
 
     let configData: any = {};
 
-    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
+    if (!ingestorSchema) return;
+    const schema: FormField[] = ingestorSchema.fields;
     const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
     const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
     const hasGoogleDrivePicker = schema.some((field: FormField) => field.type === 'google_drive_picker');
@@ -617,7 +606,9 @@ function Upload({
     }
 
     if (!ingestor.type) return true;
-    const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const ingestorSchemaForValidation = getIngestorSchema(ingestor.type as IngestorType);
+    if (!ingestorSchemaForValidation) return true;
+    const schema: FormField[] = ingestorSchemaForValidation.fields;
     const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
     const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
     const hasGoogleDrivePicker = schema.some((field: FormField) => field.type === 'google_drive_picker');
@@ -632,7 +623,9 @@ function Upload({
       }
     }
 
-    const formFields: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+    const ingestorSchemaForFields = getIngestorSchema(ingestor.type as IngestorType);
+    if (!ingestorSchemaForFields) return false;
+    const formFields: FormField[] = ingestorSchemaForFields.fields;
     for (const field of formFields) {
       if (field.required) {
         // Validate only required fields
@@ -756,7 +749,7 @@ function Upload({
                 </button>
 
                 <h2 className="font-inter font-semibold text-[22px] leading-[28px] tracking-[0.15px] text-black dark:text-[#E0E0E0]">
-                  {ingestor.type && ingestorOptions.find(option => option.value === ingestor.type)?.heading}
+                  {ingestor.type && getIngestorSchema(ingestor.type as IngestorType)?.heading}
                 </h2>
 
                 <Input
@@ -773,13 +766,13 @@ function Upload({
                   placeholder="Name"
                   required={true}
                   labelBgClassName="bg-white dark:bg-charleston-green-2"
-                  className={ingestor.type === 'google_drive' ? "max-w-xs" : "w-full"}
+                  className="w-full"
                 />
                 {renderFormFields()}
               </div>
             )}
   
-            {ingestor.type && IngestorFormSchemas[ingestor.type as IngestorType].some(
+            {ingestor.type && getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
               (field: FormField) => field.advanced,
             ) && (
               <button
@@ -798,7 +791,9 @@ function Upload({
             <button
               onClick={() => {
                 if (!ingestor.type) return;
-                const schema: FormField[] = IngestorFormSchemas[ingestor.type as IngestorType];
+                const ingestorSchemaForUpload = getIngestorSchema(ingestor.type as IngestorType);
+                if (!ingestorSchemaForUpload) return;
+                const schema: FormField[] = ingestorSchemaForUpload.fields;
                 const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
 
                 if (hasLocalFilePicker) {
@@ -835,7 +830,8 @@ function Upload({
         setfiles([]);
         setModalState('INACTIVE');
       }}
-      className="w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
+      className="w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px] max-h-[90vh] sm:max-h-none"
+      contentClassName="max-h-[80vh] sm:max-h-none"
     >
       {view}
     </WrapperModal>
