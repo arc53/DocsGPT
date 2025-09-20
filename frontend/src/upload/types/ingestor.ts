@@ -90,9 +90,8 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     icon: DriveIcon,
     heading: 'Upload from Google Drive',
     validate: () => {
-      const googleApiKey = import.meta.env.VITE_GOOGLE_API_KEY;
       const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      return !!(googleApiKey && googleClientId);
+      return !!(googleClientId);
     },
     fields: [
       {

@@ -118,7 +118,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
       openPicker({
         clientId: clientId,
-        developerKey: developerKey,
+        developerKey: "",
         appId: appId,
         setSelectFolderEnabled: true,
         viewId: "DOCS",
