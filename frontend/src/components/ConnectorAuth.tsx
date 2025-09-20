@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { useSelector } from 'react-redux';
+import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 
 interface ConnectorAuthProps {
@@ -24,6 +25,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   errorMessage,
 }) => {
   const token = useSelector(selectToken);
+  const [isDarkTheme] = useDarkTheme();
   const completedRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
 
@@ -109,22 +111,20 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   return (
     <>
       {errorMessage && (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-[#E60000] bg-[#FFEBEB] p-3">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1-11v4h2v-4h-2zm0-6v2h2V5h-2z" fill="#E60000"/>
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#E60000] dark:border-[#D42626] bg-transparent dark:bg-[#D426261A] p-2">
+          <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7.09974 24.5422H22.9C24.5156 24.5422 25.5228 22.7901 24.715 21.3947L16.8149 7.74526C16.007 6.34989 13.9927 6.34989 13.1848 7.74526L5.28471 21.3947C4.47686 22.7901 5.48405 24.5422 7.09974 24.5422ZM14.9998 17.1981C14.4228 17.1981 13.9507 16.726 13.9507 16.149V14.0507C13.9507 13.4736 14.4228 13.0015 14.9998 13.0015C15.5769 13.0015 16.049 13.4736 16.049 14.0507V16.149C16.049 16.726 15.5769 17.1981 14.9998 17.1981ZM16.049 21.3947H13.9507V19.2964H16.049V21.3947Z" fill={isDarkTheme ? '#EECF56' : '#E60000'} />
           </svg>
-          <span style={{ 
-            fontFamily: 'Inter', 
-            fontWeight: 400, 
-            fontSize: '15px', 
-            lineHeight: '100%',
-            color: '#E60000'
+
+          <span className='text-[#E60000] dark:text-[#E37064] text-sm' style={{
+            fontFamily: 'Inter',
+            lineHeight: '100%'
           }}>
             {errorMessage}
           </span>
         </div>
       )}
-      
+
       {isConnected ? (
         <div className="mb-4">
           <div className="w-full flex items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-[#212121] font-medium text-sm">

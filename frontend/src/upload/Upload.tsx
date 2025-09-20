@@ -690,10 +690,10 @@ function Upload({
         {ingestorOptions.map((option) => (
           <div
             key={option.value}
-            className={`relative flex flex-col justify-between rounded-2xl cursor-pointer w-full max-w-[181px] h-[91.2px] border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] gap-[13.1px] transition-colors duration-300 ease-out mx-auto ${
+            className={`relative flex flex-col justify-between rounded-2xl cursor-pointer w-full h-[91.2px] border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] gap-2 transition-colors duration-300 ease-out mx-auto ${
               ingestor.type === option.value 
-                ? 'bg-[#7D54D1] text-white border-[#7D54D1] shadow-[0px_0px_8px_0px_#FFFFFF1A] dark:shadow-[0px_0px_8px_0px_#FFFFFF1A]' 
-                : 'bg-transparent hover:bg-[#ECECEC]/30 dark:hover:bg-[#383838]/30 border-[#D7D7D7] dark:border-[#4A4A4A] shadow-[0px_4px_40px_-3px_#0000001A]'
+                ? 'bg-[#7D54D1] text-white border-[#7D54D1]' 
+                : 'bg-transparent hover:bg-[#ECECEC]/30 dark:hover:bg-[#383838]/30 border-[#D7D7D7] dark:border-[#4A4A4A] hover:shadow-[0_0_15px_0_#00000026] transition-shadow duration-300'
             }`}
             onClick={() => handleIngestorTypeChange(option.value as IngestorType)}
           >

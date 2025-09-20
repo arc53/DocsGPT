@@ -71,8 +71,6 @@ const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
     <thead className={`
       sticky top-0 z-10
       bg-gray-100 dark:bg-[#27282D]
-      before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-px before:bg-[#EEE6FF78] dark:before:bg-[#6A6A6A]
-      after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-[#EEE6FF78] dark:after:bg-[#6A6A6A]
       ${className}
     `}>
       {children}
@@ -117,7 +115,7 @@ const TableHeader: React.FC<TableCellProps> = ({
     }
   };
 
-  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-[#59636E] border-t border-b border-[#D7D7D7] dark:border-[#6A6A6A] relative box-border ${getAlignmentClass()}`;
+  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-[#59636E] border-b border-[#D7D7D7] dark:border-[#6A6A6A] relative box-border ${getAlignmentClass()}`;
   const widthClasses = minWidth ? minWidth : '';
 
   return (
