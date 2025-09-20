@@ -172,7 +172,7 @@ class ConnectorSources(Resource):
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         try:
-            sources = sources_collection.find({"user": user, "type": {"$regex": "^connector:"}}).sort("date", -1)
+            sources = sources_collection.find({"user": user, "type": "connector:file"}).sort("date", -1)
             connector_sources = []
             for source in sources:
                 connector_sources.append({
@@ -289,8 +289,7 @@ class ConnectorsCallback(Resource):
                     "access_token": token_info.get("access_token"),
                     "refresh_token": token_info.get("refresh_token"),
                     "token_uri": token_info.get("token_uri"),
-                    "expiry": token_info.get("expiry"),
-                    "scopes": token_info.get("scopes")
+                    "expiry": token_info.get("expiry")
                 }
 
                 user_id = request.decoded_token.get("sub") if getattr(request, "decoded_token", None) else None
@@ -443,13 +442,18 @@ class ConnectorValidateSession(Resource):
 
             if is_expired and token_info.get('refresh_token'):
                 try:
-                    new_token_info = auth.refresh_access_token(token_info.get('refresh_token'))
-
+                    refreshed_token_info = auth.refresh_access_token(token_info.get('refresh_token'))
+                    sanitized_token_info = {
+                    "access_token": refreshed_token_info.get("access_token"),
+                    "refresh_token": refreshed_token_info.get("refresh_token"),
+                    "token_uri": refreshed_token_info.get("token_uri"),
+                    "expiry": refreshed_token_info.get("expiry")
+                }    
                     sessions_collection.update_one(
                         {"session_token": session_token},
-                        {"$set": {"token_info": new_token_info}}
+                        {"$set": {"token_info": sanitized_token_info}}
                     )
-                    token_info = new_token_info
+                    token_info = sanitized_token_info
                     is_expired = False
                 except Exception as refresh_error:
                     current_app.logger.error(f"Failed to refresh token: {refresh_error}")
