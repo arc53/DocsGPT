@@ -24,7 +24,7 @@
     "clsx": "^2.1.1",
     "copy-to-clipboard": "^3.3.3",
     "i18next": "^24.2.0",
-    "i18next-browser-languagedetector": "^8.0.2",
+    "i18next-browser-languagedetector": "^8.2.0",
     "lodash": "^4.17.21",
     "mermaid": "^11.6.0",
     "prop-types": "^15.8.1",
