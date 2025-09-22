@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { formatBytes } from '../utils/stringUtils';
 import { selectToken } from '../preferences/preferenceSlice';
+import { ActiveState } from '../models/misc';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import userService from '../api/services/userService';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -12,7 +14,17 @@ import ArrowLeft from '../assets/arrow-left.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import SyncIcon from '../assets/sync.svg';
+import CheckmarkIcon from '../assets/checkMark2.svg';
 import { useOutsideAlerter } from '../hooks';
+import {
+  Table,
+  TableContainer,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeader,
+  TableCell,
+} from './Table';
 
 interface FileNode {
   type?: string;
@@ -64,6 +76,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   const [syncProgress, setSyncProgress] = useState<number>(0);
   const [sourceProvider, setSourceProvider] = useState<string>('');
   const [syncDone, setSyncDone] = useState<boolean>(false);
+  const [syncConfirmationModal, setSyncConfirmationModal] = useState<ActiveState>('INACTIVE');
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -343,7 +356,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
 
           {/* Sync button */}
           <button
-            onClick={handleSync}
+            onClick={() => setSyncConfirmationModal('ACTIVE')}
             disabled={isSyncing}
             className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors ${
               isSyncing
@@ -359,7 +372,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
             }
           >
             <img
-              src={SyncIcon}
+              src={syncDone ? CheckmarkIcon : SyncIcon}
               alt={t('settings.sources.sync')}
               className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
             />
@@ -374,39 +387,36 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     );
   };
 
-  const renderFileTree = (directory: DirectoryStructure) => {
-    if (!directory) return [];
-
+  const renderFileTree = (directory: DirectoryStructure): React.ReactNode[] => {
     // Create parent directory row
     const parentRow =
       currentPath.length > 0
         ? [
-            <tr
-              key="parent-dir"
-              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
-              onClick={navigateUp}
-            >
-              <td className="px-2 py-2 lg:px-4">
-                <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 flex-shrink-0"
-                  />
-                  <span className="truncate text-sm dark:text-[#E0E0E0]">
-                    ..
-                  </span>
-                </div>
-              </td>
-              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-                -
-              </td>
-              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-                -
-              </td>
-              <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
-            </tr>,
-          ]
+          <TableRow
+            key="parent-dir"
+            onClick={navigateUp}
+          >
+            <TableCell width="40%" align="left">
+              <div className="flex items-center">
+                <img
+                  src={FolderIcon}
+                  alt={t('settings.sources.parentFolderAlt')}
+                  className="mr-2 h-4 w-4 flex-shrink-0"
+                />
+                <span className="truncate">
+                  ..
+                </span>
+              </div>
+            </TableCell>
+            <TableCell width="30%" align="left">
+              -
+            </TableCell>
+            <TableCell width="20%" align="left">
+              -
+            </TableCell>
+            <TableCell width="10%" align="right"></TableCell>
+          </TableRow>,
+        ]
         : [];
 
     // Sort entries: directories first, then files, both alphabetically
@@ -434,36 +444,35 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
-          <tr
+          <TableRow
             key={itemId}
-            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => navigateToDirectory(name)}
           >
-            <td className="px-2 py-2 lg:px-4">
+            <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
                   src={FolderIcon}
                   alt={t('settings.sources.folderAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                <span className="truncate">
                   {name}
                 </span>
               </div>
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+            </TableCell>
+            <TableCell width="30%" align="left">
               {dirStats.totalTokens > 0
                 ? dirStats.totalTokens.toLocaleString()
                 : '-'}
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+            </TableCell>
+            <TableCell width="20%" align="left">
               {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
-            </td>
-            <td className="w-10 px-2 py-2 text-sm lg:px-4">
+            </TableCell>
+            <TableCell width="10%" align="right">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E] font-medium"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -483,8 +492,8 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                   offset={{ x: -4, y: 4 }}
                 />
               </div>
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         );
       });
 
@@ -496,30 +505,29 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
         const menuRef = getMenuRef(itemId);
 
         return (
-          <tr
+          <TableRow
             key={itemId}
-            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => handleFileClick(name)}
           >
-            <td className="px-2 py-2 lg:px-4">
+            <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
                   src={FileIcon}
                   alt={t('settings.sources.fileAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                <span className="truncate">
                   {name}
                 </span>
               </div>
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+            </TableCell>
+            <TableCell width="30%" align="left">
               {node.token_count?.toLocaleString() || '-'}
-            </td>
-            <td className="px-2 py-2 text-sm md:px-4 dark:text-[#E0E0E0]">
+            </TableCell>
+            <TableCell width="20%" align="left">
               {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
-            </td>
-            <td className="w-10 px-2 py-2 text-sm lg:px-4">
+            </TableCell>
+            <TableCell width="10%" align="right">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -543,8 +551,8 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                   offset={{ x: -4, y: 4 }}
                 />
               </div>
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         );
       });
 
@@ -702,28 +710,45 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
           <div className="mb-2">{renderPathNavigation()}</div>
 
           <div className="w-full">
-            <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-              <table className="w-full min-w-[600px] table-auto bg-transparent">
-                <thead className="bg-gray-100 dark:bg-[#27282D]">
-                  <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-                    <th className="min-w-[200px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeader width="40%" align="left">
                       {t('settings.sources.fileName')}
-                    </th>
-                    <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                    </TableHeader>
+                    <TableHeader width="30%" align="left">
                       {t('settings.sources.tokens')}
-                    </th>
-                    <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                    </TableHeader>
+                    <TableHeader width="20%" align="left">
                       {t('settings.sources.size')}
-                    </th>
-                    <th className="w-10 px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]"></th>
-                  </tr>
-                </thead>
-                <tbody>{renderFileTree(getCurrentDirectory())}</tbody>
-              </table>
-            </div>
+                    </TableHeader>
+                    <TableHeader width="10%" align="right">
+                      <span className="sr-only">
+                        {t('settings.sources.actions')}
+                      </span>
+                    </TableHeader>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {renderFileTree(getCurrentDirectory())}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        message={t('settings.sources.syncConfirmation', {
+          sourceName,
+        })}
+        modalState={syncConfirmationModal}
+        setModalState={setSyncConfirmationModal}
+        handleSubmit={handleSync}
+        submitLabel={t('settings.sources.sync')}
+        cancelLabel={t('cancel')}
+      />
     </div>
   );
 };

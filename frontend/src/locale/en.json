@@ -68,6 +68,7 @@
       "private": "Private",
       "sync": "Sync",
       "syncing": "Syncing...",
+      "syncConfirmation": "Are you sure you want to sync \"{{sourceName}}\"? This will update the content with your cloud storage and may override any edits you made to individual chunks.",
       "syncFrequency": {
         "never": "Never",
         "daily": "Daily",

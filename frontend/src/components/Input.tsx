@@ -16,6 +16,7 @@ const Input = ({
   textSize = 'medium',
   children,
   labelBgClassName = 'bg-white dark:bg-raisin-black',
+  leftIcon,
   onChange,
   onPaste,
   onKeyDown,
@@ -42,7 +43,7 @@ const Input = ({
     <div className={`relative ${className}`}>
       <input
         ref={inputRef}
-        className={`peer text-jet dark:text-bright-gray h-[42px] w-full rounded-full bg-transparent px-3 py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
+        className={`peer text-jet dark:text-bright-gray h-[42px] w-full rounded-full bg-transparent ${leftIcon ? 'pl-10' : 'px-3'} py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
         type={type}
         id={id}
         name={name}
@@ -57,12 +58,19 @@ const Input = ({
       >
         {children}
       </input>
+      {leftIcon && (
+        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center justify-center">
+          {leftIcon}
+        </div>
+      )}
       {placeholder && (
         <label
           htmlFor={id}
           className={`absolute select-none ${
             hasValue ? '-top-2.5 left-3 text-xs' : ''
-          } px-2 transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:${
+          } px-2 transition-all peer-placeholder-shown:top-2.5 ${
+            leftIcon ? 'peer-placeholder-shown:left-7' : 'peer-placeholder-shown:left-3'
+          } peer-placeholder-shown:${
             textSizeStyles[textSize]
           } text-gray-4000 pointer-events-none cursor-none peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
         >
