@@ -104,12 +104,11 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     
     try {
       const clientId: string = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      const developerKey : string = import.meta.env.VITE_GOOGLE_API_KEY;
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;
 
-      if (!clientId || !developerKey || !appId) {
+      if (!clientId || !appId) {
         console.error('Missing Google Drive configuration');
 
         setIsLoading(false);
@@ -120,14 +119,14 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         clientId: clientId,
         developerKey: "",
         appId: appId,
-        setSelectFolderEnabled: true,
+        setSelectFolderEnabled: false,
         viewId: "DOCS",
         showUploadView: false,
-        showUploadFolders: true,
+        showUploadFolders: false,
         supportDrives: false,
         multiselect: true,
         token: accessToken,
-        viewMimeTypes: 'application/vnd.google-apps.folder,application/vnd.google-apps.document,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.ms-powerpoint,application/vnd.ms-excel,text/plain,text/csv,text/html,application/rtf,image/jpeg,image/jpg,image/png',
+        viewMimeTypes: 'application/vnd.google-apps.document,application/vnd.google-apps.presentation,application/vnd.google-apps.spreadsheet,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.ms-powerpoint,application/vnd.ms-excel,text/plain,text/csv,text/html,text/markdown,text/x-rst,application/json,application/epub+zip,application/rtf,image/jpeg,image/jpg,image/png',
         callbackFunction: (data:any) => {
           setIsLoading(false);
           if (data.action === 'picked') {
@@ -137,14 +136,14 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
             const newFolders: PickerFile[] = [];
 
             docs.forEach((doc: any) => {
-              const item = {
-                id: doc.id,
-                name: doc.name,
-                mimeType: doc.mimeType,
-                iconUrl: doc.iconUrl || '',
-                description: doc.description,
-                sizeBytes: doc.sizeBytes
-              };
+                const item = {
+                  id: doc.id,
+                  name: doc.name,
+                  mimeType: doc.mimeType,
+                  iconUrl: doc.iconUrl || '',
+                  description: doc.description,
+                  sizeBytes: doc.sizeBytes
+                };
 
               if (doc.mimeType === 'application/vnd.google-apps.folder') {
                 newFolders.push(item);
