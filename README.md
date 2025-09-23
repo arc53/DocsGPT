@@ -55,9 +55,11 @@
 - [x] Agent optimisations (May 2025)
 - [x] Filesystem sources update (July 2025)
 - [x] Json Responses (August 2025)
-- [ ] Sharepoint integration (August 2025)
-- [ ] MCP support (August 2025)
-- [ ] Add OAuth 2.0 authentication for tools and sources (August 2025)
+- [x] MCP support (August 2025)
+- [x] Google Drive integration (September 2025)
+- [ ] Add OAuth 2.0 authentication for MCP (September 2025)
+- [ ] Sharepoint integration (October 2025)
+- [ ] Deep Agents (October 2025)
 - [ ] Agent scheduling
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
