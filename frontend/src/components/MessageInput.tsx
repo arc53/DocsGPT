@@ -9,6 +9,7 @@ import ClipIcon from '../assets/clip.svg';
 import ExitIcon from '../assets/exit.svg';
 import PaperPlane from '../assets/paper_plane.svg';
 import SourceIcon from '../assets/source.svg';
+import StopIcon from '../assets/cancel-response.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
 import SpinnerDark from '../assets/spinner-dark.svg';
 import Spinner from '../assets/spinner.svg';
@@ -29,6 +30,7 @@ import Upload from '../upload/Upload';
 import { getOS, isTouchDevice } from '../utils/browserUtils';
 import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
+import { handleAbort } from '../conversation/conversationSlice';
 
 type MessageInputProps = {
   onSubmit: (text: string) => void;
@@ -64,6 +66,8 @@ export default function MessageInput({
 
   const browserOS = getOS();
   const isTouch = isTouchDevice();
+
+  const [elipsis, setElipsis] = useState('.');
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -256,199 +260,235 @@ export default function MessageInput({
       setValue('');
     }
   };
+
+  const handleCancel = () => {
+    console.log('Cancel');
+    handleAbort();
+  };
+
+  useEffect(() => {
+    if (loading) {
+      const interval = setInterval(() => {
+        setElipsis((prev) => (prev.length < 3 ? prev + '.' : ''));
+      }, 300);
+      return () => clearInterval(interval);
+    }
+  }, [loading]);
+
   return (
     <div className="mx-2 flex w-full flex-col">
-      <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
-        <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment, index) => (
-            <div
-              key={index}
-              className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
-                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-              }`}
-              title={attachment.fileName}
-            >
-              <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                {attachment.status === 'completed' && (
-                  <img
-                    src={DocumentationDark}
-                    alt="Attachment"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {attachment.status === 'failed' && (
-                  <img
-                    src={AlertIcon}
-                    alt="Failed"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {(attachment.status === 'uploading' ||
-                  attachment.status === 'processing') && (
-                  <div className="flex h-[15px] w-[15px] items-center justify-center">
-                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-0"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="transparent"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <circle
-                        className="text-[#ECECF1]"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                        strokeDasharray="62.83"
-                        strokeDashoffset={
-                          62.83 * (1 - attachment.progress / 100)
-                        }
-                        transform="rotate(-90 12 12)"
-                      />
-                    </svg>
-                  </div>
-                )}
-              </div>
-
-              <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                {attachment.fileName}
-              </span>
-
-              <button
-                className="ml-1.5 flex items-center justify-center rounded-full p-1"
-                onClick={() => {
-                  if (attachment.id) {
-                    dispatch(removeAttachment(attachment.id));
-                  } else if (attachment.taskId) {
-                    dispatch(removeAttachment(attachment.taskId));
-                  }
-                }}
-                aria-label={t('conversation.attachments.remove')}
-              >
-                <img
-                  src={ExitIcon}
-                  alt={t('conversation.attachments.remove')}
-                  className="h-2.5 w-2.5 filter dark:invert"
-                />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="w-full">
-          <label htmlFor="message-input" className="sr-only">
-            {t('inputPlaceholder')}
-          </label>
-          <textarea
-            id="message-input"
-            ref={inputRef}
-            value={value}
-            onChange={handleChange}
-            tabIndex={1}
-            placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3 dark:bg-transparent"
-            onInput={handleInput}
-            onKeyDown={handleKeyDown}
-            aria-label={t('inputPlaceholder')}
-          />
-        </div>
-
-        <div className="flex items-center px-2 pb-1.5 sm:px-3 sm:pb-2">
-          <div className="flex grow flex-wrap gap-1 sm:gap-2">
-            {showSourceButton && (
-              <button
-                ref={sourceButtonRef}
-                className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 sm:max-w-[150px] dark:hover:bg-[#2C2E3C]"
-                onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
-                title={
-                  selectedDocs && selectedDocs.length > 0
-                    ? selectedDocs.map((doc) => doc.name).join(', ')
-                    : t('conversation.sources.title')
-                }
-              >
-                <img
-                  src={SourceIcon}
-                  alt="Sources"
-                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
-                />
-                <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
-                  {selectedDocs && selectedDocs.length > 0
-                    ? selectedDocs.length === 1
-                      ? selectedDocs[0].name
-                      : `${selectedDocs.length} sources selected`
-                    : t('conversation.sources.title')}
-                </span>
-                {!isTouch && (
-                  <span className="ml-1 hidden text-[10px] text-gray-500 sm:inline-block dark:text-gray-400">
-                    {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {showToolButton && (
-              <button
-                ref={toolButtonRef}
-                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]"
-                onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-              >
-                <img
-                  src={ToolIcon}
-                  alt="Tools"
-                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
-                />
-                <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
-                  {t('settings.tools.label')}
-                </span>
-              </button>
-            )}
-            <label className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]">
-              <img
-                src={ClipIcon}
-                alt="Attach"
-                className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
-              />
-              <span className="xs:text-[12px] dark:text-bright-gray text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
-                {t('conversation.attachments.attach')}
-              </span>
-              <input
-                type="file"
-                className="hidden"
-                onChange={handleFileAttachment}
-              />
-            </label>
-            {/* Additional badges can be added here in the future */}
-          </div>
-
+      {loading ? (
+        <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[100px] border hover:bg-amber-50 dark:bg-transparent">
           <button
-            onClick={loading ? undefined : handleSubmit}
-            aria-label={loading ? t('loading') : t('send')}
-            className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${loading || !value.trim() ? 'bg-black opacity-60 dark:bg-[#F0F3F4] dark:opacity-80' : 'bg-black opacity-100 dark:bg-[#F0F3F4]'} ml-auto shrink-0`}
-            disabled={loading}
+            className="text-gray-6000 bg-white-3000 transition-background dark:text-chinese-white dark:bg-gun-metal flex h-full w-full items-center justify-center rounded-[100px] p-4 text-sm duration-150 ease-in-out hover:bg-[#F8F8F8] dark:hover:bg-[#363947]"
+            onClick={handleCancel}
+            aria-label={t('cancel')}
           >
-            {loading ? (
-              <img
-                src={isDarkTheme ? SpinnerDark : Spinner}
-                className="mx-auto my-auto block h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4"
-                alt={t('loading')}
-              />
-            ) : (
-              <img
-                className={`mx-auto my-auto block h-3.5 w-3.5 translate-x-[-0.9px] translate-y-[1.1px] sm:h-4 sm:w-4 ${isDarkTheme ? 'invert filter' : ''}`}
-                src={PaperPlane}
-                alt={t('send')}
-              />
-            )}
+            <img
+              src={StopIcon}
+              alt="Cancel"
+              className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
+            />
+            <p className="flex h-min items-center justify-center text-center">
+              {'Stop Generating' + elipsis}
+            </p>
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
+          <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
+            {attachments.map((attachment, index) => (
+              <div
+                key={index}
+                className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
+                  attachment.status !== 'completed'
+                    ? 'opacity-70'
+                    : 'opacity-100'
+                }`}
+                title={attachment.fileName}
+              >
+                <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
+                  {attachment.status === 'completed' && (
+                    <img
+                      src={DocumentationDark}
+                      alt="Attachment"
+                      className="h-[15px] w-[15px] object-fill"
+                    />
+                  )}
+
+                  {attachment.status === 'failed' && (
+                    <img
+                      src={AlertIcon}
+                      alt="Failed"
+                      className="h-[15px] w-[15px] object-fill"
+                    />
+                  )}
+
+                  {(attachment.status === 'uploading' ||
+                    attachment.status === 'processing') && (
+                    <div className="flex h-[15px] w-[15px] items-center justify-center">
+                      <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-0"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="transparent"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <circle
+                          className="text-[#ECECF1]"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                          strokeDasharray="62.83"
+                          strokeDashoffset={
+                            62.83 * (1 - attachment.progress / 100)
+                          }
+                          transform="rotate(-90 12 12)"
+                        />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
+                  {attachment.fileName}
+                </span>
+
+                <button
+                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                  onClick={() => {
+                    if (attachment.id) {
+                      dispatch(removeAttachment(attachment.id));
+                    } else if (attachment.taskId) {
+                      dispatch(removeAttachment(attachment.taskId));
+                    }
+                  }}
+                  aria-label={t('conversation.attachments.remove')}
+                >
+                  <img
+                    src={ExitIcon}
+                    alt={t('conversation.attachments.remove')}
+                    className="h-2.5 w-2.5 filter dark:invert"
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="w-full">
+            <label htmlFor="message-input" className="sr-only">
+              {t('inputPlaceholder')}
+            </label>
+            <textarea
+              id="message-input"
+              ref={inputRef}
+              value={value}
+              onChange={handleChange}
+              tabIndex={1}
+              placeholder={t('inputPlaceholder')}
+              className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3 dark:bg-transparent"
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+              aria-label={t('inputPlaceholder')}
+            />
+          </div>
+
+          <div className="flex items-center px-2 pb-1.5 sm:px-3 sm:pb-2">
+            <div className="flex grow flex-wrap gap-1 sm:gap-2">
+              {showSourceButton && (
+                <button
+                  ref={sourceButtonRef}
+                  className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 sm:max-w-[150px] dark:hover:bg-[#2C2E3C]"
+                  onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
+                  title={
+                    selectedDocs && selectedDocs.length > 0
+                      ? selectedDocs.map((doc) => doc.name).join(', ')
+                      : t('conversation.sources.title')
+                  }
+                >
+                  <img
+                    src={SourceIcon}
+                    alt="Sources"
+                    className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
+                  />
+                  <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
+                    {selectedDocs && selectedDocs.length > 0
+                      ? selectedDocs.length === 1
+                        ? selectedDocs[0].name
+                        : `${selectedDocs.length} sources selected`
+                      : t('conversation.sources.title')}
+                  </span>
+                  {!isTouch && (
+                    <span className="ml-1 hidden text-[10px] text-gray-500 sm:inline-block dark:text-gray-400">
+                      {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {showToolButton && (
+                <button
+                  ref={toolButtonRef}
+                  className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]"
+                  onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
+                >
+                  <img
+                    src={ToolIcon}
+                    alt="Tools"
+                    className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
+                  />
+                  <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
+                    {t('settings.tools.label')}
+                  </span>
+                </button>
+              )}
+              <label className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]">
+                <img
+                  src={ClipIcon}
+                  alt="Attach"
+                  className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
+                />
+                <span className="xs:text-[12px] dark:text-bright-gray text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
+                  {t('conversation.attachments.attach')}
+                </span>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileAttachment}
+                />
+              </label>
+              {/* Additional badges can be added here in the future */}
+            </div>
+
+            <button
+              onClick={loading ? undefined : handleSubmit}
+              aria-label={loading ? t('loading') : t('send')}
+              className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${loading || !value.trim() ? 'bg-black opacity-60 dark:bg-[#F0F3F4] dark:opacity-80' : 'bg-black opacity-100 dark:bg-[#F0F3F4]'} ml-auto shrink-0`}
+              disabled={loading}
+            >
+              {loading ? (
+                <img
+                  src={isDarkTheme ? SpinnerDark : Spinner}
+                  className="mx-auto my-auto block h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4"
+                  alt={t('loading')}
+                />
+              ) : (
+                <img
+                  className={`mx-auto my-auto block h-3.5 w-3.5 translate-x-[-0.9px] translate-y-[1.1px] sm:h-4 sm:w-4 ${isDarkTheme ? 'invert filter' : ''}`}
+                  src={PaperPlane}
+                  alt={t('send')}
+                />
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       <SourcesPopup
         isOpen={isSourcesPopupOpen}
