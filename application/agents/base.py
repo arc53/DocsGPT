@@ -264,7 +264,15 @@ class BaseAgent(ABC):
         query: str,
         retrieved_data: List[Dict],
     ) -> List[Dict]:
-        docs_together = "\n".join([doc["text"] for doc in retrieved_data])
+        docs_with_filenames = []
+        for doc in retrieved_data:
+            filename = doc.get("filename") or doc.get("title") or doc.get("source")
+            if filename:
+                chunk_header = str(filename)
+                docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
+            else:
+                docs_with_filenames.append(doc["text"])
+        docs_together = "\n\n".join(docs_with_filenames)
         p_chat_combine = system_prompt.replace("{summaries}", docs_together)
         messages_combine = [{"role": "system", "content": p_chat_combine}]
 
