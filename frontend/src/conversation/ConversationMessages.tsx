@@ -210,7 +210,7 @@ export default function ConversationMessages({
       )}
 
       <div className="w-full max-w-[1300px] px-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
-        {headerContent && headerContent}
+        {headerContent}
 
         {queries.length > 0 ? (
           queries.map((query, index) => (
