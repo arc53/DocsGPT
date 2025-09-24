@@ -334,7 +334,7 @@ class ConnectorsCallback(Resource):
 
         except Exception as e:
             current_app.logger.error(f"Error handling connector callback: {e}")
-            return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.")
+            return redirect("/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.")
 
 
 @connectors_ns.route("/api/connectors/refresh")
