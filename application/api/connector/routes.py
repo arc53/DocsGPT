@@ -276,7 +276,11 @@ class ConnectorsCallback(Resource):
             error = request.args.get('error')
 
             if error:
-                return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
+                if error == "access_denied":
+                    return redirect(f"/api/connectors/callback-status?status=cancelled&message=Authentication+was+cancelled.+You+can+try+again+if+you'd+like+to+connect+your+account.&provider={provider}")
+                else:
+                    current_app.logger.warning(f"OAuth error in callback: {error}")
+                    return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
 
             if not authorization_code:
                 return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
@@ -644,20 +648,23 @@ class ConnectorCallbackStatus(Resource):
                     .container {{ max-width: 600px; margin: 0 auto; }}
                     .success {{ color: #4CAF50; }}
                     .error {{ color: #F44336; }}
+                    .cancelled {{ color: #FF9800; }}
                 </style>
                 <script>
                     window.onload = function() {{
                         const status = "{status}";
                         const sessionToken = "{session_token}";
                         const userEmail = "{user_email}";
-                        
+
                         if (status === "success" && window.opener) {{
                             window.opener.postMessage({{
                                 type: '{provider}_auth_success',
                                 session_token: sessionToken,
                                 user_email: userEmail
                             }}, '*');
-                            
+
+                            setTimeout(() => window.close(), 3000);
+                        }} else if (status === "cancelled" || status === "error") {{
                             setTimeout(() => window.close(), 3000);
                         }}
                     }};
@@ -670,7 +677,7 @@ class ConnectorCallbackStatus(Resource):
                         <p>{message}</p>
                         {f'<p>Connected as: {user_email}</p>' if status == 'success' else ''}
                     </div>
-                    <p><small>You can close this window. {f"Your {provider.replace('_', ' ').title()} is now connected and ready to use." if status == 'success' else ''}</small></p>
+                    <p><small>You can close this window. {f"Your {provider.replace('_', ' ').title()} is now connected and ready to use." if status == 'success' else "Feel free to close this window."}</small></p>
                 </div>
             </body>
             </html>
