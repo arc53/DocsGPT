@@ -234,8 +234,20 @@ class ConnectorAuth(Resource):
             if not ConnectorCreator.is_supported(provider):
                 return make_response(jsonify({"success": False, "error": f"Unsupported provider: {provider}"}), 400)
 
-            import uuid
-            state = str(uuid.uuid4())
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
+            user_id = decoded_token.get('sub')
+
+            now = datetime.datetime.now(datetime.timezone.utc)
+            result = sessions_collection.insert_one({
+                "provider": provider,
+                "user": user_id,
+                "status": "pending",
+                "created_at": now
+            })
+            state = str(result.inserted_id)
+
             auth = ConnectorCreator.create_auth(provider)
             authorization_url = auth.get_authorization_url(state=state)
             return make_response(jsonify({
@@ -260,21 +272,22 @@ class ConnectorsCallback(Resource):
 
             provider = request.args.get('provider', 'google_drive')
             authorization_code = request.args.get('code')
-            _ = request.args.get('state')
+            state = request.args.get('state')
             error = request.args.get('error')
 
             if error:
-                return redirect(f"/api/connectors/callback-status?status=error&message=OAuth+error:+{error}.+Please+try+again+and+make+sure+to+grant+all+requested+permissions,+including+offline+access.&provider={provider}")
+                return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
 
             if not authorization_code:
-                return redirect(f"/api/connectors/callback-status?status=error&message=Authorization+code+not+provided.+Please+complete+the+authorization+process+and+make+sure+to+grant+offline+access.&provider={provider}")
+                return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
+
+            state_object_id = ObjectId(state)
 
             try:
                 auth = ConnectorCreator.create_auth(provider)
                 token_info = auth.exchange_code_for_tokens(authorization_code)
 
                 session_token = str(uuid.uuid4())
-                
 
                 try:
                     credentials = auth.create_credentials_from_token_info(token_info)
@@ -292,26 +305,28 @@ class ConnectorsCallback(Resource):
                     "expiry": token_info.get("expiry")
                 }
 
-                user_id = request.decoded_token.get("sub") if getattr(request, "decoded_token", None) else None
-                sessions_collection.insert_one({
-                    "session_token": session_token,
-                    "user": user_id,
-                    "token_info": sanitized_token_info,
-                    "created_at": datetime.datetime.now(datetime.timezone.utc),
-                    "user_email": user_email,
-                    "provider": provider
-                })
+                sessions_collection.find_one_and_update(
+                    {"_id": state_object_id, "provider": provider},
+                    {
+                        "$set": {
+                            "session_token": session_token,
+                            "token_info": sanitized_token_info,
+                            "user_email": user_email,
+                            "status": "authorized"
+                        }
+                    }
+                )
 
                 # Redirect to success page with session token and user email
                 return redirect(f"/api/connectors/callback-status?status=success&message=Authentication+successful&provider={provider}&session_token={session_token}&user_email={user_email}")
 
             except Exception as e:
                 current_app.logger.error(f"Error exchanging code for tokens: {str(e)}", exc_info=True)
-                return redirect(f"/api/connectors/callback-status?status=error&message=Failed+to+exchange+authorization+code+for+tokens:+{str(e)}&provider={provider}")
+                return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
 
         except Exception as e:
             current_app.logger.error(f"Error handling connector callback: {e}")
-            return redirect(f"/api/connectors/callback-status?status=error&message=Failed+to+complete+connector+authentication:+{str(e)}.+Please+try+again+and+make+sure+to+grant+all+requested+permissions,+including+offline+access.")
+            return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.")
 
 
 @connectors_ns.route("/api/connectors/refresh")
