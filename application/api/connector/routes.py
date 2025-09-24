@@ -1,5 +1,7 @@
+import base64
 import datetime
 import json
+import uuid
 
 
 from bson.objectid import ObjectId
@@ -11,8 +13,6 @@ from flask import (
     request
 )
 from flask_restx import fields, Namespace, Resource
-
-
 
 
 from application.api.user.tasks import (
@@ -246,7 +246,11 @@ class ConnectorAuth(Resource):
                 "status": "pending",
                 "created_at": now
             })
-            state = str(result.inserted_id)
+            state_dict = {
+                "provider": provider,
+                "object_id": str(result.inserted_id)
+            }
+            state = base64.urlsafe_b64encode(json.dumps(state_dict).encode()).decode()
 
             auth = ConnectorCreator.create_auth(provider)
             authorization_url = auth.get_authorization_url(state=state)
@@ -268,12 +272,14 @@ class ConnectorsCallback(Resource):
         try:
             from application.parser.connectors.connector_creator import ConnectorCreator
             from flask import request, redirect
-            import uuid
 
-            provider = request.args.get('provider', 'google_drive')
             authorization_code = request.args.get('code')
             state = request.args.get('state')
             error = request.args.get('error')
+
+            state_dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+            provider = state_dict["provider"]
+            state_object_id = state_dict["object_id"]
 
             if error:
                 if error == "access_denied":
@@ -284,8 +290,6 @@ class ConnectorsCallback(Resource):
 
             if not authorization_code:
                 return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
-
-            state_object_id = ObjectId(state)
 
             try:
                 auth = ConnectorCreator.create_auth(provider)
@@ -310,7 +314,7 @@ class ConnectorsCallback(Resource):
                 }
 
                 sessions_collection.find_one_and_update(
-                    {"_id": state_object_id, "provider": provider},
+                    {"_id": ObjectId(state_object_id), "provider": provider},
                     {
                         "$set": {
                             "session_token": session_token,
