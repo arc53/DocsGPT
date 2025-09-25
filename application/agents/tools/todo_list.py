@@ -15,8 +15,8 @@ class TodoListTool(Tool):
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config or {}
-        self.database_name = self.config.get("database", settings.MONGO_DB_NAME)
-        self.collection_name = self.config.get("collection", "todos")
+        self.database_name = settings.MONGO_DB_NAME
+        self.collection_name = "todos"
         self._client = None
         self._db = None
         self._col = None
@@ -245,11 +245,4 @@ class TodoListTool(Tool):
         ]
 
     def get_config_requirements(self):
-        return {
-            "mongo_uri": {"type": "string", "description": "MongoDB connection URI"},
-            "database": {"type": "string", "description": "MongoDB database name"},
-            "collection": {
-                "type": "string",
-                "description": "MongoDB collection name for todos",
-            },
-        }
+        return {}
