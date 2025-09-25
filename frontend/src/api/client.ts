@@ -1,3 +1,5 @@
+import { throttle } from 'lodash';
+
 export const baseURL =
   import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
@@ -17,6 +19,27 @@ const getHeaders = (
 
   return headers;
 };
+
+// Throttled post function with 500ms delay
+const throttledPost = throttle(
+  (
+    url: string,
+    data: any,
+    token: string | null,
+    headers = {},
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    fetch(`${baseURL}${url}`, {
+      method: 'POST',
+      headers: getHeaders(token, headers),
+      body: JSON.stringify(data),
+      signal,
+    }).then((response) => {
+      return response;
+    }),
+  500, // 500ms delay between calls
+  { leading: true, trailing: false } // Only allow the first call in the window
+);
 
 const apiClient = {
   get: (
@@ -39,15 +62,7 @@ const apiClient = {
     token: string | null,
     headers = {},
     signal?: AbortSignal,
-  ): Promise<any> =>
-    fetch(`${baseURL}${url}`, {
-      method: 'POST',
-      headers: getHeaders(token, headers),
-      body: JSON.stringify(data),
-      signal,
-    }).then((response) => {
-      return response;
-    }),
+  ): Promise<any> => throttledPost(url, data, token, headers, signal),
 
   postFormData: (
     url: string,
