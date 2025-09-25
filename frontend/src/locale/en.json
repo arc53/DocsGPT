@@ -193,17 +193,20 @@
         "headerName": "Header Name",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
-        "testing": "Testing...",
-        "saving": "Saving...",
+        "testing": "Testing",
+        "saving": "Saving",
         "save": "Save",
         "cancel": "Cancel",
         "noAuth": "No Authentication",
+        "oauthInProgress": "Waiting for OAuth completion...",
+        "oauthCompleted": "OAuth completed successfully",
         "placeholders": {
           "serverUrl": "https://api.example.com",
           "apiKey": "Your secret API key",
           "bearerToken": "Your secret token",
           "username": "Your username",
-          "password": "Your password"
+          "password": "Your password",
+          "oauthScopes": "OAuth scopes (comma separated)"
         },
         "errors": {
           "nameRequired": "Server name is required",
@@ -214,7 +217,9 @@
           "usernameRequired": "Username is required",
           "passwordRequired": "Password is required",
           "testFailed": "Connection test failed",
-          "saveFailed": "Failed to save MCP server"
+          "saveFailed": "Failed to save MCP server",
+          "oauthFailed": "OAuth process failed or was cancelled",
+          "oauthTimeout": "OAuth process timed out, please try again"
         }
       }
     }
