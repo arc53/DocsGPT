@@ -10,7 +10,7 @@ import Add from './assets/add.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
-import Github from './assets/github.svg';
+import Github from './assets/git_nav.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
@@ -568,6 +568,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 >
                   <img
                     src={Discord}
+                    width={24}
+                    height={24}
                     alt="Join Discord community"
                     className="m-2 w-6 self-center filter dark:invert"
                   />
@@ -581,8 +583,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 >
                   <img
                     src={Twitter}
+                    width={20}
+                    height={20}
                     alt="Follow us on Twitter"
-                    className="m-2 w-5 self-center filter dark:invert"
+                    className="m-2 self-center filter dark:invert"
                   />
                 </NavLink>
                 <NavLink
@@ -595,7 +599,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   <img
                     src={Github}
                     alt="View on GitHub"
-                    className="m-2 w-6 self-center filter dark:invert"
+                    width={28}
+                    height={28}
+                    className="m-2 self-center filter dark:invert"
                   />
                 </NavLink>
               </div>

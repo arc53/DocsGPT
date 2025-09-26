@@ -272,7 +272,7 @@ export default function Sources({
   return documentToView ? (
     <div className="mt-8 flex flex-col">
       {documentToView.isNested ? (
-        documentToView.type === 'connector' ? (
+        documentToView.type === 'connector:file' ? (
           <ConnectorTreeComponent
             docId={documentToView.id || ''}
             sourceName={documentToView.name}

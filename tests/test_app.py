@@ -1,6 +1,6 @@
 from flask import Flask
 
-from application.api.answer.routes import answer
+from application.api.answer import answer
 from application.api.internal.routes import internal
 from application.api.user.routes import user
 from application.core.settings import settings
