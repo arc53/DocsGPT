@@ -14,6 +14,15 @@ import EyeView from '../assets/eye-view.svg';
 import Trash from '../assets/red-trash.svg';
 import { useOutsideAlerter } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import {
+  Table,
+  TableContainer,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeader,
+  TableCell,
+} from './Table';
 
 interface FileNode {
   type?: string;
@@ -533,32 +542,31 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-            <tr
-              key="parent-dir"
-              className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
-              onClick={navigateUp}
-            >
-              <td className="px-2 py-2 lg:px-4">
-                <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 flex-shrink-0"
-                  />
-                  <span className="truncate text-sm dark:text-[#E0E0E0]">
-                    ..
-                  </span>
-                </div>
-              </td>
-              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-                -
-              </td>
-              <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-                -
-              </td>
-              <td className="w-10 px-2 py-2 text-sm lg:px-4"></td>
-            </tr>,
-          ]
+          <TableRow
+            key="parent-dir"
+            onClick={navigateUp}
+          >
+            <TableCell width="40%" align="left">
+              <div className="flex items-center">
+                <img
+                  src={FolderIcon}
+                  alt={t('settings.sources.parentFolderAlt')}
+                  className="mr-2 h-4 w-4 flex-shrink-0"
+                />
+                <span className="truncate">
+                  ..
+                </span>
+              </div>
+            </TableCell>
+            <TableCell width="30%" align="left">
+              -
+            </TableCell>
+            <TableCell width="20%" align="right">
+              -
+            </TableCell>
+            <TableCell width="10%" align="right"></TableCell>
+          </TableRow>,
+        ]
         : [];
 
     // Render directories first, then files
@@ -570,32 +578,31 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
-          <tr
+          <TableRow
             key={itemId}
-            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => navigateToDirectory(name)}
           >
-            <td className="px-2 py-2 lg:px-4">
+            <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
                   src={FolderIcon}
                   alt={t('settings.sources.folderAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                <span className="truncate">
                   {name}
                 </span>
               </div>
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
+            </TableCell>
+            <TableCell width="30%" align="left">
+              {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
+            </TableCell>
+            <TableCell width="20%" align="right">
               {dirStats.totalTokens > 0
                 ? dirStats.totalTokens.toLocaleString()
                 : '-'}
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-              {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
-            </td>
-            <td className="w-10 px-2 py-2 text-sm lg:px-4">
+            </TableCell>
+            <TableCell width="10%" align="right">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -619,8 +626,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   offset={{ x: -4, y: 4 }}
                 />
               </div>
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         );
       }),
       ...files.map(([name, node]) => {
@@ -628,30 +635,29 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         const menuRef = getMenuRef(itemId);
 
         return (
-          <tr
+          <TableRow
             key={itemId}
-            className="cursor-pointer border-b border-[#D1D9E0] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]"
             onClick={() => handleFileClick(name)}
           >
-            <td className="px-2 py-2 lg:px-4">
+            <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
                   src={FileIcon}
                   alt={t('settings.sources.fileAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate text-sm dark:text-[#E0E0E0]">
+                <span className="truncate">
                   {name}
                 </span>
               </div>
-            </td>
-            <td className="px-2 py-2 text-sm lg:px-4 dark:text-[#E0E0E0]">
-              {node.token_count?.toLocaleString() || '-'}
-            </td>
-            <td className="px-2 py-2 text-sm md:px-4 dark:text-[#E0E0E0]">
+            </TableCell>
+            <TableCell width="30%" align="left">
               {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
-            </td>
-            <td className="w-10 px-2 py-2 text-sm lg:px-4">
+            </TableCell>
+            <TableCell width="20%" align="right">
+              {node.token_count?.toLocaleString() || '-'}
+            </TableCell>
+            <TableCell width="10%" align="right">
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
@@ -675,8 +681,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   offset={{ x: -4, y: 4 }}
                 />
               </div>
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         );
       }),
     ];
@@ -828,31 +834,31 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
           <div className="mb-2">{renderPathNavigation()}</div>
 
           <div className="w-full">
-            <div className="overflow-x-auto rounded-[6px] border border-[#D1D9E0] dark:border-[#6A6A6A]">
-              <table className="w-full min-w-[600px] table-auto bg-transparent">
-                <thead className="bg-gray-100 dark:bg-[#27282D]">
-                  <tr className="border-b border-[#D1D9E0] dark:border-[#6A6A6A]">
-                    <th className="min-w-[200px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeader width="40%" align="left">
                       {t('settings.sources.fileName')}
-                    </th>
-                    <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
-                      {t('settings.sources.tokens')}
-                    </th>
-                    <th className="min-w-[80px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                    </TableHeader>
+                    <TableHeader width="30%" align="left">
                       {t('settings.sources.size')}
-                    </th>
-                    <th className="w-[60px] px-2 py-3 text-left text-sm font-medium text-gray-700 lg:px-4 dark:text-[#59636E]">
+                    </TableHeader>
+                    <TableHeader width="20%" align="right">
+                      {t('settings.sources.tokens')}
+                    </TableHeader>
+                    <TableHeader width="10%" align="right">
                       <span className="sr-only">
                         {t('settings.sources.actions')}
                       </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="[&>tr:last-child]:border-b-0">
+                    </TableHeader>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {renderFileTree(currentDirectory)}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
           </div>
         </div>
       )}

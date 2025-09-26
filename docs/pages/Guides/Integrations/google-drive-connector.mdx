@@ -1,0 +1,212 @@
+---
+title: Google Drive Connector
+description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Google Drive Connector
+
+The Google Drive Connector allows you to seamlessly connect your Google Drive account as an external knowledge base. This integration enables you to upload and process files directly from your Google Drive without manually downloading and uploading them to DocsGPT.
+
+## Features
+
+- **Direct File Access**: Browse and select files directly from your Google Drive
+- **Comprehensive File Support**: Supports all major document formats including:
+  - Google Workspace files (Docs, Sheets, Slides)
+  - Microsoft Office files (.docx, .xlsx, .pptx, .doc, .ppt, .xls)
+  - PDF documents
+  - Text files (.txt, .md, .rst, .html, .rtf)
+  - Data files (.csv, .json)
+  - Image files (.png, .jpg, .jpeg)
+  - E-books (.epub)
+- **Secure Authentication**: Uses OAuth 2.0 for secure access to your Google Drive
+- **Real-time Sync**: Process files directly from Google Drive without local downloads
+
+<Callout type="info" emoji="ℹ️">
+The Google Drive Connector requires proper configuration of Google API credentials. Follow the setup instructions below to enable this feature.
+</Callout>
+
+## Prerequisites
+
+Before setting up the Google Drive Connector, you'll need:
+
+1. A Google Cloud Platform (GCP) project
+2. Google Drive API enabled
+3. OAuth 2.0 credentials configured
+4. DocsGPT instance with proper environment variables
+
+## Setup Instructions
+
+<Steps>
+
+### Step 1: Create a Google Cloud Project
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Note down your Project ID for later use
+
+### Step 2: Enable Google Drive API
+
+1. In the Google Cloud Console, navigate to **APIs & Services** > **Library**
+2. Search for "Google Drive API"
+3. Click on "Google Drive API" and click **Enable**
+
+### Step 3: Create OAuth 2.0 Credentials
+
+1. Go to **APIs & Services** > **Credentials**
+2. Click **Create Credentials** > **OAuth client ID**
+3. If prompted, configure the OAuth consent screen:
+   - Choose **External** user type (unless you're using Google Workspace)
+   - Fill in the required fields (App name, User support email, Developer contact)
+   - Add your domain to **Authorized domains** if deploying publicly
+4. For Application type, select **Web application**
+5. Add your DocsGPT frontend URL to **Authorized JavaScript origins**:
+   - For local development: `http://localhost:3000`
+   - For production: `https://yourdomain.com`
+6. Add your DocsGPT callback URL to **Authorized redirect URIs**:
+   - For local development: `http://localhost:7091/api/connectors/callback?provider=google_drive`
+   - For production: `https://yourdomain.com/api/connectors/callback?provider=google_drive`
+7. Click **Create** and note down the **Client ID** and **Client Secret**
+
+
+
+### Step 4: Configure Backend Environment Variables
+
+Add the following environment variables to your backend configuration:
+
+**For Docker deployment**, add to your `.env` file in the root directory:
+
+```env
+# Google Drive Connector Configuration
+GOOGLE_CLIENT_ID=your_google_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+```
+
+**For manual deployment**, set these environment variables in your system or application configuration.
+
+### Step 5: Configure Frontend Environment Variables
+
+Add the following environment variables to your frontend `.env` file:
+
+```env
+# Google Drive Frontend Configuration
+VITE_GOOGLE_CLIENT_ID=your_google_client_id_here
+```
+
+<Callout type="warning" emoji="⚠️">
+Make sure to use the same Google Client ID in both backend and frontend configurations.
+</Callout>
+
+### Step 6: Restart Your Application
+
+After configuring the environment variables:
+
+1. **For Docker**: Restart your Docker containers
+   ```bash
+   docker-compose down
+   docker-compose up -d
+   ```
+
+2. **For manual deployment**: Restart both backend and frontend services
+
+</Steps>
+
+## Using the Google Drive Connector
+
+Once configured, you can use the Google Drive Connector to upload files:
+
+<Steps>
+
+### Step 1: Access the Upload Interface
+
+1. Navigate to the DocsGPT interface
+2. Go to the upload/training section
+3. You should now see "Google Drive" as an available upload option
+
+### Step 2: Connect Your Google Account
+
+1. Select "Google Drive" as your upload method
+2. Click "Connect to Google Drive"
+3. You'll be redirected to Google's OAuth consent screen
+4. Grant the necessary permissions to DocsGPT
+5. You'll be redirected back to DocsGPT with a successful connection
+
+### Step 3: Select Files
+
+1. Once connected, click "Select Files"
+2. The Google Drive picker will open
+3. Browse your Google Drive and select the files you want to process
+4. Click "Select" to confirm your choices
+
+### Step 4: Process Files
+
+1. Review your selected files
+2. Click "Train" or "Upload" to process the files
+3. DocsGPT will download and process the files from your Google Drive
+4. Once processing is complete, the files will be available in your knowledge base
+
+</Steps>
+
+## Supported File Types
+
+The Google Drive Connector supports the following file types:
+
+| File Type | Extensions | Description |
+|-----------|------------|-------------|
+| **Google Workspace** | - | Google Docs, Sheets, Slides (automatically converted) |
+| **Microsoft Office** | .docx, .xlsx, .pptx | Modern Office formats |
+| **Legacy Office** | .doc, .ppt, .xls | Older Office formats |
+| **PDF Documents** | .pdf | Portable Document Format |
+| **Text Files** | .txt, .md, .rst, .html, .rtf | Various text formats |
+| **Data Files** | .csv, .json | Structured data formats |
+| **Images** | .png, .jpg, .jpeg | Image files (with OCR if enabled) |
+| **E-books** | .epub | Electronic publication format |
+
+## Troubleshooting
+
+### Common Issues
+
+**"Google Drive option not appearing"**
+- Verify that `VITE_GOOGLE_CLIENT_ID` is set in frontend environment
+- Check that `VITE_GOOGLE_CLIENT_ID` environment variable is present in your frontend configuration
+- Check browser console for any JavaScript errors
+- Ensure the frontend has been restarted after adding environment variables
+
+**"Authentication failed"**
+- Verify that your OAuth 2.0 credentials are correctly configured
+- Check that the redirect URI `http://<your-domain>/api/connectors/callback?provider=google_drive` is correctly added in GCP console
+- Ensure the Google Drive API is enabled in your GCP project
+
+**"Permission denied" errors**
+- Verify that the OAuth consent screen is properly configured
+- Check that your Google account has access to the files you're trying to select
+- Ensure the required scopes are granted during authentication
+
+**"Files not processing"**
+- Check that the backend environment variables are correctly set
+- Verify that the OAuth credentials have the necessary permissions
+- Check the backend logs for any error messages
+
+### Environment Variable Checklist
+
+**Backend (.env in root directory):**
+- ✅ `GOOGLE_CLIENT_ID`
+- ✅ `GOOGLE_CLIENT_SECRET`
+
+**Frontend (.env in frontend directory):**
+- ✅ `VITE_GOOGLE_CLIENT_ID`
+
+### Security Considerations
+
+- Keep your Google Client Secret secure and never expose it in frontend code
+- Regularly rotate your OAuth credentials
+- Use HTTPS in production to protect authentication tokens
+- Ensure proper OAuth consent screen configuration for production use
+
+<Callout type="tip" emoji="💡">
+For production deployments, make sure to add your actual domain to the OAuth consent screen and authorized origins/redirect URIs.
+</Callout>
+
+

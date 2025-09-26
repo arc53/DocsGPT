@@ -17,14 +17,13 @@ class GoogleDriveAuth(BaseConnectorAuth):
     """
     
     SCOPES = [
-        'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/drive.metadata.readonly'
+        'https://www.googleapis.com/auth/drive.file'
     ]
     
     def __init__(self):
         self.client_id = settings.GOOGLE_CLIENT_ID
         self.client_secret = settings.GOOGLE_CLIENT_SECRET
-        self.redirect_uri = f"{settings.CONNECTOR_REDIRECT_BASE_URI}?provider=google_drive"
+        self.redirect_uri = f"{settings.CONNECTOR_REDIRECT_BASE_URI}"
         
         if not self.client_id or not self.client_secret:
             raise ValueError("Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in settings.")
@@ -50,7 +49,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
             authorization_url, _ = flow.authorization_url(
                 access_type='offline',
                 prompt='consent',
-                include_granted_scopes='true',
+                include_granted_scopes='false',
                 state=state
             )
             

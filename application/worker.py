@@ -1085,7 +1085,7 @@ def ingest_connector(
                 "tokens": tokens,
                 "retriever": retriever,
                 "id": str(id),
-                "type": "connector",
+                "type": "connector:file",
                 "remote_data": json.dumps(
                     {"provider": source_type, **api_source_config}
                 ),

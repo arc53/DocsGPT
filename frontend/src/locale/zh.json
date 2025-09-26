@@ -68,6 +68,7 @@
       "private": "私有",
       "sync": "同步",
       "syncing": "同步中...",
+      "syncConfirmation": "您确定要同步 \"{{sourceName}}\" 吗？这将使用您的云存储更新内容，并可能覆盖您对单个文本块所做的任何编辑。",
       "syncFrequency": {
         "never": "从不",
         "daily": "每天",

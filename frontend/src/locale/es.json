@@ -68,6 +68,7 @@
       "private": "Privado",
       "sync": "Sincronizar",
       "syncing": "Sincronizando...",
+      "syncConfirmation": "¿Estás seguro de que deseas sincronizar \"{{sourceName}}\"? Esto actualizará el contenido con tu almacenamiento en la nube y puede anular cualquier edición que hayas realizado en fragmentos individuales.",
       "syncFrequency": {
         "never": "Nunca",
         "daily": "Diario",
