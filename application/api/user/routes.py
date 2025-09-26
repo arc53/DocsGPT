@@ -8,6 +8,7 @@ import uuid
 import zipfile
 from functools import wraps
 from typing import Optional, Tuple
+from urllib.parse import unquote
 
 from bson.binary import Binary, UuidRepresentation
 from bson.dbref import DBRef
@@ -25,7 +26,7 @@ from flask_restx import fields, inputs, Namespace, Resource
 from pymongo import ReturnDocument
 from werkzeug.utils import secure_filename
 
-from application.agents.tools.mcp_tool import MCPTool
+from application.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
@@ -37,6 +38,8 @@ from application.api.user.tasks import (
     process_agent_webhook,
     store_attachment,
 )
+
+from application.cache import get_redis_instance
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.connectors.connector_creator import ConnectorCreator
@@ -494,7 +497,6 @@ class DeleteOldIndexes(Resource):
         )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
-
         storage = StorageCreator.get_storage()
 
         try:
@@ -511,7 +513,6 @@ class DeleteOldIndexes(Resource):
                     settings.VECTOR_STORE, source_id=str(doc["_id"])
                 )
                 vectorstore.delete_index()
-
             if "file_path" in doc and doc["file_path"]:
                 file_path = doc["file_path"]
                 if storage.is_directory(file_path):
@@ -520,7 +521,6 @@ class DeleteOldIndexes(Resource):
                         storage.delete_file(f)
                 else:
                     storage.delete_file(file_path)
-
         except FileNotFoundError:
             pass
         except Exception as err:
@@ -528,7 +528,6 @@ class DeleteOldIndexes(Resource):
                 f"Error deleting files and indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
         sources_collection.delete_one({"_id": ObjectId(source_id)})
         return make_response(jsonify({"success": True}), 200)
 
@@ -600,7 +599,6 @@ class UploadFile(Resource):
                                             == temp_file_path
                                         ):
                                             continue
-
                                         rel_path = os.path.relpath(
                                             os.path.join(root, extracted_file), temp_dir
                                         )
@@ -625,7 +623,6 @@ class UploadFile(Resource):
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, "rb") as f:
                             storage.save_file(f, file_path)
-
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
                 [
@@ -697,7 +694,6 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Unauthorized"}), 401
             )
-
         user = decoded_token.get("sub")
         source_id = request.form.get("source_id")
         operation = request.form.get("operation")
@@ -747,7 +743,6 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Database error"}), 500
             )
-
         try:
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
@@ -804,7 +799,6 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-
             elif operation == "remove":
                 file_paths_str = request.form.get("file_paths")
                 if not file_paths_str:
@@ -858,7 +852,6 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-
             elif operation == "remove_directory":
                 directory_path = request.form.get("directory_path")
                 if not directory_path:
@@ -884,7 +877,6 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-
                 full_directory_path = (
                     f"{source_file_path}/{directory_path}"
                     if directory_path
@@ -943,7 +935,6 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-
         except Exception as err:
             error_context = f"operation={operation}, user={user}, source_id={source_id}"
             if operation == "remove_directory":
@@ -955,7 +946,6 @@ class ManageSourceFiles(Resource):
             elif operation == "add":
                 parent_dir = request.form.get("parent_dir", "")
                 error_context += f", parent_dir={parent_dir}"
-
             current_app.logger.error(
                 f"Error managing source files: {err} ({error_context})", exc_info=True
             )
@@ -1632,7 +1622,6 @@ class CreateAgent(Resource):
                         ),
                         400,
                     )
-
                 # Validate that it has either a 'schema' property or is itself a schema
 
                 if "schema" not in json_schema and "type" not in json_schema:
@@ -3476,7 +3465,6 @@ class AvailableTools(Resource):
                         "displayName": name,
                         "description": description,
                         "configRequirements": tool_instance.get_config_requirements(),
-                        "actions": tool_instance.get_actions_metadata(),
                     }
                 )
         except Exception as err:
@@ -3527,11 +3515,6 @@ class CreateTool(Resource):
                 "customName": fields.String(
                     required=False, description="Custom name for the tool"
                 ),
-                "actions": fields.List(
-                    fields.Raw,
-                    required=True,
-                    description="Actions the tool can perform",
-                ),
                 "status": fields.Boolean(
                     required=True, description="Status of the tool"
                 ),
@@ -3549,24 +3532,35 @@ class CreateTool(Resource):
             "name",
             "displayName",
             "description",
-            "actions",
             "config",
             "status",
         ]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
-        transformed_actions = []
-        for action in data["actions"]:
-            action["active"] = True
-            if "parameters" in action:
-                if "properties" in action["parameters"]:
-                    for param_name, param_details in action["parameters"][
-                        "properties"
-                    ].items():
-                        param_details["filled_by_llm"] = True
-                        param_details["value"] = ""
-            transformed_actions.append(action)
+        try:
+            tool_instance = tool_manager.tools.get(data["name"])
+            if not tool_instance:
+                return make_response(
+                    jsonify({"success": False, "message": "Tool not found"}), 404
+                )
+            actions_metadata = tool_instance.get_actions_metadata()
+            transformed_actions = []
+            for action in actions_metadata:
+                action["active"] = True
+                if "parameters" in action:
+                    if "properties" in action["parameters"]:
+                        for param_name, param_details in action["parameters"][
+                            "properties"
+                        ].items():
+                            param_details["filled_by_llm"] = True
+                            param_details["value"] = ""
+                transformed_actions.append(action)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error getting tool actions: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
         try:
             new_tool = {
                 "user": user,
@@ -3907,7 +3901,6 @@ class GetChunks(Resource):
                     if not (text_match or title_match):
                         continue
                 filtered_chunks.append(chunk)
-
             chunks = filtered_chunks
 
             total_chunks = len(chunks)
@@ -4098,7 +4091,6 @@ class UpdateChunk(Resource):
                     current_app.logger.warning(
                         f"Failed to delete old chunk {chunk_id}, but new chunk {new_chunk_id} was created"
                     )
-
                 return make_response(
                     jsonify(
                         {
@@ -4226,23 +4218,19 @@ class DirectoryStructure(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-
         user = decoded_token.get("sub")
         doc_id = request.args.get("id")
 
         if not doc_id:
             return make_response(jsonify({"error": "Document ID is required"}), 400)
-
         if not ObjectId.is_valid(doc_id):
             return make_response(jsonify({"error": "Invalid document ID"}), 400)
-
         try:
             doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
             if not doc:
                 return make_response(
                     jsonify({"error": "Document not found or access denied"}), 404
                 )
-
             directory_structure = doc.get("directory_structure", {})
             base_path = doc.get("file_path", "")
 
@@ -4315,11 +4303,10 @@ class TestMCPServerConfig(Resource):
                     auth_credentials["username"] = config["username"]
                 if "password" in config:
                     auth_credentials["password"] = config["password"]
-
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
 
-            mcp_tool = MCPTool(test_config, user)
+            mcp_tool = MCPTool(config=test_config, user_id=user)
             result = mcp_tool.test_connection()
 
             return make_response(jsonify(result), 200)
@@ -4387,22 +4374,45 @@ class MCPServerSave(Resource):
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = auth_credentials
 
-            if auth_type == "none" or auth_credentials:
-                mcp_tool = MCPTool(mcp_config, user)
+            if auth_type == "oauth":
+                if not config.get("oauth_task_id"):
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "Connection not authorized. Please complete the OAuth authorization first.",
+                            }
+                        ),
+                        400,
+                    )
+                redis_client = get_redis_instance()
+                manager = MCPOAuthManager(redis_client)
+                result = manager.get_oauth_status(config["oauth_task_id"])
+                if not result.get("status") == "completed":
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "OAuth failed or not completed. Please try authorizing again.",
+                            }
+                        ),
+                        400,
+                    )
+                actions_metadata = result.get("tools", [])
+            elif auth_type == "none" or auth_credentials:
+                mcp_tool = MCPTool(config=mcp_config, user_id=user)
                 mcp_tool.discover_tools()
                 actions_metadata = mcp_tool.get_actions_metadata()
             else:
                 raise Exception(
                     "No valid credentials provided for the selected authentication type"
                 )
-
             storage_config = config.copy()
             if auth_credentials:
                 encrypted_credentials_string = encrypt_credentials(
                     auth_credentials, user
                 )
                 storage_config["encrypted_credentials"] = encrypted_credentials_string
-
             for field in [
                 "api_key",
                 "bearer_token",
@@ -4472,4 +4482,97 @@ class MCPServerSave(Resource):
                     {"success": False, "error": f"Failed to save MCP server: {str(e)}"}
                 ),
                 500,
+            )
+
+
+@user_ns.route("/api/mcp_server/callback")
+class MCPOAuthCallback(Resource):
+    @api.expect(
+        api.model(
+            "MCPServerCallbackModel",
+            {
+                "code": fields.String(required=True, description="Authorization code"),
+                "state": fields.String(required=True, description="State parameter"),
+                "error": fields.String(
+                    required=False, description="Error message (if any)"
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description="Handle OAuth callback by providing the authorization code and state"
+    )
+    def get(self):
+        code = request.args.get("code")
+        state = request.args.get("state")
+        error = request.args.get("error")
+
+        if error:
+            return redirect(
+                f"/api/connectors/callback-status?status=error&message=OAuth+error:+{error}.+Please+try+again+and+make+sure+to+grant+all+requested+permissions,+including+offline+access.&provider=mcp_tool"
+            )
+        if not code or not state:
+            return redirect(
+                "/api/connectors/callback-status?status=error&message=Authorization+code+or+state+not+provided.+Please+complete+the+authorization+process+and+make+sure+to+grant+offline+access.&provider=mcp_tool"
+            )
+        try:
+            redis_client = get_redis_instance()
+            if not redis_client:
+                return redirect(
+                    "/api/connectors/callback-status?status=error&message=Internal+server+error:+Redis+not+available.&provider=mcp_tool"
+                )
+            code = unquote(code)
+            manager = MCPOAuthManager(redis_client)
+            success = manager.handle_oauth_callback(state, code, error)
+            if success:
+                return redirect(
+                    "/api/connectors/callback-status?status=success&message=Authorization+code+received+successfully.+You+can+close+this+window.&provider=mcp_tool"
+                )
+            else:
+                return redirect(
+                    "/api/connectors/callback-status?status=error&message=OAuth+callback+failed.&provider=mcp_tool"
+                )
+        except Exception as e:
+            current_app.logger.error(
+                f"Error handling MCP OAuth callback: {str(e)}", exc_info=True
+            )
+            return redirect(
+                f"/api/connectors/callback-status?status=error&message=Internal+server+error:+{str(e)}.&provider=mcp_tool"
+            )
+
+
+@user_ns.route("/api/mcp_server/oauth_status/<string:task_id>")
+class MCPOAuthStatus(Resource):
+    def get(self, task_id):
+        """
+        Get current status of OAuth flow.
+        Frontend should poll this endpoint periodically.
+        """
+        try:
+            redis_client = get_redis_instance()
+            status_key = f"mcp_oauth_status:{task_id}"
+            status_data = redis_client.get(status_key)
+
+            if status_data:
+                status = json.loads(status_data)
+                return make_response(
+                    jsonify({"success": True, "task_id": task_id, **status})
+                )
+            else:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Task not found or expired",
+                            "task_id": task_id,
+                        }
+                    ),
+                    404,
+                )
+        except Exception as e:
+            current_app.logger.error(
+                f"Error getting OAuth status for task {task_id}: {str(e)}"
+            )
+            return make_response(
+                jsonify({"success": False, "error": str(e), "task_id": task_id}), 500
             )
