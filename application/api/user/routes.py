@@ -4513,24 +4513,24 @@ class MCPOAuthCallback(Resource):
             )
         if not code or not state:
             return redirect(
-                f"/api/connectors/callback-status?status=error&message=Authorization+code+or+state+not+provided.+Please+complete+the+authorization+process+and+make+sure+to+grant+offline+access.&provider=mcp_tool"
+                "/api/connectors/callback-status?status=error&message=Authorization+code+or+state+not+provided.+Please+complete+the+authorization+process+and+make+sure+to+grant+offline+access.&provider=mcp_tool"
             )
         try:
             redis_client = get_redis_instance()
             if not redis_client:
                 return redirect(
-                    f"/api/connectors/callback-status?status=error&message=Internal+server+error:+Redis+not+available.&provider=mcp_tool"
+                    "/api/connectors/callback-status?status=error&message=Internal+server+error:+Redis+not+available.&provider=mcp_tool"
                 )
             code = unquote(code)
             manager = MCPOAuthManager(redis_client)
             success = manager.handle_oauth_callback(state, code, error)
             if success:
                 return redirect(
-                    f"/api/connectors/callback-status?status=success&message=Authorization+code+received+successfully.+You+can+close+this+window.&provider=mcp_tool"
+                    "/api/connectors/callback-status?status=success&message=Authorization+code+received+successfully.+You+can+close+this+window.&provider=mcp_tool"
                 )
             else:
                 return redirect(
-                    f"/api/connectors/callback-status?status=error&message=OAuth+callback+failed.&provider=mcp_tool"
+                    "/api/connectors/callback-status?status=error&message=OAuth+callback+failed.&provider=mcp_tool"
                 )
         except Exception as e:
             current_app.logger.error(
