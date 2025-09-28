@@ -1450,6 +1450,10 @@ class GetAgent(Resource):
                 "agent_type": agent.get("agent_type", ""),
                 "status": agent.get("status", ""),
                 "json_schema": agent.get("json_schema"),
+                "limited_token_mode": agent.get("limited_token_mode", False),
+                "token_limit": agent.get("token_limit", 50000),
+                "limited_request_mode": agent.get("limited_request_mode", False),
+                "request_limit": agent.get("request_limit", 500),
                 "created_at": agent.get("createdAt", ""),
                 "updated_at": agent.get("updatedAt", ""),
                 "last_used_at": agent.get("lastUsedAt", ""),
@@ -1519,6 +1523,10 @@ class GetAgents(Resource):
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "json_schema": agent.get("json_schema"),
+                    "limited_token_mode": agent.get("limited_token_mode", False),
+                    "token_limit": agent.get("token_limit", 50000),
+                    "limited_request_mode": agent.get("limited_request_mode", False),
+                    "request_limit": agent.get("request_limit", 500),
                     "created_at": agent.get("createdAt", ""),
                     "updated_at": agent.get("updatedAt", ""),
                     "last_used_at": agent.get("lastUsedAt", ""),
@@ -1575,6 +1583,22 @@ class CreateAgent(Resource):
                 required=False,
                 description="JSON schema for enforcing structured output format",
             ),
+            "limited_token_mode": fields.Boolean(
+                required=False,
+                description="Whether the agent is in limited token mode"
+            ),
+            "token_limit": fields.Integer(
+                required=False,
+                description="Token limit for the agent in limited mode"
+            ),
+            "limited_request_mode": fields.Boolean(
+                require=False,
+                description="Whether the agent is in limited request mode"
+            ),
+            "request_limit": fields.Integer(
+                required=False,
+                description="Request limit for the agent in limited mode"
+            )
         },
     )
 
@@ -1720,6 +1744,10 @@ class CreateAgent(Resource):
                 "agent_type": data.get("agent_type", ""),
                 "status": data.get("status"),
                 "json_schema": data.get("json_schema"),
+                "limited_token_mode": data.get("limited_token_mode", False),
+                "token_limit": data.get("token_limit", 50000),
+                "limited_request_mode": data.get("limited_request_mode", False),
+                "request_limit": data.get("request_limit", 500),
                 "createdAt": datetime.datetime.now(datetime.timezone.utc),
                 "updatedAt": datetime.datetime.now(datetime.timezone.utc),
                 "lastUsedAt": None,
@@ -1775,6 +1803,22 @@ class UpdateAgent(Resource):
                 required=False,
                 description="JSON schema for enforcing structured output format",
             ),
+                        "limited_token_mode": fields.Boolean(
+                required=False,
+                description="Whether the agent is in limited token mode"
+            ),
+            "token_limit": fields.Integer(
+                required=False,
+                description="Token limit for the agent in limited mode"
+            ),
+            "limited_request_mode": fields.Boolean(
+                require=False,
+                description="Whether the agent is in limited request mode"
+            ),
+            "request_limit": fields.Integer(
+                required=False,
+                description="Request limit for the agent in limited mode"
+            )
         },
     )
 
@@ -1847,6 +1891,10 @@ class UpdateAgent(Resource):
             "agent_type",
             "status",
             "json_schema",
+            "limited_token_mode",
+            "token_limit",
+            "limited_request_mode",
+            "request_limit"
         ]
 
         for field in allowed_fields:
@@ -1932,6 +1980,53 @@ class UpdateAgent(Resource):
                                 ),
                                 400,
                             )
+                elif field == "limited_token_mode":
+                    is_mode_enabled = data.get("limited_token_mode", False)
+                    if is_mode_enabled and data.get("token_limit") is None:
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Token limit must be provided when limited token mode is enabled",
+                                }
+                            ),
+                            400,
+                        )
+                elif field == "limited_request_mode":
+                    is_mode_enabled = data.get("limited_request_mode", False)
+                    if is_mode_enabled and data.get("request_limit") is None:
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Request limit must be provided when limited request mode is enabled",
+                                }
+                            ),
+                            400,
+                        )
+                elif field == "token_limit":
+                    token_limit = data.get("token_limit")
+                    if token_limit is not None and not data.get("limited_token_mode"):
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Token limit cannot be set when limited token mode is disabled",
+                                }
+                            ),
+                            400,
+                        )
+                elif field == "request_limit":
+                    request_limit = data.get("request_limit")
+                    if request_limit is not None and not data.get("limited_request_mode"):
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Request limit cannot be set when limited request mode is disabled",
+                                }
+                            )
+                        )
                 else:
                     update_fields[field] = data[field]
         if image_url:
@@ -2263,6 +2358,10 @@ class SharedAgent(Resource):
                 "agent_type": shared_agent.get("agent_type", ""),
                 "status": shared_agent.get("status", ""),
                 "json_schema": shared_agent.get("json_schema"),
+                "limited_token_mode": shared_agent.get("limited_token_mode", False),
+                "token_limit": shared_agent.get("token_limit", 50000),
+                "limited_request_mode": shared_agent.get("limited_request_mode", False),
+                "request_limit": shared_agent.get("request_limit", 500),
                 "created_at": shared_agent.get("createdAt", ""),
                 "updated_at": shared_agent.get("updatedAt", ""),
                 "shared": shared_agent.get("shared_publicly", False),
@@ -2337,6 +2436,10 @@ class SharedAgents(Resource):
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "json_schema": agent.get("json_schema"),
+                    "limited_token_mode": agent.get("limited_token_mode", False),
+                    "token_limit": agent.get("token_limit", 50000),
+                    "limited_request_mode": agent.get("limited_request_mode", False),
+                    "request_limit": agent.get("request_limit", 500),
                     "created_at": agent.get("createdAt", ""),
                     "updated_at": agent.get("updatedAt", ""),
                     "pinned": str(agent["_id"]) in pinned_ids,
