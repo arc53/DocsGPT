@@ -1,4 +1,5 @@
 import logging
+import os
 
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
@@ -141,15 +142,28 @@ class ClassicRAG(BaseRetriever):
                         title = metadata.get(
                             "title", metadata.get("post_title", page_content)
                         )
-                        if isinstance(title, str):
-                            title = title.split("/")[-1]
+                        if not isinstance(title, str):
+                            title = str(title)
+                        title = title.split("/")[-1]
+
+                        filename = (
+                            metadata.get("filename")
+                            or metadata.get("file_name")
+                            or metadata.get("source")
+                        )
+                        if isinstance(filename, str):
+                            filename = os.path.basename(filename) or filename
                         else:
-                            title = str(title).split("/")[-1]
+                            filename = title
+                        if not filename:
+                            filename = title
+                        source_path = metadata.get("source") or vectorstore_id
                         all_docs.append(
                             {
                                 "title": title,
                                 "text": page_content,
-                                "source": metadata.get("source") or vectorstore_id,
+                                "source": source_path,
+                                "filename": filename,
                             }
                         )
                 except Exception as e:

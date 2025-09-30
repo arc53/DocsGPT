@@ -5,6 +5,8 @@ from application.worker import (
     agent_webhook_worker,
     attachment_worker,
     ingest_worker,
+    mcp_oauth,
+    mcp_oauth_status,
     remote_worker,
     sync_worker,
 )
@@ -25,6 +27,7 @@ def ingest_remote(self, source_data, job_name, user, loader):
 @celery.task(bind=True)
 def reingest_source_task(self, source_id, user):
     from application.worker import reingest_source_worker
+
     resp = reingest_source_worker(self, source_id, user)
     return resp
 
@@ -60,9 +63,10 @@ def ingest_connector_task(
     retriever="classic",
     operation_mode="upload",
     doc_id=None,
-    sync_frequency="never"
+    sync_frequency="never",
 ):
     from application.worker import ingest_connector
+
     resp = ingest_connector(
         self,
         job_name,
@@ -75,7 +79,7 @@ def ingest_connector_task(
         retriever=retriever,
         operation_mode=operation_mode,
         doc_id=doc_id,
-        sync_frequency=sync_frequency
+        sync_frequency=sync_frequency,
     )
     return resp
 
@@ -94,3 +98,15 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(days=30),
         schedule_syncs.s("monthly"),
     )
+
+
+@celery.task(bind=True)
+def mcp_oauth_task(self, config, user):
+    resp = mcp_oauth(self, config, user)
+    return resp
+
+
+@celery.task(bind=True)
+def mcp_oauth_status_task(self, task_id):
+    resp = mcp_oauth_status(self, task_id)
+    return resp

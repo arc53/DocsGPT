@@ -59,6 +59,8 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
+    MCP_OAUTH_STATUS: (task_id: string) =>
+      `/api/mcp_server/oauth_status/${task_id}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

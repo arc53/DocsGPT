@@ -1,6 +1,6 @@
+import { getSessionToken } from '../../utils/providerUtils';
 import apiClient from '../client';
 import endpoints from '../endpoints';
-import { getSessionToken } from '../../utils/providerUtils';
 
 const userService = {
   getConfig: (): Promise<any> => apiClient.get(endpoints.USER.CONFIG, null),
@@ -112,6 +112,8 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
+  getMCPOAuthStatus: (task_id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.MCP_OAUTH_STATUS(task_id), token),
   syncConnector: (
     docId: string,
     provider: string,
