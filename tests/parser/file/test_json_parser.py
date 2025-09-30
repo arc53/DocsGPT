@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
@@ -40,7 +39,8 @@ def test_json_parser_row_joiner_config():
 
 
 def test_json_parser_forwards_json_config():
-    pf = lambda s: 1.23
+    def pf(s):
+        return 1.23
     parser = JSONParser(json_config={"parse_float": pf})
     with patch("builtins.open", mock_open(read_data="[]")):
         with patch("json.load", return_value=[]) as mock_load:

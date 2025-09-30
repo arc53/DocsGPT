@@ -27,7 +27,6 @@ def test_html_parser_parse_file():
     mock_doc.page_content = "Extracted HTML content"
     mock_doc.metadata = {"source": "test.html"}
 
-    import types, sys
     fake_lc = types.ModuleType("langchain_community")
     fake_dl = types.ModuleType("langchain_community.document_loaders")
 
