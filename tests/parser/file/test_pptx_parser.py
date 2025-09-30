@@ -30,7 +30,8 @@ def _fake_presentation_with(slides_shapes_texts):
 def test_pptx_parser_concat_true():
     slides = [["Hello ", "World"], ["Slide2"]]
     FakePres = _fake_presentation_with(slides)
-    import sys, types
+    import sys
+    import types
     fake_pptx = types.ModuleType("pptx")
     fake_pptx.Presentation = FakePres
     parser = PPTXParser()
@@ -42,7 +43,8 @@ def test_pptx_parser_concat_true():
 def test_pptx_parser_list_mode():
     slides = [[" A ", "B"], [" C "]]
     FakePres = _fake_presentation_with(slides)
-    import sys, types
+    import sys
+    import types
     fake_pptx = types.ModuleType("pptx")
     fake_pptx.Presentation = FakePres
     parser = PPTXParser()

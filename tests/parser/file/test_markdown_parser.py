@@ -2,17 +2,19 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 
 import pytest
+import tiktoken
+
+from application.parser.file.markdown_parser import MarkdownParser
+
 
 class _Enc:
     def encode(self, s: str):
         return list(s)
 
+
 @pytest.fixture(autouse=True)
 def _patch_tokenizer(monkeypatch):
-    import application.parser.file.markdown_parser as mdp
-    monkeypatch.setattr(mdp.tiktoken, "get_encoding", lambda _: _Enc())
-
-from application.parser.file.markdown_parser import MarkdownParser
+    monkeypatch.setattr(tiktoken, "get_encoding", lambda _: _Enc())
 
 def test_markdown_init_parser():
     parser = MarkdownParser()

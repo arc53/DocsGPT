@@ -1,4 +1,3 @@
-import pytest
 
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.handlers.base import LLMHandler
