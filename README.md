@@ -25,7 +25,17 @@
 <br>
 
 </div>
+
 <div align="center">
+  <br>
+🎃 <a href="https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md"> Hacktoberfest Prizes, Rules & Q&A </a> 🎃
+  <br>
+  <br>
+</div>
+
+
+<div align="center">
+  <br>
 <img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov7.gif" alt="video-example-of-docs-gpt" width="800" height="450">
 </div>
 <h3 align="left">
