@@ -1,21 +1,16 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
-import sys, types
-if "tiktoken" not in sys.modules:
-    fake_tt = types.ModuleType("tiktoken")
+import pytest
 
-    class _Enc:
-        def encode(self, s: str):
-            return list(s)
+class _Enc:
+    def encode(self, s: str):
+        return list(s)
 
-    def get_encoding(_: str):
-        return _Enc()
-
-    fake_tt.get_encoding = get_encoding
-    sys.modules["tiktoken"] = fake_tt
-
-import tiktoken
+@pytest.fixture(autouse=True)
+def _patch_tokenizer(monkeypatch):
+    import application.parser.file.markdown_parser as mdp
+    monkeypatch.setattr(mdp.tiktoken, "get_encoding", lambda _: _Enc())
 
 from application.parser.file.markdown_parser import MarkdownParser
 
