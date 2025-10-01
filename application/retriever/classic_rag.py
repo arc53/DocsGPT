@@ -36,6 +36,11 @@ class ClassicRAG(BaseRetriever):
                 self.chunks = 2
         else:
             self.chunks = chunks
+        user_identifier = user_api_key if user_api_key else "default"
+        logging.info(
+            f"ClassicRAG initialized with chunks={self.chunks}, user_api_key={user_identifier}, "
+            f"sources={'active_docs' in source and source['active_docs'] is not None}"
+        )
         self.gpt_model = gpt_model
         self.token_limit = (
             token_limit
@@ -92,17 +97,12 @@ class ClassicRAG(BaseRetriever):
             or not self.vectorstores
         ):
             return self.original_question
-        prompt = f"""Given the following conversation history:
-
-        {self.chat_history}
-
-
-
-        Rephrase the following user question to be a standalone search query 
-
-        that captures all relevant context from the conversation:
-
-        """
+        prompt = (
+            "Given the following conversation history:\n"
+            f"{self.chat_history}\n\n"
+            "Rephrase the following user question to be a standalone search query "
+            "that captures all relevant context from the conversation:\n"
+        )
 
         messages = [
             {"role": "system", "content": prompt},
@@ -120,9 +120,19 @@ class ClassicRAG(BaseRetriever):
     def _get_data(self):
         """Retrieve relevant documents from configured vectorstores"""
         if self.chunks == 0 or not self.vectorstores:
+            logging.info(
+                f"ClassicRAG._get_data: Skipping retrieval - chunks={self.chunks}, "
+                f"vectorstores_count={len(self.vectorstores) if self.vectorstores else 0}"
+            )
             return []
         all_docs = []
         chunks_per_source = max(1, self.chunks // len(self.vectorstores))
+
+        logging.info(
+            f"ClassicRAG._get_data: Starting retrieval with chunks={self.chunks}, "
+            f"vectorstores={self.vectorstores}, chunks_per_source={chunks_per_source}, "
+            f"query='{self.question[:50]}...'"
+        )
 
         for vectorstore_id in self.vectorstores:
             if vectorstore_id:
@@ -172,6 +182,10 @@ class ClassicRAG(BaseRetriever):
                         exc_info=True,
                     )
                     continue
+        logging.info(
+            f"ClassicRAG._get_data: Retrieval complete - retrieved {len(all_docs)} documents "
+            f"(requested chunks={self.chunks}, chunks_per_source={chunks_per_source})"
+        )
         return all_docs
 
     def search(self, query: str = ""):

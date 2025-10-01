@@ -1726,7 +1726,7 @@ class CreateAgent(Resource):
                 "key": key,
             }
             if new_agent["chunks"] == "":
-                new_agent["chunks"] = "0"
+                new_agent["chunks"] = "2"
             if (
                 new_agent["source"] == ""
                 and new_agent["retriever"] == ""
@@ -1782,27 +1782,11 @@ class UpdateAgent(Resource):
     @api.doc(description="Update an existing agent")
     def put(self, agent_id):
         if not (decoded_token := request.decoded_token):
-            return {"success": False}, 401
+            return make_response(
+                jsonify({"success": False, "message": "Unauthorized"}), 401
+            )
         user = decoded_token.get("sub")
-        if request.content_type == "application/json":
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
-            if "tools" in data:
-                try:
-                    data["tools"] = json.loads(data["tools"])
-                except json.JSONDecodeError:
-                    data["tools"] = []
-            if "sources" in data:
-                try:
-                    data["sources"] = json.loads(data["sources"])
-                except json.JSONDecodeError:
-                    data["sources"] = []
-            if "json_schema" in data:
-                try:
-                    data["json_schema"] = json.loads(data["json_schema"])
-                except json.JSONDecodeError:
-                    data["json_schema"] = None
+
         if not ObjectId.is_valid(agent_id):
             return make_response(
                 jsonify({"success": False, "message": "Invalid agent ID format"}), 400
@@ -1810,15 +1794,44 @@ class UpdateAgent(Resource):
         oid = ObjectId(agent_id)
 
         try:
+            if request.content_type and "application/json" in request.content_type:
+                data = request.get_json()
+            else:
+                data = request.form.to_dict()
+                json_fields = ["tools", "sources", "json_schema"]
+                for field in json_fields:
+                    if field in data and data[field]:
+                        try:
+                            data[field] = json.loads(data[field])
+                        except json.JSONDecodeError:
+                            return make_response(
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": f"Invalid JSON format for field: {field}",
+                                    }
+                                ),
+                                400,
+                            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error parsing request data: {err}", exc_info=True
+            )
+            return make_response(
+                jsonify({"success": False, "message": "Invalid request data"}), 400
+            )
+
+        try:
             existing_agent = agents_collection.find_one({"_id": oid, "user": user})
         except Exception as err:
+            current_app.logger.error(
+                f"Error finding agent {agent_id}: {err}", exc_info=True
+            )
             return make_response(
-                current_app.logger.error(
-                    f"Error finding agent {agent_id}: {err}", exc_info=True
-                ),
                 jsonify({"success": False, "message": "Database error finding agent"}),
                 500,
             )
+
         if not existing_agent:
             return make_response(
                 jsonify(
@@ -1826,13 +1839,19 @@ class UpdateAgent(Resource):
                 ),
                 404,
             )
+
         image_url, error = handle_image_upload(
             request, existing_agent.get("image", ""), user, storage
         )
         if error:
-            return make_response(
-                jsonify({"success": False, "message": "Image upload failed"}), 400
+            current_app.logger.error(
+                f"Image upload error for agent {agent_id}: {error}"
             )
+            return make_response(
+                jsonify({"success": False, "message": f"Image upload failed: {error}"}),
+                400,
+            )
+
         update_fields = {}
         allowed_fields = [
             "name",
@@ -1850,116 +1869,189 @@ class UpdateAgent(Resource):
         ]
 
         for field in allowed_fields:
-            if field in data:
-                if field == "status":
-                    new_status = data.get("status")
-                    if new_status not in ["draft", "published"]:
-                        return make_response(
-                            jsonify(
-                                {"success": False, "message": "Invalid status value"}
-                            ),
-                            400,
-                        )
-                    update_fields[field] = new_status
-                elif field == "source":
-                    source_id = data.get("source")
-                    if source_id == "default":
-                        # Handle special "default" source
+            if field not in data:
+                continue
 
-                        update_fields[field] = "default"
-                    elif source_id and ObjectId.is_valid(source_id):
-                        update_fields[field] = DBRef("sources", ObjectId(source_id))
-                    elif source_id:
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "message": "Invalid source ID format provided",
-                                }
-                            ),
-                            400,
-                        )
-                    else:
-                        update_fields[field] = ""
-                elif field == "sources":
-                    sources_list = data.get("sources", [])
-                    if sources_list and isinstance(sources_list, list):
-                        valid_sources = []
-                        for source_id in sources_list:
-                            if source_id == "default":
-                                valid_sources.append("default")
-                            elif ObjectId.is_valid(source_id):
-                                valid_sources.append(
-                                    DBRef("sources", ObjectId(source_id))
-                                )
-                            else:
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid source ID format: {source_id}",
-                                        }
-                                    ),
-                                    400,
-                                )
-                        update_fields[field] = valid_sources
-                    else:
-                        update_fields[field] = []
-                elif field == "chunks":
-                    chunks_value = data.get("chunks")
-                    if chunks_value == "":
-                        update_fields[field] = "0"
-                    else:
-                        try:
-                            if int(chunks_value) < 0:
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": "Chunks value must be a positive integer",
-                                        }
-                                    ),
-                                    400,
-                                )
-                            update_fields[field] = chunks_value
-                        except ValueError:
+            if field == "status":
+                new_status = data.get("status")
+                if new_status not in ["draft", "published"]:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Invalid status value. Must be 'draft' or 'published'",
+                            }
+                        ),
+                        400,
+                    )
+                update_fields[field] = new_status
+
+            elif field == "source":
+                source_id = data.get("source")
+                if source_id == "default":
+                    update_fields[field] = "default"
+                elif source_id and ObjectId.is_valid(source_id):
+                    update_fields[field] = DBRef("sources", ObjectId(source_id))
+                elif source_id:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": f"Invalid source ID format: {source_id}",
+                            }
+                        ),
+                        400,
+                    )
+                else:
+                    update_fields[field] = ""
+
+            elif field == "sources":
+                sources_list = data.get("sources", [])
+                if sources_list and isinstance(sources_list, list):
+                    valid_sources = []
+                    for source_id in sources_list:
+                        if source_id == "default":
+                            valid_sources.append("default")
+                        elif ObjectId.is_valid(source_id):
+                            valid_sources.append(DBRef("sources", ObjectId(source_id)))
+                        else:
                             return make_response(
                                 jsonify(
                                     {
                                         "success": False,
-                                        "message": "Invalid chunks value provided",
+                                        "message": f"Invalid source ID in list: {source_id}",
                                     }
                                 ),
                                 400,
                             )
+                    update_fields[field] = valid_sources
                 else:
-                    update_fields[field] = data[field]
+                    update_fields[field] = []
+
+            elif field == "chunks":
+                chunks_value = data.get("chunks")
+                if chunks_value == "" or chunks_value is None:
+                    update_fields[field] = "2"
+                else:
+                    try:
+                        chunks_int = int(chunks_value)
+                        if chunks_int < 0:
+                            return make_response(
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": "Chunks value must be a non-negative integer",
+                                    }
+                                ),
+                                400,
+                            )
+                        update_fields[field] = str(chunks_int)
+                    except (ValueError, TypeError):
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": f"Invalid chunks value: {chunks_value}",
+                                }
+                            ),
+                            400,
+                        )
+
+            elif field == "tools":
+                tools_list = data.get("tools", [])
+                if isinstance(tools_list, list):
+                    update_fields[field] = tools_list
+                else:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Tools must be a list",
+                            }
+                        ),
+                        400,
+                    )
+
+            elif field == "json_schema":
+                json_schema = data.get("json_schema")
+                if json_schema is not None:
+                    if not isinstance(json_schema, dict):
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "JSON schema must be a valid object",
+                                }
+                            ),
+                            400,
+                        )
+                    update_fields[field] = json_schema
+                else:
+                    update_fields[field] = None
+
+            else:
+                value = data[field]
+                if field in ["name", "description", "prompt_id", "agent_type"]:
+                    if not value or not str(value).strip():
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": f"Field '{field}' cannot be empty",
+                                }
+                            ),
+                            400,
+                        )
+                update_fields[field] = value
+
         if image_url:
             update_fields["image"] = image_url
+
         if not update_fields:
             return make_response(
-                jsonify({"success": False, "message": "No update data provided"}), 400
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "No valid update data provided",
+                    }
+                ),
+                400,
             )
+
         newly_generated_key = None
         final_status = update_fields.get("status", existing_agent.get("status"))
+
         if final_status == "published":
-            required_published_fields = [
-                "name",
-                "description",
-                "source",
-                "chunks",
-                "retriever",
-                "prompt_id",
-                "agent_type",
-            ]
+            required_published_fields = {
+                "name": "Agent name",
+                "description": "Agent description",
+                "chunks": "Chunks count",
+                "prompt_id": "Prompt",
+                "agent_type": "Agent type",
+            }
+
             missing_published_fields = []
-            for req_field in required_published_fields:
+            for req_field, field_label in required_published_fields.items():
                 final_value = update_fields.get(
                     req_field, existing_agent.get(req_field)
                 )
-                if req_field == "source" and final_value:
-                    if not isinstance(final_value, DBRef):
-                        missing_published_fields.append(req_field)
+                if not final_value:
+                    missing_published_fields.append(field_label)
+
+            source_val = update_fields.get("source", existing_agent.get("source"))
+            sources_val = update_fields.get(
+                "sources", existing_agent.get("sources", [])
+            )
+
+            has_valid_source = (
+                isinstance(source_val, DBRef)
+                or source_val == "default"
+                or (isinstance(sources_val, list) and len(sources_val) > 0)
+            )
+
+            if not has_valid_source:
+                missing_published_fields.append("Source")
+
             if missing_published_fields:
                 return make_response(
                     jsonify(
@@ -1970,9 +2062,11 @@ class UpdateAgent(Resource):
                     ),
                     400,
                 )
+
             if not existing_agent.get("key"):
                 newly_generated_key = str(uuid.uuid4())
                 update_fields["key"] = newly_generated_key
+
         update_fields["updatedAt"] = datetime.datetime.now(datetime.timezone.utc)
 
         try:
@@ -1985,20 +2079,22 @@ class UpdateAgent(Resource):
                     jsonify(
                         {
                             "success": False,
-                            "message": "Agent not found or update failed unexpectedly",
+                            "message": "Agent not found or update failed",
                         }
                     ),
                     404,
                 )
+
             if result.modified_count == 0 and result.matched_count == 1:
                 return make_response(
                     jsonify(
                         {
                             "success": True,
-                            "message": "Agent found, but no changes were applied",
+                            "message": "No changes detected",
+                            "id": agent_id,
                         }
                     ),
-                    304,
+                    200,
                 )
         except Exception as err:
             current_app.logger.error(
@@ -2008,6 +2104,7 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
             )
+
         response_data = {
             "success": True,
             "id": agent_id,
@@ -2015,10 +2112,8 @@ class UpdateAgent(Resource):
         }
         if newly_generated_key:
             response_data["key"] = newly_generated_key
-        return make_response(
-            jsonify(response_data),
-            200,
-        )
+
+        return make_response(jsonify(response_data), 200)
 
 
 @user_ns.route("/api/delete_agent")
