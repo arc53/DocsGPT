@@ -27,7 +27,7 @@ const DEFAULT_COPIED_DURATION = 2000;
 const DEFAULT_BG_LIGHT = '#FFFFFF';
 const DEFAULT_BG_DARK = 'transparent';
 const DEFAULT_HOVER_BG_LIGHT = '#EEEEEE';
-const DEFAULT_HOVER_BG_DARK = '#4A4A4A';
+const DEFAULT_HOVER_BG_DARK = 'purple-taupe';
 
 export default function CopyButton({
   textToCopy,
@@ -51,7 +51,7 @@ export default function CopyButton({
     'flex items-center justify-center rounded-full transition-colors duration-150 ease-in-out',
     padding,
     `bg-[${bgColorLight}] dark:bg-[${bgColorDark}]`,
-    `hover:bg-[${hoverBgColorLight}] dark:hover:bg-[${hoverBgColorDark}]`,
+    `hover:bg-[${hoverBgColorLight}] dark:hover:bg-${hoverBgColorDark}`,
     {
       'bg-green-100 dark:bg-green-900 hover:bg-green-100 dark:hover:bg-green-900':
         isCopied,
