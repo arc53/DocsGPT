@@ -1660,18 +1660,6 @@ class CreateAgent(Resource):
                 "prompt_id",
                 "agent_type",
             ]
-            # Require either source or sources (but not both)
-
-            if not data.get("source") and not data.get("sources"):
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Either 'source' or 'sources' field is required for published agents",
-                        }
-                    ),
-                    400,
-                )
             validate_fields = ["name", "description", "prompt_id", "agent_type"]
         else:
             required_fields = ["name"]
