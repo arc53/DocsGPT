@@ -2,6 +2,9 @@ import pytest
 from application.agents.tools.notes import NotesTool
 from application.core.settings import settings
 
+from bson.objectid import ObjectId
+from application.agents.tools.notes import NotesTool
+
 
 @pytest.fixture
 def notes_tool(monkeypatch) -> NotesTool:
@@ -55,3 +58,64 @@ def test_edit_and_delete(notes_tool: NotesTool) -> None:
     assert "second" in notes_tool.execute_action("get_note")
     assert "deleted" in notes_tool.execute_action("delete_note").lower()
     assert "no note" in notes_tool.execute_action("get_note").lower()
+
+def test_init_without_user_id(monkeypatch):
+    """Should fail gracefully if no user_id is provided."""
+    notes_tool = NotesTool(tool_config={})
+    result = notes_tool.execute_action("add_note", note="test")
+    assert "user_id" in str(result).lower()
+
+
+def test_add_note_when_note_already_exists(monkeypatch):
+    """Should prevent multiple notes for a single user"""
+
+    class FakeCollection:
+        def find_one(self, query):
+            return {"_id": ObjectId(), "note": "existing"}
+        def update_one(self, *a, **kw):
+            return type("Res", (), {"modified_count": 0})()
+
+    monkeypatch.setattr(
+        "application.core.mongo_db.MongoDB.get_client",
+        lambda: {"docsgpt": {"notes": FakeCollection()}}
+    )
+
+    notes_tool = NotesTool(tool_config={}, user_id="user123")
+    result = notes_tool.execute_action("add_note", note="new one")
+    assert "existing" in str(result).lower() or "already" in str(result).lower()
+
+
+def test_edit_nonexistent_note(monkeypatch):
+    class FakeResult:
+        modified_count = 0
+
+    class FakeCollection:
+        def update_one(self, *args, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr(
+        "application.core.mongo_db.MongoDB.get_client",
+        lambda: {"docsgpt": {"notes": FakeCollection()}}
+    )
+
+    notes_tool = NotesTool(tool_config={}, user_id="user123")
+    result = notes_tool.execute_action("edit_note", id=str(ObjectId()), note="updated")
+    assert "not found" in result.lower()
+
+
+def test_delete_nonexistent_note(monkeypatch):
+    class FakeResult:
+        deleted_count = 0
+
+    class FakeCollection:
+        def delete_one(self, *args, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr(
+        "application.core.mongo_db.MongoDB.get_client",
+        lambda: {"docsgpt": {"notes": FakeCollection()}}
+    )
+
+    notes_tool = NotesTool(tool_config={}, user_id="user123")
+    result = notes_tool.execute_action("delete_note", id=str(ObjectId()))
+    assert "no note found" in result.lower()

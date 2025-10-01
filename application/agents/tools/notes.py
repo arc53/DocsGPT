@@ -121,6 +121,9 @@ class NotesTool(Tool):
         content = (content or "").strip()
         if not content:
             return "Note content required."
+        existing = self.collection.find_one({"user_id": self.user_id})
+        if existing:
+            return "Error: note already exists for this user. Please edit or delete it."
         self.collection.update_one(
             {"user_id": self.user_id},
             {"$set": {"note": content, "updated_at": datetime.utcnow()}},
