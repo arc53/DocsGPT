@@ -33,7 +33,7 @@ function MainLayout() {
   const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
 
   return (
-    <div className="relative h-screen overflow-hidden dark:bg-raisin-black">
+    <div className="dark:bg-raisin-black relative h-screen overflow-hidden">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <ActionButtons showNewChat={true} showShare={true} />
       <div

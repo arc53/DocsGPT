@@ -6,7 +6,6 @@ interface TableProps {
   minWidth?: string;
 }
 
-
 interface TableContainerProps {
   children: React.ReactNode;
   className?: string;
@@ -34,12 +33,15 @@ interface TableCellProps {
   align?: 'left' | 'right' | 'center';
 }
 
-const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(({
-  children,
-  className = '',
-  height = 'auto',
-  bordered = true
-}, ref) => {
+function TableContainerBase(
+  {
+    children,
+    className = '',
+    height = 'auto',
+    bordered = true,
+  }: TableContainerProps,
+  ref: React.Ref<HTMLDivElement>,
+) {
   return (
     <div className={`relative rounded-[6px] ${className}`}>
       <div
@@ -47,32 +49,38 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(({
         className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border border-[#D7D7D7] dark:border-[#6A6A6A]' : ''}`}
         style={{
           maxHeight: height === 'auto' ? undefined : height,
-          overflowY: height === 'auto' ? 'hidden' : 'auto'
+          overflowY: height === 'auto' ? 'hidden' : 'auto',
         }}
       >
         {children}
       </div>
     </div>
   );
-});;
+}
+
+const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
+  TableContainerBase,
+);
+TableContainer.displayName = 'TableContainer';
+
 const Table: React.FC<TableProps> = ({
   children,
   className = '',
-  minWidth = 'min-w-[600px]'
+  minWidth = 'min-w-[600px]',
 }) => {
   return (
-    <table className={`w-full table-auto border-collapse bg-transparent ${minWidth} ${className}`}>
+    <table
+      className={`w-full table-auto border-collapse bg-transparent ${minWidth} ${className}`}
+    >
       {children}
     </table>
   );
 };
 const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
   return (
-    <thead className={`
-      sticky top-0 z-10
-      bg-gray-100 dark:bg-[#27282D]
-      ${className}
-    `}>
+    <thead
+      className={`sticky top-0 z-10 bg-gray-100 dark:bg-[#27282D] ${className} `}
+    >
       {children}
     </thead>
   );
@@ -86,12 +94,20 @@ const TableBody: React.FC<TableHeadProps> = ({ children, className = '' }) => {
   );
 };
 
-const TableRow: React.FC<TableRowProps> = ({ children, className = '', onClick }) => {
-  const baseClasses = "border-b border-[#D7D7D7] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]";
-  const cursorClass = onClick ? "cursor-pointer" : "";
+const TableRow: React.FC<TableRowProps> = ({
+  children,
+  className = '',
+  onClick,
+}) => {
+  const baseClasses =
+    'border-b border-[#D7D7D7] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]';
+  const cursorClass = onClick ? 'cursor-pointer' : '';
 
   return (
-    <tr className={`${baseClasses} ${cursorClass} ${className}`} onClick={onClick}>
+    <tr
+      className={`${baseClasses} ${cursorClass} ${className}`}
+      onClick={onClick}
+    >
       {children}
     </tr>
   );
@@ -102,7 +118,7 @@ const TableHeader: React.FC<TableCellProps> = ({
   className = '',
   minWidth,
   width,
-  align = 'left'
+  align = 'left',
 }) => {
   const getAlignmentClass = () => {
     switch (align) {
@@ -133,7 +149,7 @@ const TableCell: React.FC<TableCellProps> = ({
   className = '',
   minWidth,
   width,
-  align = 'left'
+  align = 'left',
 }) => {
   const getAlignmentClass = () => {
     switch (align) {

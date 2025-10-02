@@ -9,7 +9,7 @@ import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
 import WrapperModal from '../modals/WrapperModal';
-import { ActiveState, Doc } from '../models/misc';  
+import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
 import {
@@ -18,14 +18,15 @@ import {
   setSelectedDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
-import { IngestorDefaultConfigs, IngestorFormSchemas, getIngestorSchema, IngestorOption } from '../upload/types/ingestor';
 import {
-  FormField,
-  IngestorConfig,
-  IngestorType,
-} from './types/ingestor';
+  IngestorDefaultConfigs,
+  IngestorFormSchemas,
+  getIngestorSchema,
+  IngestorOption,
+} from '../upload/types/ingestor';
+import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
-import {FilePicker}  from '../components/FilePicker';
+import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 
 import ChevronRight from '../assets/chevron-right.svg';
@@ -46,7 +47,7 @@ function Upload({
   onSuccessfulUpload?: () => void;
 }) {
   const token = useSelector(selectToken);
-  
+
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<boolean>(true);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
@@ -54,9 +55,6 @@ function Upload({
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
-
-
-  
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
@@ -190,7 +188,7 @@ function Upload({
         return (
           <div key={field.name}>
             <div className="mb-3" {...getRootProps()}>
-              <span className="inline-block text-purple-30 dark:text-silver rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
+              <span className="text-purple-30 dark:text-silver inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
                 Choose Files
               </span>
@@ -203,7 +201,7 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-gray-6000 dark:text-[#ececf1] truncate overflow-hidden text-ellipsis"
+                    className="text-gray-6000 truncate overflow-hidden text-ellipsis dark:text-[#ececf1]"
                     title={file.name}
                   >
                     {file.name}
@@ -222,7 +220,10 @@ function Upload({
         return (
           <FilePicker
             key={field.name}
-            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
               setSelectedFiles(selectedFileIds);
               setSelectedFolders(selectedFolderIds);
             }}
@@ -236,7 +237,10 @@ function Upload({
         return (
           <GoogleDrivePicker
             key={field.name}
-            onSelectionChange={(selectedFileIds: string[], selectedFolderIds: string[] = []) => {
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
               setSelectedFiles(selectedFileIds);
               setSelectedFolders(selectedFolderIds);
             }}
@@ -265,14 +269,14 @@ function Upload({
   const { t } = useTranslation();
   const setTimeoutRef = useRef<number | null>(null);
 
-  const ingestorOptions: IngestorOption[] = IngestorFormSchemas
-    .filter(schema => schema.validate ? schema.validate() : true)
-    .map(schema => ({
-      label: schema.label,
-      value: schema.key,
-      icon: schema.icon,
-      heading: schema.heading
-    }));
+  const ingestorOptions: IngestorOption[] = IngestorFormSchemas.filter(
+    (schema) => (schema.validate ? schema.validate() : true),
+  ).map((schema) => ({
+    label: schema.label,
+    value: schema.key,
+    icon: schema.icon,
+    heading: schema.heading,
+  }));
 
   const sourceDocs = useSelector(selectSourceDocs);
   useEffect(() => {
@@ -383,7 +387,8 @@ function Upload({
                           data?.find(
                             (d: Doc) => d.type?.toLowerCase() === 'local',
                           ),
-                    ));
+                      ),
+                    );
                   });
                   setProgress(
                     (progress) =>
@@ -457,21 +462,24 @@ function Upload({
     );
   }
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    setfiles(acceptedFiles);
-    setIngestor(prev => ({ ...prev, name: acceptedFiles[0]?.name || '' }));
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      setfiles(acceptedFiles);
+      setIngestor((prev) => ({ ...prev, name: acceptedFiles[0]?.name || '' }));
 
-    // If we're in local_file mode, update the ingestor config
-    if (ingestor.type === 'local_file') {
-      setIngestor((prevState) => ({
-        ...prevState,
-        config: {
-          ...prevState.config,
-          files: acceptedFiles,
-        },
-      }));
-    }
-  }, [ingestor.type]);
+      // If we're in local_file mode, update the ingestor config
+      if (ingestor.type === 'local_file') {
+        setIngestor((prevState) => ({
+          ...prevState,
+          config: {
+            ...prevState.config,
+            files: acceptedFiles,
+          },
+        }));
+      }
+    },
+    [ingestor.type],
+  );
 
   const doNothing = () => undefined;
 
@@ -512,9 +520,15 @@ function Upload({
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) return;
     const schema: FormField[] = ingestorSchema.fields;
-    const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
-    const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
-    const hasGoogleDrivePicker = schema.some((field: FormField) => field.type === 'google_drive_picker');
+    const hasLocalFilePicker = schema.some(
+      (field: FormField) => field.type === 'local_file_picker',
+    );
+    const hasRemoteFilePicker = schema.some(
+      (field: FormField) => field.type === 'remote_file_picker',
+    );
+    const hasGoogleDrivePicker = schema.some(
+      (field: FormField) => field.type === 'google_drive_picker',
+    );
 
     if (hasLocalFilePicker) {
       files.forEach((file) => {
@@ -557,14 +571,15 @@ function Upload({
       }, 3000);
     };
 
-    const endpoint = ingestor.type === 'local_file' ? `${apiHost}/api/upload` : `${apiHost}/api/remote`;
+    const endpoint =
+      ingestor.type === 'local_file'
+        ? `${apiHost}/api/upload`
+        : `${apiHost}/api/remote`;
 
     xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
-
-  
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
@@ -604,12 +619,20 @@ function Upload({
     }
 
     if (!ingestor.type) return true;
-    const ingestorSchemaForValidation = getIngestorSchema(ingestor.type as IngestorType);
+    const ingestorSchemaForValidation = getIngestorSchema(
+      ingestor.type as IngestorType,
+    );
     if (!ingestorSchemaForValidation) return true;
     const schema: FormField[] = ingestorSchemaForValidation.fields;
-    const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
-    const hasRemoteFilePicker = schema.some((field: FormField) => field.type === 'remote_file_picker');
-    const hasGoogleDrivePicker = schema.some((field: FormField) => field.type === 'google_drive_picker');
+    const hasLocalFilePicker = schema.some(
+      (field: FormField) => field.type === 'local_file_picker',
+    );
+    const hasRemoteFilePicker = schema.some(
+      (field: FormField) => field.type === 'remote_file_picker',
+    );
+    const hasGoogleDrivePicker = schema.some(
+      (field: FormField) => field.type === 'google_drive_picker',
+    );
 
     if (hasLocalFilePicker) {
       if (files.length === 0) {
@@ -621,7 +644,9 @@ function Upload({
       }
     }
 
-    const ingestorSchemaForFields = getIngestorSchema(ingestor.type as IngestorType);
+    const ingestorSchemaForFields = getIngestorSchema(
+      ingestor.type as IngestorType,
+    );
     if (!ingestorSchemaForFields) return false;
     const formFields: FormField[] = ingestorSchemaForFields.fields;
     for (const field of formFields) {
@@ -686,26 +711,28 @@ function Upload({
 
   const renderIngestorSelection = () => {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {ingestorOptions.map((option) => (
           <div
             key={option.value}
-            className={`relative flex flex-col justify-between rounded-2xl cursor-pointer w-full h-[91.2px] border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] gap-2 transition-colors duration-300 ease-out mx-auto ${
-              ingestor.type === option.value 
-                ? 'bg-[#7D54D1] text-white border-[#7D54D1]' 
-                : 'bg-transparent hover:bg-[#ECECEC]/30 dark:hover:bg-[#383838]/30 border-[#D7D7D7] dark:border-[#4A4A4A] hover:shadow-[0_0_15px_0_#00000026] transition-shadow duration-300'
+            className={`relative mx-auto flex h-[91.2px] w-full cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] transition-colors duration-300 ease-out ${
+              ingestor.type === option.value
+                ? 'border-[#7D54D1] bg-[#7D54D1] text-white'
+                : 'border-[#D7D7D7] bg-transparent transition-shadow duration-300 hover:bg-[#ECECEC]/30 hover:shadow-[0_0_15px_0_#00000026] dark:border-[#4A4A4A] dark:hover:bg-[#383838]/30'
             }`}
-            onClick={() => handleIngestorTypeChange(option.value as IngestorType)}
+            onClick={() =>
+              handleIngestorTypeChange(option.value as IngestorType)
+            }
           >
-            <div className="flex flex-col justify-between h-full">
-              <div className="w-6 h-6">
-                <img 
-                  src={option.icon} 
-                  alt={option.label} 
-                  className={`${ingestor.type === option.value ? 'filter invert' : ''} dark:filter dark:invert`}
+            <div className="flex h-full flex-col justify-between">
+              <div className="h-6 w-6">
+                <img
+                  src={option.icon}
+                  alt={option.label}
+                  className={`${ingestor.type === option.value ? 'invert filter' : ''} dark:invert dark:filter`}
                 />
               </div>
-              <p className="font-inter font-semibold text-[13px] leading-[18px] self-start">
+              <p className="font-inter self-start text-[13px] leading-[18px] font-semibold">
                 {option.label}
               </p>
             </div>
@@ -720,15 +747,15 @@ function Upload({
     view = <UploadProgress></UploadProgress>;
   } else if (progress?.type === 'TRAINING') {
     view = <TrainingProgress></TrainingProgress>;
-  }   else {
+  } else {
     view = (
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="text-[#18181B] dark:text-[#ECECF1] text-left font-inter font-semibold text-[20px] leading-[28px] tracking-[0.15px]">
+          <p className="font-inter text-left text-[20px] leading-[28px] font-semibold tracking-[0.15px] text-[#18181B] dark:text-[#ECECF1]">
             Select the way to add your source
           </p>
         )}
-        
+
         {activeTab && (
           <>
             {!ingestor.type && renderIngestorSelection()}
@@ -736,18 +763,19 @@ function Upload({
               <div className="flex flex-col gap-4">
                 <button
                   onClick={() => handleIngestorTypeChange(null)}
-                  className="flex items-center gap-2 text-[#777777] hover:text-[#555555] w-fit"
+                  className="flex w-fit items-center gap-2 text-[#777777] hover:text-[#555555]"
                 >
-                  <img 
-                    src={ChevronRight} 
-                    alt="back" 
-                    className="h-3 w-3 transform rotate-180" 
+                  <img
+                    src={ChevronRight}
+                    alt="back"
+                    className="h-3 w-3 rotate-180 transform"
                   />
                   <span>Back</span>
                 </button>
 
-                <h2 className="font-inter font-semibold text-[22px] leading-[28px] tracking-[0.15px] text-black dark:text-[#E0E0E0]">
-                  {ingestor.type && getIngestorSchema(ingestor.type as IngestorType)?.heading}
+                <h2 className="font-inter text-[22px] leading-[28px] font-semibold tracking-[0.15px] text-black dark:text-[#E0E0E0]">
+                  {ingestor.type &&
+                    getIngestorSchema(ingestor.type as IngestorType)?.heading}
                 </h2>
 
                 <Input
@@ -769,19 +797,20 @@ function Upload({
                 {renderFormFields()}
               </div>
             )}
-  
-            {ingestor.type && getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
-              (field: FormField) => field.advanced,
-            ) && (
-              <button
-                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                className="text-purple-30 bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
-              >
-                {showAdvancedOptions
-                  ? t('modals.uploadDoc.hideAdvanced')
-                  : t('modals.uploadDoc.showAdvanced')}
-              </button>
-            )}
+
+            {ingestor.type &&
+              getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
+                (field: FormField) => field.advanced,
+              ) && (
+                <button
+                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  className="text-purple-30 bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
+                >
+                  {showAdvancedOptions
+                    ? t('modals.uploadDoc.hideAdvanced')
+                    : t('modals.uploadDoc.showAdvanced')}
+                </button>
+              )}
           </>
         )}
         <div className="flex justify-end gap-4">
@@ -789,10 +818,14 @@ function Upload({
             <button
               onClick={() => {
                 if (!ingestor.type) return;
-                const ingestorSchemaForUpload = getIngestorSchema(ingestor.type as IngestorType);
+                const ingestorSchemaForUpload = getIngestorSchema(
+                  ingestor.type as IngestorType,
+                );
                 if (!ingestorSchemaForUpload) return;
                 const schema: FormField[] = ingestorSchemaForUpload.fields;
-                const hasLocalFilePicker = schema.some((field: FormField) => field.type === 'local_file_picker');
+                const hasLocalFilePicker = schema.some(
+                  (field: FormField) => field.type === 'local_file_picker',
+                );
 
                 if (hasLocalFilePicker) {
                   uploadFile();
@@ -815,10 +848,6 @@ function Upload({
     );
   }
 
-  
-
-  
-
   return (
     <WrapperModal
       isPerformingTask={progress !== undefined && progress.percentage < 100}
@@ -828,7 +857,7 @@ function Upload({
         setfiles([]);
         setModalState('INACTIVE');
       }}
-      className="w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px] max-h-[90vh] sm:max-h-none"
+      className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
       contentClassName="max-h-[80vh] sm:max-h-none"
     >
       {view}
