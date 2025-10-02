@@ -1,8 +1,8 @@
+import os
 import json
 
 import requests
 from application.agents.tools.base import Tool
-
 
 class APITool(Tool):
     """
@@ -18,20 +18,25 @@ class APITool(Tool):
         self.query_params = config.get("query_params", {})
 
     def execute_action(self, action_name, **kwargs):
+        proxy_url = kwargs.get("proxy_url")  # Allow override via parameter
         return self._make_api_call(
-            self.url, self.method, self.headers, self.query_params, kwargs
+            self.url, self.method, self.headers, self.query_params, kwargs, proxy_url
         )
 
-    def _make_api_call(self, url, method, headers, query_params, body):
+    def _make_api_call(self, url, method, headers, query_params, body, proxy_url=None):
         if query_params:
             url = f"{url}?{requests.compat.urlencode(query_params)}"
         # if isinstance(body, dict):
         #     body = json.dumps(body)
+        # Use env var as default, override with parameter if provided
+        proxy = proxy_url or os.getenv("API_PROXY_URL")
+        proxies = {"http": proxy, "https": proxy} if proxy else None
+
         try:
-            print(f"Making API call: {method} {url} with body: {body}")
+            print(f"Making API call: {method} {url} with body: {body} and proxy: {proxy}")
             if body == "{}":
                 body = None
-            response = requests.request(method, url, headers=headers, data=body)
+            response = requests.request(method, url, headers=headers, data=body, proxies=proxies, timeout=30)
             response.raise_for_status()
             content_type = response.headers.get(
                 "Content-Type", "application/json"
@@ -61,7 +66,7 @@ class APITool(Tool):
             }
         except requests.exceptions.RequestException as e:
             return {
-                "status_code": response.status_code if response else None,
+                "status_code": getattr(response, "status_code", None) if "response" in locals() else None,
                 "message": f"API call failed: {str(e)}",
             }
 
