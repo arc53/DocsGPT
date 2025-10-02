@@ -14,7 +14,7 @@ import Github from './assets/git_nav.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
-import Robot from './assets/robot.svg';
+import AgentImage from './components/AgentImage';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
@@ -419,12 +419,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex w-6 justify-center">
-                          <img
-                            src={
-                              agent.image && agent.image.trim() !== ''
-                                ? agent.image
-                                : Robot
-                            }
+                          <AgentImage
+                            src={agent.image}
                             alt="agent-logo"
                             className="h-6 w-6 rounded-full object-contain"
                           />
