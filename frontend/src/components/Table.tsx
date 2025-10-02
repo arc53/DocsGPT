@@ -9,7 +9,6 @@ interface TableProps {
 interface TableContainerProps {
   children: React.ReactNode;
   className?: string;
-  ref?: React.Ref<HTMLDivElement>;
   height?: string;
   bordered?: boolean;
 }
@@ -34,7 +33,15 @@ interface TableCellProps {
 }
 
 const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
-  ({ children, className = '', height = 'auto', bordered = true }, ref) => {
+  function TableContainer(
+    {
+      children,
+      className = '',
+      height = 'auto',
+      bordered = true,
+    }: TableContainerProps,
+    ref: React.ForwardedRef<HTMLDivElement>,
+  ) {
     return (
       <div className={`relative rounded-[6px] ${className}`}>
         <div
@@ -51,7 +58,6 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
     );
   },
 );
-TableContainer.displayName = 'TableContainer';
 
 const Table: React.FC<TableProps> = ({
   children,

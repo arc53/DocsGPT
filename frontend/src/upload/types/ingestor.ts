@@ -5,7 +5,13 @@ import GithubIcon from '../../assets/github.svg';
 import RedditIcon from '../../assets/reddit.svg';
 import DriveIcon from '../../assets/drive.svg';
 
-export type IngestorType = 'crawler' | 'github' | 'reddit' | 'url' | 'google_drive' | 'local_file';
+export type IngestorType =
+  | 'crawler'
+  | 'github'
+  | 'reddit'
+  | 'url'
+  | 'google_drive'
+  | 'local_file';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -20,7 +26,14 @@ export type IngestorFormData = {
   data: string;
 };
 
-export type FieldType = 'string' | 'number' | 'enum' | 'boolean' | 'local_file_picker' | 'remote_file_picker' | 'google_drive_picker';
+export type FieldType =
+  | 'string'
+  | 'number'
+  | 'enum'
+  | 'boolean'
+  | 'local_file_picker'
+  | 'remote_file_picker'
+  | 'google_drive_picker';
 
 export interface FormField {
   name: string;
@@ -47,29 +60,41 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     icon: FileUploadIcon,
     heading: 'Upload new document',
     fields: [
-      { name: 'files', label: 'Select files', type: 'local_file_picker', required: true },
-    ]
+      {
+        name: 'files',
+        label: 'Select files',
+        type: 'local_file_picker',
+        required: true,
+      },
+    ],
   },
   {
     key: 'crawler',
     label: 'Crawler',
     icon: CrawlerIcon,
     heading: 'Add content with Web Crawler',
-    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }]
+    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }],
   },
   {
     key: 'url',
     label: 'Link',
     icon: UrlIcon,
     heading: 'Add content from URL',
-    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }]
+    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }],
   },
   {
     key: 'github',
     label: 'GitHub',
     icon: GithubIcon,
     heading: 'Add content from GitHub',
-    fields: [{ name: 'repo_url', label: 'Repository URL', type: 'string', required: true }]
+    fields: [
+      {
+        name: 'repo_url',
+        label: 'Repository URL',
+        type: 'string',
+        required: true,
+      },
+    ],
   },
   {
     key: 'reddit',
@@ -78,11 +103,31 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     heading: 'Add content from Reddit',
     fields: [
       { name: 'client_id', label: 'Client ID', type: 'string', required: true },
-      { name: 'client_secret', label: 'Client Secret', type: 'string', required: true },
-      { name: 'user_agent', label: 'User Agent', type: 'string', required: true },
-      { name: 'search_queries', label: 'Search Queries', type: 'string', required: true },
-      { name: 'number_posts', label: 'Number of Posts', type: 'number', required: true },
-    ]
+      {
+        name: 'client_secret',
+        label: 'Client Secret',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'user_agent',
+        label: 'User Agent',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'search_queries',
+        label: 'Search Queries',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'number_posts',
+        label: 'Number of Posts',
+        type: 'number',
+        required: true,
+      },
+    ],
   },
   {
     key: 'google_drive',
@@ -91,7 +136,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     heading: 'Upload from Google Drive',
     validate: () => {
       const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      return !!(googleClientId);
+      return !!googleClientId;
     },
     fields: [
       {
@@ -99,12 +144,15 @@ export const IngestorFormSchemas: IngestorSchema[] = [
         label: 'Select Files from Google Drive',
         type: 'google_drive_picker',
         required: true,
-      }
-    ]
+      },
+    ],
   },
 ];
 
-export const IngestorDefaultConfigs: Record<IngestorType, Omit<IngestorConfig, 'type'>> = {
+export const IngestorDefaultConfigs: Record<
+  IngestorType,
+  Omit<IngestorConfig, 'type'>
+> = {
   crawler: { name: '', config: { url: '' } },
   url: { name: '', config: { url: '' } },
   reddit: {
@@ -114,8 +162,8 @@ export const IngestorDefaultConfigs: Record<IngestorType, Omit<IngestorConfig, '
       client_secret: '',
       user_agent: '',
       search_queries: '',
-      number_posts: 10
-    }
+      number_posts: 10,
+    },
   },
   github: { name: '', config: { repo_url: '' } },
   google_drive: {
@@ -123,8 +171,8 @@ export const IngestorDefaultConfigs: Record<IngestorType, Omit<IngestorConfig, '
     config: {
       file_ids: '',
       folder_ids: '',
-      recursive: true
-    }
+      recursive: true,
+    },
   },
   local_file: { name: '', config: { files: [] } },
 };
@@ -136,8 +184,8 @@ export interface IngestorOption {
   heading: string;
 }
 
-export const getIngestorSchema = (key: IngestorType): IngestorSchema | undefined => {
-  return IngestorFormSchemas.find(schema => schema.key === key);
+export const getIngestorSchema = (
+  key: IngestorType,
+): IngestorSchema | undefined => {
+  return IngestorFormSchemas.find((schema) => schema.key === key);
 };
-
-

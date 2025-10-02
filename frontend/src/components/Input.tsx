@@ -59,7 +59,7 @@ const Input = ({
         {children}
       </input>
       {leftIcon && (
-        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center justify-center">
+        <div className="absolute top-1/2 left-3 flex -translate-y-1/2 transform items-center justify-center">
           {leftIcon}
         </div>
       )}
@@ -69,7 +69,9 @@ const Input = ({
           className={`absolute select-none ${
             hasValue ? '-top-2.5 left-3 text-xs' : ''
           } px-2 transition-all peer-placeholder-shown:top-2.5 ${
-            leftIcon ? 'peer-placeholder-shown:left-7' : 'peer-placeholder-shown:left-3'
+            leftIcon
+              ? 'peer-placeholder-shown:left-7'
+              : 'peer-placeholder-shown:left-3'
           } peer-placeholder-shown:${
             textSizeStyles[textSize]
           } text-gray-4000 pointer-events-none cursor-none peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
