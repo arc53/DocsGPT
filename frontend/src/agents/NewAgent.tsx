@@ -46,11 +46,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     image: '',
     source: '',
     sources: [],
-    chunks: '',
-    retriever: '',
+    chunks: '2',
+    retriever: 'classic',
     prompt_id: 'default',
     tools: [],
-    agent_type: '',
+    agent_type: 'classic',
     status: '',
     json_schema: undefined,
   });
@@ -122,7 +122,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.name && agent.description && agent.prompt_id && agent.agent_type;
     const isJsonSchemaValidOrEmpty =
       jsonSchemaText.trim() === '' || jsonSchemaValid;
-    return hasRequiredFields && isJsonSchemaValidOrEmpty;
+    const hasSource = selectedSourceIds.size > 0;
+    return hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource;
   };
 
   const isJsonSchemaInvalid = () => {
@@ -352,6 +353,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getTools();
     getPrompts();
   }, [token]);
+
+  // Auto-select default source if none selected
+  useEffect(() => {
+    if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
+      const defaultSource = sourceDocs.find((s) => s.name === 'Default');
+      if (defaultSource) {
+        setSelectedSourceIds(
+          new Set([
+            defaultSource.id || defaultSource.retriever || defaultSource.name,
+          ]),
+        );
+      } else {
+        setSelectedSourceIds(
+          new Set([
+            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
+          ]),
+        );
+      }
+    }
+  }, [sourceDocs, selectedSourceIds.size]);
 
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
@@ -650,7 +671,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   selectedIds={selectedSourceIds}
                   onSelectionChange={(newSelectedIds: Set<string | number>) => {
-                    setSelectedSourceIds(newSelectedIds);
+                    if (
+                      newSelectedIds.size === 0 &&
+                      sourceDocs &&
+                      sourceDocs.length > 0
+                    ) {
+                      const defaultSource = sourceDocs.find(
+                        (s) => s.name === 'Default',
+                      );
+                      if (defaultSource) {
+                        setSelectedSourceIds(
+                          new Set([
+                            defaultSource.id ||
+                              defaultSource.retriever ||
+                              defaultSource.name,
+                          ]),
+                        );
+                      } else {
+                        setSelectedSourceIds(
+                          new Set([
+                            sourceDocs[0].id ||
+                              sourceDocs[0].retriever ||
+                              sourceDocs[0].name,
+                          ]),
+                        );
+                      }
+                    } else {
+                      setSelectedSourceIds(newSelectedIds);
+                    }
                   }}
                   title="Select Sources"
                   searchPlaceholder="Search sources..."
