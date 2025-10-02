@@ -9,7 +9,6 @@ interface TableProps {
 interface TableContainerProps {
   children: React.ReactNode;
   className?: string;
-  ref?: React.Ref<HTMLDivElement>;
   height?: string;
   bordered?: boolean;
 }
@@ -33,35 +32,32 @@ interface TableCellProps {
   align?: 'left' | 'right' | 'center';
 }
 
-function TableContainerBase(
-  {
-    children,
-    className = '',
-    height = 'auto',
-    bordered = true,
-  }: TableContainerProps,
-  ref: React.Ref<HTMLDivElement>,
-) {
-  return (
-    <div className={`relative rounded-[6px] ${className}`}>
-      <div
-        ref={ref}
-        className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border border-[#D7D7D7] dark:border-[#6A6A6A]' : ''}`}
-        style={{
-          maxHeight: height === 'auto' ? undefined : height,
-          overflowY: height === 'auto' ? 'hidden' : 'auto',
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
 const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
-  TableContainerBase,
+  function TableContainer(
+    {
+      children,
+      className = '',
+      height = 'auto',
+      bordered = true,
+    }: TableContainerProps,
+    ref: React.ForwardedRef<HTMLDivElement>,
+  ) {
+    return (
+      <div className={`relative rounded-[6px] ${className}`}>
+        <div
+          ref={ref}
+          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border border-[#D7D7D7] dark:border-[#6A6A6A]' : ''}`}
+          style={{
+            maxHeight: height === 'auto' ? undefined : height,
+            overflowY: height === 'auto' ? 'hidden' : 'auto',
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    );
+  },
 );
-TableContainer.displayName = 'TableContainer';
 
 const Table: React.FC<TableProps> = ({
   children,
