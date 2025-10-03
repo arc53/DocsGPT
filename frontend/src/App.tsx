@@ -38,9 +38,9 @@ function MainLayout() {
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <ActionButtons showNewChat={true} showShare={true} />
       <div
-        className={`h-[calc(100dvh-64px)] overflow-auto lg:h-screen ${
+        className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
           !(isMobile || isTablet)
-            ? `ml-0 ${!navOpen ? 'lg:mx-auto' : 'lg:ml-72'}`
+            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-0'}`
             : 'ml-0 lg:ml-16'
         }`}
       >

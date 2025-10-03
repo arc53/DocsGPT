@@ -111,7 +111,7 @@ function AgentsList() {
   }, [token]);
   return (
     <div className="p-4 md:p-12">
-      <h1 className="text-eerie-black mb-0 text-[40px] font-bold dark:text-[#E0E0E0]">
+      <h1 className="text-eerie-black mb-0 text-[32px] font-bold lg:text-[40px] dark:text-[#E0E0E0]">
         Agents
       </h1>
       <p className="dark:text-gray-4000 mt-5 text-[15px] text-[#71717A]">
