@@ -24,6 +24,7 @@ export interface UploadTask {
   status: UploadTaskStatus;
   taskId?: string;
   errorMessage?: string;
+  dismissed?: boolean;
 }
 
 interface UploadState {
@@ -84,9 +85,29 @@ export const uploadSlice = createSlice({
         (task) => task.id === action.payload.id,
       );
       if (index !== -1) {
+        const updates = action.payload.updates;
+
+        // When task completes or fails, set dismissed to false to notify user
+        if (updates.status === 'completed' || updates.status === 'failed') {
+          state.tasks[index] = {
+            ...state.tasks[index],
+            ...updates,
+            dismissed: false,
+          };
+        } else {
+          state.tasks[index] = {
+            ...state.tasks[index],
+            ...updates,
+          };
+        }
+      }
+    },
+    dismissUploadTask: (state, action: PayloadAction<string>) => {
+      const index = state.tasks.findIndex((task) => task.id === action.payload);
+      if (index !== -1) {
         state.tasks[index] = {
           ...state.tasks[index],
-          ...action.payload.updates,
+          dismissed: true,
         };
       }
     },
@@ -111,6 +132,7 @@ export const {
   clearAttachments,
   addUploadTask,
   updateUploadTask,
+  dismissUploadTask,
   removeUploadTask,
   clearCompletedTasks,
 } = uploadSlice.actions;
