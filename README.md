@@ -118,7 +118,7 @@ A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available
    PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
    ```
 
-Either script will guide you through setting up DocsGPT. Four options available: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider. Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
+You can use either script to set up DocsGPT with four options: public API, local setup, local inference engine, or cloud API provider. The scripts will automatically configure your .env file and manage all downloads and installations for your choice.
 
 **Navigate to http://localhost:5173/**
 
