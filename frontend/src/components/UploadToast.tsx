@@ -43,7 +43,7 @@ export default function UploadToast() {
       case 'failed':
         return t('attachments.uploadFailed');
       default:
-        return 'Preparing upload';
+        return t('modals.uploadDoc.progress.preparing');
     }
   };
 
@@ -91,8 +91,8 @@ export default function UploadToast() {
                       onClick={() => toggleTaskCollapse(task.id)}
                       aria-label={
                         isCollapsed
-                          ? 'Expand upload details'
-                          : 'Collapse upload details'
+                          ? t('modals.uploadDoc.progress.expandDetails')
+                          : t('modals.uploadDoc.progress.collapseDetails')
                       }
                       className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
                     >
@@ -108,7 +108,7 @@ export default function UploadToast() {
                       type="button"
                       onClick={() => dispatch(dismissUploadTask(task.id))}
                       className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
-                      aria-label="Dismiss upload toast"
+                      aria-label={t('modals.uploadDoc.progress.dismiss')}
                     >
                       <svg
                         width="16"
@@ -165,7 +165,12 @@ export default function UploadToast() {
                             aria-valuemin={0}
                             aria-valuemax={100}
                             aria-valuenow={formattedProgress}
-                            aria-label={`Upload progress ${formattedProgress}%`}
+                            aria-label={t(
+                              'modals.uploadDoc.progress.uploadProgress',
+                              {
+                                progress: formattedProgress,
+                              },
+                            )}
                           >
                             <circle
                               className="text-gray-300 dark:text-gray-700"
@@ -231,7 +236,7 @@ export default function UploadToast() {
           onClick={() => dispatch(clearCompletedTasks())}
           className="mt-1 mr-1 text-right text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
         >
-          Clear
+          {t('modals.uploadDoc.progress.clear')}
         </button>
       )}
     </div>

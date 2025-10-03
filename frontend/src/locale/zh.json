@@ -192,6 +192,9 @@
     "uploadDoc": {
       "label": "上传新文档",
       "select": "选择如何将文档上传到 DocsGPT",
+      "selectSource": "选择添加源的方式",
+      "selectedFiles": "已选择的文件",
+      "noFilesSelected": "未选择文件",
       "file": "从设备上传",
       "back": "后退",
       "wait": "请稍等 ...",
@@ -223,10 +226,71 @@
         "training": "正在训练",
         "completed": "训练完成",
         "wait": "这可能需要几分钟",
-        "tokenLimit": "超出令牌限制，请考虑上传较小的文档"
+        "preparing": "准备上传",
+        "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
+        "expandDetails": "展开上传详情",
+        "collapseDetails": "折叠上传详情",
+        "dismiss": "关闭上传通知",
+        "uploadProgress": "上传进度 {{progress}}%",
+        "clear": "清除"
       },
       "showAdvanced": "显示高级选项",
-      "hideAdvanced": "隐藏高级选项"
+      "hideAdvanced": "隐藏高级选项",
+      "ingestors": {
+        "local_file": {
+          "label": "上传文件",
+          "heading": "上传新文档"
+        },
+        "crawler": {
+          "label": "爬虫",
+          "heading": "使用网络爬虫添加内容"
+        },
+        "url": {
+          "label": "链接",
+          "heading": "从URL添加内容"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "从GitHub添加内容"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "从Reddit添加内容"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "从Google Drive上传"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "已连接用户",
+          "authFailed": "身份验证失败",
+          "authUrlFailed": "获取授权URL失败",
+          "popupBlocked": "无法打开身份验证窗口。请允许弹出窗口。",
+          "authCancelled": "身份验证已取消",
+          "connectedAs": "已连接为 {{email}}",
+          "disconnect": "断开连接"
+        },
+        "googleDrive": {
+          "connect": "连接到 Google Drive",
+          "sessionExpired": "会话已过期。请重新连接到 Google Drive。",
+          "sessionExpiredGeneric": "会话已过期。请重新连接您的账户。",
+          "validateFailed": "验证会话失败。请重新连接。",
+          "noSession": "未找到有效会话。请重新连接到 Google Drive。",
+          "noAccessToken": "访问令牌不可用。请重新连接到 Google Drive。",
+          "pickerFailed": "无法打开文件选择器。请重试。",
+          "selectedFiles": "已选择的文件",
+          "selectFiles": "选择文件",
+          "loading": "加载中...",
+          "noFilesSelected": "未选择文件或文件夹",
+          "folders": "文件夹",
+          "files": "文件",
+          "remove": "删除",
+          "folderAlt": "文件夹",
+          "fileAlt": "文件"
+        }
+      }
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",

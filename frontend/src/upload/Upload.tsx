@@ -193,12 +193,12 @@ function Upload({
             <div className="mb-3" {...getRootProps()}>
               <span className="text-purple-30 dark:text-silver inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
-                Choose Files
+                {t('modals.uploadDoc.choose')}
               </span>
             </div>
             <div className="mt-4 max-w-full">
               <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
-                Selected Files
+                {t('modals.uploadDoc.selectedFiles')}
               </p>
               <div className="max-w-full overflow-hidden">
                 {files.map((file) => (
@@ -212,7 +212,7 @@ function Upload({
                 ))}
                 {files.length === 0 && (
                   <p className="text-gray-6000 dark:text-light-gray text-[14px]">
-                    No files selected
+                    {t('modals.uploadDoc.noFilesSelected')}
                   </p>
                 )}
               </div>
@@ -795,7 +795,7 @@ function Upload({
                 />
               </div>
               <p className="font-inter self-start text-[13px] leading-[18px] font-semibold">
-                {option.label}
+                {t(`modals.uploadDoc.ingestors.${option.value}.label`)}
               </p>
             </div>
           </div>
@@ -812,7 +812,7 @@ function Upload({
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
           <p className="font-inter text-left text-[20px] leading-[28px] font-semibold tracking-[0.15px] text-[#18181B] dark:text-[#ECECF1]">
-            Select the way to add your source
+            {t('modals.uploadDoc.selectSource')}
           </p>
         )}
 
@@ -830,12 +830,12 @@ function Upload({
                     alt="back"
                     className="h-3 w-3 rotate-180 transform"
                   />
-                  <span>Back</span>
+                  <span>{t('modals.uploadDoc.back')}</span>
                 </button>
 
                 <h2 className="font-inter text-[22px] leading-[28px] font-semibold tracking-[0.15px] text-black dark:text-[#E0E0E0]">
                   {ingestor.type &&
-                    getIngestorSchema(ingestor.type as IngestorType)?.heading}
+                    t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
                 </h2>
 
                 <Input
@@ -849,7 +849,7 @@ function Upload({
                     }));
                   }}
                   borderVariant="thin"
-                  placeholder="Name"
+                  placeholder={t('modals.uploadDoc.name')}
                   required={true}
                   labelBgClassName="bg-white dark:bg-charleston-green-2"
                   className="w-full"

@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { useSelector } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 
@@ -24,6 +25,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   onDisconnect,
   errorMessage,
 }) => {
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [isDarkTheme] = useDarkTheme();
   const completedRef = useRef(false);
@@ -47,12 +49,16 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       cleanup();
       onSuccess({
         session_token: event.data.session_token,
-        user_email: event.data.user_email || 'Connected User',
+        user_email:
+          event.data.user_email ||
+          t('modals.uploadDoc.connectors.auth.connectedUser'),
       });
     } else if (errorProvider) {
       completedRef.current = true;
       cleanup();
-      onError(event.data.error || 'Authentication failed');
+      onError(
+        event.data.error || t('modals.uploadDoc.connectors.auth.authFailed'),
+      );
     }
   };
 
@@ -71,13 +77,15 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
 
       if (!authResponse.ok) {
         throw new Error(
-          `Failed to get authorization URL: ${authResponse.status}`,
+          `${t('modals.uploadDoc.connectors.auth.authUrlFailed')}: ${authResponse.status}`,
         );
       }
 
       const authData = await authResponse.json();
       if (!authData.success || !authData.authorization_url) {
-        throw new Error(authData.error || 'Failed to get authorization URL');
+        throw new Error(
+          authData.error || t('modals.uploadDoc.connectors.auth.authUrlFailed'),
+        );
       }
 
       const authWindow = window.open(
@@ -86,9 +94,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
         'width=500,height=600,scrollbars=yes,resizable=yes',
       );
       if (!authWindow) {
-        throw new Error(
-          'Failed to open authentication window. Please allow popups.',
-        );
+        throw new Error(t('modals.uploadDoc.connectors.auth.popupBlocked'));
       }
 
       window.addEventListener('message', handleAuthMessage as any);
@@ -98,13 +104,17 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
           clearInterval(checkClosed);
           window.removeEventListener('message', handleAuthMessage as any);
           if (!completedRef.current) {
-            onError('Authentication was cancelled');
+            onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
           }
         }
       }, 1000);
       intervalRef.current = checkClosed;
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Authentication failed');
+      onError(
+        error instanceof Error
+          ? error.message
+          : t('modals.uploadDoc.connectors.auth.authFailed'),
+      );
     }
   };
 
@@ -147,14 +157,18 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
                   d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
                 />
               </svg>
-              <span>Connected as {userEmail}</span>
+              <span>
+                {t('modals.uploadDoc.connectors.auth.connectedAs', {
+                  email: userEmail,
+                })}
+              </span>
             </div>
             {onDisconnect && (
               <button
                 onClick={onDisconnect}
                 className="text-xs font-medium text-[#212121] underline hover:text-gray-700"
               >
-                Disconnect
+                {t('modals.uploadDoc.connectors.auth.disconnect')}
               </button>
             )}
           </div>
