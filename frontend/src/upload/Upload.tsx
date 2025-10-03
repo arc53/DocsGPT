@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -24,6 +25,8 @@ import {
   getIngestorSchema,
   IngestorOption,
 } from '../upload/types/ingestor';
+import { addUploadTask, updateUploadTask } from './uploadSlice';
+
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FilePicker } from '../components/FilePicker';
@@ -259,15 +262,8 @@ function Upload({
     config: {},
   }));
 
-  const [progress, setProgress] = useState<{
-    type: 'UPLOAD' | 'TRAINING';
-    percentage: number;
-    taskId?: string;
-    failed?: boolean;
-  }>();
-
   const { t } = useTranslation();
-  const setTimeoutRef = useRef<number | null>(null);
+  const dispatch = useDispatch();
 
   const ingestorOptions: IngestorOption[] = IngestorFormSchemas.filter(
     (schema) => (schema.validate ? schema.validate() : true),
@@ -279,188 +275,120 @@ function Upload({
   }));
 
   const sourceDocs = useSelector(selectSourceDocs);
-  useEffect(() => {
-    if (setTimeoutRef.current) {
-      clearTimeout(setTimeoutRef.current);
-    }
+
+  const resetUploaderState = useCallback(() => {
+    setIngestor({ type: null, name: '', config: {} });
+    setfiles([]);
+    setSelectedFiles([]);
+    setSelectedFolders([]);
+    setShowAdvancedOptions(false);
   }, []);
 
-  function ProgressBar({ progressPercent }: { progressPercent: number }) {
-    return (
-      <div className="my-8 flex h-full w-full items-center justify-center">
-        <div className="relative h-32 w-32 rounded-full">
-          <div className="absolute inset-0 rounded-full shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset] dark:shadow-[0_0_10px_2px_rgba(0,0,0,0.3)_inset]"></div>
-          <div
-            className={`absolute inset-0 rounded-full ${progressPercent === 100 ? 'bg-linear-to-r from-white to-gray-400 shadow-xl shadow-lime-300/50 dark:bg-linear-to-br dark:from-gray-500 dark:to-gray-300 dark:shadow-lime-300/50' : 'shadow-[0_4px_0_#7D54D1] dark:shadow-[0_4px_0_#7D54D1]'}`}
-            style={{
-              animation: `${progressPercent === 100 ? 'none' : 'rotate 2s linear infinite'}`,
-            }}
-          ></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-2xl font-bold">{progressPercent}%</span>
-          </div>
-          <style>
-            {`@keyframes rotate {
-                0% { transform: rotate(0deg); }
-                100%{ transform: rotate(360deg); }
-              }`}
-          </style>
-        </div>
-      </div>
-    );
-  }
+  const handleTaskFailure = useCallback(
+    (clientTaskId: string, errorMessage?: string) => {
+      dispatch(
+        updateUploadTask({
+          id: clientTaskId,
+          updates: {
+            status: 'failed',
+            errorMessage: errorMessage || t('attachments.uploadFailed'),
+          },
+        }),
+      );
+    },
+    [dispatch, t],
+  );
 
-  function Progress({
-    title,
-    isCancellable = false,
-    isFailed = false,
-    isTraining = false,
-  }: {
-    title: string;
-    isCancellable?: boolean;
-    isFailed?: boolean;
-    isTraining?: boolean;
-  }) {
-    return (
-      <div className="text-gray-2000 dark:text-bright-gray mt-5 flex flex-col items-center gap-2">
-        <p className="text-gra text-xl tracking-[0.15px]">
-          {isTraining &&
-            (progress?.percentage === 100
-              ? t('modals.uploadDoc.progress.completed')
-              : title)}
-          {!isTraining && title}
-        </p>
-        <p className="text-sm">{t('modals.uploadDoc.progress.wait')}</p>
-        <p className={`ml-5 text-xl text-red-400 ${isFailed ? '' : 'hidden'}`}>
-          {t('modals.uploadDoc.progress.tokenLimit')}
-        </p>
-        {/* <p className="mt-10 text-2xl">{progress?.percentage || 0}%</p> */}
-        <ProgressBar progressPercent={progress?.percentage || 0} />
-        {isTraining &&
-          (progress?.percentage === 100 ? (
-            <button
-              onClick={() => {
-                setIngestor({ type: null, name: '', config: {} });
-                setfiles([]);
-                setProgress(undefined);
-                setModalState('INACTIVE');
-              }}
-              className="h-[42px] cursor-pointer rounded-3xl bg-[#7D54D1] px-[28px] py-[6px] text-sm text-white shadow-lg hover:bg-[#6F3FD1]"
-            >
-              {t('modals.uploadDoc.start')}
-            </button>
-          ) : (
-            <button
-              className="ml-2 h-[42px] cursor-pointer rounded-3xl bg-[#7D54D14D] px-[28px] py-[6px] text-sm text-white shadow-lg"
-              disabled
-            >
-              {t('modals.uploadDoc.wait')}
-            </button>
-          ))}
-      </div>
-    );
-  }
+  const trackTraining = useCallback(
+    (backendTaskId: string, clientTaskId: string) => {
+      let timeoutId: number | null = null;
 
-  function UploadProgress() {
-    return <Progress title={t('modals.uploadDoc.progress.upload')}></Progress>;
-  }
-
-  function TrainingProgress() {
-    const dispatch = useDispatch();
-
-    useEffect(() => {
-      let timeoutID: number | undefined;
-
-      if ((progress?.percentage ?? 0) < 100) {
-        timeoutID = setTimeout(() => {
-          userService
-            .getTaskStatus(progress?.taskId as string, null)
-            .then((data) => data.json())
-            .then((data) => {
-              if (data.status == 'SUCCESS') {
-                if (data.result.limited === true) {
-                  getDocs(token).then((data) => {
-                    dispatch(setSourceDocs(data));
-                    dispatch(
-                      setSelectedDocs(
-                        Array.isArray(data) &&
-                          data?.find(
-                            (d: Doc) => d.type?.toLowerCase() === 'local',
-                          ),
-                      ),
-                    );
-                  });
-                  setProgress(
-                    (progress) =>
-                      progress && {
-                        ...progress,
-                        percentage: 100,
-                        failed: true,
-                      },
-                  );
-                } else {
-                  getDocs(token).then((data) => {
-                    dispatch(setSourceDocs(data));
-                    const docIds = new Set(
-                      (Array.isArray(sourceDocs) &&
-                        sourceDocs?.map((doc: Doc) =>
-                          doc.id ? doc.id : null,
-                        )) ||
-                        [],
-                    );
-                    if (data && Array.isArray(data)) {
-                      data.map((updatedDoc: Doc) => {
-                        if (updatedDoc.id && !docIds.has(updatedDoc.id)) {
-                          // Select the doc not present in the intersection of current Docs and fetched data
-                          dispatch(setSelectedDocs(updatedDoc));
-                          return;
-                        }
-                      });
-                    }
-                  });
-                  setProgress(
-                    (progress) =>
-                      progress && {
-                        ...progress,
-                        percentage: 100,
-                        failed: false,
-                      },
-                  );
-                  setIngestor({ type: null, name: '', config: {} });
-                  setfiles([]);
-                  setProgress(undefined);
-                  setModalState('INACTIVE');
-                  onSuccessfulUpload?.();
-                }
-              } else if (data.status == 'PROGRESS') {
-                setProgress(
-                  (progress) =>
-                    progress && {
-                      ...progress,
-                      percentage: data.result.current,
-                    },
-                );
+      const poll = () => {
+        userService
+          .getTaskStatus(backendTaskId, null)
+          .then((response) => response.json())
+          .then(async (data) => {
+            if (data.status === 'SUCCESS') {
+              if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
               }
-            });
-        }, 5000);
-      }
 
-      // cleanup
-      return () => {
-        if (timeoutID !== undefined) {
-          clearTimeout(timeoutID);
-        }
+              const docs = await getDocs(token);
+              dispatch(setSourceDocs(docs));
+
+              if (Array.isArray(docs)) {
+                const existingDocIds = new Set(
+                  (Array.isArray(sourceDocs) ? sourceDocs : [])
+                    .map((doc: Doc) => doc?.id)
+                    .filter((id): id is string => Boolean(id)),
+                );
+                const newDoc = docs.find(
+                  (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
+                );
+                if (newDoc) {
+                  dispatch(setSelectedDocs(newDoc));
+                }
+              }
+
+              if (data.result?.limited) {
+                dispatch(
+                  updateUploadTask({
+                    id: clientTaskId,
+                    updates: {
+                      status: 'failed',
+                      progress: 100,
+                      errorMessage: t('modals.uploadDoc.progress.tokenLimit'),
+                    },
+                  }),
+                );
+              } else {
+                dispatch(
+                  updateUploadTask({
+                    id: clientTaskId,
+                    updates: {
+                      status: 'completed',
+                      progress: 100,
+                      errorMessage: undefined,
+                    },
+                  }),
+                );
+                onSuccessfulUpload?.();
+              }
+            } else if (data.status === 'FAILURE') {
+              if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+              }
+              handleTaskFailure(clientTaskId, data.result?.message);
+            } else if (data.status === 'PROGRESS') {
+              dispatch(
+                updateUploadTask({
+                  id: clientTaskId,
+                  updates: {
+                    status: 'training',
+                    progress: Math.min(100, data.result?.current ?? 0),
+                  },
+                }),
+              );
+              timeoutId = window.setTimeout(poll, 5000);
+            } else {
+              timeoutId = window.setTimeout(poll, 5000);
+            }
+          })
+          .catch(() => {
+            if (timeoutId !== null) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
+            handleTaskFailure(clientTaskId);
+          });
       };
-    }, [progress, dispatch]);
-    return (
-      <Progress
-        title={t('modals.uploadDoc.progress.training')}
-        isCancellable={progress?.percentage === 100}
-        isFailed={progress?.failed === true}
-        isTraining={true}
-      ></Progress>
-    );
-  }
+
+      timeoutId = window.setTimeout(poll, 3000);
+    },
+    [dispatch, handleTaskFailure, onSuccessfulUpload, sourceDocs, t, token],
+  );
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -483,7 +411,7 @@ function Upload({
 
   const doNothing = () => undefined;
 
-  const uploadFile = () => {
+  const uploadFile = (clientTaskId: string) => {
     const formData = new FormData();
     files.forEach((file) => {
       formData.append('file', file);
@@ -491,34 +419,89 @@ function Upload({
 
     formData.append('name', ingestor.name);
     formData.append('user', 'local');
+
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
+
+    dispatch(
+      updateUploadTask({
+        id: clientTaskId,
+        updates: { status: 'uploading', progress: 0 },
+      }),
+    );
+
     xhr.upload.addEventListener('progress', (event) => {
-      const progress = +((event.loaded / event.total) * 100).toFixed(2);
-      setProgress({ type: 'UPLOAD', percentage: progress });
+      if (!event.lengthComputable) return;
+      const progressPercentage = Number(
+        ((event.loaded / event.total) * 100).toFixed(2),
+      );
+      dispatch(
+        updateUploadTask({
+          id: clientTaskId,
+          updates: { progress: progressPercentage },
+        }),
+      );
     });
+
     xhr.onload = () => {
-      const { task_id } = JSON.parse(xhr.responseText);
-      setTimeoutRef.current = setTimeout(() => {
-        setProgress({ type: 'TRAINING', percentage: 0, taskId: task_id });
-      }, 3000);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const parsed = JSON.parse(xhr.responseText) as { task_id?: string };
+          if (parsed.task_id) {
+            dispatch(
+              updateUploadTask({
+                id: clientTaskId,
+                updates: {
+                  taskId: parsed.task_id,
+                  status: 'training',
+                  progress: 0,
+                },
+              }),
+            );
+            trackTraining(parsed.task_id, clientTaskId);
+          } else {
+            dispatch(
+              updateUploadTask({
+                id: clientTaskId,
+                updates: { status: 'completed', progress: 100 },
+              }),
+            );
+            onSuccessfulUpload?.();
+          }
+        } catch (error) {
+          handleTaskFailure(clientTaskId);
+        }
+      } else {
+        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+      }
     };
-    xhr.open('POST', `${apiHost + '/api/upload'}`);
+
+    xhr.onerror = () => {
+      handleTaskFailure(clientTaskId);
+    };
+
+    xhr.open('POST', `${apiHost}/api/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
   };
 
-  const uploadRemote = () => {
-    if (!ingestor.type) return;
+  const uploadRemote = (clientTaskId: string) => {
+    if (!ingestor.type) {
+      handleTaskFailure(clientTaskId);
+      return;
+    }
+
     const formData = new FormData();
     formData.append('name', ingestor.name);
     formData.append('user', 'local');
     formData.append('source', ingestor.type as string);
 
-    let configData: any = {};
-
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
-    if (!ingestorSchema) return;
+    if (!ingestorSchema) {
+      handleTaskFailure(clientTaskId);
+      return;
+    }
+
     const schema: FormField[] = ingestorSchema.fields;
     const hasLocalFilePicker = schema.some(
       (field: FormField) => field.type === 'local_file_picker',
@@ -530,11 +513,12 @@ function Upload({
       (field: FormField) => field.type === 'google_drive_picker',
     );
 
+    let configData: Record<string, unknown> = { ...ingestor.config };
+
     if (hasLocalFilePicker) {
       files.forEach((file) => {
         formData.append('file', file);
       });
-      configData = { ...ingestor.config };
     } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
       const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
@@ -543,42 +527,120 @@ function Upload({
         file_ids: selectedFiles,
         folder_ids: selectedFolders,
       };
-    } else {
-      configData = { ...ingestor.config };
     }
 
     formData.append('data', JSON.stringify(configData));
 
     const apiHost: string = import.meta.env.VITE_API_HOST;
-    const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', (event: ProgressEvent) => {
-      if (event.lengthComputable) {
-        const progressPercentage = +(
-          (event.loaded / event.total) *
-          100
-        ).toFixed(2);
-        setProgress({ type: 'UPLOAD', percentage: progressPercentage });
-      }
-    });
-    xhr.onload = () => {
-      const response = JSON.parse(xhr.responseText) as { task_id: string };
-      setTimeoutRef.current = window.setTimeout(() => {
-        setProgress({
-          type: 'TRAINING',
-          percentage: 0,
-          taskId: response.task_id,
-        });
-      }, 3000);
-    };
-
     const endpoint =
       ingestor.type === 'local_file'
         ? `${apiHost}/api/upload`
         : `${apiHost}/api/remote`;
 
+    const xhr = new XMLHttpRequest();
+
+    dispatch(
+      updateUploadTask({
+        id: clientTaskId,
+        updates: { status: 'uploading', progress: 0 },
+      }),
+    );
+
+    xhr.upload.addEventListener('progress', (event: ProgressEvent) => {
+      if (!event.lengthComputable) return;
+      const progressPercentage = Number(
+        ((event.loaded / event.total) * 100).toFixed(2),
+      );
+      dispatch(
+        updateUploadTask({
+          id: clientTaskId,
+          updates: { progress: progressPercentage },
+        }),
+      );
+    });
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText) as { task_id?: string };
+          if (response.task_id) {
+            dispatch(
+              updateUploadTask({
+                id: clientTaskId,
+                updates: {
+                  taskId: response.task_id,
+                  status: 'training',
+                  progress: 0,
+                },
+              }),
+            );
+            trackTraining(response.task_id, clientTaskId);
+          } else {
+            dispatch(
+              updateUploadTask({
+                id: clientTaskId,
+                updates: { status: 'completed', progress: 100 },
+              }),
+            );
+            onSuccessfulUpload?.();
+          }
+        } catch (error) {
+          handleTaskFailure(clientTaskId);
+        }
+      } else {
+        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+      }
+    };
+
+    xhr.onerror = () => {
+      handleTaskFailure(clientTaskId);
+    };
+
     xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.send(formData);
+  };
+
+  const handleClose = useCallback(() => {
+    resetUploaderState();
+    setModalState('INACTIVE');
+    close();
+  }, [close, resetUploaderState, setModalState]);
+
+  const handleUpload = () => {
+    if (!ingestor.type) return;
+
+    const ingestorSchemaForUpload = getIngestorSchema(
+      ingestor.type as IngestorType,
+    );
+    if (!ingestorSchemaForUpload) return;
+
+    const schema: FormField[] = ingestorSchemaForUpload.fields;
+    const hasLocalFilePicker = schema.some(
+      (field: FormField) => field.type === 'local_file_picker',
+    );
+
+    const displayName =
+      ingestor.name?.trim() || files[0]?.name || t('modals.uploadDoc.label');
+
+    const clientTaskId = nanoid();
+
+    dispatch(
+      addUploadTask({
+        id: clientTaskId,
+        fileName: displayName,
+        progress: 0,
+        status: 'preparing',
+      }),
+    );
+
+    if (hasLocalFilePicker) {
+      uploadFile(clientTaskId);
+    } else {
+      uploadRemote(clientTaskId);
+    }
+
+    handleClose();
   };
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -741,14 +803,12 @@ function Upload({
       </div>
     );
   };
-  let view;
-
-  if (progress?.type === 'UPLOAD') {
-    view = <UploadProgress></UploadProgress>;
-  } else if (progress?.type === 'TRAINING') {
-    view = <TrainingProgress></TrainingProgress>;
-  } else {
-    view = (
+  return (
+    <WrapperModal
+      close={handleClose}
+      className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
+      contentClassName="max-h-[80vh] sm:max-h-none"
+    >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
           <p className="font-inter text-left text-[20px] leading-[28px] font-semibold tracking-[0.15px] text-[#18181B] dark:text-[#ECECF1]">
@@ -816,23 +876,7 @@ function Upload({
         <div className="flex justify-end gap-4">
           {activeTab && ingestor.type && (
             <button
-              onClick={() => {
-                if (!ingestor.type) return;
-                const ingestorSchemaForUpload = getIngestorSchema(
-                  ingestor.type as IngestorType,
-                );
-                if (!ingestorSchemaForUpload) return;
-                const schema: FormField[] = ingestorSchemaForUpload.fields;
-                const hasLocalFilePicker = schema.some(
-                  (field: FormField) => field.type === 'local_file_picker',
-                );
-
-                if (hasLocalFilePicker) {
-                  uploadFile();
-                } else {
-                  uploadRemote();
-                }
-              }}
+              onClick={handleUpload}
               disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
                 isUploadDisabled()
@@ -845,22 +889,6 @@ function Upload({
           )}
         </div>
       </div>
-    );
-  }
-
-  return (
-    <WrapperModal
-      isPerformingTask={progress !== undefined && progress.percentage < 100}
-      close={() => {
-        close();
-        setIngestor({ type: null, name: '', config: {} });
-        setfiles([]);
-        setModalState('INACTIVE');
-      }}
-      className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
-      contentClassName="max-h-[80vh] sm:max-h-none"
-    >
-      {view}
     </WrapperModal>
   );
 }

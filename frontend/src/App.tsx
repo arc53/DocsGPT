@@ -7,6 +7,7 @@ import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
 import ActionButtons from './components/ActionButtons';
 import Spinner from './components/Spinner';
+import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme, useMediaQuery } from './hooks';
@@ -45,6 +46,7 @@ function MainLayout() {
       >
         <Outlet />
       </div>
+      <UploadToast />
     </div>
   );
 }

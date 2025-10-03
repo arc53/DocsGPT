@@ -10,12 +10,30 @@ export interface Attachment {
   token_count?: number;
 }
 
+export type UploadTaskStatus =
+  | 'preparing'
+  | 'uploading'
+  | 'training'
+  | 'completed'
+  | 'failed';
+
+export interface UploadTask {
+  id: string;
+  fileName: string;
+  progress: number;
+  status: UploadTaskStatus;
+  taskId?: string;
+  errorMessage?: string;
+}
+
 interface UploadState {
   attachments: Attachment[];
+  tasks: UploadTask[];
 }
 
 const initialState: UploadState = {
   attachments: [],
+  tasks: [],
 };
 
 export const uploadSlice = createSlice({
@@ -52,6 +70,37 @@ export const uploadSlice = createSlice({
         (att) => att.status === 'uploading' || att.status === 'processing',
       );
     },
+    addUploadTask: (state, action: PayloadAction<UploadTask>) => {
+      state.tasks.unshift(action.payload);
+    },
+    updateUploadTask: (
+      state,
+      action: PayloadAction<{
+        id: string;
+        updates: Partial<UploadTask>;
+      }>,
+    ) => {
+      const index = state.tasks.findIndex(
+        (task) => task.id === action.payload.id,
+      );
+      if (index !== -1) {
+        state.tasks[index] = {
+          ...state.tasks[index],
+          ...action.payload.updates,
+        };
+      }
+    },
+    removeUploadTask: (state, action: PayloadAction<string>) => {
+      state.tasks = state.tasks.filter((task) => task.id !== action.payload);
+    },
+    clearCompletedTasks: (state) => {
+      state.tasks = state.tasks.filter(
+        (task) =>
+          task.status === 'uploading' ||
+          task.status === 'training' ||
+          task.status === 'preparing',
+      );
+    },
   },
 });
 
@@ -60,10 +109,15 @@ export const {
   updateAttachment,
   removeAttachment,
   clearAttachments,
+  addUploadTask,
+  updateUploadTask,
+  removeUploadTask,
+  clearCompletedTasks,
 } = uploadSlice.actions;
 
 export const selectAttachments = (state: RootState) => state.upload.attachments;
 export const selectCompletedAttachments = (state: RootState) =>
   state.upload.attachments.filter((att) => att.status === 'completed');
+export const selectUploadTasks = (state: RootState) => state.upload.tasks;
 
 export default uploadSlice.reducer;
