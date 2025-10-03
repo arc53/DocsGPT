@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Robot from '../assets/robot.svg';
+import AgentImage from '../components/AgentImage';
 import ThreeDots from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -82,8 +82,8 @@ export default function AgentCard({
 
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
-          <img
-            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+          <AgentImage
+            src={agent.image}
             alt={`${agent.name}`}
             className="h-7 w-7 rounded-full object-contain"
           />

@@ -6,7 +6,7 @@ import { useParams } from 'react-router-dom';
 import userService from '../api/services/userService';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import Robot from '../assets/robot.svg';
+import AgentImage from '../components/AgentImage';
 import MessageInput from '../components/MessageInput';
 import Spinner from '../components/Spinner';
 import ConversationMessages from '../conversation/ConversationMessages';
@@ -152,12 +152,8 @@ export default function SharedAgent() {
   return (
     <div className="relative h-full w-full">
       <div className="absolute top-5 left-4 hidden items-center gap-3 sm:flex">
-        <img
-          src={
-            sharedAgent.image && sharedAgent.image.trim() !== ''
-              ? sharedAgent.image
-              : Robot
-          }
+        <AgentImage
+          src={sharedAgent.image}
           alt="agent-logo"
           className="h-6 w-6 rounded-full object-contain"
         />

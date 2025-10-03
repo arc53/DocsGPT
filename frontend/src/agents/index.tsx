@@ -8,7 +8,7 @@ import Link from '../assets/link-gray.svg';
 import Monitoring from '../assets/monitoring.svg';
 import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
-import Robot from '../assets/robot.svg';
+import AgentImage from '../components/AgentImage';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
@@ -138,11 +138,7 @@ function AgentsList() {
               </button>
               <div className="w-full">
                 <div className="flex w-full items-center px-1">
-                  <img
-                    src={Robot}
-                    alt="agent-logo"
-                    className="h-7 w-7 rounded-full"
-                  />
+                  <AgentImage className="h-7 w-7 rounded-full" />
                 </div>
                 <div className="mt-2">
                   <p
@@ -436,8 +432,8 @@ function AgentCard({
       </div>
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
-          <img
-            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+          <AgentImage
+            src={agent.image}
             alt={`${agent.name}`}
             className="h-7 w-7 rounded-full object-contain"
           />
