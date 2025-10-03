@@ -8,7 +8,11 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
           <img
             src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+            alt={`${agent.name}`}
             className="h-full w-full rounded-full object-contain"
+            onError={(e) => {
+              e.currentTarget.src = Robot;
+            }}
           />
         </div>
         <div className="flex max-h-[92px] w-[80%] flex-col gap-px">

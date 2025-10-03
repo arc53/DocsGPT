@@ -83,9 +83,13 @@ export default function AgentCard({
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
           <img
-            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+            // src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+            src="https://this-is-a-broken-url-for-testing.com/fake-image.png"
             alt={`${agent.name}`}
             className="h-7 w-7 rounded-full object-contain"
+            onError={(e) => {
+              e.currentTarget.src = Robot;
+            }}
           />
           {agent.status === 'draft' && (
             <p className="text-xs text-black opacity-50 dark:text-[#E0E0E0]">
