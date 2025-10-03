@@ -35,4 +35,4 @@ Non-Code Contributions:
   
 Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typos) could earn you a stylish new t-shirt.
 
-We will publish a t-shirt desing later into the October.
+We will publish a t-shirt design later into the October.
