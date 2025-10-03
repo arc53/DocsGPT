@@ -8,7 +8,6 @@ import uuid
 from functools import wraps
 from typing import Optional, Tuple
 
-from bson.dbref import DBRef
 from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, Response
 from pymongo import ReturnDocument
@@ -49,8 +48,6 @@ try:
     users_collection.create_index("user_id", unique=True)
 except Exception as e:
     print("Error creating indexes:", e)
-
-
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )

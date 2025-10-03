@@ -1,7 +1,9 @@
 """Source document management upload functionality."""
 
-import json, tempfile, zipfile
+import json
 import os
+import tempfile
+import zipfile
 
 from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request

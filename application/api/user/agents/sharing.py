@@ -1,6 +1,7 @@
 """Agent management sharing functionality."""
 
-import datetime, secrets
+import datetime
+import secrets
 
 from bson import DBRef
 from bson.objectid import ObjectId

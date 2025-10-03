@@ -1,7 +1,6 @@
 """Agent management webhook handlers."""
 
 import secrets
-from functools import wraps
 
 from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
@@ -62,31 +61,6 @@ class AgentWebhook(Resource):
         return make_response(
             jsonify({"success": True, "webhook_url": full_webhook_url}), 200
         )
-
-
-def require_agent(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        webhook_token = kwargs.get("webhook_token")
-        if not webhook_token:
-            return make_response(
-                jsonify({"success": False, "message": "Webhook token missing"}), 400
-            )
-        agent = agents_collection.find_one(
-            {"incoming_webhook_token": webhook_token}, {"_id": 1}
-        )
-        if not agent:
-            current_app.logger.warning(
-                f"Webhook attempt with invalid token: {webhook_token}"
-            )
-            return make_response(
-                jsonify({"success": False, "message": "Agent not found"}), 404
-            )
-        kwargs["agent"] = agent
-        kwargs["agent_id_str"] = str(agent["_id"])
-        return func(*args, **kwargs)
-
-    return wrapper
 
 
 @agents_webhooks_ns.route("/webhooks/agents/<string:webhook_token>")

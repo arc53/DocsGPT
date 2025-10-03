@@ -7,11 +7,7 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import (
-    attachments_collection,
-    conversations_collection,
-    db,
-)
+from application.api.user.base import attachments_collection, conversations_collection
 from application.utils import check_required_fields
 
 conversations_ns = Namespace(
