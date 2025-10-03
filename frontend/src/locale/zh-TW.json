@@ -192,6 +192,9 @@
     "uploadDoc": {
       "label": "上傳新文件",
       "select": "選擇如何將文件上傳到 DocsGPT",
+      "selectSource": "選擇新增來源的方式",
+      "selectedFiles": "已選擇的檔案",
+      "noFilesSelected": "未選擇檔案",
       "file": "從檔案",
       "remote": "遠端",
       "back": "返回",
@@ -223,10 +226,71 @@
         "training": "正在訓練",
         "completed": "訓練完成",
         "wait": "這可能需要幾分鐘",
-        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔"
+        "preparing": "準備上傳",
+        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
+        "expandDetails": "展開上傳詳情",
+        "collapseDetails": "摺疊上傳詳情",
+        "dismiss": "關閉上傳通知",
+        "uploadProgress": "上傳進度 {{progress}}%",
+        "clear": "清除"
       },
       "showAdvanced": "顯示進階選項",
-      "hideAdvanced": "隱藏進階選項"
+      "hideAdvanced": "隱藏進階選項",
+      "ingestors": {
+        "local_file": {
+          "label": "上傳檔案",
+          "heading": "上傳新文檔"
+        },
+        "crawler": {
+          "label": "爬蟲",
+          "heading": "使用網路爬蟲新增內容"
+        },
+        "url": {
+          "label": "連結",
+          "heading": "從URL新增內容"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "從GitHub新增內容"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "從Reddit新增內容"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "從Google Drive上傳"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "已連接使用者",
+          "authFailed": "驗證失敗",
+          "authUrlFailed": "取得授權URL失敗",
+          "popupBlocked": "無法開啟驗證視窗。請允許彈出視窗。",
+          "authCancelled": "驗證已取消",
+          "connectedAs": "已連接為 {{email}}",
+          "disconnect": "中斷連接"
+        },
+        "googleDrive": {
+          "connect": "連接到 Google Drive",
+          "sessionExpired": "工作階段已過期。請重新連接到 Google Drive。",
+          "sessionExpiredGeneric": "工作階段已過期。請重新連接您的帳戶。",
+          "validateFailed": "驗證工作階段失敗。請重新連接。",
+          "noSession": "未找到有效工作階段。請重新連接到 Google Drive。",
+          "noAccessToken": "存取權杖不可用。請重新連接到 Google Drive。",
+          "pickerFailed": "無法開啟檔案選擇器。請重試。",
+          "selectedFiles": "已選擇的檔案",
+          "selectFiles": "選擇檔案",
+          "loading": "載入中...",
+          "noFilesSelected": "未選擇檔案或資料夾",
+          "folders": "資料夾",
+          "files": "檔案",
+          "remove": "移除",
+          "folderAlt": "資料夾",
+          "fileAlt": "檔案"
+        }
+      }
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",

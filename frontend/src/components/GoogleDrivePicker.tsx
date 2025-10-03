@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import useDrivePicker from 'react-google-drive-picker';
 
 import ConnectorAuth from './ConnectorAuth';
@@ -26,6 +27,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   token,
   onSelectionChange,
 }) => {
+  const { t } = useTranslation();
   const [selectedFiles, setSelectedFiles] = useState<PickerFile[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<PickerFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -66,14 +68,19 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
       if (!validateResponse.ok) {
         setIsConnected(false);
-        setAuthError('Session expired. Please reconnect to Google Drive.');
+        setAuthError(
+          t('modals.uploadDoc.connectors.googleDrive.sessionExpired'),
+        );
         setIsValidating(false);
         return false;
       }
 
       const validateData = await validateResponse.json();
       if (validateData.success) {
-        setUserEmail(validateData.user_email || 'Connected User');
+        setUserEmail(
+          validateData.user_email ||
+            t('modals.uploadDoc.connectors.auth.connectedUser'),
+        );
         setIsConnected(true);
         setAuthError('');
         setAccessToken(validateData.access_token || null);
@@ -83,14 +90,14 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         setIsConnected(false);
         setAuthError(
           validateData.error ||
-            'Session expired. Please reconnect your account.',
+            t('modals.uploadDoc.connectors.googleDrive.sessionExpiredGeneric'),
         );
         setIsValidating(false);
         return false;
       }
     } catch (error) {
       console.error('Error validating session:', error);
-      setAuthError('Failed to validate session. Please reconnect.');
+      setAuthError(t('modals.uploadDoc.connectors.googleDrive.validateFailed'));
       setIsConnected(false);
       setIsValidating(false);
       return false;
@@ -103,15 +110,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     const sessionToken = getSessionToken('google_drive');
 
     if (!sessionToken) {
-      setAuthError('No valid session found. Please reconnect to Google Drive.');
+      setAuthError(t('modals.uploadDoc.connectors.googleDrive.noSession'));
       setIsLoading(false);
       return;
     }
 
     if (!accessToken) {
-      setAuthError(
-        'No access token available. Please reconnect to Google Drive.',
-      );
+      setAuthError(t('modals.uploadDoc.connectors.googleDrive.noAccessToken'));
       setIsLoading(false);
       return;
     }
@@ -193,7 +198,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
       });
     } catch (error) {
       console.error('Error opening picker:', error);
-      setAuthError('Failed to open file picker. Please try again.');
+      setAuthError(t('modals.uploadDoc.connectors.googleDrive.pickerFailed'));
       setIsLoading(false);
     }
   };
@@ -264,9 +269,12 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         <>
           <ConnectorAuth
             provider="google_drive"
-            label="Connect to Google Drive"
+            label={t('modals.uploadDoc.connectors.googleDrive.connect')}
             onSuccess={(data) => {
-              setUserEmail(data.user_email || 'Connected User');
+              setUserEmail(
+                data.user_email ||
+                  t('modals.uploadDoc.connectors.auth.connectedUser'),
+              );
               setIsConnected(true);
               setAuthError('');
 
@@ -289,26 +297,34 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
             <div className="rounded-lg border border-[#EEE6FF78] dark:border-[#6A6A6A]">
               <div className="p-4">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Selected Files</h3>
+                  <h3 className="text-sm font-medium">
+                    {t('modals.uploadDoc.connectors.googleDrive.selectedFiles')}
+                  </h3>
                   <button
                     onClick={() => handleOpenPicker()}
                     className="rounded-md bg-[#A076F6] px-3 py-1 text-sm text-white hover:bg-[#8A5FD4]"
                     disabled={isLoading}
                   >
-                    {isLoading ? 'Loading...' : 'Select Files'}
+                    {isLoading
+                      ? t('modals.uploadDoc.connectors.googleDrive.loading')
+                      : t(
+                          'modals.uploadDoc.connectors.googleDrive.selectFiles',
+                        )}
                   </button>
                 </div>
 
                 {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    No files or folders selected
+                    {t(
+                      'modals.uploadDoc.connectors.googleDrive.noFilesSelected',
+                    )}
                   </p>
                 ) : (
                   <div className="max-h-60 overflow-y-auto">
                     {selectedFolders.length > 0 && (
                       <div className="mb-2">
                         <h4 className="mb-1 text-xs font-medium text-gray-500">
-                          Folders
+                          {t('modals.uploadDoc.connectors.googleDrive.folders')}
                         </h4>
                         {selectedFolders.map((folder) => (
                           <div
@@ -317,7 +333,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                           >
                             <img
                               src={folder.iconUrl}
-                              alt="Folder"
+                              alt={t(
+                                'modals.uploadDoc.connectors.googleDrive.folderAlt',
+                              )}
                               className="mr-2 h-5 w-5"
                             />
                             <span className="flex-1 truncate text-sm">
@@ -337,7 +355,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                               }}
                               className="ml-2 text-sm text-red-500 hover:text-red-700"
                             >
-                              Remove
+                              {t(
+                                'modals.uploadDoc.connectors.googleDrive.remove',
+                              )}
                             </button>
                           </div>
                         ))}
@@ -347,7 +367,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                     {selectedFiles.length > 0 && (
                       <div>
                         <h4 className="mb-1 text-xs font-medium text-gray-500">
-                          Files
+                          {t('modals.uploadDoc.connectors.googleDrive.files')}
                         </h4>
                         {selectedFiles.map((file) => (
                           <div
@@ -356,7 +376,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                           >
                             <img
                               src={file.iconUrl}
-                              alt="File"
+                              alt={t(
+                                'modals.uploadDoc.connectors.googleDrive.fileAlt',
+                              )}
                               className="mr-2 h-5 w-5"
                             />
                             <span className="flex-1 truncate text-sm">
@@ -375,7 +397,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                               }}
                               className="ml-2 text-sm text-red-500 hover:text-red-700"
                             >
-                              Remove
+                              {t(
+                                'modals.uploadDoc.connectors.googleDrive.remove',
+                              )}
                             </button>
                           </div>
                         ))}

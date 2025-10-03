@@ -192,6 +192,9 @@
     "uploadDoc": {
       "label": "Subir nuevo documento",
       "select": "Elige cómo cargar tu documento en DocsGPT",
+      "selectSource": "Selecciona la forma de agregar tu fuente",
+      "selectedFiles": "Archivos Seleccionados",
+      "noFilesSelected": "No hay archivos seleccionados",
       "file": "Subir desde el dispositivo",
       "back": "Atrás",
       "wait": "Por favor espera ...",
@@ -223,10 +226,71 @@
         "training": "Entrenamiento en progreso",
         "completed": "Entrenamiento completado",
         "wait": "Esto puede tardar varios minutos",
-        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño"
+        "preparing": "Preparando subida",
+        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",
+        "expandDetails": "Expandir detalles de subida",
+        "collapseDetails": "Contraer detalles de subida",
+        "dismiss": "Descartar notificación de subida",
+        "uploadProgress": "Progreso de subida {{progress}}%",
+        "clear": "Limpiar"
       },
       "showAdvanced": "Mostrar opciones avanzadas",
-      "hideAdvanced": "Ocultar opciones avanzadas"
+      "hideAdvanced": "Ocultar opciones avanzadas",
+      "ingestors": {
+        "local_file": {
+          "label": "Subir archivo",
+          "heading": "Subir nuevo documento"
+        },
+        "crawler": {
+          "label": "Rastreador",
+          "heading": "Agregar contenido con rastreador web"
+        },
+        "url": {
+          "label": "Enlace",
+          "heading": "Agregar contenido desde URL"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "Agregar contenido desde GitHub"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "Agregar contenido desde Reddit"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "Subir desde Google Drive"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "Usuario Conectado",
+          "authFailed": "Autenticación fallida",
+          "authUrlFailed": "Error al obtener la URL de autorización",
+          "popupBlocked": "Error al abrir la ventana de autenticación. Por favor, permita ventanas emergentes.",
+          "authCancelled": "Autenticación cancelada",
+          "connectedAs": "Conectado como {{email}}",
+          "disconnect": "Desconectar"
+        },
+        "googleDrive": {
+          "connect": "Conectar a Google Drive",
+          "sessionExpired": "Sesión expirada. Por favor, reconecte a Google Drive.",
+          "sessionExpiredGeneric": "Sesión expirada. Por favor, reconecte su cuenta.",
+          "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
+          "noSession": "No se encontró una sesión válida. Por favor, reconecte a Google Drive.",
+          "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a Google Drive.",
+          "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
+          "selectedFiles": "Archivos Seleccionados",
+          "selectFiles": "Seleccionar Archivos",
+          "loading": "Cargando...",
+          "noFilesSelected": "No hay archivos o carpetas seleccionados",
+          "folders": "Carpetas",
+          "files": "Archivos",
+          "remove": "Eliminar",
+          "folderAlt": "Carpeta",
+          "fileAlt": "Archivo"
+        }
+      }
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
