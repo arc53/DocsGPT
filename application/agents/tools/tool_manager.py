@@ -28,7 +28,7 @@ class ToolManager:
         module = importlib.import_module(f"application.agents.tools.{tool_name}")
         for member_name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Tool) and obj is not Tool:
-                if tool_name == "mcp_tool" and user_id:
+                if tool_name in {"mcp_tool","notes"} and user_id:
                     return obj(tool_config, user_id)
                 else:
                     return obj(tool_config)
