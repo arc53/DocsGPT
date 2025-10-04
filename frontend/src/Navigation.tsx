@@ -581,7 +581,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 </NavLink>
                 <NavLink
                   target="_blank"
-                  to={'https://twitter.com/docsgptai'}
+                  to={'https://x.com/docsgptai'}
                   className={
                     'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
                   }
@@ -590,7 +590,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     src={Twitter}
                     width={20}
                     height={20}
-                    alt="Follow us on Twitter"
+                    alt="Follow us on X"
                     className="m-2 self-center filter dark:invert"
                   />
                 </NavLink>
