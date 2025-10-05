@@ -260,8 +260,8 @@
       },
       "progress": {
         "upload": "Upload is in progress",
-        "training": "Training is in progress",
-        "completed": "Training completed",
+        "training": "Upload is in progress",
+        "completed": "Upload completed",
         "wait": "This may take several minutes",
         "preparing": "Preparing upload",
         "tokenLimit": "Over the token limit, please consider uploading smaller document",

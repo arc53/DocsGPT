@@ -223,8 +223,8 @@
       },
       "progress": {
         "upload": "Subida en progreso",
-        "training": "Entrenamiento en progreso",
-        "completed": "Entrenamiento completado",
+        "training": "Subida en progreso",
+        "completed": "Subida completada",
         "wait": "Esto puede tardar varios minutos",
         "preparing": "Preparando subida",
         "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",

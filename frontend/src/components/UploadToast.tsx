@@ -2,11 +2,7 @@ import { useState } from 'react';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import {
-  selectUploadTasks,
-  dismissUploadTask,
-  clearCompletedTasks,
-} from '../upload/uploadSlice';
+import { selectUploadTasks, dismissUploadTask } from '../upload/uploadSlice';
 import ChevronDown from '../assets/chevron-down.svg';
 import CheckCircleFilled from '../assets/check-circle-filled.svg';
 import WarnIcon from '../assets/warn.svg';
@@ -37,7 +33,7 @@ export default function UploadToast() {
       case 'uploading':
         return t('modals.uploadDoc.progress.upload');
       case 'training':
-        return t('modals.uploadDoc.progress.training');
+        return t('modals.uploadDoc.progress.upload');
       case 'completed':
         return t('modals.uploadDoc.progress.completed');
       case 'failed':
@@ -100,7 +96,7 @@ export default function UploadToast() {
                         src={ChevronDown}
                         alt=""
                         className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${
-                          isCollapsed ? '' : 'rotate-180'
+                          isCollapsed ? 'rotate-180' : ''
                         }`}
                       />
                     </button>
@@ -228,17 +224,6 @@ export default function UploadToast() {
             </div>
           );
         })}
-
-      {uploadTasks.some(
-        (task) => task.status === 'completed' || task.status === 'failed',
-      ) && (
-        <button
-          onClick={() => dispatch(clearCompletedTasks())}
-          className="mt-1 mr-1 text-right text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          {t('modals.uploadDoc.progress.clear')}
-        </button>
-      )}
     </div>
   );
 }

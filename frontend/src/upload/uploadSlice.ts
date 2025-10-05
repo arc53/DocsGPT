@@ -114,14 +114,6 @@ export const uploadSlice = createSlice({
     removeUploadTask: (state, action: PayloadAction<string>) => {
       state.tasks = state.tasks.filter((task) => task.id !== action.payload);
     },
-    clearCompletedTasks: (state) => {
-      state.tasks = state.tasks.filter(
-        (task) =>
-          task.status === 'uploading' ||
-          task.status === 'training' ||
-          task.status === 'preparing',
-      );
-    },
   },
 });
 
@@ -134,7 +126,6 @@ export const {
   updateUploadTask,
   dismissUploadTask,
   removeUploadTask,
-  clearCompletedTasks,
 } = uploadSlice.actions;
 
 export const selectAttachments = (state: RootState) => state.upload.attachments;

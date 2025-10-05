@@ -223,8 +223,8 @@
       },
       "progress": {
         "upload": "正在上传",
-        "training": "正在训练",
-        "completed": "训练完成",
+        "training": "正在上传",
+        "completed": "上传完成",
         "wait": "这可能需要几分钟",
         "preparing": "准备上传",
         "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
