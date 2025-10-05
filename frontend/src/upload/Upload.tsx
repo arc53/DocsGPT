@@ -327,7 +327,7 @@ function Upload({
                   (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
                 );
                 if (newDoc) {
-                  dispatch(setSelectedDocs(newDoc));
+                  dispatch(setSelectedDocs([newDoc]));
                 }
               }
 
