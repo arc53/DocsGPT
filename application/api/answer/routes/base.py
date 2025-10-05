@@ -73,30 +73,26 @@ class BaseAnswerResource:
 
         limited_token_mode = agent.get("limited_token_mode", False)
         limited_request_mode = agent.get("limited_request_mode", False)
-        token_limit = agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"])
-        request_limit = agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]) 
+        token_limit = int(agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]))
+        request_limit = int(agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]))
 
         token_usage_collection = self.db["token_usage"]
 
-        agent_key = agent.get("key")
-
-        end_date = datetime.datetime.now(datetime.timezone.utc)
+        end_date = datetime.datetime.now()
         start_date = end_date - datetime.timedelta(hours=24)
 
         match_query = {
             "timestamp": {"$gte": start_date, "$lte": end_date},
-            "api_key": agent_key
+            "api_key": api_key
         }
-
+        
         if limited_token_mode:
             token_pipeline = [
                 {"$match": match_query},
                 {
                     "$group": {
                         "_id": None,
-                        "total_tokens": {
-                            "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
-                        }
+                        "total_tokens": {"$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}}
                     }
                 }
             ]

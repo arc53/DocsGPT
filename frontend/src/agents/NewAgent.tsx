@@ -53,6 +53,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     agent_type: '',
     status: '',
     json_schema: undefined,
+    limited_token_mode: false,
+    token_limit: undefined,
+    limited_request_mode: false,
+    request_limit: undefined,
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [prompts, setPrompts] = useState<
@@ -76,7 +80,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [publishLoading, setPublishLoading] = useState(false);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
-  const [isJsonSchemaExpanded, setIsJsonSchemaExpanded] = useState(false);
+  const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] = useState(false);
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -192,6 +196,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'draft');
 
+    formData.append(
+      'limited_token_mode',
+      JSON.stringify(agent.limited_token_mode),
+    );
+    formData.append(
+      'limited_request_mode',
+      JSON.stringify(agent.limited_request_mode),
+    );
+
+    if (agent.limited_token_mode && agent.token_limit){
+      formData.append('limited_token_mode', 'True');
+      formData.append('token_limit', JSON.stringify(agent.token_limit));
+    } 
+    else formData.append('token_limit', '0');
+
+    if (agent.limited_request_mode && agent.request_limit){
+      formData.append('limited_request_mode', 'True');
+      formData.append('request_limit', JSON.stringify(agent.request_limit));
+    }
+    else formData.append('request_limit', '0');
+
     if (imageFile) formData.append('image', imageFile);
 
     if (agent.tools && agent.tools.length > 0)
@@ -280,6 +305,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.json_schema) {
       formData.append('json_schema', JSON.stringify(agent.json_schema));
     }
+
+    if (agent.limited_token_mode && agent.token_limit){
+      formData.append('limited_token_mode', 'True');
+      formData.append('token_limit', JSON.stringify(agent.token_limit));
+    }
+    else formData.append('token_limit', '0');
+
+    if (agent.limited_request_mode && agent.request_limit){
+      formData.append('limited_request_mode', 'True');
+      formData.append('request_limit', JSON.stringify(agent.request_limit));
+    }
+    else formData.append('request_limit', '0');
 
     try {
       setPublishLoading(true);
@@ -776,7 +813,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </div>
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
             <button
-              onClick={() => setIsJsonSchemaExpanded(!isJsonSchemaExpanded)}
+              onClick={() => setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)}
               className="flex w-full items-center justify-between text-left focus:outline-none"
             >
               <div>
@@ -785,7 +822,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <div className="ml-4 flex items-center">
                 <svg
                   className={`h-5 w-5 transform transition-transform duration-200 ${
-                    isJsonSchemaExpanded ? 'rotate-180' : ''
+                    isAdvancedSectionExpanded ? 'rotate-180' : ''
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -800,7 +837,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </svg>
               </div>
             </button>
-            {isJsonSchemaExpanded && (
+            {isAdvancedSectionExpanded && (
               <div className="mt-3">
                 <div>
                   <h2 className="text-sm font-medium">JSON response schema</h2>
@@ -843,6 +880,106 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       : 'Invalid JSON - fix to enable saving'}
                   </div>
                 )}
+
+                <div className="mt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-medium">Token limiting</h2>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        Limit daily total tokens that can be used by this agent
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newTokenMode = !agent.limited_token_mode;
+                        setAgent({
+                          ...agent,
+                          limited_token_mode: newTokenMode,
+                          limited_request_mode: newTokenMode ? false : agent.limited_request_mode,
+                        });
+                      }}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${
+                        agent.limited_token_mode
+                          ? 'bg-purple-30'
+                          : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          agent.limited_token_mode ? '' : '-translate-x-5'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={agent.token_limit || ''}
+                    onChange={(e) =>
+                      setAgent({
+                        ...agent,
+                        token_limit: e.target.value ? parseInt(e.target.value) : undefined,
+                      })
+                    }
+                    disabled={!agent.limited_token_mode}
+                    placeholder="Enter token limit"
+                    className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-2 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E] ${
+                      !agent.limited_token_mode
+                        ? 'cursor-not-allowed opacity-50'
+                        : ''
+                    }`}
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-medium">Request limiting</h2>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        Limit daily total requests that can be made to this agent
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newRequestMode = !agent.limited_request_mode;
+                        setAgent({
+                          ...agent,
+                          limited_request_mode: newRequestMode,
+                          limited_token_mode: newRequestMode ? false : agent.limited_token_mode,
+                        });
+                      }}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${
+                        agent.limited_request_mode
+                          ? 'bg-purple-30'
+                          : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          agent.limited_request_mode ? '' : '-translate-x-5'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={agent.request_limit || ''}
+                    onChange={(e) =>
+                      setAgent({
+                        ...agent,
+                        request_limit: e.target.value ? parseInt(e.target.value) : undefined,
+                      })
+                    }
+                    disabled={!agent.limited_request_mode}
+                    placeholder="Enter request limit"
+                    className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-2 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E] ${
+                      !agent.limited_request_mode
+                        ? 'cursor-not-allowed opacity-50'
+                        : ''
+                    }`}
+                  />
+                </div>
               </div>
             )}
           </div>

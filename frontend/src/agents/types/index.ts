@@ -28,4 +28,8 @@ export type Agent = {
   updated_at?: string;
   last_used_at?: string;
   json_schema?: object;
+  limited_token_mode?: boolean;
+  token_limit?: number;
+  limited_request_mode?: boolean;
+  request_limit?: number;
 };
