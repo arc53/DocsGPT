@@ -229,6 +229,9 @@
     "uploadDoc": {
       "label": "Upload new document",
       "select": "Choose how to upload your document to DocsGPT",
+      "selectSource": "Select the way to add your source",
+      "selectedFiles": "Selected Files",
+      "noFilesSelected": "No files selected",
       "file": "Upload from device",
       "back": "Back",
       "wait": "Please wait ...",
@@ -257,13 +260,74 @@
       },
       "progress": {
         "upload": "Upload is in progress",
-        "training": "Training is in progress",
-        "completed": "Training completed",
+        "training": "Upload is in progress",
+        "completed": "Upload completed",
         "wait": "This may take several minutes",
-        "tokenLimit": "Over the token limit, please consider uploading smaller document"
+        "preparing": "Preparing upload",
+        "tokenLimit": "Over the token limit, please consider uploading smaller document",
+        "expandDetails": "Expand upload details",
+        "collapseDetails": "Collapse upload details",
+        "dismiss": "Dismiss upload toast",
+        "uploadProgress": "Upload progress {{progress}}%",
+        "clear": "Clear"
       },
       "showAdvanced": "Show advanced options",
-      "hideAdvanced": "Hide advanced options"
+      "hideAdvanced": "Hide advanced options",
+      "ingestors": {
+        "local_file": {
+          "label": "Upload File",
+          "heading": "Upload new document"
+        },
+        "crawler": {
+          "label": "Crawler",
+          "heading": "Add content with Web Crawler"
+        },
+        "url": {
+          "label": "Link",
+          "heading": "Add content from URL"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "Add content from GitHub"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "Add content from Reddit"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "Upload from Google Drive"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "Connected User",
+          "authFailed": "Authentication failed",
+          "authUrlFailed": "Failed to get authorization URL",
+          "popupBlocked": "Failed to open authentication window. Please allow popups.",
+          "authCancelled": "Authentication was cancelled",
+          "connectedAs": "Connected as {{email}}",
+          "disconnect": "Disconnect"
+        },
+        "googleDrive": {
+          "connect": "Connect to Google Drive",
+          "sessionExpired": "Session expired. Please reconnect to Google Drive.",
+          "sessionExpiredGeneric": "Session expired. Please reconnect your account.",
+          "validateFailed": "Failed to validate session. Please reconnect.",
+          "noSession": "No valid session found. Please reconnect to Google Drive.",
+          "noAccessToken": "No access token available. Please reconnect to Google Drive.",
+          "pickerFailed": "Failed to open file picker. Please try again.",
+          "selectedFiles": "Selected Files",
+          "selectFiles": "Select Files",
+          "loading": "Loading...",
+          "noFilesSelected": "No files or folders selected",
+          "folders": "Folders",
+          "files": "Files",
+          "remove": "Remove",
+          "folderAlt": "Folder",
+          "fileAlt": "File"
+        }
+      }
     },
     "createAPIKey": {
       "label": "Create New API Key",
