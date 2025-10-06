@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Robot from '../assets/robot.svg';
 
 type AgentImageProps = {
@@ -14,8 +14,16 @@ export default function AgentImage({
   className = '',
   fallbackSrc = Robot,
 }: AgentImageProps) {
-  const initialSrc = src && src.trim() !== '' ? src : fallbackSrc;
-  const [currentSrc, setCurrentSrc] = useState(initialSrc);
+  const [currentSrc, setCurrentSrc] = useState(
+    src && src.trim() !== '' ? src : fallbackSrc,
+  );
+
+  useEffect(() => {
+    const newSrc = src && src.trim() !== '' ? src : fallbackSrc;
+    if (newSrc !== currentSrc) {
+      setCurrentSrc(newSrc);
+    }
+  }, [src, fallbackSrc]);
 
   return (
     <img
@@ -30,5 +38,3 @@ export default function AgentImage({
     />
   );
 }
-
-
