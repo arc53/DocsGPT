@@ -14,7 +14,7 @@ _mcp_session_cache = {}
 class MCPTool(Tool):
     """
     MCP Tool
-    Connect to remote Model Context Protocol (MCP) servers to access dynamic tools and resources. Supports various authentication methods and provides secure access to external services through the MCP protocol.
+    Connect to remote Model Context Protocol (MCP) servers to access dynamic tools and resources.
     """
 
     def __init__(self, config: Dict[str, Any], user_id: Optional[str] = None):

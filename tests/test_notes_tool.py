@@ -3,7 +3,6 @@ from application.agents.tools.notes import NotesTool
 from application.core.settings import settings
 
 from bson.objectid import ObjectId
-from application.agents.tools.notes import NotesTool
 
 
 @pytest.fixture
