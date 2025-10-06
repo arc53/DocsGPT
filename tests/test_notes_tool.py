@@ -130,5 +130,5 @@ def test_delete_nonexistent_note(monkeypatch):
     )
 
     notes_tool = NotesTool(tool_config={}, user_id="user123")
-    result = notes_tool.execute_action("delete_note", id=str(ObjectId()))
+    result = notes_tool.execute_action("delete")
     assert "no note found" in result.lower()

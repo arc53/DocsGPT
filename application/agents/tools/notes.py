@@ -33,7 +33,7 @@ class NotesTool(Tool):
         """Execute an action by name.
 
         Args:
-            action_name: One of add_note, get_note, get_notes, edit_note, delete_note.
+            action_name: One of view, overwrite, str_replace, insert, delete.
             **kwargs: Parameters for the action.
 
         Returns:
@@ -142,10 +142,15 @@ class NotesTool(Tool):
             return "No note found."
 
         current_note = str(doc["note"])
-        if old_str not in current_note:
+
+        # Case-insensitive search
+        if old_str.lower() not in current_note.lower():
             return f"String '{old_str}' not found in note."
 
-        updated_note = current_note.replace(old_str, new_str)
+        # Case-insensitive replacement
+        import re
+        updated_note = re.sub(re.escape(old_str), new_str, current_note, flags=re.IGNORECASE)
+
         self.collection.update_one(
             {"user_id": self.user_id},
             {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
