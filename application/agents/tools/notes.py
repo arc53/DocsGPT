@@ -7,19 +7,9 @@ from application.core.settings import settings
 
 
 class NotesTool(Tool):
-    """MongoDB-backed notes tool with a single note per user.
+    """Notepad
 
-    Actions:
-        - add_note(note: str) -> str
-            Create or replace the user's single note (upsert).
-        - get_note() -> str
-            Return the user's note text, or 'No note found.' if absent.
-        - get_notes() -> str
-            Alias of get_note() for backwards/LLM friendliness.
-        - edit_note(note: str) -> str
-            Update the note only if it exists (no upsert).
-        - delete_note() -> str
-            Delete the user's note if present.
+    Each user has a single note. Supports viewing, overwriting, string replacement,
     """
 
     def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:
@@ -32,7 +22,7 @@ class NotesTool(Tool):
         """
 
 
-        self.user_id: str = user_id
+        self.user_id: Optional[str] = user_id
         db = MongoDB.get_client()[settings.MONGO_DB_NAME]
         self.collection = db["notes"]
 
@@ -51,19 +41,20 @@ class NotesTool(Tool):
         """
         if not self.user_id:
              return "Error: NotesTool requires a valid user_id."
-        if action_name == "add_note":
-            return self._add_or_replace(kwargs.get("note", ""))
 
-        if action_name == "get_note":
+        if action_name == "view":
             return self._get_note()
 
-        if action_name == "get_notes":  # alias
-            return self._get_note()
+        if action_name == "overwrite":
+            return self._overwrite_note(kwargs.get("text", ""))
 
-        if action_name == "edit_note":
-            return self._edit_existing(kwargs.get("note", ""))
+        if action_name == "str_replace":
+            return self._str_replace(kwargs.get("old_str", ""), kwargs.get("new_str", ""))
 
-        if action_name == "delete_note":
+        if action_name == "insert":
+            return self._insert(kwargs.get("line_number", 1), kwargs.get("text", ""))
+
+        if action_name == "delete":
             return self._delete_note()
 
         return f"Unknown action: {action_name}"
@@ -72,39 +63,47 @@ class NotesTool(Tool):
         """Return JSON metadata describing supported actions for tool schemas."""
         return [
             {
-                "name": "add_note",
-                "description": "Create or replace the single note for this user.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "note": {"type": "string", "description": "Note content."}
-                    },
-                    "required": ["note"],
-                },
-            },
-            {
-                "name": "get_note",
-                "description": "Retrieve the user's note (single-note design).",
+                "name": "view",
+                "description": "Retrieve the user's note.",
                 "parameters": {"type": "object", "properties": {}},
             },
             {
-                "name": "get_notes",
-                "description": "Alias of get_note (single-note design).",
-                "parameters": {"type": "object", "properties": {}},
-            },
-            {
-                "name": "edit_note",
-                "description": "Edit the existing note (fails if it does not exist).",
+                "name": "overwrite",
+                "description": "Replace the entire note content (creates if doesn't exist).",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "note": {"type": "string", "description": "New note content."}
+                        "text": {"type": "string", "description": "New note content."}
                     },
-                    "required": ["note"],
+                    "required": ["text"],
                 },
             },
             {
-                "name": "delete_note",
+                "name": "str_replace",
+                "description": "Replace occurrences of old_str with new_str in the note.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "old_str": {"type": "string", "description": "String to find."},
+                        "new_str": {"type": "string", "description": "String to replace with."}
+                    },
+                    "required": ["old_str", "new_str"],
+                },
+            },
+            {
+                "name": "insert",
+                "description": "Insert text at the specified line number (1-indexed).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "line_number": {"type": "integer", "description": "Line number to insert at (1-indexed)."},
+                        "text": {"type": "string", "description": "Text to insert."}
+                    },
+                    "required": ["line_number", "text"],
+                },
+            },
+            {
+                "name": "delete",
                 "description": "Delete the user's note.",
                 "parameters": {"type": "object", "properties": {}},
             },
@@ -117,36 +116,66 @@ class NotesTool(Tool):
     # -----------------------------
     # Internal helpers (single-note)
     # -----------------------------
-    def _add_or_replace(self, content: str) -> str:
-        content = (content or "").strip()
-        if not content:
-            return "Note content required."
-        existing = self.collection.find_one({"user_id": self.user_id})
-        if existing:
-            return "Error: note already exists for this user. Please edit or delete it."
-        self.collection.update_one(
-            {"user_id": self.user_id},
-            {"$set": {"note": content, "updated_at": datetime.utcnow()}},
-            upsert=True,  # ✅ single note per user
-        )
-        return "Note saved."
-
     def _get_note(self) -> str:
         doc = self.collection.find_one({"user_id": self.user_id})
         if not doc or not doc.get("note"):
             return "No note found."
         return str(doc["note"])
 
-    def _edit_existing(self, content: str) -> str:
+    def _overwrite_note(self, content: str) -> str:
         content = (content or "").strip()
         if not content:
             return "Note content required."
-        res = self.collection.update_one(
+        self.collection.update_one(
             {"user_id": self.user_id},
             {"$set": {"note": content, "updated_at": datetime.utcnow()}},
-            upsert=False,  # ✅ do not create if missing
+            upsert=True,  # ✅ create if missing
         )
-        return "Note updated." if res.modified_count else "Note not found."
+        return "Note saved."
+
+    def _str_replace(self, old_str: str, new_str: str) -> str:
+        if not old_str:
+            return "old_str is required."
+
+        doc = self.collection.find_one({"user_id": self.user_id})
+        if not doc or not doc.get("note"):
+            return "No note found."
+
+        current_note = str(doc["note"])
+        if old_str not in current_note:
+            return f"String '{old_str}' not found in note."
+
+        updated_note = current_note.replace(old_str, new_str)
+        self.collection.update_one(
+            {"user_id": self.user_id},
+            {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
+        )
+        return "Note updated."
+
+    def _insert(self, line_number: int, text: str) -> str:
+        if not text:
+            return "Text is required."
+
+        doc = self.collection.find_one({"user_id": self.user_id})
+        if not doc or not doc.get("note"):
+            return "No note found."
+
+        current_note = str(doc["note"])
+        lines = current_note.split("\n")
+
+        # Convert to 0-indexed and validate
+        index = line_number - 1
+        if index < 0 or index > len(lines):
+            return f"Invalid line number. Note has {len(lines)} lines."
+
+        lines.insert(index, text)
+        updated_note = "\n".join(lines)
+
+        self.collection.update_one(
+            {"user_id": self.user_id},
+            {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
+        )
+        return "Text inserted."
 
     def _delete_note(self) -> str:
         res = self.collection.delete_one({"user_id": self.user_id})

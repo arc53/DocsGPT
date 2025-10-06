@@ -45,62 +45,76 @@ def notes_tool(monkeypatch) -> NotesTool:
     return NotesTool({}, user_id="test_user")
 
 
-def test_add_and_get_note(notes_tool: NotesTool) -> None:
-    assert notes_tool.execute_action("add_note", note="hello") == "Note saved."
-    assert "hello" in notes_tool.execute_action("get_note")
-    # alias also returns the single note
-    assert "hello" in notes_tool.execute_action("get_notes")
+def test_view(notes_tool: NotesTool) -> None:
+    # Manually insert a note to test retrieval
+    notes_tool.collection.update_one(
+        {"user_id": "test_user"},
+        {"$set": {"note": "hello"}},
+        upsert=True
+    )
+    assert "hello" in notes_tool.execute_action("view")
 
 
-def test_edit_and_delete(notes_tool: NotesTool) -> None:
-    notes_tool.execute_action("add_note", note="first")
-    assert "updated" in notes_tool.execute_action("edit_note", note="second").lower()
-    assert "second" in notes_tool.execute_action("get_note")
-    assert "deleted" in notes_tool.execute_action("delete_note").lower()
-    assert "no note" in notes_tool.execute_action("get_note").lower()
+def test_overwrite_and_delete(notes_tool: NotesTool) -> None:
+    # Overwrite creates a new note
+    assert "saved" in notes_tool.execute_action("overwrite", text="first").lower()
+    assert "first" in notes_tool.execute_action("view")
+
+    # Overwrite replaces existing note
+    assert "saved" in notes_tool.execute_action("overwrite", text="second").lower()
+    assert "second" in notes_tool.execute_action("view")
+
+    assert "deleted" in notes_tool.execute_action("delete").lower()
+    assert "no note" in notes_tool.execute_action("view").lower()
 
 def test_init_without_user_id(monkeypatch):
     """Should fail gracefully if no user_id is provided."""
     notes_tool = NotesTool(tool_config={})
-    result = notes_tool.execute_action("add_note", note="test")
+    result = notes_tool.execute_action("view")
     assert "user_id" in str(result).lower()
 
 
-def test_add_note_when_note_already_exists(monkeypatch):
-    """Should prevent multiple notes for a single user"""
-
-    class FakeCollection:
-        def find_one(self, query):
-            return {"_id": ObjectId(), "note": "existing"}
-        def update_one(self, *a, **kw):
-            return type("Res", (), {"modified_count": 0})()
-
-    monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client",
-        lambda: {"docsgpt": {"notes": FakeCollection()}}
-    )
-
-    notes_tool = NotesTool(tool_config={}, user_id="user123")
-    result = notes_tool.execute_action("add_note", note="new one")
-    assert "existing" in str(result).lower() or "already" in str(result).lower()
+def test_view_not_found(notes_tool: NotesTool) -> None:
+    """Should return 'No note found.' when no note exists"""
+    result = notes_tool.execute_action("view")
+    assert "no note found" in result.lower()
 
 
-def test_edit_nonexistent_note(monkeypatch):
-    class FakeResult:
-        modified_count = 0
+def test_str_replace(notes_tool: NotesTool) -> None:
+    """Test string replacement in note"""
+    # Create a note
+    notes_tool.execute_action("overwrite", text="Hello world, hello universe")
 
-    class FakeCollection:
-        def update_one(self, *args, **kwargs):
-            return FakeResult()
+    # Replace text
+    result = notes_tool.execute_action("str_replace", old_str="hello", new_str="hi")
+    assert "updated" in result.lower()
 
-    monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client",
-        lambda: {"docsgpt": {"notes": FakeCollection()}}
-    )
+    # Verify replacement
+    note = notes_tool.execute_action("view")
+    assert "hi world, hi universe" in note.lower()
 
-    notes_tool = NotesTool(tool_config={}, user_id="user123")
-    result = notes_tool.execute_action("edit_note", id=str(ObjectId()), note="updated")
+
+def test_str_replace_not_found(notes_tool: NotesTool) -> None:
+    """Test string replacement when string not found"""
+    notes_tool.execute_action("overwrite", text="Hello world")
+    result = notes_tool.execute_action("str_replace", old_str="goodbye", new_str="hi")
     assert "not found" in result.lower()
+
+
+def test_insert_line(notes_tool: NotesTool) -> None:
+    """Test inserting text at a line number"""
+    # Create a multiline note
+    notes_tool.execute_action("overwrite", text="Line 1\nLine 2\nLine 3")
+
+    # Insert at line 2
+    result = notes_tool.execute_action("insert", line_number=2, text="Inserted line")
+    assert "inserted" in result.lower()
+
+    # Verify insertion
+    note = notes_tool.execute_action("view")
+    lines = note.split("\n")
+    assert lines[1] == "Inserted line"
+    assert lines[2] == "Line 2"
 
 
 def test_delete_nonexistent_note(monkeypatch):
