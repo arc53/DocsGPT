@@ -104,7 +104,7 @@ class MemoryTool(Tool):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Path to file or directory (e.g., /notes.txt or /project/)."
+                            "description": "Path to file or directory (e.g., /notes.txt or /project/ or /)."
                         },
                         "view_range": {
                             "type": "array",
@@ -233,6 +233,9 @@ class MemoryTool(Tool):
         # Remove any leading/trailing whitespace
         path = path.strip()
 
+        # Preserve whether path ends with / (indicates directory)
+        is_directory = path.endswith("/")
+
         # Ensure path starts with / for consistency
         if not path.startswith("/"):
             path = "/" + path
@@ -249,6 +252,10 @@ class MemoryTool(Tool):
             # Ensure it still starts with /
             if not normalized.startswith("/"):
                 return None
+
+            # Preserve trailing slash for directories
+            if is_directory and not normalized.endswith("/") and normalized != "/":
+                normalized = normalized + "/"
 
             return normalized
         except Exception:
@@ -322,8 +329,8 @@ class MemoryTool(Tool):
                 return f"Error: Line range out of bounds. File has {len(lines)} lines."
 
             selected_lines = lines[start_idx:end_idx]
-            # Add line numbers
-            numbered_lines = [f"{i+start}: {line}" for i, line in enumerate(selected_lines, start=start_idx)]
+            # Add line numbers (enumerate with 1-based start)
+            numbered_lines = [f"{i}: {line}" for i, line in enumerate(selected_lines, start=start)]
             return "\n".join(numbered_lines)
 
         return content
@@ -480,6 +487,10 @@ class MemoryTool(Tool):
 
         # Check if renaming a directory
         if validated_old.endswith("/"):
+            # Ensure validated_new also ends with / for proper path replacement
+            if not validated_new.endswith("/"):
+                validated_new = validated_new + "/"
+
             # Find all files in the old directory
             docs = list(self.collection.find({
                 "user_id": self.user_id,

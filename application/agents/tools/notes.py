@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import uuid
 
 from .base import Tool
 from application.core.mongo_db import MongoDB
@@ -16,13 +17,24 @@ class NotesTool(Tool):
         """Initialize the tool.
 
         Args:
-            tool_config: Optional tool configuration (unused for now).
+            tool_config: Optional tool configuration. Should include:
+                - tool_id: Unique identifier for this notes tool instance (from user_tools._id)
+                           This ensures each user's tool configuration has isolated notes
             user_id: The authenticated user's id (should come from decoded_token["sub"]).
-
         """
-
-
         self.user_id: Optional[str] = user_id
+
+        # Get tool_id from configuration (passed from user_tools._id in production)
+        # In production, tool_id is the MongoDB ObjectId string from user_tools collection
+        if tool_config and "tool_id" in tool_config:
+            self.tool_id = tool_config["tool_id"]
+        elif user_id:
+            # Fallback for backward compatibility or testing
+            self.tool_id = f"default_{user_id}"
+        else:
+            # Last resort fallback (shouldn't happen in normal use)
+            self.tool_id = str(uuid.uuid4())
+
         db = MongoDB.get_client()[settings.MONGO_DB_NAME]
         self.collection = db["notes"]
 
@@ -117,7 +129,7 @@ class NotesTool(Tool):
     # Internal helpers (single-note)
     # -----------------------------
     def _get_note(self) -> str:
-        doc = self.collection.find_one({"user_id": self.user_id})
+        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
         if not doc or not doc.get("note"):
             return "No note found."
         return str(doc["note"])
@@ -127,7 +139,7 @@ class NotesTool(Tool):
         if not content:
             return "Note content required."
         self.collection.update_one(
-            {"user_id": self.user_id},
+            {"user_id": self.user_id, "tool_id": self.tool_id},
             {"$set": {"note": content, "updated_at": datetime.utcnow()}},
             upsert=True,  # ✅ create if missing
         )
@@ -137,7 +149,7 @@ class NotesTool(Tool):
         if not old_str:
             return "old_str is required."
 
-        doc = self.collection.find_one({"user_id": self.user_id})
+        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
         if not doc or not doc.get("note"):
             return "No note found."
 
@@ -152,7 +164,7 @@ class NotesTool(Tool):
         updated_note = re.sub(re.escape(old_str), new_str, current_note, flags=re.IGNORECASE)
 
         self.collection.update_one(
-            {"user_id": self.user_id},
+            {"user_id": self.user_id, "tool_id": self.tool_id},
             {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
         )
         return "Note updated."
@@ -161,7 +173,7 @@ class NotesTool(Tool):
         if not text:
             return "Text is required."
 
-        doc = self.collection.find_one({"user_id": self.user_id})
+        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
         if not doc or not doc.get("note"):
             return "No note found."
 
@@ -177,11 +189,11 @@ class NotesTool(Tool):
         updated_note = "\n".join(lines)
 
         self.collection.update_one(
-            {"user_id": self.user_id},
+            {"user_id": self.user_id, "tool_id": self.tool_id},
             {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
         )
         return "Text inserted."
 
     def _delete_note(self) -> str:
-        res = self.collection.delete_one({"user_id": self.user_id})
+        res = self.collection.delete_one({"user_id": self.user_id, "tool_id": self.tool_id})
         return "Note deleted." if res.deleted_count else "No note found to delete."
