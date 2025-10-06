@@ -43,7 +43,8 @@ The easiest way to launch DocsGPT is using the provided `setup.sh` script. This 
    2) Serve Local (with Ollama)
    3) Connect Local Inference Engine
    4) Connect Cloud API Provider
-   Choose option (1-4):
+   5) Advanced: Build images locally (for developers)
+   Choose option (1-5):
    ```
 
    Let's break down each option:
@@ -55,6 +56,8 @@ The easiest way to launch DocsGPT is using the provided `setup.sh` script. This 
    * **3) Connect Local Inference Engine:**  If you are already running a local inference engine like Llama.cpp, Text Generation Inference (TGI), vLLM, or others, choose this option.  You'll be asked to select your engine and provide the necessary connection details. This is for users with existing local LLM infrastructure.
 
    * **4) Connect Cloud API Provider:** This option lets you connect DocsGPT to a commercial Cloud API provider such as OpenAI, Google (Vertex AI/Gemini), Anthropic (Claude), Groq, HuggingFace Inference API, or Azure OpenAI. You will need an API key from your chosen provider. Select this if you prefer to use a powerful cloud-based LLM.
+
+   * **5) Modify DocsGPT's source code and rebuild the Docker images locally. Instead of pulling prebuilt images from Docker Hub or using the hosted/public API, you build the entire backend and frontend from source, customizing how DocsGPT works internally, or run it in an environment without internet access.
 
    After selecting an option and providing any required information (like API keys or model names), the script will configure your `.env` file and start DocsGPT using Docker Compose.
 
