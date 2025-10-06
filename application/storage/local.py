@@ -26,7 +26,7 @@ class LocalStorage(BaseStorage):
             return path
         return os.path.join(self.base_dir, path)
 
-    def save_file(self, file_data: BinaryIO, path: str) -> dict:
+    def save_file(self, file_data: BinaryIO, path: str, **kwargs) -> dict:
         """Save a file to local storage."""
         full_path = self._get_full_path(path)
 
