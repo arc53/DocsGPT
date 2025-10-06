@@ -45,7 +45,7 @@ export default function WrapperModal({
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center">
       <div
         ref={modalRef}
-        className={`relative rounded-2xl bg-white p-8 shadow-[0px_4px_40px_-3px_#0000001A] dark:bg-[#26272E] ${className}`}
+        className={`relative max-h-[80vh] w-[600px] max-w-[80vw] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0px_4px_40px_-3px_#0000001A] dark:bg-[#26272E] ${className}`}
       >
         {!isPerformingTask && (
           <button
