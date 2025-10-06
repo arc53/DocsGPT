@@ -76,7 +76,8 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   const [syncProgress, setSyncProgress] = useState<number>(0);
   const [sourceProvider, setSourceProvider] = useState<string>('');
   const [syncDone, setSyncDone] = useState<boolean>(false);
-  const [syncConfirmationModal, setSyncConfirmationModal] = useState<ActiveState>('INACTIVE');
+  const [syncConfirmationModal, setSyncConfirmationModal] =
+    useState<ActiveState>('INACTIVE');
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -392,31 +393,26 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-          <TableRow
-            key="parent-dir"
-            onClick={navigateUp}
-          >
-            <TableCell width="40%" align="left">
-              <div className="flex items-center">
-                <img
-                  src={FolderIcon}
-                  alt={t('settings.sources.parentFolderAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
-                />
-                <span className="truncate">
-                  ..
-                </span>
-              </div>
-            </TableCell>
-            <TableCell width="30%" align="left">
-              -
-            </TableCell>
-            <TableCell width="20%" align="left">
-              -
-            </TableCell>
-            <TableCell width="10%" align="right"></TableCell>
-          </TableRow>,
-        ]
+            <TableRow key="parent-dir" onClick={navigateUp}>
+              <TableCell width="40%" align="left">
+                <div className="flex items-center">
+                  <img
+                    src={FolderIcon}
+                    alt={t('settings.sources.parentFolderAlt')}
+                    className="mr-2 h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="truncate">..</span>
+                </div>
+              </TableCell>
+              <TableCell width="30%" align="left">
+                -
+              </TableCell>
+              <TableCell width="20%" align="left">
+                -
+              </TableCell>
+              <TableCell width="10%" align="right"></TableCell>
+            </TableRow>,
+          ]
         : [];
 
     // Sort entries: directories first, then files, both alphabetically
@@ -444,10 +440,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
-          <TableRow
-            key={itemId}
-            onClick={() => navigateToDirectory(name)}
-          >
+          <TableRow key={itemId} onClick={() => navigateToDirectory(name)}>
             <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
@@ -455,9 +448,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                   alt={t('settings.sources.folderAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate">
-                  {name}
-                </span>
+                <span className="truncate">{name}</span>
               </div>
             </TableCell>
             <TableCell width="30%" align="left">
@@ -472,7 +463,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E] font-medium"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -505,10 +496,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
         const menuRef = getMenuRef(itemId);
 
         return (
-          <TableRow
-            key={itemId}
-            onClick={() => handleFileClick(name)}
-          >
+          <TableRow key={itemId} onClick={() => handleFileClick(name)}>
             <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
@@ -516,9 +504,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                   alt={t('settings.sources.fileAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate">
-                  {name}
-                </span>
+                <span className="truncate">{name}</span>
               </div>
             </TableCell>
             <TableCell width="30%" align="left">
@@ -730,9 +716,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                     </TableHeader>
                   </TableRow>
                 </TableHead>
-                <TableBody>
-                  {renderFileTree(getCurrentDirectory())}
-                </TableBody>
+                <TableBody>{renderFileTree(getCurrentDirectory())}</TableBody>
               </Table>
             </TableContainer>
           </div>

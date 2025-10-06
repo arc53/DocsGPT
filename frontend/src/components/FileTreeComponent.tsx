@@ -542,31 +542,26 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
     const parentRow =
       currentPath.length > 0
         ? [
-          <TableRow
-            key="parent-dir"
-            onClick={navigateUp}
-          >
-            <TableCell width="40%" align="left">
-              <div className="flex items-center">
-                <img
-                  src={FolderIcon}
-                  alt={t('settings.sources.parentFolderAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
-                />
-                <span className="truncate">
-                  ..
-                </span>
-              </div>
-            </TableCell>
-            <TableCell width="30%" align="left">
-              -
-            </TableCell>
-            <TableCell width="20%" align="right">
-              -
-            </TableCell>
-            <TableCell width="10%" align="right"></TableCell>
-          </TableRow>,
-        ]
+            <TableRow key="parent-dir" onClick={navigateUp}>
+              <TableCell width="40%" align="left">
+                <div className="flex items-center">
+                  <img
+                    src={FolderIcon}
+                    alt={t('settings.sources.parentFolderAlt')}
+                    className="mr-2 h-4 w-4 flex-shrink-0"
+                  />
+                  <span className="truncate">..</span>
+                </div>
+              </TableCell>
+              <TableCell width="30%" align="left">
+                -
+              </TableCell>
+              <TableCell width="20%" align="right">
+                -
+              </TableCell>
+              <TableCell width="10%" align="right"></TableCell>
+            </TableRow>,
+          ]
         : [];
 
     // Render directories first, then files
@@ -578,10 +573,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
-          <TableRow
-            key={itemId}
-            onClick={() => navigateToDirectory(name)}
-          >
+          <TableRow key={itemId} onClick={() => navigateToDirectory(name)}>
             <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
@@ -589,9 +581,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   alt={t('settings.sources.folderAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate">
-                  {name}
-                </span>
+                <span className="truncate">{name}</span>
               </div>
             </TableCell>
             <TableCell width="30%" align="left">
@@ -635,10 +625,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         const menuRef = getMenuRef(itemId);
 
         return (
-          <TableRow
-            key={itemId}
-            onClick={() => handleFileClick(name)}
-          >
+          <TableRow key={itemId} onClick={() => handleFileClick(name)}>
             <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
@@ -646,9 +633,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                   alt={t('settings.sources.fileAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate">
-                  {name}
-                </span>
+                <span className="truncate">{name}</span>
               </div>
             </TableCell>
             <TableCell width="30%" align="left">
@@ -854,9 +839,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                     </TableHeader>
                   </TableRow>
                 </TableHead>
-                <TableBody>
-                  {renderFileTree(currentDirectory)}
-                </TableBody>
+                <TableBody>{renderFileTree(currentDirectory)}</TableBody>
               </Table>
             </TableContainer>
           </div>

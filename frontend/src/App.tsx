@@ -7,6 +7,7 @@ import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
 import ActionButtons from './components/ActionButtons';
 import Spinner from './components/Spinner';
+import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme, useMediaQuery } from './hooks';
@@ -33,18 +34,19 @@ function MainLayout() {
   const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
 
   return (
-    <div className="relative h-screen overflow-hidden dark:bg-raisin-black">
+    <div className="dark:bg-raisin-black relative h-screen overflow-hidden">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
       <ActionButtons showNewChat={true} showShare={true} />
       <div
-        className={`h-[calc(100dvh-64px)] overflow-auto lg:h-screen ${
+        className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
           !(isMobile || isTablet)
-            ? `ml-0 ${!navOpen ? 'lg:mx-auto' : 'lg:ml-72'}`
+            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-0'}`
             : 'ml-0 lg:ml-16'
         }`}
       >
         <Outlet />
       </div>
+      <UploadToast />
     </div>
   );
 }

@@ -45,7 +45,7 @@ export default function WrapperModal({
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center">
       <div
         ref={modalRef}
-        className={`relative rounded-2xl bg-white dark:bg-[#26272E] p-8 shadow-[0px_4px_40px_-3px_#0000001A] ${className}`}
+        className={`relative rounded-2xl bg-white p-8 shadow-[0px_4px_40px_-3px_#0000001A] dark:bg-[#26272E] ${className}`}
       >
         {!isPerformingTask && (
           <button
@@ -55,7 +55,11 @@ export default function WrapperModal({
             <img className="filter dark:invert" src={Exit} alt="Close" />
           </button>
         )}
-        <div className={`overflow-y-auto no-scrollbar text-[#18181B] dark:text-[#ECECF1] ${contentClassName}`}>{children}</div>
+        <div
+          className={`no-scrollbar overflow-y-auto text-[#18181B] dark:text-[#ECECF1] ${contentClassName}`}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -177,9 +177,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     <div className="mt-12">
       {/* Messages Analytics */}
       <div className="mt-8 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
-        <div className="h-[345px] w-full overflow-hidden rounded-2xl border border-silver px-6 py-5 dark:border-silver/40 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-silver dark:border-silver/40 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="font-bold text-jet dark:text-bright-gray">
+            <p className="text-jet dark:text-bright-gray font-bold">
               {t('settings.analytics.messages')}
             </p>
             <Dropdown
@@ -225,9 +225,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
         </div>
 
         {/* Token Usage Analytics */}
-        <div className="h-[345px] w-full overflow-hidden rounded-2xl border border-silver px-6 py-5 dark:border-silver/40 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-silver dark:border-silver/40 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="font-bold text-jet dark:text-bright-gray">
+            <p className="text-jet dark:text-bright-gray font-bold">
               {t('settings.analytics.tokenUsage')}
             </p>
             <Dropdown
@@ -275,9 +275,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
       {/* Feedback Analytics */}
       <div className="mt-8 flex w-full flex-col gap-3">
-        <div className="h-[345px] w-full overflow-hidden rounded-2xl border border-silver px-6 py-5 dark:border-silver/40">
+        <div className="border-silver dark:border-silver/40 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="font-bold text-jet dark:text-bright-gray">
+            <p className="text-jet dark:text-bright-gray font-bold">
               {t('settings.analytics.userFeedback')}
             </p>
             <Dropdown

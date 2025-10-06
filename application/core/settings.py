@@ -41,11 +41,15 @@ class Settings(BaseSettings):
     FALLBACK_LLM_API_KEY: Optional[str] = None  # api key for fallback llm
 
     # Google Drive integration
-    GOOGLE_CLIENT_ID: Optional[str] = None # Replace with your actual Google OAuth client ID
-    GOOGLE_CLIENT_SECRET: Optional[str] = None# Replace with your actual Google OAuth client secret
-    CONNECTOR_REDIRECT_BASE_URI: Optional[str] = "http://127.0.0.1:7091/api/connectors/callback" 
-    ##append ?provider={provider_name} in your Provider console like http://127.0.0.1:7091/api/connectors/callback?provider=google_drive
-
+    GOOGLE_CLIENT_ID: Optional[str] = (
+        None  # Replace with your actual Google OAuth client ID
+    )
+    GOOGLE_CLIENT_SECRET: Optional[str] = (
+        None  # Replace with your actual Google OAuth client secret
+    )
+    CONNECTOR_REDIRECT_BASE_URI: Optional[str] = (
+        "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
+    )
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
@@ -119,6 +123,7 @@ class Settings(BaseSettings):
     # Encryption settings
     ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
+    ELEVENLABS_API_KEY: Optional[str] = None
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")

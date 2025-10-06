@@ -22,6 +22,7 @@ const authTypes = [
   { label: 'No Authentication', value: 'none' },
   { label: 'API Key', value: 'api_key' },
   { label: 'Bearer Token', value: 'bearer' },
+  { label: 'OAuth', value: 'oauth' },
   // { label: 'Basic Authentication', value: 'basic' },
 ];
 
@@ -45,6 +46,8 @@ export default function MCPServerModal({
     username: '',
     password: '',
     timeout: server?.timeout || 30,
+    oauth_scopes: '',
+    oauth_task_id: '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -52,8 +55,13 @@ export default function MCPServerModal({
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
+    status?: string;
+    authorization_url?: string;
   } | null>(null);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const oauthPopupRef = useRef<Window | null>(null);
+  const [oauthCompleted, setOAuthCompleted] = useState(false);
+  const [saveActive, setSaveActive] = useState(false);
 
   useOutsideAlerter(modalRef, () => {
     if (modalState === 'ACTIVE') {
@@ -73,9 +81,12 @@ export default function MCPServerModal({
       username: '',
       password: '',
       timeout: 30,
+      oauth_scopes: '',
+      oauth_task_id: '',
     });
     setErrors({});
     setTestResult(null);
+    setSaveActive(false);
   };
 
   const validateForm = () => {
@@ -154,8 +165,79 @@ export default function MCPServerModal({
     } else if (formData.auth_type === 'basic') {
       config.username = formData.username.trim();
       config.password = formData.password.trim();
+    } else if (formData.auth_type === 'oauth') {
+      config.oauth_scopes = formData.oauth_scopes
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      config.oauth_task_id = formData.oauth_task_id.trim();
     }
     return config;
+  };
+
+  const pollOAuthStatus = async (
+    taskId: string,
+    onComplete: (result: any) => void,
+  ) => {
+    let attempts = 0;
+    const maxAttempts = 60;
+    let popupOpened = false;
+    const poll = async () => {
+      try {
+        const resp = await userService.getMCPOAuthStatus(taskId, token);
+        const data = await resp.json();
+        if (data.authorization_url && !popupOpened) {
+          if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+            oauthPopupRef.current.close();
+          }
+          oauthPopupRef.current = window.open(
+            data.authorization_url,
+            'oauthPopup',
+            'width=600,height=700',
+          );
+          popupOpened = true;
+        }
+        if (data.status === 'completed') {
+          setOAuthCompleted(true);
+          setSaveActive(true);
+          onComplete({
+            ...data,
+            success: true,
+            message: t('settings.tools.mcp.oauthCompleted'),
+          });
+          if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+            oauthPopupRef.current.close();
+          }
+        } else if (data.status === 'error' || data.success === false) {
+          setSaveActive(false);
+          onComplete({
+            ...data,
+            success: false,
+            message: t('settings.tools.mcp.errors.oauthFailed'),
+          });
+          if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+            oauthPopupRef.current.close();
+          }
+        } else {
+          if (++attempts < maxAttempts) setTimeout(poll, 1000);
+          else {
+            setSaveActive(false);
+            onComplete({
+              success: false,
+              message: t('settings.tools.mcp.errors.oauthTimeout'),
+            });
+          }
+        }
+      } catch {
+        if (++attempts < maxAttempts) setTimeout(poll, 1000);
+        else
+          onComplete({
+            success: false,
+            message: t('settings.tools.mcp.errors.oauthTimeout'),
+          });
+      }
+    };
+    poll();
   };
 
   const testConnection = async () => {
@@ -167,13 +249,37 @@ export default function MCPServerModal({
       const response = await userService.testMCPConnection({ config }, token);
       const result = await response.json();
 
-      setTestResult(result);
+      if (
+        formData.auth_type === 'oauth' &&
+        result.requires_oauth &&
+        result.task_id
+      ) {
+        setTestResult({
+          success: true,
+          message: t('settings.tools.mcp.oauthInProgress'),
+        });
+        setOAuthCompleted(false);
+        setSaveActive(false);
+        pollOAuthStatus(result.task_id, (finalResult) => {
+          setTestResult(finalResult);
+          setFormData((prev) => ({
+            ...prev,
+            oauth_task_id: result.task_id || '',
+          }));
+          setTesting(false);
+        });
+      } else {
+        setTestResult(result);
+        setSaveActive(result.success === true);
+        setTesting(false);
+      }
     } catch (error) {
       setTestResult({
         success: false,
         message: t('settings.tools.mcp.errors.testFailed'),
       });
-    } finally {
+      setOAuthCompleted(false);
+      setSaveActive(false);
       setTesting(false);
     }
   };
@@ -305,6 +411,28 @@ export default function MCPServerModal({
             </div>
           </div>
         );
+      case 'oauth':
+        return (
+          <div className="mb-10">
+            <div className="mt-6">
+              <Input
+                name="oauth_scopes"
+                type="text"
+                className="rounded-md"
+                value={formData.oauth_scopes}
+                onChange={(e) =>
+                  handleInputChange('oauth_scopes', e.target.value)
+                }
+                placeholder={
+                  t('settings.tools.mcp.placeholders.oauthScopes') ||
+                  'Scopes (comma separated)'
+                }
+                borderVariant="thin"
+                labelBgClassName="bg-white dark:bg-charleston-green-2"
+              />
+            </div>
+          </div>
+        );
       default:
         return null;
     }
@@ -331,7 +459,6 @@ export default function MCPServerModal({
             <div className="space-y-6 py-6">
               <div>
                 <Input
-                  name="name"
                   type="text"
                   className="rounded-md"
                   value={formData.name}
@@ -410,7 +537,7 @@ export default function MCPServerModal({
 
               {testResult && (
                 <div
-                  className={`rounded-md p-5 ${
+                  className={`rounded-2xl p-5 ${
                     testResult.success
                       ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                       : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
@@ -458,7 +585,7 @@ export default function MCPServerModal({
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={loading}
+                  disabled={loading || !saveActive}
                   className="bg-purple-30 hover:bg-violets-are-blue w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
                 >
                   {loading ? (

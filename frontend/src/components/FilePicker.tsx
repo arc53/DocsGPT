@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatBytes } from '../utils/stringUtils';
 import { formatDate } from '../utils/dateTimeUtils';
-import { getSessionToken, setSessionToken, removeSessionToken } from '../utils/providerUtils';
+import {
+  getSessionToken,
+  setSessionToken,
+  removeSessionToken,
+} from '../utils/providerUtils';
 import ConnectorAuth from '../components/ConnectorAuth';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -28,7 +32,10 @@ interface CloudFile {
 }
 
 interface CloudFilePickerProps {
-  onSelectionChange: (selectedFileIds: string[], selectedFolderIds?: string[]) => void;
+  onSelectionChange: (
+    selectedFileIds: string[],
+    selectedFolderIds?: string[],
+  ) => void;
   onDisconnect?: () => void;
   provider: string;
   token: string | null;
@@ -51,23 +58,30 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   } as const;
 
   const getProviderConfig = (provider: string) => {
-    return PROVIDER_CONFIG[provider as keyof typeof PROVIDER_CONFIG] || {
-      displayName: provider,
-      rootName: 'Root',
-    };
+    return (
+      PROVIDER_CONFIG[provider as keyof typeof PROVIDER_CONFIG] || {
+        displayName: provider,
+        rootName: 'Root',
+      }
+    );
   };
 
   const [files, setFiles] = useState<CloudFile[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<string[]>(initialSelectedFiles);
+  const [selectedFiles, setSelectedFiles] =
+    useState<string[]>(initialSelectedFiles);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasMoreFiles, setHasMoreFiles] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderPath, setFolderPath] = useState<Array<{ id: string | null, name: string }>>([{
-    id: null,
-    name: getProviderConfig(provider).rootName
-  }]);
+  const [folderPath, setFolderPath] = useState<
+    Array<{ id: string | null; name: string }>
+  >([
+    {
+      id: null,
+      name: getProviderConfig(provider).rootName,
+    },
+  ]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
@@ -77,9 +91,11 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isFolder = (file: CloudFile) => {
-    return file.isFolder ||
+    return (
+      file.isFolder ||
       file.type === 'application/vnd.google-apps.folder' ||
-      file.type === 'folder';
+      file.type === 'folder'
+    );
   };
 
   const loadCloudFiles = useCallback(
@@ -87,7 +103,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       sessionToken: string,
       folderId: string | null,
       pageToken?: string,
-      searchQuery: string = ''
+      searchQuery = '',
     ) => {
       setIsLoading(true);
 
@@ -101,7 +117,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             provider: provider,
@@ -109,13 +125,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
             folder_id: folderId,
             limit: 10,
             page_token: pageToken,
-            search_query: searchQuery
-          })
+            search_query: searchQuery,
+          }),
         });
 
         const data = await response.json();
         if (data.success) {
-          setFiles(prev => pageToken ? [...prev, ...data.files] : data.files);
+          setFiles((prev) =>
+            pageToken ? [...prev, ...data.files] : data.files,
+          );
           setNextPageToken(data.next_page_token);
           setHasMoreFiles(!!data.next_page_token);
         } else {
@@ -133,7 +151,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         setIsLoading(false);
       }
     },
-    [token, provider]
+    [token, provider],
   );
 
   const validateAndLoadFiles = useCallback(async () => {
@@ -145,14 +163,20 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
     try {
       const apiHost = import.meta.env.VITE_API_HOST;
-      const validateResponse = await fetch(`${apiHost}/api/connectors/validate-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+      const validateResponse = await fetch(
+        `${apiHost}/api/connectors/validate-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            provider: provider,
+            session_token: sessionToken,
+          }),
         },
-        body: JSON.stringify({ provider: provider, session_token: sessionToken })
-      });
+      );
 
       if (!validateResponse.ok) {
         removeSessionToken(provider);
@@ -171,14 +195,20 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         setNextPageToken(null);
         setHasMoreFiles(false);
         setCurrentFolderId(null);
-        setFolderPath([{
-          id: null, name: getProviderConfig(provider).rootName
-        }]);
+        setFolderPath([
+          {
+            id: null,
+            name: getProviderConfig(provider).rootName,
+          },
+        ]);
         loadCloudFiles(sessionToken, null, undefined, '');
       } else {
         removeSessionToken(provider);
         setIsConnected(false);
-        setAuthError(validateData.error || 'Session expired. Please reconnect your account.');
+        setAuthError(
+          validateData.error ||
+            'Session expired. Please reconnect your account.',
+        );
       }
     } catch (error) {
       console.error('Error validating session:', error);
@@ -201,10 +231,23 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     if (isNearBottom && hasMoreFiles && !isLoading && nextPageToken) {
       const sessionToken = getSessionToken(provider);
       if (sessionToken) {
-        loadCloudFiles(sessionToken, currentFolderId, nextPageToken, searchQuery);
+        loadCloudFiles(
+          sessionToken,
+          currentFolderId,
+          nextPageToken,
+          searchQuery,
+        );
       }
     }
-  }, [hasMoreFiles, isLoading, nextPageToken, currentFolderId, searchQuery, provider, loadCloudFiles]);
+  }, [
+    hasMoreFiles,
+    isLoading,
+    nextPageToken,
+    currentFolderId,
+    searchQuery,
+    provider,
+    loadCloudFiles,
+  ]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -245,7 +288,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     setIsLoading(true);
 
     setCurrentFolderId(folderId);
-    setFolderPath(prev => [...prev, { id: folderId, name: folderName }]);
+    setFolderPath((prev) => [...prev, { id: folderId, name: folderName }]);
     setSearchQuery('');
 
     const sessionToken = getSessionToken(provider);
@@ -273,13 +316,13 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const handleFileSelect = (fileId: string, isFolder: boolean) => {
     if (isFolder) {
       const newSelectedFolders = selectedFolders.includes(fileId)
-        ? selectedFolders.filter(id => id !== fileId)
+        ? selectedFolders.filter((id) => id !== fileId)
         : [...selectedFolders, fileId];
       setSelectedFolders(newSelectedFolders);
       onSelectionChange(selectedFiles, newSelectedFolders);
     } else {
       const newSelectedFiles = selectedFiles.includes(fileId)
-        ? selectedFiles.filter(id => id !== fileId)
+        ? selectedFiles.filter((id) => id !== fileId)
         : [...selectedFiles, fileId];
       setSelectedFiles(newSelectedFiles);
       onSelectionChange(newSelectedFiles, selectedFolders);
@@ -287,11 +330,11 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   };
 
   return (
-    <div className=''>
+    <div className="">
       {authError && (
-        <div className="text-red-500 text-sm mb-4 text-center">{authError}</div>
+        <div className="mb-4 text-center text-sm text-red-500">{authError}</div>
       )}
-      
+
       <ConnectorAuth
         provider={provider}
         onSuccess={(data) => {
@@ -318,10 +361,18 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                Authorization: `Bearer ${token}`,
               },
-              body: JSON.stringify({ provider: provider, session_token: sessionToken })
-            }).catch(err => console.error(`Error disconnecting from ${getProviderConfig(provider).displayName}:`, err));
+              body: JSON.stringify({
+                provider: provider,
+                session_token: sessionToken,
+              }),
+            }).catch((err) =>
+              console.error(
+                `Error disconnecting from ${getProviderConfig(provider).displayName}:`,
+                err,
+              ),
+            );
           }
 
           removeSessionToken(provider);
@@ -337,13 +388,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       />
 
       {isConnected && (
-        <div className="border border-[#D7D7D7] rounded-lg dark:border-[#6A6A6A] mt-3">
-          <div className="border-[#EEE6FF78] dark:border-[#6A6A6A] rounded-t-lg">
+        <div className="mt-3 rounded-lg border border-[#D7D7D7] dark:border-[#6A6A6A]">
+          <div className="rounded-t-lg border-[#EEE6FF78] dark:border-[#6A6A6A]">
             {/* Breadcrumb navigation */}
-            <div className="px-4 pt-4 bg-[#EEE6FF78] dark:bg-[#2A262E] rounded-t-lg">
-              <div className="flex items-center gap-1 mb-2">
+            <div className="rounded-t-lg bg-[#EEE6FF78] px-4 pt-4 dark:bg-[#2A262E]">
+              <div className="mb-2 flex items-center gap-1">
                 {folderPath.map((path, index) => (
-                  <div key={path.id || 'root'} className="flex items-center gap-1">
+                  <div
+                    key={path.id || 'root'}
+                    className="flex items-center gap-1"
+                  >
                     {index > 0 && <span className="text-gray-400">/</span>}
                     <button
                       onClick={() => navigateBack(index)}
@@ -369,7 +423,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                   colorVariant="silver"
                   borderVariant="thin"
                   labelBgClassName="bg-[#EEE6FF78] dark:bg-[#2A262E]"
-                  leftIcon={<img src={SearchIcon} alt="Search" width={16} height={16} />}
+                  leftIcon={
+                    <img src={SearchIcon} alt="Search" width={16} height={16} />
+                  }
                 />
               </div>
 
@@ -386,7 +442,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                 className="scrollbar-thin md:w-4xl lg:w-5xl"
                 bordered={false}
               >
-                {(
+                {
                   <>
                     <Table minWidth="1200px">
                       <TableHead>
@@ -411,13 +467,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                           >
                             <TableCell width="40px" align="center">
                               <div
-                                className="flex h-5 w-5 text-sm shrink-0 items-center justify-center border border-[#EEE6FF78] p-[0.5px] dark:border-[#6A6A6A] cursor-pointer mx-auto"
+                                className="mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border border-[#EEE6FF78] p-[0.5px] text-sm dark:border-[#6A6A6A]"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleFileSelect(file.id, isFolder(file));
                                 }}
                               >
-                                {(isFolder(file) ? selectedFolders : selectedFiles).includes(file.id) && (
+                                {(isFolder(file)
+                                  ? selectedFolders
+                                  : selectedFiles
+                                ).includes(file.id) && (
                                   <img
                                     src={CheckIcon}
                                     alt="Selected"
@@ -427,21 +486,21 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex min-w-0 items-center gap-3">
                                 <div className="flex-shrink-0">
                                   <img
                                     src={isFolder(file) ? FolderIcon : FileIcon}
-                                    alt={isFolder(file) ? "Folder" : "File"}
+                                    alt={isFolder(file) ? 'Folder' : 'File'}
                                     className="h-6 w-6"
                                   />
                                 </div>
                                 <span className="truncate">{file.name}</span>
                               </div>
                             </TableCell>
-                            <TableCell className='text-xs'>
+                            <TableCell className="text-xs">
                               {formatDate(file.modifiedTime)}
                             </TableCell>
-                            <TableCell className='text-xs'>
+                            <TableCell className="text-xs">
                               {file.size ? formatBytes(file.size) : '-'}
                             </TableCell>
                           </TableRow>
@@ -450,7 +509,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                     </Table>
 
                     {isLoading && (
-                      <div className="flex items-center justify-center p-4 border-t border-[#EEE6FF78] dark:border-[#6A6A6A]">
+                      <div className="flex items-center justify-center border-t border-[#EEE6FF78] p-4 dark:border-[#6A6A6A]">
                         <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
                           Loading more files...
@@ -458,7 +517,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                       </div>
                     )}
                   </>
-                )}
+                }
               </TableContainer>
             </div>
           </div>

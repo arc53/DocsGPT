@@ -49,7 +49,7 @@ export default function AgentLogs() {
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-eerie-black m-0 text-[40px] font-bold dark:text-white">
+        <h1 className="text-eerie-black m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
           Agent Logs
         </h1>
       </div>
