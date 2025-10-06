@@ -9,7 +9,7 @@ from application.core.settings import settings
 class NotesTool(Tool):
     """Notepad
 
-    Each user has a single note. Supports viewing, overwriting, string replacement,
+    Single note. Supports viewing, overwriting, string replacement.
     """
 
     def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:
