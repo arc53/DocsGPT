@@ -51,6 +51,9 @@ class Settings(BaseSettings):
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
 
+    # GitHub source
+    GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
+
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
