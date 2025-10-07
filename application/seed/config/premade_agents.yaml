@@ -2,7 +2,7 @@
 
 agents:
   - name: "Assistant"
-    description: "Your general-purpose AI assistant. Ready to help with a wide range of tasks, from answering questions and summarizing text to brainstorming ideas and writing content."
+    description: "Your general-purpose AI assistant. Ready to help with a wide range of tasks."
     image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-logo.svg"
     agent_type: "classic"
     prompt_id: "default"
@@ -16,7 +16,7 @@ agents:
         config:
 
   - name: "Researcher"
-    description: "A specialized research agent that performs deep dives into subjects. It's designed to gather comprehensive information, analyze it, and provide detailed, well-structured answers."
+    description: "A specialized research agent that performs deep dives into subjects."
     image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-researcher.svg"
     agent_type: "react"
     prompt:
@@ -46,7 +46,7 @@ agents:
         config:
 
   - name: "Search Widget"
-    description: "A powerful search widget agent. Ask it anything about our documentation, and it will find the most relevant information for you quickly."
+    description: "A powerful search widget agent. Ask it anything about DocsGPT"
     image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-search.svg"
     agent_type: "classic"
     prompt:
@@ -70,7 +70,7 @@ agents:
       loader: "url" 
 
   - name: "Support Widget"
-    description: "A friendly support widget agent to help you with any questions. It has deep knowledge of documentation and can guide you to the information you need."
+    description: "A friendly support widget agent to help you with any questions."
     image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-support.svg"
     agent_type: "classic"
     prompt:

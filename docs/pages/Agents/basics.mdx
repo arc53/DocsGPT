@@ -107,3 +107,13 @@ Once an agent is created, you can:
     * Modify any of its configuration settings (name, description, source, prompt, tools, type).
     * **Generate a Public Link:** From the edit screen, you can create a shareable public link that allows others to import and use your agent.
     * **Get a Webhook URL:** You can also obtain a Webhook URL for the agent. This allows external applications or services to trigger the agent and receive responses programmatically, enabling powerful integrations and automations.
+
+## Seeding Premade Agents from YAML
+
+You can bootstrap a fresh DocsGPT deployment with a curated set of agents by seeding them directly into MongoDB.
+
+1. **Customize the configuration** – edit `application/seed/config/premade_agents.yaml` (or copy from `application/seed/config/agents_template.yaml`) to describe the agents you want to provision. Each entry lets you define prompts, tools, and optional data sources.
+2. **Ensure dependencies are running** – MongoDB must be reachable using the credentials in `.env`, and a Celery worker should be available if any agent sources need to be ingested via `ingest_remote`.
+3. **Execute the seeder** – run `python -m application.seed.commands init`. Add `--force` when you need to reseed an existing environment.
+
+The seeder keeps templates under the `system` user so they appear in the UI for anyone to clone or customize. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.
