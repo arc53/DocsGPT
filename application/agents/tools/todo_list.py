@@ -38,8 +38,8 @@ class TodoListTool(Tool):
             self._client = MongoDB.get_client()
             self._db = self._client[self.database_name]
             self._col = self._db[self.collection_name]
-            # Ensure an index on user_id, tool_id
-            self._col.create_index([("user_id", 1), ("tool_id", 1)], unique=True)
+            self._col.create_index([("todo_id", 1)], unique=True)
+            self._col.create_index([("user_id", 1), ("tool_id", 1)])
         except Exception:
             self._client = None
             self._db = None
@@ -55,6 +55,7 @@ class TodoListTool(Tool):
         actions = {
             "todo_create": self._create_todo,
             "todo_get": self._get_todo,
+            "todo_list": self._get_todos,
             "todo_update": self._update_todo,
             "todo_delete": self._delete_todo,
         }
@@ -71,7 +72,11 @@ class TodoListTool(Tool):
     def _create_todo(self, title: str, description: str = "", due_date: Optional[str] = None, metadata: Optional[Dict] = None):
         self._ensure_connection()
         now = datetime.datetime.utcnow()
+        todo_id = str(uuid.uuid4())
         doc = {
+            "todo_id": todo_id,
+            "user_id": self.user_id,
+            "tool_id": self.tool_id,
             "title": title,
             "description": description,
             "status": "open",
@@ -80,34 +85,55 @@ class TodoListTool(Tool):
             "created_at": now,
             "updated_at": now,
         }
-        self._col.update_one({"user_id": self.user_id, "tool_id": self.tool_id}, {"$set": doc}, upsert=True)
-        return {"status_code": 201, "message": "Todo created"}
+        self._col.insert_one(doc)
+        return {"status_code": 201, "message": "Todo created", "todo_id": todo_id}
 
-    def _get_todo(self):
+    def _get_todo(self, todo_id: str):
         self._ensure_connection()
-        doc = self._col.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
+        doc = self._col.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": todo_id})
         if not doc:
             return {"status_code": 404, "message": "Todo not found"}
+        doc.pop("_id", None)
+        self._format_timestamps(doc)
         return {"status_code": 200, "todo": doc}
 
-    def _update_todo(self, updates: Dict[str, Any]):
+    def _get_todos(self):
+        self._ensure_connection()
+        cursor = self._col.find({"user_id": self.user_id, "tool_id": self.tool_id})
+        todos = []
+        for doc in cursor:
+            doc.pop("_id", None)
+            self._format_timestamps(doc)
+            todos.append(doc)
+        return {"status_code": 200, "todos": todos}
+
+    def _update_todo(self, todo_id: str, updates: Dict[str, Any]):
         self._ensure_connection()
         allowed = {"title", "description", "status", "due_date", "metadata"}
         set_fields = {k: v for k, v in updates.items() if k in allowed}
         if not set_fields:
             return {"status_code": 400, "message": "No valid fields to update"}
         set_fields["updated_at"] = datetime.datetime.utcnow()
-        result = self._col.update_one({"user_id": self.user_id, "tool_id": self.tool_id}, {"$set": set_fields})
+        result = self._col.update_one(
+            {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": todo_id},
+            {"$set": set_fields}
+        )
         if result.matched_count == 0:
             return {"status_code": 404, "message": "Todo not found"}
         return {"status_code": 200, "message": "Todo updated"}
 
-    def _delete_todo(self):
+    def _delete_todo(self, todo_id: str):
         self._ensure_connection()
-        result = self._col.delete_one({"user_id": self.user_id, "tool_id": self.tool_id})
+        result = self._col.delete_one({"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": todo_id})
         if result.deleted_count == 0:
             return {"status_code": 404, "message": "Todo not found"}
         return {"status_code": 200, "message": "Todo deleted"}
+
+    def _format_timestamps(self, doc: Dict[str, Any]):
+        for field in ["created_at", "updated_at"]:
+            if field in doc and isinstance(doc[field], datetime.datetime):
+                utc_dt = doc[field].astimezone(datetime.timezone.utc)
+                doc[field] = utc_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     def get_actions_metadata(self) -> List[Dict[str, Any]]:
         return [
@@ -128,7 +154,19 @@ class TodoListTool(Tool):
             },
             {
                 "name": "todo_get",
-                "description": "Get a single todo by id",
+                "description": "Get a specific todo by todo_id",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {"type": "string"},
+                    },
+                    "required": ["todo_id"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "todo_list",
+                "description": "List all todos for this tool",
                 "parameters": {
                     "type": "object",
                     "properties": {},
@@ -138,21 +176,26 @@ class TodoListTool(Tool):
             },
             {
                 "name": "todo_update",
-                "description": "Update a todo's fields",
+                "description": "Update a todo's fields by todo_id",
                 "parameters": {
                     "type": "object",
-                    "properties": {"updates": {"type": "object"}},
-                    "required": ["updates"],
+                    "properties": {
+                        "todo_id": {"type": "string"},
+                        "updates": {"type": "object"},
+                    },
+                    "required": ["todo_id", "updates"],
                     "additionalProperties": False,
                 },
             },
             {
                 "name": "todo_delete",
-                "description": "Delete a todo",
+                "description": "Delete a specific todo by todo_id",
                 "parameters": {
                     "type": "object",
-                    "properties": {},
-                    "required": [],
+                    "properties": {
+                        "todo_id": {"type": "string"},
+                    },
+                    "required": ["todo_id"],
                     "additionalProperties": False,
                 },
             },

@@ -8,38 +8,48 @@ def todo_tool(monkeypatch) -> TodoListTool:
 
     class FakeCollection:
         def __init__(self):
-            self.doc = None
+            self.docs = {}
 
         def create_index(self, *args, **kwargs):
             pass
 
         def insert_one(self, doc):
-            self.doc = doc
-            return type("res", (), {"inserted_id": doc.get("_id", "fake_id")})
+            self.docs[doc["todo_id"]] = doc
+            return type("res", (), {"inserted_id": doc["todo_id"]})
 
         def find_one(self, query):
-            if not self.doc:
+            todo_id = query.get("todo_id")
+            doc = self.docs.get(todo_id)
+            if not doc:
                 return None
-            if self.doc.get("user_id") == query.get("user_id") and self.doc.get("tool_id") == query.get("tool_id"):
-                return self.doc
+            # Also verify user_id and tool_id
+            if doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
+                return doc
             return None
 
+        def find(self, query):
+            user_id = query.get("user_id")
+            tool_id = query.get("tool_id")
+            return [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
+
         def update_one(self, query, update, upsert=False):
-            if self.doc is None and upsert:
-                # Create new doc by merging query and update["$set"]
-                self.doc = {**query, **update.get("$set", {})}
+            todo_id = query.get("todo_id")
+            doc = self.docs.get(todo_id)
+            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
+                doc.update(update.get("$set", {}))
                 return type("res", (), {"matched_count": 1})
-            elif self.doc and self.doc.get("user_id") == query.get("user_id") and self.doc.get("tool_id") == query.get("tool_id"):
-                self.doc.update(update.get("$set", {}))
+            elif upsert:
+                new_doc = {**query, **update.get("$set", {})}
+                self.docs[todo_id] = new_doc
                 return type("res", (), {"matched_count": 1})
             else:
                 return type("res", (), {"matched_count": 0})
 
         def delete_one(self, query):
-            if not self.doc:
-                return type("res", (), {"deleted_count": 0})
-            if self.doc.get("user_id") == query.get("user_id") and self.doc.get("tool_id") == query.get("tool_id"):
-                self.doc = None
+            todo_id = query.get("todo_id")
+            doc = self.docs.get(todo_id)
+            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
+                del self.docs[todo_id]
                 return type("res", (), {"deleted_count": 1})
             return type("res", (), {"deleted_count": 0})
 
@@ -54,30 +64,45 @@ def todo_tool(monkeypatch) -> TodoListTool:
 def test_create_and_get(todo_tool: TodoListTool):
     res = todo_tool.execute_action("todo_create", title="Write tests", description="Write pytest cases")
     assert res["status_code"] == 201
+    todo_id = res["todo_id"]
 
-    get_res = todo_tool.execute_action("todo_get")
+    get_res = todo_tool.execute_action("todo_get", todo_id=todo_id)
     assert get_res["status_code"] == 200
     assert get_res["todo"]["title"] == "Write tests"
+    assert get_res["todo"]["description"] == "Write pytest cases"
+
+
+def test_get_all_todos(todo_tool: TodoListTool):
+    todo_tool.execute_action("todo_create", title="Task 1")
+    todo_tool.execute_action("todo_create", title="Task 2")
+
+    list_res = todo_tool.execute_action("todo_list")
+    assert list_res["status_code"] == 200
+    assert len(list_res["todos"]) >= 2
+    titles = [todo["title"] for todo in list_res["todos"]]
+    assert "Task 1" in titles and "Task 2" in titles
 
 
 def test_update_todo(todo_tool: TodoListTool):
-    todo_tool.execute_action("todo_create", title="Initial Title")
+    create_res = todo_tool.execute_action("todo_create", title="Initial Title")
+    todo_id = create_res["todo_id"]
 
-    update_res = todo_tool.execute_action("todo_update", updates={"title": "Updated Title", "status": "done"})
+    update_res = todo_tool.execute_action("todo_update", todo_id=todo_id, updates={"title": "Updated Title", "status": "done"})
     assert update_res["status_code"] == 200
 
-    get_res = todo_tool.execute_action("todo_get")
+    get_res = todo_tool.execute_action("todo_get", todo_id=todo_id)
     assert get_res["todo"]["title"] == "Updated Title"
     assert get_res["todo"]["status"] == "done"
 
 
 def test_delete_todo(todo_tool: TodoListTool):
-    todo_tool.execute_action("todo_create", title="To Delete")
+    create_res = todo_tool.execute_action("todo_create", title="To Delete")
+    todo_id = create_res["todo_id"]
 
-    delete_res = todo_tool.execute_action("todo_delete")
+    delete_res = todo_tool.execute_action("todo_delete", todo_id=todo_id)
     assert delete_res["status_code"] == 200
 
-    get_res = todo_tool.execute_action("todo_get")
+    get_res = todo_tool.execute_action("todo_get", todo_id=todo_id)
     assert get_res["status_code"] == 404
 
 
@@ -90,28 +115,41 @@ def test_isolation_and_default_tool_id(monkeypatch):
             pass
 
         def insert_one(self, doc):
-            key = (doc["user_id"], doc["tool_id"])
-            self.docs[key] = doc
-            return type("res", (), {"inserted_id": doc.get("_id", "fake_id")})
+            self.docs[doc["todo_id"]] = doc
+            return type("res", (), {"inserted_id": doc["todo_id"]})
 
         def find_one(self, query):
-            key = (query["user_id"], query["tool_id"])
-            return self.docs.get(key)
+            todo_id = query.get("todo_id")
+            doc = self.docs.get(todo_id)
+            if not doc:
+                return None
+            if doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
+                return doc
+            return None
+
+        def find(self, query):
+            user_id = query.get("user_id")
+            tool_id = query.get("tool_id")
+            return [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
 
         def update_one(self, query, update, upsert=False):
-            key = (query["user_id"], query["tool_id"])
-            if key not in self.docs and upsert:
-                self.docs[key] = {**query, **update.get("$set", {})}
+            todo_id = query.get("todo_id")
+            doc = self.docs.get(todo_id)
+            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
+                doc.update(update.get("$set", {}))
                 return type("res", (), {"matched_count": 1})
-            if key not in self.docs:
+            elif upsert:
+                new_doc = {**query, **update.get("$set", {})}
+                self.docs[todo_id] = new_doc
+                return type("res", (), {"matched_count": 1})
+            else:
                 return type("res", (), {"matched_count": 0})
-            self.docs[key].update(update.get("$set", {}))
-            return type("res", (), {"matched_count": 1})
 
         def delete_one(self, query):
-            key = (query["user_id"], query["tool_id"])
-            if key in self.docs:
-                del self.docs[key]
+            todo_id = query.get("todo_id")
+            doc = self.docs.get(todo_id)
+            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
+                del self.docs[todo_id]
                 return type("res", (), {"deleted_count": 1})
             return type("res", (), {"deleted_count": 0})
 
@@ -124,11 +162,11 @@ def test_isolation_and_default_tool_id(monkeypatch):
     tool1 = TodoListTool({"tool_id": "tool_1"}, user_id="u1")
     tool2 = TodoListTool({"tool_id": "tool_2"}, user_id="u1")
 
-    tool1.execute_action("todo_create", title="from tool 1")
-    tool2.execute_action("todo_create", title="from tool 2")
+    r1_create = tool1.execute_action("todo_create", title="from tool 1")
+    r2_create = tool2.execute_action("todo_create", title="from tool 2")
 
-    r1 = tool1.execute_action("todo_get")
-    r2 = tool2.execute_action("todo_get")
+    r1 = tool1.execute_action("todo_get", todo_id=r1_create["todo_id"])
+    r2 = tool2.execute_action("todo_get", todo_id=r2_create["todo_id"])
 
     assert r1["todo"]["title"] == "from tool 1"
     assert r2["todo"]["title"] == "from tool 2"
@@ -140,8 +178,8 @@ def test_isolation_and_default_tool_id(monkeypatch):
     assert t3.tool_id == "default_default_user"
     assert t4.tool_id == "default_default_user"
 
-    t3.execute_action("todo_create", title="shared default")
-    r = t4.execute_action("todo_get")
+    create_res = t3.execute_action("todo_create", title="shared default")
+    r = t4.execute_action("todo_get", todo_id=create_res["todo_id"])
 
     assert r["status_code"] == 200
     assert r["todo"]["title"] == "shared default"
