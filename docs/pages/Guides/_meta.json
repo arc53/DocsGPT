@@ -20,5 +20,8 @@
   "Architecture": {
     "title": "🏗️ Architecture",
     "href": "/Guides/Architecture"
+  },
+  "Integrations": {
+    "title": "🔗 Integrations"
   }
 }

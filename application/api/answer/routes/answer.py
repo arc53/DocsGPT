@@ -83,9 +83,24 @@ class AnswerResource(Resource, BaseAnswerResource):
                 index=None,
                 should_save_conversation=data.get("save_conversation", True),
             )
-            conversation_id, response, sources, tool_calls, thought, error = (
-                self.process_response_stream(stream)
-            )
+            stream_result = self.process_response_stream(stream)
+
+            if len(stream_result) == 7:
+                (
+                    conversation_id,
+                    response,
+                    sources,
+                    tool_calls,
+                    thought,
+                    error,
+                    structured_info,
+                ) = stream_result
+            else:
+                conversation_id, response, sources, tool_calls, thought, error = (
+                    stream_result
+                )
+                structured_info = None
+
             if error:
                 return make_response({"error": error}, 400)
             result = {
@@ -95,6 +110,9 @@ class AnswerResource(Resource, BaseAnswerResource):
                 "tool_calls": tool_calls,
                 "thought": thought,
             }
+
+            if structured_info:
+                result.update(structured_info)
         except Exception as e:
             logger.error(
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",

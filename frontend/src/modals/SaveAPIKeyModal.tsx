@@ -18,23 +18,23 @@ export default function SaveAPIKeyModal({
 
   return (
     <WrapperModal close={close}>
-      <h1 className="my-0 text-xl font-medium text-jet dark:text-bright-gray">
+      <h1 className="text-jet dark:text-bright-gray my-0 text-xl font-medium">
         {t('modals.saveKey.note')}
       </h1>
-      <h3 className="text-sm font-normal text-outer-space dark:text-silver">
+      <h3 className="text-outer-space dark:text-silver text-sm font-normal">
         {t('modals.saveKey.disclaimer')}
       </h3>
       <div className="flex justify-between py-2">
         <div>
-          <h2 className="text-base font-semibold text-jet dark:text-bright-gray">
+          <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
             API Key
           </h2>
-          <span className="text-sm font-normal leading-7 text-jet dark:text-bright-gray">
+          <span className="text-jet dark:text-bright-gray text-sm leading-7 font-normal">
             {apiKey}
           </span>
         </div>
         <button
-          className="my-1 h-10 w-20 rounded-full border border-solid border-violets-are-blue p-2 text-sm text-violets-are-blue hover:bg-violets-are-blue hover:text-white"
+          className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue my-1 h-10 w-20 rounded-full border border-solid p-2 text-sm hover:text-white"
           onClick={handleCopyKey}
         >
           {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
@@ -42,7 +42,7 @@ export default function SaveAPIKeyModal({
       </div>
       <button
         onClick={close}
-        className="rounded-full bg-philippine-yellow px-4 py-3 font-medium text-black hover:bg-[#E6B91A]"
+        className="bg-philippine-yellow rounded-full px-4 py-3 font-medium text-black hover:bg-[#E6B91A]"
       >
         {t('modals.saveKey.confirm')}
       </button>

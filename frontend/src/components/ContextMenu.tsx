@@ -82,14 +82,14 @@ export default function ContextMenu({
     // Adjust position based on specified position
     switch (position) {
       case 'bottom-left':
-        left = rect.left + scrollX - offset.x;
+        left = rect.right + scrollX - menuWidth + offset.x;
         break;
       case 'top-right':
         top = rect.top + scrollY - offset.y - menuHeight;
         break;
       case 'top-left':
         top = rect.top + scrollY - offset.y - menuHeight;
-        left = rect.left + scrollX - offset.x;
+        left = rect.right + scrollX - menuWidth + offset.x;
         break;
       // bottom-right is default
     }

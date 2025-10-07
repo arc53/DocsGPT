@@ -259,7 +259,7 @@ export default function MessageInput({
   return (
     <div className="mx-2 flex w-full flex-col">
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
-        <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-0 sm:gap-2 sm:px-6">
+        <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment, index) => (
             <div
               key={index}
@@ -353,14 +353,14 @@ export default function MessageInput({
             onChange={handleChange}
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-4 py-3 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-6 sm:py-5 dark:bg-transparent"
+            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3 dark:bg-transparent"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             aria-label={t('inputPlaceholder')}
           />
         </div>
 
-        <div className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2">
+        <div className="flex items-center px-2 pb-1.5 sm:px-3 sm:pb-2">
           <div className="flex grow flex-wrap gap-1 sm:gap-2">
             {showSourceButton && (
               <button
@@ -368,8 +368,8 @@ export default function MessageInput({
                 className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 sm:max-w-[150px] dark:hover:bg-[#2C2E3C]"
                 onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
                 title={
-                  selectedDocs
-                    ? selectedDocs.name
+                  selectedDocs && selectedDocs.length > 0
+                    ? selectedDocs.map((doc) => doc.name).join(', ')
                     : t('conversation.sources.title')
                 }
               >
@@ -379,8 +379,10 @@ export default function MessageInput({
                   className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
                 />
                 <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
-                  {selectedDocs
-                    ? selectedDocs.name
+                  {selectedDocs && selectedDocs.length > 0
+                    ? selectedDocs.length === 1
+                      ? selectedDocs[0].name
+                      : `${selectedDocs.length} sources selected`
                     : t('conversation.sources.title')}
                 </span>
                 {!isTouch && (
@@ -428,18 +430,18 @@ export default function MessageInput({
           <button
             onClick={loading ? undefined : handleSubmit}
             aria-label={loading ? t('loading') : t('send')}
-            className={`flex items-center justify-center rounded-full p-2 sm:p-2.5 ${loading ? 'bg-gray-300 dark:bg-gray-600' : 'bg-black dark:bg-white'} ml-auto shrink-0`}
+            className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${loading || !value.trim() ? 'bg-black opacity-60 dark:bg-[#F0F3F4] dark:opacity-80' : 'bg-black opacity-100 dark:bg-[#F0F3F4]'} ml-auto shrink-0`}
             disabled={loading}
           >
             {loading ? (
               <img
                 src={isDarkTheme ? SpinnerDark : Spinner}
-                className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4"
+                className="mx-auto my-auto block h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4"
                 alt={t('loading')}
               />
             ) : (
               <img
-                className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isDarkTheme ? 'invert filter' : ''}`}
+                className={`mx-auto my-auto block h-3.5 w-3.5 translate-x-[-0.9px] translate-y-[1.1px] sm:h-4 sm:w-4 ${isDarkTheme ? 'invert filter' : ''}`}
                 src={PaperPlane}
                 alt={t('send')}
               />

@@ -4,5 +4,6 @@ export type ToolCallsType = {
   call_id: string;
   arguments: Record<string, any>;
   result?: Record<string, any>;
-  status?: 'pending' | 'completed';
+  error?: string;
+  status?: 'pending' | 'completed' | 'error';
 };

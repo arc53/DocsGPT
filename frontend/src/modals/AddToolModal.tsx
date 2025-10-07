@@ -8,6 +8,7 @@ import { useOutsideAlerter } from '../hooks';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
+import MCPServerModal from './MCPServerModal';
 import { AvailableToolType } from './types';
 import WrapperComponent from './WrapperModal';
 
@@ -33,6 +34,8 @@ export default function AddToolModal({
   const [selectedTool, setSelectedTool] =
     React.useState<AvailableToolType | null>(null);
   const [configModalState, setConfigModalState] =
+    React.useState<ActiveState>('INACTIVE');
+  const [mcpModalState, setMcpModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [loading, setLoading] = React.useState(false);
 
@@ -86,6 +89,9 @@ export default function AddToolModal({
         .catch((error) => {
           console.error('Failed to create tool:', error);
         });
+    } else if (tool.name === 'mcp_tool') {
+      setModalState('INACTIVE');
+      setMcpModalState('ACTIVE');
     } else {
       setModalState('INACTIVE');
       setConfigModalState('ACTIVE');
@@ -95,6 +101,12 @@ export default function AddToolModal({
   React.useEffect(() => {
     if (modalState === 'ACTIVE') getAvailableTools();
   }, [modalState]);
+
+  const handleMcpServerAdded = () => {
+    getUserTools();
+    setMcpModalState('INACTIVE');
+  };
+
   return (
     <>
       {modalState === 'ACTIVE' && (
@@ -165,6 +177,11 @@ export default function AddToolModal({
         setModalState={setConfigModalState}
         tool={selectedTool}
         getUserTools={getUserTools}
+      />
+      <MCPServerModal
+        modalState={mcpModalState}
+        setModalState={setMcpModalState}
+        onServerSaved={handleMcpServerAdded}
       />
     </>
   );

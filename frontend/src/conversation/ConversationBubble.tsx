@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { forwardRef, Fragment, useRef, useState, useEffect } from 'react';
+import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
@@ -12,12 +12,13 @@ import {
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import DocumentationDark from '../assets/documentation-dark.svg';
+
 import ChevronDown from '../assets/chevron-down.svg';
 import Cloud from '../assets/cloud.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
+import DocumentationDark from '../assets/documentation-dark.svg';
 import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
@@ -92,8 +93,7 @@ const ConversationBubble = forwardRef<
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
-  const [isLikeClicked, setIsLikeClicked] = useState(false);
-  const [isDislikeClicked, setIsDislikeClicked] = useState(false);
+
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement>(null);
@@ -188,7 +188,7 @@ const ConversationBubble = forwardRef<
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 dark:hover:bg-[#35363B] ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-[#35363B] ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </button>
@@ -407,7 +407,7 @@ const ConversationBubble = forwardRef<
               </p>
             </div>
             <div
-              className={`fade-in-bubble bg-gray-1000 dark:bg-gun-metal mr-5 flex max-w-full rounded-[28px] px-7 py-[18px] ${
+              className={`fade-in-bubble bg-gray-1000 dark:bg-gun-metal mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
                 type === 'ERROR'
                   ? 'text-red-3000 dark:border-red-2000 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
                   : 'flex-col rounded-3xl'
@@ -550,104 +550,71 @@ const ConversationBubble = forwardRef<
         )}
         {message && (
           <div className="my-2 ml-2 flex justify-start">
-            <div
-              className={`relative mr-2 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'lg:group-hover:visible' : 'hidden'}`}
-            >
-              <div>
-                <CopyButton textToCopy={message} />
-              </div>
-            </div>
-            <div
-              className={`relative mr-2 block items-center justify-center lg:invisible ${type !== 'ERROR' ? 'lg:group-hover:visible' : 'hidden'}`}
-            >
-              <div>
-                <SpeakButton text={message} />
-              </div>
-            </div>
-            {type === 'ERROR' && (
+            {type === 'ERROR' ? (
               <div className="relative mr-2 block items-center justify-center">
                 <div>{retryBtn}</div>
               </div>
-            )}
-            {handleFeedback && (
+            ) : (
               <>
-                <div
-                  className={`relative mr-2 flex items-center justify-center ${
-                    feedback === 'LIKE' || isLikeClicked
-                      ? 'visible'
-                      : 'lg:invisible'
-                  } ${type !== 'ERROR' ? 'lg:group-hover:visible' : ''} ${feedback === 'DISLIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
-                >
-                  <div>
-                    <div
-                      className={`flex items-center justify-center rounded-full p-2 ${
-                        isLikeHovered
-                          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                          : 'bg-white-3000 dark:bg-transparent'
-                      }`}
-                    >
-                      <Like
-                        className={`cursor-pointer ${
-                          isLikeClicked || feedback === 'LIKE'
-                            ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent'
-                            : 'stroke-gray-4000 fill-none'
-                        }`}
-                        onClick={() => {
-                          if (feedback === undefined || feedback === null) {
-                            handleFeedback?.('LIKE');
-                            setIsLikeClicked(true);
-                            setIsDislikeClicked(false);
-                          } else if (feedback === 'LIKE') {
-                            handleFeedback?.(null);
-                            setIsLikeClicked(false);
-                            setIsDislikeClicked(false);
-                          }
-                        }}
-                        onMouseEnter={() => setIsLikeHovered(true)}
-                        onMouseLeave={() => setIsLikeHovered(false)}
-                      ></Like>
-                    </div>
-                  </div>
+                <div className="relative mr-2 block items-center justify-center">
+                  <CopyButton textToCopy={message} />
                 </div>
+                <div className="relative mr-2 block items-center justify-center">
+                  <SpeakButton text={message} />
+                </div>
+                {handleFeedback && (
+                  <>
+                    <div className="relative mr-2 flex items-center justify-center">
+                      <div>
+                        <div
+                          className={`flex items-center justify-center rounded-full p-2 ${
+                            isLikeHovered
+                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                              : 'bg-white-3000 dark:bg-transparent'
+                          }`}
+                        >
+                          <Like
+                            className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            onClick={() => {
+                              if (feedback === 'LIKE') {
+                                handleFeedback?.(null);
+                              } else {
+                                handleFeedback?.('LIKE');
+                              }
+                            }}
+                            onMouseEnter={() => setIsLikeHovered(true)}
+                            onMouseLeave={() => setIsLikeHovered(false)}
+                          ></Like>
+                        </div>
+                      </div>
+                    </div>
 
-                <div
-                  className={`relative mr-2 flex items-center justify-center ${
-                    feedback === 'DISLIKE' || isLikeClicked
-                      ? 'visible'
-                      : 'lg:invisible'
-                  } ${type !== 'ERROR' ? 'lg:group-hover:visible' : ''} ${feedback === 'LIKE' && type !== 'ERROR' ? 'hidden' : ''}`}
-                >
-                  <div>
-                    <div
-                      className={`flex items-center justify-center rounded-full p-2 ${
-                        isDislikeHovered
-                          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                          : 'bg-white-3000 dark:bg-transparent'
-                      }`}
-                    >
-                      <Dislike
-                        className={`cursor-pointer ${
-                          isDislikeClicked || feedback === 'DISLIKE'
-                            ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent'
-                            : 'stroke-gray-4000 fill-none'
-                        }`}
-                        onClick={() => {
-                          if (feedback === undefined || feedback === null) {
-                            handleFeedback?.('DISLIKE');
-                            setIsDislikeClicked(true);
-                            setIsLikeClicked(false);
-                          } else if (feedback === 'DISLIKE') {
-                            handleFeedback?.(null);
-                            setIsLikeClicked(false);
-                            setIsDislikeClicked(false);
-                          }
-                        }}
-                        onMouseEnter={() => setIsDislikeHovered(true)}
-                        onMouseLeave={() => setIsDislikeHovered(false)}
-                      ></Dislike>
+                    <div className="relative mr-2 flex items-center justify-center">
+                      <div>
+                        <div
+                          className={`flex items-center justify-center rounded-full p-2 ${
+                            isDislikeHovered
+                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                              : 'bg-white-3000 dark:bg-transparent'
+                          }`}
+                        >
+                          <Dislike
+                            className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                            onClick={() => {
+                              if (feedback === 'DISLIKE') {
+                                handleFeedback?.(null);
+                              } else {
+                                handleFeedback?.('DISLIKE');
+                              }
+                            }}
+                            onMouseEnter={() => setIsDislikeHovered(true)}
+                            onMouseLeave={() => setIsDislikeHovered(false)}
+                          ></Dislike>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -795,7 +762,11 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         Response
                       </span>{' '}
                       <CopyButton
-                        textToCopy={JSON.stringify(toolCall.result, null, 2)}
+                        textToCopy={
+                          toolCall.status === 'error'
+                            ? toolCall.error || 'Unknown error'
+                            : JSON.stringify(toolCall.result, null, 2)
+                        }
                       />
                     </p>
                     {toolCall.status === 'pending' && (
@@ -810,6 +781,16 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
                           {JSON.stringify(toolCall.result, null, 2)}
+                        </span>
+                      </p>
+                    )}
+                    {toolCall.status === 'error' && (
+                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
+                        <span
+                          className="leading-[23px] text-red-500 dark:text-red-400"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {toolCall.error}
                         </span>
                       </p>
                     )}

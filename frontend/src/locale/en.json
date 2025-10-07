@@ -52,19 +52,23 @@
       "default": "Default",
       "add": "Add"
     },
-    "documents": {
-      "title": "This table contains all the documents that are available to you and those you have uploaded",
-      "label": "Documents",
-      "name": "Document Name",
+    "sources": {
+      "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
+      "label": "Sources",
+      "name": "Source Name",
       "date": "Vector Date",
       "type": "Type",
       "tokenUsage": "Token Usage",
-      "noData": "No existing Documents",
+      "noData": "No existing Sources",
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
+      "addSource": "Add Source",
+      "addChunk": "Add Chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
       "sync": "Sync",
+      "syncing": "Syncing...",
+      "syncConfirmation": "Are you sure you want to sync \"{{sourceName}}\"? This will update the content with your cloud storage and may override any edits you made to individual chunks.",
       "syncFrequency": {
         "never": "Never",
         "daily": "Daily",
@@ -74,12 +78,32 @@
       "actions": "Actions",
       "view": "View",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
-      "backToAll": "Back to all documents",
+      "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
+      "backToAll": "Back to all sources",
       "chunks": "Chunks",
       "noChunks": "No chunks found",
       "noChunksAlt": "No chunks found",
-      "goToDocuments": "Go to Documents",
-      "uploadNew": "Upload new"
+      "goToSources": "Go to Sources",
+      "uploadNew": "Upload new",
+      "searchFiles": "Search files...",
+      "noResults": "No results found",
+      "fileName": "Name",
+      "tokens": "Tokens",
+      "size": "Size",
+      "fileAlt": "File",
+      "folderAlt": "Folder",
+      "parentFolderAlt": "Parent folder",
+      "menuAlt": "Menu",
+      "tokensUnit": "tokens",
+      "editAlt": "Edit",
+      "uploading": "Uploading…",
+      "deleting": "Deleting…",
+      "queued": "Queued: {{count}}",
+      "addFile": "Add file",
+      "uploadingFilesTitle": "Uploading files...",
+      "deletingTitle": "Deleting...",
+      "deleteDirectoryWarning": "Are you sure you want to delete the directory \"{{name}}\" and all its contents? This action cannot be undone.",
+      "searchAlt": "Search"
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -161,13 +185,53 @@
       "cancel": "Cancel",
       "addNew": "Add New",
       "name": "Name",
-      "type": "Type"
+      "type": "Type",
+      "mcp": {
+        "addServer": "Add MCP Server",
+        "editServer": "Edit Server",
+        "serverName": "Server Name",
+        "serverUrl": "Server URL",
+        "headerName": "Header Name",
+        "timeout": "Timeout (seconds)",
+        "testConnection": "Test Connection",
+        "testing": "Testing",
+        "saving": "Saving",
+        "save": "Save",
+        "cancel": "Cancel",
+        "noAuth": "No Authentication",
+        "oauthInProgress": "Waiting for OAuth completion...",
+        "oauthCompleted": "OAuth completed successfully",
+        "placeholders": {
+          "serverUrl": "https://api.example.com",
+          "apiKey": "Your secret API key",
+          "bearerToken": "Your secret token",
+          "username": "Your username",
+          "password": "Your password",
+          "oauthScopes": "OAuth scopes (comma separated)"
+        },
+        "errors": {
+          "nameRequired": "Server name is required",
+          "urlRequired": "Server URL is required",
+          "invalidUrl": "Please enter a valid URL",
+          "apiKeyRequired": "API key is required",
+          "tokenRequired": "Bearer token is required",
+          "usernameRequired": "Username is required",
+          "passwordRequired": "Password is required",
+          "testFailed": "Connection test failed",
+          "saveFailed": "Failed to save MCP server",
+          "oauthFailed": "OAuth process failed or was cancelled",
+          "oauthTimeout": "OAuth process timed out, please try again"
+        }
+      }
     }
   },
   "modals": {
     "uploadDoc": {
       "label": "Upload new document",
       "select": "Choose how to upload your document to DocsGPT",
+      "selectSource": "Select the way to add your source",
+      "selectedFiles": "Selected Files",
+      "noFilesSelected": "No files selected",
       "file": "Upload from device",
       "back": "Back",
       "wait": "Please wait ...",
@@ -196,13 +260,74 @@
       },
       "progress": {
         "upload": "Upload is in progress",
-        "training": "Training is in progress",
-        "completed": "Training completed",
+        "training": "Upload is in progress",
+        "completed": "Upload completed",
         "wait": "This may take several minutes",
-        "tokenLimit": "Over the token limit, please consider uploading smaller document"
+        "preparing": "Preparing upload",
+        "tokenLimit": "Over the token limit, please consider uploading smaller document",
+        "expandDetails": "Expand upload details",
+        "collapseDetails": "Collapse upload details",
+        "dismiss": "Dismiss upload toast",
+        "uploadProgress": "Upload progress {{progress}}%",
+        "clear": "Clear"
       },
       "showAdvanced": "Show advanced options",
-      "hideAdvanced": "Hide advanced options"
+      "hideAdvanced": "Hide advanced options",
+      "ingestors": {
+        "local_file": {
+          "label": "Upload File",
+          "heading": "Upload new document"
+        },
+        "crawler": {
+          "label": "Crawler",
+          "heading": "Add content with Web Crawler"
+        },
+        "url": {
+          "label": "Link",
+          "heading": "Add content from URL"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "Add content from GitHub"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "Add content from Reddit"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "Upload from Google Drive"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "Connected User",
+          "authFailed": "Authentication failed",
+          "authUrlFailed": "Failed to get authorization URL",
+          "popupBlocked": "Failed to open authentication window. Please allow popups.",
+          "authCancelled": "Authentication was cancelled",
+          "connectedAs": "Connected as {{email}}",
+          "disconnect": "Disconnect"
+        },
+        "googleDrive": {
+          "connect": "Connect to Google Drive",
+          "sessionExpired": "Session expired. Please reconnect to Google Drive.",
+          "sessionExpiredGeneric": "Session expired. Please reconnect your account.",
+          "validateFailed": "Failed to validate session. Please reconnect.",
+          "noSession": "No valid session found. Please reconnect to Google Drive.",
+          "noAccessToken": "No access token available. Please reconnect to Google Drive.",
+          "pickerFailed": "Failed to open file picker. Please try again.",
+          "selectedFiles": "Selected Files",
+          "selectFiles": "Select Files",
+          "loading": "Loading...",
+          "noFilesSelected": "No files or folders selected",
+          "folders": "Folders",
+          "files": "Files",
+          "remove": "Remove",
+          "folderAlt": "Folder",
+          "fileAlt": "File"
+        }
+      }
     },
     "createAPIKey": {
       "label": "Create New API Key",
@@ -250,13 +375,14 @@
     },
     "chunk": {
       "add": "Add Chunk",
-      "edit": "Edit Chunk",
+      "edit": "Edit",
       "title": "Title",
       "enterTitle": "Enter title",
       "bodyText": "Body text",
       "promptText": "Prompt Text",
-      "update": "Update",
+      "save": "Save",
       "close": "Close",
+      "cancel": "Cancel",
       "delete": "Delete",
       "deleteConfirmation": "Are you sure you want to delete this chunk?"
     }

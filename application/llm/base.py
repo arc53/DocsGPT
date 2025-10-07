@@ -120,6 +120,20 @@ class BaseLLM(ABC):
     def _supports_tools(self):
         raise NotImplementedError("Subclass must implement _supports_tools method")
 
+    def supports_structured_output(self):
+        """Check if the LLM supports structured output/JSON schema enforcement"""
+        return hasattr(self, "_supports_structured_output") and callable(
+            getattr(self, "_supports_structured_output")
+        )
+
+    def _supports_structured_output(self):
+        return False
+
+    def prepare_structured_output_format(self, json_schema):
+        """Prepare structured output format specific to the LLM provider"""
+        _ = json_schema
+        return None
+
     def get_supported_attachment_types(self):
         """
         Return a list of MIME types supported by this LLM for file uploads.
@@ -127,4 +141,4 @@ class BaseLLM(ABC):
         Returns:
             list: List of supported MIME types
         """
-        return []  # Default: no attachments supported
+        return []

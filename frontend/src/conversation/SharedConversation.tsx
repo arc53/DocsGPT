@@ -23,7 +23,7 @@ import {
   updateQuery,
 } from './sharedConversationSlice';
 import { selectCompletedAttachments } from '../upload/uploadSlice';
-import { DocumentHead } from '../components/DocumentHead';
+import { Head as DocumentHead } from '../components/Head';
 
 export const SharedConversation = () => {
   const navigate = useNavigate();

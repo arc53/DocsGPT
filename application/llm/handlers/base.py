@@ -205,7 +205,6 @@ class LLMHandler(ABC):
                     except StopIteration as e:
                         tool_response, call_id = e.value
                         break
-
                 updated_messages.append(
                     {
                         "role": "assistant",
@@ -222,17 +221,36 @@ class LLMHandler(ABC):
                 )
 
                 updated_messages.append(self.create_tool_message(call, tool_response))
-
             except Exception as e:
                 logger.error(f"Error executing tool: {str(e)}", exc_info=True)
-                updated_messages.append(
-                    {
-                        "role": "tool",
-                        "content": f"Error executing tool: {str(e)}",
-                        "tool_call_id": call.id,
-                    }
+                error_call = ToolCall(
+                    id=call.id, name=call.name, arguments=call.arguments
                 )
+                error_response = f"Error executing tool: {str(e)}"
+                error_message = self.create_tool_message(error_call, error_response)
+                updated_messages.append(error_message)
 
+                call_parts = call.name.split("_")
+                if len(call_parts) >= 2:
+                    tool_id = call_parts[-1]  # Last part is tool ID (e.g., "1")
+                    action_name = "_".join(call_parts[:-1])
+                    tool_name = tools_dict.get(tool_id, {}).get("name", "unknown_tool")
+                    full_action_name = f"{action_name}_{tool_id}"
+                else:
+                    tool_name = "unknown_tool"
+                    action_name = call.name
+                    full_action_name = call.name
+                yield {
+                    "type": "tool_call",
+                    "data": {
+                        "tool_name": tool_name,
+                        "call_id": call.id,
+                        "action_name": full_action_name,
+                        "arguments": call.arguments,
+                        "error": error_response,
+                        "status": "error",
+                    },
+                }
         return updated_messages
 
     def handle_non_streaming(
@@ -263,13 +281,11 @@ class LLMHandler(ABC):
                 except StopIteration as e:
                     messages = e.value
                     break
-
             response = agent.llm.gen(
                 model=agent.gpt_model, messages=messages, tools=agent.tools
             )
             parsed = self.parse_response(response)
             self.llm_calls.append(build_stack_data(agent.llm))
-
         return parsed.content
 
     def handle_streaming(

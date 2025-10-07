@@ -10,11 +10,11 @@ import Add from './assets/add.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Expand from './assets/expand.svg';
-import Github from './assets/github.svg';
+import Github from './assets/git_nav.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
-import Robot from './assets/robot.svg';
+import AgentImage from './components/AgentImage';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
 import SpinnerDark from './assets/spinner-dark.svg';
@@ -292,20 +292,26 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   useDefaultDocument();
   return (
     <>
-      {!navOpen && (
-        <div className="absolute top-3 left-3 z-20 hidden transition-all duration-25 lg:block">
+      {(isMobile || isTablet) && navOpen && (
+        <div
+          className="fixed inset-0 z-10 bg-black opacity-50 transition-opacity duration-300"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+
+      {
+        <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
                 setNavOpen(!navOpen);
               }}
+              className="transition-transform duration-200 hover:scale-110"
             >
               <img
                 src={Expand}
                 alt="Toggle navigation menu"
-                className={`${
-                  !navOpen ? 'rotate-180' : 'rotate-0'
-                } m-auto transition-all duration-200`}
+                className="m-auto transition-all duration-300 ease-in-out"
               />
             </button>
             {queries?.length > 0 && (
@@ -313,6 +319,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 onClick={() => {
                   newChat();
                 }}
+                className="transition-transform duration-200 hover:scale-110"
               >
                 <img
                   src={openNewChat}
@@ -326,12 +333,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </div>
           </div>
         </div>
-      )}
+      }
       <div
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-72'
-        } bg-lotion dark:border-r-purple-taupe dark:bg-chinese-black fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-20 dark:text-white`}
+        } bg-lotion dark:border-r-purple-taupe dark:bg-chinese-black fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -345,7 +352,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             }}
           >
             <a href="/" className="flex gap-1.5">
-              <img className="mb-2 h-10" src={DocsGPT3} alt="DocsGPT Logo" />
+              <img className="h-10" src={DocsGPT3} alt="DocsGPT Logo" />
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
             </a>
           </div>
@@ -358,9 +365,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <img
               src={Expand}
               alt="Toggle navigation menu"
-              className={`${
-                !navOpen ? 'rotate-180' : 'rotate-0'
-              } m-auto transition-all duration-200`}
+              className="m-auto transition-all duration-300 ease-in-out hover:scale-110"
             />
           </button>
         </div>
@@ -419,12 +424,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex w-6 justify-center">
-                          <img
-                            src={
-                              agent.image && agent.image.trim() !== ''
-                                ? agent.image
-                                : Robot
-                            }
+                          <AgentImage
+                            src={agent.image}
                             alt="agent-logo"
                             className="h-6 w-6 rounded-full object-contain"
                           />
@@ -568,21 +569,25 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 >
                   <img
                     src={Discord}
+                    width={24}
+                    height={24}
                     alt="Join Discord community"
                     className="m-2 w-6 self-center filter dark:invert"
                   />
                 </NavLink>
                 <NavLink
                   target="_blank"
-                  to={'https://twitter.com/docsgptai'}
+                  to={'https://x.com/docsgptai'}
                   className={
                     'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
                   }
                 >
                   <img
                     src={Twitter}
-                    alt="Follow us on Twitter"
-                    className="m-2 w-5 self-center filter dark:invert"
+                    width={20}
+                    height={20}
+                    alt="Follow us on X"
+                    className="m-2 self-center filter dark:invert"
                   />
                 </NavLink>
                 <NavLink
@@ -595,7 +600,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   <img
                     src={Github}
                     alt="View on GitHub"
-                    className="m-2 w-6 self-center filter dark:invert"
+                    width={28}
+                    height={28}
+                    className="m-2 self-center filter dark:invert"
                   />
                 </NavLink>
               </div>

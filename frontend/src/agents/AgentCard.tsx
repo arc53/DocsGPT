@@ -9,9 +9,9 @@ import Link from '../assets/link-gray.svg';
 import Monitoring from '../assets/monitoring.svg';
 import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
-import Robot from '../assets/robot.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
+import AgentImage from '../components/AgentImage';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
@@ -246,8 +246,8 @@ export default function AgentCard({
       </div>
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
-          <img
-            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+          <AgentImage
+            src={agent.image}
             alt={`${agent.name}`}
             className="h-7 w-7 rounded-full object-contain"
           />

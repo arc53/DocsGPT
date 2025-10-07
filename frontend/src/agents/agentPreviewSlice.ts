@@ -62,7 +62,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
           state.preference.prompt.id,
           state.preference.chunks,
           state.preference.token_limit,
-          (event) => {
+          (event: MessageEvent) => {
             const data = JSON.parse(event.data);
             const targetIndex = indx ?? state.agentPreview.queries.length - 1;
 
@@ -95,6 +95,17 @@ export const fetchPreviewAnswer = createAsyncThunk<
                 agentPreviewSlice.actions.raiseError({
                   index: targetIndex,
                   message: data.error,
+                }),
+              );
+            } else if (data.type === 'structured_answer') {
+              dispatch(
+                updateStreamingQuery({
+                  index: targetIndex,
+                  query: {
+                    response: data.answer,
+                    structured: data.structured,
+                    schema: data.schema,
+                  },
                 }),
               );
             } else {
@@ -201,6 +212,14 @@ export const agentPreviewSlice = createSlice({
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
+      }
+
+      if (query.structured !== undefined) {
+        state.queries[index].structured = query.structured;
+      }
+
+      if (query.schema !== undefined) {
+        state.queries[index].schema = query.schema;
       }
     },
     updateThought(

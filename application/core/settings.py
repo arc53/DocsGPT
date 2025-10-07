@@ -26,10 +26,11 @@ class Settings(BaseSettings):
         "gpt-4o-mini": 128000,
         "gpt-3.5-turbo": 4096,
         "claude-2": 1e5,
-        "gemini-2.0-flash-exp": 1e6,
+        "gemini-2.5-flash": 1e6,
     }
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False
+    PARSE_IMAGE_REMOTE: bool = False
     VECTOR_STORE: str = (
         "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
     )
@@ -38,6 +39,17 @@ class Settings(BaseSettings):
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
     FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm
     FALLBACK_LLM_API_KEY: Optional[str] = None  # api key for fallback llm
+
+    # Google Drive integration
+    GOOGLE_CLIENT_ID: Optional[str] = (
+        None  # Replace with your actual Google OAuth client ID
+    )
+    GOOGLE_CLIENT_SECRET: Optional[str] = (
+        None  # Replace with your actual Google OAuth client secret
+    )
+    CONNECTOR_REDIRECT_BASE_URI: Optional[str] = (
+        "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
+    )
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
@@ -89,6 +101,8 @@ class Settings(BaseSettings):
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
 
+    # PGVector vectorstore config
+    PGVECTOR_CONNECTION_STRING: Optional[str] = None
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
     MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
@@ -106,6 +120,10 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: str = ""
 
+    # Encryption settings
+    ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
+
+    ELEVENLABS_API_KEY: Optional[str] = None
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")

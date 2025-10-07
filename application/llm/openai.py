@@ -1,5 +1,5 @@
-import json
 import base64
+import json
 import logging
 
 from application.core.settings import settings
@@ -13,7 +13,10 @@ class OpenAILLM(BaseLLM):
         from openai import OpenAI
 
         super().__init__(*args, **kwargs)
-        if isinstance(settings.OPENAI_BASE_URL, str) and settings.OPENAI_BASE_URL.strip():
+        if (
+            isinstance(settings.OPENAI_BASE_URL, str)
+            and settings.OPENAI_BASE_URL.strip()
+        ):
             self.client = OpenAI(api_key=api_key, base_url=settings.OPENAI_BASE_URL)
         else:
             DEFAULT_OPENAI_API_BASE = "https://api.openai.com/v1"
@@ -73,14 +76,30 @@ class OpenAILLM(BaseLLM):
                         elif isinstance(item, dict):
                             content_parts = []
                             if "text" in item:
-                                content_parts.append({"type": "text", "text": item["text"]})
-                            elif "type" in item and item["type"] == "text" and "text" in item:
+                                content_parts.append(
+                                    {"type": "text", "text": item["text"]}
+                                )
+                            elif (
+                                "type" in item
+                                and item["type"] == "text"
+                                and "text" in item
+                            ):
                                 content_parts.append(item)
-                            elif "type" in item and item["type"] == "file" and "file" in item:
+                            elif (
+                                "type" in item
+                                and item["type"] == "file"
+                                and "file" in item
+                            ):
                                 content_parts.append(item)
-                            elif "type" in item and item["type"] == "image_url" and "image_url" in item:
+                            elif (
+                                "type" in item
+                                and item["type"] == "image_url"
+                                and "image_url" in item
+                            ):
                                 content_parts.append(item)
-                            cleaned_messages.append({"role": role, "content": content_parts})
+                            cleaned_messages.append(
+                                {"role": role, "content": content_parts}
+                            )
                         else:
                             raise ValueError(
                                 f"Unexpected content dictionary format: {item}"
@@ -98,22 +117,29 @@ class OpenAILLM(BaseLLM):
         stream=False,
         tools=None,
         engine=settings.AZURE_DEPLOYMENT_NAME,
+        response_format=None,
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
+
+        request_params = {
+            "model": model,
+            "messages": messages,
+            "stream": stream,
+            **kwargs,
+        }
+
         if tools:
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=stream,
-                tools=tools,
-                **kwargs,
-            )
+            request_params["tools"] = tools
+
+        if response_format:
+            request_params["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**request_params)
+
+        if tools:
             return response.choices[0]
         else:
-            response = self.client.chat.completions.create(
-                model=model, messages=messages, stream=stream, **kwargs
-            )
             return response.choices[0].message.content
 
     def _raw_gen_stream(
@@ -124,30 +150,98 @@ class OpenAILLM(BaseLLM):
         stream=True,
         tools=None,
         engine=settings.AZURE_DEPLOYMENT_NAME,
+        response_format=None,
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
+
+        request_params = {
+            "model": model,
+            "messages": messages,
+            "stream": stream,
+            **kwargs,
+        }
+
         if tools:
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=stream,
-                tools=tools,
-                **kwargs,
-            )
-        else:
-            response = self.client.chat.completions.create(
-                model=model, messages=messages, stream=stream, **kwargs
-            )
+            request_params["tools"] = tools
+
+        if response_format:
+            request_params["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**request_params)
 
         for line in response:
-            if len(line.choices) > 0 and line.choices[0].delta.content is not None and len(line.choices[0].delta.content) > 0:
+            if (
+                len(line.choices) > 0
+                and line.choices[0].delta.content is not None
+                and len(line.choices[0].delta.content) > 0
+            ):
                 yield line.choices[0].delta.content
             elif len(line.choices) > 0:
                 yield line.choices[0]
 
     def _supports_tools(self):
         return True
+
+    def _supports_structured_output(self):
+        return True
+
+    def prepare_structured_output_format(self, json_schema):
+        if not json_schema:
+            return None
+
+        try:
+
+            def add_additional_properties_false(schema_obj):
+                if isinstance(schema_obj, dict):
+                    schema_copy = schema_obj.copy()
+
+                    if schema_copy.get("type") == "object":
+                        schema_copy["additionalProperties"] = False
+                        # Ensure 'required' includes all properties for OpenAI strict mode
+                        if "properties" in schema_copy:
+                            schema_copy["required"] = list(
+                                schema_copy["properties"].keys()
+                            )
+
+                    for key, value in schema_copy.items():
+                        if key == "properties" and isinstance(value, dict):
+                            schema_copy[key] = {
+                                prop_name: add_additional_properties_false(prop_schema)
+                                for prop_name, prop_schema in value.items()
+                            }
+                        elif key == "items" and isinstance(value, dict):
+                            schema_copy[key] = add_additional_properties_false(value)
+                        elif key in ["anyOf", "oneOf", "allOf"] and isinstance(
+                            value, list
+                        ):
+                            schema_copy[key] = [
+                                add_additional_properties_false(sub_schema)
+                                for sub_schema in value
+                            ]
+
+                    return schema_copy
+                return schema_obj
+
+            processed_schema = add_additional_properties_false(json_schema)
+
+            result = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": processed_schema.get("name", "response"),
+                    "description": processed_schema.get(
+                        "description", "Structured response"
+                    ),
+                    "schema": processed_schema,
+                    "strict": True,
+                },
+            }
+
+            return result
+
+        except Exception as e:
+            logging.error(f"Error preparing structured output format: {e}")
+            return None
 
     def get_supported_attachment_types(self):
         """
@@ -157,12 +251,12 @@ class OpenAILLM(BaseLLM):
             list: List of supported MIME types
         """
         return [
-            'application/pdf',
-            'image/png',
-            'image/jpeg',
-            'image/jpg',
-            'image/webp',
-            'image/gif'
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "image/webp",
+            "image/gif",
         ]
 
     def prepare_messages_with_attachments(self, messages, attachments=None):
@@ -202,39 +296,46 @@ class OpenAILLM(BaseLLM):
             prepared_messages[user_message_index]["content"] = []
 
         for attachment in attachments:
-            mime_type = attachment.get('mime_type')
+            mime_type = attachment.get("mime_type")
 
-            if mime_type and mime_type.startswith('image/'):
+            if mime_type and mime_type.startswith("image/"):
                 try:
                     base64_image = self._get_base64_image(attachment)
-                    prepared_messages[user_message_index]["content"].append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{base64_image}"
+                    prepared_messages[user_message_index]["content"].append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            },
                         }
-                    })
+                    )
                 except Exception as e:
-                    logging.error(f"Error processing image attachment: {e}", exc_info=True)
-                    if 'content' in attachment:
-                        prepared_messages[user_message_index]["content"].append({
-                            "type": "text",
-                            "text": f"[Image could not be processed: {attachment.get('path', 'unknown')}]"
-                        })
+                    logging.error(
+                        f"Error processing image attachment: {e}", exc_info=True
+                    )
+                    if "content" in attachment:
+                        prepared_messages[user_message_index]["content"].append(
+                            {
+                                "type": "text",
+                                "text": f"[Image could not be processed: {attachment.get('path', 'unknown')}]",
+                            }
+                        )
             # Handle PDFs using the file API
-            elif mime_type == 'application/pdf':
+            elif mime_type == "application/pdf":
                 try:
                     file_id = self._upload_file_to_openai(attachment)
-                    prepared_messages[user_message_index]["content"].append({
-                        "type": "file",
-                        "file": {"file_id": file_id}
-                    })
+                    prepared_messages[user_message_index]["content"].append(
+                        {"type": "file", "file": {"file_id": file_id}}
+                    )
                 except Exception as e:
                     logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
-                    if 'content' in attachment:
-                        prepared_messages[user_message_index]["content"].append({
-                            "type": "text",
-                            "text": f"File content:\n\n{attachment['content']}"
-                        })
+                    if "content" in attachment:
+                        prepared_messages[user_message_index]["content"].append(
+                            {
+                                "type": "text",
+                                "text": f"File content:\n\n{attachment['content']}",
+                            }
+                        )
 
         return prepared_messages
 
@@ -248,13 +349,13 @@ class OpenAILLM(BaseLLM):
         Returns:
             str: Base64-encoded image data.
         """
-        file_path = attachment.get('path')
+        file_path = attachment.get("path")
         if not file_path:
             raise ValueError("No file path provided in attachment")
 
         try:
             with self.storage.get_file(file_path) as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
+                return base64.b64encode(image_file.read()).decode("utf-8")
         except FileNotFoundError:
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -273,10 +374,10 @@ class OpenAILLM(BaseLLM):
         """
         import logging
 
-        if 'openai_file_id' in attachment:
-            return attachment['openai_file_id']
+        if "openai_file_id" in attachment:
+            return attachment["openai_file_id"]
 
-        file_path = attachment.get('path')
+        file_path = attachment.get("path")
 
         if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -285,19 +386,18 @@ class OpenAILLM(BaseLLM):
             file_id = self.storage.process_file(
                 file_path,
                 lambda local_path, **kwargs: self.client.files.create(
-                    file=open(local_path, 'rb'),
-                    purpose="assistants"
-                ).id
+                    file=open(local_path, "rb"), purpose="assistants"
+                ).id,
             )
 
             from application.core.mongo_db import MongoDB
+
             mongo = MongoDB.get_client()
             db = mongo[settings.MONGO_DB_NAME]
             attachments_collection = db["attachments"]
-            if '_id' in attachment:
+            if "_id" in attachment:
                 attachments_collection.update_one(
-                    {"_id": attachment['_id']},
-                    {"$set": {"openai_file_id": file_id}}
+                    {"_id": attachment["_id"]}, {"$set": {"openai_file_id": file_id}}
                 )
 
             return file_id
@@ -308,9 +408,7 @@ class OpenAILLM(BaseLLM):
 
 class AzureOpenAILLM(OpenAILLM):
 
-    def __init__(
-        self, api_key, user_api_key, *args, **kwargs
-    ):
+    def __init__(self, api_key, user_api_key, *args, **kwargs):
 
         super().__init__(api_key)
         self.api_base = (settings.OPENAI_API_BASE,)
@@ -321,5 +419,5 @@ class AzureOpenAILLM(OpenAILLM):
         self.client = AzureOpenAI(
             api_key=api_key,
             api_version=settings.OPENAI_API_VERSION,
-            azure_endpoint=settings.OPENAI_API_BASE
+            azure_endpoint=settings.OPENAI_API_BASE,
         )

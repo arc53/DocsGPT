@@ -52,19 +52,23 @@
       "default": "默认",
       "add": "添加"
     },
-    "documents": {
-      "title": "此表格包含所有可供您使用的文档以及您上传的文档",
-      "label": "文档",
-      "name": "文件名称",
+    "sources": {
+      "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
+      "label": "来源",
+      "name": "来源名称",
       "date": "向量日期",
       "type": "类型",
       "tokenUsage": "令牌使用",
-      "noData": "没有现有的文档",
+      "noData": "没有现有的来源",
       "searchPlaceholder": "搜索...",
       "addNew": "添加新文档",
+      "addSource": "添加来源",
+      "addChunk": "添加块",
       "preLoaded": "预加载",
       "private": "私有",
       "sync": "同步",
+      "syncing": "同步中...",
+      "syncConfirmation": "您确定要同步 \"{{sourceName}}\" 吗？这将使用您的云存储更新内容，并可能覆盖您对单个文本块所做的任何编辑。",
       "syncFrequency": {
         "never": "从不",
         "daily": "每天",
@@ -74,12 +78,32 @@
       "actions": "操作",
       "view": "查看",
       "deleteWarning": "您确定要删除 \"{{name}}\" 吗？",
-      "backToAll": "返回所有文档",
+      "confirmDelete": "您确定要删除此文件吗？此操作无法撤销。",
+      "backToAll": "返回所有来源",
       "chunks": "文本块",
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
-      "goToDocuments": "前往文档",
-      "uploadNew": "上传新文档"
+      "goToSources": "前往来源",
+      "uploadNew": "上传新文档",
+      "searchFiles": "搜索文件...",
+      "noResults": "未找到结果",
+      "fileName": "名称",
+      "tokens": "令牌",
+      "size": "大小",
+      "fileAlt": "文件",
+      "folderAlt": "文件夹",
+      "parentFolderAlt": "父文件夹",
+      "menuAlt": "菜单",
+      "tokensUnit": "令牌",
+      "editAlt": "编辑",
+      "uploading": "正在上传…",
+      "deleting": "正在删除…",
+      "queued": "已排队：{{count}}",
+      "addFile": "添加文件",
+      "uploadingFilesTitle": "正在上传文件...",
+      "deletingTitle": "正在删除...",
+      "deleteDirectoryWarning": "确定要删除目录 \"{{name}}\" 及其所有内容吗？此操作无法撤销。",
+      "searchAlt": "搜索"
     },
     "apiKeys": {
       "label": "聊天机器人",
@@ -168,6 +192,9 @@
     "uploadDoc": {
       "label": "上传新文档",
       "select": "选择如何将文档上传到 DocsGPT",
+      "selectSource": "选择添加源的方式",
+      "selectedFiles": "已选择的文件",
+      "noFilesSelected": "未选择文件",
       "file": "从设备上传",
       "back": "后退",
       "wait": "请稍等 ...",
@@ -196,13 +223,74 @@
       },
       "progress": {
         "upload": "正在上传",
-        "training": "正在训练",
-        "completed": "训练完成",
+        "training": "正在上传",
+        "completed": "上传完成",
         "wait": "这可能需要几分钟",
-        "tokenLimit": "超出令牌限制，请考虑上传较小的文档"
+        "preparing": "准备上传",
+        "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
+        "expandDetails": "展开上传详情",
+        "collapseDetails": "折叠上传详情",
+        "dismiss": "关闭上传通知",
+        "uploadProgress": "上传进度 {{progress}}%",
+        "clear": "清除"
       },
       "showAdvanced": "显示高级选项",
-      "hideAdvanced": "隐藏高级选项"
+      "hideAdvanced": "隐藏高级选项",
+      "ingestors": {
+        "local_file": {
+          "label": "上传文件",
+          "heading": "上传新文档"
+        },
+        "crawler": {
+          "label": "爬虫",
+          "heading": "使用网络爬虫添加内容"
+        },
+        "url": {
+          "label": "链接",
+          "heading": "从URL添加内容"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "从GitHub添加内容"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "从Reddit添加内容"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "从Google Drive上传"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "已连接用户",
+          "authFailed": "身份验证失败",
+          "authUrlFailed": "获取授权URL失败",
+          "popupBlocked": "无法打开身份验证窗口。请允许弹出窗口。",
+          "authCancelled": "身份验证已取消",
+          "connectedAs": "已连接为 {{email}}",
+          "disconnect": "断开连接"
+        },
+        "googleDrive": {
+          "connect": "连接到 Google Drive",
+          "sessionExpired": "会话已过期。请重新连接到 Google Drive。",
+          "sessionExpiredGeneric": "会话已过期。请重新连接您的账户。",
+          "validateFailed": "验证会话失败。请重新连接。",
+          "noSession": "未找到有效会话。请重新连接到 Google Drive。",
+          "noAccessToken": "访问令牌不可用。请重新连接到 Google Drive。",
+          "pickerFailed": "无法打开文件选择器。请重试。",
+          "selectedFiles": "已选择的文件",
+          "selectFiles": "选择文件",
+          "loading": "加载中...",
+          "noFilesSelected": "未选择文件或文件夹",
+          "folders": "文件夹",
+          "files": "文件",
+          "remove": "删除",
+          "folderAlt": "文件夹",
+          "fileAlt": "文件"
+        }
+      }
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",
@@ -250,13 +338,14 @@
     },
     "chunk": {
       "add": "添加块",
-      "edit": "编辑块",
+      "edit": "编辑",
       "title": "标题",
       "enterTitle": "输入标题",
       "bodyText": "正文",
       "promptText": "提示文本",
-      "update": "更新",
+      "save": "保存",
       "close": "关闭",
+      "cancel": "取消",
       "delete": "删除",
       "deleteConfirmation": "您确定要删除此块吗？"
     }

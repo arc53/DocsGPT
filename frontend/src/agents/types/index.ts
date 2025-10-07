@@ -10,6 +10,7 @@ export type Agent = {
   description: string;
   image: string;
   source: string;
+  sources?: string[];
   chunks: string;
   retriever: string;
   prompt_id: string;
@@ -26,4 +27,5 @@ export type Agent = {
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;
+  json_schema?: object;
 };

@@ -26,7 +26,7 @@ class LocalStorage(BaseStorage):
             return path
         return os.path.join(self.base_dir, path)
 
-    def save_file(self, file_data: BinaryIO, path: str) -> dict:
+    def save_file(self, file_data: BinaryIO, path: str, **kwargs) -> dict:
         """Save a file to local storage."""
         full_path = self._get_full_path(path)
 
@@ -101,3 +101,40 @@ class LocalStorage(BaseStorage):
             raise FileNotFoundError(f"File not found: {full_path}")
 
         return processor_func(local_path=full_path, **kwargs)
+
+    def is_directory(self, path: str) -> bool:
+        """
+        Check if a path is a directory in local storage.
+        
+        Args:
+            path: Path to check
+        
+        Returns:
+            bool: True if the path is a directory, False otherwise
+        """
+        full_path = self._get_full_path(path)
+        return os.path.isdir(full_path)
+
+    def remove_directory(self, directory: str) -> bool:
+        """
+        Remove a directory and all its contents from local storage.
+
+        Args:
+            directory: Directory path to remove
+
+        Returns:
+            bool: True if removal was successful, False otherwise
+        """
+        full_path = self._get_full_path(directory)
+
+        if not os.path.exists(full_path):
+            return False
+
+        if not os.path.isdir(full_path):
+            return False
+
+        try:
+            shutil.rmtree(full_path)
+            return True
+        except (OSError, PermissionError):
+            return False

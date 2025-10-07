@@ -1,3 +1,4 @@
+import logging
 import uuid
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, List, Optional
@@ -6,14 +7,14 @@ from bson.objectid import ObjectId
 
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
-
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 from application.retriever.base import BaseRetriever
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -28,6 +29,7 @@ class BaseAgent(ABC):
         chat_history: Optional[List[Dict]] = None,
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
+        json_schema: Optional[Dict] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -51,6 +53,7 @@ class BaseAgent(ABC):
             llm_name if llm_name else "default"
         )
         self.attachments = attachments or []
+        self.json_schema = json_schema
 
     @log_activity()
     def gen(
@@ -137,6 +140,40 @@ class BaseAgent(ABC):
         tool_id, action_name, call_args = parser.parse_args(call)
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
+
+        # Check if parsing failed
+        if tool_id is None or action_name is None:
+            error_message = f"Error: Failed to parse LLM tool call. Tool name: {getattr(call, 'name', 'unknown')}"
+            logger.error(error_message)
+
+            tool_call_data = {
+                "tool_name": "unknown",
+                "call_id": call_id,
+                "action_name": getattr(call, "name", "unknown"),
+                "arguments": call_args or {},
+                "result": f"Failed to parse tool call. Invalid tool name format: {getattr(call, 'name', 'unknown')}",
+            }
+            yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
+            self.tool_calls.append(tool_call_data)
+            return "Failed to parse tool call.", call_id
+
+        # Check if tool_id exists in available tools
+        if tool_id not in tools_dict:
+            error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
+            logger.error(error_message)
+
+            # Return error result
+            tool_call_data = {
+                "tool_name": "unknown",
+                "call_id": call_id,
+                "action_name": f"{action_name}_{tool_id}",
+                "arguments": call_args,
+                "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
+            }
+            yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
+            self.tool_calls.append(tool_call_data)
+            return f"Tool with ID {tool_id} not found.", call_id
+
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
             "call_id": call_id,
@@ -176,18 +213,25 @@ class BaseAgent(ABC):
                 ):
                     target_dict[param] = value
         tm = ToolManager(config={})
+
+        # Prepare tool_config and add tool_id for memory tools
+        if tool_data["name"] == "api_tool":
+            tool_config = {
+                "url": tool_data["config"]["actions"][action_name]["url"],
+                "method": tool_data["config"]["actions"][action_name]["method"],
+                "headers": headers,
+                "query_params": query_params,
+            }
+        else:
+            tool_config = tool_data["config"].copy() if tool_data["config"] else {}
+            # Add tool_id from MongoDB _id for tools that need instance isolation (like memory tool)
+            # Use MongoDB _id if available, otherwise fall back to enumerated tool_id
+            tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
+
         tool = tm.load_tool(
             tool_data["name"],
-            tool_config=(
-                {
-                    "url": tool_data["config"]["actions"][action_name]["url"],
-                    "method": tool_data["config"]["actions"][action_name]["method"],
-                    "headers": headers,
-                    "query_params": query_params,
-                }
-                if tool_data["name"] == "api_tool"
-                else tool_data["config"]
-            ),
+            tool_config=tool_config,
+            user_id=self.user,  # Pass user ID for MCP tools credential decryption
         )
         if tool_data["name"] == "api_tool":
             print(
@@ -226,7 +270,15 @@ class BaseAgent(ABC):
         query: str,
         retrieved_data: List[Dict],
     ) -> List[Dict]:
-        docs_together = "\n".join([doc["text"] for doc in retrieved_data])
+        docs_with_filenames = []
+        for doc in retrieved_data:
+            filename = doc.get("filename") or doc.get("title") or doc.get("source")
+            if filename:
+                chunk_header = str(filename)
+                docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
+            else:
+                docs_with_filenames.append(doc["text"])
+        docs_together = "\n\n".join(docs_with_filenames)
         p_chat_combine = system_prompt.replace("{summaries}", docs_together)
         messages_combine = [{"role": "system", "content": p_chat_combine}]
 
@@ -283,6 +335,21 @@ class BaseAgent(ABC):
             and self.tools
         ):
             gen_kwargs["tools"] = self.tools
+
+        if (
+            self.json_schema
+            and hasattr(self.llm, "_supports_structured_output")
+            and self.llm._supports_structured_output()
+        ):
+            structured_format = self.llm.prepare_structured_output_format(
+                self.json_schema
+            )
+            if structured_format:
+                if self.llm_name == "openai":
+                    gen_kwargs["response_format"] = structured_format
+                elif self.llm_name == "google":
+                    gen_kwargs["response_schema"] = structured_format
+
         resp = self.llm.gen_stream(**gen_kwargs)
 
         if log_context:
@@ -307,11 +374,25 @@ class BaseAgent(ABC):
         return resp
 
     def _handle_response(self, response, tools_dict, messages, log_context):
+        is_structured_output = (
+            self.json_schema is not None
+            and hasattr(self.llm, "_supports_structured_output")
+            and self.llm._supports_structured_output()
+        )
+
         if isinstance(response, str):
-            yield {"answer": response}
+            answer_data = {"answer": response}
+            if is_structured_output:
+                answer_data["structured"] = True
+                answer_data["schema"] = self.json_schema
+            yield answer_data
             return
         if hasattr(response, "message") and getattr(response.message, "content", None):
-            yield {"answer": response.message.content}
+            answer_data = {"answer": response.message.content}
+            if is_structured_output:
+                answer_data["structured"] = True
+                answer_data["schema"] = self.json_schema
+            yield answer_data
             return
         processed_response_gen = self._llm_handler(
             response, tools_dict, messages, log_context, self.attachments
@@ -319,8 +400,16 @@ class BaseAgent(ABC):
 
         for event in processed_response_gen:
             if isinstance(event, str):
-                yield {"answer": event}
+                answer_data = {"answer": event}
+                if is_structured_output:
+                    answer_data["structured"] = True
+                    answer_data["schema"] = self.json_schema
+                yield answer_data
             elif hasattr(event, "message") and getattr(event.message, "content", None):
-                yield {"answer": event.message.content}
+                answer_data = {"answer": event.message.content}
+                if is_structured_output:
+                    answer_data["structured"] = True
+                    answer_data["schema"] = self.json_schema
+                yield answer_data
             elif isinstance(event, dict) and "type" in event:
                 yield event

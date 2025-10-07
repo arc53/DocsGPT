@@ -158,7 +158,7 @@ function SourceDropdown({
         </div>
       )}
       <ConfirmationModal
-        message={t('settings.documents.deleteWarning', {
+        message={t('settings.sources.deleteWarning', {
           name: documentToDelete?.name,
         })}
         modalState={deleteModalState}

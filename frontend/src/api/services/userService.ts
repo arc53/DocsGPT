@@ -1,3 +1,4 @@
+import { getSessionToken } from '../../utils/providerUtils';
 import apiClient from '../client';
 import endpoints from '../endpoints';
 
@@ -90,8 +91,13 @@ const userService = {
     page: number,
     perPage: number,
     token: string | null,
+    path?: string,
+    search?: string,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.GET_CHUNKS(docId, page, perPage), token),
+    apiClient.get(
+      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
+      token,
+    ),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (
@@ -102,6 +108,32 @@ const userService = {
     apiClient.delete(endpoints.USER.DELETE_CHUNK(docId, chunkId), token),
   updateChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
+  getDirectoryStructure: (docId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
+  manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
+    apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
+  testMCPConnection: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
+  saveMCPServer: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
+  getMCPOAuthStatus: (task_id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.MCP_OAUTH_STATUS(task_id), token),
+  syncConnector: (
+    docId: string,
+    provider: string,
+    token: string | null,
+  ): Promise<any> => {
+    const sessionToken = getSessionToken(provider);
+    return apiClient.post(
+      endpoints.USER.SYNC_CONNECTOR,
+      {
+        source_id: docId,
+        session_token: sessionToken,
+        provider: provider,
+      },
+      token,
+    );
+  },
 };
 
 export default userService;

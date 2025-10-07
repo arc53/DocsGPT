@@ -29,7 +29,7 @@ export default function Hero({
       </div>
 
       {/* Demo Buttons Section */}
-      <div className="mb-8 w-full max-w-full md:mb-16">
+      <div className="mb-3 w-full max-w-full md:mb-3">
         <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-1 md:gap-4 lg:grid-cols-2">
           {demos?.map(
             (demo: { header: string; query: string }, key: number) =>

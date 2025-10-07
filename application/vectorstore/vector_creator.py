@@ -3,6 +3,7 @@ from application.vectorstore.elasticsearch import ElasticsearchStore
 from application.vectorstore.milvus import MilvusStore
 from application.vectorstore.mongodb import MongoDBVectorStore
 from application.vectorstore.qdrant import QdrantStore
+from application.vectorstore.pgvector import PGVectorStore
 
 
 class VectorCreator:
@@ -12,6 +13,7 @@ class VectorCreator:
         "mongodb": MongoDBVectorStore,
         "qdrant": QdrantStore,
         "milvus": MilvusStore,
+        "pgvector": PGVectorStore
     }
 
     @classmethod

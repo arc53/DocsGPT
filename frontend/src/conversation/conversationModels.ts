@@ -33,6 +33,8 @@ export interface Answer {
   thought: string;
   sources: { title: string; text: string; source: string }[];
   tool_calls: ToolCallsType[];
+  structured?: boolean;
+  schema?: object;
 }
 
 export interface Query {
@@ -46,11 +48,13 @@ export interface Query {
   tool_calls?: ToolCallsType[];
   error?: string;
   attachments?: { id: string; fileName: string }[];
+  structured?: boolean;
+  schema?: object;
 }
 
 export interface RetrievalPayload {
   question: string;
-  active_docs?: string;
+  active_docs?: string | string[];
   retriever?: string;
   conversation_id: string | null;
   prompt_id?: string | null;

@@ -2,15 +2,11 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Docker Debug Frontend",
+      "name": "Frontend Debug (npm)",
+      "type": "node-terminal",
       "request": "launch",
-      "type": "chrome",
-      "preLaunchTask": "docker-compose: debug:frontend",
-      "url": "http://127.0.0.1:5173",
-      "webRoot": "${workspaceFolder}/frontend",
-      "skipFiles": [
-        "<node_internals>/**"
-      ]
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend"
     },
     {
         "name": "Flask Debugger",
@@ -49,6 +45,27 @@
         "--pool=solo"
       ],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Dev Containers (Mongo + Redis)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "docker compose -f deployment/docker-compose-dev.yaml up --build",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "DocsGPT: Full Stack",
+      "configurations": [
+        "Frontend Debug (npm)",
+        "Flask Debugger",
+        "Celery Debugger"
+      ],
+      "presentation": {
+        "group": "DocsGPT",
+        "order": 1
+      }
     }
   ]
 }

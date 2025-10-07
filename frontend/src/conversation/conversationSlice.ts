@@ -130,6 +130,18 @@ export const fetchAnswer = createAsyncThunk<
                   message: data.error,
                 }),
               );
+            } else if (data.type === 'structured_answer') {
+              dispatch(
+                updateStreamingQuery({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: {
+                    response: data.answer,
+                    structured: data.structured,
+                    schema: data.schema,
+                  },
+                }),
+              );
             } else {
               dispatch(
                 updateStreamingQuery({
@@ -249,6 +261,14 @@ export const conversationSlice = createSlice({
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
+      }
+
+      if (query.structured !== undefined) {
+        state.queries[index].structured = query.structured;
+      }
+
+      if (query.schema !== undefined) {
+        state.queries[index].schema = query.schema;
       }
     },
     updateConversationId(

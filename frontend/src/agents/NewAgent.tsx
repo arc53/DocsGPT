@@ -45,12 +45,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     description: '',
     image: '',
     source: '',
-    chunks: '',
-    retriever: '',
+    sources: [],
+    chunks: '2',
+    retriever: 'classic',
     prompt_id: 'default',
     tools: [],
-    agent_type: '',
+    agent_type: 'classic',
     status: '',
+    json_schema: undefined,
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [prompts, setPrompts] = useState<
@@ -70,6 +72,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [jsonSchemaText, setJsonSchemaText] = useState('');
+  const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
+  const [isJsonSchemaExpanded, setIsJsonSchemaExpanded] = useState(false);
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -111,9 +116,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   ];
 
   const isPublishable = () => {
-    return (
-      agent.name && agent.description && agent.prompt_id && agent.agent_type
-    );
+    const hasRequiredFields =
+      agent.name && agent.description && agent.prompt_id && agent.agent_type;
+    const isJsonSchemaValidOrEmpty =
+      jsonSchemaText.trim() === '' || jsonSchemaValid;
+    const hasSource = selectedSourceIds.size > 0;
+    return hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource;
+  };
+
+  const isJsonSchemaInvalid = () => {
+    return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -138,7 +150,41 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
-    formData.append('source', agent.source);
+
+    if (selectedSourceIds.size > 1) {
+      const sourcesArray = Array.from(selectedSourceIds)
+        .map((id) => {
+          const sourceDoc = sourceDocs?.find(
+            (source) =>
+              source.id === id || source.retriever === id || source.name === id,
+          );
+          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
+            return 'default';
+          }
+          return sourceDoc?.id || id;
+        })
+        .filter(Boolean);
+      formData.append('sources', JSON.stringify(sourcesArray));
+      formData.append('source', '');
+    } else if (selectedSourceIds.size === 1) {
+      const singleSourceId = Array.from(selectedSourceIds)[0];
+      const sourceDoc = sourceDocs?.find(
+        (source) =>
+          source.id === singleSourceId ||
+          source.retriever === singleSourceId ||
+          source.name === singleSourceId,
+      );
+      let finalSourceId;
+      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
+        finalSourceId = 'default';
+      else finalSourceId = sourceDoc?.id || singleSourceId;
+      formData.append('source', String(finalSourceId));
+      formData.append('sources', JSON.stringify([]));
+    } else {
+      formData.append('source', '');
+      formData.append('sources', JSON.stringify([]));
+    }
+
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
@@ -150,6 +196,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.tools && agent.tools.length > 0)
       formData.append('tools', JSON.stringify(agent.tools));
     else formData.append('tools', '[]');
+
+    if (agent.json_schema) {
+      formData.append('json_schema', JSON.stringify(agent.json_schema));
+    }
 
     try {
       setDraftLoading(true);
@@ -180,7 +230,41 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
-    formData.append('source', agent.source);
+
+    if (selectedSourceIds.size > 1) {
+      const sourcesArray = Array.from(selectedSourceIds)
+        .map((id) => {
+          const sourceDoc = sourceDocs?.find(
+            (source) =>
+              source.id === id || source.retriever === id || source.name === id,
+          );
+          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
+            return 'default';
+          }
+          return sourceDoc?.id || id;
+        })
+        .filter(Boolean);
+      formData.append('sources', JSON.stringify(sourcesArray));
+      formData.append('source', '');
+    } else if (selectedSourceIds.size === 1) {
+      const singleSourceId = Array.from(selectedSourceIds)[0];
+      const sourceDoc = sourceDocs?.find(
+        (source) =>
+          source.id === singleSourceId ||
+          source.retriever === singleSourceId ||
+          source.name === singleSourceId,
+      );
+      let finalSourceId;
+      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
+        finalSourceId = 'default';
+      else finalSourceId = sourceDoc?.id || singleSourceId;
+      formData.append('source', String(finalSourceId));
+      formData.append('sources', JSON.stringify([]));
+    } else {
+      formData.append('source', '');
+      formData.append('sources', JSON.stringify([]));
+    }
+
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
@@ -191,6 +275,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.tools && agent.tools.length > 0)
       formData.append('tools', JSON.stringify(agent.tools));
     else formData.append('tools', '[]');
+
+    if (agent.json_schema) {
+      formData.append('json_schema', JSON.stringify(agent.json_schema));
+    }
 
     try {
       setPublishLoading(true);
@@ -224,6 +312,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
+  const validateAndSetJsonSchema = (text: string) => {
+    setJsonSchemaText(text);
+    if (text.trim() === '') {
+      setAgent({ ...agent, json_schema: undefined });
+      setJsonSchemaValid(true);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      setAgent({ ...agent, json_schema: parsed });
+      setJsonSchemaValid(true);
+    } catch (error) {
+      setJsonSchemaValid(false);
+    }
+  };
+
   useEffect(() => {
     const getTools = async () => {
       const response = await userService.getUserTools(token);
@@ -248,6 +352,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getPrompts();
   }, [token]);
 
+  // Auto-select default source if none selected
+  useEffect(() => {
+    if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
+      const defaultSource = sourceDocs.find((s) => s.name === 'Default');
+      if (defaultSource) {
+        setSelectedSourceIds(
+          new Set([
+            defaultSource.id || defaultSource.retriever || defaultSource.name,
+          ]),
+        );
+      } else {
+        setSelectedSourceIds(
+          new Set([
+            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
+          ]),
+        );
+      }
+    }
+  }, [sourceDocs, selectedSourceIds.size]);
+
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
       const getAgent = async () => {
@@ -257,11 +381,40 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           throw new Error('Failed to fetch agent');
         }
         const data = await response.json();
-        if (data.source) setSelectedSourceIds(new Set([data.source]));
-        else if (data.retriever)
+
+        if (data.sources && data.sources.length > 0) {
+          const mappedSources = data.sources.map((sourceId: string) => {
+            if (sourceId === 'default') {
+              const defaultSource = sourceDocs?.find(
+                (source) => source.name === 'Default',
+              );
+              return defaultSource?.retriever || 'classic';
+            }
+            return sourceId;
+          });
+          setSelectedSourceIds(new Set(mappedSources));
+        } else if (data.source) {
+          if (data.source === 'default') {
+            const defaultSource = sourceDocs?.find(
+              (source) => source.name === 'Default',
+            );
+            setSelectedSourceIds(
+              new Set([defaultSource?.retriever || 'classic']),
+            );
+          } else {
+            setSelectedSourceIds(new Set([data.source]));
+          }
+        } else if (data.retriever) {
           setSelectedSourceIds(new Set([data.retriever]));
+        }
+
         if (data.tool_details) setSelectedTools(data.tool_details);
         if (data.status === 'draft') setEffectiveMode('draft');
+        if (data.json_schema) {
+          const jsonText = JSON.stringify(data.json_schema, null, 2);
+          setJsonSchemaText(jsonText);
+          setJsonSchemaValid(true);
+        }
         setAgent(data);
         initialAgentRef.current = data;
       };
@@ -270,25 +423,57 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [agentId, mode, token]);
 
   useEffect(() => {
-    const selectedSource = Array.from(selectedSourceIds).map((id) =>
-      sourceDocs?.find(
-        (source) =>
-          source.id === id || source.retriever === id || source.name === id,
-      ),
-    );
-    if (selectedSource[0]?.model === embeddingsName) {
-      if (selectedSource[0] && 'id' in selectedSource[0]) {
+    const selectedSources = Array.from(selectedSourceIds)
+      .map((id) =>
+        sourceDocs?.find(
+          (source) =>
+            source.id === id || source.retriever === id || source.name === id,
+        ),
+      )
+      .filter(Boolean);
+
+    if (selectedSources.length > 0) {
+      // Handle multiple sources
+      if (selectedSources.length > 1) {
+        // Multiple sources selected - store in sources array
+        const sourceIds = selectedSources
+          .map((source) => source?.id)
+          .filter((id): id is string => Boolean(id));
         setAgent((prev) => ({
           ...prev,
-          source: selectedSource[0]?.id || 'default',
+          sources: sourceIds,
+          source: '', // Clear single source for multiple sources
           retriever: '',
         }));
-      } else
-        setAgent((prev) => ({
-          ...prev,
-          source: '',
-          retriever: selectedSource[0]?.retriever || 'classic',
-        }));
+      } else {
+        // Single source selected - maintain backward compatibility
+        const selectedSource = selectedSources[0];
+        if (selectedSource?.model === embeddingsName) {
+          if (selectedSource && 'id' in selectedSource) {
+            setAgent((prev) => ({
+              ...prev,
+              source: selectedSource?.id || 'default',
+              sources: [], // Clear sources array for single source
+              retriever: '',
+            }));
+          } else {
+            setAgent((prev) => ({
+              ...prev,
+              source: '',
+              sources: [], // Clear sources array
+              retriever: selectedSource?.retriever || 'classic',
+            }));
+          }
+        }
+      }
+    } else {
+      // No sources selected
+      setAgent((prev) => ({
+        ...prev,
+        source: '',
+        sources: [],
+        retriever: '',
+      }));
     }
   }, [selectedSourceIds]);
 
@@ -312,10 +497,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setHasChanges(false);
       return;
     }
+
+    const initialJsonSchemaText = initialAgentRef.current.json_schema
+      ? JSON.stringify(initialAgentRef.current.json_schema, null, 2)
+      : '';
+
     const isChanged =
-      !isEqual(agent, initialAgentRef.current) || imageFile !== null;
+      !isEqual(agent, initialAgentRef.current) ||
+      imageFile !== null ||
+      jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile]);
+  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
   return (
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
@@ -330,7 +522,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-eerie-black m-0 text-[40px] font-bold dark:text-white">
+        <h1 className="text-eerie-black m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
           {modeConfig[effectiveMode].heading}
         </h1>
         <div className="flex flex-wrap items-center gap-1">
@@ -351,7 +543,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
             <button
-              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-28 rounded-3xl border border-solid py-2 text-sm font-medium transition-colors hover:text-white"
+              disabled={isJsonSchemaInvalid()}
+              className={`border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-28 rounded-3xl border border-solid py-2 text-sm font-medium transition-colors hover:text-white ${
+                isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
+              }`}
               onClick={handleSaveDraft}
             >
               <span className="flex items-center justify-center transition-all duration-200">
@@ -407,7 +602,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
-              className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 h-32 w-full rounded-3xl border bg-white px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
+              className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 h-32 w-full rounded-xl border bg-white px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
               placeholder="Describe your agent"
               value={agent.description}
               onChange={(e) =>
@@ -456,7 +651,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         })
                         .filter(Boolean)
                         .join(', ')
-                    : 'Select source'}
+                    : 'Select sources'}
                 </button>
                 <MultiSelectPopup
                   isOpen={isSourcePopupOpen}
@@ -471,13 +666,38 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   selectedIds={selectedSourceIds}
                   onSelectionChange={(newSelectedIds: Set<string | number>) => {
-                    setSelectedSourceIds(newSelectedIds);
-                    setIsSourcePopupOpen(false);
+                    if (
+                      newSelectedIds.size === 0 &&
+                      sourceDocs &&
+                      sourceDocs.length > 0
+                    ) {
+                      const defaultSource = sourceDocs.find(
+                        (s) => s.name === 'Default',
+                      );
+                      if (defaultSource) {
+                        setSelectedSourceIds(
+                          new Set([
+                            defaultSource.id ||
+                              defaultSource.retriever ||
+                              defaultSource.name,
+                          ]),
+                        );
+                      } else {
+                        setSelectedSourceIds(
+                          new Set([
+                            sourceDocs[0].id ||
+                              sourceDocs[0].retriever ||
+                              sourceDocs[0].name,
+                          ]),
+                        );
+                      }
+                    } else {
+                      setSelectedSourceIds(newSelectedIds);
+                    }
                   }}
-                  title="Select Source"
+                  title="Select Sources"
                   searchPlaceholder="Search sources..."
-                  noOptionsMessage="No source available"
-                  singleSelect={true}
+                  noOptionsMessage="No sources available"
                 />
               </div>
               <div className="mt-3">
@@ -602,6 +822,78 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 contentSize="text-sm"
               />
             </div>
+          </div>
+          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+            <button
+              onClick={() => setIsJsonSchemaExpanded(!isJsonSchemaExpanded)}
+              className="flex w-full items-center justify-between text-left focus:outline-none"
+            >
+              <div>
+                <h2 className="text-lg font-semibold">Advanced</h2>
+              </div>
+              <div className="ml-4 flex items-center">
+                <svg
+                  className={`h-5 w-5 transform transition-transform duration-200 ${
+                    isJsonSchemaExpanded ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+            </button>
+            {isJsonSchemaExpanded && (
+              <div className="mt-3">
+                <div>
+                  <h2 className="text-sm font-medium">JSON response schema</h2>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                    Define a JSON schema to enforce structured output format
+                  </p>
+                </div>
+                <textarea
+                  value={jsonSchemaText}
+                  onChange={(e) => validateAndSetJsonSchema(e.target.value)}
+                  placeholder={`{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "email": {"type": "string"}
+  },
+  "required": ["name", "email"],
+  "additionalProperties": false
+}`}
+                  rows={9}
+                  className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray mt-2 w-full rounded-2xl border bg-white px-4 py-3 font-mono text-sm outline-hidden dark:border-[#7E7E7E]`}
+                />
+                {jsonSchemaText.trim() !== '' && (
+                  <div
+                    className={`mt-2 flex items-center gap-2 text-sm ${
+                      jsonSchemaValid
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    }`}
+                  >
+                    <span
+                      className={`h-4 w-4 bg-contain bg-center bg-no-repeat ${
+                        jsonSchemaValid
+                          ? "bg-[url('/src/assets/circle-check.svg')]"
+                          : "bg-[url('/src/assets/circle-x.svg')]"
+                      }`}
+                    />
+                    {jsonSchemaValid
+                      ? 'Valid JSON'
+                      : 'Invalid JSON - fix to enable saving'}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="col-span-3 flex flex-col gap-3 rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
