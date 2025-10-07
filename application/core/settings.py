@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     MICROSOFT_REDIRECT_URI: Optional[str] = "http://localhost:7091/api/connectors/callback"  # Your project's redirect URI that you registered in Azure Portal.
     MICROSOFT_AUTHORITY: Optional[str] = None  # e.g., "https://login.microsoftonline.com/{tenant_id}"
 
+    # GitHub source
+    GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
+
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
