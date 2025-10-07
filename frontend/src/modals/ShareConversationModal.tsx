@@ -104,14 +104,14 @@ export const ShareConversationModal = ({
 
   return (
     <WrapperModal close={close}>
-      <div className="flex flex-col gap-2">
+      <div className="flex max-h-[80vh] w-[600px] max-w-[80vw] flex-col gap-2 overflow-y-auto">
         <h2 className="text-eerie-black dark:text-chinese-white text-xl font-medium">
           {t('modals.shareConv.label')}
         </h2>
-        <p className="text-eerie-black dark:text-silver/60 text-sm">
+        <p className="text-eerie-black dark:text-silver/60 text-sm leading-relaxed">
           {t('modals.shareConv.note')}
         </p>
-        <div className="flex items-center justify-between">
+        <div className="border-silver/30 flex items-center justify-between border-b pb-2">
           <span className="text-eerie-black text-lg dark:text-white">
             {t('modals.shareConv.option')}
           </span>
