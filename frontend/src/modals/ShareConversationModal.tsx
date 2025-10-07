@@ -111,7 +111,7 @@ export const ShareConversationModal = ({
         <p className="text-eerie-black dark:text-silver/60 text-sm leading-relaxed">
           {t('modals.shareConv.note')}
         </p>
-        <div className="border-silver/30 flex items-center justify-between border-b pb-2">
+        <div className="flex items-center justify-between">
           <span className="text-eerie-black text-lg dark:text-white">
             {t('modals.shareConv.option')}
           </span>
