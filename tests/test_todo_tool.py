@@ -1,7 +1,6 @@
-import datetime
 import pytest
 from application.agents.tools.todo_list import TodoListTool
-
+from application.core.settings import settings
 
 @pytest.fixture
 def todo_tool(monkeypatch) -> TodoListTool:
@@ -10,6 +9,9 @@ def todo_tool(monkeypatch) -> TodoListTool:
     class FakeCollection:
         def __init__(self):
             self.doc = None
+
+        def create_index(self, *args, **kwargs):
+            pass
 
         def insert_one(self, doc):
             self.doc = doc
@@ -42,7 +44,7 @@ def todo_tool(monkeypatch) -> TodoListTool:
             return type("res", (), {"deleted_count": 0})
 
     fake_collection = FakeCollection()
-    fake_client = {"my_db": {"todos": fake_collection}}
+    fake_client = {settings.MONGO_DB_NAME: {"todos": fake_collection}}
 
     monkeypatch.setattr("application.core.mongo_db.MongoDB.get_client", lambda: fake_client)
 
@@ -114,7 +116,7 @@ def test_isolation_and_default_tool_id(monkeypatch):
             return type("res", (), {"deleted_count": 0})
 
     fake_collection = FakeCollection()
-    fake_client = {"my_db": {"todos": fake_collection}}
+    fake_client = {settings.MONGO_DB_NAME: {"todos": fake_collection}}
 
     monkeypatch.setattr("application.core.mongo_db.MongoDB.get_client", lambda: fake_client)
 
