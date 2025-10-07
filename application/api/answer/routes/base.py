@@ -193,6 +193,44 @@ class BaseAnswerResource:
 
             data = json.dumps({"type": "end"})
             yield f"data: {data}\n\n"
+        except GeneratorExit:
+            # Client aborted the connection
+            logger.info(
+                f"Stream aborted by client for question: {question[:50]}... "
+                f"Partial response length: {len(response_full)}"
+            )
+            # Save partial response to database before exiting
+            if should_save_conversation and response_full:
+                try:
+                    if isNoneDoc:
+                        for doc in source_log_docs:
+                            doc["source"] = "None"
+                    llm = LLMCreator.create_llm(
+                        settings.LLM_PROVIDER,
+                        api_key=settings.API_KEY,
+                        user_api_key=user_api_key,
+                        decoded_token=decoded_token,
+                    )
+                    self.conversation_service.save_conversation(
+                        conversation_id,
+                        question,
+                        response_full,
+                        thought,
+                        source_log_docs,
+                        tool_calls,
+                        llm,
+                        self.gpt_model,
+                        decoded_token,
+                        index=index,
+                        api_key=user_api_key,
+                        agent_id=agent_id,
+                        is_shared_usage=is_shared_usage,
+                        shared_token=shared_token,
+                        attachment_ids=attachment_ids,
+                    )
+                except Exception as e:
+                    logger.error(f"Error saving partial response: {str(e)}", exc_info=True)
+            raise
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
             data = json.dumps(
