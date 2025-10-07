@@ -1,5 +1,7 @@
 from application.parser.connectors.google_drive.loader import GoogleDriveLoader
 from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+from application.parser.connectors.share_point.auth import SharePointAuth
+from application.parser.connectors.share_point.loader import SharePointLoader
 
 
 class ConnectorCreator:
@@ -12,10 +14,12 @@ class ConnectorCreator:
 
     connectors = {
         "google_drive": GoogleDriveLoader,
+        "share_point": SharePointLoader,
     }
 
     auth_providers = {
         "google_drive": GoogleDriveAuth,
+        "share_point": SharePointAuth,
     }
 
     @classmethod
