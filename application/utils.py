@@ -168,6 +168,10 @@ def validate_function_name(function_name):
 
 
 def generate_image_url(image_path):
+    if isinstance(image_path, str) and (
+        image_path.startswith("http://") or image_path.startswith("https://")
+    ):
+        return image_path
     strategy = getattr(settings, "URL_STRATEGY", "backend")
     if strategy == "s3":
         bucket_name = getattr(settings, "S3_BUCKET_NAME", "docsgpt-test-bucket")
