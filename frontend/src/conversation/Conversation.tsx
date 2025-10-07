@@ -17,6 +17,7 @@ import { AppDispatch } from '../store';
 import Upload from '../upload/Upload';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
+import Notification from './Notification';
 import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
@@ -52,6 +53,7 @@ export default function Conversation() {
     useState<boolean>(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
+  const [showNotification, setShowNotification] = useState<boolean>(true);
 
   const fetchStream = useRef<any>(null);
 
@@ -202,8 +204,19 @@ export default function Conversation() {
       queries[queries.length - 1].response && setLastQueryReturnedErr(false);
     }
   }, [queries[queries.length - 1]]);
+
+  const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
+  const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
   return (
     <div className="flex h-full flex-col justify-end gap-1">
+      {notificationLink && notificationText && showNotification && (
+        <Notification
+          notificationText={notificationText}
+          notificationLink={notificationLink}
+          handleCloseNotification={() => setShowNotification(false)}
+        />
+      )}
+
       <ConversationMessages
         handleQuestion={handleQuestion}
         handleQuestionSubmission={handleQuestionSubmission}
