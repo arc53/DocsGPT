@@ -4,17 +4,28 @@ from typing import Any, Dict, List, Optional
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 
-from application.agents.tools.base import Tool
+from .base import Tool
 
 
 class TodoListTool(Tool):
     """
     Todo List Tool
     A simple MongoDB-backed todo list tool for agents to create, list, update, retrieve and delete todo items.
+    Constructor accepts optional `tool_config` (may include `tool_id`) and
+    optional `user_id` (decoded_token['sub']).
     """
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config or {}
+    def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None):
+        self.user_id: Optional[str] = user_id
+        self.tool_config = tool_config or {}
+
+        if self.tool_config and "tool_id" in self.tool_config:
+            self.tool_id = self.tool_config["tool_id"]
+        elif self.user_id:
+            self.tool_id = f"default_{self.user_id}"
+        else:
+            self.tool_id = str(uuid.uuid4())
+
         self.database_name = settings.MONGO_DB_NAME
         self.collection_name = "todos"
         self._client = None
@@ -27,15 +38,12 @@ class TodoListTool(Tool):
             self._client = MongoDB.get_client()
             self._db = self._client[self.database_name]
             self._col = self._db[self.collection_name]
-            # Ensure an index on user_id and created_at for common queries
-            self._col.create_index([("user_id", 1)])
-            self._col.create_index([("created_at", -1)])
-        except Exception as e:
-            # Lazy failure: keep attributes None and surface errors on operations
+            # Ensure an index on user_id, tool_id
+            self._col.create_index([("user_id", 1), ("tool_id", 1)], unique=True)
+        except Exception:
             self._client = None
             self._db = None
             self._col = None
-            print(f"TodoListTool: failed to connect to MongoDB: {e}")
 
     def _ensure_connection(self):
         if not self._col:
@@ -46,35 +54,24 @@ class TodoListTool(Tool):
     def execute_action(self, action_name: str, **kwargs):
         actions = {
             "todo_create": self._create_todo,
-            "todo_list": self._list_todos,
             "todo_get": self._get_todo,
             "todo_update": self._update_todo,
             "todo_delete": self._delete_todo,
-            "todo_clear": self._clear_todos,
         }
-        if action_name in actions:
-            try:
-                return actions[action_name](**kwargs)
-            except Exception as e:
-                return {"status_code": 500, "message": str(e)}
-        else:
+        if action_name not in actions:
             raise ValueError(f"Unknown action: {action_name}")
+        if not self.user_id:
+            return {"status_code": 401, "message": "user_id required"}
 
-    def _create_todo(
-        self,
-        user_id: str,
-        title: str,
-        description: str = "",
-        due_date: Optional[str] = None,
-        metadata: Optional[Dict] = None,
-    ):
-        """Create a new todo item for a user."""
+        return actions[action_name](**kwargs)
+
+    # -----------------------------
+    # Actions
+    # -----------------------------
+    def _create_todo(self, title: str, description: str = "", due_date: Optional[str] = None, metadata: Optional[Dict] = None):
         self._ensure_connection()
-        todo_id = str(uuid.uuid4())
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.utcnow()
         doc = {
-            "_id": todo_id,
-            "user_id": user_id,
             "title": title,
             "description": description,
             "status": "open",
@@ -83,80 +80,36 @@ class TodoListTool(Tool):
             "created_at": now,
             "updated_at": now,
         }
-        self._col.insert_one(doc)
-        # Convert datetimes to ISO for returning
-        doc["created_at"] = doc["created_at"].isoformat() + "Z"
-        doc["updated_at"] = doc["updated_at"].isoformat() + "Z"
-        return {"status_code": 201, "message": "Todo created", "todo": doc}
+        self._col.update_one({"user_id": self.user_id, "tool_id": self.tool_id}, {"$set": doc}, upsert=True)
+        return {"status_code": 201, "message": "Todo created"}
 
-    def _list_todos(
-        self,
-        user_id: str,
-        status: Optional[str] = None,
-        limit: int = 50,
-        since: Optional[str] = None,
-    ):
-        """List todos for a user, optionally filtered by status or since a given ISO timestamp."""
+    def _get_todo(self):
         self._ensure_connection()
-        query = {"user_id": user_id}
-        if status:
-            query["status"] = status
-        if since:
-            try:
-                since_dt = datetime.datetime.fromisoformat(since.replace("Z", ""))
-                query["updated_at"] = {"$gte": since_dt}
-            except (ValueError, TypeError):
-                pass
-        cursor = self._col.find(query).sort("created_at", -1).limit(int(limit))
-        results: List[Dict] = []
-        for doc in cursor:
-            doc["created_at"] = doc["created_at"].isoformat() + "Z"
-            doc["updated_at"] = doc["updated_at"].isoformat() + "Z"
-            results.append(doc)
-        return {"status_code": 200, "todos": results}
-
-    def _get_todo(self, user_id: str, todo_id: str):
-        """Retrieve a single todo by id for a user."""
-        self._ensure_connection()
-        doc = self._col.find_one({"_id": todo_id, "user_id": user_id})
+        doc = self._col.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
         if not doc:
             return {"status_code": 404, "message": "Todo not found"}
-        doc["created_at"] = doc["created_at"].isoformat() + "Z"
-        doc["updated_at"] = doc["updated_at"].isoformat() + "Z"
         return {"status_code": 200, "todo": doc}
 
-    def _update_todo(self, user_id: str, todo_id: str, updates: Dict[str, Any]):
-        """Update fields on a todo. Allowed fields: title, description, status, due_date, metadata."""
+    def _update_todo(self, updates: Dict[str, Any]):
         self._ensure_connection()
         allowed = {"title", "description", "status", "due_date", "metadata"}
         set_fields = {k: v for k, v in updates.items() if k in allowed}
         if not set_fields:
             return {"status_code": 400, "message": "No valid fields to update"}
-        set_fields["updated_at"] = datetime.datetime.now(datetime.timezone.utc)
-        result = self._col.update_one(
-            {"_id": todo_id, "user_id": user_id}, {"$set": set_fields}
-        )
+        set_fields["updated_at"] = datetime.datetime.utcnow()
+        result = self._col.update_one({"user_id": self.user_id, "tool_id": self.tool_id}, {"$set": set_fields})
         if result.matched_count == 0:
             return {"status_code": 404, "message": "Todo not found"}
-        doc = self._col.find_one({"_id": todo_id, "user_id": user_id})
-        doc["created_at"] = doc["created_at"].isoformat() + "Z"
-        doc["updated_at"] = doc["updated_at"].isoformat() + "Z"
-        return {"status_code": 200, "message": "Todo updated", "todo": doc}
+        return {"status_code": 200, "message": "Todo updated"}
 
-    def _delete_todo(self, user_id: str, todo_id: str):
+    def _delete_todo(self):
         self._ensure_connection()
-        result = self._col.delete_one({"_id": todo_id, "user_id": user_id})
+        result = self._col.delete_one({"user_id": self.user_id, "tool_id": self.tool_id})
         if result.deleted_count == 0:
             return {"status_code": 404, "message": "Todo not found"}
         return {"status_code": 200, "message": "Todo deleted"}
 
-    def _clear_todos(self, user_id: str):
-        """Delete all todos for a user. Use with caution."""
-        self._ensure_connection()
-        result = self._col.delete_many({"user_id": user_id})
-        return {"status_code": 200, "message": f"Deleted {result.deleted_count} todos"}
-
-    def get_actions_metadata(self):
+    def get_actions_metadata(self) -> List[Dict[str, Any]]:
         return [
             {
                 "name": "todo_create",
@@ -164,31 +117,12 @@ class TodoListTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "user_id": {"type": "string"},
                         "title": {"type": "string"},
                         "description": {"type": "string"},
-                        "due_date": {
-                            "type": "string",
-                            "description": "ISO date string",
-                        },
+                        "due_date": {"type": "string"},
                         "metadata": {"type": "object"},
                     },
-                    "required": ["user_id", "title"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "todo_list",
-                "description": "List todos for a user",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string"},
-                        "status": {"type": "string"},
-                        "limit": {"type": "integer"},
-                        "since": {"type": "string"},
-                    },
-                    "required": ["user_id"],
+                    "required": ["title"],
                     "additionalProperties": False,
                 },
             },
@@ -197,11 +131,8 @@ class TodoListTool(Tool):
                 "description": "Get a single todo by id",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string"},
-                        "todo_id": {"type": "string"},
-                    },
-                    "required": ["user_id", "todo_id"],
+                    "properties": {},
+                    "required": [],
                     "additionalProperties": False,
                 },
             },
@@ -210,12 +141,8 @@ class TodoListTool(Tool):
                 "description": "Update a todo's fields",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string"},
-                        "todo_id": {"type": "string"},
-                        "updates": {"type": "object"},
-                    },
-                    "required": ["user_id", "todo_id", "updates"],
+                    "properties": {"updates": {"type": "object"}},
+                    "required": ["updates"],
                     "additionalProperties": False,
                 },
             },
@@ -224,21 +151,8 @@ class TodoListTool(Tool):
                 "description": "Delete a todo",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "user_id": {"type": "string"},
-                        "todo_id": {"type": "string"},
-                    },
-                    "required": ["user_id", "todo_id"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "todo_clear",
-                "description": "Delete all todos for a user",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"user_id": {"type": "string"}},
-                    "required": ["user_id"],
+                    "properties": {},
+                    "required": [],
                     "additionalProperties": False,
                 },
             },
