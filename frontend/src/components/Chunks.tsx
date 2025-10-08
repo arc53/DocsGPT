@@ -138,7 +138,7 @@ const Chunks: React.FC<ChunksProps> = ({
 
   const fetchChunks = () => {
     setLoading(true);
-    try {
+    
       userService
         .getDocumentChunks(documentId, page, perPage, token, path, searchTerm)
         .then((response) => {
@@ -160,10 +160,7 @@ const Chunks: React.FC<ChunksProps> = ({
           setLoading(false);
           setPaginatedChunks([]);
         });
-    } catch (e) {
-      setLoading(false);
-      setPaginatedChunks([]);
-    }
+    
   };
 
   const handleAddChunk = (title: string, text: string) => {
