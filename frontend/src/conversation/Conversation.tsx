@@ -53,8 +53,12 @@ export default function Conversation() {
     useState<boolean>(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
-  const [showNotification, setShowNotification] = useState<boolean>(true);
+  const [showNotification, setShowNotification] = useState<boolean>(() => {
+    const saved = localStorage.getItem('showNotification');
+    return saved ? JSON.parse(saved) : true;
+  });
 
+  console.log('showNotification', showNotification);
   const fetchStream = useRef<any>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -213,7 +217,10 @@ export default function Conversation() {
         <Notification
           notificationText={notificationText}
           notificationLink={notificationLink}
-          handleCloseNotification={() => setShowNotification(false)}
+          handleCloseNotification={() => {
+            setShowNotification(false);
+            localStorage.setItem('showNotification', 'false');
+          }}
         />
       )}
 

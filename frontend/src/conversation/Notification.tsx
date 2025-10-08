@@ -15,22 +15,22 @@ export default function Notification({
 }: NotificationProps) {
   return (
     <a
-      className="absolute top-20 right-4 z-20 flex w-2/3 items-center justify-center gap-2 rounded-lg bg-cover bg-center bg-no-repeat px-2 py-4 md:w-1/3 lg:top-16 lg:w-1/4 2xl:w-1/5"
+      className="absolute right-2 bottom-6 z-20 flex w-3/4 items-center justify-center gap-2 rounded-lg bg-cover bg-center bg-no-repeat px-2 py-4 sm:right-4 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5"
       style={{ backgroundImage: `url(${bg})` }}
       href={notificationLink}
       target="_blank"
       aria-label="Notification"
       rel="noreferrer"
     >
-      <p className="text-white-3000 text-[10px] font-semibold xl:text-sm">
+      <p className="text-white-3000 text-xs leading-6 font-semibold xl:text-sm xl:leading-7">
         {notificationText}
       </p>
       <span>
-        <img className="w-full" src={rightArrow} alt="Right Arrow" />
+        <img className="w-full" src={rightArrow} alt="" />
       </span>
 
       <button
-        className="absolute top-1.5 right-1.5 z-30 h-4 w-4 hover:opacity-70"
+        className="absolute top-2 right-2 z-30 h-4 w-4 hover:opacity-70"
         aria-label="Close notification"
         onClick={(e) => {
           e.stopPropagation();
