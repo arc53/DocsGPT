@@ -6,6 +6,20 @@ from application.core.settings import settings
 def todo_tool(monkeypatch) -> TodoListTool:
     """Provides a TodoListTool with fake MongoDB and fixed user/tool IDs."""
 
+    class FakeCursor(list):
+        def sort(self, key, direction):
+            reverse = direction == -1
+            sorted_list = sorted(self, key=lambda d: d.get(key, 0), reverse=reverse)
+            return FakeCursor(sorted_list)
+
+        def limit(self, count):
+            return FakeCursor(self[:count])
+
+        def __next__(self):
+            if not self:
+                raise StopIteration
+            return self.pop(0)
+
     class FakeCollection:
         def __init__(self):
             self.docs = {}
@@ -30,7 +44,8 @@ def todo_tool(monkeypatch) -> TodoListTool:
         def find(self, query):
             user_id = query.get("user_id")
             tool_id = query.get("tool_id")
-            return [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
+            filtered_docs = [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
+            return FakeCursor(filtered_docs)
 
         def update_one(self, query, update, upsert=False):
             todo_id = query.get("todo_id")
@@ -107,6 +122,20 @@ def test_delete_todo(todo_tool: TodoListTool):
 
 
 def test_isolation_and_default_tool_id(monkeypatch):
+    class FakeCursor(list):
+        def sort(self, key, direction):
+            reverse = direction == -1
+            sorted_list = sorted(self, key=lambda d: d.get(key, 0), reverse=reverse)
+            return FakeCursor(sorted_list)
+
+        def limit(self, count):
+            return FakeCursor(self[:count])
+
+        def __next__(self):
+            if not self:
+                raise StopIteration
+            return self.pop(0)
+
     class FakeCollection:
         def __init__(self):
             self.docs = {}
@@ -130,7 +159,8 @@ def test_isolation_and_default_tool_id(monkeypatch):
         def find(self, query):
             user_id = query.get("user_id")
             tool_id = query.get("tool_id")
-            return [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
+            filtered_docs = [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
+            return FakeCursor(filtered_docs)
 
         def update_one(self, query, update, upsert=False):
             todo_id = query.get("todo_id")

@@ -67,12 +67,28 @@ class TodoListTool(Tool):
         return actions[action_name](**kwargs)
 
     # -----------------------------
+    # Auto-incrementing todo_id
+    # -----------------------------
+    def _get_next_todo_id(self) -> int:
+        latest = self._col.find(
+            {"user_id": self.user_id, "tool_id": self.tool_id}
+        ).sort("todo_id", -1).limit(1)
+
+        try:
+            max_id = int(next(latest)["todo_id"])
+        except (StopIteration, KeyError, ValueError):
+            max_id = 0
+
+        return max_id + 1
+
+    # -----------------------------
     # Actions
     # -----------------------------
     def _create_todo(self, title: str, description: str = "", due_date: Optional[str] = None, metadata: Optional[Dict] = None):
         self._ensure_connection()
         now = datetime.datetime.utcnow()
-        todo_id = str(uuid.uuid4())
+        todo_id = self._get_next_todo_id()
+
         doc = {
             "todo_id": todo_id,
             "user_id": self.user_id,
@@ -88,9 +104,13 @@ class TodoListTool(Tool):
         self._col.insert_one(doc)
         return {"status_code": 201, "message": "Todo created", "todo_id": todo_id}
 
-    def _get_todo(self, todo_id: str):
+    def _get_todo(self, todo_id: int):
         self._ensure_connection()
-        doc = self._col.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": todo_id})
+        doc = self._col.find_one({
+            "user_id": self.user_id,
+            "tool_id": self.tool_id,
+            "todo_id": todo_id
+        })
         if not doc:
             return {"status_code": 404, "message": "Todo not found"}
         doc.pop("_id", None)
@@ -107,7 +127,7 @@ class TodoListTool(Tool):
             todos.append(doc)
         return {"status_code": 200, "todos": todos}
 
-    def _update_todo(self, todo_id: str, updates: Dict[str, Any]):
+    def _update_todo(self, todo_id: int, updates: Dict[str, Any]):
         self._ensure_connection()
         allowed = {"title", "description", "status", "due_date", "metadata"}
         set_fields = {k: v for k, v in updates.items() if k in allowed}
@@ -122,9 +142,13 @@ class TodoListTool(Tool):
             return {"status_code": 404, "message": "Todo not found"}
         return {"status_code": 200, "message": "Todo updated"}
 
-    def _delete_todo(self, todo_id: str):
+    def _delete_todo(self, todo_id: int):
         self._ensure_connection()
-        result = self._col.delete_one({"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": todo_id})
+        result = self._col.delete_one({
+            "user_id": self.user_id,
+            "tool_id": self.tool_id,
+            "todo_id": todo_id
+        })
         if result.deleted_count == 0:
             return {"status_code": 404, "message": "Todo not found"}
         return {"status_code": 200, "message": "Todo deleted"}
@@ -158,7 +182,7 @@ class TodoListTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "todo_id": {"type": "string"},
+                        "todo_id": {"type": "integer"},
                     },
                     "required": ["todo_id"],
                     "additionalProperties": False,
@@ -180,7 +204,7 @@ class TodoListTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "todo_id": {"type": "string"},
+                        "todo_id": {"type": "integer"},
                         "updates": {"type": "object"},
                     },
                     "required": ["todo_id", "updates"],
@@ -193,7 +217,7 @@ class TodoListTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "todo_id": {"type": "string"},
+                        "todo_id": {"type": "integer"},
                     },
                     "required": ["todo_id"],
                     "additionalProperties": False,
