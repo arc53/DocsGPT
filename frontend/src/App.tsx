@@ -16,6 +16,9 @@ import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
 
+import { Toaster } from 'sonner';
+import { NotificationToast } from './components/NotificationToast';
+
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
 
@@ -47,6 +50,8 @@ function MainLayout() {
         <Outlet />
       </div>
       <UploadToast />
+      <Toaster position="bottom-right" richColors />
+      <NotificationToast />
     </div>
   );
 }
@@ -76,3 +81,7 @@ export default function App() {
     </div>
   );
 }
+
+/* Frame 721 */
+
+/* Auto layout */
