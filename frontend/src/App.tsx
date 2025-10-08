@@ -81,7 +81,3 @@ export default function App() {
     </div>
   );
 }
-
-/* Frame 721 */
-
-/* Auto layout */
