@@ -196,15 +196,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'draft');
 
-    formData.append(
-      'limited_token_mode',
-      JSON.stringify(agent.limited_token_mode),
-    );
-    formData.append(
-      'limited_request_mode',
-      JSON.stringify(agent.limited_request_mode),
-    );
-
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
       formData.append('token_limit', JSON.stringify(agent.token_limit));

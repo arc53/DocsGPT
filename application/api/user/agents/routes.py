@@ -217,7 +217,7 @@ class CreateAgent(Resource):
                 description="Token limit for the agent in limited mode"
             ),
             "limited_request_mode": fields.Boolean(
-                require=False,
+                required=False,
                 description="Whether the agent is in limited request mode"
             ),
             "request_limit": fields.Integer(
@@ -696,7 +696,8 @@ class UpdateAgent(Resource):
                                 "success": False,
                                 "message": "Request limit cannot be set when limited request mode is disabled",
                             }
-                        )
+                        ),
+                        400,
                     )
             else:
                 value = data[field]
