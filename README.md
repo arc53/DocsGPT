@@ -17,7 +17,7 @@
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![link to license file](https://img.shields.io/github/license/arc53/docsgpt)</a>
   <a href="https://www.bestpractices.dev/projects/9907"><img src="https://www.bestpractices.dev/projects/9907/badge"></a>
   <a href="https://discord.gg/n5BX8dh8rU">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
-  <a href="https://twitter.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
+  <a href="https://x.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
 
 <a href="https://docs.docsgpt.cloud/quickstart">⚡️ Quickstart</a> • <a href="https://app.docsgpt.cloud/">☁️ Cloud Version</a> • <a href="https://discord.gg/n5BX8dh8rU">💬 Discord</a>
 <br>
@@ -25,7 +25,17 @@
 <br>
 
 </div>
+
 <div align="center">
+  <br>
+🎃 <a href="https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md"> Hacktoberfest Prizes, Rules & Q&A </a> 🎃
+  <br>
+  <br>
+</div>
+
+
+<div align="center">
+  <br>
 <img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov7.gif" alt="video-example-of-docs-gpt" width="800" height="450">
 </div>
 <h3 align="left">
@@ -57,7 +67,7 @@
 - [x] Json Responses (August 2025)
 - [x] MCP support (August 2025)
 - [x] Google Drive integration (September 2025)
-- [ ] Add OAuth 2.0 authentication for MCP (September 2025)
+- [x] Add OAuth 2.0 authentication for MCP (September 2025)
 - [ ] Sharepoint integration (October 2025)
 - [ ] Deep Agents (October 2025)
 - [ ] Agent scheduling
@@ -108,7 +118,7 @@ A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available
    PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
    ```
 
-Either script will guide you through setting up DocsGPT. Four options available: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider. Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
+Either script will guide you through setting up DocsGPT. Five options available: using the public API, running locally, connecting to a local inference engine, using a cloud API provider, or build the docker image locally. Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
 
 **Navigate to http://localhost:5173/**
 

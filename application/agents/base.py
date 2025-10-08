@@ -221,18 +221,24 @@ class BaseAgent(ABC):
                 ):
                     target_dict[param] = value
         tm = ToolManager(config={})
+
+        # Prepare tool_config and add tool_id for memory tools
+        if tool_data["name"] == "api_tool":
+            tool_config = {
+                "url": tool_data["config"]["actions"][action_name]["url"],
+                "method": tool_data["config"]["actions"][action_name]["method"],
+                "headers": headers,
+                "query_params": query_params,
+            }
+        else:
+            tool_config = tool_data["config"].copy() if tool_data["config"] else {}
+            # Add tool_id from MongoDB _id for tools that need instance isolation (like memory tool)
+            # Use MongoDB _id if available, otherwise fall back to enumerated tool_id
+            tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
+
         tool = tm.load_tool(
             tool_data["name"],
-            tool_config=(
-                {
-                    "url": tool_data["config"]["actions"][action_name]["url"],
-                    "method": tool_data["config"]["actions"][action_name]["method"],
-                    "headers": headers,
-                    "query_params": query_params,
-                }
-                if tool_data["name"] == "api_tool"
-                else tool_data["config"]
-            ),
+            tool_config=tool_config,
             user_id=self.user,  # Pass user ID for MCP tools credential decryption
         )
         if tool_data["name"] == "api_tool":

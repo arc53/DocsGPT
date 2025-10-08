@@ -23,7 +23,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
-import { Agent } from './types';
+import { Agent, ToolSummary } from './types';
 
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
@@ -46,11 +46,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     image: '',
     source: '',
     sources: [],
-    chunks: '',
-    retriever: '',
+    chunks: '2',
+    retriever: 'classic',
     prompt_id: 'default',
     tools: [],
-    agent_type: '',
+    agent_type: 'classic',
     status: '',
     json_schema: undefined,
     limited_token_mode: false,
@@ -68,9 +68,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<
     Set<string | number>
   >(new Set());
-  const [selectedToolIds, setSelectedToolIds] = useState<Set<string | number>>(
-    new Set(),
-  );
+  const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
@@ -80,7 +78,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [publishLoading, setPublishLoading] = useState(false);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
-  const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] = useState(false);
+  const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
+    useState(false);
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -126,7 +125,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.name && agent.description && agent.prompt_id && agent.agent_type;
     const isJsonSchemaValidOrEmpty =
       jsonSchemaText.trim() === '' || jsonSchemaValid;
-    return hasRequiredFields && isJsonSchemaValidOrEmpty;
+    const hasSource = selectedSourceIds.size > 0;
+    return hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource;
   };
 
   const isJsonSchemaInvalid = () => {
@@ -205,17 +205,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       JSON.stringify(agent.limited_request_mode),
     );
 
-    if (agent.limited_token_mode && agent.token_limit){
+    if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
       formData.append('token_limit', JSON.stringify(agent.token_limit));
-    } 
-    else formData.append('token_limit', '0');
+    } else formData.append('token_limit', '0');
 
-    if (agent.limited_request_mode && agent.request_limit){
+    if (agent.limited_request_mode && agent.request_limit) {
       formData.append('limited_request_mode', 'True');
       formData.append('request_limit', JSON.stringify(agent.request_limit));
-    }
-    else formData.append('request_limit', '0');
+    } else formData.append('request_limit', '0');
 
     if (imageFile) formData.append('image', imageFile);
 
@@ -306,17 +304,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('json_schema', JSON.stringify(agent.json_schema));
     }
 
-    if (agent.limited_token_mode && agent.token_limit){
+    if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
       formData.append('token_limit', JSON.stringify(agent.token_limit));
-    }
-    else formData.append('token_limit', '0');
+    } else formData.append('token_limit', '0');
 
-    if (agent.limited_request_mode && agent.request_limit){
+    if (agent.limited_request_mode && agent.request_limit) {
       formData.append('limited_request_mode', 'True');
       formData.append('request_limit', JSON.stringify(agent.request_limit));
-    }
-    else formData.append('request_limit', '0');
+    } else formData.append('request_limit', '0');
 
     try {
       setPublishLoading(true);
@@ -373,7 +369,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
         id: tool.id,
-        label: tool.displayName,
+        label: tool.customName ? tool.customName : tool.displayName,
         icon: `/toolIcons/tool_${tool.name}.svg`,
       }));
       setUserTools(tools);
@@ -389,6 +385,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getTools();
     getPrompts();
   }, [token]);
+
+  // Auto-select default source if none selected
+  useEffect(() => {
+    if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
+      const defaultSource = sourceDocs.find((s) => s.name === 'Default');
+      if (defaultSource) {
+        setSelectedSourceIds(
+          new Set([
+            defaultSource.id || defaultSource.retriever || defaultSource.name,
+          ]),
+        );
+      } else {
+        setSelectedSourceIds(
+          new Set([
+            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
+          ]),
+        );
+      }
+    }
+  }, [sourceDocs, selectedSourceIds.size]);
 
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
@@ -426,7 +442,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setSelectedSourceIds(new Set([data.retriever]));
         }
 
-        if (data.tools) setSelectedToolIds(new Set(data.tools));
+        if (data.tool_details) setSelectedTools(data.tool_details);
         if (data.status === 'draft') setEffectiveMode('draft');
         if (data.json_schema) {
           const jsonText = JSON.stringify(data.json_schema, null, 2);
@@ -496,16 +512,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedSourceIds]);
 
   useEffect(() => {
-    const selectedTool = Array.from(selectedToolIds).map((id) =>
-      userTools.find((tool) => tool.id === id),
-    );
     setAgent((prev) => ({
       ...prev,
-      tools: selectedTool
+      tools: Array.from(selectedTools)
         .map((tool) => tool?.id)
         .filter((id): id is string => typeof id === 'string'),
     }));
-  }, [selectedToolIds]);
+  }, [selectedTools]);
 
   useEffect(() => {
     if (isPublishable()) dispatch(setSelectedAgent(agent));
@@ -543,7 +556,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-eerie-black m-0 text-[40px] font-bold dark:text-white">
+        <h1 className="text-eerie-black m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
           {modeConfig[effectiveMode].heading}
         </h1>
         <div className="flex flex-wrap items-center gap-1">
@@ -661,15 +674,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 >
                   {selectedSourceIds.size > 0
                     ? Array.from(selectedSourceIds)
-                        .map(
-                          (id) =>
-                            sourceDocs?.find(
-                              (source) =>
-                                source.id === id ||
-                                source.name === id ||
-                                source.retriever === id,
-                            )?.name,
-                        )
+                        .map((id) => {
+                          const matchedDoc = sourceDocs?.find(
+                            (source) =>
+                              source.id === id ||
+                              source.name === id ||
+                              source.retriever === id,
+                          );
+                          return matchedDoc?.name || `External KB`;
+                        })
                         .filter(Boolean)
                         .join(', ')
                     : 'Select sources'}
@@ -687,7 +700,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   selectedIds={selectedSourceIds}
                   onSelectionChange={(newSelectedIds: Set<string | number>) => {
-                    setSelectedSourceIds(newSelectedIds);
+                    if (
+                      newSelectedIds.size === 0 &&
+                      sourceDocs &&
+                      sourceDocs.length > 0
+                    ) {
+                      const defaultSource = sourceDocs.find(
+                        (s) => s.name === 'Default',
+                      );
+                      if (defaultSource) {
+                        setSelectedSourceIds(
+                          new Set([
+                            defaultSource.id ||
+                              defaultSource.retriever ||
+                              defaultSource.name,
+                          ]),
+                        );
+                      } else {
+                        setSelectedSourceIds(
+                          new Set([
+                            sourceDocs[0].id ||
+                              sourceDocs[0].retriever ||
+                              sourceDocs[0].name,
+                          ]),
+                        );
+                      }
+                    } else {
+                      setSelectedSourceIds(newSelectedIds);
+                    }
                   }}
                   title="Select Sources"
                   searchPlaceholder="Search sources..."
@@ -757,16 +797,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
                 className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
-                  selectedToolIds.size > 0
+                  selectedTools.length > 0
                     ? 'text-jet dark:text-bright-gray'
                     : 'dark:text-silver text-gray-400'
                 }`}
               >
-                {selectedToolIds.size > 0
-                  ? Array.from(selectedToolIds)
-                      .map(
-                        (id) => userTools.find((tool) => tool.id === id)?.label,
-                      )
+                {selectedTools.length > 0
+                  ? selectedTools
+                      .map((tool) => tool.display_name || tool.name)
                       .filter(Boolean)
                       .join(', ')
                   : 'Select tools'}
@@ -776,9 +814,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onClose={() => setIsToolsPopupOpen(false)}
                 anchorRef={toolAnchorButtonRef}
                 options={userTools}
-                selectedIds={selectedToolIds}
+                selectedIds={new Set(selectedTools.map((tool) => tool.id))}
                 onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedToolIds(newSelectedIds)
+                  setSelectedTools(
+                    userTools
+                      .filter((tool) => newSelectedIds.has(tool.id))
+                      .map((tool) => ({
+                        id: String(tool.id),
+                        name: tool.label,
+                        display_name: tool.label,
+                      })),
+                  )
                 }
                 title="Select Tools"
                 searchPlaceholder="Search tools..."
@@ -813,7 +859,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </div>
           <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
             <button
-              onClick={() => setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)}
+              onClick={() =>
+                setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
+              }
               className="flex w-full items-center justify-between text-left focus:outline-none"
             >
               <div>
@@ -895,7 +943,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         setAgent({
                           ...agent,
                           limited_token_mode: newTokenMode,
-                          limited_request_mode: newTokenMode ? false : agent.limited_request_mode,
+                          limited_request_mode: newTokenMode
+                            ? false
+                            : agent.limited_request_mode,
                         });
                       }}
                       className={`relative h-6 w-11 rounded-full transition-colors ${
@@ -918,7 +968,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     onChange={(e) =>
                       setAgent({
                         ...agent,
-                        token_limit: e.target.value ? parseInt(e.target.value) : undefined,
+                        token_limit: e.target.value
+                          ? parseInt(e.target.value)
+                          : undefined,
                       })
                     }
                     disabled={!agent.limited_token_mode}
@@ -936,7 +988,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     <div>
                       <h2 className="text-sm font-medium">Request limiting</h2>
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        Limit daily total requests that can be made to this agent
+                        Limit daily total requests that can be made to this
+                        agent
                       </p>
                     </div>
                     <button
@@ -945,7 +998,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         setAgent({
                           ...agent,
                           limited_request_mode: newRequestMode,
-                          limited_token_mode: newRequestMode ? false : agent.limited_token_mode,
+                          limited_token_mode: newRequestMode
+                            ? false
+                            : agent.limited_token_mode,
                         });
                       }}
                       className={`relative h-6 w-11 rounded-full transition-colors ${
@@ -968,7 +1023,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     onChange={(e) =>
                       setAgent({
                         ...agent,
-                        request_limit: e.target.value ? parseInt(e.target.value) : undefined,
+                        request_limit: e.target.value
+                          ? parseInt(e.target.value)
+                          : undefined,
                       })
                     }
                     disabled={!agent.limited_request_mode}

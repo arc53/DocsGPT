@@ -192,6 +192,9 @@
     "uploadDoc": {
       "label": "新しい文書をアップロードする",
       "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
+      "selectSource": "ソースを追加する方法を選択してください",
+      "selectedFiles": "選択されたファイル",
+      "noFilesSelected": "ファイルが選択されていません",
       "file": "デバイスからアップロード",
       "back": "戻る",
       "wait": "お待ちください ...",
@@ -220,13 +223,74 @@
       },
       "progress": {
         "upload": "アップロード中",
-        "training": "トレーニング中",
-        "completed": "トレーニング完了",
+        "training": "アップロード中",
+        "completed": "アップロード完了",
         "wait": "数分かかる場合があります",
-        "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください"
+        "preparing": "アップロードを準備中",
+        "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください",
+        "expandDetails": "アップロードの詳細を展開",
+        "collapseDetails": "アップロードの詳細を折りたたむ",
+        "dismiss": "アップロード通知を閉じる",
+        "uploadProgress": "アップロード進行状況 {{progress}}%",
+        "clear": "クリア"
       },
       "showAdvanced": "詳細オプションを表示",
-      "hideAdvanced": "詳細オプションを非表示"
+      "hideAdvanced": "詳細オプションを非表示",
+      "ingestors": {
+        "local_file": {
+          "label": "ファイルをアップロード",
+          "heading": "新しいドキュメントをアップロード"
+        },
+        "crawler": {
+          "label": "クローラー",
+          "heading": "Webクローラーでコンテンツを追加"
+        },
+        "url": {
+          "label": "リンク",
+          "heading": "URLからコンテンツを追加"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "GitHubからコンテンツを追加"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "Redditからコンテンツを追加"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "Google Driveからアップロード"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "接続されたユーザー",
+          "authFailed": "認証に失敗しました",
+          "authUrlFailed": "認証URLの取得に失敗しました",
+          "popupBlocked": "認証ウィンドウを開けませんでした。ポップアップを許可してください。",
+          "authCancelled": "認証がキャンセルされました",
+          "connectedAs": "{{email}}として接続",
+          "disconnect": "切断"
+        },
+        "googleDrive": {
+          "connect": "Google Driveに接続",
+          "sessionExpired": "セッションが期限切れです。Google Driveに再接続してください。",
+          "sessionExpiredGeneric": "セッションが期限切れです。アカウントに再接続してください。",
+          "validateFailed": "セッションの検証に失敗しました。再接続してください。",
+          "noSession": "有効なセッションが見つかりません。Google Driveに再接続してください。",
+          "noAccessToken": "アクセストークンが利用できません。Google Driveに再接続してください。",
+          "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
+          "selectedFiles": "選択されたファイル",
+          "selectFiles": "ファイルを選択",
+          "loading": "読み込み中...",
+          "noFilesSelected": "ファイルまたはフォルダが選択されていません",
+          "folders": "フォルダ",
+          "files": "ファイル",
+          "remove": "削除",
+          "folderAlt": "フォルダ",
+          "fileAlt": "ファイル"
+        }
+      }
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",

@@ -24,11 +24,11 @@ export default function JWTModal({
       close={() => undefined}
     >
       <div className="mb-6">
-        <span className="text-lg text-jet dark:text-bright-gray">
+        <span className="text-jet dark:text-bright-gray text-lg">
           Add JWT Token
         </span>
       </div>
-      <div className="relative mb-4 mt-5">
+      <div className="relative mt-5 mb-4">
         <Input
           name="JWT Token"
           type="text"
@@ -41,7 +41,7 @@ export default function JWTModal({
       <button
         disabled={jwtToken.length === 0}
         onClick={handleTokenSubmit.bind(null, jwtToken)}
-        className="float-right mt-4 rounded-full bg-purple-30 px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
+        className="bg-purple-30 float-right mt-4 rounded-full px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
       >
         Save Token
       </button>
