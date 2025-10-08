@@ -1,0 +1,36 @@
+# Configuration for Premade Agents
+# This file contains template agents that will be seeded into the database
+
+agents:
+  # Basic Agent Template
+  - name: "Agent Name" # Required: Unique name for the agent
+    description: "What this agent does" # Required: Brief description of the agent's purpose
+    image: "URL_TO_IMAGE" # Optional: URL to agent's avatar/image
+    agent_type: "classic" # Required: Type of agent (e.g., classic, react, etc.)
+    prompt_id: "default" # Optional: Reference to prompt template
+    prompt: # Optional: Define new prompt
+      name: "New Prompt"
+      content: "You are new agent with cool new prompt."
+    chunks: "0" # Optional: Chunking strategy for documents
+    retriever: "" # Optional: Retriever type for document search
+
+    # Source Configuration (where the agent gets its knowledge)
+    source: # Optional: Select a source to link with agent
+      name: "Source Display Name" # Human-readable name for the source
+      url: "https://example.com/data-source" # URL or path to knowledge source
+      loader: "url" # Type of loader (url, pdf, txt, etc.)
+
+    # Tools Configuration (what capabilities the agent has)
+    tools: # Optional: Remove if agent doesn't need tools
+      - name: "tool_name" # Must match a supported tool name
+        display_name: "Tool Display Name" # Optional: Human-readable name for the tool
+        config:
+        # Tool-specific configuration
+        # Example for DuckDuckGo:
+        # token: "${DDG_API_KEY}"          # ${} denotes environment variable
+
+      # Add more tools as needed
+      # - name: "another_tool"
+      #   config:
+      #     param1: "value1"
+      #     param2: "${ENV_VAR}"

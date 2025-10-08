@@ -27,7 +27,7 @@ class TestGitHubLoaderFetchFileContent:
 
         result = loader.fetch_file_content("owner/repo", "README.md")
 
-        assert result == f"Filename: README.md\n\n{content_str}"
+        assert result == content_str
         mock_get.assert_called_once_with(
             "https://api.github.com/repos/owner/repo/contents/README.md",
             headers=loader.headers,
@@ -40,7 +40,7 @@ class TestGitHubLoaderFetchFileContent:
 
         result = loader.fetch_file_content("owner/repo", "image.png")
 
-        assert result == "Filename: image.png is a binary file and was skipped."
+        assert result is None
 
     @patch("application.parser.remote.github_loader.requests.get")
     def test_non_base64_plain_content(self, mock_get):
@@ -49,7 +49,7 @@ class TestGitHubLoaderFetchFileContent:
 
         result = loader.fetch_file_content("owner/repo", "file.txt")
 
-        assert result == "Filename: file.txt\n\nPlain text"
+        assert result == "Plain text"
 
     @patch("application.parser.remote.github_loader.requests.get")
     def test_http_error_raises(self, mock_get):
@@ -102,13 +102,13 @@ class TestGitHubLoaderLoadData:
         docs = loader.load_data("https://github.com/owner/repo")
 
         assert len(docs) == 2
-        assert docs[0].page_content == "content for README.md"
-        assert docs[0].metadata == {
+        assert docs[0].text == "content for README.md"
+        assert docs[0].extra_info == {
             "title": "README.md",
             "source": "https://github.com/owner/repo/blob/main/README.md",
         }
-        assert docs[1].page_content == "content for src/main.py"
-        assert docs[1].metadata == {
+        assert docs[1].text == "content for src/main.py"
+        assert docs[1].extra_info == {
             "title": "src/main.py",
             "source": "https://github.com/owner/repo/blob/main/src/main.py",
         }
@@ -142,12 +142,13 @@ class TestGitHubLoaderRobustness:
             GitHubLoader().fetch_file_content("owner/repo", "README.md")
 
     @patch("application.parser.remote.github_loader.requests.get")
-    def test_fetch_file_content_unexpected_shape_missing_content_raises(self, mock_get):
+    def test_fetch_file_content_unexpected_shape_missing_content_returns_none(self, mock_get):
         # encoding indicates base64 text, but 'content' key is missing
+        # With the new code, the exception is caught and returns None (treated as binary/skipped)
         resp = make_response({"encoding": "base64"})
         mock_get.return_value = resp
-        with pytest.raises(KeyError):
-            GitHubLoader().fetch_file_content("owner/repo", "README.md")
+        result = GitHubLoader().fetch_file_content("owner/repo", "file.txt")
+        assert result is None
 
     @patch("application.parser.remote.github_loader.base64.b64decode")
     @patch("application.parser.remote.github_loader.requests.get")
@@ -156,4 +157,4 @@ class TestGitHubLoaderRobustness:
         mock_b64decode.side_effect = AssertionError("b64decode should not be called for binary files")
         mock_get.return_value = make_response({"encoding": "base64", "content": "AAA"})
         result = GitHubLoader().fetch_file_content("owner/repo", "bigfile.bin")
-        assert result == "Filename: bigfile.bin is a binary file and was skipped."
+        assert result is None

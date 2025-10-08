@@ -67,7 +67,7 @@
 - [x] Json Responses (August 2025)
 - [x] MCP support (August 2025)
 - [x] Google Drive integration (September 2025)
-- [ ] Add OAuth 2.0 authentication for MCP (September 2025)
+- [x] Add OAuth 2.0 authentication for MCP (September 2025)
 - [ ] Sharepoint integration (October 2025)
 - [ ] Deep Agents (October 2025)
 - [ ] Agent scheduling
@@ -118,7 +118,7 @@ A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available
    PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
    ```
 
-Either script will guide you through setting up DocsGPT. Four options available: using the public API, running locally, connecting to a local inference engine, or using a cloud API provider. Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
+Either script will guide you through setting up DocsGPT. Five options available: using the public API, running locally, connecting to a local inference engine, using a cloud API provider, or build the docker image locally. Scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
 
 **Navigate to http://localhost:5173/**
 

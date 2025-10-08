@@ -28,7 +28,7 @@ class ToolManager:
         module = importlib.import_module(f"application.agents.tools.{tool_name}")
         for member_name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Tool) and obj is not Tool:
-                if tool_name == "mcp_tool" and user_id:
+                if tool_name in {"mcp_tool", "notes", "memory"} and user_id:
                     return obj(tool_config, user_id)
                 else:
                     return obj(tool_config)
@@ -36,7 +36,7 @@ class ToolManager:
     def execute_action(self, tool_name, action_name, user_id=None, **kwargs):
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' not loaded")
-        if tool_name == "mcp_tool" and user_id:
+        if tool_name in {"mcp_tool", "memory"} and user_id:
             tool_config = self.config.get(tool_name, {})
             tool = self.load_tool(tool_name, tool_config, user_id)
             return tool.execute_action(action_name, **kwargs)

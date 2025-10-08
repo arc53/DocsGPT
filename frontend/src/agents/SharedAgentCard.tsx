@@ -1,4 +1,4 @@
-import Robot from '../assets/robot.svg';
+import AgentImage from '../components/AgentImage';
 import { Agent } from './types';
 
 export default function SharedAgentCard({ agent }: { agent: Agent }) {
@@ -6,8 +6,8 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
     <div className="border-dark-gray dark:border-grey flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
-          <img
-            src={agent.image && agent.image.trim() !== '' ? agent.image : Robot}
+          <AgentImage
+            src={agent.image}
             className="h-full w-full rounded-full object-contain"
           />
         </div>
