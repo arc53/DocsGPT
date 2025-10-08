@@ -202,6 +202,7 @@ export default function Conversation() {
       queries[queries.length - 1].response && setLastQueryReturnedErr(false);
     }
   }, [queries[queries.length - 1]]);
+
   return (
     <div className="flex h-full flex-col justify-end gap-1">
       <ConversationMessages
