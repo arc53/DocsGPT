@@ -197,7 +197,6 @@ class BaseAnswerResource:
             # Client aborted the connection
             logger.info(
                 f"Stream aborted by client for question: {question[:50]}... "
-                f"Partial response length: {len(response_full)}"
             )
             # Save partial response to database before exiting
             if should_save_conversation and response_full:
