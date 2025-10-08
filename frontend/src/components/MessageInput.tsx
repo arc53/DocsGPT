@@ -438,7 +438,7 @@ export default function MessageInput({
               className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#7F54D6] sm:h-9 sm:w-9`}
               disabled={!loading}
             >
-              <div className="flex h-3 w-3 items-center justify-center rounded-[3.5px] bg-white sm:h-3.5 sm:w-3.5" />
+              <div className="flex h-3 w-3 items-center justify-center rounded-[3px] bg-white sm:h-3.5 sm:w-3.5" />
             </button>
           ) : (
             <button
