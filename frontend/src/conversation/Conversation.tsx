@@ -17,7 +17,6 @@ import { AppDispatch } from '../store';
 import Upload from '../upload/Upload';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
-import Notification from './Notification';
 import { FEEDBACK, Query } from './conversationModels';
 import {
   addQuery,
@@ -53,12 +52,7 @@ export default function Conversation() {
     useState<boolean>(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
-  const [showNotification, setShowNotification] = useState<boolean>(() => {
-    const saved = localStorage.getItem('showNotification');
-    return saved ? JSON.parse(saved) : true;
-  });
 
-  console.log('showNotification', showNotification);
   const fetchStream = useRef<any>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -209,21 +203,8 @@ export default function Conversation() {
     }
   }, [queries[queries.length - 1]]);
 
-  const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
-  const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
   return (
     <div className="flex h-full flex-col justify-end gap-1">
-      {notificationLink && notificationText && showNotification && (
-        <Notification
-          notificationText={notificationText}
-          notificationLink={notificationLink}
-          handleCloseNotification={() => {
-            setShowNotification(false);
-            localStorage.setItem('showNotification', 'false');
-          }}
-        />
-      )}
-
       <ConversationMessages
         handleQuestion={handleQuestion}
         handleQuestionSubmission={handleQuestionSubmission}
