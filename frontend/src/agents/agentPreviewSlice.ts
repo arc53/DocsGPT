@@ -1,19 +1,20 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+
+import {
+  handleFetchAnswer,
+  handleFetchAnswerSteaming,
+} from '../conversation/conversationHandlers';
 import {
   Answer,
   ConversationState,
   Query,
   Status,
 } from '../conversation/conversationModels';
-import {
-  handleFetchAnswer,
-  handleFetchAnswerSteaming,
-} from '../conversation/conversationHandlers';
-import {
-  selectCompletedAttachments,
-  clearAttachments,
-} from '../upload/uploadSlice';
 import store from '../store';
+import {
+  clearAttachments,
+  selectCompletedAttachments,
+} from '../upload/uploadSlice';
 
 const initialState: ConversationState = {
   queries: [],
