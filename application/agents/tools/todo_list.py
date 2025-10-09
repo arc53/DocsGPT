@@ -46,9 +46,9 @@ class TodoListTool(Tool):
             self._col = None
 
     def _ensure_connection(self):
-        if not self._col:
+        if self._col is None:
             self._connect()
-            if not self._col:
+            if self._col is None:
                 raise RuntimeError("TodoListTool: no MongoDB connection available")
 
     def execute_action(self, action_name: str, **kwargs):

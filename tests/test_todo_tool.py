@@ -2,77 +2,76 @@ import pytest
 from application.agents.tools.todo_list import TodoListTool
 from application.core.settings import settings
 
+
+class FakeCursor(list):
+    def sort(self, key, direction):
+        reverse = direction == -1
+        sorted_list = sorted(self, key=lambda d: d.get(key, 0), reverse=reverse)
+        return FakeCursor(sorted_list)
+
+    def limit(self, count):
+        return FakeCursor(self[:count])
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if not self:
+            raise StopIteration
+        return self.pop(0)
+
+
+class FakeCollection:
+    def __init__(self):
+        self.docs = {}
+
+    def create_index(self, *args, **kwargs):
+        pass
+
+    def insert_one(self, doc):
+        key = (doc["user_id"], doc["tool_id"], int(doc["todo_id"]))
+        self.docs[key] = doc
+        return type("res", (), {"inserted_id": key})
+
+    def find_one(self, query):
+        key = (query.get("user_id"), query.get("tool_id"), int(query.get("todo_id")))
+        return self.docs.get(key)
+
+    def find(self, query):
+        user_id = query.get("user_id")
+        tool_id = query.get("tool_id")
+        filtered = [
+            doc for (uid, tid, _), doc in self.docs.items()
+            if uid == user_id and tid == tool_id
+        ]
+        return FakeCursor(filtered)
+
+    def update_one(self, query, update, upsert=False):
+        key = (query.get("user_id"), query.get("tool_id"), int(query.get("todo_id")))
+        if key in self.docs:
+            self.docs[key].update(update.get("$set", {}))
+            return type("res", (), {"matched_count": 1})
+        elif upsert:
+            new_doc = {**query, **update.get("$set", {})}
+            self.docs[key] = new_doc
+            return type("res", (), {"matched_count": 1})
+        else:
+            return type("res", (), {"matched_count": 0})
+
+    def delete_one(self, query):
+        key = (query.get("user_id"), query.get("tool_id"), int(query.get("todo_id")))
+        if key in self.docs:
+            del self.docs[key]
+            return type("res", (), {"deleted_count": 1})
+        return type("res", (), {"deleted_count": 0})
+
+
 @pytest.fixture
 def todo_tool(monkeypatch) -> TodoListTool:
-    """Provides a TodoListTool with fake MongoDB and fixed user/tool IDs."""
-
-    class FakeCursor(list):
-        def sort(self, key, direction):
-            reverse = direction == -1
-            sorted_list = sorted(self, key=lambda d: d.get(key, 0), reverse=reverse)
-            return FakeCursor(sorted_list)
-
-        def limit(self, count):
-            return FakeCursor(self[:count])
-
-        def __next__(self):
-            if not self:
-                raise StopIteration
-            return self.pop(0)
-
-    class FakeCollection:
-        def __init__(self):
-            self.docs = {}
-
-        def create_index(self, *args, **kwargs):
-            pass
-
-        def insert_one(self, doc):
-            self.docs[doc["todo_id"]] = doc
-            return type("res", (), {"inserted_id": doc["todo_id"]})
-
-        def find_one(self, query):
-            todo_id = query.get("todo_id")
-            doc = self.docs.get(todo_id)
-            if not doc:
-                return None
-            # Also verify user_id and tool_id
-            if doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
-                return doc
-            return None
-
-        def find(self, query):
-            user_id = query.get("user_id")
-            tool_id = query.get("tool_id")
-            filtered_docs = [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
-            return FakeCursor(filtered_docs)
-
-        def update_one(self, query, update, upsert=False):
-            todo_id = query.get("todo_id")
-            doc = self.docs.get(todo_id)
-            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
-                doc.update(update.get("$set", {}))
-                return type("res", (), {"matched_count": 1})
-            elif upsert:
-                new_doc = {**query, **update.get("$set", {})}
-                self.docs[todo_id] = new_doc
-                return type("res", (), {"matched_count": 1})
-            else:
-                return type("res", (), {"matched_count": 0})
-
-        def delete_one(self, query):
-            todo_id = query.get("todo_id")
-            doc = self.docs.get(todo_id)
-            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
-                del self.docs[todo_id]
-                return type("res", (), {"deleted_count": 1})
-            return type("res", (), {"deleted_count": 0})
-
+    """Provides a TodoListTool with a fake MongoDB backend."""
     fake_collection = FakeCollection()
     fake_client = {settings.MONGO_DB_NAME: {"todos": fake_collection}}
-
     monkeypatch.setattr("application.core.mongo_db.MongoDB.get_client", lambda: fake_client)
-
     return TodoListTool({"tool_id": "test_tool"}, user_id="test_user")
 
 
@@ -93,9 +92,9 @@ def test_get_all_todos(todo_tool: TodoListTool):
 
     list_res = todo_tool.execute_action("todo_list")
     assert list_res["status_code"] == 200
-    assert len(list_res["todos"]) >= 2
     titles = [todo["title"] for todo in list_res["todos"]]
-    assert "Task 1" in titles and "Task 2" in titles
+    assert "Task 1" in titles
+    assert "Task 2" in titles
 
 
 def test_update_todo(todo_tool: TodoListTool):
@@ -122,70 +121,9 @@ def test_delete_todo(todo_tool: TodoListTool):
 
 
 def test_isolation_and_default_tool_id(monkeypatch):
-    class FakeCursor(list):
-        def sort(self, key, direction):
-            reverse = direction == -1
-            sorted_list = sorted(self, key=lambda d: d.get(key, 0), reverse=reverse)
-            return FakeCursor(sorted_list)
-
-        def limit(self, count):
-            return FakeCursor(self[:count])
-
-        def __next__(self):
-            if not self:
-                raise StopIteration
-            return self.pop(0)
-
-    class FakeCollection:
-        def __init__(self):
-            self.docs = {}
-
-        def create_index(self, *args, **kwargs):
-            pass
-
-        def insert_one(self, doc):
-            self.docs[doc["todo_id"]] = doc
-            return type("res", (), {"inserted_id": doc["todo_id"]})
-
-        def find_one(self, query):
-            todo_id = query.get("todo_id")
-            doc = self.docs.get(todo_id)
-            if not doc:
-                return None
-            if doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
-                return doc
-            return None
-
-        def find(self, query):
-            user_id = query.get("user_id")
-            tool_id = query.get("tool_id")
-            filtered_docs = [doc for doc in self.docs.values() if doc.get("user_id") == user_id and doc.get("tool_id") == tool_id]
-            return FakeCursor(filtered_docs)
-
-        def update_one(self, query, update, upsert=False):
-            todo_id = query.get("todo_id")
-            doc = self.docs.get(todo_id)
-            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
-                doc.update(update.get("$set", {}))
-                return type("res", (), {"matched_count": 1})
-            elif upsert:
-                new_doc = {**query, **update.get("$set", {})}
-                self.docs[todo_id] = new_doc
-                return type("res", (), {"matched_count": 1})
-            else:
-                return type("res", (), {"matched_count": 0})
-
-        def delete_one(self, query):
-            todo_id = query.get("todo_id")
-            doc = self.docs.get(todo_id)
-            if doc and doc.get("user_id") == query.get("user_id") and doc.get("tool_id") == query.get("tool_id"):
-                del self.docs[todo_id]
-                return type("res", (), {"deleted_count": 1})
-            return type("res", (), {"deleted_count": 0})
-
+    """Ensure todos are isolated by tool_id and user_id."""
     fake_collection = FakeCollection()
     fake_client = {settings.MONGO_DB_NAME: {"todos": fake_collection}}
-
     monkeypatch.setattr("application.core.mongo_db.MongoDB.get_client", lambda: fake_client)
 
     # Same user, different tool_id
@@ -198,7 +136,10 @@ def test_isolation_and_default_tool_id(monkeypatch):
     r1 = tool1.execute_action("todo_get", todo_id=r1_create["todo_id"])
     r2 = tool2.execute_action("todo_get", todo_id=r2_create["todo_id"])
 
+    assert r1["status_code"] == 200
     assert r1["todo"]["title"] == "from tool 1"
+
+    assert r2["status_code"] == 200
     assert r2["todo"]["title"] == "from tool 2"
 
     # Same user, no tool_id → should default to same value
