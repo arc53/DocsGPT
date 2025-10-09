@@ -72,7 +72,6 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_ID: Optional[str] = None  # Azure AD Application (client) ID
     MICROSOFT_CLIENT_SECRET: Optional[str] = None  # Azure AD Application client secret
     MICROSOFT_TENANT_ID: Optional[str] = "common"  # Azure AD Tenant ID (or 'common' for multi-tenant)
-    MICROSOFT_REDIRECT_URI: Optional[str] = "http://localhost:7091/api/connectors/callback"  # Your project's redirect URI that you registered in Azure Portal.
     MICROSOFT_AUTHORITY: Optional[str] = None  # e.g., "https://login.microsoftonline.com/{tenant_id}"
 
     # GitHub source

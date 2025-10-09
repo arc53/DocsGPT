@@ -31,7 +31,7 @@ class SharePointAuth(BaseConnectorAuth):
                 "Microsoft OAuth credentials not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in settings."
             )
 
-        self.redirect_uri = settings.MICROSOFT_REDIRECT_URI
+        self.redirect_uri = settings.CONNECTOR_REDIRECT_BASE_URI
         self.tenant_id = settings.MICROSOFT_TENANT_ID
         self.authority = getattr(settings, "MICROSOFT_AUTHORITY", f"https://{self.tenant_id}.ciamlogin.com/{self.tenant_id}")
 
