@@ -2,6 +2,12 @@ import AgentImage from '../components/AgentImage';
 import { Agent } from './types';
 
 export default function SharedAgentCard({ agent }: { agent: Agent }) {
+  // Check if shared metadata exists and has properties (type is 'any' so we validate it's a non-empty object)
+  const hasSharedMetadata =
+    agent.shared_metadata &&
+    typeof agent.shared_metadata === 'object' &&
+    agent.shared_metadata !== null &&
+    Object.keys(agent.shared_metadata).length > 0;
   return (
     <div className="border-dark-gray dark:border-grey flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
       <div className="flex items-center gap-3">
@@ -20,7 +26,7 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
           </p>
         </div>
       </div>
-      {agent.shared_metadata && (
+      {hasSharedMetadata && (
         <div className="mt-4 flex items-center gap-8">
           {agent.shared_metadata?.shared_by && (
             <p className="text-eerie-black text-xs font-light sm:text-sm dark:text-[#E0E0E0]">
