@@ -7,7 +7,7 @@ import userService from '../api/services/userService';
 import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
 import ExitIcon from '../assets/exit.svg';
-import PaperPlane from '../assets/paper_plane.svg';
+import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
 import ToolIcon from '../assets/tool.svg';
@@ -442,15 +442,15 @@ export default function MessageInput({
             </button>
           ) : (
             <button
-              onClick={loading ? undefined : handleSubmit}
-              aria-label={loading ? t('loading') : t('send')}
-              className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${loading || !value.trim() ? 'bg-black opacity-60 dark:bg-[#F0F3F4] dark:opacity-80' : 'bg-black opacity-100 dark:bg-[#F0F3F4]'} ml-auto shrink-0`}
+              onClick={handleSubmit}
+              aria-label={t('send')}
+              className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${isDarkTheme ? 'bg-[#37383D] text-[#77787D]' : 'bg-[#EDEDED] text-[#959595]'} ml-auto shrink-0 duration-150 ease-in-out hover:bg-[#7F54D6] hover:text-white`}
               disabled={loading}
             >
-              <img
-                className={`mx-auto my-auto block h-3.5 w-3.5 translate-x-[-0.9px] translate-y-[1.1px] sm:h-4 sm:w-4 ${isDarkTheme ? 'invert filter' : ''}`}
-                src={PaperPlane}
-                alt={t('send')}
+              <SendArrowIcon
+                className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
+                aria-label={t('send')}
+                role="img"
               />
             </button>
           )}
