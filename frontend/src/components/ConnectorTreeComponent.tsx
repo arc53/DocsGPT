@@ -6,6 +6,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
+import SkeletonLoader from './SkeletonLoader';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import userService from '../api/services/userService';
 import FileIcon from '../assets/file.svg';
@@ -15,7 +16,7 @@ import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import SyncIcon from '../assets/sync.svg';
 import CheckmarkIcon from '../assets/checkMark2.svg';
-import { useOutsideAlerter } from '../hooks';
+import { useOutsideAlerter, useLoaderState } from '../hooks';
 import {
   Table,
   TableContainer,
@@ -55,7 +56,7 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
   onBackToDocuments,
 }) => {
   const { t } = useTranslation();
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useLoaderState(true, 500);
   const [error, setError] = useState<string | null>(null);
   const [directoryStructure, setDirectoryStructure] =
     useState<DirectoryStructure | null>(null);
@@ -716,7 +717,13 @@ const ConnectorTreeComponent: React.FC<ConnectorTreeComponentProps> = ({
                     </TableHeader>
                   </TableRow>
                 </TableHead>
-                <TableBody>{renderFileTree(getCurrentDirectory())}</TableBody>
+                <TableBody>
+                  {loading ? (
+                    <SkeletonLoader component="fileTable" />
+                  ) : (
+                    renderFileTree(getCurrentDirectory())
+                  )}
+                </TableBody>
               </Table>
             </TableContainer>
           </div>
