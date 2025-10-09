@@ -153,10 +153,22 @@ class ConnectorTaskStatus(Resource):
             task = celery.AsyncResult(task_id)
             task_meta = task.info
             print(f"Task status: {task.status}")
+
+            if task.status == "PENDING":
+                inspect = celery.control.inspect()
+                active_workers = inspect.ping()
+                if not active_workers:
+                    raise ConnectionError("Service unavailable")
+
             if not isinstance(
                 task_meta, (dict, list, str, int, float, bool, type(None))
             ):
                 task_meta = str(task_meta)
+        except ConnectionError as err:
+            current_app.logger.warning(f"No Celery workers available for task {task_id}")
+            return make_response(
+                jsonify({"success": False, "message": str(err)}), 503
+            )
         except Exception as err:
             current_app.logger.error(f"Error getting task status: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

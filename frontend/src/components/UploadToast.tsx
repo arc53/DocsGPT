@@ -37,7 +37,7 @@ export default function UploadToast() {
       case 'completed':
         return t('modals.uploadDoc.progress.completed');
       case 'failed':
-        return t('attachments.uploadFailed');
+        return t('modals.uploadDoc.progress.failed');
       default:
         return t('modals.uploadDoc.progress.preparing');
     }
