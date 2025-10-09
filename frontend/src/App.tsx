@@ -15,7 +15,10 @@ import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
-import Notification from './components/Notification';
+// import Notification from './components/Notification';
+
+import { Toaster } from 'sonner';
+import { NotificationToast } from './components/NotificationToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
@@ -48,32 +51,18 @@ function MainLayout() {
         <Outlet />
       </div>
       <UploadToast />
+      <Toaster position="bottom-right" richColors />
+      <NotificationToast />
     </div>
   );
 }
 export default function App() {
   const [, , componentMounted] = useDarkTheme();
-  const [showNotification, setShowNotification] = useState<boolean>(() => {
-    const saved = localStorage.getItem('showNotification');
-    return saved ? JSON.parse(saved) : true;
-  });
-  const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
-  const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
   if (!componentMounted) {
     return <div />;
   }
   return (
     <div className="relative h-full overflow-hidden">
-      {notificationLink && notificationText && showNotification && (
-        <Notification
-          notificationText={notificationText}
-          notificationLink={notificationLink}
-          handleCloseNotification={() => {
-            setShowNotification(false);
-            localStorage.setItem('showNotification', 'false');
-          }}
-        />
-      )}
       <Routes>
         <Route
           element={
