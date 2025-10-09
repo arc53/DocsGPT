@@ -17,7 +17,7 @@ import {
   selectAttachments,
   updateAttachment,
 } from '../upload/uploadSlice';
-import { useDarkTheme } from '../hooks';
+
 import { ActiveState } from '../models/misc';
 import {
   selectSelectedDocs,
@@ -45,7 +45,6 @@ export default function MessageInput({
   autoFocus = true,
 }: MessageInputProps) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sourceButtonRef = useRef<HTMLButtonElement>(null);
@@ -435,7 +434,7 @@ export default function MessageInput({
             <button
               onClick={handleCancel}
               aria-label={t('cancel')}
-              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#7F54D6] sm:h-9 sm:w-9`}
+              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#7F54D6] text-white sm:h-9 sm:w-9`}
               disabled={!loading}
             >
               <div className="flex h-3 w-3 items-center justify-center rounded-[3px] bg-white sm:h-3.5 sm:w-3.5" />
@@ -444,8 +443,12 @@ export default function MessageInput({
             <button
               onClick={handleSubmit}
               aria-label={t('send')}
-              className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${isDarkTheme ? 'bg-[#37383D] text-[#77787D]' : 'bg-[#EDEDED] text-[#959595]'} ml-auto shrink-0 duration-150 ease-in-out hover:bg-[#7F54D6] hover:text-white`}
-              disabled={loading}
+              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
+                value.trim() && !loading
+                  ? 'bg-purple-30 text-white'
+                  : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
+              }`}
+              disabled={!value.trim() || loading}
             >
               <SendArrowIcon
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
