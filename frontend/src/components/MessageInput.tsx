@@ -11,6 +11,7 @@ import ClipIcon from '../assets/clip.svg';
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import ExitIcon from '../assets/exit.svg';
 import SendArrowIcon from './SendArrowIcon';
+import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
 import ToolIcon from '../assets/tool.svg';
