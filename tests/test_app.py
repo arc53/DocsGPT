@@ -1,12 +1,12 @@
-from flask import Flask
-
+import pytest
 from application.api.answer import answer
 from application.api.internal.routes import internal
 from application.api.user.routes import user
 from application.core.settings import settings
+from flask import Flask
 
 
-
+@pytest.mark.unit
 def test_app_config():
     app = Flask(__name__)
     app.register_blueprint(user)
