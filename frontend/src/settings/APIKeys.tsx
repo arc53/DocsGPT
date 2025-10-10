@@ -146,7 +146,7 @@ export default function APIKeys() {
                 </thead>
                 <tbody className="dark:divide-silver/40 divide-y divide-gray-300">
                   {loading ? (
-                    <SkeletonLoader component="table" />
+                    <SkeletonLoader component="fileTable" />
                   ) : !apiKeys?.length ? (
                     <tr>
                       <td

@@ -5,6 +5,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
+import SkeletonLoader from './SkeletonLoader';
 import userService from '../api/services/userService';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -12,7 +13,7 @@ import ArrowLeft from '../assets/arrow-left.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import Trash from '../assets/red-trash.svg';
-import { useOutsideAlerter } from '../hooks';
+import { useOutsideAlerter, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import {
   Table,
@@ -53,7 +54,7 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
   onBackToDocuments,
 }) => {
   const { t } = useTranslation();
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useLoaderState(true, 500);
   const [error, setError] = useState<string | null>(null);
   const [directoryStructure, setDirectoryStructure] =
     useState<DirectoryStructure | null>(null);
@@ -839,7 +840,13 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
                     </TableHeader>
                   </TableRow>
                 </TableHead>
-                <TableBody>{renderFileTree(currentDirectory)}</TableBody>
+                <TableBody>
+                  {loading ? (
+                    <SkeletonLoader component="fileTable" />
+                  ) : (
+                    renderFileTree(currentDirectory)
+                  )}
+                </TableBody>
               </Table>
             </TableContainer>
           </div>

@@ -6,7 +6,7 @@ interface SkeletonLoaderProps {
     | 'default'
     | 'analysis'
     | 'logs'
-    | 'table'
+    | 'fileTable'
     | 'chatbot'
     | 'dropdown'
     | 'chunkCards'
@@ -44,13 +44,13 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     <>
       {[...Array(4)].map((_, idx) => (
         <tr key={idx} className="animate-pulse">
-          <td className="w-[45%] px-4 py-4">
+          <td className="w-[40%] px-4 py-4">
+            <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+          </td>
+          <td className="w-[30%] px-4 py-4">
             <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
           </td>
           <td className="w-[20%] px-4 py-4">
-            <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-          </td>
-          <td className="w-[25%] px-4 py-4">
             <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
           </td>
           <td className="w-[10%] px-4 py-4">
@@ -241,7 +241,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   );
 
   const componentMap = {
-    table: renderTable,
+    fileTable: renderTable,
     chatbot: renderChatbot,
     dropdown: renderDropdown,
     logs: renderLogs,
