@@ -261,6 +261,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Загрузить из Google Drive"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Загрузить из SharePoint"
         }
       },
       "connectors": {
@@ -280,6 +284,24 @@
           "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
           "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к Google Drive.",
           "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к Google Drive.",
+          "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
+          "selectedFiles": "Выбранные файлы",
+          "selectFiles": "Выбрать файлы",
+          "loading": "Загрузка...",
+          "noFilesSelected": "Файлы или папки не выбраны",
+          "folders": "Папки",
+          "files": "Файлы",
+          "remove": "Удалить",
+          "folderAlt": "Папка",
+          "fileAlt": "Файл"
+        },
+        "sharePoint": {
+          "connect": "Подключиться к SharePoint",
+          "sessionExpired": "Сеанс истек. Пожалуйста, переподключитесь к SharePoint.",
+          "sessionExpiredGeneric": "Сеанс истек. Пожалуйста, переподключите свою учетную запись.",
+          "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
+          "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к SharePoint.",
+          "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к SharePoint.",
           "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
           "selectedFiles": "Выбранные файлы",
           "selectFiles": "Выбрать файлы",

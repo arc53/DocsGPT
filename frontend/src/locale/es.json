@@ -261,6 +261,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Subir desde Google Drive"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Subir desde SharePoint"
         }
       },
       "connectors": {
@@ -280,6 +284,24 @@
           "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
           "noSession": "No se encontró una sesión válida. Por favor, reconecte a Google Drive.",
           "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a Google Drive.",
+          "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
+          "selectedFiles": "Archivos Seleccionados",
+          "selectFiles": "Seleccionar Archivos",
+          "loading": "Cargando...",
+          "noFilesSelected": "No hay archivos o carpetas seleccionados",
+          "folders": "Carpetas",
+          "files": "Archivos",
+          "remove": "Eliminar",
+          "folderAlt": "Carpeta",
+          "fileAlt": "Archivo"
+        },
+        "sharePoint": {
+          "connect": "Conectar a SharePoint",
+          "sessionExpired": "Sesión expirada. Por favor, reconecte a SharePoint.",
+          "sessionExpiredGeneric": "Sesión expirada. Por favor, reconecte su cuenta.",
+          "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
+          "noSession": "No se encontró una sesión válida. Por favor, reconecte a SharePoint.",
+          "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a SharePoint.",
           "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
           "selectedFiles": "Archivos Seleccionados",
           "selectFiles": "Seleccionar Archivos",

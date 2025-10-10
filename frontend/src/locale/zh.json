@@ -261,6 +261,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "从Google Drive上传"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "从SharePoint上传"
         }
       },
       "connectors": {
@@ -280,6 +284,24 @@
           "validateFailed": "验证会话失败。请重新连接。",
           "noSession": "未找到有效会话。请重新连接到 Google Drive。",
           "noAccessToken": "访问令牌不可用。请重新连接到 Google Drive。",
+          "pickerFailed": "无法打开文件选择器。请重试。",
+          "selectedFiles": "已选择的文件",
+          "selectFiles": "选择文件",
+          "loading": "加载中...",
+          "noFilesSelected": "未选择文件或文件夹",
+          "folders": "文件夹",
+          "files": "文件",
+          "remove": "删除",
+          "folderAlt": "文件夹",
+          "fileAlt": "文件"
+        },
+        "sharePoint": {
+          "connect": "连接到 SharePoint",
+          "sessionExpired": "会话已过期。请重新连接到 SharePoint。",
+          "sessionExpiredGeneric": "会话已过期。请重新连接您的账户。",
+          "validateFailed": "验证会话失败。请重新连接。",
+          "noSession": "未找到有效会话。请重新连接到 SharePoint。",
+          "noAccessToken": "访问令牌不可用。请重新连接到 SharePoint。",
           "pickerFailed": "无法打开文件选择器。请重试。",
           "selectedFiles": "已选择的文件",
           "selectFiles": "选择文件",

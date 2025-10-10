@@ -261,6 +261,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "從Google Drive上傳"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "從SharePoint上傳"
         }
       },
       "connectors": {
@@ -280,6 +284,24 @@
           "validateFailed": "驗證工作階段失敗。請重新連接。",
           "noSession": "未找到有效工作階段。請重新連接到 Google Drive。",
           "noAccessToken": "存取權杖不可用。請重新連接到 Google Drive。",
+          "pickerFailed": "無法開啟檔案選擇器。請重試。",
+          "selectedFiles": "已選擇的檔案",
+          "selectFiles": "選擇檔案",
+          "loading": "載入中...",
+          "noFilesSelected": "未選擇檔案或資料夾",
+          "folders": "資料夾",
+          "files": "檔案",
+          "remove": "移除",
+          "folderAlt": "資料夾",
+          "fileAlt": "檔案"
+        },
+        "sharePoint": {
+          "connect": "連接到 SharePoint",
+          "sessionExpired": "工作階段已過期。請重新連接到 SharePoint。",
+          "sessionExpiredGeneric": "工作階段已過期。請重新連接您的帳戶。",
+          "validateFailed": "驗證工作階段失敗。請重新連接。",
+          "noSession": "未找到有效工作階段。請重新連接到 SharePoint。",
+          "noAccessToken": "存取權杖不可用。請重新連接到 SharePoint。",
           "pickerFailed": "無法開啟檔案選擇器。請重試。",
           "selectedFiles": "已選擇的檔案",
           "selectFiles": "選擇檔案",

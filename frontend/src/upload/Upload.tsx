@@ -31,6 +31,7 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
+import SharePointPicker from '../components/SharePointPicker';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -250,6 +251,8 @@ function Upload({
             token={token}
           />
         );
+      case 'share_point_picker':
+        return <SharePointPicker key={field.name} token={token} />;
       default:
         return null;
     }

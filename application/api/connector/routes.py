@@ -113,10 +113,14 @@ class ConnectorsCallback(Resource):
                 session_token = str(uuid.uuid4())
 
                 try:
-                    credentials = auth.create_credentials_from_token_info(token_info)
-                    service = auth.build_drive_service(credentials)
-                    user_info = service.about().get(fields="user").execute()
-                    user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
+                    if provider == "google_drive":
+                        credentials = auth.create_credentials_from_token_info(token_info)
+                        service = auth.build_drive_service(credentials)
+                        user_info = service.about().get(fields="user").execute()
+                        user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
+                    else:
+                        user_email = token_info.get('user_info', {}).get('email', 'Connected User')
+
                 except Exception as e:
                     current_app.logger.warning(f"Could not get user info: {e}")
                     user_email = 'Connected User'

@@ -298,6 +298,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Upload from Google Drive"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Upload from SharePoint"
         }
       },
       "connectors": {
@@ -317,6 +321,24 @@
           "validateFailed": "Failed to validate session. Please reconnect.",
           "noSession": "No valid session found. Please reconnect to Google Drive.",
           "noAccessToken": "No access token available. Please reconnect to Google Drive.",
+          "pickerFailed": "Failed to open file picker. Please try again.",
+          "selectedFiles": "Selected Files",
+          "selectFiles": "Select Files",
+          "loading": "Loading...",
+          "noFilesSelected": "No files or folders selected",
+          "folders": "Folders",
+          "files": "Files",
+          "remove": "Remove",
+          "folderAlt": "Folder",
+          "fileAlt": "File"
+        },
+        "sharePoint": {
+          "connect": "Connect to SharePoint",
+          "sessionExpired": "Session expired. Please reconnect to SharePoint.",
+          "sessionExpiredGeneric": "Session expired. Please reconnect your account.",
+          "validateFailed": "Failed to validate session. Please reconnect.",
+          "noSession": "No valid session found. Please reconnect to SharePoint.",
+          "noAccessToken": "No access token available. Please reconnect to SharePoint.",
           "pickerFailed": "Failed to open file picker. Please try again.",
           "selectedFiles": "Selected Files",
           "selectFiles": "Select Files",

@@ -261,6 +261,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Google Driveからアップロード"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "SharePointからアップロード"
         }
       },
       "connectors": {
@@ -280,6 +284,24 @@
           "validateFailed": "セッションの検証に失敗しました。再接続してください。",
           "noSession": "有効なセッションが見つかりません。Google Driveに再接続してください。",
           "noAccessToken": "アクセストークンが利用できません。Google Driveに再接続してください。",
+          "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
+          "selectedFiles": "選択されたファイル",
+          "selectFiles": "ファイルを選択",
+          "loading": "読み込み中...",
+          "noFilesSelected": "ファイルまたはフォルダが選択されていません",
+          "folders": "フォルダ",
+          "files": "ファイル",
+          "remove": "削除",
+          "folderAlt": "フォルダ",
+          "fileAlt": "ファイル"
+        },
+        "sharePoint": {
+          "connect": "SharePointに接続",
+          "sessionExpired": "セッションが期限切れです。SharePointに再接続してください。",
+          "sessionExpiredGeneric": "セッションが期限切れです。アカウントに再接続してください。",
+          "validateFailed": "セッションの検証に失敗しました。再接続してください。",
+          "noSession": "有効なセッションが見つかりません。SharePointに再接続してください。",
+          "noAccessToken": "アクセストークンが利用できません。SharePointに再接続してください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
           "selectedFiles": "選択されたファイル",
           "selectFiles": "ファイルを選択",
