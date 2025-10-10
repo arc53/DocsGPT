@@ -4,6 +4,7 @@ import UrlIcon from '../../assets/url.svg';
 import GithubIcon from '../../assets/github.svg';
 import RedditIcon from '../../assets/reddit.svg';
 import DriveIcon from '../../assets/drive.svg';
+import SharePoint from '../../assets/sharepoint.svg';
 
 export type IngestorType =
   | 'crawler'
@@ -11,7 +12,8 @@ export type IngestorType =
   | 'reddit'
   | 'url'
   | 'google_drive'
-  | 'local_file';
+  | 'local_file'
+  | 'share_point';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -33,7 +35,8 @@ export type FieldType =
   | 'boolean'
   | 'local_file_picker'
   | 'remote_file_picker'
-  | 'google_drive_picker';
+  | 'google_drive_picker'
+  | 'share_point_picker';
 
 export interface FormField {
   name: string;
@@ -147,6 +150,24 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       },
     ],
   },
+  {
+    key: 'share_point',
+    label: 'Share Point',
+    icon: SharePoint,
+    heading: 'Upload from Share Point',
+    validate: () => {
+      const sharePointClientId = import.meta.env.VITE_SHARE_POINT_CLIENT_ID;
+      return !!sharePointClientId;
+    },
+    fields: [
+      {
+        name: 'files',
+        label: 'Select Files from Share Point',
+        type: 'share_point_picker',
+        required: true,
+      },
+    ],
+  },
 ];
 
 export const IngestorDefaultConfigs: Record<
@@ -175,6 +196,14 @@ export const IngestorDefaultConfigs: Record<
     },
   },
   local_file: { name: '', config: { files: [] } },
+  share_point: {
+    name: '',
+    config: {
+      file_ids: '',
+      folder_ids: '',
+      recursive: true,
+    },
+  },
 };
 
 export interface IngestorOption {
