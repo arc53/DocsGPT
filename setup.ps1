@@ -292,7 +292,7 @@ function Use-DocsPublicAPIEndpoint {
     Write-ColorText "Setting up DocsGPT Public API Endpoint..." -ForegroundColor "White"
     
     # Create .env file
-    "LLM_NAME=docsgpt" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
+    "LLM_PROVIDER=docsgpt" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     
     Write-ColorText ".env file configured for DocsGPT Public API." -ForegroundColor "Green"
@@ -397,7 +397,7 @@ function Serve-LocalOllama {
     
     # Create .env file
     "API_KEY=xxxx" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "LLM_NAME=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "LLM_PROVIDER=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
     "MODEL_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     "OPENAI_BASE_URL=http://host.docker.internal:11434/v1" | Add-Content -Path $ENV_FILE -Encoding utf8
@@ -560,7 +560,7 @@ function Connect-LocalInferenceEngine {
     
     # Create .env file
     "API_KEY=None" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "LLM_NAME=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "LLM_PROVIDER=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
     "MODEL_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     "OPENAI_BASE_URL=$openai_base_url" | Add-Content -Path $ENV_FILE -Encoding utf8
@@ -693,7 +693,7 @@ function Connect-CloudAPIProvider {
     
     # Create .env file
     "API_KEY=$api_key" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "LLM_NAME=$llm_name" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "LLM_PROVIDER=$llm_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "MODEL_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     
