@@ -7,11 +7,9 @@ import userService from '../api/services/userService';
 import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
 import ExitIcon from '../assets/exit.svg';
-import PaperPlane from '../assets/paper_plane.svg';
+import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
-import SpinnerDark from '../assets/spinner-dark.svg';
-import Spinner from '../assets/spinner.svg';
 import ToolIcon from '../assets/tool.svg';
 import {
   addAttachment,
@@ -19,7 +17,7 @@ import {
   selectAttachments,
   updateAttachment,
 } from '../upload/uploadSlice';
-import { useDarkTheme } from '../hooks';
+
 import { ActiveState } from '../models/misc';
 import {
   selectSelectedDocs,
@@ -29,6 +27,7 @@ import Upload from '../upload/Upload';
 import { getOS, isTouchDevice } from '../utils/browserUtils';
 import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
+import { handleAbort } from '../conversation/conversationSlice';
 
 type MessageInputProps = {
   onSubmit: (text: string) => void;
@@ -46,7 +45,6 @@ export default function MessageInput({
   autoFocus = true,
 }: MessageInputProps) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sourceButtonRef = useRef<HTMLButtonElement>(null);
@@ -256,6 +254,11 @@ export default function MessageInput({
       setValue('');
     }
   };
+
+  const handleCancel = () => {
+    handleAbort();
+  };
+
   return (
     <div className="mx-2 flex w-full flex-col">
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
@@ -427,26 +430,33 @@ export default function MessageInput({
             {/* Additional badges can be added here in the future */}
           </div>
 
-          <button
-            onClick={loading ? undefined : handleSubmit}
-            aria-label={loading ? t('loading') : t('send')}
-            className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-9 sm:w-9 ${loading || !value.trim() ? 'bg-black opacity-60 dark:bg-[#F0F3F4] dark:opacity-80' : 'bg-black opacity-100 dark:bg-[#F0F3F4]'} ml-auto shrink-0`}
-            disabled={loading}
-          >
-            {loading ? (
-              <img
-                src={isDarkTheme ? SpinnerDark : Spinner}
-                className="mx-auto my-auto block h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4"
-                alt={t('loading')}
+          {loading ? (
+            <button
+              onClick={handleCancel}
+              aria-label={t('cancel')}
+              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#7F54D6] text-white sm:h-9 sm:w-9`}
+              disabled={!loading}
+            >
+              <div className="flex h-3 w-3 items-center justify-center rounded-[3px] bg-white sm:h-3.5 sm:w-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              aria-label={t('send')}
+              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
+                value.trim() && !loading
+                  ? 'bg-purple-30 text-white'
+                  : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
+              }`}
+              disabled={!value.trim() || loading}
+            >
+              <SendArrowIcon
+                className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
+                aria-label={t('send')}
+                role="img"
               />
-            ) : (
-              <img
-                className={`mx-auto my-auto block h-3.5 w-3.5 translate-x-[-0.9px] translate-y-[1.1px] sm:h-4 sm:w-4 ${isDarkTheme ? 'invert filter' : ''}`}
-                src={PaperPlane}
-                alt={t('send')}
-              />
-            )}
-          </button>
+            </button>
+          )}
         </div>
       </div>
 

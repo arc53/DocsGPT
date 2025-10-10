@@ -399,7 +399,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           {conversations?.loading && !isDeletingConversation && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
               <img
-                src={isDarkTheme ? SpinnerDark : Spinner}
+                src={isDarkTheme ? Spinner : SpinnerDark}
                 className="animate-spin cursor-pointer bg-transparent"
                 alt="Loading conversations"
               />

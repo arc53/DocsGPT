@@ -121,11 +121,19 @@ class DocsGPTAPILLM(BaseLLM):
                 model="docsgpt", messages=messages, stream=stream, **kwargs
             )
 
-        for line in response:
-            if len(line.choices) > 0 and line.choices[0].delta.content is not None and len(line.choices[0].delta.content) > 0:
-                yield line.choices[0].delta.content
-            elif len(line.choices) > 0:
-                yield line.choices[0]
+        try:
+            for line in response:
+                if (
+                    len(line.choices) > 0
+                    and line.choices[0].delta.content is not None
+                    and len(line.choices[0].delta.content) > 0
+                ):
+                    yield line.choices[0].delta.content
+                elif len(line.choices) > 0:
+                    yield line.choices[0]
+        finally:
+            if hasattr(response, 'close'):
+                response.close()
 
     def _supports_tools(self):
         return True

@@ -46,5 +46,9 @@ class AnthropicLLM(BaseLLM):
             stream=True,
         )
 
-        for completion in stream_response:
-            yield completion.completion
+        try:
+            for completion in stream_response:
+                yield completion.completion
+        finally:
+            if hasattr(stream_response, 'close'):
+                stream_response.close()
