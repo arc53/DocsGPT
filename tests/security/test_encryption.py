@@ -1,12 +1,24 @@
 import base64
 
+import pytest
+from application.security import encryption
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from application.security import encryption
+
+def _fake_os_urandom_factory(values):
+    values_iter = iter(values)
+
+    def _fake(length):
+        value = next(values_iter)
+        assert len(value) == length
+        return value
+
+    return _fake
 
 
+@pytest.mark.unit
 def test_derive_key_uses_secret_and_user(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
     salt = bytes(range(16))
@@ -25,17 +37,7 @@ def test_derive_key_uses_secret_and_user(monkeypatch):
     assert derived == expected_key
 
 
-def _fake_os_urandom_factory(values):
-    values_iter = iter(values)
-
-    def _fake(length):
-        value = next(values_iter)
-        assert len(value) == length
-        return value
-
-    return _fake
-
-
+@pytest.mark.unit
 def test_encrypt_and_decrypt_round_trip(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
     salt = bytes(range(16))
@@ -55,6 +57,7 @@ def test_encrypt_and_decrypt_round_trip(monkeypatch):
     assert decrypted == credentials
 
 
+@pytest.mark.unit
 def test_encrypt_credentials_returns_empty_for_empty_input(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
 
@@ -62,11 +65,12 @@ def test_encrypt_credentials_returns_empty_for_empty_input(monkeypatch):
     assert encryption.encrypt_credentials(None, "user-123") == ""
 
 
+@pytest.mark.unit
 def test_encrypt_credentials_returns_empty_on_serialization_error(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
     monkeypatch.setattr(encryption.os, "urandom", lambda length: b"\x00" * length)
 
-    class NonSerializable:  # pragma: no cover - simple helper container
+    class NonSerializable:
         pass
 
     credentials = {"bad": NonSerializable()}
@@ -74,6 +78,7 @@ def test_encrypt_credentials_returns_empty_on_serialization_error(monkeypatch):
     assert encryption.encrypt_credentials(credentials, "user-123") == ""
 
 
+@pytest.mark.unit
 def test_decrypt_credentials_returns_empty_for_invalid_input(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
 
@@ -84,6 +89,7 @@ def test_decrypt_credentials_returns_empty_for_invalid_input(monkeypatch):
     assert encryption.decrypt_credentials(invalid_payload, "user-123") == {}
 
 
+@pytest.mark.unit
 def test_pad_and_unpad_are_inverse():
     original = b"secret-data"
 
@@ -91,4 +97,3 @@ def test_pad_and_unpad_are_inverse():
 
     assert len(padded) % 16 == 0
     assert encryption._unpad_data(padded) == original
-

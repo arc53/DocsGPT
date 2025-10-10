@@ -38,7 +38,7 @@ class BaseAgent(ABC):
         self.user_api_key = user_api_key
         self.prompt = prompt
         self.decoded_token = decoded_token or {}
-        self.user: str = decoded_token.get("sub")
+        self.user: str = self.decoded_token.get("sub")
         self.tool_config: Dict = {}
         self.tools: List[Dict] = []
         self.tool_calls: List[Dict] = []

@@ -1,6 +1,6 @@
 import pytest
-from openapi_parser import parse
 from application.parser.file.openapi3_parser import OpenAPI3Parser
+from openapi_parser import parse
 
 
 @pytest.mark.parametrize(
@@ -17,10 +17,12 @@ from application.parser.file.openapi3_parser import OpenAPI3Parser
         ),
     ],
 )
+@pytest.mark.unit
 def test_get_base_urls(urls, expected_base_urls):
     assert OpenAPI3Parser().get_base_urls(urls) == expected_base_urls
 
 
+@pytest.mark.unit
 def test_get_info_from_paths():
     file_path = "tests/test_openapi3.yaml"
     data = parse(file_path)
@@ -31,6 +33,7 @@ def test_get_info_from_paths():
     )
 
 
+@pytest.mark.unit
 def test_parse_file():
     file_path = "tests/test_openapi3.yaml"
     results_expected = (
