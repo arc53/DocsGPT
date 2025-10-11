@@ -72,6 +72,9 @@ class AnswerResource(Resource, BaseAnswerResource):
             agent = processor.create_agent()
             retriever = processor.create_retriever()
 
+            if error := self.check_usage(processor.agent_config):
+                return error
+
             stream = self.complete_stream(
                 question=data["question"],
                 agent=agent,

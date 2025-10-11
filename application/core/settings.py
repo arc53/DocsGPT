@@ -28,6 +28,10 @@ class Settings(BaseSettings):
         "claude-2": 1e5,
         "gemini-2.5-flash": 1e6,
     }
+    DEFAULT_AGENT_LIMITS: dict = {
+        "token_limit": 50000,
+        "request_limit": 500,
+    }
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False

@@ -76,6 +76,9 @@ class StreamResource(Resource, BaseAnswerResource):
             agent = processor.create_agent()
             retriever = processor.create_retriever()
 
+            if error := self.check_usage(processor.agent_config):
+                return error
+
             return Response(
                 self.complete_stream(
                     question=data["question"],
