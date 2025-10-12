@@ -46,14 +46,15 @@ export default function ActionButtons({
         {showNewChat && (
           <button
             title="Open New Chat"
+            aria-label="Open New Chat"
             onClick={newChat}
-            className="hover:bg-bright-gray flex items-center gap-1 rounded-full p-2 lg:hidden dark:hover:bg-[#28292E]"
+            className="text-eerie-black dark:text-bright-gray flex items-center gap-2 rounded-full bg-white px-3 py-2 shadow-sm transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md lg:hidden dark:bg-[#0b0b0c]"
           >
             <img
-              className="filter dark:invert"
+              className="h-5 w-5 filter dark:invert"
               alt="NewChat"
-              width={21}
-              height={21}
+              width={20}
+              height={20}
               src={newChatIcon}
             />
           </button>

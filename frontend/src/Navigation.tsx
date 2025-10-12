@@ -319,7 +319,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 onClick={() => {
                   newChat();
                 }}
-                className="transition-transform duration-200 hover:scale-110"
+                aria-label="Start new chat"
+                className="text-eerie-black dark:text-bright-gray hidden items-center gap-2 rounded-full bg-white px-3 py-1 shadow-sm transition-transform duration-150 hover:-translate-y-0.5 md:flex dark:bg-[#0b0b0c]"
               >
                 <img
                   src={openNewChat}
@@ -378,19 +379,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             resetConversation();
           }}
           className={({ isActive }) =>
-            `${
-              isActive ? 'bg-transparent' : ''
-            } group border-silver hover:border-rainy-gray dark:border-purple-taupe sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
+            `sticky mx-4 mt-4 flex cursor-pointer items-center gap-3 rounded-full p-3 transition-all duration-200 ${
+              isActive
+                ? 'bg-gradient-to-r from-[#6EE7B7] to-[#3B82F6] text-white shadow-md'
+                : 'text-eerie-black dark:text-bright-gray bg-white hover:scale-[1.02] hover:shadow dark:bg-[#0b0b0c]'
+            }`
           }
         >
-          <img
-            src={Add}
-            alt="Create new chat"
-            className="opacity-80 group-hover:opacity-100"
-          />
-          <p className="text-dove-gray dark:text-chinese-silver dark:group-hover:text-bright-gray text-sm group-hover:text-neutral-600">
-            {t('newChat')}
-          </p>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-white/60 to-white/30 shadow-sm">
+            <img src={Add} alt="Create new chat" className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-medium">{t('newChat')}</p>
         </NavLink>
         <div
           id="conversationsMainDiv"
