@@ -421,7 +421,7 @@ const ConversationBubble = forwardRef<
                       <Fragment key={index}>
                         {segment.type === 'text' ? (
                           <ReactMarkdown
-                            className="fade-in leading-normal break-words whitespace-pre-wrap"
+                            className="fade-in flex flex-col gap-3 leading-normal break-words whitespace-pre-wrap"
                             remarkPlugins={[remarkGfm, remarkMath]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
