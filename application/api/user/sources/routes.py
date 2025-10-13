@@ -2,12 +2,10 @@
 
 import json
 import math
-import os
 
 from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
-from werkzeug.utils import secure_filename
 
 from application.api import api
 from application.api.user.base import sources_collection
@@ -134,31 +132,6 @@ class PaginatedSources(Resource):
                 f"Error retrieving paginated sources: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-
-
-@sources_ns.route("/docs_check")
-class CheckDocs(Resource):
-    check_docs_model = api.model(
-        "CheckDocsModel",
-        {"docs": fields.String(required=True, description="Document name")},
-    )
-
-    @api.expect(check_docs_model)
-    @api.doc(description="Check if document exists")
-    def post(self):
-        data = request.get_json()
-        required_fields = ["docs"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
-        try:
-            vectorstore = "vectors/" + secure_filename(data["docs"])
-            if os.path.exists(vectorstore) or data["docs"] == "default":
-                return {"status": "exists"}, 200
-        except Exception as err:
-            current_app.logger.error(f"Error checking document: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"status": "not found"}), 404)
 
 
 @sources_ns.route("/delete_by_ids")
