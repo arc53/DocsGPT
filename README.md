@@ -68,7 +68,7 @@
 - [x] MCP support (August 2025)
 - [x] Google Drive integration (September 2025)
 - [x] Add OAuth 2.0 authentication for MCP (September 2025)
-- [ ] Sharepoint integration (October 2025)
+- [ ] SharePoint integration (October 2025)
 - [ ] Deep Agents (October 2025)
 - [ ] Agent scheduling
 
