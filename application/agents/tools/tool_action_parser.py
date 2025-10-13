@@ -20,20 +20,24 @@ class ToolActionParser:
         try:
             call_args = json.loads(call.arguments)
             tool_parts = call.name.split("_")
-            
+
             # If the tool name doesn't contain an underscore, it's likely a hallucinated tool
             if len(tool_parts) < 2:
-                logger.warning(f"Invalid tool name format: {call.name}. Expected format: action_name_tool_id")
+                logger.warning(
+                    f"Invalid tool name format: {call.name}. Expected format: action_name_tool_id"
+                )
                 return None, None, None
-                
+
             tool_id = tool_parts[-1]
             action_name = "_".join(tool_parts[:-1])
-            
+
             # Validate that tool_id looks like a numerical ID
             if not tool_id.isdigit():
-                logger.warning(f"Tool ID '{tool_id}' is not numerical. This might be a hallucinated tool call.")
-                
-        except (AttributeError, TypeError) as e:
+                logger.warning(
+                    f"Tool ID '{tool_id}' is not numerical. This might be a hallucinated tool call."
+                )
+
+        except (AttributeError, TypeError, json.JSONDecodeError) as e:
             logger.error(f"Error parsing OpenAI LLM call: {e}")
             return None, None, None
         return tool_id, action_name, call_args
@@ -42,19 +46,23 @@ class ToolActionParser:
         try:
             call_args = call.arguments
             tool_parts = call.name.split("_")
-            
+
             # If the tool name doesn't contain an underscore, it's likely a hallucinated tool
             if len(tool_parts) < 2:
-                logger.warning(f"Invalid tool name format: {call.name}. Expected format: action_name_tool_id")
+                logger.warning(
+                    f"Invalid tool name format: {call.name}. Expected format: action_name_tool_id"
+                )
                 return None, None, None
-                
+
             tool_id = tool_parts[-1]
             action_name = "_".join(tool_parts[:-1])
-            
+
             # Validate that tool_id looks like a numerical ID
             if not tool_id.isdigit():
-                logger.warning(f"Tool ID '{tool_id}' is not numerical. This might be a hallucinated tool call.")
-                
+                logger.warning(
+                    f"Tool ID '{tool_id}' is not numerical. This might be a hallucinated tool call."
+                )
+
         except (AttributeError, TypeError) as e:
             logger.error(f"Error parsing Google LLM call: {e}")
             return None, None, None
