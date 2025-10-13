@@ -74,6 +74,9 @@ class AnswerResource(Resource, BaseAnswerResource):
 
             if error := self.check_usage(processor.agent_config):
                 return error
+            
+            if error := self.check_origin_access(processor.agent_config, request):
+                return error
 
             stream = self.complete_stream(
                 question=data["question"],

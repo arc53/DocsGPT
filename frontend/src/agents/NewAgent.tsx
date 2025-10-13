@@ -46,6 +46,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     image: '',
     source: '',
     sources: [],
+    granted_origins: [],
     chunks: '2',
     retriever: 'classic',
     prompt_id: 'default',
@@ -80,6 +81,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
     useState(false);
+  const [originInput, setOriginInput] = useState('');
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -190,6 +192,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('sources', JSON.stringify([]));
     }
 
+    formData.append('granted_origins', JSON.stringify(agent.granted_origins));
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
@@ -280,6 +283,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('sources', JSON.stringify([]));
     }
 
+    formData.append('granted_origins', JSON.stringify(agent.granted_origins));
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
@@ -1027,6 +1031,118 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         : ''
                     }`}
                   />
+                </div>
+
+                <div className="mt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-medium">Origin Whitelist</h2>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        Specify allowed origins that can access this agent
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={originInput}
+                        onChange={(e) => setOriginInput(e.target.value)}
+                        placeholder="Enter origin URL (https://example.com)"
+                        pattern="^https|http://.+"
+                        className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver flex-1 rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const trimmedOrigin = originInput.trim();
+                            if (
+                              trimmedOrigin &&
+                              !agent.granted_origins?.includes(trimmedOrigin)
+                            ) {
+                              setAgent({
+                                ...agent,
+                                granted_origins: [
+                                  ...(agent.granted_origins || []),
+                                  trimmedOrigin,
+                                ],
+                              });
+                              setOriginInput('');
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmedOrigin = originInput.trim();
+                          if (
+                            trimmedOrigin &&
+                            !agent.granted_origins?.includes(trimmedOrigin)
+                          ) {
+                            setAgent({
+                              ...agent,
+                              granted_origins: [
+                                ...(agent.granted_origins || []),
+                                trimmedOrigin,
+                              ],
+                            });
+                            setOriginInput('');
+                          }
+                        }}
+                        className="bg-purple-30 hover:bg-purple-25 rounded-3xl px-4 py-3 text-sm font-medium text-white transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {agent.granted_origins &&
+                      agent.granted_origins.length > 0 && (
+                        <div className="space-y-2">
+                          {agent.granted_origins.map((origin, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-600 dark:bg-gray-700"
+                            >
+                              <span className="text-sm text-gray-700 dark:text-gray-300">
+                                {origin}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAgent({
+                                    ...agent,
+                                    granted_origins:
+                                      agent.granted_origins?.filter(
+                                        (_, i) => i !== index,
+                                      ) || [],
+                                  });
+                                }}
+                                className="text-red-500 transition-colors hover:text-red-700"
+                              >
+                                <svg
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M6 18L18 6M6 6l12 12"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    {(!agent.granted_origins ||
+                      agent.granted_origins.length === 0) && (
+                      <p className="text-xs text-gray-500 italic dark:text-gray-400">
+                        No origins added. All origins will be allowed.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

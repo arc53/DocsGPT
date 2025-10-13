@@ -28,6 +28,7 @@ class BaseAgent(ABC):
         prompt: str = "",
         chat_history: Optional[List[Dict]] = None,
         decoded_token: Optional[Dict] = None,
+        granted_origins: Optional[List] = None,
         attachments: Optional[List[Dict]] = None,
         json_schema: Optional[Dict] = None,
         limited_token_mode: Optional[bool] = False,
@@ -40,6 +41,7 @@ class BaseAgent(ABC):
         self.gpt_model = gpt_model
         self.api_key = api_key
         self.user_api_key = user_api_key
+        self.granted_origins: List[str] = []
         self.prompt = prompt
         self.decoded_token = decoded_token or {}
         self.user: str = self.decoded_token.get("sub")
