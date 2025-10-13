@@ -13,6 +13,7 @@ class BraveSearchTool(Tool):
         self.config = config
         self.token = config.get("token", "")
         self.base_url = "https://api.search.brave.com/res/v1"
+        self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")
 
     def execute_action(self, action_name, **kwargs):
         actions = {
@@ -67,8 +68,11 @@ class BraveSearchTool(Tool):
             "Accept-Encoding": "gzip",
             "X-Subscription-Token": self.token,
         }
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, proxies=proxies)
 
         if response.status_code == 200:
             return {
@@ -112,8 +116,11 @@ class BraveSearchTool(Tool):
             "Accept-Encoding": "gzip",
             "X-Subscription-Token": self.token,
         }
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, proxies=proxies)
 
         if response.status_code == 200:
             return {

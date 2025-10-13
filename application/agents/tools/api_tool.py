@@ -16,6 +16,7 @@ class APITool(Tool):
         self.method = config.get("method", "GET")
         self.headers = config.get("headers", {"Content-Type": "application/json"})
         self.query_params = config.get("query_params", {})
+        self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")
 
     def execute_action(self, action_name, **kwargs):
         return self._make_api_call(
@@ -27,12 +28,15 @@ class APITool(Tool):
             url = f"{url}?{requests.compat.urlencode(query_params)}"
         # if isinstance(body, dict):
         #     body = json.dumps(body)
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
         try:
             print(f"Making API call: {method} {url} with body: {body}")
             if body == "{}":
                 body = None
-            response = requests.request(method, url, headers=headers, data=body)
-            response.raise_for_status()
+            response = requests.request(method, url, headers=headers, data=body, proxies=proxies)
+            response.raise_for_status() 
             content_type = response.headers.get(
                 "Content-Type", "application/json"
             ).lower()
