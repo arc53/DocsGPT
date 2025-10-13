@@ -14,6 +14,7 @@ import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
 import {
+  selectSelectedDocs,
   selectSourceDocs,
   selectToken,
   setSelectedDocs,
@@ -50,6 +51,7 @@ function Upload({
   onSuccessfulUpload?: () => void;
 }) {
   const token = useSelector(selectToken);
+  const selectedDocs = useSelector(selectSelectedDocs);
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<boolean>(true);
@@ -336,7 +338,13 @@ function Upload({
                   (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
                 );
                 if (newDoc) {
-                  dispatch(setSelectedDocs([newDoc]));
+                  // If only one doc is selected, replace it completely
+                  // If multiple docs are selected, append the new doc
+                  if (selectedDocs.length === 1) {
+                    dispatch(setSelectedDocs([newDoc]));
+                  } else {
+                    dispatch(setSelectedDocs([...selectedDocs, newDoc]));
+                  }
                 }
               }
 
