@@ -291,12 +291,12 @@ function Upload({
           id: clientTaskId,
           updates: {
             status: 'failed',
-            errorMessage: errorMessage || t('attachments.uploadFailed'),
+            errorMessage: errorMessage,
           },
         }),
       );
     },
-    [dispatch, t],
+    [dispatch],
   );
 
   const trackTraining = useCallback(
@@ -308,6 +308,15 @@ function Upload({
           .getTaskStatus(backendTaskId, null)
           .then((response) => response.json())
           .then(async (data) => {
+            if (!data.success && data.message) {
+              if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+              }
+              handleTaskFailure(clientTaskId, data.message);
+              return;
+            }
+
             if (data.status === 'SUCCESS') {
               if (timeoutId !== null) {
                 clearTimeout(timeoutId);
@@ -376,12 +385,12 @@ function Upload({
               timeoutId = window.setTimeout(poll, 5000);
             }
           })
-          .catch(() => {
+          .catch((error) => {
             if (timeoutId !== null) {
               clearTimeout(timeoutId);
               timeoutId = null;
             }
-            handleTaskFailure(clientTaskId);
+            handleTaskFailure(clientTaskId, error?.message);
           });
       };
 

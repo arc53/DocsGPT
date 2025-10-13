@@ -225,6 +225,7 @@
         "upload": "正在上传",
         "training": "正在上传",
         "completed": "上传完成",
+        "failed": "上传失败",
         "wait": "这可能需要几分钟",
         "preparing": "准备上传",
         "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
@@ -387,8 +388,7 @@
     },
     "attachments": {
       "attach": "附件",
-      "remove": "删除附件",
-      "uploadFailed": "上传失败"
+      "remove": "删除附件"
     },
     "retry": "重试"
   }

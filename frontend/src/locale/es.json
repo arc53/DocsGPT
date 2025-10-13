@@ -225,6 +225,7 @@
         "upload": "Subida en progreso",
         "training": "Subida en progreso",
         "completed": "Subida completada",
+        "failed": "Error al subir",
         "wait": "Esto puede tardar varios minutos",
         "preparing": "Preparando subida",
         "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",
@@ -387,8 +388,7 @@
     },
     "attachments": {
       "attach": "Adjuntar",
-      "remove": "Eliminar adjunto",
-      "uploadFailed": "Error al subir"
+      "remove": "Eliminar adjunto"
     },
     "retry": "Reintentar"
   }
