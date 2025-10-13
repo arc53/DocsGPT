@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import { debounceAPI } from '../utils/throttleUtils';
 
 import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -116,13 +117,17 @@ export default function Sources({
     document: null,
   });
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
+  // Debounced search to avoid excessive API calls during typing
+  const debouncedSetSearchTerm = useCallback(
+    debounceAPI((term: string) => {
+      setDebouncedSearchTerm(term);
+    }, 500),
+    [],
+  );
 
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
+  useEffect(() => {
+    debouncedSetSearchTerm(searchTerm);
+  }, [searchTerm, debouncedSetSearchTerm]);
 
   const refreshDocs = useCallback(
     (

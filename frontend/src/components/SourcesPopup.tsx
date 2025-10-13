@@ -1,7 +1,14 @@
-import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  useLayoutEffect,
+  useCallback,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Doc } from '../models/misc';
+import { debounceAPI } from '../utils/throttleUtils';
 import SourceIcon from '../assets/source.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import RedirectIcon from '../assets/redirect.svg';
@@ -32,6 +39,19 @@ export default function SourcesPopup({
   const { t } = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
+  // Debounced search handler for filtering sources during typing
+  const debouncedSetSearchTerm = useCallback(
+    debounceAPI((term: string) => {
+      setDebouncedSearchTerm(term);
+    }, 300),
+    [],
+  );
+
+  useEffect(() => {
+    debouncedSetSearchTerm(searchTerm);
+  }, [searchTerm, debouncedSetSearchTerm]);
   const [popupPosition, setPopupPosition] = useState({
     top: 0,
     left: 0,
@@ -47,7 +67,7 @@ export default function SourcesPopup({
   const selectedDocs = useSelector(selectSelectedDocs);
 
   const filteredOptions = options?.filter((option) =>
-    option.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    option.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()),
   );
 
   useLayoutEffect(() => {

@@ -7,12 +7,13 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import { throttleAPI } from '../utils/throttleUtils';
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
@@ -96,25 +97,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingTokens, setLoadingTokens] = useLoaderState(true);
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
 
-  const fetchMessagesData = async (agent_id?: string, filter?: string) => {
-    setLoadingMessages(true);
-    try {
-      const response = await userService.getMessageAnalytics(
-        {
-          api_key_id: agent_id,
-          filter_option: filter,
-        },
-        token,
-      );
-      if (!response.ok) throw new Error('Failed to fetch analytics data');
-      const data = await response.json();
-      setMessagesData(data.messages);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
+  // Throttled fetch to prevent excessive analytics API calls during filter changes
+  const fetchMessagesData = useCallback(
+    throttleAPI(async (agent_id?: string, filter?: string) => {
+      setLoadingMessages(true);
+      try {
+        const response = await userService.getMessageAnalytics(
+          {
+            api_key_id: agent_id,
+            filter_option: filter,
+          },
+          token,
+        );
+        if (!response.ok) throw new Error('Failed to fetch analytics data');
+        const data = await response.json();
+        setMessagesData(data.messages);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoadingMessages(false);
+      }
+    }, 1000),
+    [token],
+  );
 
   const fetchTokenData = async (agent_id?: string, filter?: string) => {
     setLoadingTokens(true);

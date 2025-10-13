@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -6,6 +6,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
+import { throttleAPI } from './utils/throttleUtils';
 import Add from './assets/add.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
@@ -102,40 +103,44 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       };
     }
   }, [navOpen, isMobile, isTablet, setNavOpen]);
-  async function fetchRecentAgents() {
-    try {
-      const response = await userService.getPinnedAgents(token);
-      if (!response.ok) throw new Error('Failed to fetch pinned agents');
-      const pinnedAgents: Agent[] = await response.json();
-      if (pinnedAgents.length >= 3) {
-        setRecentAgents(pinnedAgents);
-        return;
+  // Throttled fetch to prevent excessive API calls when agents are requested frequently
+  const fetchRecentAgents = useCallback(
+    throttleAPI(async () => {
+      try {
+        const response = await userService.getPinnedAgents(token);
+        if (!response.ok) throw new Error('Failed to fetch pinned agents');
+        const pinnedAgents: Agent[] = await response.json();
+        if (pinnedAgents.length >= 3) {
+          setRecentAgents(pinnedAgents);
+          return;
+        }
+        let tempAgents: Agent[] = [];
+        if (!agents) {
+          const response = await userService.getAgents(token);
+          if (!response.ok) throw new Error('Failed to fetch agents');
+          const data: Agent[] = await response.json();
+          dispatch(setAgents(data));
+          tempAgents = data;
+        } else tempAgents = agents;
+        const additionalAgents = tempAgents
+          .filter(
+            (agent: Agent) =>
+              agent.status === 'published' &&
+              !pinnedAgents.some((pinned) => pinned.id === agent.id),
+          )
+          .sort(
+            (a: Agent, b: Agent) =>
+              new Date(b.last_used_at ?? 0).getTime() -
+              new Date(a.last_used_at ?? 0).getTime(),
+          )
+          .slice(0, 3 - pinnedAgents.length);
+        setRecentAgents([...pinnedAgents, ...additionalAgents]);
+      } catch (error) {
+        console.error('Failed to fetch recent agents: ', error);
       }
-      let tempAgents: Agent[] = [];
-      if (!agents) {
-        const response = await userService.getAgents(token);
-        if (!response.ok) throw new Error('Failed to fetch agents');
-        const data: Agent[] = await response.json();
-        dispatch(setAgents(data));
-        tempAgents = data;
-      } else tempAgents = agents;
-      const additionalAgents = tempAgents
-        .filter(
-          (agent: Agent) =>
-            agent.status === 'published' &&
-            !pinnedAgents.some((pinned) => pinned.id === agent.id),
-        )
-        .sort(
-          (a: Agent, b: Agent) =>
-            new Date(b.last_used_at ?? 0).getTime() -
-            new Date(a.last_used_at ?? 0).getTime(),
-        )
-        .slice(0, 3 - pinnedAgents.length);
-      setRecentAgents([...pinnedAgents, ...additionalAgents]);
-    } catch (error) {
-      console.error('Failed to fetch recent agents: ', error);
-    }
-  }
+    }, 2000),
+    [token, agents, dispatch],
+  );
 
   async function fetchConversations() {
     dispatch(setConversations({ ...conversations, loading: true }));

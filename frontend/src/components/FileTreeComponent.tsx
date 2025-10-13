@@ -311,7 +311,8 @@ const FileTreeComponent: React.FC<FileTreeComponentProps> = ({
         console.log('Reingest task started:', result.reingest_task_id);
 
         const maxAttempts = 30;
-        const pollInterval = 2000;
+        // Throttled polling - minimum 3 second interval to prevent excessive API calls
+        const pollInterval = Math.max(3000, 2000);
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
