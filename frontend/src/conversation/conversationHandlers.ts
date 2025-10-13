@@ -7,7 +7,7 @@ export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
   token: string | null,
-  selectedDocs: Doc[] | null,
+  selectedDocs: Doc[],
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -42,7 +42,7 @@ export function handleFetchAnswer(
     prompt_id: promptId,
     chunks: chunks,
     token_limit: token_limit,
-    isNoneDoc: selectedDocs === null,
+    isNoneDoc: selectedDocs.length === 0,
     agent_id: agentId,
     save_conversation: save_conversation,
   };
@@ -52,7 +52,7 @@ export function handleFetchAnswer(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs && Array.isArray(selectedDocs)) {
+  if (selectedDocs.length > 0) {
     if (selectedDocs.length > 1) {
       // Handle multiple documents
       payload.active_docs = selectedDocs.map((doc) => doc.id!);
@@ -91,7 +91,7 @@ export function handleFetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
   token: string | null,
-  selectedDocs: Doc[] | null,
+  selectedDocs: Doc[],
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
@@ -108,7 +108,7 @@ export function handleFetchAnswerSteaming(
     prompt_id: promptId,
     chunks: chunks,
     token_limit: token_limit,
-    isNoneDoc: selectedDocs === null,
+    isNoneDoc: selectedDocs.length === 0,
     index: indx,
     agent_id: agentId,
     save_conversation: save_conversation,
@@ -119,7 +119,7 @@ export function handleFetchAnswerSteaming(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs && Array.isArray(selectedDocs)) {
+  if (selectedDocs.length > 0) {
     if (selectedDocs.length > 1) {
       // Handle multiple documents
       payload.active_docs = selectedDocs.map((doc) => doc.id!);
@@ -185,7 +185,7 @@ export function handleFetchAnswerSteaming(
 export function handleSearch(
   question: string,
   token: string | null,
-  selectedDocs: Doc[] | null,
+  selectedDocs: Doc[],
   conversation_id: string | null,
   chunks: string,
   token_limit: number,
@@ -195,9 +195,9 @@ export function handleSearch(
     conversation_id: conversation_id,
     chunks: chunks,
     token_limit: token_limit,
-    isNoneDoc: selectedDocs === null,
+    isNoneDoc: selectedDocs.length === 0,
   };
-  if (selectedDocs && Array.isArray(selectedDocs)) {
+  if (selectedDocs.length > 0) {
     if (selectedDocs.length > 1) {
       // Handle multiple documents
       payload.active_docs = selectedDocs.map((doc) => doc.id!);
