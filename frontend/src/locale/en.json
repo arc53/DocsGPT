@@ -262,6 +262,7 @@
         "upload": "Upload is in progress",
         "training": "Upload is in progress",
         "completed": "Upload completed",
+        "failed": "Upload failed",
         "wait": "This may take several minutes",
         "preparing": "Preparing upload",
         "tokenLimit": "Over the token limit, please consider uploading smaller document",
@@ -424,8 +425,7 @@
     },
     "attachments": {
       "attach": "Attach",
-      "remove": "Remove attachment",
-      "uploadFailed": "Upload failed"
+      "remove": "Remove attachment"
     },
     "retry": "Retry"
   }
