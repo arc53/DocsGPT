@@ -111,16 +111,6 @@ export function setLocalPrompt(prompt: string): void {
 export function setLocalRecentDocs(docs: Doc[] | null): void {
   if (docs && docs.length > 0) {
     localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(docs));
-
-    docs.forEach((doc) => {
-      let docPath = 'default';
-      if (doc.type === 'local') {
-        docPath = 'local' + '/' + doc.name + '/';
-      }
-      userService
-        .checkDocs({ docs: docPath }, null)
-        .then((response) => response.json());
-    });
   } else {
     localStorage.removeItem('DocsGPTRecentDocs');
   }

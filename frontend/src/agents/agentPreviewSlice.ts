@@ -57,7 +57,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
           question,
           signal,
           state.preference.token,
-          state.preference.selectedDocs!,
+          state.preference.selectedDocs,
           null, // No conversation ID for previews
           state.preference.prompt.id,
           state.preference.chunks,
@@ -128,7 +128,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
           question,
           signal,
           state.preference.token,
-          state.preference.selectedDocs!,
+          state.preference.selectedDocs,
           null, // No conversation ID for previews
           state.preference.prompt.id,
           state.preference.chunks,

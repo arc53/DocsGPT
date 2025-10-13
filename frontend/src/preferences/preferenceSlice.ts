@@ -15,7 +15,7 @@ export interface Preference {
   prompt: { name: string; id: string; type: string };
   chunks: string;
   token_limit: number;
-  selectedDocs: Doc[] | null;
+  selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
   conversations: {
     data: { name: string; id: string }[] | null;
@@ -137,8 +137,11 @@ prefListenerMiddleware.startListening({
 prefListenerMiddleware.startListening({
   matcher: isAnyOf(setSelectedDocs),
   effect: (action, listenerApi) => {
+    const state = listenerApi.getState() as RootState;
     setLocalRecentDocs(
-      (listenerApi.getState() as RootState).preference.selectedDocs ?? null,
+      state.preference.selectedDocs.length > 0
+        ? state.preference.selectedDocs
+        : null,
     );
   },
 });
@@ -179,7 +182,7 @@ export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;
 export const selectSelectedDocsStatus = (state: RootState) =>
-  !!state.preference.selectedDocs;
+  state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
 export const selectModalStateDeleteConv = (state: RootState) =>

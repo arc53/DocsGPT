@@ -3,7 +3,6 @@ const endpoints = {
     CONFIG: '/api/config',
     NEW_TOKEN: '/api/generate_token',
     DOCS: '/api/sources',
-    DOCS_CHECK: '/api/docs_check',
     DOCS_PAGINATED: '/api/sources/paginated',
     API_KEYS: '/api/get_api_keys',
     CREATE_API_KEY: '/api/create_api_key',

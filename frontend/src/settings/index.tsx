@@ -25,16 +25,12 @@ import Sources from './Sources';
 import General from './General';
 import Logs from './Logs';
 import Tools from './Tools';
-import Widgets from './Widgets';
 
 export default function Settings() {
   const dispatch = useDispatch();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const [widgetScreenshot, setWidgetScreenshot] = React.useState<File | null>(
-    null,
-  );
 
   const getActiveTabFromPath = () => {
     const path = location.pathname;
@@ -43,7 +39,6 @@ export default function Settings() {
       return t('settings.analytics.label');
     if (path.includes('/settings/logs')) return t('settings.logs.label');
     if (path.includes('/settings/tools')) return t('settings.tools.label');
-    if (path.includes('/settings/widgets')) return 'Widgets';
     return t('settings.general.label');
   };
 
@@ -57,7 +52,6 @@ export default function Settings() {
       navigate('/settings/analytics');
     else if (tab === t('settings.logs.label')) navigate('/settings/logs');
     else if (tab === t('settings.tools.label')) navigate('/settings/tools');
-    else if (tab === 'Widgets') navigate('/settings/widgets');
   };
 
   React.useEffect(() => {
@@ -72,9 +66,6 @@ export default function Settings() {
   const token = useSelector(selectToken);
   const documents = useSelector(selectSourceDocs);
   const paginatedDocuments = useSelector(selectPaginatedDocuments);
-  const updateWidgetScreenshot = (screenshot: File | null) => {
-    setWidgetScreenshot(screenshot);
-  };
 
   const updateDocumentsList = (documents: Doc[], index: number) => [
     ...documents.slice(0, index),
@@ -122,15 +113,6 @@ export default function Settings() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="logs" element={<Logs />} />
         <Route path="tools" element={<Tools />} />
-        <Route
-          path="widgets"
-          element={
-            <Widgets
-              widgetScreenshot={widgetScreenshot}
-              onWidgetScreenshotChange={updateWidgetScreenshot}
-            />
-          }
-        />
         <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>
     </div>

@@ -26,7 +26,7 @@ const preloadedState: { preference: Preference } = {
         : { name: 'default', id: 'default', type: 'private' },
     chunks: JSON.parse(chunks ?? '2').toString(),
     token_limit: token_limit ? parseInt(token_limit) : 2000,
-    selectedDocs: doc !== null ? JSON.parse(doc) : null,
+    selectedDocs: doc !== null ? JSON.parse(doc) : [],
     conversations: {
       data: null,
       loading: false,
