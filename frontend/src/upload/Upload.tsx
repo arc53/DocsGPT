@@ -389,10 +389,10 @@ function Upload({
                 }),
               );
               // Throttled polling - wait at least 5 seconds between status checks
-              timeoutId = window.setTimeout(poll, Math.max(5000, 5000));
+              timeoutId = window.setTimeout(poll, 5000);
             } else {
               // Throttled polling - wait at least 5 seconds between status checks
-              timeoutId = window.setTimeout(poll, Math.max(5000, 5000));
+              timeoutId = window.setTimeout(poll, 5000);
             }
           })
           .catch((error) => {
@@ -405,7 +405,7 @@ function Upload({
       };
 
       // Initial delay before first poll - throttled to minimum 3 seconds
-      timeoutId = window.setTimeout(poll, Math.max(3000, 3000));
+      timeoutId = window.setTimeout(poll, 3000);
     },
     [dispatch, handleTaskFailure, onSuccessfulUpload, sourceDocs, t, token],
   );
