@@ -101,7 +101,7 @@ export const FileUpload = ({
       const filesToUpload = multiple ? acceptedFiles : [acceptedFiles[0]];
       onUpload(filesToUpload);
 
-      const file = multiple ? acceptedFiles[0] : acceptedFiles[0];
+      const file = acceptedFiles[0];
       setCurrentFile(file);
 
       if (showPreview && file.type.startsWith('image/')) {
