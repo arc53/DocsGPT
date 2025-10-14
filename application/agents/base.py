@@ -30,6 +30,10 @@ class BaseAgent(ABC):
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
         json_schema: Optional[Dict] = None,
+        limited_token_mode: Optional[bool] = False,
+        token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
+        limited_request_mode: Optional[bool] = False,
+        request_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["request_limit"],
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -54,6 +58,10 @@ class BaseAgent(ABC):
         )
         self.attachments = attachments or []
         self.json_schema = json_schema
+        self.limited_token_mode = limited_token_mode
+        self.token_limit = token_limit
+        self.limited_request_mode = limited_request_mode
+        self.request_limit = request_limit
 
     @log_activity()
     def gen(

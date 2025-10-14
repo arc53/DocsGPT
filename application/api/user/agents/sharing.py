@@ -9,6 +9,7 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
+from application.core.settings import settings
 from application.api.user.base import (
     agents_collection,
     db,
@@ -75,6 +76,10 @@ class SharedAgent(Resource):
                 "agent_type": shared_agent.get("agent_type", ""),
                 "status": shared_agent.get("status", ""),
                 "json_schema": shared_agent.get("json_schema"),
+                "limited_token_mode": shared_agent.get("limited_token_mode", False),
+                "token_limit": shared_agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]),
+                "limited_request_mode": shared_agent.get("limited_request_mode", False),
+                "request_limit": shared_agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]),
                 "created_at": shared_agent.get("createdAt", ""),
                 "updated_at": shared_agent.get("updatedAt", ""),
                 "shared": shared_agent.get("shared_publicly", False),
@@ -149,6 +154,10 @@ class SharedAgents(Resource):
                     "agent_type": agent.get("agent_type", ""),
                     "status": agent.get("status", ""),
                     "json_schema": agent.get("json_schema"),
+                    "limited_token_mode": agent.get("limited_token_mode", False),
+                    "token_limit": agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]),
+                    "limited_request_mode": agent.get("limited_request_mode", False),
+                    "request_limit": agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]),
                     "created_at": agent.get("createdAt", ""),
                     "updated_at": agent.get("updatedAt", ""),
                     "pinned": str(agent["_id"]) in pinned_ids,
