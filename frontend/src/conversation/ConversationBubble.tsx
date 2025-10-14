@@ -556,63 +556,67 @@ const ConversationBubble = forwardRef<
               </div>
             ) : (
               <>
-                <div className="relative mr-2 block items-center justify-center">
-                  <CopyButton textToCopy={message} />
-                </div>
-                <div className="relative mr-2 block items-center justify-center">
-                  <SpeakButton text={message} />
-                </div>
-                {handleFeedback && (
+                {!isStreaming && (
                   <>
-                    <div className="relative mr-2 flex items-center justify-center">
-                      <div>
-                        <div
-                          className={`flex items-center justify-center rounded-full p-2 ${
-                            isLikeHovered
-                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                              : 'bg-white-3000 dark:bg-transparent'
-                          }`}
-                        >
-                          <Like
-                            className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
-                            onClick={() => {
-                              if (feedback === 'LIKE') {
-                                handleFeedback?.(null);
-                              } else {
-                                handleFeedback?.('LIKE');
-                              }
-                            }}
-                            onMouseEnter={() => setIsLikeHovered(true)}
-                            onMouseLeave={() => setIsLikeHovered(false)}
-                          ></Like>
-                        </div>
-                      </div>
+                    <div className="relative mr-2 block items-center justify-center">
+                      <CopyButton textToCopy={message} />
                     </div>
+                    <div className="relative mr-2 block items-center justify-center">
+                      <SpeakButton text={message} />
+                    </div>
+                    {handleFeedback && (
+                      <>
+                        <div className="relative mr-2 flex items-center justify-center">
+                          <div>
+                            <div
+                              className={`flex items-center justify-center rounded-full p-2 ${
+                                isLikeHovered
+                                  ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                                  : 'bg-white-3000 dark:bg-transparent'
+                              }`}
+                            >
+                              <Like
+                                className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                                onClick={() => {
+                                  if (feedback === 'LIKE') {
+                                    handleFeedback?.(null);
+                                  } else {
+                                    handleFeedback?.('LIKE');
+                                  }
+                                }}
+                                onMouseEnter={() => setIsLikeHovered(true)}
+                                onMouseLeave={() => setIsLikeHovered(false)}
+                              ></Like>
+                            </div>
+                          </div>
+                        </div>
 
-                    <div className="relative mr-2 flex items-center justify-center">
-                      <div>
-                        <div
-                          className={`flex items-center justify-center rounded-full p-2 ${
-                            isDislikeHovered
-                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                              : 'bg-white-3000 dark:bg-transparent'
-                          }`}
-                        >
-                          <Dislike
-                            className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
-                            onClick={() => {
-                              if (feedback === 'DISLIKE') {
-                                handleFeedback?.(null);
-                              } else {
-                                handleFeedback?.('DISLIKE');
-                              }
-                            }}
-                            onMouseEnter={() => setIsDislikeHovered(true)}
-                            onMouseLeave={() => setIsDislikeHovered(false)}
-                          ></Dislike>
+                        <div className="relative mr-2 flex items-center justify-center">
+                          <div>
+                            <div
+                              className={`flex items-center justify-center rounded-full p-2 ${
+                                isDislikeHovered
+                                  ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+                                  : 'bg-white-3000 dark:bg-transparent'
+                              }`}
+                            >
+                              <Dislike
+                                className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                                onClick={() => {
+                                  if (feedback === 'DISLIKE') {
+                                    handleFeedback?.(null);
+                                  } else {
+                                    handleFeedback?.('DISLIKE');
+                                  }
+                                }}
+                                onMouseEnter={() => setIsDislikeHovered(true)}
+                                onMouseLeave={() => setIsDislikeHovered(false)}
+                              ></Dislike>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </>
                 )}
               </>
