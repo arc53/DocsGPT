@@ -86,9 +86,7 @@ const ConversationBubble = forwardRef<
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
-  const [isLikeHovered, setIsLikeHovered] = useState(false);
   const [isEditClicked, setIsEditClicked] = useState(false);
-  const [isDislikeHovered, setIsDislikeHovered] = useState(false);
   const [isQuestionHovered, setIsQuestionHovered] = useState(false);
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -568,13 +566,7 @@ const ConversationBubble = forwardRef<
                       <>
                         <div className="relative mr-2 flex items-center justify-center">
                           <div>
-                            <div
-                              className={`flex items-center justify-center rounded-full p-2 ${
-                                isLikeHovered
-                                  ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                                  : 'bg-white-3000 dark:bg-transparent'
-                              }`}
-                            >
+                            <div className="bg-white-3000 dark:hover:bg-purple-taupe flex items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent">
                               <Like
                                 className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
                                 onClick={() => {
@@ -584,8 +576,6 @@ const ConversationBubble = forwardRef<
                                     handleFeedback?.('LIKE');
                                   }
                                 }}
-                                onMouseEnter={() => setIsLikeHovered(true)}
-                                onMouseLeave={() => setIsLikeHovered(false)}
                               ></Like>
                             </div>
                           </div>
@@ -593,13 +583,7 @@ const ConversationBubble = forwardRef<
 
                         <div className="relative mr-2 flex items-center justify-center">
                           <div>
-                            <div
-                              className={`flex items-center justify-center rounded-full p-2 ${
-                                isDislikeHovered
-                                  ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                                  : 'bg-white-3000 dark:bg-transparent'
-                              }`}
-                            >
+                            <div className="bg-white-3000 dark:hover:bg-purple-taupe flex items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent">
                               <Dislike
                                 className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
                                 onClick={() => {
@@ -609,8 +593,6 @@ const ConversationBubble = forwardRef<
                                     handleFeedback?.('DISLIKE');
                                   }
                                 }}
-                                onMouseEnter={() => setIsDislikeHovered(true)}
-                                onMouseLeave={() => setIsDislikeHovered(false)}
                               ></Dislike>
                             </div>
                           </div>
