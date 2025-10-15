@@ -137,36 +137,35 @@ const Chunks: React.FC<ChunksProps> = ({
   const pathParts = path ? path.split('/') : [];
 
   const fetchChunks = async () => {
-  setLoading(true);
-  try {
-    const response = await userService.getDocumentChunks(
-      documentId,
-      page,
-      perPage,
-      token,
-      path,
-      searchTerm
-    );
+    setLoading(true);
+    try {
+      const response = await userService.getDocumentChunks(
+        documentId,
+        page,
+        perPage,
+        token,
+        path,
+        searchTerm,
+      );
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch chunks data');
+      if (!response.ok) {
+        throw new Error('Failed to fetch chunks data');
+      }
+
+      const data = await response.json();
+
+      setPage(data.page);
+      setPerPage(data.per_page);
+      setTotalChunks(data.total);
+      setPaginatedChunks(data.chunks);
+    } catch (error) {
+      setPaginatedChunks([]);
+      console.error(error);
+    } finally {
+      // ✅ always runs, success or failure
+      setLoading(false);
     }
-
-    const data = await response.json();
-
-    setPage(data.page);
-    setPerPage(data.per_page);
-    setTotalChunks(data.total);
-    setPaginatedChunks(data.chunks);
-  } catch (error) {
-    setPaginatedChunks([]);
-    console.error(error);
-  } finally {
-    // ✅ always runs, success or failure
-    setLoading(false);
-  }
-};
-
+  };
 
   const handleAddChunk = (title: string, text: string) => {
     if (!text.trim()) {
