@@ -87,7 +87,6 @@ const ConversationBubble = forwardRef<
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const [isEditClicked, setIsEditClicked] = useState(false);
-  const [isQuestionHovered, setIsQuestionHovered] = useState(false);
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
@@ -113,11 +112,7 @@ const ConversationBubble = forwardRef<
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
-      <div
-        onMouseEnter={() => setIsQuestionHovered(true)}
-        onMouseLeave={() => setIsQuestionHovered(false)}
-        className={className}
-      >
+      <div className={`group ${className}`}>
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
             <div className="mr-12 mb-4 flex flex-wrap justify-end gap-2">
@@ -186,7 +181,7 @@ const ConversationBubble = forwardRef<
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-[#35363B] ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-[#35363B] ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </button>
