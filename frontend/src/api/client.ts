@@ -1,7 +1,7 @@
 export const baseURL =
   import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
 
-// Request deduplication - prevent duplicate requests for the same URL
+// Request deduplication - prevent duplicate GET requests for the same URL with same params
 // This helps avoid redundant API calls when components make identical requests simultaneously
 const pendingRequests = new Map<string, Promise<Response>>();
 
@@ -23,19 +23,40 @@ const getHeaders = (
 };
 
 /**
- * Fetch with deduplication to prevent identical concurrent requests
+ * Create a cache key that includes URL, method, and query parameters for proper deduplication
+ * @param url - The request URL
+ * @param options - Fetch options
+ * @returns Cache key string
+ */
+const createCacheKey = (url: string, options?: RequestInit): string => {
+  const method = options?.method || 'GET';
+  const parsedUrl = new URL(url, baseURL);
+
+  // Sort query parameters for consistent cache keys
+  const sortedParams = Array.from(parsedUrl.searchParams.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+
+  return `${method}:${parsedUrl.pathname}${sortedParams ? `?${sortedParams}` : ''}`;
+};
+
+/**
+ * Fetch with deduplication - only for GET requests without body
+ * POST/PUT/DELETE requests are never deduplicated to avoid side effects
  * @param url - The request URL
  * @param options - Fetch options
  * @returns Promise resolving to Response
  */
 const fetchOnce = (url: string, options?: RequestInit): Promise<Response> => {
-  // Create a cache key based on URL and method
-  const cacheKey = `${options?.method || 'GET'}:${url}`;
+  const method = options?.method || 'GET';
 
-  // For non-GET requests or requests with body, don't deduplicate
-  if (options?.method && options.method !== 'GET' && options.body) {
+  // Only deduplicate GET requests without body
+  if (method !== 'GET' || options?.body) {
     return fetch(url, options);
   }
+
+  const cacheKey = createCacheKey(url, options);
 
   // If identical request is already pending, return that promise
   if (pendingRequests.has(cacheKey)) {

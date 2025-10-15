@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { debounceAPI } from '../utils/throttleUtils';
+import { useDebounce } from '../hooks/useThrottle';
 
 import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -118,10 +118,11 @@ export default function Sources({
   });
 
   // Debounced search to avoid excessive API calls during typing
-  const debouncedSetSearchTerm = useCallback(
-    debounceAPI((term: string) => {
+  const debouncedSetSearchTerm = useDebounce(
+    (term: string) => {
       setDebouncedSearchTerm(term);
-    }, 500),
+    },
+    500,
     [],
   );
 

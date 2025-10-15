@@ -1,14 +1,8 @@
-import React, {
-  useRef,
-  useEffect,
-  useState,
-  useLayoutEffect,
-  useCallback,
-} from 'react';
+import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Doc } from '../models/misc';
-import { debounceAPI } from '../utils/throttleUtils';
+import { useDebounce } from '../hooks/useThrottle';
 import SourceIcon from '../assets/source.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import RedirectIcon from '../assets/redirect.svg';
@@ -42,10 +36,11 @@ export default function SourcesPopup({
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   // Debounced search handler for filtering sources during typing
-  const debouncedSetSearchTerm = useCallback(
-    debounceAPI((term: string) => {
+  const debouncedSetSearchTerm = useDebounce(
+    (term: string) => {
       setDebouncedSearchTerm(term);
-    }, 300),
+    },
+    300,
     [],
   );
 

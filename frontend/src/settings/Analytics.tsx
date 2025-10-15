@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { throttleAPI } from '../utils/throttleUtils';
+
 import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useLoaderState } from '../hooks';
@@ -97,9 +97,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingTokens, setLoadingTokens] = useLoaderState(true);
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
 
-  // Throttled fetch to prevent excessive analytics API calls during filter changes
+  // Fetch messages analytics data - throttling now handled at service layer
   const fetchMessagesData = useCallback(
-    throttleAPI(async (agent_id?: string, filter?: string) => {
+    async (agent_id?: string, filter?: string) => {
       setLoadingMessages(true);
       try {
         const response = await userService.getMessageAnalytics(
@@ -117,7 +117,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       } finally {
         setLoadingMessages(false);
       }
-    }, 1000),
+    },
     [token],
   );
 

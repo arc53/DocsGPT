@@ -1,6 +1,7 @@
 import { getSessionToken } from '../../utils/providerUtils';
 import apiClient from '../client';
 import endpoints from '../endpoints';
+import { getThrottledFunction, API_THROTTLE_CONFIG } from '../throttleConfig';
 
 const userService = {
   getConfig: (): Promise<any> => apiClient.get(endpoints.USER.CONFIG, null),
@@ -30,8 +31,12 @@ const userService = {
     apiClient.putFormData(endpoints.USER.UPDATE_AGENT(agent_id), data, token),
   deleteAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.DELETE_AGENT(id), token),
-  getPinnedAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.PINNED_AGENTS, token),
+  getPinnedAgents: getThrottledFunction(
+    'pinnedAgents',
+    (token: string | null): Promise<any> =>
+      apiClient.get(endpoints.USER.PINNED_AGENTS, token),
+    API_THROTTLE_CONFIG.POLLING,
+  ),
   togglePinAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.TOGGLE_PIN_AGENT(id), {}, token),
   getSharedAgent: (id: string, token: string | null): Promise<any> =>
@@ -62,12 +67,24 @@ const userService = {
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
   getTaskStatus: (task_id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.TASK_STATUS(task_id), token),
-  getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
-  getTokenAnalytics: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data, token),
-  getFeedbackAnalytics: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data, token),
+  getMessageAnalytics: getThrottledFunction(
+    'messageAnalytics',
+    (data: any, token: string | null): Promise<any> =>
+      apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
+    API_THROTTLE_CONFIG.ANALYTICS,
+  ),
+  getTokenAnalytics: getThrottledFunction(
+    'tokenAnalytics',
+    (data: any, token: string | null): Promise<any> =>
+      apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data, token),
+    API_THROTTLE_CONFIG.ANALYTICS,
+  ),
+  getFeedbackAnalytics: getThrottledFunction(
+    'feedbackAnalytics',
+    (data: any, token: string | null): Promise<any> =>
+      apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data, token),
+    API_THROTTLE_CONFIG.ANALYTICS,
+  ),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   manageSync: (data: any, token: string | null): Promise<any> =>
