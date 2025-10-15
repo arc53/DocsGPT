@@ -91,8 +91,10 @@ export default function MessageInput({
 
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
+    const uniqueId = crypto.randomUUID();
 
     const newAttachment = {
+      id: uniqueId,
       fileName: file.name,
       progress: 0,
       status: 'uploading' as const,
@@ -106,7 +108,7 @@ export default function MessageInput({
         const progress = Math.round((event.loaded / event.total) * 100);
         dispatch(
           updateAttachment({
-            taskId: newAttachment.taskId,
+            id: uniqueId,
             updates: { progress },
           }),
         );
@@ -119,7 +121,7 @@ export default function MessageInput({
         if (response.task_id) {
           dispatch(
             updateAttachment({
-              taskId: newAttachment.taskId,
+              id: uniqueId,
               updates: {
                 taskId: response.task_id,
                 status: 'processing',
@@ -131,7 +133,7 @@ export default function MessageInput({
       } else {
         dispatch(
           updateAttachment({
-            taskId: newAttachment.taskId,
+            id: uniqueId,
             updates: { status: 'failed' },
           }),
         );
@@ -141,7 +143,7 @@ export default function MessageInput({
     xhr.onerror = () => {
       dispatch(
         updateAttachment({
-          taskId: newAttachment.taskId,
+          id: uniqueId,
           updates: { status: 'failed' },
         }),
       );
@@ -167,7 +169,7 @@ export default function MessageInput({
             if (data.status === 'SUCCESS') {
               dispatch(
                 updateAttachment({
-                  taskId: attachment.taskId!,
+                  id: attachment.id,
                   updates: {
                     status: 'completed',
                     progress: 100,
@@ -179,14 +181,14 @@ export default function MessageInput({
             } else if (data.status === 'FAILURE') {
               dispatch(
                 updateAttachment({
-                  taskId: attachment.taskId!,
+                  id: attachment.id,
                   updates: { status: 'failed' },
                 }),
               );
             } else if (data.status === 'PROGRESS' && data.result?.current) {
               dispatch(
                 updateAttachment({
-                  taskId: attachment.taskId!,
+                  id: attachment.id,
                   updates: { progress: data.result.current },
                 }),
               );
@@ -195,7 +197,7 @@ export default function MessageInput({
           .catch(() => {
             dispatch(
               updateAttachment({
-                taskId: attachment.taskId!,
+                id: attachment.id,
                 updates: { status: 'failed' },
               }),
             );
@@ -263,9 +265,9 @@ export default function MessageInput({
     <div className="mx-2 flex w-full flex-col">
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment, index) => (
+          {attachments.map((attachment) => (
             <div
-              key={index}
+              key={attachment.id}
               className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
                 attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               }`}
@@ -327,11 +329,7 @@ export default function MessageInput({
               <button
                 className="ml-1.5 flex items-center justify-center rounded-full p-1"
                 onClick={() => {
-                  if (attachment.id) {
-                    dispatch(removeAttachment(attachment.id));
-                  } else if (attachment.taskId) {
-                    dispatch(removeAttachment(attachment.taskId));
-                  }
+                  dispatch(removeAttachment(attachment.id));
                 }}
                 aria-label={t('conversation.attachments.remove')}
               >
