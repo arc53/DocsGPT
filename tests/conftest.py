@@ -1,7 +1,15 @@
 from unittest.mock import Mock
 
+import mongomock
+
 import pytest
-from application.core.settings import settings
+
+
+def get_settings():
+    """Lazy load settings to avoid import-time errors."""
+    from application.core.settings import settings
+
+    return settings
 
 
 @pytest.fixture
@@ -35,18 +43,51 @@ def mock_retriever():
 
 @pytest.fixture
 def mock_mongo_db(monkeypatch):
-    fake_collection = FakeMongoCollection()
-    fake_db = {
-        "agents": fake_collection,
-        "user_tools": fake_collection,
-        "memories": fake_collection,
-    }
-    fake_client = {settings.MONGO_DB_NAME: fake_db}
+    """Mock MongoDB using mongomock - industry standard MongoDB mocking library."""
+    settings = get_settings()
 
+    mock_client = mongomock.MongoClient()
+    mock_db = mock_client[settings.MONGO_DB_NAME]
+
+    def get_mock_client():
+        return {settings.MONGO_DB_NAME: mock_db}
+
+    monkeypatch.setattr("application.core.mongo_db.MongoDB.get_client", get_mock_client)
+
+    monkeypatch.setattr("application.api.user.base.users_collection", mock_db["users"])
     monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client", lambda: fake_client
+        "application.api.user.base.user_tools_collection", mock_db["user_tools"]
     )
-    return fake_client
+    monkeypatch.setattr(
+        "application.api.user.base.agents_collection", mock_db["agents"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.conversations_collection", mock_db["conversations"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.sources_collection", mock_db["sources"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.prompts_collection", mock_db["prompts"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.feedback_collection", mock_db["feedback"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.token_usage_collection", mock_db["token_usage"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.attachments_collection", mock_db["attachments"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.user_logs_collection", mock_db["user_logs"]
+    )
+    monkeypatch.setattr(
+        "application.api.user.base.shared_conversations_collections",
+        mock_db["shared_conversations"],
+    )
+
+    return get_mock_client()
 
 
 @pytest.fixture
@@ -85,53 +126,6 @@ def log_context():
         query="test query",
     )
     return context
-
-
-class FakeMongoCollection:
-    def __init__(self):
-        self.docs = {}
-
-    def find_one(self, query, projection=None):
-        if "key" in query:
-            return self.docs.get(query["key"])
-        if "_id" in query:
-            return self.docs.get(str(query["_id"]))
-        if "user" in query:
-            for doc in self.docs.values():
-                if doc.get("user") == query["user"]:
-                    return doc
-        return None
-
-    def find(self, query, projection=None):
-        results = []
-        if "_id" in query and "$in" in query["_id"]:
-            for doc_id in query["_id"]["$in"]:
-                doc = self.docs.get(str(doc_id))
-                if doc:
-                    results.append(doc)
-        elif "user" in query:
-            for doc in self.docs.values():
-                if doc.get("user") == query["user"]:
-                    if "status" in query:
-                        if doc.get("status") == query["status"]:
-                            results.append(doc)
-                    else:
-                        results.append(doc)
-        return results
-
-    def insert_one(self, doc):
-        doc_id = doc.get("_id", len(self.docs))
-        self.docs[str(doc_id)] = doc
-        return Mock(inserted_id=doc_id)
-
-    def update_one(self, query, update, upsert=False):
-        return Mock(modified_count=1)
-
-    def delete_one(self, query):
-        return Mock(deleted_count=1)
-
-    def delete_many(self, query):
-        return Mock(deleted_count=0)
 
 
 @pytest.fixture
