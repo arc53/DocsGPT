@@ -20,14 +20,9 @@ type CopyButtonProps = {
 const DEFAULT_ICON_SIZE = 'w-4 h-4';
 const DEFAULT_PADDING = 'p-2';
 const DEFAULT_COPIED_DURATION = 2000;
-const DEFAULT_BG_LIGHT = '#FFFFFF';
-const DEFAULT_BG_DARK = 'transparent';
-const DEFAULT_HOVER_BG_LIGHT = '#EEEEEE';
-const DEFAULT_HOVER_BG_DARK = '#464152';
 
 export default function CopyButton({
   textToCopy,
-
   iconSize = DEFAULT_ICON_SIZE,
   padding = DEFAULT_PADDING,
   showText = false,
@@ -43,10 +38,9 @@ export default function CopyButton({
   const iconWrapperClasses = clsx(
     'flex items-center justify-center rounded-full transition-colors duration-150 ease-in-out',
     padding,
-    `bg-[${DEFAULT_BG_LIGHT}] dark:bg-[${DEFAULT_BG_DARK}]`,
+    `bg-[#FFFFFF}] dark:bg-transparent`,
     {
-      [`hover:bg-[${DEFAULT_HOVER_BG_LIGHT}] dark:hover:bg-[${DEFAULT_HOVER_BG_DARK}]`]:
-        !isCopied,
+      [`hover:bg-[#EEEEEE] dark:hover:bg-purple-taupe`]: !isCopied,
       'bg-green-100 dark:bg-green-900 hover:bg-green-100 dark:hover:bg-green-900':
         isCopied,
     },
