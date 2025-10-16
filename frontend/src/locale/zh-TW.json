@@ -384,7 +384,8 @@
       "title": "來源",
       "text": "來源文字",
       "link": "來源連結",
-      "view_more": "查看更多 {{count}} 個來源"
+      "view_more": "查看更多 {{count}} 個來源",
+      "noSourcesAvailable": "沒有可用的來源"
     },
     "attachments": {
       "attach": "附件",

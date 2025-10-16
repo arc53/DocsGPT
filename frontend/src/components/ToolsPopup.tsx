@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -133,10 +134,10 @@ export default function ToolsPopup({
     tool.displayName.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  return (
+  const popupContent = (
     <div
       ref={popupRef}
-      className="border-light-silver bg-lotion dark:border-dim-gray dark:bg-charleston-green-2 fixed z-9999 rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
+      className="border-light-silver bg-lotion dark:border-dim-gray dark:bg-charleston-green-2 fixed z-50 rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
       style={{
         top: popupPosition.showAbove ? popupPosition.top : undefined,
         bottom: popupPosition.showAbove
@@ -242,4 +243,6 @@ export default function ToolsPopup({
       </div>
     </div>
   );
+
+  return createPortal(popupContent, document.body);
 }
