@@ -78,6 +78,9 @@ class StreamResource(Resource, BaseAnswerResource):
 
             if error := self.check_usage(processor.agent_config):
                 return error
+            
+            if error := self.check_origin_access(processor.agent_config, request):
+                return error
 
             return Response(
                 self.complete_stream(

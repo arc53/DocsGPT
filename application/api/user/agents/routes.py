@@ -67,6 +67,7 @@ class GetAgent(Resource):
                     if (isinstance(source_ref, DBRef) and db.dereference(source_ref))
                     or source_ref == "default"
                 ],
+                "granted_origins": agent.get("granted_origins", []),
                 "chunks": agent["chunks"],
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent.get("prompt_id", ""),
@@ -140,6 +141,7 @@ class GetAgents(Resource):
                             isinstance(source_ref, DBRef) and db.dereference(source_ref)
                         )
                     ],
+                    "granted_origins": agent.get("granted_origins", []),
                     "chunks": agent["chunks"],
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
@@ -193,6 +195,11 @@ class CreateAgent(Resource):
                 fields.String,
                 required=False,
                 description="List of source identifiers for multiple sources",
+            ),
+            "granted_origins": fields.List(
+                fields.String, 
+                required=False,
+                description="List of origins which access is granted."
             ),
             "chunks": fields.Integer(required=True, description="Chunks count"),
             "retriever": fields.String(required=True, description="Retriever ID"),
@@ -362,6 +369,7 @@ class CreateAgent(Resource):
                 "image": image_url,
                 "source": source_field,
                 "sources": sources_list,
+                "granted_origins": data.get("granted_origins", []),
                 "chunks": data.get("chunks", ""),
                 "retriever": data.get("retriever", ""),
                 "prompt_id": data.get("prompt_id", ""),
@@ -413,6 +421,11 @@ class UpdateAgent(Resource):
                 fields.String,
                 required=False,
                 description="List of source identifiers for multiple sources",
+            ),
+            "granted_origins": fields.List(
+                fields.String, 
+                required=False,
+                description="List of origins which access is granted."
             ),
             "chunks": fields.Integer(required=True, description="Chunks count"),
             "retriever": fields.String(required=True, description="Retriever ID"),
@@ -524,6 +537,7 @@ class UpdateAgent(Resource):
             "image",
             "source",
             "sources",
+            "granted_origins",
             "chunks",
             "retriever",
             "prompt_id",

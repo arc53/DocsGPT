@@ -123,6 +123,37 @@ class BaseAnswerResource:
             429, # too many requests
         )
 
+    def check_origin_access(self, agent_config: Dict, request) -> Optional[Response]:
+        """If user specified an origin whitelist for agent, check if request coming from a valid origin.
+
+        Args:
+            agent_config: The config dict of agent instance
+            request_headers: Headers of request for access checking
+
+        Returns:
+            None or Response if origin is not valid.
+        """
+        api_key = agent_config.get("user_api_key")
+        if not api_key:
+            return None
+        
+        agents_collection = self.db["agents"]
+        agent = agents_collection.find_one({"key": api_key})
+        
+        request_origin = request.headers.get("Origin")
+        granted_origins = json.loads(agent.get("granted_origins", "[]"))
+        granted_origins.extend(settings.FRONTEND_ORIGINS)
+        
+        if granted_origins == []:
+            return None
+        elif request_origin in granted_origins or (str(request_origin)+"/") in granted_origins:
+            return None
+    
+        return make_response(
+            jsonify({"success": "True", "message": "You are not authorized for this action."}),
+            401,
+        )
+
     def complete_stream(
         self,
         question: str,
