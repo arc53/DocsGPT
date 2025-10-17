@@ -3,7 +3,6 @@ from unittest.mock import Mock
 import pytest
 from application.agents.classic_agent import ClassicAgent
 from application.core.settings import settings
-from tests.conftest import FakeMongoCollection
 
 
 @pytest.mark.unit
@@ -168,10 +167,13 @@ class TestBaseAgentTools:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"].docs = {
-            "1": {"_id": "1", "user": "test_user", "name": "tool1", "status": True},
-            "2": {"_id": "2", "user": "test_user", "name": "tool2", "status": True},
-        }
+        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
+        user_tools.insert_one(
+            {"_id": "1", "user": "test_user", "name": "tool1", "status": True}
+        )
+        user_tools.insert_one(
+            {"_id": "2", "user": "test_user", "name": "tool2", "status": True}
+        )
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_user_tools("test_user")
@@ -187,10 +189,13 @@ class TestBaseAgentTools:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"].docs = {
-            "1": {"_id": "1", "user": "test_user", "name": "tool1", "status": True},
-            "2": {"_id": "2", "user": "test_user", "name": "tool2", "status": False},
-        }
+        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
+        user_tools.insert_one(
+            {"_id": "1", "user": "test_user", "name": "tool1", "status": True}
+        )
+        user_tools.insert_one(
+            {"_id": "2", "user": "test_user", "name": "tool2", "status": False}
+        )
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_user_tools("test_user")
@@ -209,17 +214,16 @@ class TestBaseAgentTools:
         tool_id = str(ObjectId())
         tool_obj_id = ObjectId(tool_id)
 
-        fake_agent_collection = FakeMongoCollection()
-        fake_agent_collection.docs["api_key_123"] = {
-            "key": "api_key_123",
-            "tools": [tool_id],
-        }
+        agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
+        agents_collection.insert_one(
+            {
+                "key": "api_key_123",
+                "tools": [tool_id],
+            }
+        )
 
-        fake_tools_collection = FakeMongoCollection()
-        fake_tools_collection.docs[tool_id] = {"_id": tool_obj_id, "name": "api_tool"}
-
-        mock_mongo_db[settings.MONGO_DB_NAME]["agents"] = fake_agent_collection
-        mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"] = fake_tools_collection
+        tools_collection = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
+        tools_collection.insert_one({"_id": tool_obj_id, "name": "api_tool"})
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_tools("api_key_123")

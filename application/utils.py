@@ -21,7 +21,7 @@ def get_encoding():
 
 
 def get_gpt_model() -> str:
-    """Get the appropriate GPT model based on provider"""
+    """Get GPT model based on provider"""
     model_map = {
         "openai": "gpt-4o-mini",
         "anthropic": "claude-2",
@@ -32,16 +32,7 @@ def get_gpt_model() -> str:
 
 
 def safe_filename(filename):
-    """
-    Creates a safe filename that preserves the original extension.
-    Uses secure_filename, but ensures a proper filename is returned even with non-Latin characters.
-
-    Args:
-        filename (str): The original filename
-
-    Returns:
-        str: A safe filename that can be used for storage
-    """
+    """Create safe filename, preserving extension. Handles non-Latin characters."""
     if not filename:
         return str(uuid.uuid4())
     _, extension = os.path.splitext(filename)
@@ -83,8 +74,14 @@ def count_tokens_docs(docs):
     return tokens
 
 
+def get_missing_fields(data, required_fields):
+    """Check for missing required fields. Returns list of missing field names."""
+    return [field for field in required_fields if field not in data]
+
+
 def check_required_fields(data, required_fields):
-    missing_fields = [field for field in required_fields if field not in data]
+    """Validate required fields. Returns Flask 400 response if validation fails, None otherwise."""
+    missing_fields = get_missing_fields(data, required_fields)
     if missing_fields:
         return make_response(
             jsonify(
@@ -98,7 +95,8 @@ def check_required_fields(data, required_fields):
     return None
 
 
-def validate_required_fields(data, required_fields):
+def get_field_validation_errors(data, required_fields):
+    """Check for missing and empty fields. Returns dict with 'missing_fields' and 'empty_fields', or None."""
     missing_fields = []
     empty_fields = []
 
@@ -107,12 +105,24 @@ def validate_required_fields(data, required_fields):
             missing_fields.append(field)
         elif not data[field]:
             empty_fields.append(field)
-    errors = []
-    if missing_fields:
-        errors.append(f"Missing required fields: {', '.join(missing_fields)}")
-    if empty_fields:
-        errors.append(f"Empty values in required fields: {', '.join(empty_fields)}")
-    if errors:
+    if missing_fields or empty_fields:
+        return {"missing_fields": missing_fields, "empty_fields": empty_fields}
+    return None
+
+
+def validate_required_fields(data, required_fields):
+    """Validate required fields (must exist and be non-empty). Returns Flask 400 response if validation fails, None otherwise."""
+    errors_dict = get_field_validation_errors(data, required_fields)
+    if errors_dict:
+        errors = []
+        if errors_dict["missing_fields"]:
+            errors.append(
+                f"Missing required fields: {', '.join(errors_dict['missing_fields'])}"
+            )
+        if errors_dict["empty_fields"]:
+            errors.append(
+                f"Empty values in required fields: {', '.join(errors_dict['empty_fields'])}"
+            )
         return make_response(
             jsonify({"success": False, "message": " | ".join(errors)}), 400
         )
@@ -124,10 +134,7 @@ def get_hash(data):
 
 
 def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
-    """
-    Limits chat history based on token count.
-    Returns a list of messages that fit within the token limit.
-    """
+    """Limit chat history to fit within token limit."""
     from application.core.settings import settings
 
     max_token_limit = (
@@ -161,7 +168,7 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
 
 
 def validate_function_name(function_name):
-    """Validates if a function name matches the allowed pattern."""
+    """Validate function name matches allowed pattern (alphanumeric, underscore, hyphen)."""
     if not re.match(r"^[a-zA-Z0-9_-]+$", function_name):
         return False
     return True
