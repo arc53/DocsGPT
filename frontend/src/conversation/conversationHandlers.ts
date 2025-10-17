@@ -3,7 +3,7 @@ import { Doc } from '../models/misc';
 import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
 import { ToolCallsType } from './types';
 
-export function handleFetchAnswer(
+export async function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
   token: string | null,
@@ -63,31 +63,29 @@ export function handleFetchAnswer(
       payload.retriever = selectedDocs[0].retriever as string;
     }
   }
-  return conversationService
-    .answer(payload, token, signal)
-    .then((response) => {
-      if (response.ok) {
-        return response.json();
-      } else {
-        return Promise.reject(new Error(response.statusText));
-      }
-    })
-    .then((data) => {
-      const result = data.answer;
-      return {
-        answer: result,
-        query: question,
-        result,
-        thought: data.thought,
-        sources: data.sources,
-        toolCalls: data.tool_calls,
-        conversationId: data.conversation_id,
-        title: data.title || null,
-      };
-    });
+
+  const response = await conversationService.answer(payload, token, signal);
+  
+  if (!response.ok) {
+    throw new Error(response.statusText);
+  }
+
+  const data = await response.json();
+  const result = data.answer;
+  
+  return {
+    answer: result,
+    query: question,
+    result,
+    thought: data.thought,
+    sources: data.sources,
+    toolCalls: data.tool_calls,
+    conversationId: data.conversation_id,
+    title: data.title || null,
+  };
 }
 
-export function handleFetchAnswerSteaming(
+export async function handleFetchAnswerSteaming(
   question: string,
   signal: AbortSignal,
   token: string | null,
@@ -131,58 +129,66 @@ export function handleFetchAnswerSteaming(
     }
   }
 
-  return new Promise<Answer>((resolve, reject) => {
-    conversationService
-      .answerStream(payload, token, signal)
-      .then((response) => {
-        if (!response.body) throw Error('No response body');
+  return new Promise<Answer>(async (resolve, reject) => {
+    try {
+      const response = await conversationService.answerStream(payload, token, signal);
+      
+      if (!response.body) throw Error('No response body');
 
-        let buffer = '';
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let counterrr = 0;
-        const processStream = ({
-          done,
-          value,
-        }: ReadableStreamReadResult<Uint8Array>) => {
-          if (done) return;
+      let buffer = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let counterrr = 0;
+      
+      const processStream = async ({
+        done,
+        value,
+      }: ReadableStreamReadResult<Uint8Array>) => {
+        if (done) return;
 
-          counterrr += 1;
+        counterrr += 1;
 
-          const chunk = decoder.decode(value);
-          buffer += chunk;
+        const chunk = decoder.decode(value);
+        buffer += chunk;
 
-          const events = buffer.split('\n\n');
-          buffer = events.pop() ?? '';
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
 
-          for (const event of events) {
-            if (event.trim().startsWith('data:')) {
-              const dataLine: string = event
-                .split('\n')
-                .map((line: string) => line.replace(/^data:\s?/, ''))
-                .join('');
+        for (const event of events) {
+          if (event.trim().startsWith('data:')) {
+            const dataLine: string = event
+              .split('\n')
+              .map((line: string) => line.replace(/^data:\s?/, ''))
+              .join('');
 
-              const messageEvent = new MessageEvent('message', {
-                data: dataLine.trim(),
-              });
+            const messageEvent = new MessageEvent('message', {
+              data: dataLine.trim(),
+            });
 
-              onEvent(messageEvent);
-            }
+            onEvent(messageEvent);
           }
+        }
 
-          reader.read().then(processStream).catch(reject);
-        };
+        try {
+          await reader.read().then(processStream);
+        } catch (error) {
+          reject(error);
+        }
+      };
 
-        reader.read().then(processStream).catch(reject);
-      })
-      .catch((error) => {
-        console.error('Connection failed:', error);
+      try {
+        await reader.read().then(processStream);
+      } catch (error) {
         reject(error);
-      });
+      }
+    } catch (error) {
+      console.error('Connection failed:', error);
+      reject(error);
+    }
   });
 }
 
-export function handleSearch(
+export async function handleSearch(
   question: string,
   token: string | null,
   selectedDocs: Doc[],
@@ -208,16 +214,17 @@ export function handleSearch(
       payload.retriever = selectedDocs[0].retriever as string;
     }
   }
-  return conversationService
-    .search(payload, token)
-    .then((response) => response.json())
-    .then((data) => {
-      return data;
-    })
-    .catch((err) => console.log(err));
+  
+  try {
+    const response = await conversationService.search(payload, token);
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    console.log(err);
+  }
 }
 
-export function handleSearchViaApiKey(
+export async function handleSearchViaApiKey(
   question: string,
   api_key: string,
   history: Array<any> = [],
@@ -229,23 +236,24 @@ export function handleSearchViaApiKey(
       tool_calls: item.tool_calls,
     };
   });
-  return conversationService
-    .search(
+  
+  try {
+    const response = await conversationService.search(
       {
         question: question,
         history: JSON.stringify(history),
         api_key: api_key,
       },
       null,
-    )
-    .then((response) => response.json())
-    .then((data) => {
-      return data;
-    })
-    .catch((err) => console.log(err));
+    );
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    console.log(err);
+  }
 }
 
-export function handleSendFeedback(
+export async function handleSendFeedback(
   prompt: string,
   response: string,
   feedback: FEEDBACK,
@@ -253,27 +261,25 @@ export function handleSendFeedback(
   prompt_index: number,
   token: string | null,
 ) {
-  return conversationService
-    .feedback(
-      {
-        question: prompt,
-        answer: response,
-        feedback: feedback,
-        conversation_id: conversation_id,
-        question_index: prompt_index,
-      },
-      token,
-    )
-    .then((response) => {
-      if (response.ok) {
-        return Promise.resolve();
-      } else {
-        return Promise.reject();
-      }
-    });
+  const feedbackResponse = await conversationService.feedback(
+    {
+      question: prompt,
+      answer: response,
+      feedback: feedback,
+      conversation_id: conversation_id,
+      question_index: prompt_index,
+    },
+    token,
+  );
+  
+  if (feedbackResponse.ok) {
+    return Promise.resolve();
+  } else {
+    return Promise.reject();
+  }
 }
 
-export function handleFetchSharedAnswerStreaming(
+export async function handleFetchSharedAnswerStreaming(
   question: string,
   signal: AbortSignal,
   apiKey: string,
@@ -289,7 +295,7 @@ export function handleFetchSharedAnswerStreaming(
     };
   });
 
-  return new Promise<Answer>((resolve, reject) => {
+  return new Promise<Answer>(async (resolve, reject) => {
     const payload = {
       question: question,
       history: JSON.stringify(history),
@@ -297,57 +303,66 @@ export function handleFetchSharedAnswerStreaming(
       save_conversation: false,
       attachments: attachments.length > 0 ? attachments : undefined,
     };
-    conversationService
-      .answerStream(payload, null, signal)
-      .then((response) => {
-        if (!response.body) throw Error('No response body');
+    
+    try {
+      const response = await conversationService.answerStream(payload, null, signal);
+      
+      if (!response.body) throw Error('No response body');
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let counterrr = 0;
-        const processStream = ({
-          done,
-          value,
-        }: ReadableStreamReadResult<Uint8Array>) => {
-          if (done) {
-            console.log(counterrr);
-            return;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let counterrr = 0;
+      
+      const processStream = async ({
+        done,
+        value,
+      }: ReadableStreamReadResult<Uint8Array>) => {
+        if (done) {
+          console.log(counterrr);
+          return;
+        }
+
+        counterrr += 1;
+
+        const chunk = decoder.decode(value);
+
+        const lines = chunk.split('\n');
+
+        for (let line of lines) {
+          if (line.trim() == '') {
+            continue;
+          }
+          if (line.startsWith('data:')) {
+            line = line.substring(5);
           }
 
-          counterrr += 1;
+          const messageEvent: MessageEvent = new MessageEvent('message', {
+            data: line,
+          });
 
-          const chunk = decoder.decode(value);
+          onEvent(messageEvent); // handle each message
+        }
 
-          const lines = chunk.split('\n');
+        try {
+          await reader.read().then(processStream);
+        } catch (error) {
+          reject(error);
+        }
+      };
 
-          for (let line of lines) {
-            if (line.trim() == '') {
-              continue;
-            }
-            if (line.startsWith('data:')) {
-              line = line.substring(5);
-            }
-
-            const messageEvent: MessageEvent = new MessageEvent('message', {
-              data: line,
-            });
-
-            onEvent(messageEvent); // handle each message
-          }
-
-          reader.read().then(processStream).catch(reject);
-        };
-
-        reader.read().then(processStream).catch(reject);
-      })
-      .catch((error) => {
-        console.error('Connection failed:', error);
+      try {
+        await reader.read().then(processStream);
+      } catch (error) {
         reject(error);
-      });
+      }
+    } catch (error) {
+      console.error('Connection failed:', error);
+      reject(error);
+    }
   });
 }
 
-export function handleFetchSharedAnswer(
+export async function handleFetchSharedAnswer(
   question: string,
   signal: AbortSignal,
   apiKey: string,
@@ -358,6 +373,7 @@ export function handleFetchSharedAnswer(
       answer: any;
       sources: any;
       query: string;
+      toolCalls?: ToolCallsType[];
     }
   | {
       result: any;
@@ -365,6 +381,7 @@ export function handleFetchSharedAnswer(
       sources: any;
       query: string;
       title: any;
+      toolCalls?: ToolCallsType[];
     }
 > {
   const payload = {
@@ -374,23 +391,20 @@ export function handleFetchSharedAnswer(
       attachments && attachments.length > 0 ? attachments : undefined,
   };
 
-  return conversationService
-    .answer(payload, null, signal)
-    .then((response) => {
-      if (response.ok) {
-        return response.json();
-      } else {
-        return Promise.reject(new Error(response.statusText));
-      }
-    })
-    .then((data) => {
-      const result = data.answer;
-      return {
-        answer: result,
-        query: question,
-        result,
-        sources: data.sources,
-        toolCalls: data.tool_calls,
-      };
-    });
+  const response = await conversationService.answer(payload, null, signal);
+  
+  if (!response.ok) {
+    throw new Error(response.statusText);
+  }
+
+  const data = await response.json();
+  const result = data.answer;
+  
+  return {
+    answer: result,
+    query: question,
+    result,
+    sources: data.sources,
+    toolCalls: data.tool_calls,
+  };
 }
