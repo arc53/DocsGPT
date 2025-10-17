@@ -262,7 +262,7 @@ export default function MessageInput({
   };
 
   return (
-    <div className="mx-2 flex w-full flex-col">
+    <div className="flex w-full flex-col">
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => (

@@ -161,14 +161,16 @@ export const SharedConversation = () => {
         />
         <div className="flex w-full max-w-[1200px] flex-col items-center gap-4 pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           {apiKey ? (
-            <MessageInput
-              onSubmit={(text) => {
-                handleQuestionSubmission(text);
-              }}
-              loading={status === 'loading'}
-              showSourceButton={false}
-              showToolButton={false}
-            />
+            <div className="w-full px-2">
+              <MessageInput
+                onSubmit={(text) => {
+                  handleQuestionSubmission(text);
+                }}
+                loading={status === 'loading'}
+                showSourceButton={false}
+                showToolButton={false}
+              />
+            </div>
           ) : (
             <button
               onClick={() => navigate('/')}
