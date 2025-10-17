@@ -3,9 +3,9 @@
 }
 
 .list li:not(:first-child) {
-  margin-top: 1em;
+  margin-top: 0.5em;
 }
 
 .list li > .list {
-  margin-top: 1em;
+  margin-top: 0.5em;
 }
