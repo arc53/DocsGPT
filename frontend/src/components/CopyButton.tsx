@@ -38,9 +38,9 @@ export default function CopyButton({
   const iconWrapperClasses = clsx(
     'flex items-center justify-center rounded-full transition-colors duration-150 ease-in-out',
     padding,
-    `bg-[#FFFFFF}] dark:bg-transparent`,
     {
-      [`hover:bg-[#EEEEEE] dark:hover:bg-purple-taupe`]: !isCopied,
+      [`bg-[#FFFFFF}] dark:bg-transparent hover:bg-[#EEEEEE] dark:hover:bg-purple-taupe`]:
+        !isCopied,
       'bg-green-100 dark:bg-green-900 hover:bg-green-100 dark:hover:bg-green-900':
         isCopied,
     },
