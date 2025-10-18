@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../hooks';
 
 import userService from '../api/services/userService';
 import { getSessionToken } from '../utils/providerUtils';
@@ -60,6 +61,8 @@ function Upload({
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+
+  const dispatch = useAppDispatch();
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
