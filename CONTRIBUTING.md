@@ -38,7 +38,7 @@ Tech Stack Overview:
 ### 🌐 Frontend Contributions (⚛️ React, Vite)
 
 *   The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).  Please try to follow the guidelines.
-*   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `fronetend/.eslintrc.js` file.  We recommend configuring your editor with ESLint and Prettier to help with this.
+*   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `frontend/.eslintrc.js` file.  We recommend configuring your editor with ESLint and Prettier to help with this.
 * **Component Structure:** Strive for small, reusable components.  Favor functional components and hooks over class components where possible.
 * **State Management** If you need to add stores, please use Redux.
 
