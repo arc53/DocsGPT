@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../hooks';
 
 import userService from '../api/services/userService';
 
@@ -53,7 +54,7 @@ export default function Sources({
 }: DocumentsProps) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const token = useSelector(selectToken);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
