@@ -1,5 +1,6 @@
 import os
 import logging
+from typing import List, Optional, Any
 from retry import retry
 from tqdm import tqdm
 from application.core.settings import settings
@@ -22,13 +23,16 @@ def sanitize_content(content: str) -> str:
 
 
 @retry(tries=10, delay=60)
-def add_text_to_store_with_retry(store, doc, source_id):
-    """
-    Add a document's text and metadata to the vector store with retry logic.
+def add_text_to_store_with_retry(store: Any, doc: Any, source_id: str) -> None:
+    """Add a document's text and metadata to the vector store with retry logic.
+    
     Args:
         store: The vector store object.
         doc: The document to be added.
         source_id: Unique identifier for the source.
+        
+    Raises:
+        Exception: If document addition fails after all retry attempts.
     """
     try:
         # Sanitize content to remove NUL characters that cause ingestion failures
@@ -41,18 +45,21 @@ def add_text_to_store_with_retry(store, doc, source_id):
         raise
 
 
-def embed_and_store_documents(docs, folder_name, source_id, task_status):
-    """
-    Embeds documents and stores them in a vector store.
+def embed_and_store_documents(docs: List[Any], folder_name: str, source_id: str, task_status: Any) -> None:
+    """Embeds documents and stores them in a vector store.
 
     Args:
-        docs (list): List of documents to be embedded and stored.
-        folder_name (str): Directory to save the vector store.
-        source_id (str): Unique identifier for the source.
+        docs: List of documents to be embedded and stored.
+        folder_name: Directory to save the vector store.
+        source_id: Unique identifier for the source.
         task_status: Task state manager for progress updates.
 
     Returns:
         None
+        
+    Raises:
+        OSError: If unable to create folder or save vector store.
+        Exception: If vector store creation or document embedding fails.
     """
     # Ensure the folder exists
     if not os.path.exists(folder_name):
@@ -95,10 +102,21 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
         except Exception as e:
             logging.error(f"Error embedding document {idx}: {e}", exc_info=True)
             logging.info(f"Saving progress at document {idx} out of {total_docs}")
-            store.save_local(folder_name)
+            try:
+                store.save_local(folder_name)
+                logging.info("Progress saved successfully")
+            except Exception as save_error:
+                logging.error(f"CRITICAL: Failed to save progress: {save_error}", exc_info=True)
+                # Continue without breaking to attempt final save
             break
 
     # Save the vector store
     if settings.VECTOR_STORE == "faiss":
-        store.save_local(folder_name)
-    logging.info("Vector store saved successfully.")
+        try:
+            store.save_local(folder_name)
+            logging.info("Vector store saved successfully.")
+        except Exception as e:
+            logging.error(f"CRITICAL: Failed to save final vector store: {e}", exc_info=True)
+            raise OSError(f"Unable to save vector store to {folder_name}: {e}") from e
+    else:
+        logging.info("Vector store saved successfully.")
