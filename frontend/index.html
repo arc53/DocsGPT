@@ -7,12 +7,43 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#fbfbfb" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#161616" media="(prefers-color-scheme: dark)" />
-  <title>DocsGPT</title>
+
+  <!-- SEO Meta Tags -->
+  <title>DocsGPT – AI Documentation Helper</title>
+  <meta name="description" content="DocsGPT helps you create and manage AI documentation efficiently with GPT-powered AI assistance.">
+  <meta name="keywords" content="DocsGPT, AI documentation, GPT, open source, developer tools">
+  <meta name="author" content="DocsGPT Team">
+
+  <!-- Open Graph / Social Media -->
+  <meta property="og:title" content="DocsGPT – AI Documentation Helper" />
+  <meta property="og:description" content="DocsGPT helps you create and manage AI documentation efficiently with GPT-powered AI assistance." />
+  <meta property="og:image" content="/social-preview.png" />
+  <meta property="og:url" content="https://yourdomain.com" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DocsGPT – AI Documentation Helper" />
+  <meta name="twitter:description" content="DocsGPT helps you create and manage AI documentation efficiently." />
+  <meta name="twitter:image" content="/social-preview.png" />
+
+  <!-- Favicon -->
   <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "DocsGPT",
+    "url": "https://yourdomain.com",
+    "applicationCategory": "DeveloperTool",
+    "operatingSystem": "Web",
+    "description": "DocsGPT helps you create and manage AI documentation efficiently with GPT-powered AI assistance."
+  }
+  </script>
 </head>
 
 <body>
-  <div id="root" class="h-screen"></div>
+  <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 
