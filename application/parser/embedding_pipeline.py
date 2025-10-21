@@ -95,10 +95,45 @@ def embed_and_store_documents(docs, folder_name, source_id, task_status):
         except Exception as e:
             logging.error(f"Error embedding document {idx}: {e}", exc_info=True)
             logging.info(f"Saving progress at document {idx} out of {total_docs}")
-            store.save_local(folder_name)
+            try:
+                if settings.VECTOR_STORE == "faiss":
+                    store.save_local(folder_name)
+                logging.info(f"Progress saved successfully up to document {idx}")
+            except (OSError, PermissionError, IOError) as save_error:
+                logging.error(
+                    f"Failed to save progress to {folder_name}: {save_error}",
+                    exc_info=True
+                )
+                logging.error(
+                    f"Data loss risk: {idx} documents embedded but not saved"
+                )
+            except Exception as save_error:
+                logging.error(
+                    f"Unexpected error saving progress to {folder_name}: {save_error}",
+                    exc_info=True
+                )
             break
 
     # Save the vector store
     if settings.VECTOR_STORE == "faiss":
-        store.save_local(folder_name)
-    logging.info("Vector store saved successfully.")
+        try:
+            store.save_local(folder_name)
+            logging.info("Vector store saved successfully.")
+        except (OSError, PermissionError, IOError) as e:
+            logging.error(
+                f"Failed to save vector store to {folder_name}: {e}",
+                exc_info=True
+            )
+            logging.error(
+                f"Critical: {total_docs} documents embedded but save failed. "
+                f"Possible causes: disk full, permission denied, or I/O error."
+            )
+            raise
+        except Exception as e:
+            logging.error(
+                f"Unexpected error saving vector store to {folder_name}: {e}",
+                exc_info=True
+            )
+            raise
+    else:
+        logging.info("Vector store saved successfully.")
