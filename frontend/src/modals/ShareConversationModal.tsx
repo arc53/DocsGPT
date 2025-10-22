@@ -103,8 +103,8 @@ export const ShareConversationModal = ({
   };
 
   return (
-    <WrapperModal close={close}>
-      <div className="flex max-h-[80vh] w-[600px] max-w-[80vw] flex-col gap-2 overflow-y-auto">
+    <WrapperModal close={close} contentClassName="!overflow-visible">
+      <div className="flex w-[600px] max-w-[80vw] flex-col gap-2">
         <h2 className="text-eerie-black dark:text-chinese-white text-xl font-medium">
           {t('modals.shareConv.label')}
         </h2>

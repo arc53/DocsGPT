@@ -118,18 +118,34 @@ layer(base);
     background: transparent;
   }
 
+  /* Light theme scrollbar */
   &::-webkit-scrollbar-thumb {
-    background: rgba(156, 163, 175, 0.5);
+    background: rgba(215, 215, 215, 1);
     border-radius: 3px;
   }
 
   &::-webkit-scrollbar-thumb:hover {
-    background: rgba(156, 163, 175, 0.7);
+    background: rgba(195, 195, 195, 1);
   }
 
-  /* For Firefox */
+  /* Dark theme scrollbar */
+  .dark &::-webkit-scrollbar-thumb {
+    background: rgba(77, 78, 88, 1);
+    border-radius: 3px;
+  }
+
+  .dark &::-webkit-scrollbar-thumb:hover {
+    background: rgba(97, 98, 108, 1);
+  }
+
+  /* For Firefox - Light theme */
   scrollbar-width: thin;
-  scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+  scrollbar-color: rgba(215, 215, 215, 1) transparent;
+
+  /* For Firefox - Dark theme */
+  .dark & {
+    scrollbar-color: rgba(77, 78, 88, 1) transparent;
+  }
 }
 
 @utility table-default {

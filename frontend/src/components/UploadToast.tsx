@@ -44,7 +44,10 @@ export default function UploadToast() {
   };
 
   return (
-    <div className="fixed right-4 bottom-4 z-50 flex max-w-md flex-col gap-2">
+    <div
+      className="fixed right-4 bottom-4 z-50 flex max-w-md flex-col gap-2"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {uploadTasks
         .filter((task) => !task.dismissed)
         .map((task) => {

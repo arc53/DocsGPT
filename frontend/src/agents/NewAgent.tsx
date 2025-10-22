@@ -534,7 +534,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
   return (
-    <div className="p-4 md:p-12">
+    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-[100dvh] min-[1180px]:h-[100dvh] md:px-12 md:pt-12 md:pb-3">
       <div className="flex items-center gap-3 px-4">
         <button
           className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
@@ -615,9 +615,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </button>
         </div>
       </div>
-      <div className="mt-5 flex w-full grid-cols-5 flex-col gap-10 min-[1180px]:grid min-[1180px]:gap-5">
-        <div className="col-span-2 flex flex-col gap-5">
-          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+      <div className="mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] bg-[#F6F6F6] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden dark:bg-[#383838]">
+        <div className="scrollbar-thin col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Meta</h2>
             <input
               className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
@@ -650,7 +650,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Source</h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
@@ -744,7 +744,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
             </div>
           </div>
-          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
                 <Prompts
@@ -781,7 +781,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </button>
             </div>
           </div>
-          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Tools</h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
               <button
@@ -823,7 +823,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">Agent type</h2>
             <div className="mt-3">
               <Dropdown
@@ -848,7 +848,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <button
               onClick={() =>
                 setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
@@ -1032,9 +1032,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             )}
           </div>
         </div>
-        <div className="col-span-3 flex flex-col gap-3 rounded-[30px] bg-[#F6F6F6] px-6 py-3 dark:bg-[#383838] dark:text-[#E0E0E0]">
+        <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2 dark:text-[#E0E0E0]">
           <h2 className="text-lg font-semibold">Preview</h2>
-          <AgentPreviewArea />
+          <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
+            <AgentPreviewArea />
+          </div>
         </div>
       </div>
       <ConfirmationModal
@@ -1071,9 +1073,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 function AgentPreviewArea() {
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="dark:bg-raisin-black h-full w-full rounded-[30px] border border-[#F6F6F6] bg-white max-[1180px]:h-192 dark:border-[#7E7E7E]">
+    <div className="dark:bg-raisin-black w-full rounded-[30px] border border-[#F6F6F6] bg-white max-[1179px]:h-[600px] min-[1180px]:h-full dark:border-[#7E7E7E]">
       {selectedAgent?.status === 'published' ? (
-        <div className="flex h-full w-full flex-col justify-end overflow-auto rounded-[30px]">
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-[30px]">
           <AgentPreview />
         </div>
       ) : (
