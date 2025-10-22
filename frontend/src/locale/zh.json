@@ -233,7 +233,10 @@
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
       }
-    }
+    },
+    "scrollTabsLeft": "向左滚动标签",
+    "tabsAriaLabel": "设置标签",
+    "scrollTabsRight": "向右滚动标签"
   },
   "modals": {
     "uploadDoc": {
@@ -456,7 +459,8 @@
       "attach": "附件",
       "remove": "删除附件"
     },
-    "retry": "重试"
+    "retry": "重试",
+    "reasoning": "推理"
   },
   "agents": {
     "title": "代理",
@@ -575,5 +579,33 @@
     "title": "404",
     "message": "The page you are looking for does not exist.",
     "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "搜索文件和文件夹...",
+    "itemsSelected": "已选择 {{count}} 项",
+    "name": "名称",
+    "lastModified": "最后修改",
+    "size": "大小"
+  },
+  "actionButtons": {
+    "openNewChat": "打开新聊天",
+    "share": "分享"
+  },
+  "mermaid": {
+    "downloadOptions": "下载选项",
+    "viewCode": "查看代码",
+    "decreaseZoom": "缩小",
+    "resetZoom": "重置缩放",
+    "increaseZoom": "放大"
+  },
+  "navigation": {
+    "agents": "代理"
+  },
+  "notification": {
+    "ariaLabel": "通知",
+    "closeAriaLabel": "关闭通知"
+  },
+  "prompts": {
+    "textAriaLabel": "提示文本"
   }
 }

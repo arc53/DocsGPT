@@ -233,7 +233,10 @@
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
       }
-    }
+    },
+    "scrollTabsLeft": "Прокрутить вкладки влево",
+    "tabsAriaLabel": "Вкладки настроек",
+    "scrollTabsRight": "Прокрутить вкладки вправо"
   },
   "modals": {
     "uploadDoc": {
@@ -456,7 +459,8 @@
       "attach": "Прикрепить",
       "remove": "Удалить вложение"
     },
-    "retry": "Повторить"
+    "retry": "Повторить",
+    "reasoning": "Рассуждение"
   },
   "agents": {
     "title": "Агенты",
@@ -575,5 +579,33 @@
     "title": "404",
     "message": "The page you are looking for does not exist.",
     "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "Поиск файлов и папок...",
+    "itemsSelected": "{{count}} выбрано",
+    "name": "Имя",
+    "lastModified": "Последнее изменение",
+    "size": "Размер"
+  },
+  "actionButtons": {
+    "openNewChat": "Открыть новый чат",
+    "share": "Поделиться"
+  },
+  "mermaid": {
+    "downloadOptions": "Параметры загрузки",
+    "viewCode": "Просмотр кода",
+    "decreaseZoom": "Уменьшить масштаб",
+    "resetZoom": "Сбросить масштаб",
+    "increaseZoom": "Увеличить масштаб"
+  },
+  "navigation": {
+    "agents": "Агенты"
+  },
+  "notification": {
+    "ariaLabel": "Уведомление",
+    "closeAriaLabel": "Закрыть уведомление"
+  },
+  "prompts": {
+    "textAriaLabel": "Текст подсказки"
   }
 }

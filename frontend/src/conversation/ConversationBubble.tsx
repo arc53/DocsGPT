@@ -793,6 +793,7 @@ function Thought({
   thought: string;
   preprocessLaTeX: (content: string) => string;
 }) {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const [isThoughtOpen, setIsThoughtOpen] = useState(true);
 
@@ -813,7 +814,9 @@ function Thought({
           className="flex flex-row items-center gap-2"
           onClick={() => setIsThoughtOpen(!isThoughtOpen)}
         >
-          <p className="text-base font-semibold">Reasoning</p>
+          <p className="text-base font-semibold">
+            {t('conversation.reasoning')}
+          </p>
           <img
             src={ChevronDown}
             alt="ChevronDown"

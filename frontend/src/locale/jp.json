@@ -233,7 +233,10 @@
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
       }
-    }
+    },
+    "scrollTabsLeft": "タブを左にスクロール",
+    "tabsAriaLabel": "設定タブ",
+    "scrollTabsRight": "タブを右にスクロール"
   },
   "modals": {
     "uploadDoc": {
@@ -456,7 +459,8 @@
       "attach": "添付",
       "remove": "添付ファイルを削除"
     },
-    "retry": "再試行"
+    "retry": "再試行",
+    "reasoning": "推論"
   },
   "agents": {
     "title": "エージェント",
@@ -575,5 +579,33 @@
     "title": "404",
     "message": "The page you are looking for does not exist.",
     "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "ファイルとフォルダを検索...",
+    "itemsSelected": "{{count}} 件選択済み",
+    "name": "名前",
+    "lastModified": "最終更新日",
+    "size": "サイズ"
+  },
+  "actionButtons": {
+    "openNewChat": "新しいチャットを開く",
+    "share": "共有"
+  },
+  "mermaid": {
+    "downloadOptions": "ダウンロードオプション",
+    "viewCode": "コードを表示",
+    "decreaseZoom": "ズームアウト",
+    "resetZoom": "ズームをリセット",
+    "increaseZoom": "ズームイン"
+  },
+  "navigation": {
+    "agents": "エージェント"
+  },
+  "notification": {
+    "ariaLabel": "通知",
+    "closeAriaLabel": "通知を閉じる"
+  },
+  "prompts": {
+    "textAriaLabel": "プロンプトテキスト"
   }
 }

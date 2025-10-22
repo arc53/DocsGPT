@@ -233,7 +233,10 @@
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
       }
-    }
+    },
+    "scrollTabsLeft": "Desplazar pestañas a la izquierda",
+    "tabsAriaLabel": "Pestañas de configuración",
+    "scrollTabsRight": "Desplazar pestañas a la derecha"
   },
   "modals": {
     "uploadDoc": {
@@ -456,7 +459,8 @@
       "attach": "Adjuntar",
       "remove": "Eliminar adjunto"
     },
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "reasoning": "Razonamiento"
   },
   "agents": {
     "title": "Agentes",
@@ -575,5 +579,33 @@
     "title": "404",
     "message": "The page you are looking for does not exist.",
     "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "Buscar archivos y carpetas...",
+    "itemsSelected": "{{count}} seleccionados",
+    "name": "Nombre",
+    "lastModified": "Última modificación",
+    "size": "Tamaño"
+  },
+  "actionButtons": {
+    "openNewChat": "Abrir nuevo chat",
+    "share": "Compartir"
+  },
+  "mermaid": {
+    "downloadOptions": "Opciones de descarga",
+    "viewCode": "Ver código",
+    "decreaseZoom": "Reducir zoom",
+    "resetZoom": "Restablecer zoom",
+    "increaseZoom": "Aumentar zoom"
+  },
+  "navigation": {
+    "agents": "Agentes"
+  },
+  "notification": {
+    "ariaLabel": "Notificación",
+    "closeAriaLabel": "Cerrar notificación"
+  },
+  "prompts": {
+    "textAriaLabel": "Texto del prompt"
   }
 }

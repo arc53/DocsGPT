@@ -24,6 +24,7 @@ interface SettingsBarProps {
 }
 
 const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
+  const { t } = useTranslation();
   const [hiddenGradient, setHiddenGradient] =
     useState<HiddenGradientType>('left');
   const containerRef = useRef<null | HTMLDivElement>(null);
@@ -60,7 +61,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
         <button
           onClick={() => scrollTabs(-1)}
           className="flex h-6 w-6 items-center justify-center rounded-full transition-all hover:bg-gray-200 dark:hover:bg-gray-700"
-          aria-label="Scroll tabs left"
+          aria-label={t('settings.scrollTabsLeft')}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3" />
         </button>
@@ -69,7 +70,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
         ref={containerRef}
         className="no-scrollbar flex snap-x flex-nowrap overflow-x-auto scroll-smooth md:space-x-4"
         role="tablist"
-        aria-label="Settings tabs"
+        aria-label={t('settings.tabsAriaLabel')}
       >
         {tabs.map((tab, index) => (
           <button
@@ -93,7 +94,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
         <button
           onClick={() => scrollTabs(1)}
           className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-          aria-label="Scroll tabs right"
+          aria-label={t('settings.scrollTabsRight')}
         >
           <img src={ArrowRight} alt="right-arrow" className="h-3" />
         </button>
