@@ -27,7 +27,7 @@ export default function SaveAPIKeyModal({
       <div className="flex justify-between py-2">
         <div>
           <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
-            API Key
+            {t('modals.saveKey.apiKeyLabel')}
           </h2>
           <span className="text-jet dark:text-bright-gray text-sm leading-7 font-normal">
             {apiKey}

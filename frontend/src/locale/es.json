@@ -185,7 +185,54 @@
       "fieldDescription": "Descripción del campo",
       "add": "Añadir",
       "cancel": "Cancelar",
-      "addNew": "Añadir Nuevo"
+      "addNew": "Añadir Nuevo",
+      "mcp": {
+        "addServer": "Add MCP Server",
+        "editServer": "Edit Server",
+        "serverName": "Server Name",
+        "serverUrl": "Server URL",
+        "headerName": "Header Name",
+        "timeout": "Timeout (seconds)",
+        "testConnection": "Test Connection",
+        "testing": "Testing",
+        "saving": "Saving",
+        "save": "Save",
+        "cancel": "Cancel",
+        "noAuth": "No Authentication",
+        "oauthInProgress": "Waiting for OAuth completion...",
+        "oauthCompleted": "OAuth completed successfully",
+        "authType": "Authentication Type",
+        "defaultServerName": "My MCP Server",
+        "authTypes": {
+          "none": "No Authentication",
+          "apiKey": "API Key",
+          "bearer": "Bearer Token",
+          "oauth": "OAuth",
+          "basic": "Basic Authentication"
+        },
+        "placeholders": {
+          "serverUrl": "https://api.example.com",
+          "apiKey": "Your secret API key",
+          "bearerToken": "Your secret token",
+          "username": "Your username",
+          "password": "Your password",
+          "oauthScopes": "OAuth scopes (comma separated)"
+        },
+        "errors": {
+          "nameRequired": "Server name is required",
+          "urlRequired": "Server URL is required",
+          "invalidUrl": "Please enter a valid URL",
+          "apiKeyRequired": "API key is required",
+          "tokenRequired": "Bearer token is required",
+          "usernameRequired": "Username is required",
+          "passwordRequired": "Password is required",
+          "testFailed": "Connection test failed",
+          "saveFailed": "Failed to save MCP server",
+          "oauthFailed": "OAuth process failed or was cancelled",
+          "oauthTimeout": "OAuth process timed out, please try again",
+          "timeoutRange": "Timeout must be between 1 and 300 seconds"
+        }
+      }
     }
   },
   "modals": {
@@ -306,7 +353,8 @@
       "disclaimer": "Esta es la única vez que se mostrará tu clave.",
       "copy": "Copiar",
       "copied": "Copiado",
-      "confirm": "He guardado la Clave"
+      "confirm": "He guardado la Clave",
+      "apiKeyLabel": "API Key"
     },
     "deleteConv": {
       "confirm": "¿Estás seguro de que deseas eliminar todas las conversaciones?",
@@ -324,7 +372,8 @@
       "apiKeyLabel": "Clave API / OAuth",
       "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
       "addButton": "Agregar Herramienta",
-      "closeButton": "Cerrar"
+      "closeButton": "Cerrar",
+      "customNamePlaceholder": "Enter custom name (optional)"
     },
     "prompts": {
       "addPrompt": "Agregar Prompt",
@@ -349,6 +398,22 @@
       "cancel": "Cancelar",
       "delete": "Eliminar",
       "deleteConfirmation": "¿Estás seguro de que deseas eliminar este fragmento?"
+    },
+    "addAction": {
+      "title": "New Action",
+      "actionNamePlaceholder": "Action Name",
+      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
+      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
+      "addButton": "Add"
+    },
+    "agentDetails": {
+      "title": "Access Details",
+      "publicLink": "Public Link",
+      "apiKey": "API Key",
+      "webhookUrl": "Webhook URL",
+      "generate": "Generate",
+      "test": "Test",
+      "learnMore": "Learn more"
     }
   },
   "sharedConv": {
@@ -392,5 +457,123 @@
       "remove": "Eliminar adjunto"
     },
     "retry": "Reintentar"
+  },
+  "agents": {
+    "title": "Agentes",
+    "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
+    "newAgent": "Nuevo Agente",
+    "backToAll": "Volver a todos los agentes",
+    "sections": {
+      "template": {
+        "title": "Por DocsGPT",
+        "description": "Agentes proporcionados por DocsGPT",
+        "emptyState": "No se encontraron agentes de plantilla."
+      },
+      "user": {
+        "title": "Por mí",
+        "description": "Agentes creados o publicados por ti",
+        "emptyState": "Aún no tienes agentes creados."
+      },
+      "shared": {
+        "title": "Compartidos conmigo",
+        "description": "Agentes importados mediante un enlace público",
+        "emptyState": "No se encontraron agentes compartidos."
+      }
+    },
+    "form": {
+      "headings": {
+        "new": "Nuevo Agente",
+        "edit": "Editar Agente",
+        "draft": "Nuevo Agente (Borrador)"
+      },
+      "buttons": {
+        "publish": "Publicar",
+        "save": "Guardar",
+        "saveDraft": "Guardar Borrador",
+        "cancel": "Cancelar",
+        "delete": "Eliminar",
+        "logs": "Registros",
+        "accessDetails": "Detalles de Acceso",
+        "add": "Agregar"
+      },
+      "sections": {
+        "meta": "Meta",
+        "source": "Fuente",
+        "prompt": "Prompt",
+        "tools": "Herramientas",
+        "agentType": "Tipo de agente",
+        "advanced": "Avanzado",
+        "preview": "Vista previa"
+      },
+      "placeholders": {
+        "agentName": "Nombre del agente",
+        "describeAgent": "Describe tu agente",
+        "selectSources": "Seleccionar fuentes",
+        "chunksPerQuery": "Fragmentos por consulta",
+        "selectType": "Seleccionar tipo",
+        "selectTools": "Seleccionar herramientas",
+        "enterTokenLimit": "Ingresar límite de tokens",
+        "enterRequestLimit": "Ingresar límite de solicitudes"
+      },
+      "sourcePopup": {
+        "title": "Seleccionar Fuentes",
+        "searchPlaceholder": "Buscar fuentes...",
+        "noOptionsMessage": "No hay fuentes disponibles"
+      },
+      "toolsPopup": {
+        "title": "Seleccionar Herramientas",
+        "searchPlaceholder": "Buscar herramientas...",
+        "noOptionsMessage": "No hay herramientas disponibles"
+      },
+      "upload": {
+        "clickToUpload": "Haz clic para subir",
+        "dragAndDrop": " o arrastra y suelta"
+      },
+      "agentTypes": {
+        "classic": "Clásico",
+        "react": "ReAct"
+      },
+      "advanced": {
+        "jsonSchema": "Esquema de respuesta JSON",
+        "jsonSchemaDescription": "Define un esquema JSON para aplicar formato de salida estructurado",
+        "validJson": "JSON válido",
+        "invalidJson": "JSON inválido - corrige para habilitar el guardado",
+        "tokenLimiting": "Límite de tokens",
+        "tokenLimitingDescription": "Limita el total diario de tokens que puede usar este agente",
+        "requestLimiting": "Límite de solicitudes",
+        "requestLimitingDescription": "Limita el total diario de solicitudes que se pueden hacer a este agente"
+      },
+      "preview": {
+        "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
+      },
+      "externalKb": "KB Externa"
+    },
+    "logs": {
+      "title": "Registros del Agente",
+      "lastUsedAt": "Último uso",
+      "noUsageHistory": "Sin historial de uso",
+      "tableHeader": "Registros del endpoint del agente"
+    },
+    "shared": {
+      "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido."
+    },
+    "preview": {
+      "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones."
+    },
+    "deleteConfirmation": "¿Estás seguro de que quieres eliminar este agente?"
+  },
+  "components": {
+    "fileUpload": {
+      "clickToUpload": "Click to upload or drag and drop",
+      "dropFiles": "Drop the files here",
+      "fileTypes": "PNG, JPG, JPEG up to",
+      "sizeLimitUnit": "MB",
+      "fileSizeError": "File exceeds {{size}}MB limit"
+    }
+  },
+  "pageNotFound": {
+    "title": "404",
+    "message": "The page you are looking for does not exist.",
+    "goHome": "Go Back Home"
   }
 }

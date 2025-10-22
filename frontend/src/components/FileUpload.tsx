@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDropzone } from 'react-dropzone';
 import { twMerge } from 'tailwind-merge';
 
@@ -44,13 +45,14 @@ export const FileUpload = ({
   activeClassName = 'border-blue-500 bg-blue-50',
   acceptClassName = 'border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-50/10',
   rejectClassName = 'border-red-500 bg-red-50 dark:bg-red-500/10 dark:border-red-500',
-  uploadText = 'Click to upload or drag and drop',
-  dragActiveText = 'Drop the files here',
-  fileTypeText = 'PNG, JPG, JPEG up to',
-  sizeLimitText = 'MB',
+  uploadText,
+  dragActiveText,
+  fileTypeText,
+  sizeLimitText,
   disabled = false,
   validator,
 }: FileUploadProps) => {
+  const { t } = useTranslation();
   const [errors, setErrors] = useState<string[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
@@ -71,7 +73,9 @@ export const FileUpload = ({
     if (file.size > maxSize) {
       return {
         isValid: false,
-        error: `File exceeds ${maxSize / 1024 / 1024}MB limit`,
+        error: t('components.fileUpload.fileSizeError', {
+          size: maxSize / 1024 / 1024,
+        }),
       };
     }
 
@@ -178,7 +182,11 @@ export const FileUpload = ({
         </p>
       );
     }
-    return <p className="text-sm font-semibold">{uploadText}</p>;
+    return (
+      <p className="text-sm font-semibold">
+        {uploadText || t('components.fileUpload.clickToUpload')}
+      </p>
+    );
   };
 
   const defaultContent = (
@@ -196,14 +204,17 @@ export const FileUpload = ({
       <div className="text-center">
         <div className="text-sm font-medium">
           {isDragActive ? (
-            <p className="text-sm font-semibold">{dragActiveText}</p>
+            <p className="text-sm font-semibold">
+              {dragActiveText || t('components.fileUpload.dropFiles')}
+            </p>
           ) : (
             renderUploadText()
           )}
         </div>
         <p className="mt-1 text-xs text-[#A3A3A3]">
-          {fileTypeText} {maxSize / 1024 / 1024}
-          {sizeLimitText}
+          {fileTypeText || t('components.fileUpload.fileTypes')}{' '}
+          {maxSize / 1024 / 1024}
+          {sizeLimitText || t('components.fileUpload.sizeLimitUnit')}
         </p>
       </div>
     </div>

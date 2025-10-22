@@ -201,6 +201,15 @@
         "noAuth": "No Authentication",
         "oauthInProgress": "Waiting for OAuth completion...",
         "oauthCompleted": "OAuth completed successfully",
+        "authType": "Authentication Type",
+        "defaultServerName": "My MCP Server",
+        "authTypes": {
+          "none": "No Authentication",
+          "apiKey": "API Key",
+          "bearer": "Bearer Token",
+          "oauth": "OAuth",
+          "basic": "Basic Authentication"
+        },
         "placeholders": {
           "serverUrl": "https://api.example.com",
           "apiKey": "Your secret API key",
@@ -220,7 +229,8 @@
           "testFailed": "Connection test failed",
           "saveFailed": "Failed to save MCP server",
           "oauthFailed": "OAuth process failed or was cancelled",
-          "oauthTimeout": "OAuth process timed out, please try again"
+          "oauthTimeout": "OAuth process timed out, please try again",
+          "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
       }
     }
@@ -343,7 +353,8 @@
       "disclaimer": "This is the only time your key will be shown.",
       "copy": "Copy",
       "copied": "Copied",
-      "confirm": "I saved the Key"
+      "confirm": "I saved the Key",
+      "apiKeyLabel": "API Key"
     },
     "deleteConv": {
       "confirm": "Are you sure you want to delete all the conversations?",
@@ -361,7 +372,8 @@
       "apiKeyLabel": "API Key / OAuth",
       "apiKeyPlaceholder": "Enter API Key / OAuth",
       "addButton": "Add Tool",
-      "closeButton": "Close"
+      "closeButton": "Close",
+      "customNamePlaceholder": "Enter custom name (optional)"
     },
     "prompts": {
       "addPrompt": "Add Prompt",
@@ -386,6 +398,22 @@
       "cancel": "Cancel",
       "delete": "Delete",
       "deleteConfirmation": "Are you sure you want to delete this chunk?"
+    },
+    "addAction": {
+      "title": "New Action",
+      "actionNamePlaceholder": "Action Name",
+      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
+      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
+      "addButton": "Add"
+    },
+    "agentDetails": {
+      "title": "Access Details",
+      "publicLink": "Public Link",
+      "apiKey": "API Key",
+      "webhookUrl": "Webhook URL",
+      "generate": "Generate",
+      "test": "Test",
+      "learnMore": "Learn more"
     }
   },
   "sharedConv": {
@@ -429,5 +457,123 @@
       "remove": "Remove attachment"
     },
     "retry": "Retry"
+  },
+  "agents": {
+    "title": "Agents",
+    "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
+    "newAgent": "New Agent",
+    "backToAll": "Back to all agents",
+    "sections": {
+      "template": {
+        "title": "By DocsGPT",
+        "description": "Agents provided by DocsGPT",
+        "emptyState": "No template agents found."
+      },
+      "user": {
+        "title": "By me",
+        "description": "Agents created or published by you",
+        "emptyState": "You don't have any created agents yet."
+      },
+      "shared": {
+        "title": "Shared with me",
+        "description": "Agents imported by using a public link",
+        "emptyState": "No shared agents found."
+      }
+    },
+    "form": {
+      "headings": {
+        "new": "New Agent",
+        "edit": "Edit Agent",
+        "draft": "New Agent (Draft)"
+      },
+      "buttons": {
+        "publish": "Publish",
+        "save": "Save",
+        "saveDraft": "Save Draft",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "logs": "Logs",
+        "accessDetails": "Access Details",
+        "add": "Add"
+      },
+      "sections": {
+        "meta": "Meta",
+        "source": "Source",
+        "prompt": "Prompt",
+        "tools": "Tools",
+        "agentType": "Agent type",
+        "advanced": "Advanced",
+        "preview": "Preview"
+      },
+      "placeholders": {
+        "agentName": "Agent name",
+        "describeAgent": "Describe your agent",
+        "selectSources": "Select sources",
+        "chunksPerQuery": "Chunks per query",
+        "selectType": "Select type",
+        "selectTools": "Select tools",
+        "enterTokenLimit": "Enter token limit",
+        "enterRequestLimit": "Enter request limit"
+      },
+      "sourcePopup": {
+        "title": "Select Sources",
+        "searchPlaceholder": "Search sources...",
+        "noOptionsMessage": "No sources available"
+      },
+      "toolsPopup": {
+        "title": "Select Tools",
+        "searchPlaceholder": "Search tools...",
+        "noOptionsMessage": "No tools available"
+      },
+      "upload": {
+        "clickToUpload": "Click to upload",
+        "dragAndDrop": " or drag and drop"
+      },
+      "agentTypes": {
+        "classic": "Classic",
+        "react": "ReAct"
+      },
+      "advanced": {
+        "jsonSchema": "JSON response schema",
+        "jsonSchemaDescription": "Define a JSON schema to enforce structured output format",
+        "validJson": "Valid JSON",
+        "invalidJson": "Invalid JSON - fix to enable saving",
+        "tokenLimiting": "Token limiting",
+        "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
+        "requestLimiting": "Request limiting",
+        "requestLimitingDescription": "Limit daily total requests that can be made to this agent"
+      },
+      "preview": {
+        "publishedPreview": "Published agents can be previewed here"
+      },
+      "externalKb": "External KB"
+    },
+    "logs": {
+      "title": "Agent Logs",
+      "lastUsedAt": "Last used at",
+      "noUsageHistory": "No usage history",
+      "tableHeader": "Agent endpoint logs"
+    },
+    "shared": {
+      "notFound": "No agent found. Please ensure the agent is shared."
+    },
+    "preview": {
+      "testMessage": "Test your agent here. Published agents can be used in conversations."
+    },
+    "deleteConfirmation": "Are you sure you want to delete this agent?"
+  },
+  "components": {
+    "fileUpload": {
+      "clickToUpload": "Click to upload or drag and drop",
+      "dropFiles": "Drop the files here",
+      "fileTypes": "PNG, JPG, JPEG up to",
+      "sizeLimitUnit": "MB",
+      "fileSizeError": "File exceeds {{size}}MB limit"
+    }
+  },
+  "pageNotFound": {
+    "title": "404",
+    "message": "The page you are looking for does not exist.",
+    "goHome": "Go Back Home"
   }
 }

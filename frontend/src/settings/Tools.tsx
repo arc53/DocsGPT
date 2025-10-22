@@ -192,7 +192,7 @@ export default function Tools() {
                   <div className="flex w-full flex-col items-center justify-center py-12">
                     <img
                       src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                      alt="No tools found"
+                      alt={t('settings.tools.noToolsFound')}
                       className="mx-auto mb-6 h-32 w-32"
                     />
                     <p className="text-center text-lg text-gray-500 dark:text-gray-400">
