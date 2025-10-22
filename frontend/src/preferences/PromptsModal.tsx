@@ -3,6 +3,8 @@ import Input from '../components/Input';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import WrapperModal from '../modals/WrapperModal';
+import Dropdown from '../components/Dropdown';
+import BookIcon from '../assets/book.svg';
 
 function AddPrompt({
   setModalState,
@@ -25,49 +27,127 @@ function AddPrompt({
 
   return (
     <div>
-      <p className="text-jet dark:text-bright-gray mb-1 text-xl">
+      <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
         {t('modals.prompts.addPrompt')}
       </p>
-      <p className="text-sonic-silver mb-7 text-xs dark:text-[#7F7F82]">
+      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-[#9A9AA0]">
         {t('modals.prompts.addDescription')}
       </p>
       <div>
         <Input
           placeholder={t('modals.prompts.promptName')}
           type="text"
-          className="mb-4"
+          className="mb-5"
+          edgeRoundness="rounded-sm"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
           labelBgClassName="bg-white dark:bg-[#26272E]"
           borderVariant="thin"
         />
-        <div className="relative top-[7px] left-3">
-          <span className="text-silver dark:text-silver bg-white px-1 text-xs dark:bg-[#26272E]">
-            {t('modals.prompts.promptText')}
-          </span>
-        </div>
-        <label htmlFor="new-prompt-content" className="sr-only">
+
+        <div className="mb-2 text-xs font-medium text-[#6B6B6B] dark:text-[#A0A0A5]">
           {t('modals.prompts.promptText')}
-        </label>
-        <textarea
-          id="new-prompt-content"
-          className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
-          value={newPromptContent}
-          onChange={(e) => setNewPromptContent(e.target.value)}
-          aria-label="Prompt Text"
-        ></textarea>
+        </div>
+
+        <div className="relative w-full">
+          <textarea
+            id="new-prompt-content"
+            className="h-48 w-full rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-purple-400 dark:border-[#3C3C44] dark:bg-[#26272E] dark:text-white"
+            value={newPromptContent}
+            onChange={(e) => setNewPromptContent(e.target.value)}
+          />
+
+          {!newPromptContent && (
+            <div className="pointer-events-none absolute top-2 left-3 text-sm text-gray-400">
+              {t('modals.prompts.placeholderText')}{' '}
+              <span className="text-green-500">{'{summaries}'}</span>
+              <br />
+              This is the code:
+              <br />
+              <span className="text-green-500">(code)</span>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="mt-6 flex flex-row-reverse">
-        <button
-          onClick={handleAddPrompt}
-          className="bg-purple-30 hover:bg-violets-are-blue disabled:hover:bg-purple-30 rounded-3xl px-5 py-2 text-sm text-white transition-all"
-          disabled={disableSave}
-          title={
-            disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
-          }
-        >
-          {t('modals.prompts.save')}
-        </button>
+
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span className="font-bold">
+            {t('modals.prompts.variablesLabel')}
+          </span>
+          <span className="text-xs text-[10px] font-medium text-gray-500">
+            {t('modals.prompts.variablesDescription')}
+          </span>
+        </p>
+
+        <div className="flex items-center gap-3">
+          <Dropdown
+            options={[
+              { label: '{Time}', value: 'Time' },
+              { label: '{Summaries}', value: 'Summaries' },
+            ]}
+            selectedValue={'System Variables'}
+            onSelect={(option) =>
+              console.log('System variable selected:', option)
+            }
+            placeholder="System Variables"
+            size="w-40"
+            rounded="3xl"
+            border="border"
+            contentSize="text-[14px]"
+          />
+
+          <Dropdown
+            options={[
+              { label: '{1}', value: '1' },
+              { label: '{2}', value: '2' },
+            ]}
+            selectedValue={'Tool Variables'}
+            onSelect={(option) =>
+              console.log('Tool variable selected:', option)
+            }
+            placeholder="Tool Variables"
+            size="w-32"
+            rounded="3xl"
+            border="border"
+            contentSize="text-[14px]"
+          />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-between text-[14px]">
+        <div className="flex justify-center">
+          <a
+            href="#"
+            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+          >
+            <img
+              src={BookIcon}
+              alt=""
+              className="flex h-4 w-3 flex-shrink-0 items-center justify-center"
+              aria-hidden="true"
+            />
+            <span className="text-[14px] font-bold">
+              {t('modals.prompts.learnAboutPrompts')}
+            </span>
+          </a>
+        </div>
+
+        <div className="flex justify-end gap-4">
+          <button
+            onClick={() => setModalState('INACTIVE')}
+            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+          >
+            {t('modals.prompts.cancel')}
+          </button>
+
+          <button
+            onClick={handleAddPrompt}
+            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:opacity-50"
+            disabled={disableSave}
+          >
+            {t('modals.prompts.save')}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -95,7 +175,7 @@ function EditPrompt({
   const { t } = useTranslation();
 
   return (
-    <div>
+    <div className="w-2xl">
       <div className="">
         <p className="text-jet dark:text-bright-gray mb-1 text-xl">
           {t('modals.prompts.editPrompt')}
@@ -272,7 +352,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mt-24 sm:w-[512px]"
+      className="mt-24 w-[650px] rounded-2xl bg-white px-8 py-6 shadow-xl dark:bg-[#1E1E2A]"
     >
       {view}
     </WrapperModal>
