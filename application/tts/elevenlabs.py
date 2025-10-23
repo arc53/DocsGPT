@@ -15,10 +15,11 @@ class ElevenlabsTTS(BaseTTS):
 
     def text_to_speech(self, text):
         lang = "en"
-        audio = self.client.generate(
+        audio = self.client.text_to_speech.convert(
+            voice_id="nPczCjzI2devNBz1zQrb",             
+            model_id="eleven_multilingual_v2",
             text=text,
-            model="eleven_multilingual_v2",
-            voice="Brian",
+            output_format="mp3_44100_128"
         )
         audio_data = BytesIO()
         for chunk in audio:
