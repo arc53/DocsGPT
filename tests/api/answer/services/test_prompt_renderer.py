@@ -42,16 +42,13 @@ class TestTemplateEngine:
 
         assert result == "Just plain text"
 
-    def test_render_undefined_variable_raises_error(self):
-        from application.templates.template_engine import (
-            TemplateEngine,
-            TemplateRenderError,
-        )
+    def test_render_undefined_variable_returns_empty_string(self):
+        from application.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
 
-        with pytest.raises(TemplateRenderError, match="Undefined variable"):
-            engine.render("Hello {{ undefined_var }}", {})
+        result = engine.render("Hello {{ undefined_var }}", {})
+        assert result == "Hello "
 
     def test_render_syntax_error_raises_error(self):
         from application.templates.template_engine import (
@@ -319,7 +316,7 @@ class TestNamespaceManager:
         assert builder is None
 
     def test_namespace_manager_handles_builder_exceptions(self):
-        from unittest.mock import Mock, patch
+        from unittest.mock import patch
 
         from application.templates.namespaces import NamespaceManager
 
@@ -331,7 +328,10 @@ class TestNamespaceManager:
             side_effect=Exception("Builder error"),
         ):
             context = manager.build_context()
-            assert "system" not in context
+            # Namespace should be present but empty when builder fails
+
+            assert "system" in context
+            assert context["system"] == {}
 
 
 @pytest.mark.unit
@@ -419,25 +419,23 @@ class TestPromptRenderer:
         assert "Date: 202" in result
         assert "Doc content" in result
 
-    def test_render_prompt_undefined_variable_raises_error(self):
+    def test_render_prompt_undefined_variable_returns_empty_string(self):
         from application.api.answer.services.prompt_renderer import PromptRenderer
-        from application.templates.template_engine import TemplateRenderError
 
         renderer = PromptRenderer()
         prompt = "Hello {{ undefined_var }}"
 
-        with pytest.raises(TemplateRenderError):
-            renderer.render_prompt(prompt)
+        result = renderer.render_prompt(prompt)
+        assert result == "Hello "
 
     def test_render_prompt_with_undefined_variable_in_template(self):
         from application.api.answer.services.prompt_renderer import PromptRenderer
-        from application.templates.template_engine import TemplateRenderError
 
         renderer = PromptRenderer()
         prompt = "Hello {{ undefined_name }}"
 
-        with pytest.raises(TemplateRenderError, match="Undefined variable"):
-            renderer.render_prompt(prompt)
+        result = renderer.render_prompt(prompt)
+        assert result == "Hello "
 
     def test_validate_template_valid(self):
         from application.api.answer.services.prompt_renderer import PromptRenderer
@@ -499,39 +497,7 @@ class TestPromptRendererIntegration:
         from application.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
-        prompt = """You are helping {{ passthrough.company }}.
-
-
-
-User: {{ passthrough.user_name }}
-
-
-
-Request ID: {{ system.request_id }}
-
-
-
-Date: {{ system.date }}
-
-
-
-
-
-
-
-Reference Documents:
-
-
-
-{{ source.content }}
-
-
-
-
-
-
-
-Please answer the question professionally."""
+        prompt = "You are helping {{ passthrough.company }}.\n\nUser: {{ passthrough.user_name }}\n\nRequest ID: {{ system.request_id }}\n\nDate: {{ system.date }}\n\nReference Documents:\n\n{{ source.content }}\n\nPlease answer the question professionally."
 
         passthrough_data = {"company": "Tech Corp", "user_name": "Alice"}
         docs_together = "Document 1: Technical specs\nDocument 2: Requirements"
@@ -554,11 +520,7 @@ Please answer the question professionally."""
         from application.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
-        prompt = """Documents: {{ source.content }}
-
-
-
-Also summaries: {{ source.summaries }}"""
+        prompt = """Documents: {{ source.content }} \n\nAlso summaries: {{ source.summaries }}"""
         docs_together = "Content here"
 
         result = renderer.render_prompt(prompt, docs_together=docs_together)
