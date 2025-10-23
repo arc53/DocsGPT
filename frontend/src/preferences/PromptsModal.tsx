@@ -1,10 +1,16 @@
 import { ActiveState } from '../models/misc';
 import Input from '../components/Input';
+import { Link } from 'react-router-dom';
+
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import WrapperModal from '../modals/WrapperModal';
 import Dropdown from '../components/Dropdown';
 import BookIcon from '../assets/book.svg';
+import userService from '../api/services/userService';
+import { selectToken } from '../preferences/preferenceSlice';
+import { UserToolType } from '../settings/types';
 
 function AddPrompt({
   setModalState,
@@ -24,6 +30,54 @@ function AddPrompt({
   disableSave: boolean;
 }) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const [toolVariables, setToolVariables] = React.useState<
+    { label: string; value: string }[]
+  >([]);
+
+  // Fetch and process tool variables
+  React.useEffect(() => {
+    const fetchToolVariables = async () => {
+      if (!token) return;
+
+      try {
+        const response = await userService.getUserTools(token);
+        const data = await response.json();
+
+        if (data.success && data.tools) {
+          const filteredActions: { label: string; value: string }[] = [];
+
+          data.tools.forEach((tool: UserToolType) => {
+            if (tool.actions && tool.status) {
+              // Only include active tools
+              tool.actions.forEach((action: any) => {
+                if (action.active) {
+                  const hasLLMParams =
+                    action.parameters?.properties &&
+                    Object.values(action.parameters.properties).some(
+                      (param: any) => param.filled_by_llm !== false,
+                    );
+
+                  if (!hasLLMParams) {
+                    filteredActions.push({
+                      label: `${tool.displayName || tool.name}: ${action.name}`,
+                      value: `tools.${tool.name}.${action.name}`,
+                    });
+                  }
+                }
+              });
+            }
+          });
+
+          setToolVariables(filteredActions);
+        }
+      } catch (error) {
+        console.error('Error fetching tool variables:', error);
+      }
+    };
+
+    fetchToolVariables();
+  }, [token]);
 
   return (
     <div>
@@ -60,11 +114,11 @@ function AddPrompt({
           {!newPromptContent && (
             <div className="pointer-events-none absolute top-2 left-3 text-sm text-gray-400">
               {t('modals.prompts.placeholderText')}{' '}
-              <span className="text-green-500">{'{summaries}'}</span>
+              {/* <span className="text-green-500">{'{summaries}'}</span>
               <br />
               This is the code:
               <br />
-              <span className="text-green-500">(code)</span>
+              <span className="text-green-500">(code)</span> */}
             </div>
           )}
         </div>
@@ -82,14 +136,28 @@ function AddPrompt({
 
         <div className="flex items-center gap-3">
           <Dropdown
-            options={[
-              { label: '{Time}', value: 'Time' },
-              { label: '{Summaries}', value: 'Summaries' },
-            ]}
+            options={[{ label: 'Summaries', value: 'summaries' }]}
             selectedValue={'System Variables'}
-            onSelect={(option) =>
-              console.log('System variable selected:', option)
-            }
+            onSelect={(option) => {
+              const textarea = document.getElementById(
+                'new-prompt-content',
+              ) as HTMLTextAreaElement;
+              if (textarea) {
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = newPromptContent.slice(0, cursorPosition);
+                const textAfter = newPromptContent.slice(cursorPosition);
+                const newText = textBefore + `{${option.value}}` + textAfter;
+                setNewPromptContent(newText);
+
+                setTimeout(() => {
+                  textarea.focus();
+                  textarea.setSelectionRange(
+                    cursorPosition + option.value.length + 2,
+                    cursorPosition + option.value.length + 2,
+                  );
+                }, 0);
+              }
+            }}
             placeholder="System Variables"
             size="w-40"
             rounded="3xl"
@@ -98,14 +166,28 @@ function AddPrompt({
           />
 
           <Dropdown
-            options={[
-              { label: '{1}', value: '1' },
-              { label: '{2}', value: '2' },
-            ]}
+            options={toolVariables}
             selectedValue={'Tool Variables'}
-            onSelect={(option) =>
-              console.log('Tool variable selected:', option)
-            }
+            onSelect={(option) => {
+              const textarea = document.getElementById(
+                'new-prompt-content',
+              ) as HTMLTextAreaElement;
+              if (textarea) {
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = newPromptContent.slice(0, cursorPosition);
+                const textAfter = newPromptContent.slice(cursorPosition);
+                const newText =
+                  textBefore + `{{ ${option.value} }}` + textAfter;
+                setNewPromptContent(newText);
+                setTimeout(() => {
+                  textarea.focus();
+                  textarea.setSelectionRange(
+                    cursorPosition + option.value.length + 6,
+                    cursorPosition + option.value.length + 6,
+                  );
+                }, 0);
+              }
+            }}
             placeholder="Tool Variables"
             size="w-32"
             rounded="3xl"
@@ -116,8 +198,8 @@ function AddPrompt({
       </div>
       <div className="mt-4 flex justify-between text-[14px]">
         <div className="flex justify-center">
-          <a
-            href="#"
+          <Link
+            to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
           >
             <img
@@ -129,7 +211,7 @@ function AddPrompt({
             <span className="text-[14px] font-bold">
               {t('modals.prompts.learnAboutPrompts')}
             </span>
-          </a>
+          </Link>
         </div>
 
         <div className="flex justify-end gap-4">
