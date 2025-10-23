@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict
 
-from jinja2 import Environment, StrictUndefined, TemplateSyntaxError
+from jinja2 import Environment, select_autoescape, StrictUndefined, TemplateSyntaxError
 from jinja2.exceptions import UndefinedError
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,10 @@ class TemplateEngine:
 
     def __init__(self):
         self._env = Environment(
-            undefined=StrictUndefined, trim_blocks=True, lstrip_blocks=True
+            undefined=StrictUndefined,
+            trim_blocks=True,
+            lstrip_blocks=True,
+            autoescape=select_autoescape(default_for_string=True, default=True),
         )
 
     def render(self, template_content: str, context: Dict[str, Any]) -> str:
