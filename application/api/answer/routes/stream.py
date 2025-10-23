@@ -60,6 +60,10 @@ class StreamResource(Resource, BaseAnswerResource):
             "attachments": fields.List(
                 fields.String, required=False, description="List of attachment IDs"
             ),
+            "passthrough": fields.Raw(
+                required=False,
+                description="Dynamic parameters to inject into prompt template",
+            ),
         },
     )
 
@@ -73,17 +77,17 @@ class StreamResource(Resource, BaseAnswerResource):
         processor = StreamProcessor(data, decoded_token)
         try:
             processor.initialize()
-            agent = processor.create_agent()
-            retriever = processor.create_retriever()
+
+            docs_together, docs_list = processor.pre_fetch_docs(data["question"])
+
+            agent = processor.create_agent(docs_together=docs_together, docs=docs_list)
 
             if error := self.check_usage(processor.agent_config):
                 return error
-
             return Response(
                 self.complete_stream(
                     question=data["question"],
                     agent=agent,
-                    retriever=retriever,
                     conversation_id=processor.conversation_id,
                     user_api_key=processor.agent_config.get("user_api_key"),
                     decoded_token=processor.decoded_token,

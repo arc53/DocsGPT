@@ -194,15 +194,3 @@ class ClassicRAG(BaseRetriever):
             self.original_question = query
             self.question = self._rephrase_query()
         return self._get_data()
-
-    def get_params(self):
-        """Return current retriever configuration parameters"""
-        return {
-            "question": self.original_question,
-            "rephrased_question": self.question,
-            "sources": self.vectorstores,
-            "chunks": self.chunks,
-            "token_limit": self.token_limit,
-            "gpt_model": self.gpt_model,
-            "user_api_key": self.user_api_key,
-        }

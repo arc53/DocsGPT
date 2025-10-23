@@ -41,9 +41,7 @@ class BaseAnswerResource:
             return missing_fields
         return None
 
-    def check_usage(
-            self, agent_config: Dict
-    ) -> Optional[Response]:
+    def check_usage(self, agent_config: Dict) -> Optional[Response]:
         """Check if there is a usage limit and if it is exceeded
 
         Args:
@@ -51,30 +49,28 @@ class BaseAnswerResource:
 
         Returns:
             None or Response if either of limits exceeded.
-        
+
         """
         api_key = agent_config.get("user_api_key")
         if not api_key:
             return None
-        
+
         agents_collection = self.db["agents"]
         agent = agents_collection.find_one({"key": api_key})
 
         if not agent:
             return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Invalid API key."
-                    }
-                ),
-                401
+                jsonify({"success": False, "message": "Invalid API key."}), 401
             )
 
         limited_token_mode = agent.get("limited_token_mode", False)
         limited_request_mode = agent.get("limited_request_mode", False)
-        token_limit = int(agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]))
-        request_limit = int(agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]))
+        token_limit = int(
+            agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"])
+        )
+        request_limit = int(
+            agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"])
+        )
 
         token_usage_collection = self.db["token_usage"]
 
@@ -83,18 +79,20 @@ class BaseAnswerResource:
 
         match_query = {
             "timestamp": {"$gte": start_date, "$lte": end_date},
-            "api_key": api_key
+            "api_key": api_key,
         }
-        
+
         if limited_token_mode:
             token_pipeline = [
                 {"$match": match_query},
                 {
                     "$group": {
                         "_id": None,
-                        "total_tokens": {"$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}}
+                        "total_tokens": {
+                            "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
+                        },
                     }
-                }
+                },
             ]
             token_result = list(token_usage_collection.aggregate(token_pipeline))
             daily_token_usage = token_result[0]["total_tokens"] if token_result else 0
@@ -117,17 +115,16 @@ class BaseAnswerResource:
             jsonify(
                 {
                     "success": False,
-                    "message": "Exceeding usage limit, please try again later."
+                    "message": "Exceeding usage limit, please try again later.",
                 }
             ),
-            429, # too many requests
+            429,
         )
 
     def complete_stream(
         self,
         question: str,
         agent: Any,
-        retriever: Any,
         conversation_id: Optional[str],
         user_api_key: Optional[str],
         decoded_token: Dict[str, Any],
@@ -156,6 +153,7 @@ class BaseAnswerResource:
             agent_id: ID of agent used
             is_shared_usage: Flag for shared agent usage
             shared_token: Token for shared agent
+            retrieved_docs: Pre-fetched documents for sources (optional)
 
         Yields:
             Server-sent event strings
@@ -166,7 +164,7 @@ class BaseAnswerResource:
             schema_info = None
             structured_chunks = []
 
-            for line in agent.gen(query=question, retriever=retriever):
+            for line in agent.gen(query=question):
                 if "answer" in line:
                     response_full += str(line["answer"])
                     if line.get("structured"):
@@ -247,7 +245,6 @@ class BaseAnswerResource:
             data = json.dumps(id_data)
             yield f"data: {data}\n\n"
 
-            retriever_params = retriever.get_params()
             log_data = {
                 "action": "stream_answer",
                 "level": "info",
@@ -256,7 +253,6 @@ class BaseAnswerResource:
                 "question": question,
                 "response": response_full,
                 "sources": source_log_docs,
-                "retriever_params": retriever_params,
                 "attachments": attachment_ids,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
             }
@@ -264,24 +260,19 @@ class BaseAnswerResource:
                 log_data["structured_output"] = True
                 if schema_info:
                     log_data["schema"] = schema_info
-  
-            # clean up text fields to be no longer than 10000 characters
+
+            # Clean up text fields to be no longer than 10000 characters
             for key, value in log_data.items():
                 if isinstance(value, str) and len(value) > 10000:
                     log_data[key] = value[:10000]
-            
-            self.user_logs_collection.insert_one(log_data)
 
-            # End of stream
+            self.user_logs_collection.insert_one(log_data)
 
             data = json.dumps({"type": "end"})
             yield f"data: {data}\n\n"
         except GeneratorExit:
-            # Client aborted the connection
-            logger.info(
-                f"Stream aborted by client for question: {question[:50]}... "
-            )
-            # Save partial response to database before exiting
+            logger.info(f"Stream aborted by client for question: {question[:50]}... ")
+            # Save partial response
             if should_save_conversation and response_full:
                 try:
                     if isNoneDoc:
@@ -311,7 +302,9 @@ class BaseAnswerResource:
                         attachment_ids=attachment_ids,
                     )
                 except Exception as e:
-                    logger.error(f"Error saving partial response: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"Error saving partial response: {str(e)}", exc_info=True
+                    )
             raise
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)

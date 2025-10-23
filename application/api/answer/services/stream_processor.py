@@ -11,6 +11,7 @@ from bson.objectid import ObjectId
 
 from application.agents.agent_creator import AgentCreator
 from application.api.answer.services.conversation_service import ConversationService
+from application.api.answer.services.prompt_renderer import PromptRenderer
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.retriever.retriever_creator import RetrieverCreator
@@ -73,12 +74,14 @@ class StreamProcessor:
         self.all_sources = []
         self.attachments = []
         self.history = []
+        self.retrieved_docs = []
         self.agent_config = {}
         self.retriever_config = {}
         self.is_shared_usage = False
         self.shared_token = None
         self.gpt_model = get_gpt_model()
         self.conversation_service = ConversationService()
+        self.prompt_renderer = PromptRenderer()
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -322,22 +325,6 @@ class StreamProcessor:
         if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
 
-    def create_agent(self):
-        """Create and return the configured agent"""
-        return AgentCreator.create_agent(
-            self.agent_config["agent_type"],
-            endpoint="stream",
-            llm_name=settings.LLM_PROVIDER,
-            gpt_model=self.gpt_model,
-            api_key=settings.API_KEY,
-            user_api_key=self.agent_config["user_api_key"],
-            prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
-            chat_history=self.history,
-            decoded_token=self.decoded_token,
-            attachments=self.attachments,
-            json_schema=self.agent_config.get("json_schema"),
-        )
-
     def create_retriever(self):
         """Create and return the configured retriever"""
         return RetrieverCreator.create_retriever(
@@ -350,4 +337,61 @@ class StreamProcessor:
             gpt_model=self.gpt_model,
             user_api_key=self.agent_config["user_api_key"],
             decoded_token=self.decoded_token,
+        )
+
+    def pre_fetch_docs(self, question: str) -> tuple[Optional[str], Optional[list]]:
+        """Pre-fetch documents for template rendering before agent creation"""
+        if self.data.get("isNoneDoc", False):
+            return None, None
+        try:
+            retriever = self.create_retriever()
+            docs = retriever.search(question)
+
+            if not docs:
+                return None, None
+            self.retrieved_docs = docs
+
+            docs_with_filenames = []
+            for doc in docs:
+                filename = doc.get("filename") or doc.get("title") or doc.get("source")
+                if filename:
+                    chunk_header = str(filename)
+                    docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
+                else:
+                    docs_with_filenames.append(doc["text"])
+            docs_together = "\n\n".join(docs_with_filenames)
+
+            return docs_together, docs
+        except Exception as e:
+            logger.warning(f"Failed to pre-fetch docs: {str(e)}")
+            return None, None
+
+    def create_agent(
+        self, docs_together: Optional[str] = None, docs: Optional[list] = None
+    ):
+        """Create and return the configured agent with rendered prompt"""
+        raw_prompt = get_prompt(self.agent_config["prompt_id"], self.prompts_collection)
+
+        rendered_prompt = self.prompt_renderer.render_prompt(
+            prompt_content=raw_prompt,
+            user_id=self.initial_user_id,
+            request_id=self.data.get("request_id"),
+            passthrough_data=self.data.get("passthrough"),
+            docs=docs,
+            docs_together=docs_together,
+        )
+
+        return AgentCreator.create_agent(
+            self.agent_config["agent_type"],
+            endpoint="stream",
+            llm_name=settings.LLM_PROVIDER,
+            gpt_model=self.gpt_model,
+            api_key=settings.API_KEY,
+            user_api_key=self.agent_config["user_api_key"],
+            prompt=rendered_prompt,
+            chat_history=self.history,
+            retrieved_docs=self.retrieved_docs,
+            decoded_token=self.decoded_token,
+            attachments=self.attachments,
+            json_schema=self.agent_config.get("json_schema"),
         )
