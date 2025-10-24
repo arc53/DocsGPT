@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     # Encryption settings
     ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
+    TTS_PROVIDER: str = "google_tts" # google_tts or elevenlabs
     ELEVENLABS_API_KEY: Optional[str] = None
 
 path = Path(__file__).parent.parent.absolute()
