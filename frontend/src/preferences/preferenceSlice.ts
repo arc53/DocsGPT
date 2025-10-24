@@ -8,7 +8,11 @@ import {
 import { Agent } from '../agents/types';
 import { ActiveState, Doc } from '../models/misc';
 import { RootState } from '../store';
-import { setLocalApiKey, setLocalRecentDocs } from './preferenceApi';
+import {
+  setLocalApiKey,
+  setLocalRecentDocs,
+  getLocalRecentDocs,
+} from './preferenceApi';
 
 export interface Preference {
   apiKey: string;
@@ -175,6 +179,22 @@ prefListenerMiddleware.startListening({
         (listenerApi.getState() as RootState).preference.token_limit,
       ),
     );
+  },
+});
+
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setSourceDocs),
+  effect: (_action, listenerApi) => {
+    const state = listenerApi.getState() as RootState;
+    const sourceDocs = state.preference.sourceDocs;
+    if (sourceDocs && sourceDocs.length > 0) {
+      const validatedDocs = getLocalRecentDocs(sourceDocs);
+      if (validatedDocs !== null) {
+        listenerApi.dispatch(setSelectedDocs(validatedDocs));
+      } else {
+        listenerApi.dispatch(setSelectedDocs([]));
+      }
+    }
   },
 });
 
