@@ -17,6 +17,7 @@ import {
   selectAttachments,
   updateAttachment,
 } from '../upload/uploadSlice';
+import { reorderAttachments } from '../upload/uploadSlice';
 
 import { ActiveState } from '../models/misc';
 import {
@@ -85,73 +86,85 @@ export default function MessageInput({
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
-    const file = e.target.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-
+    const files = Array.from(e.target.files);
     const apiHost = import.meta.env.VITE_API_HOST;
-    const xhr = new XMLHttpRequest();
-    const uniqueId = crypto.randomUUID();
 
-    const newAttachment = {
-      id: uniqueId,
-      fileName: file.name,
-      progress: 0,
-      status: 'uploading' as const,
-      taskId: '',
-    };
+    files.forEach((file) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const xhr = new XMLHttpRequest();
+      const uniqueId = crypto.randomUUID();
 
-    dispatch(addAttachment(newAttachment));
+      // create preview for images
+      const isImage = file.type.startsWith('image/');
+      const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
 
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        dispatch(
-          updateAttachment({
-            id: uniqueId,
-            updates: { progress },
-          }),
-        );
-      }
-    });
+      const newAttachment = {
+        id: uniqueId,
+        fileName: file.name,
+        previewUrl,
+        mimeType: file.type,
+        progress: 0,
+        status: 'uploading' as const,
+        taskId: '',
+      };
 
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        const response = JSON.parse(xhr.responseText);
-        if (response.task_id) {
+      dispatch(addAttachment(newAttachment));
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
           dispatch(
             updateAttachment({
               id: uniqueId,
-              updates: {
-                taskId: response.task_id,
-                status: 'processing',
-                progress: 10,
-              },
+              updates: { progress },
             }),
           );
         }
-      } else {
+      });
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.task_id) {
+            dispatch(
+              updateAttachment({
+                id: uniqueId,
+                updates: {
+                  taskId: response.task_id,
+                  status: 'processing',
+                  progress: 10,
+                },
+              }),
+            );
+          }
+        } else {
+          dispatch(
+            updateAttachment({
+              id: uniqueId,
+              updates: { status: 'failed' },
+            }),
+          );
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+        }
+      };
+
+      xhr.onerror = () => {
         dispatch(
           updateAttachment({
             id: uniqueId,
             updates: { status: 'failed' },
           }),
         );
-      }
-    };
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+      };
 
-    xhr.onerror = () => {
-      dispatch(
-        updateAttachment({
-          id: uniqueId,
-          updates: { status: 'failed' },
-        }),
-      );
-    };
+      xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.send(formData);
+    });
 
-    xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.send(formData);
+    // clear input so same file can be selected again
     e.target.value = '';
   };
 
@@ -261,86 +274,148 @@ export default function MessageInput({
     handleAbort();
   };
 
+  // Drag state for reordering
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  // Revoke object URLs on unmount to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      attachments.forEach((att) => {
+        if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const findIndexById = (id: string) => attachments.findIndex((a) => a.id === id);
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggingId(id);
+    try {
+      e.dataTransfer.setData('text/plain', id);
+      e.dataTransfer.effectAllowed = 'move';
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropOn = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (!sourceId || sourceId === targetId) return;
+
+    const sourceIndex = findIndexById(sourceId);
+    const destIndex = findIndexById(targetId);
+    if (sourceIndex === -1 || destIndex === -1) return;
+
+    dispatch(reorderAttachments({ sourceIndex, destinationIndex: destIndex }));
+    setDraggingId(null);
+  };
+
   return (
     <div className="flex w-full flex-col">
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
-                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-              }`}
-              title={attachment.fileName}
-            >
-              <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                {attachment.status === 'completed' && (
-                  <img
-                    src={DocumentationDark}
-                    alt="Attachment"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {attachment.status === 'failed' && (
-                  <img
-                    src={AlertIcon}
-                    alt="Failed"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {(attachment.status === 'uploading' ||
-                  attachment.status === 'processing') && (
-                  <div className="flex h-[15px] w-[15px] items-center justify-center">
-                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-0"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="transparent"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <circle
-                        className="text-[#ECECF1]"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                        strokeDasharray="62.83"
-                        strokeDashoffset={
-                          62.83 * (1 - attachment.progress / 100)
-                        }
-                        transform="rotate(-90 12 12)"
-                      />
-                    </svg>
-                  </div>
-                )}
-              </div>
-
-              <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                {attachment.fileName}
-              </span>
-
-              <button
-                className="ml-1.5 flex items-center justify-center rounded-full p-1"
-                onClick={() => {
-                  dispatch(removeAttachment(attachment.id));
-                }}
-                aria-label={t('conversation.attachments.remove')}
+          {attachments.map((attachment) => {
+            const isImage = attachment.mimeType?.startsWith?.('image/');
+            const index = attachments.findIndex((a) => a.id === attachment.id);
+            return (
+              <div
+                key={attachment.id}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, attachment.id)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDropOn(e, attachment.id)}
+                className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
+                  attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
+                } ${draggingId === attachment.id ? 'opacity-60 ring-2 ring-dashed ring-purple-200' : ''}`}
+                title={attachment.fileName}
               >
-                <img
-                  src={ExitIcon}
-                  alt={t('conversation.attachments.remove')}
-                  className="h-2.5 w-2.5 filter dark:invert"
-                />
-              </button>
-            </div>
-          ))}
+                <div className="mr-2 flex items-center justify-center">
+                  {isImage && attachment.previewUrl ? (
+                    <img
+                      src={attachment.previewUrl}
+                      alt={attachment.fileName}
+                      className="h-8 w-8 rounded-md object-cover"
+                    />
+                  ) : (
+                    <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
+                      {attachment.status === 'completed' && (
+                        <img
+                          src={DocumentationDark}
+                          alt="Attachment"
+                          className="h-[15px] w-[15px] object-fill"
+                        />
+                      )}
+
+                      {attachment.status === 'failed' && (
+                        <img
+                          src={AlertIcon}
+                          alt="Failed"
+                          className="h-[15px] w-[15px] object-fill"
+                        />
+                      )}
+
+                      {(attachment.status === 'uploading' ||
+                        attachment.status === 'processing') && (
+                        <div className="flex h-[15px] w-[15px] items-center justify-center">
+                          <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                            <circle
+                              className="opacity-0"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="transparent"
+                              strokeWidth="4"
+                              fill="none"
+                            />
+                            <circle
+                              className="text-[#ECECF1]"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                              fill="none"
+                              strokeDasharray="62.83"
+                              strokeDashoffset={
+                                62.83 * (1 - attachment.progress / 100)
+                              }
+                              transform="rotate(-90 12 12)"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
+                  {attachment.fileName}
+                </span>
+
+                <button
+                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                  onClick={() => {
+                    if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+                    dispatch(removeAttachment(attachment.id));
+                  }}
+                  aria-label={t('conversation.attachments.remove')}
+                >
+                  <img
+                    src={ExitIcon}
+                    alt={t('conversation.attachments.remove')}
+                    className="h-2.5 w-2.5 filter dark:invert"
+                  />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <div className="w-full">
@@ -422,6 +497,7 @@ export default function MessageInput({
               <input
                 type="file"
                 className="hidden"
+                multiple
                 onChange={handleFileAttachment}
               />
             </label>
