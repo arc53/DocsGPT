@@ -41,7 +41,12 @@ jobs:
       - name: Run Vale
         run: |
           # Run Vale with our configuration
-          vale --config=.vale.ini --output=line docs/
+          # Using the full path to the config file
+          CONFIG_PATH="$(pwd)/.vale.ini"
+          echo "Using Vale config file at: $CONFIG_PATH"
+          
+          # Run Vale with the full config path
+          vale --config="$CONFIG_PATH" --output=line ./docs
           
           # Exit with code 0 to prevent the job from failing on warnings
           # Change to 'exit $?' to fail the build on warnings
