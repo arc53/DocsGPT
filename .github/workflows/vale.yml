@@ -1,72 +1,45 @@
-name: Vale Linting
+name: Vale Documentation Linter
 
 on:
-  push:
-    branches: [ main ]
+  pull_request:
     paths:
-      - 'docs/**/*.md'
-      - 'docs/**/*.mdx'
-      - '.github/workflows/vale.yml'
+      - 'docs/pages/**'
+      - 'docs/README.md'
       - '.vale.ini'
       - '.github/styles/**'
-  pull_request:
-    branches: [ main ]
+  push:
+    branches: [main]
     paths:
-      - 'docs/**/*.md'
-      - 'docs/**/*.mdx'
-      - '.github/workflows/vale.yml'
+      - 'docs/pages/**'
+      - 'docs/README.md'
       - '.vale.ini'
+      - '.github/workflows/vale.yml'
       - '.github/styles/**'
 
 jobs:
-  vale-lint:
+  vale:
     name: Vale Linter
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for PR annotations to work
-
+      
       - name: Install Vale
         run: |
-          # Install Vale using Homebrew (works on Linux in GitHub Actions)
-          sudo apt-get update
-          sudo apt-get install -y wget
-          wget https://github.com/errata-ai/vale/releases/download/v2.28.0/vale_2.28.0_Linux_64-bit.tar.gz
-          tar -xvzf vale_2.28.0_Linux_64-bit.tar.gz
+          wget -q https://github.com/errata-ai/vale/releases/download/v3.7.1/vale_3.7.1_Linux_64-bit.tar.gz
+          tar -xzf vale_3.7.1_Linux_64-bit.tar.gz
           sudo mv vale /usr/local/bin/
-          
-          # Verify installation
-          echo "Vale version:"
           vale --version
-          
-          # Print PATH for debugging
-          echo "PATH: $PATH"
-          
-      - name: Set up Vale configuration
+      
+      - name: Sync Vale styles
+        run: vale sync
+      
+      - name: Run Vale on documentation
         run: |
-          # Create config directory structure
-          mkdir -p ~/.config/vale/styles/
-          
-          # Copy our styles to the config directory
-          cp -r .github/styles/* ~/.config/vale/styles/
-          
-          # Verify the files were copied
-          echo "Vale config directory contents:"
-          ls -la ~/.config/vale/
-          
-      - name: Run Vale
-        run: |
-          # Run Vale with our configuration
-          echo "Current directory: $(pwd)"
-          echo "Files in current directory:".github/workflows/vale.yml
-          ls -la
-          
-          # Run Vale with the config file in the current directory
-          # and output in a format that works well with GitHub Actions
-          vale --config=.vale.ini --output=line ./docs
-          
-          # Exit with code 0 to prevent the job from failing on warnings
-          # Change to 'exit $?' to fail the build on warnings
-          exit 0
+          vale --output=line docs/pages/ docs/README.md
+        continue-on-error: true
