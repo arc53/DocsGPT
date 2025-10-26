@@ -1,37 +1,52 @@
-name: Vale Documentation Linter
+name: Vale Linting
 
 on:
-  pull_request:
+  push:
+    branches: 
+      - main
     paths:
-      - 'docs/pages/**'
-      - 'docs/README.md'
+      - 'docs/**/*.md'
+      - 'docs/**/*.mdx'
+      - '.github/workflows/vale.yml'
+      - '.vale.ini'
+      - '.github/styles/**'
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - 'docs/**/*.md'
+      - 'docs/**/*.mdx'
+      - '.github/workflows/vale.yml'
       - '.vale.ini'
       - '.github/styles/**'
 
 jobs:
-  vale:
+  vale-lint:
     name: Vale Linter
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: read
-      pull-requests: write
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Install Vale
-        run: |
-          wget -q https://github.com/errata-ai/vale/releases/download/v3.7.1/vale_3.7.1_Linux_64-bit.tar.gz
-          tar -xzf vale_3.7.1_Linux_64-bit.tar.gz
-          sudo mv vale /usr/local/bin/
-          vale --version
-      
-      - name: Sync Vale styles
-        run: vale sync
-      
-      - name: Run Vale on documentation
-        run: |
-          vale --output=line docs/pages/
-        continue-on-error: true
+        with:
+          fetch-depth: 0  # Required for PR annotations to work
+
+      - name: Run Vale
+        uses: errata-ai/vale-action@v2
+        with:
+          # Specify Vale version (optional, latest by default)
+          version: '3.7.1'
+          
+          # Files or directories to check
+          files: 'docs/'
+          
+          # Reporter type for GitHub integration
+          reporter: 'github-pr-check'
+          
+          # Don't fail the build on warnings
+          fail_on_error: false
+          
+          # Show all files, even those without issues
+          filter_mode: 'nofilter'
+          
+          # Additional Vale flags
+          vale_flags: '--config=.vale.ini --output=line'
