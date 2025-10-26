@@ -32,11 +32,21 @@ jobs:
 
       - name: Install Vale
         run: |
-          # Install Vale
-          curl -sfL https://install.goreleaser.com/github.com/errata-ai/vale.sh | sh -s -- -b $GOPATH/bin v2.28.0
+          # Create a local bin directory
+          mkdir -p $HOME/.local/bin
+          
+          # Install Vale to the local bin directory
+          curl -sfL https://install.goreleaser.com/github.com/errata-ai/vale.sh | sh -s -- -b $HOME/.local/bin v2.28.0
+          
+          # Add local bin to PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
           
           # Verify installation
+          echo "Vale version:"
           vale --version
+          
+          # Print PATH for debugging
+          echo "PATH: $PATH"
           
       - name: Run Vale
         run: |
