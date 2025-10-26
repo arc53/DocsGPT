@@ -36,26 +36,13 @@ jobs:
           sudo mv vale /usr/local/bin/
           vale --version
       
-      - name: Create Vale directories
-        run: |
-          mkdir -p ~/.vale/styles
-          cp -r .github/styles/* ~/.vale/styles/
+      - name: Sync Vale styles
+        run: vale sync
       
       - name: Run Vale on documentation
         working-directory: ${{ github.workspace }}
         run: |
-          # Verify paths
           pwd
           ls -la .github/styles/
-          ls -la ~/.vale/styles/
-          
-          # Create a minimal .vale.ini if it doesn't exist
-          if [ ! -f .vale.ini ]; then
-            echo "MinAlertLevel = warning" > .vale.ini
-            echo "StylesPath = ~/.vale/styles" >> .vale.ini
-            echo "Vocab = DocsGPT" >> .vale.ini
-          fi
-          
-          # Run Vale
-          vale --output=line --config=.vale.ini docs/pages/ docs/README.md
+          vale --output=line docs/pages/ docs/README.md
         continue-on-error: true
