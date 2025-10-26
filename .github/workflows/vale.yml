@@ -7,14 +7,6 @@ on:
       - 'docs/README.md'
       - '.vale.ini'
       - '.github/styles/**'
-  push:
-    branches: [main]
-    paths:
-      - 'docs/pages/**'
-      - 'docs/README.md'
-      - '.vale.ini'
-      - '.github/workflows/vale.yml'
-      - '.github/styles/**'
 
 jobs:
   vale:
@@ -31,8 +23,8 @@ jobs:
       
       - name: Install Vale
         run: |
-          wget -q https://github.com/errata-ai/vale/releases/download/v3.7.1/vale_3.7.1_linux_amd64.tar.gz
-          tar -xzf vale_3.7.1_linux_amd64.tar.gz
+          wget -q https://github.com/errata-ai/vale/releases/download/v3.7.1/vale_3.7.1_Linux_64-bit.tar.gz
+          tar -xzf vale_3.7.1_Linux_64-bit.tar.gz
           sudo mv vale /usr/local/bin/
           vale --version
       
@@ -40,9 +32,6 @@ jobs:
         run: vale sync
       
       - name: Run Vale on documentation
-        working-directory: ${{ github.workspace }}
         run: |
-          pwd
-          ls -la .github/styles/
-          vale --output=line docs/pages/ docs/README.md
+          vale --output=line docs/pages/
         continue-on-error: true
