@@ -1,63 +1,38 @@
-name: Vale Linting
+name: Vale Documentation Linter
 
 on:
-  push:
-    branches: 
-      - main
-    paths:
-      - 'docs/**/*.md'
-      - 'docs/**/*.mdx'
-      - '.github/workflows/vale.yml'
-      - '.vale.ini'
-      - '.github/styles/**'
   pull_request:
-    branches: 
-      - main
     paths:
-      - 'docs/**/*.md'
-      - 'docs/**/*.mdx'
-      - '.github/workflows/vale.yml'
+      - '**/*.md'
+      - '**/*.mdx'
       - '.vale.ini'
       - '.github/styles/**'
 
 jobs:
-  vale-lint:
+  vale:
     name: Vale Linter
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for PR annotations to work
-
+      
       - name: Install Vale
         run: |
-          # Create a local bin directory
-          mkdir -p $HOME/.local/bin
-          
-          # Install Vale to the local bin directory
-          curl -sfL https://install.goreleaser.com/github.com/errata-ai/vale.sh | sh -s -- -b $HOME/.local/bin v2.28.0
-          
-          # Add local bin to PATH
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-          # Verify installation
-          echo "Vale version:"
+          wget -q https://github.com/errata-ai/vale/releases/download/v3.7.1/vale_3.7.1_Linux_64-bit.tar.gz
+          tar -xzf vale_3.7.1_Linux_64-bit.tar.gz
+          sudo mv vale /usr/local/bin/
           vale --version
-          
-          # Print PATH for debugging
-          echo "PATH: $PATH"
-          
-      - name: Run Vale
+      
+      - name: Sync Vale styles
+        run: vale sync
+      
+      - name: Run Vale on documentation
         run: |
-          # Run Vale with our configuration
-          # Using the full path to the config file
-          CONFIG_PATH="$(pwd)/.vale.ini"
-          echo "Using Vale config file at: $CONFIG_PATH"
-          
-          # Run Vale with the full config path
-          vale --config="$CONFIG_PATH" --output=line ./docs
-          
-          # Exit with code 0 to prevent the job from failing on warnings
-          # Change to 'exit $?' to fail the build on warnings
-          exit 0
+          # Find and run Vale on all .md and .mdx files
+          find . -type f \( -name "*.md" -o -name "*.mdx" \) -print0 | xargs -0 vale --output=line
+        continue-on-error: true
