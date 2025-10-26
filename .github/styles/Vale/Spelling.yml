@@ -1,0 +1,23 @@
+# Vale Spelling Configuration
+# Custom spelling rules for DocsGPT
+
+extends: spelling
+message: "'%s' is not in our dictionary."
+level: warning
+ignorecase: true
+
+# Ignore words that match these patterns (regex)
+ignore:
+  - "[A-Z]{2,}s?\\b"  # Ignore ALL-CAPS words (acronyms)
+  - "[A-Z][a-z]+[A-Z]"  # Ignore camelCase and PascalCase
+  - "[0-9]"  # Ignore words with numbers
+  - "[\\w\\.-]+@[\\w\\.-]+\\.[\\w]+"  # Ignore email addresses
+  - "https?://[^\s]+"  # Ignore URLs
+
+# Add custom suggestions for commonly misspelled words
+suggestions:
+  - "teh" => "the"
+  - "adn" => "and"
+  - "thier" => "their"
+  - "recieve" => "receive"
+  - "seperate" => "separate"

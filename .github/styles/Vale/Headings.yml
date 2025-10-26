@@ -1,0 +1,29 @@
+# Vale Headings Configuration
+# Rules for consistent heading styles in DocsGPT documentation
+
+# Ensure headings have consistent capitalization
+extends: capitalization
+message: "Headings should use sentence case (only capitalize the first word and proper nouns)."
+level: warning
+# Only check headings (lines starting with 1-6 #'s)
+scope: heading
+# Allow proper nouns and acronyms to be capitalized
+match: $title
+style: sentence
+
+# Check for consecutive headings
+extends: heading
+level: warning
+message: "Don't skip heading levels (h1 → h3)."
+
+# Check for empty headings
+extends: heading
+level: error
+message: "Headings should not be empty."
+empty: true
+
+# Check for heading length
+extends: heading
+level: warning
+message: "Headings should be concise (under 60 characters)."
+max_length: 60

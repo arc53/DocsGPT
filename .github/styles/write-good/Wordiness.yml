@@ -1,0 +1,55 @@
+# Wordiness and Style Checks
+# Based on write-good style for DocsGPT
+
+# Check for weasel words
+extends: existence
+message: "'%s' is a weasel word. Try to be more specific."
+level: warning
+tokens:
+  - "many"
+  - "various"
+  - "very"
+  - "fairly"
+  - "several"
+  - "extremely"
+  - "exceedingly"
+  - "quite"
+  - "remarkably"
+  - "few"
+  - "most"
+  - "some"
+
+# Check for passive voice
+extends: passive
+message: "Use active voice instead of passive."
+level: warning
+
+# Check for wordy phrases
+extends: substitution
+message: "'%s' is wordy. Try '%s' instead."
+level: suggestion
+ignorecase: true
+swap:
+  "a number of": "some, many"
+  "are able to": "can"
+  "due to the fact that": "because"
+  "in order to": "to"
+  "in the event that": "if"
+  "with the exception of": "except"
+  "at this point in time": "now"
+  "in spite of the fact that": "although"
+
+# Check for redundant phrases
+extends: repetition
+message: "'%s' is redundant. Consider removing it."
+level: suggestion
+ignorecase: true
+tokens:
+  - "end result"
+  - "past history"
+  - "future plans"
+  - "basic fundamentals"
+  - "true facts"
+  - "free gift"
+  - "unexpected surprise"
+  - "final outcome"

@@ -1,0 +1,46 @@
+name: Vale Linting
+
+on:
+  push:
+    branches: 
+      - main
+    paths:
+      - 'docs/**/*.md'
+      - 'docs/**/*.mdx'
+      - '.github/workflows/vale.yml'
+      - '.vale.ini'
+      - '.github/styles/**'
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - 'docs/**/*.md'
+      - 'docs/**/*.mdx'
+      - '.github/workflows/vale.yml'
+      - '.vale.ini'
+      - '.github/styles/**'
+
+jobs:
+  vale-lint:
+    name: Vale Linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for PR annotations to work
+
+      - name: Run Vale
+        uses: errata-ai/vale-action@v2
+        with:
+          # Only check files in the docs directory
+          files: docs/
+          # Use the configuration from the repository
+          config: .vale.ini
+          # Set the minimum alert level (suggestion, warning, or error)
+          minAlertLevel: warning
+          # Enable annotations in the GitHub UI
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          # Exit code when issues are found (0 = pass, 1 = fail)
+          # Set to 1 to fail the build on warnings
+          exitCode: 1
