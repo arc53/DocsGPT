@@ -85,73 +85,77 @@ export default function MessageInput({
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
-    const file = e.target.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-
+    const files = Array.from(e.target.files);
     const apiHost = import.meta.env.VITE_API_HOST;
-    const xhr = new XMLHttpRequest();
-    const uniqueId = crypto.randomUUID();
 
-    const newAttachment = {
-      id: uniqueId,
-      fileName: file.name,
-      progress: 0,
-      status: 'uploading' as const,
-      taskId: '',
-    };
+    files.forEach((file) => {
+      const formData = new FormData();
+      formData.append('file', file);
 
-    dispatch(addAttachment(newAttachment));
+      const xhr = new XMLHttpRequest();
+      const uniqueId = crypto.randomUUID();
 
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        dispatch(
-          updateAttachment({
-            id: uniqueId,
-            updates: { progress },
-          }),
-        );
-      }
-    });
+      const newAttachment = {
+        id: uniqueId,
+        fileName: file.name,
+        progress: 0,
+        status: 'uploading' as const,
+        taskId: '',
+      };
 
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        const response = JSON.parse(xhr.responseText);
-        if (response.task_id) {
+      dispatch(addAttachment(newAttachment));
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
           dispatch(
             updateAttachment({
               id: uniqueId,
-              updates: {
-                taskId: response.task_id,
-                status: 'processing',
-                progress: 10,
-              },
+              updates: { progress },
             }),
           );
         }
-      } else {
+      });
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.task_id) {
+            dispatch(
+              updateAttachment({
+                id: uniqueId,
+                updates: {
+                  taskId: response.task_id,
+                  status: 'processing',
+                  progress: 10,
+                },
+              }),
+            );
+          }
+        } else {
+          dispatch(
+            updateAttachment({
+              id: uniqueId,
+              updates: { status: 'failed' },
+            }),
+          );
+        }
+      };
+
+      xhr.onerror = () => {
         dispatch(
           updateAttachment({
             id: uniqueId,
             updates: { status: 'failed' },
           }),
         );
-      }
-    };
+      };
 
-    xhr.onerror = () => {
-      dispatch(
-        updateAttachment({
-          id: uniqueId,
-          updates: { status: 'failed' },
-        }),
-      );
-    };
+      xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.send(formData);
+    });
 
-    xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.send(formData);
     e.target.value = '';
   };
 
@@ -423,6 +427,7 @@ export default function MessageInput({
                 type="file"
                 className="hidden"
                 onChange={handleFileAttachment}
+                multiple
               />
             </label>
             {/* Additional badges can be added here in the future */}

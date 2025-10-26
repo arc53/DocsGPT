@@ -25,7 +25,7 @@ class StoreAttachment(Resource):
         api.model(
             "AttachmentModel",
             {
-                "file": fields.Raw(required=True, description="File to upload"),
+                "file": fields.List(fields.Raw, required=True, description="Files to upload"),
                 "api_key": fields.String(
                     required=False, description="API key (optional)"
                 ),
@@ -38,9 +38,12 @@ class StoreAttachment(Resource):
     def post(self):
         decoded_token = getattr(request, "decoded_token", None)
         api_key = request.form.get("api_key") or request.args.get("api_key")
-        file = request.files.get("file")
-
-        if not file or file.filename == "":
+        files = request.files.getlist("file") or request.files.getlist("files")
+        if not files or len(files) == 0:
+            single = request.files.get("file")
+            if single:
+                files = [single]
+        if not files or len(files) == 0:
             return make_response(
                 jsonify({"status": "error", "message": "Missing file"}),
                 400,
@@ -59,32 +62,54 @@ class StoreAttachment(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Authentication required"}), 401
             )
+        results = []
         try:
-            attachment_id = ObjectId()
-            original_filename = safe_filename(os.path.basename(file.filename))
-            relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
+            for file in files:
+                if not file or file.filename == "":
+                    results.append(
+                        {"status": "error", "message": "Empty filename", "filename": None}
+                    )
+                    continue
+                attachment_id = ObjectId()
+                original_filename = safe_filename(os.path.basename(file.filename))
+                relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
 
-            metadata = storage.save_file(file, relative_path)
+                try:
+                    metadata = storage.save_file(file, relative_path)
 
-            file_info = {
-                "filename": original_filename,
-                "attachment_id": str(attachment_id),
-                "path": relative_path,
-                "metadata": metadata,
-            }
-
-            task = store_attachment.delay(file_info, user)
-
-            return make_response(
-                jsonify(
-                    {
-                        "success": True,
-                        "task_id": task.id,
-                        "message": "File uploaded successfully. Processing started.",
+                    file_info = {
+                        "filename": original_filename,
+                        "attachment_id": str(attachment_id),
+                        "path": relative_path,
+                        "metadata": metadata,
                     }
-                ),
-                200,
-            )
+
+                    task = store_attachment.delay(file_info, user)
+
+                    results.append(
+                        {
+                            "success": True,
+                            "filename": original_filename,
+                            "attachment_id": str(attachment_id),
+                            "task_id": task.id,
+                            "message": "File uploaded successfully. Processing started.",
+                        }
+                    )    
+                except Exception as in_err:
+                    current_app.logger.error(
+                        f"Error saving file {original_filename}: {in_err}",
+                        exc_info=True,
+                    )
+                    results.append(
+                        {
+                            "success": False,
+                            "filename": original_filename,
+                            "attachment_id": None,
+                            "task_id": None,
+                            "message": str(in_err),
+                        }
+                    )
+            return make_response(jsonify({"success": True, "results": results}), 200)
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
