@@ -44,14 +44,27 @@ jobs:
           # Print PATH for debugging
           echo "PATH: $PATH"
           
+      - name: Set up Vale configuration
+        run: |
+          # Create config directory structure
+          mkdir -p ~/.config/vale/styles/
+          
+          # Copy our styles to the config directory
+          cp -r .github/styles/* ~/.config/vale/styles/
+          
+          # Verify the files were copied
+          echo "Vale config directory contents:"
+          ls -la ~/.config/vale/
+          
       - name: Run Vale
         run: |
           # Run Vale with our configuration
           echo "Current directory: $(pwd)"
-          echo "Files in current directory:"
+          echo "Files in current directory:".github/workflows/vale.yml
           ls -la
           
           # Run Vale with the config file in the current directory
+          # and output in a format that works well with GitHub Actions
           vale --config=.vale.ini --output=line ./docs
           
           # Exit with code 0 to prevent the job from failing on warnings
