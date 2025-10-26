@@ -2,8 +2,7 @@ name: Vale Linting
 
 on:
   push:
-    branches: 
-      - main
+    branches: [ main ]
     paths:
       - 'docs/**/*.md'
       - 'docs/**/*.mdx'
@@ -11,8 +10,7 @@ on:
       - '.vale.ini'
       - '.github/styles/**'
   pull_request:
-    branches: 
-      - main
+    branches: [ main ]
     paths:
       - 'docs/**/*.md'
       - 'docs/**/*.mdx'
@@ -32,14 +30,12 @@ jobs:
 
       - name: Install Vale
         run: |
-          # Create a local bin directory
-          mkdir -p $HOME/.local/bin
-          
-          # Install Vale to the local bin directory
-          curl -sfL https://install.goreleaser.com/github.com/errata-ai/vale.sh | sh -s -- -b $HOME/.local/bin v2.28.0
-          
-          # Add local bin to PATH
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Install Vale using Homebrew (works on Linux in GitHub Actions)
+          sudo apt-get update
+          sudo apt-get install -y wget
+          wget https://github.com/errata-ai/vale/releases/download/v2.28.0/vale_2.28.0_Linux_64-bit.tar.gz
+          tar -xvzf vale_2.28.0_Linux_64-bit.tar.gz
+          sudo mv vale /usr/local/bin/
           
           # Verify installation
           echo "Vale version:"
@@ -51,12 +47,12 @@ jobs:
       - name: Run Vale
         run: |
           # Run Vale with our configuration
-          # Using the full path to the config file
-          CONFIG_PATH="$(pwd)/.vale.ini"
-          echo "Using Vale config file at: $CONFIG_PATH"
+          echo "Current directory: $(pwd)"
+          echo "Files in current directory:"
+          ls -la
           
-          # Run Vale with the full config path
-          vale --config="$CONFIG_PATH" --output=line ./docs
+          # Run Vale with the config file in the current directory
+          vale --config=.vale.ini --output=line ./docs
           
           # Exit with code 0 to prevent the job from failing on warnings
           # Change to 'exit $?' to fail the build on warnings
