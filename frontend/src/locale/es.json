@@ -218,8 +218,8 @@
         "addQuery": "Agregar Consulta"
       },
       "drag": {
-        "title": "Subir archivo fuente",
-        "description": "Arrastra tu archivo aquí para agregarlo como fuente"
+        "title": "Suelta los archivos adjuntos aquí",
+        "description": "Suelta para subir tus archivos adjuntos"
       },
       "progress": {
         "upload": "Subida en progreso",

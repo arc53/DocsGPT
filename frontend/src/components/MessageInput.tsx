@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -6,6 +8,7 @@ import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
 import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
+import DragFileUpload from '../assets/DragFileUpload.svg';
 import ExitIcon from '../assets/exit.svg';
 import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
@@ -54,6 +57,7 @@ export default function MessageInput({
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
+  const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
@@ -83,82 +87,133 @@ export default function MessageInput({
     };
   }, [browserOS]);
 
-  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
+  const uploadFiles = useCallback(
+    (files: File[]) => {
+      const apiHost = import.meta.env.VITE_API_HOST;
 
-    const files = Array.from(e.target.files);
-    const apiHost = import.meta.env.VITE_API_HOST;
+      files.forEach((file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const xhr = new XMLHttpRequest();
+        const uniqueId = crypto.randomUUID();
 
-    files.forEach((file) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      const xhr = new XMLHttpRequest();
-      const uniqueId = crypto.randomUUID();
+        const newAttachment = {
+          id: uniqueId,
+          fileName: file.name,
+          progress: 0,
+          status: 'uploading' as const,
+          taskId: '',
+        };
 
-      const newAttachment = {
-        id: uniqueId,
-        fileName: file.name,
-        progress: 0,
-        status: 'uploading' as const,
-        taskId: '',
-      };
+        dispatch(addAttachment(newAttachment));
 
-      dispatch(addAttachment(newAttachment));
-
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          dispatch(
-            updateAttachment({
-              id: uniqueId,
-              updates: { progress },
-            }),
-          );
-        }
-      });
-
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          if (response.task_id) {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
             dispatch(
               updateAttachment({
                 id: uniqueId,
-                updates: {
-                  taskId: response.task_id,
-                  status: 'processing',
-                  progress: 10,
-                },
+                updates: { progress },
               }),
             );
           }
-        } else {
+        });
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText);
+            if (response.task_id) {
+              dispatch(
+                updateAttachment({
+                  id: uniqueId,
+                  updates: {
+                    taskId: response.task_id,
+                    status: 'processing',
+                    progress: 10,
+                  },
+                }),
+              );
+            }
+          } else {
+            dispatch(
+              updateAttachment({
+                id: uniqueId,
+                updates: { status: 'failed' },
+              }),
+            );
+          }
+        };
+
+        xhr.onerror = () => {
           dispatch(
             updateAttachment({
               id: uniqueId,
               updates: { status: 'failed' },
             }),
           );
-        }
-      };
+        };
 
-      xhr.onerror = () => {
-        dispatch(
-          updateAttachment({
-            id: uniqueId,
-            updates: { status: 'failed' },
-          }),
-        );
-      };
+        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+      });
+    },
+    [dispatch, token],
+  );
 
-      xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      xhr.send(formData);
-    });
+  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const files = Array.from(e.target.files);
+    uploadFiles(files);
 
     // clear input so same file can be selected again
     e.target.value = '';
   };
+
+  // Drag and drop handler
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      uploadFiles(acceptedFiles);
+      setHandleDragActive(false);
+    },
+    [uploadFiles],
+  );
+
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop,
+    noClick: true,
+    noKeyboard: true,
+    multiple: true,
+    onDragEnter: () => {
+      setHandleDragActive(true);
+    },
+    onDragLeave: () => {
+      setHandleDragActive(false);
+    },
+    maxSize: 25000000,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'text/x-rst': ['.rst'],
+      'text/x-markdown': ['.md'],
+      'application/zip': ['.zip'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        ['.docx'],
+      'application/json': ['.json'],
+      'text/csv': ['.csv'],
+      'text/html': ['.html'],
+      'application/epub+zip': ['.epub'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        ['.pptx'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpeg'],
+      'image/jpg': ['.jpg'],
+    },
+  });
 
   useEffect(() => {
     const checkTaskStatus = () => {
@@ -271,7 +326,8 @@ export default function MessageInput({
 
   // no preview object URLs to revoke (preview removed per reviewer request)
 
-  const findIndexById = (id: string) => attachments.findIndex((a) => a.id === id);
+  const findIndexById = (id: string) =>
+    attachments.findIndex((a) => a.id === id);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggingId(id);
@@ -302,7 +358,8 @@ export default function MessageInput({
   };
 
   return (
-    <div className="flex w-full flex-col">
+    <div {...getRootProps()} className="flex w-full flex-col">
+      <input {...getInputProps()} />
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
@@ -314,8 +371,10 @@ export default function MessageInput({
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDropOn(e, attachment.id)}
                 className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
-                  attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-                } ${draggingId === attachment.id ? 'opacity-60 ring-2 ring-dashed ring-purple-200' : ''}`}
+                  attachment.status !== 'completed'
+                    ? 'opacity-70'
+                    : 'opacity-100'
+                } ${draggingId === attachment.id ? 'ring-dashed opacity-60 ring-2 ring-purple-200' : ''}`}
                 title={attachment.fileName}
               >
                 <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
@@ -528,6 +587,20 @@ export default function MessageInput({
           close={() => setUploadModalState('INACTIVE')}
         />
       )}
+
+      {handleDragActive &&
+        createPortal(
+          <div className="dark:bg-gray-alpha/50 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
+            <img className="filter dark:invert" src={DragFileUpload} />
+            <span className="text-outer-space dark:text-silver px-2 text-2xl font-bold">
+              {t('modals.uploadDoc.drag.title')}
+            </span>
+            <span className="text-s text-outer-space dark:text-silver w-48 p-2 text-center">
+              {t('modals.uploadDoc.drag.description')}
+            </span>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
