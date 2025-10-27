@@ -255,8 +255,8 @@
         "addQuery": "Add Query"
       },
       "drag": {
-        "title": "Upload a source file",
-        "description": "Drop your file here to add it as a source"
+        "title": "Drop attachments here",
+        "description": "Release to upload your attachments"
       },
       "progress": {
         "upload": "Upload is in progress",
