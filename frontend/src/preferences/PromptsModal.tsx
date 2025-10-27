@@ -38,8 +38,6 @@ function AddPrompt({
   // Fetch and process tool variables
   React.useEffect(() => {
     const fetchToolVariables = async () => {
-      if (!token) return;
-
       try {
         const response = await userService.getUserTools(token);
         const data = await response.json();
@@ -159,7 +157,7 @@ function AddPrompt({
               }
             }}
             placeholder="System Variables"
-            size="w-40"
+            size="w-[185px]"
             rounded="3xl"
             border="border"
             contentSize="text-[14px]"
@@ -189,7 +187,7 @@ function AddPrompt({
               }
             }}
             placeholder="Tool Variables"
-            size="w-32"
+            size="w-[171px]"
             rounded="3xl"
             border="border"
             contentSize="text-[14px]"
@@ -200,6 +198,8 @@ function AddPrompt({
         <div className="flex justify-center">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
           >
             <img
@@ -434,7 +434,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mt-24 w-[650px] rounded-2xl bg-white px-8 py-6 shadow-xl dark:bg-[#1E1E2A]"
+      className="mt-24 w-[650px] rounded-2xl bg-white px-8 py-6 dark:bg-[#1E1E2A]"
     >
       {view}
     </WrapperModal>
