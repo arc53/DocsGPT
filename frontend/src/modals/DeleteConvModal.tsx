@@ -34,11 +34,15 @@ export default function DeleteConvModal({
     dispatch(setModalState('INACTIVE'));
   }
 
+  function handleClose() {
+    dispatch(setModalState('INACTIVE'));
+  }
+
   return (
     <ConfirmationModal
       message={t('modals.deleteConv.confirm')}
       modalState={modalState}
-      setModalState={(state) => dispatch(setModalState(state))}
+      setModalState={handleClose}
       submitLabel={t('modals.deleteConv.delete')}
       handleSubmit={handleSubmit}
       handleCancel={handleCancel}
