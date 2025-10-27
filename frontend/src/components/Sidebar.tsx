@@ -33,7 +33,7 @@ export default function Sidebar({
   return (
     <div ref={sidebarRef} className="h-vh relative">
       <div
-        className={`dark:bg-chinese-black fixed top-0 right-0 z-50 h-full w-72 transform bg-white shadow-xl transition-all duration-300 sm:w-96 ${
+        className={`dark:bg-chinese-black fixed top-0 right-0 z-50 h-full w-64 transform bg-white shadow-xl transition-all duration-300 sm:w-80 ${
           isOpen ? 'translate-x-[10px]' : 'translate-x-full'
         } border-l border-[#9ca3af]/10`}
       >

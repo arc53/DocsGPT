@@ -10,7 +10,7 @@ from application.api import api
 from application.api.user.base import agents_collection, storage
 from application.api.user.tasks import store_attachment
 from application.core.settings import settings
-from application.tts.google_tts import GoogleTTS
+from application.tts.tts_creator import TTSCreator
 from application.utils import safe_filename
 
 
@@ -133,7 +133,7 @@ class TextToSpeech(Resource):
         data = request.get_json()
         text = data["text"]
         try:
-            tts_instance = GoogleTTS()
+            tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
             audio_base64, detected_language = tts_instance.text_to_speech(text)
             return make_response(
                 jsonify(

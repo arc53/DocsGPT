@@ -109,18 +109,18 @@ export default function AgentPreview() {
     } else setLastQueryReturnedErr(false);
   }, [queries]);
   return (
-    <div>
-      <div className="dark:bg-raisin-black flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
-        <div className="h-[512px] w-full overflow-y-auto">
-          <ConversationMessages
-            handleQuestion={handleQuestion}
-            handleQuestionSubmission={handleQuestionSubmission}
-            queries={queries}
-            status={status}
-            showHeroOnEmpty={false}
-          />
-        </div>
-        <div className="flex w-[95%] max-w-[1500px] flex-col items-center gap-4 pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+    <div className="relative h-full w-full">
+      <div className="scrollbar-thin absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:!w-full [&>div>div]:!max-w-none">
+        <ConversationMessages
+          handleQuestion={handleQuestion}
+          handleQuestionSubmission={handleQuestionSubmission}
+          queries={queries}
+          status={status}
+          showHeroOnEmpty={false}
+        />
+      </div>
+      <div className="absolute right-0 bottom-0 left-0 flex w-full flex-col gap-4 pb-2">
+        <div className="w-full px-4">
           <MessageInput
             onSubmit={(text) => handleQuestionSubmission(text)}
             loading={status === 'loading'}
@@ -128,11 +128,11 @@ export default function AgentPreview() {
             showToolButton={selectedAgent ? false : true}
             autoFocus={false}
           />
-          <p className="text-gray-4000 dark:text-sonic-silver w-full self-center bg-transparent pt-2 text-center text-xs md:inline">
-            This is a preview of the agent. You can publish it to start using it
-            in conversations.
-          </p>
         </div>
+        <p className="text-gray-4000 dark:text-sonic-silver w-full bg-transparent text-center text-xs md:inline">
+          This is a preview of the agent. You can publish it to start using it
+          in conversations.
+        </p>
       </div>
     </div>
   );

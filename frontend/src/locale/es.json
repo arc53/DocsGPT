@@ -396,7 +396,8 @@
       "title": "Fuentes",
       "link": "Enlace fuente",
       "view_more": "Ver {{count}} más fuentes",
-      "text": "Elegir tus fuentes"
+      "text": "Elegir tus fuentes",
+      "noSourcesAvailable": "No hay fuentes disponibles"
     },
     "attachments": {
       "attach": "Adjuntar",

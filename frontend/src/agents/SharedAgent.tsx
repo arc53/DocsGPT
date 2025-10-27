@@ -177,13 +177,15 @@ export default function SharedAgent() {
           />
         </div>
         <div className="flex w-[95%] max-w-[1500px] flex-col items-center pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
-          <MessageInput
-            onSubmit={(text) => handleQuestionSubmission(text)}
-            loading={status === 'loading'}
-            showSourceButton={sharedAgent ? false : true}
-            showToolButton={sharedAgent ? false : true}
-            autoFocus={false}
-          />
+          <div className="w-full px-2">
+            <MessageInput
+              onSubmit={(text) => handleQuestionSubmission(text)}
+              loading={status === 'loading'}
+              showSourceButton={sharedAgent ? false : true}
+              showToolButton={sharedAgent ? false : true}
+              autoFocus={false}
+            />
+          </div>
           <p className="text-gray-4000 dark:text-sonic-silver hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">
             {t('tagline')}
           </p>

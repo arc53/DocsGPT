@@ -396,7 +396,8 @@
       "title": "ソース",
       "text": "ソーステキスト",
       "link": "ソースリンク",
-      "view_more": "さらに{{count}}個のソース"
+      "view_more": "さらに{{count}}個のソース",
+      "noSourcesAvailable": "利用可能なソースがありません"
     },
     "attachments": {
       "attach": "添付",

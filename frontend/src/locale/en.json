@@ -433,7 +433,8 @@
       "title": "Sources",
       "text": "Choose Your Sources",
       "link": "Source link",
-      "view_more": "{{count}} more sources"
+      "view_more": "{{count}} more sources",
+      "noSourcesAvailable": "No sources available"
     },
     "attachments": {
       "attach": "Attach",
