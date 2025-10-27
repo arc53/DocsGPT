@@ -1,92 +1,236 @@
-import datetime
-import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
+import uuid
+
+from .base import Tool
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 
-from .base import Tool
-
 
 class TodoListTool(Tool):
-    """
-    Todo List Tool
-    A simple MongoDB-backed todo list tool for agents to create, list, update, retrieve and delete todo items.
-    Constructor accepts optional `tool_config` (may include `tool_id`) and
-    optional `user_id` (decoded_token['sub']).
+    """Todo List
+
+    Manages todo items for users. Supports creating, viewing, updating, and deleting todos.
     """
 
-    def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None):
+    def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:
+        """Initialize the tool.
+
+        Args:
+            tool_config: Optional tool configuration. Should include:
+                - tool_id: Unique identifier for this todo list tool instance (from user_tools._id)
+                           This ensures each user's tool configuration has isolated todos
+            user_id: The authenticated user's id (should come from decoded_token["sub"]).
+        """
         self.user_id: Optional[str] = user_id
-        self.tool_config = tool_config or {}
 
-        if self.tool_config and "tool_id" in self.tool_config:
-            self.tool_id = self.tool_config["tool_id"]
-        elif self.user_id:
-            self.tool_id = f"default_{self.user_id}"
+        # Get tool_id from configuration (passed from user_tools._id in production)
+        # In production, tool_id is the MongoDB ObjectId string from user_tools collection
+        if tool_config and "tool_id" in tool_config:
+            self.tool_id = tool_config["tool_id"]
+        elif user_id:
+            # Fallback for backward compatibility or testing
+            self.tool_id = f"default_{user_id}"
         else:
+            # Last resort fallback (shouldn't happen in normal use)
             self.tool_id = str(uuid.uuid4())
 
-        self.database_name = settings.MONGO_DB_NAME
-        self.collection_name = "todos"
-        self._client = None
-        self._db = None
-        self._col = None
-        self._connect()
+        db = MongoDB.get_client()[settings.MONGO_DB_NAME]
+        self.collection = db["todos"]
 
-    def _connect(self):
-        try:
-            self._client = MongoDB.get_client()
-            self._db = self._client[self.database_name]
-            self._col = self._db[self.collection_name]
-            self._col.create_index([("todo_id", 1)], unique=True)
-            self._col.create_index([("user_id", 1), ("tool_id", 1)])
-        except Exception:
-            self._client = None
-            self._db = None
-            self._col = None
+    # -----------------------------
+    # Action implementations
+    # -----------------------------
+    def execute_action(self, action_name: str, **kwargs: Any) -> str:
+        """Execute an action by name.
 
-    def _ensure_connection(self):
-        if self._col is None:
-            self._connect()
-            if self._col is None:
-                raise RuntimeError("TodoListTool: no MongoDB connection available")
+        Args:
+            action_name: One of list, create, get, update, complete, delete.
+            **kwargs: Parameters for the action.
 
-    def execute_action(self, action_name: str, **kwargs):
-        actions = {
-            "todo_create": self._create_todo,
-            "todo_get": self._get_todo,
-            "todo_list": self._get_todos,
-            "todo_update": self._update_todo,
-            "todo_delete": self._delete_todo,
-        }
-        if action_name not in actions:
-            raise ValueError(f"Unknown action: {action_name}")
+        Returns:
+            A human-readable string result.
+        """
         if not self.user_id:
-            return {"status_code": 401, "message": "user_id required"}
+            return "Error: TodoListTool requires a valid user_id."
 
-        return actions[action_name](**kwargs)
+        if action_name == "list":
+            return self._list()
+
+        if action_name == "create":
+            return self._create(kwargs.get("title", ""))
+
+        if action_name == "get":
+            return self._get(kwargs.get("todo_id"))
+
+        if action_name == "update":
+            return self._update(
+                kwargs.get("todo_id"),
+                kwargs.get("title", "")
+            )
+
+        if action_name == "complete":
+            return self._complete(kwargs.get("todo_id"))
+
+        if action_name == "delete":
+            return self._delete(kwargs.get("todo_id"))
+
+        return f"Unknown action: {action_name}"
+
+    def get_actions_metadata(self) -> List[Dict[str, Any]]:
+        """Return JSON metadata describing supported actions for tool schemas."""
+        return [
+            {
+                "name": "list",
+                "description": "List all todos for the user.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "create",
+                "description": "Create a new todo item.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Title of the todo item."
+                        }
+                    },
+                    "required": ["title"],
+                },
+            },
+            {
+                "name": "get",
+                "description": "Get a specific todo by ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to retrieve."
+                        }
+                    },
+                    "required": ["todo_id"],
+                },
+            },
+            {
+                "name": "update",
+                "description": "Update a todo's title by ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to update."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The new title for the todo."
+                        }
+                    },
+                    "required": ["todo_id", "title"],
+                },
+            },
+            {
+                "name": "complete",
+                "description": "Mark a todo as completed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to mark as completed."
+                        }
+                    },
+                    "required": ["todo_id"],
+                },
+            },
+            {
+                "name": "delete",
+                "description": "Delete a specific todo by ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to delete."
+                        }
+                    },
+                    "required": ["todo_id"],
+                },
+            },
+        ]
+
+    def get_config_requirements(self) -> Dict[str, Any]:
+        """Return configuration requirements."""
+        return {}
 
     # -----------------------------
-    # Auto-incrementing todo_id
+    # Internal helpers
     # -----------------------------
+    def _coerce_todo_id(self, value: Optional[Any]) -> Optional[int]:
+        """Convert todo identifiers to sequential integers."""
+        if value is None:
+            return None
+
+        if isinstance(value, int):
+            return value if value > 0 else None
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                numeric_value = int(stripped)
+                return numeric_value if numeric_value > 0 else None
+
+        return None
+
     def _get_next_todo_id(self) -> int:
-        latest = self._col.find(
-            {"user_id": self.user_id, "tool_id": self.tool_id}
-        ).sort("todo_id", -1).limit(1)
+        """Get the next sequential todo_id for this user and tool.
 
-        try:
-            max_id = int(next(latest)["todo_id"])
-        except (StopIteration, KeyError, ValueError):
-            max_id = 0
+        Returns a simple integer (1, 2, 3, ...) scoped to this user/tool.
+        With 5-10 todos max, scanning is negligible.
+        """
+        # Find all todos for this user/tool and get their IDs
+        todos = list(self.collection.find(
+            {"user_id": self.user_id, "tool_id": self.tool_id},
+            {"todo_id": 1}
+        ))
+
+        # Find the maximum todo_id
+        max_id = 0
+        for todo in todos:
+            todo_id = self._coerce_todo_id(todo.get("todo_id"))
+            if todo_id is not None:
+                max_id = max(max_id, todo_id)
 
         return max_id + 1
 
-    # -----------------------------
-    # Actions
-    # -----------------------------
-    def _create_todo(self, title: str, description: str = "", due_date: Optional[str] = None, metadata: Optional[Dict] = None):
-        self._ensure_connection()
-        now = datetime.datetime.utcnow()
+    def _list(self) -> str:
+        """List all todos for the user."""
+        cursor = self.collection.find({"user_id": self.user_id, "tool_id": self.tool_id})
+        todos = list(cursor)
+
+        if not todos:
+            return "No todos found."
+
+        result_lines = ["Todos:"]
+        for doc in todos:
+            todo_id = doc.get("todo_id")
+            title = doc.get("title", "Untitled")
+            status = doc.get("status", "open")
+
+            line = f"[{todo_id}] {title} ({status})"
+            result_lines.append(line)
+
+        return "\n".join(result_lines)
+
+    def _create(self, title: str) -> str:
+        """Create a new todo item."""
+        title = (title or "").strip()
+        if not title:
+            return "Error: Title is required."
+
+        now = datetime.now()
         todo_id = self._get_next_todo_id()
 
         doc = {
@@ -94,136 +238,84 @@ class TodoListTool(Tool):
             "user_id": self.user_id,
             "tool_id": self.tool_id,
             "title": title,
-            "description": description,
             "status": "open",
-            "metadata": metadata or {},
-            "due_date": due_date,
             "created_at": now,
             "updated_at": now,
         }
-        self._col.insert_one(doc)
-        return {"status_code": 201, "message": "Todo created", "todo_id": todo_id}
+        self.collection.insert_one(doc)
+        return f"Todo created with ID {todo_id}: {title}"
 
-    def _get_todo(self, todo_id: int):
-        self._ensure_connection()
-        doc = self._col.find_one({
+    def _get(self, todo_id: Optional[Any]) -> str:
+        """Get a specific todo by ID."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        doc = self.collection.find_one({
             "user_id": self.user_id,
             "tool_id": self.tool_id,
-            "todo_id": todo_id
+            "todo_id": parsed_todo_id
         })
+
         if not doc:
-            return {"status_code": 404, "message": "Todo not found"}
-        doc.pop("_id", None)
-        self._format_timestamps(doc)
-        return {"status_code": 200, "todo": doc}
+            return f"Error: Todo with ID {parsed_todo_id} not found."
 
-    def _get_todos(self):
-        self._ensure_connection()
-        cursor = self._col.find({"user_id": self.user_id, "tool_id": self.tool_id})
-        todos = []
-        for doc in cursor:
-            doc.pop("_id", None)
-            self._format_timestamps(doc)
-            todos.append(doc)
-        return {"status_code": 200, "todos": todos}
+        title = doc.get("title", "Untitled")
+        status = doc.get("status", "open")
 
-    def _update_todo(self, todo_id: int, updates: Dict[str, Any]):
-        self._ensure_connection()
-        allowed = {"title", "description", "status", "due_date", "metadata"}
-        set_fields = {k: v for k, v in updates.items() if k in allowed}
-        if not set_fields:
-            return {"status_code": 400, "message": "No valid fields to update"}
-        set_fields["updated_at"] = datetime.datetime.utcnow()
-        result = self._col.update_one(
-            {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": todo_id},
-            {"$set": set_fields}
+        result = f"Todo [{parsed_todo_id}]:\nTitle: {title}\nStatus: {status}"
+
+        return result
+
+    def _update(self, todo_id: Optional[Any], title: str) -> str:
+        """Update a todo's title by ID."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        title = (title or "").strip()
+        if not title:
+            return "Error: Title is required."
+
+        result = self.collection.update_one(
+            {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id},
+            {"$set": {"title": title, "updated_at": datetime.now()}}
         )
-        if result.matched_count == 0:
-            return {"status_code": 404, "message": "Todo not found"}
-        return {"status_code": 200, "message": "Todo updated"}
 
-    def _delete_todo(self, todo_id: int):
-        self._ensure_connection()
-        result = self._col.delete_one({
+        if result.matched_count == 0:
+            return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        return f"Todo {parsed_todo_id} updated to: {title}"
+
+    def _complete(self, todo_id: Optional[Any]) -> str:
+        """Mark a todo as completed."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        result = self.collection.update_one(
+            {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id},
+            {"$set": {"status": "completed", "updated_at": datetime.now()}}
+        )
+
+        if result.matched_count == 0:
+            return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        return f"Todo {parsed_todo_id} marked as completed."
+
+    def _delete(self, todo_id: Optional[Any]) -> str:
+        """Delete a specific todo by ID."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        result = self.collection.delete_one({
             "user_id": self.user_id,
             "tool_id": self.tool_id,
-            "todo_id": todo_id
+            "todo_id": parsed_todo_id
         })
+
         if result.deleted_count == 0:
-            return {"status_code": 404, "message": "Todo not found"}
-        return {"status_code": 200, "message": "Todo deleted"}
+            return f"Error: Todo with ID {parsed_todo_id} not found."
 
-    def _format_timestamps(self, doc: Dict[str, Any]):
-        for field in ["created_at", "updated_at"]:
-            if field in doc and isinstance(doc[field], datetime.datetime):
-                utc_dt = doc[field].astimezone(datetime.timezone.utc)
-                doc[field] = utc_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-    def get_actions_metadata(self) -> List[Dict[str, Any]]:
-        return [
-            {
-                "name": "todo_create",
-                "description": "Create a new todo item for the user",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "description": {"type": "string"},
-                        "due_date": {"type": "string"},
-                        "metadata": {"type": "object"},
-                    },
-                    "required": ["title"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "todo_get",
-                "description": "Get a specific todo by todo_id",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "todo_id": {"type": "integer"},
-                    },
-                    "required": ["todo_id"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "todo_list",
-                "description": "List all todos for this tool",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "todo_update",
-                "description": "Update a todo's fields by todo_id",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "todo_id": {"type": "integer"},
-                        "updates": {"type": "object"},
-                    },
-                    "required": ["todo_id", "updates"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "todo_delete",
-                "description": "Delete a specific todo by todo_id",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "todo_id": {"type": "integer"},
-                    },
-                    "required": ["todo_id"],
-                    "additionalProperties": False,
-                },
-            },
-        ]
-
-    def get_config_requirements(self):
-        return {}
+        return f"Todo {parsed_todo_id} deleted."
