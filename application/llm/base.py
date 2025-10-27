@@ -44,6 +44,12 @@ class BaseLLM(ABC):
                 )
         return self._fallback_llm
 
+    @staticmethod
+    def _remove_null_values(args_dict):
+        if not isinstance(args_dict, dict):
+            return args_dict
+        return {k: v for k, v in args_dict.items() if v is not None}
+
     def _execute_with_fallback(
         self, method_name: str, decorators: list, *args, **kwargs
     ):

@@ -87,15 +87,20 @@ export default function ConversationMessages({
     setHasScrolledToLast(isAtBottom);
   }, [setHasScrolledToLast]);
 
+  const lastQuery = queries[queries.length - 1];
+  const lastQueryResponse = lastQuery?.response;
+  const lastQueryError = lastQuery?.error;
+  const lastQueryThought = lastQuery?.thought;
+
   useEffect(() => {
     if (!userInterruptedScroll) {
       scrollConversationToBottom();
     }
   }, [
     queries.length,
-    queries[queries.length - 1]?.response,
-    queries[queries.length - 1]?.error,
-    queries[queries.length - 1]?.thought,
+    lastQueryResponse,
+    lastQueryError,
+    lastQueryThought,
     userInterruptedScroll,
     scrollConversationToBottom,
   ]);

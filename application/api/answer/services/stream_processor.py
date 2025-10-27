@@ -15,7 +15,11 @@ from application.api.answer.services.prompt_renderer import PromptRenderer
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.retriever.retriever_creator import RetrieverCreator
-from application.utils import get_gpt_model, limit_chat_history
+from application.utils import (
+    calculate_doc_token_budget,
+    get_gpt_model,
+    limit_chat_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -314,11 +318,16 @@ class StreamProcessor:
             )
 
     def _configure_retriever(self):
-        """Configure the retriever based on request data"""
+        history_token_limit = int(self.data.get("token_limit", 2000))
+        doc_token_limit = calculate_doc_token_budget(
+            gpt_model=self.gpt_model, history_token_limit=history_token_limit
+        )
+
         self.retriever_config = {
             "retriever_name": self.data.get("retriever", "classic"),
             "chunks": int(self.data.get("chunks", 2)),
-            "token_limit": self.data.get("token_limit", settings.DEFAULT_MAX_HISTORY),
+            "doc_token_limit": doc_token_limit,
+            "history_token_limit": history_token_limit,
         }
 
         api_key = self.data.get("api_key") or self.agent_key
@@ -326,14 +335,13 @@ class StreamProcessor:
             self.retriever_config["chunks"] = 0
 
     def create_retriever(self):
-        """Create and return the configured retriever"""
         return RetrieverCreator.create_retriever(
             self.retriever_config["retriever_name"],
             source=self.source,
             chat_history=self.history,
             prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
             chunks=self.retriever_config["chunks"],
-            token_limit=self.retriever_config["token_limit"],
+            doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
             gpt_model=self.gpt_model,
             user_api_key=self.agent_config["user_api_key"],
             decoded_token=self.decoded_token,
@@ -342,12 +350,18 @@ class StreamProcessor:
     def pre_fetch_docs(self, question: str) -> tuple[Optional[str], Optional[list]]:
         """Pre-fetch documents for template rendering before agent creation"""
         if self.data.get("isNoneDoc", False):
+            logger.info("Pre-fetch skipped: isNoneDoc=True")
             return None, None
         try:
             retriever = self.create_retriever()
+            logger.info(
+                f"Pre-fetching docs with chunks={retriever.chunks}, doc_token_limit={retriever.doc_token_limit}"
+            )
             docs = retriever.search(question)
+            logger.info(f"Pre-fetch retrieved {len(docs) if docs else 0} documents")
 
             if not docs:
+                logger.info("Pre-fetch: No documents returned from search")
                 return None, None
             self.retrieved_docs = docs
 
@@ -361,13 +375,91 @@ class StreamProcessor:
                     docs_with_filenames.append(doc["text"])
             docs_together = "\n\n".join(docs_with_filenames)
 
+            logger.info(f"Pre-fetch docs_together size: {len(docs_together)} chars")
+
             return docs_together, docs
         except Exception as e:
-            logger.warning(f"Failed to pre-fetch docs: {str(e)}")
+            logger.error(f"Failed to pre-fetch docs: {str(e)}", exc_info=True)
             return None, None
 
+    def pre_fetch_tools(self) -> Optional[Dict[str, Any]]:
+        """Pre-fetch tool data for template rendering before agent creation
+
+        Can be controlled via:
+        1. Global setting: ENABLE_TOOL_PREFETCH in .env
+        2. Per-request: disable_tool_prefetch in request data
+        3. Per-tool: pre_fetch_enabled in tool config
+        """
+        if not settings.ENABLE_TOOL_PREFETCH:
+            logger.info(
+                "Tool pre-fetching disabled globally via ENABLE_TOOL_PREFETCH setting"
+            )
+            return None
+
+        if self.data.get("disable_tool_prefetch", False):
+            logger.info("Tool pre-fetching disabled for this request")
+            return None
+
+        try:
+            user_tools_collection = self.db["user_tools"]
+            user_id = self.initial_user_id or "local"
+
+            user_tools = list(
+                user_tools_collection.find({"user": user_id, "status": True})
+            )
+
+            if not user_tools:
+                return None
+
+            tools_data = {}
+
+            for tool_doc in user_tools:
+                tool_name = tool_doc.get("name")
+                tool_config = tool_doc.get("config", {})
+
+                if not tool_config.get("pre_fetch_enabled", True):
+                    logger.info(
+                        f"Pre-fetch disabled for tool: {tool_name} (per-tool config)"
+                    )
+                    continue
+
+                if tool_name == "memory":
+                    memory_data = self._fetch_memory_tool_data(tool_doc)
+                    if memory_data:
+                        tools_data["memory"] = memory_data
+
+            return tools_data if tools_data else None
+        except Exception as e:
+            logger.warning(f"Failed to pre-fetch tools: {str(e)}")
+            return None
+
+    def _fetch_memory_tool_data(
+        self, tool_doc: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch memory tool data for pre-injection into prompt"""
+        try:
+            tool_config = tool_doc.get("config", {}).copy()
+            tool_config["tool_id"] = str(tool_doc["_id"])
+
+            from application.agents.tools.memory import MemoryTool
+
+            memory_tool = MemoryTool(tool_config, self.initial_user_id)
+
+            root_view = memory_tool.execute_action("view", path="/")
+
+            if "Error:" in root_view or not root_view.strip():
+                return None
+
+            return {"root": root_view, "available": True}
+        except Exception as e:
+            logger.warning(f"Failed to fetch memory tool data: {str(e)}")
+            return None
+
     def create_agent(
-        self, docs_together: Optional[str] = None, docs: Optional[list] = None
+        self,
+        docs_together: Optional[str] = None,
+        docs: Optional[list] = None,
+        tools_data: Optional[Dict[str, Any]] = None,
     ):
         """Create and return the configured agent with rendered prompt"""
         raw_prompt = get_prompt(self.agent_config["prompt_id"], self.prompts_collection)
@@ -379,6 +471,7 @@ class StreamProcessor:
             passthrough_data=self.data.get("passthrough"),
             docs=docs,
             docs_together=docs_together,
+            tools_data=tools_data,
         )
 
         return AgentCreator.create_agent(

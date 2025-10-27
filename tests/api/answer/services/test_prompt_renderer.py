@@ -256,14 +256,60 @@ class TestSourceNamespace:
 @pytest.mark.unit
 class TestToolsNamespace:
 
-    def test_tools_namespace_build_placeholder(self):
+    def test_tools_namespace_build_with_memory_data(self):
         from application.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
-        context = builder.build()
+        tools_data = {
+            "memory": {"root": "Files:\n- /notes.txt\n- /tasks.txt", "available": True}
+        }
 
-        assert isinstance(context, dict)
-        assert len(context) == 0
+        context = builder.build(tools_data=tools_data)
+
+        assert context["memory"]["root"] == "Files:\n- /notes.txt\n- /tasks.txt"
+        assert context["memory"]["available"] is True
+
+    def test_tools_namespace_build_empty(self):
+        from application.templates.namespaces import ToolsNamespace
+
+        builder = ToolsNamespace()
+        context = builder.build(tools_data=None)
+
+        assert context == {}
+
+    def test_tools_namespace_build_multiple_tools(self):
+        from application.templates.namespaces import ToolsNamespace
+
+        builder = ToolsNamespace()
+        tools_data = {
+            "memory": {"root": "content", "available": True},
+            "search": {"results": ["result1", "result2"]},
+            "api": {"status": "success"},
+        }
+
+        context = builder.build(tools_data=tools_data)
+
+        assert "memory" in context
+        assert "search" in context
+        assert "api" in context
+        assert context["memory"]["root"] == "content"
+        assert context["search"]["results"] == ["result1", "result2"]
+        assert context["api"]["status"] == "success"
+
+    def test_tools_namespace_filters_unsafe_values(self):
+        from application.templates.namespaces import ToolsNamespace
+
+        builder = ToolsNamespace()
+
+        class UnsafeObject:
+            pass
+
+        tools_data = {"safe_tool": {"result": "success"}, "unsafe_tool": UnsafeObject()}
+
+        context = builder.build(tools_data=tools_data)
+
+        assert "safe_tool" in context
+        assert "unsafe_tool" not in context
 
     def test_tools_namespace_name(self):
         from application.templates.namespaces import ToolsNamespace
@@ -271,9 +317,28 @@ class TestToolsNamespace:
         builder = ToolsNamespace()
         assert builder.namespace_name == "tools"
 
+    def test_tools_namespace_with_empty_dict(self):
+        from application.templates.namespaces import ToolsNamespace
+
+        builder = ToolsNamespace()
+        context = builder.build(tools_data={})
+
+        assert context == {}
+
 
 @pytest.mark.unit
-class TestNamespaceManager:
+class TestNamespaceManagerWithTools:
+
+    def test_namespace_manager_includes_tools_in_context(self):
+        from application.templates.namespaces import NamespaceManager
+
+        manager = NamespaceManager()
+        tools_data = {"memory": {"root": "content", "available": True}}
+
+        context = manager.build_context(tools_data=tools_data)
+
+        assert "tools" in context
+        assert context["tools"]["memory"]["root"] == "content"
 
     def test_namespace_manager_build_context_all_namespaces(self):
         from application.templates.namespaces import NamespaceManager
@@ -284,11 +349,14 @@ class TestNamespaceManager:
             user_id="user_456",
             passthrough_data={"key": "value"},
             docs_together="Document content",
+            tools_data={"memory": {"root": "notes"}},
         )
 
         assert "system" in context
         assert "passthrough" in context
         assert "source" in context
+        assert "tools" in context
+        assert context["tools"]["memory"]["root"] == "notes"
 
     def test_namespace_manager_build_context_partial_data(self):
         from application.templates.namespaces import NamespaceManager
@@ -419,6 +487,49 @@ class TestPromptRenderer:
         assert "Date: 202" in result
         assert "Doc content" in result
 
+    def test_render_prompt_with_tools_data(self):
+        from application.api.answer.services.prompt_renderer import PromptRenderer
+
+        renderer = PromptRenderer()
+        prompt = "Memory contents:\n{{ tools.memory.root }}\n\nStatus: {{ tools.memory.available }}"
+        tools_data = {
+            "memory": {"root": "Files:\n- /notes.txt\n- /tasks.txt", "available": True}
+        }
+
+        result = renderer.render_prompt(prompt, tools_data=tools_data)
+
+        assert "Memory contents:" in result
+        assert "Files:" in result
+        assert "/notes.txt" in result
+        assert "/tasks.txt" in result
+        assert "Status: True" in result
+
+    def test_render_prompt_with_all_namespaces(self):
+        from application.api.answer.services.prompt_renderer import PromptRenderer
+
+        renderer = PromptRenderer()
+        prompt = """
+System: {{ system.date }}
+User: {{ passthrough.user }}
+Docs: {{ source.content }}
+Memory: {{ tools.memory.root }}
+"""
+        passthrough_data = {"user": "Alice"}
+        docs_together = "Important docs"
+        tools_data = {"memory": {"root": "Notes content", "available": True}}
+
+        result = renderer.render_prompt(
+            prompt,
+            passthrough_data=passthrough_data,
+            docs_together=docs_together,
+            tools_data=tools_data,
+        )
+
+        assert "202" in result
+        assert "Alice" in result
+        assert "Important docs" in result
+        assert "Notes content" in result
+
     def test_render_prompt_undefined_variable_returns_empty_string(self):
         from application.api.answer.services.prompt_renderer import PromptRenderer
 
@@ -541,3 +652,147 @@ class TestStreamProcessorPromptRendering:
 
         assert docs_together is None
         assert docs_list is None
+
+    def test_pre_fetch_tools_disabled_globally(self, mock_mongo_db, monkeypatch):
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "ENABLE_TOOL_PREFETCH", False)
+
+        request_data = {"question": "test"}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        result = processor.pre_fetch_tools()
+
+        assert result is None
+
+    def test_pre_fetch_tools_disabled_per_request(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        request_data = {"question": "test", "disable_tool_prefetch": True}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        result = processor.pre_fetch_tools()
+
+        assert result is None
+
+    def test_pre_fetch_tools_disabled_per_tool_config(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.mongo_db import MongoDB
+        from bson import ObjectId
+
+        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
+        tool_doc = {
+            "_id": ObjectId(),
+            "name": "memory",
+            "user": "user1",
+            "status": True,
+            "config": {"pre_fetch_enabled": False},
+        }
+        db["user_tools"].insert_one(tool_doc)
+
+        request_data = {"question": "test"}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        result = processor.pre_fetch_tools()
+
+        assert result is None
+
+    def test_pre_fetch_tools_enabled_by_default(self, mock_mongo_db, monkeypatch):
+        from unittest.mock import MagicMock, patch
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.mongo_db import MongoDB
+        from bson import ObjectId
+
+        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
+        tool_doc = {
+            "_id": ObjectId(),
+            "name": "memory",
+            "user": "user1",
+            "status": True,
+            "config": {},
+        }
+        db["user_tools"].insert_one(tool_doc)
+
+        request_data = {"question": "test"}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        with patch("application.agents.tools.memory.MemoryTool") as mock_tool:
+            memory_instance = MagicMock()
+            memory_instance.execute_action.return_value = "Directory: /\n- file.txt"
+            mock_tool.return_value = memory_instance
+
+            result = processor.pre_fetch_tools()
+
+            assert result is not None
+            assert "memory" in result
+            assert result["memory"]["available"] is True
+
+    def test_pre_fetch_tools_no_tools_configured(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        request_data = {"question": "test"}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        result = processor.pre_fetch_tools()
+
+        assert result is None
+
+    def test_pre_fetch_tools_memory_returns_error(self, mock_mongo_db):
+        from unittest.mock import MagicMock, patch
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.mongo_db import MongoDB
+        from bson import ObjectId
+
+        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
+        tool_doc = {
+            "_id": ObjectId(),
+            "name": "memory",
+            "user": "user1",
+            "status": True,
+            "config": {},
+        }
+        db["user_tools"].insert_one(tool_doc)
+
+        request_data = {"question": "test"}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        with patch("application.agents.tools.memory.MemoryTool") as mock_tool:
+            memory_instance = MagicMock()
+            memory_instance.execute_action.return_value = "Error: Something went wrong"
+            mock_tool.return_value = memory_instance
+
+            result = processor.pre_fetch_tools()
+
+            assert result is None
+
+    def test_pre_fetch_tools_memory_returns_empty(self, mock_mongo_db):
+        from unittest.mock import MagicMock, patch
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.mongo_db import MongoDB
+        from bson import ObjectId
+
+        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
+        tool_doc = {
+            "_id": ObjectId(),
+            "name": "memory",
+            "user": "user1",
+            "status": True,
+            "config": {},
+        }
+        db["user_tools"].insert_one(tool_doc)
+
+        request_data = {"question": "test"}
+        processor = StreamProcessor(request_data, {"sub": "user1"})
+
+        with patch("application.agents.tools.memory.MemoryTool") as mock_tool:
+            memory_instance = MagicMock()
+            memory_instance.execute_action.return_value = ""
+            mock_tool.return_value = memory_instance
+
+            result = processor.pre_fetch_tools()
+
+            assert result is None

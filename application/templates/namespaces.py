@@ -111,6 +111,7 @@ class SourceNamespace(NamespaceBuilder):
             context["documents"] = docs
             context["count"] = len(docs)
         if docs_together:
+            context["docs_together"] = docs_together  # Add docs_together for custom templates
             context["content"] = docs_together
             context["summaries"] = docs_together
         return context
@@ -123,17 +124,31 @@ class ToolsNamespace(NamespaceBuilder):
     def namespace_name(self) -> str:
         return "tools"
 
-    def build(self, **kwargs) -> Dict[str, Any]:
+    def build(
+        self, tools_data: Optional[Dict[str, Any]] = None, **kwargs
+    ) -> Dict[str, Any]:
         """
         Build tools context with pre-executed tool results.
 
-        Note: This is a placeholder for Phase 4 implementation.
-        Currently returns empty context.
+        Args:
+            tools_data: Dictionary of pre-fetched tool results organized by tool name
+                       e.g., {"memory": {"notes": "content", "tasks": "list"}}
 
         Returns:
-            Dictionary with tool results
+            Dictionary with tool results organized by tool name
         """
-        return {}
+        if not tools_data:
+            return {}
+
+        safe_data = {}
+        for tool_name, tool_result in tools_data.items():
+            if isinstance(tool_result, (str, dict, list, int, float, bool, type(None))):
+                safe_data[tool_name] = tool_result
+            else:
+                logger.warning(
+                    f"Skipping non-serializable tool result for '{tool_name}': {type(tool_result)}"
+                )
+        return safe_data
 
 
 class NamespaceManager:

@@ -23,6 +23,7 @@ class PromptRenderer:
         passthrough_data: Optional[Dict[str, Any]] = None,
         docs: Optional[list] = None,
         docs_together: Optional[str] = None,
+        tools_data: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> str:
         """
@@ -35,6 +36,7 @@ class PromptRenderer:
             passthrough_data: Parameters from web request
             docs: RAG retrieved documents
             docs_together: Concatenated document content
+            tools_data: Pre-fetched tool results organized by tool name
             **kwargs: Additional parameters for namespace builders
 
         Returns:
@@ -54,6 +56,7 @@ class PromptRenderer:
                 passthrough_data=passthrough_data,
                 docs=docs,
                 docs_together=docs_together,
+                tools_data=tools_data,
                 **kwargs,
             )
 

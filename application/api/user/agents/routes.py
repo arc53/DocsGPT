@@ -10,7 +10,6 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.core.settings import settings
 from application.api.user.base import (
     agents_collection,
     db,
@@ -20,6 +19,7 @@ from application.api.user.base import (
     storage,
     users_collection,
 )
+from application.core.settings import settings
 from application.utils import (
     check_required_fields,
     generate_image_url,
@@ -375,13 +375,25 @@ class CreateAgent(Resource):
                 "agent_type": data.get("agent_type", ""),
                 "status": data.get("status"),
                 "json_schema": data.get("json_schema"),
-                "limited_token_mode": data.get("limited_token_mode", False),
-                "token_limit": data.get(
-                    "token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]
+                "limited_token_mode": (
+                    data.get("limited_token_mode") == "True"
+                    if isinstance(data.get("limited_token_mode"), str)
+                    else bool(data.get("limited_token_mode", False))
                 ),
-                "limited_request_mode": data.get("limited_request_mode", False),
-                "request_limit": data.get(
-                    "request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]
+                "token_limit": int(
+                    data.get(
+                        "token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]
+                    )
+                ),
+                "limited_request_mode": (
+                    data.get("limited_request_mode") == "True"
+                    if isinstance(data.get("limited_request_mode"), str)
+                    else bool(data.get("limited_request_mode", False))
+                ),
+                "request_limit": int(
+                    data.get(
+                        "request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]
+                    )
                 ),
                 "createdAt": datetime.datetime.now(datetime.timezone.utc),
                 "updatedAt": datetime.datetime.now(datetime.timezone.utc),
@@ -660,8 +672,15 @@ class UpdateAgent(Resource):
                 else:
                     update_fields[field] = None
             elif field == "limited_token_mode":
-                is_mode_enabled = data.get("limited_token_mode", False)
-                if is_mode_enabled and data.get("token_limit") is None:
+                raw_value = data.get("limited_token_mode", False)
+                bool_value = (
+                    raw_value == "True"
+                    if isinstance(raw_value, str)
+                    else bool(raw_value)
+                )
+                update_fields[field] = bool_value
+
+                if bool_value and data.get("token_limit") is None:
                     return make_response(
                         jsonify(
                             {
@@ -672,8 +691,15 @@ class UpdateAgent(Resource):
                         400,
                     )
             elif field == "limited_request_mode":
-                is_mode_enabled = data.get("limited_request_mode", False)
-                if is_mode_enabled and data.get("request_limit") is None:
+                raw_value = data.get("limited_request_mode", False)
+                bool_value = (
+                    raw_value == "True"
+                    if isinstance(raw_value, str)
+                    else bool(raw_value)
+                )
+                update_fields[field] = bool_value
+
+                if bool_value and data.get("request_limit") is None:
                     return make_response(
                         jsonify(
                             {
@@ -685,11 +711,11 @@ class UpdateAgent(Resource):
                     )
             elif field == "token_limit":
                 token_limit = data.get("token_limit")
-                if (
-                    token_limit
-                    and int(token_limit) > 0
-                    and not data.get("limited_token_mode")
-                ):
+                # Convert to int and store
+                update_fields[field] = int(token_limit) if token_limit else 0
+
+                # Validate consistency with mode
+                if update_fields[field] > 0 and not data.get("limited_token_mode"):
                     return make_response(
                         jsonify(
                             {
@@ -701,11 +727,9 @@ class UpdateAgent(Resource):
                     )
             elif field == "request_limit":
                 request_limit = data.get("request_limit")
-                if (
-                    request_limit
-                    and int(request_limit) > 0
-                    and not data.get("limited_request_mode")
-                ):
+                update_fields[field] = int(request_limit) if request_limit else 0
+
+                if update_fields[field] > 0 and not data.get("limited_request_mode"):
                     return make_response(
                         jsonify(
                             {

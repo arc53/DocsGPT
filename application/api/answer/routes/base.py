@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any, Dict, Generator, List, Optional
 
-from flask import Response, make_response, jsonify
+from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
 from application.api.answer.services.conversation_service import ConversationService
@@ -63,8 +63,20 @@ class BaseAnswerResource:
                 jsonify({"success": False, "message": "Invalid API key."}), 401
             )
 
-        limited_token_mode = agent.get("limited_token_mode", False)
-        limited_request_mode = agent.get("limited_request_mode", False)
+        limited_token_mode_raw = agent.get("limited_token_mode", False)
+        limited_request_mode_raw = agent.get("limited_request_mode", False)
+
+        limited_token_mode = (
+            limited_token_mode_raw
+            if isinstance(limited_token_mode_raw, bool)
+            else limited_token_mode_raw == "True"
+        )
+        limited_request_mode = (
+            limited_request_mode_raw
+            if isinstance(limited_request_mode_raw, bool)
+            else limited_request_mode_raw == "True"
+        )
+
         token_limit = int(
             agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"])
         )
@@ -106,20 +118,28 @@ class BaseAnswerResource:
 
         if not limited_token_mode and not limited_request_mode:
             return None
-        elif limited_token_mode and token_limit > daily_token_usage:
-            return None
-        elif limited_request_mode and request_limit > daily_request_usage:
-            return None
 
-        return make_response(
-            jsonify(
-                {
-                    "success": False,
-                    "message": "Exceeding usage limit, please try again later.",
-                }
-            ),
-            429,
+        token_exceeded = (
+            limited_token_mode and token_limit > 0 and daily_token_usage >= token_limit
         )
+        request_exceeded = (
+            limited_request_mode
+            and request_limit > 0
+            and daily_request_usage >= request_limit
+        )
+
+        if token_exceeded or request_exceeded:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Exceeding usage limit, please try again later.",
+                    }
+                ),
+                429,
+            )
+
+        return None
 
     def complete_stream(
         self,

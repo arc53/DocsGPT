@@ -4,7 +4,7 @@ import os
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
-
+from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
 
@@ -15,14 +15,13 @@ class ClassicRAG(BaseRetriever):
         chat_history=None,
         prompt="",
         chunks=2,
-        token_limit=150,
+        doc_token_limit=50000,
         gpt_model="docsgpt",
         user_api_key=None,
         llm_name=settings.LLM_PROVIDER,
         api_key=settings.API_KEY,
         decoded_token=None,
     ):
-        """Initialize ClassicRAG retriever with vectorstore sources and LLM configuration"""
         self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
         self.prompt = prompt
@@ -42,16 +41,7 @@ class ClassicRAG(BaseRetriever):
             f"sources={'active_docs' in source and source['active_docs'] is not None}"
         )
         self.gpt_model = gpt_model
-        self.token_limit = (
-            token_limit
-            if token_limit
-            < settings.LLM_TOKEN_LIMITS.get(
-                self.gpt_model, settings.DEFAULT_MAX_HISTORY
-            )
-            else settings.LLM_TOKEN_LIMITS.get(
-                self.gpt_model, settings.DEFAULT_MAX_HISTORY
-            )
-        )
+        self.doc_token_limit = doc_token_limit
         self.user_api_key = user_api_key
         self.llm_name = llm_name
         self.api_key = api_key
@@ -118,21 +108,17 @@ class ClassicRAG(BaseRetriever):
             return self.original_question
 
     def _get_data(self):
-        """Retrieve relevant documents from configured vectorstores"""
         if self.chunks == 0 or not self.vectorstores:
             logging.info(
                 f"ClassicRAG._get_data: Skipping retrieval - chunks={self.chunks}, "
                 f"vectorstores_count={len(self.vectorstores) if self.vectorstores else 0}"
             )
             return []
+
         all_docs = []
         chunks_per_source = max(1, self.chunks // len(self.vectorstores))
-
-        logging.info(
-            f"ClassicRAG._get_data: Starting retrieval with chunks={self.chunks}, "
-            f"vectorstores={self.vectorstores}, chunks_per_source={chunks_per_source}, "
-            f"query='{self.question[:50]}...'"
-        )
+        token_budget = max(int(self.doc_token_limit * 0.9), 100)
+        cumulative_tokens = 0
 
         for vectorstore_id in self.vectorstores:
             if vectorstore_id:
@@ -140,15 +126,21 @@ class ClassicRAG(BaseRetriever):
                     docsearch = VectorCreator.create_vectorstore(
                         settings.VECTOR_STORE, vectorstore_id, settings.EMBEDDINGS_KEY
                     )
-                    docs_temp = docsearch.search(self.question, k=chunks_per_source)
+                    docs_temp = docsearch.search(
+                        self.question, k=max(chunks_per_source * 2, 20)
+                    )
 
                     for doc in docs_temp:
+                        if cumulative_tokens >= token_budget:
+                            break
+
                         if hasattr(doc, "page_content") and hasattr(doc, "metadata"):
                             page_content = doc.page_content
                             metadata = doc.metadata
                         else:
                             page_content = doc.get("text", doc.get("page_content", ""))
                             metadata = doc.get("metadata", {})
+
                         title = metadata.get(
                             "title", metadata.get("post_title", page_content)
                         )
@@ -168,23 +160,35 @@ class ClassicRAG(BaseRetriever):
                         if not filename:
                             filename = title
                         source_path = metadata.get("source") or vectorstore_id
-                        all_docs.append(
-                            {
-                                "title": title,
-                                "text": page_content,
-                                "source": source_path,
-                                "filename": filename,
-                            }
-                        )
+
+                        doc_text_with_header = f"{filename}\n{page_content}"
+                        doc_tokens = num_tokens_from_string(doc_text_with_header)
+
+                        if cumulative_tokens + doc_tokens < token_budget:
+                            all_docs.append(
+                                {
+                                    "title": title,
+                                    "text": page_content,
+                                    "source": source_path,
+                                    "filename": filename,
+                                }
+                            )
+                            cumulative_tokens += doc_tokens
+
+                    if cumulative_tokens >= token_budget:
+                        break
+
                 except Exception as e:
                     logging.error(
                         f"Error searching vectorstore {vectorstore_id}: {e}",
                         exc_info=True,
                     )
                     continue
+
         logging.info(
             f"ClassicRAG._get_data: Retrieval complete - retrieved {len(all_docs)} documents "
-            f"(requested chunks={self.chunks}, chunks_per_source={chunks_per_source})"
+            f"(requested chunks={self.chunks}, chunks_per_source={chunks_per_source}, "
+            f"cumulative_tokens={cumulative_tokens}/{token_budget})"
         )
         return all_docs
 

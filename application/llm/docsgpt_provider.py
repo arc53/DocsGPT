@@ -33,14 +33,15 @@ class DocsGPTAPILLM(BaseLLM):
                                 {"role": role, "content": item["text"]}
                             )
                         elif "function_call" in item:
+                            cleaned_args = self._remove_null_values(
+                                item["function_call"]["args"]
+                            )
                             tool_call = {
                                 "id": item["function_call"]["call_id"],
                                 "type": "function",
                                 "function": {
                                     "name": item["function_call"]["name"],
-                                    "arguments": json.dumps(
-                                        item["function_call"]["args"]
-                                    ),
+                                    "arguments": json.dumps(cleaned_args),
                                 },
                             }
                             cleaned_messages.append(

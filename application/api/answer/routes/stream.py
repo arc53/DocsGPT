@@ -79,8 +79,11 @@ class StreamResource(Resource, BaseAnswerResource):
             processor.initialize()
 
             docs_together, docs_list = processor.pre_fetch_docs(data["question"])
+            tools_data = processor.pre_fetch_tools()
 
-            agent = processor.create_agent(docs_together=docs_together, docs=docs_list)
+            agent = processor.create_agent(
+                docs_together=docs_together, docs=docs_list, tools_data=tools_data
+            )
 
             if error := self.check_usage(processor.agent_config):
                 return error
