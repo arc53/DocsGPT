@@ -271,9 +271,12 @@ export default function MessageInput({
 
   // no preview object URLs to revoke (preview removed per reviewer request)
 
-  const findIndexById = (id: string) => attachments.findIndex((a) => a.id === id);
+  const findIndexById = (id: string) =>
+    attachments.findIndex((a) => a.id === id);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
+    // Prevent parent dropzones from reacting to this drag
+    e.stopPropagation();
     setDraggingId(id);
     try {
       e.dataTransfer.setData('text/plain', id);
@@ -284,11 +287,15 @@ export default function MessageInput({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
+    // Prevent parent dropzones from triggering
+    e.stopPropagation();
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
 
   const handleDropOn = (e: React.DragEvent, targetId: string) => {
+    // Prevent parent dropzones from handling this drop
+    e.stopPropagation();
     e.preventDefault();
     const sourceId = e.dataTransfer.getData('text/plain');
     if (!sourceId || sourceId === targetId) return;
@@ -298,6 +305,12 @@ export default function MessageInput({
     if (sourceIndex === -1 || destIndex === -1) return;
 
     dispatch(reorderAttachments({ sourceIndex, destinationIndex: destIndex }));
+    setDraggingId(null);
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    // ensure drag state cleared and do not bubble
+    e.stopPropagation();
     setDraggingId(null);
   };
 
@@ -311,11 +324,14 @@ export default function MessageInput({
                 key={attachment.id}
                 draggable={true}
                 onDragStart={(e) => handleDragStart(e, attachment.id)}
+                onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDropOn(e, attachment.id)}
                 className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
-                  attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-                } ${draggingId === attachment.id ? 'opacity-60 ring-2 ring-dashed ring-purple-200' : ''}`}
+                  attachment.status !== 'completed'
+                    ? 'opacity-70'
+                    : 'opacity-100'
+                } ${draggingId === attachment.id ? 'ring-dashed opacity-60 ring-2 ring-purple-200' : ''}`}
                 title={attachment.fileName}
               >
                 <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
