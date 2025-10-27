@@ -4,10 +4,6 @@ import { RootState } from '../store';
 export interface Attachment {
   id: string; // Unique identifier for the attachment (required for state management)
   fileName: string;
-  // Optional preview URL for image thumbnails (object URL)
-  previewUrl?: string;
-  // MIME type of the original file
-  mimeType?: string;
   progress: number;
   status: 'uploading' | 'processing' | 'completed' | 'failed';
   taskId: string; // Server-assigned task ID (used for API calls)
