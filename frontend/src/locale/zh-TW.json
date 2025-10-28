@@ -268,8 +268,8 @@
         "addQuery": "新增查詢"
       },
       "drag": {
-        "title": "上傳來源檔案",
-        "description": "將檔案拖放到此處以新增為來源"
+        "title": "將附件拖放到此處",
+        "description": "釋放以上傳您的附件"
       },
       "progress": {
         "upload": "正在上傳",
