@@ -15,6 +15,33 @@ let currentLoadingRequest: {
   stopLoadingCallback: () => void;
 } | null = null;
 
+// LRU Cache for audio
+const audioCache = new Map<string, string>();
+const MAX_CACHE_SIZE = 10;
+
+function getCachedAudio(text: string): string | undefined {
+  const cached = audioCache.get(text);
+  if (cached) {
+    audioCache.delete(text);
+    audioCache.set(text, cached);
+  }
+  return cached;
+}
+
+function setCachedAudio(text: string, audioBase64: string) {
+  if (audioCache.has(text)) {
+    audioCache.delete(text);
+  }
+  if (audioCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = audioCache.keys().next().value;
+    if (firstKey !== undefined) {
+      audioCache.delete(firstKey);
+    }
+  }
+
+  audioCache.set(text, audioBase64);
+}
+
 export default function SpeakButton({ text }: { text: string }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,56 +97,69 @@ export default function SpeakButton({ text }: { text: string }) {
 
     try {
       setIsLoading(true);
+      const cachedAudio = getCachedAudio(text);
+      let audioBase64: string;
 
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+      if (cachedAudio) {
+        audioBase64 = cachedAudio;
+        setIsLoading(false);
+      } else {
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
 
-      currentLoadingRequest = {
-        abortController,
-        stopLoadingCallback: () => {
-          setIsLoading(false);
-        },
-      };
-
-      const response = await fetch(apiHost + '/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-        signal: abortController.signal,
-      });
-
-      const data = await response.json();
-      abortControllerRef.current = null;
-      currentLoadingRequest = null;
-
-      if (data.success && data.audio_base64) {
-        const audio = new Audio(`data:audio/mp3;base64,${data.audio_base64}`);
-        audioRef.current = audio;
-
-        currentlyPlayingAudio = {
-          audio,
-          stopCallback: () => {
-            setIsSpeaking(false);
-            audioRef.current = null;
+        currentLoadingRequest = {
+          abortController,
+          stopLoadingCallback: () => {
+            setIsLoading(false);
           },
         };
 
-        audio.play().then(() => {
-          setIsSpeaking(true);
-          setIsLoading(false);
-
-          audio.onended = () => {
-            setIsSpeaking(false);
-            audioRef.current = null;
-            if (currentlyPlayingAudio?.audio === audio) {
-              currentlyPlayingAudio = null;
-            }
-          };
+        const response = await fetch(apiHost + '/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+          signal: abortController.signal,
         });
-      } else {
-        console.error('Failed to retrieve audio.');
-        setIsLoading(false);
+
+        const data = await response.json();
+        abortControllerRef.current = null;
+        currentLoadingRequest = null;
+
+        if (data.success && data.audio_base64) {
+          audioBase64 = data.audio_base64;
+          // Store in cache
+          setCachedAudio(text, audioBase64);
+          setIsLoading(false);
+        } else {
+          console.error('Failed to retrieve audio.');
+          setIsLoading(false);
+          return;
+        }
       }
+
+      const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+      audioRef.current = audio;
+
+      currentlyPlayingAudio = {
+        audio,
+        stopCallback: () => {
+          setIsSpeaking(false);
+          audioRef.current = null;
+        },
+      };
+
+      audio.play().then(() => {
+        setIsSpeaking(true);
+        setIsLoading(false);
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          audioRef.current = null;
+          if (currentlyPlayingAudio?.audio === audio) {
+            currentlyPlayingAudio = null;
+          }
+        };
+      });
     } catch (error: any) {
       abortControllerRef.current = null;
       currentLoadingRequest = null;
