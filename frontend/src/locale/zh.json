@@ -268,8 +268,8 @@
         "addQuery": "添加查询"
       },
       "drag": {
-        "title": "上传源文件",
-        "description": "将文件拖放到此处以添加为源"
+        "title": "将附件拖放到此处",
+        "description": "释放以上传您的附件"
       },
       "progress": {
         "upload": "正在上传",

@@ -66,6 +66,23 @@ export const uploadSlice = createSlice({
         (att) => att.id !== action.payload,
       );
     },
+    // Reorder attachments array by moving item from sourceIndex to destinationIndex
+    reorderAttachments: (
+      state,
+      action: PayloadAction<{ sourceIndex: number; destinationIndex: number }>,
+    ) => {
+      const { sourceIndex, destinationIndex } = action.payload;
+      if (
+        sourceIndex < 0 ||
+        destinationIndex < 0 ||
+        sourceIndex >= state.attachments.length ||
+        destinationIndex >= state.attachments.length
+      )
+        return;
+
+      const [moved] = state.attachments.splice(sourceIndex, 1);
+      state.attachments.splice(destinationIndex, 0, moved);
+    },
     clearAttachments: (state) => {
       state.attachments = state.attachments.filter(
         (att) => att.status === 'uploading' || att.status === 'processing',
@@ -121,6 +138,7 @@ export const {
   addAttachment,
   updateAttachment,
   removeAttachment,
+  reorderAttachments,
   clearAttachments,
   addUploadTask,
   updateUploadTask,
