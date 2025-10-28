@@ -43,6 +43,7 @@ export default function WrapperModal({
 
   const modalContent = (
     <div className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center">
+      <div className="absolute inset-0 bg-black/25 backdrop-blur-xs dark:bg-black/50" />
       <div
         ref={modalRef}
         className={`relative rounded-2xl bg-white p-8 shadow-[0px_4px_40px_-3px_#0000001A] dark:bg-[#26272E] ${className}`}
