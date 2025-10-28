@@ -173,26 +173,30 @@ export default function SpeakButton({ text }: { text: string }) {
   };
 
   return (
-    <div
-      className={`flex items-center justify-center rounded-full p-2 ${
+    <button
+      type="button"
+      className={`flex cursor-pointer items-center justify-center rounded-full p-2 ${
         isSpeaking || isLoading
           ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
           : 'bg-white-3000 dark:hover:bg-purple-taupe hover:bg-[#EEEEEE] dark:bg-transparent'
       }`}
+      onClick={handleSpeakClick}
+      aria-label={
+        isLoading
+          ? 'Loading audio'
+          : isSpeaking
+            ? 'Stop speaking'
+            : 'Speak text'
+      }
+      disabled={isLoading}
     >
       {isLoading ? (
         <LoadingIcon className="animate-spin" />
       ) : isSpeaking ? (
-        <Stopspeech
-          className="cursor-pointer fill-none"
-          onClick={handleSpeakClick}
-        />
+        <Stopspeech className="fill-none" />
       ) : (
-        <Speaker
-          className="cursor-pointer fill-none"
-          onClick={handleSpeakClick}
-        />
+        <Speaker className="fill-none" />
       )}
-    </div>
+    </button>
   );
 }
