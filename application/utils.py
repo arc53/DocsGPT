@@ -187,3 +187,44 @@ def generate_image_url(image_path):
     else:
         base_url = getattr(settings, "API_URL", "http://localhost:7091")
         return f"{base_url}/api/images/{image_path}"
+
+
+def clean_text_for_tts(text: str) -> str:
+    """
+    clean text for Text-to-Speech processing.
+    """
+    # Handle code blocks and links
+    text = re.sub(r'```mermaid[\s\S]*?```', ' flowchart, ', text)  ## ```mermaid...```
+    text = re.sub(r'```[\s\S]*?```', ' code block, ', text)  ## ```code```
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  ## [text](url)
+    text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', '', text)  ## ![alt](url)
+
+    # Remove markdown formatting
+    text = re.sub(r'`([^`]+)`', r'\1', text)  ## `code`
+    text = re.sub(r'\{([^}]*)\}', r' \1 ', text)  ## {text}
+    text = re.sub(r'[{}]', ' ', text)  ## unmatched {}
+    text = re.sub(r'\[([^\]]+)\]', r' \1 ', text)  ## [text]
+    text = re.sub(r'[\[\]]', ' ', text)  ## unmatched []
+    text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)  ## **bold** __bold__
+    text = re.sub(r'(\*|_)(.*?)\1', r'\2', text)  ## *italic* _italic_
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  ## # headers
+    text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)  ## > blockquotes
+    text = re.sub(r'^[\s]*[-\*\+]\s+', '', text, flags=re.MULTILINE)  ## - * + lists
+    text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)  ## 1. numbered lists
+    text = re.sub(r'^[\*\-_]{3,}\s*$', '', text, flags=re.MULTILINE)  ## --- *** ___ rules
+    text = re.sub(r'<[^>]*>', '', text)  ## <html> tags
+
+    #Remove non-ASCII (emojis, special Unicode)
+    text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
+
+    #Replace special sequences
+    text = re.sub(r'-->', ', ', text)  ## -->
+    text = re.sub(r'<--', ', ', text)  ## <--
+    text = re.sub(r'=>', ', ', text)  ## =>
+    text = re.sub(r'::', ' ', text)  ## ::
+
+    #Normalize whitespace
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+
+    return text
