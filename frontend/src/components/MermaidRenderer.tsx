@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import mermaid from 'mermaid';
 import CopyButton from './CopyButton';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -15,6 +16,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   code,
   isLoading,
 }) => {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const diagramId = useRef(
     `mermaid-${Date.now()}-${Math.random().toString(36).substring(2)}`,
@@ -273,7 +275,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               <button
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
                 className="flex h-full items-center rounded-sm bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
-                title="Download options"
+                title={t('mermaid.downloadOptions')}
               >
                 Download <span className="ml-1">▼</span>
               </button>
@@ -307,7 +309,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                   ? 'bg-blue-200 dark:bg-blue-800'
                   : 'bg-gray-100 dark:bg-gray-700'
               }`}
-              title="View Code"
+              title={t('mermaid.viewCode')}
             >
               Code
             </button>
@@ -353,7 +355,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                       setZoomFactor((prev) => Math.max(1, prev - 0.5))
                     }
                     className="rounded px-1 hover:bg-gray-600"
-                    title="Decrease zoom"
+                    title={t('mermaid.decreaseZoom')}
                   >
                     -
                   </button>
@@ -362,7 +364,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                     onClick={() => {
                       setZoomFactor(2);
                     }}
-                    title="Reset zoom"
+                    title={t('mermaid.resetZoom')}
                   >
                     {zoomFactor.toFixed(1)}x
                   </span>
@@ -371,7 +373,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                       setZoomFactor((prev) => Math.min(6, prev + 0.5))
                     }
                     className="rounded px-1 hover:bg-gray-600"
-                    title="Increase zoom"
+                    title={t('mermaid.increaseZoom')}
                   >
                     +
                   </button>

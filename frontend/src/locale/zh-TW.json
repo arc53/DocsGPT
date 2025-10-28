@@ -185,8 +185,58 @@
       "cancel": "取消",
       "addNew": "新增",
       "name": "名稱",
-      "type": "類型"
-    }
+      "type": "類型",
+      "mcp": {
+        "addServer": "Add MCP Server",
+        "editServer": "Edit Server",
+        "serverName": "Server Name",
+        "serverUrl": "Server URL",
+        "headerName": "Header Name",
+        "timeout": "Timeout (seconds)",
+        "testConnection": "Test Connection",
+        "testing": "Testing",
+        "saving": "Saving",
+        "save": "Save",
+        "cancel": "Cancel",
+        "noAuth": "No Authentication",
+        "oauthInProgress": "Waiting for OAuth completion...",
+        "oauthCompleted": "OAuth completed successfully",
+        "authType": "Authentication Type",
+        "defaultServerName": "My MCP Server",
+        "authTypes": {
+          "none": "No Authentication",
+          "apiKey": "API Key",
+          "bearer": "Bearer Token",
+          "oauth": "OAuth",
+          "basic": "Basic Authentication"
+        },
+        "placeholders": {
+          "serverUrl": "https://api.example.com",
+          "apiKey": "Your secret API key",
+          "bearerToken": "Your secret token",
+          "username": "Your username",
+          "password": "Your password",
+          "oauthScopes": "OAuth scopes (comma separated)"
+        },
+        "errors": {
+          "nameRequired": "Server name is required",
+          "urlRequired": "Server URL is required",
+          "invalidUrl": "Please enter a valid URL",
+          "apiKeyRequired": "API key is required",
+          "tokenRequired": "Bearer token is required",
+          "usernameRequired": "Username is required",
+          "passwordRequired": "Password is required",
+          "testFailed": "Connection test failed",
+          "saveFailed": "Failed to save MCP server",
+          "oauthFailed": "OAuth process failed or was cancelled",
+          "oauthTimeout": "OAuth process timed out, please try again",
+          "timeoutRange": "Timeout must be between 1 and 300 seconds"
+        }
+      }
+    },
+    "scrollTabsLeft": "向左捲動標籤",
+    "tabsAriaLabel": "設定標籤",
+    "scrollTabsRight": "向右捲動標籤"
   },
   "modals": {
     "uploadDoc": {
@@ -306,7 +356,8 @@
       "disclaimer": "這是唯一一次顯示您的金鑰。",
       "copy": "複製",
       "copied": "已複製",
-      "confirm": "我已儲存金鑰"
+      "confirm": "我已儲存金鑰",
+      "apiKeyLabel": "API Key"
     },
     "deleteConv": {
       "confirm": "您確定要刪除所有對話嗎？",
@@ -324,7 +375,8 @@
       "apiKeyLabel": "API 金鑰 / OAuth",
       "apiKeyPlaceholder": "輸入 API 金鑰 / OAuth",
       "addButton": "新增工具",
-      "closeButton": "關閉"
+      "closeButton": "關閉",
+      "customNamePlaceholder": "Enter custom name (optional)"
     },
     "prompts": {
       "addPrompt": "新增提示",
@@ -349,6 +401,22 @@
       "cancel": "取消",
       "delete": "刪除",
       "deleteConfirmation": "您確定要刪除此區塊嗎？"
+    },
+    "addAction": {
+      "title": "New Action",
+      "actionNamePlaceholder": "Action Name",
+      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
+      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
+      "addButton": "Add"
+    },
+    "agentDetails": {
+      "title": "Access Details",
+      "publicLink": "Public Link",
+      "apiKey": "API Key",
+      "webhookUrl": "Webhook URL",
+      "generate": "Generate",
+      "test": "Test",
+      "learnMore": "Learn more"
     }
   },
   "sharedConv": {
@@ -391,6 +459,153 @@
       "attach": "附件",
       "remove": "刪除附件"
     },
-    "retry": "重試"
+    "retry": "重試",
+    "reasoning": "推理"
+  },
+  "agents": {
+    "title": "代理",
+    "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
+    "newAgent": "新建代理",
+    "backToAll": "返回所有代理",
+    "sections": {
+      "template": {
+        "title": "由DocsGPT提供",
+        "description": "DocsGPT提供的代理",
+        "emptyState": "未找到範本代理。"
+      },
+      "user": {
+        "title": "我的代理",
+        "description": "您創建或發佈的代理",
+        "emptyState": "您還沒有創建任何代理。"
+      },
+      "shared": {
+        "title": "與我共享",
+        "description": "透過公共連結匯入的代理",
+        "emptyState": "未找到共享代理。"
+      }
+    },
+    "form": {
+      "headings": {
+        "new": "新建代理",
+        "edit": "編輯代理",
+        "draft": "新建代理（草稿）"
+      },
+      "buttons": {
+        "publish": "發佈",
+        "save": "儲存",
+        "saveDraft": "儲存草稿",
+        "cancel": "取消",
+        "delete": "刪除",
+        "logs": "日誌",
+        "accessDetails": "存取詳情",
+        "add": "新增"
+      },
+      "sections": {
+        "meta": "中繼資料",
+        "source": "來源",
+        "prompt": "提示詞",
+        "tools": "工具",
+        "agentType": "代理類型",
+        "advanced": "進階",
+        "preview": "預覽"
+      },
+      "placeholders": {
+        "agentName": "代理名稱",
+        "describeAgent": "描述您的代理",
+        "selectSources": "選擇來源",
+        "chunksPerQuery": "每次查詢的區塊數",
+        "selectType": "選擇類型",
+        "selectTools": "選擇工具",
+        "enterTokenLimit": "輸入權杖限制",
+        "enterRequestLimit": "輸入請求限制"
+      },
+      "sourcePopup": {
+        "title": "選擇來源",
+        "searchPlaceholder": "搜尋來源...",
+        "noOptionsMessage": "沒有可用的來源"
+      },
+      "toolsPopup": {
+        "title": "選擇工具",
+        "searchPlaceholder": "搜尋工具...",
+        "noOptionsMessage": "沒有可用的工具"
+      },
+      "upload": {
+        "clickToUpload": "點擊上傳",
+        "dragAndDrop": " 或拖放"
+      },
+      "agentTypes": {
+        "classic": "經典",
+        "react": "ReAct"
+      },
+      "advanced": {
+        "jsonSchema": "JSON回應架構",
+        "jsonSchemaDescription": "定義JSON架構以強制執行結構化輸出格式",
+        "validJson": "有效的JSON",
+        "invalidJson": "無效的JSON - 修復後才能儲存",
+        "tokenLimiting": "權杖限制",
+        "tokenLimitingDescription": "限制此代理每天可使用的總權杖數",
+        "requestLimiting": "請求限制",
+        "requestLimitingDescription": "限制每天可向此代理發出的總請求數"
+      },
+      "preview": {
+        "publishedPreview": "已發佈的代理可以在此處預覽"
+      },
+      "externalKb": "外部知識庫"
+    },
+    "logs": {
+      "title": "代理日誌",
+      "lastUsedAt": "最後使用時間",
+      "noUsageHistory": "無使用歷史",
+      "tableHeader": "代理端點日誌"
+    },
+    "shared": {
+      "notFound": "未找到代理。請確保代理已共享。"
+    },
+    "preview": {
+      "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。"
+    },
+    "deleteConfirmation": "您確定要刪除此代理嗎？"
+  },
+  "components": {
+    "fileUpload": {
+      "clickToUpload": "Click to upload or drag and drop",
+      "dropFiles": "Drop the files here",
+      "fileTypes": "PNG, JPG, JPEG up to",
+      "sizeLimitUnit": "MB",
+      "fileSizeError": "File exceeds {{size}}MB limit"
+    }
+  },
+  "pageNotFound": {
+    "title": "404",
+    "message": "The page you are looking for does not exist.",
+    "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "搜尋檔案和資料夾...",
+    "itemsSelected": "已選擇 {{count}} 項",
+    "name": "名稱",
+    "lastModified": "最後修改",
+    "size": "大小"
+  },
+  "actionButtons": {
+    "openNewChat": "開啟新聊天",
+    "share": "分享"
+  },
+  "mermaid": {
+    "downloadOptions": "下載選項",
+    "viewCode": "查看程式碼",
+    "decreaseZoom": "縮小",
+    "resetZoom": "重設縮放",
+    "increaseZoom": "放大"
+  },
+  "navigation": {
+    "agents": "代理"
+  },
+  "notification": {
+    "ariaLabel": "通知",
+    "closeAriaLabel": "關閉通知"
+  },
+  "prompts": {
+    "textAriaLabel": "提示文字"
   }
 }

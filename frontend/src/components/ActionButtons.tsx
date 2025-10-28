@@ -45,7 +45,7 @@ export default function ActionButtons({
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
           <button
-            title="Open New Chat"
+            title={t('actionButtons.openNewChat')}
             onClick={newChat}
             className="hover:bg-bright-gray flex items-center gap-1 rounded-full p-2 lg:hidden dark:hover:bg-[#28292E]"
           >
@@ -62,7 +62,7 @@ export default function ActionButtons({
         {showShare && conversationId && (
           <>
             <button
-              title="Share"
+              title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
               className="hover:bg-bright-gray rounded-full p-2 dark:hover:bg-[#28292E]"
             >

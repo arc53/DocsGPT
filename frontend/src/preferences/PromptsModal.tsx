@@ -54,7 +54,7 @@ function AddPrompt({
           className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
           value={newPromptContent}
           onChange={(e) => setNewPromptContent(e.target.value)}
-          aria-label="Prompt Text"
+          aria-label={t('prompts.textAriaLabel')}
         ></textarea>
       </div>
       <div className="mt-6 flex flex-row-reverse">
@@ -126,7 +126,7 @@ function EditPrompt({
             className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
-            aria-label="Prompt Text"
+            aria-label={t('prompts.textAriaLabel')}
           ></textarea>
         </div>
         <div className="mt-6 flex flex-row-reverse gap-4">

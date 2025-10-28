@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -11,6 +12,7 @@ import Logs from '../settings/Logs';
 import { Agent } from './types';
 
 export default function AgentLogs() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { agentId } = useParams();
   const token = useSelector(selectToken);
@@ -45,12 +47,12 @@ export default function AgentLogs() {
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
         <p className="text-eerie-black dark:text-bright-gray mt-px text-sm font-semibold">
-          Back to all agents
+          {t('agents.backToAll')}
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
         <h1 className="text-eerie-black m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
-          Agent Logs
+          {t('agents.logs.title')}
         </h1>
       </div>
       <div className="mt-6 flex flex-col gap-3 px-4">
@@ -59,9 +61,10 @@ export default function AgentLogs() {
             <p className="text-[#28292E] dark:text-[#E0E0E0]">{agent.name}</p>
             <p className="text-xs text-[#28292E] dark:text-[#E0E0E0]/40">
               {agent.last_used_at
-                ? 'Last used at ' +
+                ? t('agents.logs.lastUsedAt') +
+                  ' ' +
                   new Date(agent.last_used_at).toLocaleString()
-                : 'No usage history'}
+                : t('agents.logs.noUsageHistory')}
             </p>
           </div>
         )}
@@ -79,7 +82,9 @@ export default function AgentLogs() {
           <Spinner />
         </div>
       ) : (
-        agent && <Logs agentId={agent.id} tableHeader="Agent endpoint logs" />
+        agent && (
+          <Logs agentId={agent.id} tableHeader={t('agents.logs.tableHeader')} />
+        )
       )}
     </div>
   );

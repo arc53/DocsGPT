@@ -144,7 +144,7 @@ export default function SharedAgent() {
             className="mx-auto mb-6 h-32 w-32"
           />
           <p className="dark:text-gray-4000 text-center text-lg text-[#71717A]">
-            No agent found. Please ensure the agent is shared.
+            {t('agents.shared.notFound')}
           </p>
         </div>
       </div>
