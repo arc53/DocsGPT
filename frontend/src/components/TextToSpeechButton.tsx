@@ -15,28 +15,32 @@ let currentLoadingRequest: {
   stopLoadingCallback: () => void;
 } | null = null;
 
-export default function SpeakButton({
-  text,
-  colorLight,
-  colorDark,
-}: {
-  text: string;
-  colorLight?: string;
-  colorDark?: string;
-}) {
+export default function SpeakButton({ text }: { text: string }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSpeakHovered, setIsSpeakHovered] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
+      // Abort any pending fetch request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
+      // Stop any playing audio
       if (audioRef.current) {
         audioRef.current.pause();
         if (currentlyPlayingAudio?.audio === audioRef.current) {
           currentlyPlayingAudio = null;
         }
         audioRef.current = null;
+      }
+
+      // Clear global loading request if it's this component's
+      if (currentLoadingRequest) {
+        currentLoadingRequest = null;
       }
     };
   }, []);
@@ -68,6 +72,8 @@ export default function SpeakButton({
       setIsLoading(true);
 
       const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       currentLoadingRequest = {
         abortController,
         stopLoadingCallback: () => {
@@ -83,6 +89,7 @@ export default function SpeakButton({
       });
 
       const data = await response.json();
+      abortControllerRef.current = null;
       currentLoadingRequest = null;
 
       if (data.success && data.audio_base64) {
@@ -114,21 +121,23 @@ export default function SpeakButton({
         setIsLoading(false);
       }
     } catch (error: any) {
+      abortControllerRef.current = null;
+      currentLoadingRequest = null;
+
       if (error.name === 'AbortError') {
         return;
       }
       console.error('Error fetching audio from TTS endpoint', error);
       setIsLoading(false);
-      currentLoadingRequest = null;
     }
   };
 
   return (
     <div
       className={`flex items-center justify-center rounded-full p-2 ${
-        isSpeakHovered
-          ? `dark:bg-purple-taupe bg-[#EEEEEE]`
-          : `bg-[${colorLight ? colorLight : '#FFFFFF'}] dark:bg-[${colorDark ? colorDark : 'transparent'}]`
+        isSpeaking || isLoading
+          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
+          : 'bg-white-3000 dark:hover:bg-purple-taupe hover:bg-[#EEEEEE] dark:bg-transparent'
       }`}
     >
       {isLoading ? (
@@ -137,15 +146,11 @@ export default function SpeakButton({
         <Stopspeech
           className="cursor-pointer fill-none"
           onClick={handleSpeakClick}
-          onMouseEnter={() => setIsSpeakHovered(true)}
-          onMouseLeave={() => setIsSpeakHovered(false)}
         />
       ) : (
         <Speaker
           className="cursor-pointer fill-none"
           onClick={handleSpeakClick}
-          onMouseEnter={() => setIsSpeakHovered(true)}
-          onMouseLeave={() => setIsSpeakHovered(false)}
         />
       )}
     </div>

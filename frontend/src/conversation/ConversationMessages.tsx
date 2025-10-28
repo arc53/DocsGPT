@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 
 import ArrowDown from '../assets/arrow-down.svg';
 import RetryIcon from '../components/RetryIcon';
@@ -14,6 +15,7 @@ import Hero from '../Hero';
 import { useDarkTheme } from '../hooks';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
+import { selectConversationId } from '../preferences/preferenceSlice';
 
 const SCROLL_THRESHOLD = 10;
 const LAST_BUBBLE_MARGIN = 'mb-32';
@@ -50,6 +52,7 @@ export default function ConversationMessages({
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
   const { t } = useTranslation();
+  const conversationId = useSelector(selectConversationId);
 
   const conversationRef = useRef<HTMLDivElement>(null);
   const [hasScrolledToLast, setHasScrolledToLast] = useState(true);
@@ -137,7 +140,7 @@ export default function ConversationMessages({
       return (
         <ConversationBubble
           className={bubbleMargin}
-          key={`${index}-ANSWER`}
+          key={`${conversationId}-${index}-ANSWER`}
           message={query.response}
           type={'ANSWER'}
           thought={query.thought}
@@ -175,7 +178,7 @@ export default function ConversationMessages({
       return (
         <ConversationBubble
           className={bubbleMargin}
-          key={`${index}-ERROR`}
+          key={`${conversationId}-${index}-ERROR`}
           message={query.error}
           type="ERROR"
           retryBtn={retryButton}
@@ -214,10 +217,10 @@ export default function ConversationMessages({
 
         {queries.length > 0 ? (
           queries.map((query, index) => (
-            <Fragment key={`${index}-query-fragment`}>
+            <Fragment key={`${conversationId}-${index}-query-fragment`}>
               <ConversationBubble
                 className={index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : ''}
-                key={`${index}-QUESTION`}
+                key={`${conversationId}-${index}-QUESTION`}
                 message={query.prompt}
                 type="QUESTION"
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
