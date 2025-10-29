@@ -134,14 +134,14 @@ class TestBaseAgentBuildMessages:
     ):
         agent = ClassicAgent(**agent_base_params)
 
-        messages = agent._build_messages("System prompt", "query")
+        agent._build_messages("System prompt", "query")
 
     def test_build_messages_uses_source_as_fallback(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
 
-        messages = agent._build_messages("System prompt", "query")
+        agent._build_messages("System prompt", "query")
 
 
 @pytest.mark.unit
