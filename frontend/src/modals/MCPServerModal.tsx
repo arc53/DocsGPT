@@ -18,14 +18,6 @@ interface MCPServerModalProps {
   onServerSaved: () => void;
 }
 
-const authTypes = [
-  { label: 'No Authentication', value: 'none' },
-  { label: 'API Key', value: 'api_key' },
-  { label: 'Bearer Token', value: 'bearer' },
-  { label: 'OAuth', value: 'oauth' },
-  // { label: 'Basic Authentication', value: 'basic' },
-];
-
 export default function MCPServerModal({
   modalState,
   setModalState,
@@ -36,8 +28,16 @@ export default function MCPServerModal({
   const token = useSelector(selectToken);
   const modalRef = useRef<HTMLDivElement>(null);
 
+  const authTypes = [
+    { label: t('settings.tools.mcp.authTypes.none'), value: 'none' },
+    { label: t('settings.tools.mcp.authTypes.apiKey'), value: 'api_key' },
+    { label: t('settings.tools.mcp.authTypes.bearer'), value: 'bearer' },
+    { label: t('settings.tools.mcp.authTypes.oauth'), value: 'oauth' },
+    // { label: t('settings.tools.mcp.authTypes.basic'), value: 'basic' },
+  ];
+
   const [formData, setFormData] = useState({
-    name: server?.displayName || 'My MCP Server',
+    name: server?.displayName || t('settings.tools.mcp.defaultServerName'),
     server_url: server?.server_url || '',
     auth_type: server?.auth_type || 'none',
     api_key: '',
@@ -72,7 +72,7 @@ export default function MCPServerModal({
 
   const resetForm = () => {
     setFormData({
-      name: 'My MCP Server',
+      name: t('settings.tools.mcp.defaultServerName'),
       server_url: '',
       auth_type: 'none',
       api_key: '',
@@ -133,7 +133,7 @@ export default function MCPServerModal({
       typeof timeoutValue === 'number' &&
       (timeoutValue < 1 || timeoutValue > 300)
     )
-      newErrors.timeout = 'Timeout must be between 1 and 300 seconds';
+      newErrors.timeout = t('settings.tools.mcp.errors.timeoutRange');
 
     if (authFieldChecks[formData.auth_type])
       authFieldChecks[formData.auth_type]();

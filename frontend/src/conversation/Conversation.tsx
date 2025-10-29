@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import SharedAgentCard from '../agents/SharedAgentCard';
-import DragFileUpload from '../assets/DragFileUpload.svg';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
-import { ActiveState } from '../models/misc';
 import {
   selectConversationId,
   selectSelectedAgent,
   selectToken,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import Upload from '../upload/Upload';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
 import { FEEDBACK, Query } from './conversationModels';
@@ -45,52 +41,11 @@ export default function Conversation() {
   const selectedAgent = useSelector(selectSelectedAgent);
   const completedAttachments = useSelector(selectCompletedAttachments);
 
-  const [uploadModalState, setUploadModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [files, setFiles] = useState<File[]>([]);
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
   const [isShareModalOpen, setShareModalState] = useState<boolean>(false);
-  const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
 
   const fetchStream = useRef<any>(null);
-
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    setUploadModalState('ACTIVE');
-    setFiles(acceptedFiles);
-    setHandleDragActive(false);
-  }, []);
-
-  const { getRootProps, getInputProps } = useDropzone({
-    onDrop,
-    noClick: true,
-    multiple: true,
-    onDragEnter: () => {
-      setHandleDragActive(true);
-    },
-    onDragLeave: () => {
-      setHandleDragActive(false);
-    },
-    maxSize: 25000000,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'text/plain': ['.txt'],
-      'text/x-rst': ['.rst'],
-      'text/x-markdown': ['.md'],
-      'application/zip': ['.zip'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-      'application/json': ['.json'],
-      'text/csv': ['.csv'],
-      'text/html': ['.html'],
-      'application/epub+zip': ['.epub'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-        '.xlsx',
-      ],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        ['.pptx'],
-    },
-  });
 
   const handleFetchAnswer = useCallback(
     ({ question, index }: { question: string; index?: number }) => {
@@ -222,14 +177,7 @@ export default function Conversation() {
       />
 
       <div className="bg-opacity-0 z-3 flex h-auto w-full max-w-[1300px] flex-col items-end self-center rounded-2xl py-1 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
-        <div
-          {...getRootProps()}
-          className="flex w-full items-center rounded-[40px]"
-        >
-          <label htmlFor="file-upload" className="sr-only">
-            {t('modals.uploadDoc.label')}
-          </label>
-          <input {...getInputProps()} id="file-upload" />
+        <div className="flex w-full items-center rounded-[40px] px-2">
           <MessageInput
             onSubmit={(text) => {
               handleQuestionSubmission(text);
@@ -244,26 +192,6 @@ export default function Conversation() {
           {t('tagline')}
         </p>
       </div>
-      {handleDragActive && (
-        <div className="bg-opacity-50 dark:bg-gray-alpha pointer-events-none fixed top-0 left-0 z-30 flex size-full flex-col items-center justify-center bg-white">
-          <img className="filter dark:invert" src={DragFileUpload} />
-          <span className="text-outer-space dark:text-silver px-2 text-2xl font-bold">
-            {t('modals.uploadDoc.drag.title')}
-          </span>
-          <span className="text-s text-outer-space dark:text-silver w-48 p-2 text-center">
-            {t('modals.uploadDoc.drag.description')}
-          </span>
-        </div>
-      )}
-      {uploadModalState === 'ACTIVE' && (
-        <Upload
-          receivedFile={files}
-          setModalState={setUploadModalState}
-          isOnboarding={false}
-          renderTab={'file'}
-          close={() => setUploadModalState('INACTIVE')}
-        ></Upload>
-      )}
     </div>
   );
 }

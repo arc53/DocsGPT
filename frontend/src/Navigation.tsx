@@ -9,7 +9,8 @@ import userService from './api/services/userService';
 import Add from './assets/add.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
-import Expand from './assets/expand.svg';
+import PanelLeftClose from './assets/panel-left-close.svg';
+import PanelLeftOpen from './assets/panel-left-open.svg';
 import Github from './assets/git_nav.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
@@ -302,18 +303,20 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       {
         <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setNavOpen(!navOpen);
-              }}
-              className="transition-transform duration-200 hover:scale-110"
-            >
-              <img
-                src={Expand}
-                alt="Toggle navigation menu"
-                className="m-auto transition-all duration-300 ease-in-out"
-              />
-            </button>
+            {!navOpen && (
+              <button
+                onClick={() => {
+                  setNavOpen(!navOpen);
+                }}
+                className="transition-transform duration-200 hover:scale-110"
+              >
+                <img
+                  src={PanelLeftOpen}
+                  alt="Open navigation menu"
+                  className="m-auto transition-all duration-300 ease-in-out"
+                />
+              </button>
+            )}
             {queries?.length > 0 && (
               <button
                 onClick={() => {
@@ -363,8 +366,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             }}
           >
             <img
-              src={Expand}
-              alt="Toggle navigation menu"
+              src={navOpen ? PanelLeftClose : PanelLeftOpen}
+              alt={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
               className="m-auto transition-all duration-300 ease-in-out hover:scale-110"
             />
           </button>
@@ -408,7 +411,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           {recentAgents?.length > 0 ? (
             <div>
               <div className="mx-4 my-auto mt-2 flex h-6 items-center">
-                <p className="mt-1 ml-4 text-sm font-semibold">Agents</p>
+                <p className="mt-1 ml-4 text-sm font-semibold">
+                  {t('navigation.agents')}
+                </p>
               </div>
               <div className="agents-container">
                 <div>

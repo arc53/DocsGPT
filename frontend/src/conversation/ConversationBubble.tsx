@@ -86,10 +86,7 @@ const ConversationBubble = forwardRef<
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
-  const [isLikeHovered, setIsLikeHovered] = useState(false);
   const [isEditClicked, setIsEditClicked] = useState(false);
-  const [isDislikeHovered, setIsDislikeHovered] = useState(false);
-  const [isQuestionHovered, setIsQuestionHovered] = useState(false);
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
@@ -115,11 +112,7 @@ const ConversationBubble = forwardRef<
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
-      <div
-        onMouseEnter={() => setIsQuestionHovered(true)}
-        onMouseLeave={() => setIsQuestionHovered(false)}
-        className={className}
-      >
+      <div className={`group ${className}`}>
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
             <div className="mr-12 mb-4 flex flex-wrap justify-end gap-2">
@@ -188,7 +181,7 @@ const ConversationBubble = forwardRef<
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-[#35363B] ${isQuestionHovered || isEditClicked ? 'visible' : 'invisible'}`}
+                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-[#35363B] ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </button>
@@ -421,7 +414,7 @@ const ConversationBubble = forwardRef<
                       <Fragment key={index}>
                         {segment.type === 'text' ? (
                           <ReactMarkdown
-                            className="fade-in leading-normal break-words whitespace-pre-wrap"
+                            className="fade-in flex flex-col gap-3 leading-normal break-words whitespace-pre-wrap"
                             remarkPlugins={[remarkGfm, remarkMath]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
@@ -556,25 +549,20 @@ const ConversationBubble = forwardRef<
               </div>
             ) : (
               <>
-                <div className="relative mr-2 block items-center justify-center">
-                  <CopyButton textToCopy={message} />
-                </div>
-                <div className="relative mr-2 block items-center justify-center">
-                  <SpeakButton text={message} />
-                </div>
-                {handleFeedback && (
+                {!isStreaming && (
                   <>
-                    <div className="relative mr-2 flex items-center justify-center">
-                      <div>
-                        <div
-                          className={`flex items-center justify-center rounded-full p-2 ${
-                            isLikeHovered
-                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                              : 'bg-white-3000 dark:bg-transparent'
-                          }`}
-                        >
-                          <Like
-                            className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                    <div className="relative mr-2 block items-center justify-center">
+                      <CopyButton textToCopy={message} />
+                    </div>
+                    <div className="relative mr-2 block items-center justify-center">
+                      <SpeakButton text={message} />
+                    </div>
+                    {handleFeedback && (
+                      <>
+                        <div className="relative mr-2 flex items-center justify-center">
+                          <button
+                            type="button"
+                            className="bg-white-3000 dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent"
                             onClick={() => {
                               if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
@@ -582,24 +570,20 @@ const ConversationBubble = forwardRef<
                                 handleFeedback?.('LIKE');
                               }
                             }}
-                            onMouseEnter={() => setIsLikeHovered(true)}
-                            onMouseLeave={() => setIsLikeHovered(false)}
-                          ></Like>
+                            aria-label={
+                              feedback === 'LIKE' ? 'Remove like' : 'Like'
+                            }
+                          >
+                            <Like
+                              className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'}`}
+                            ></Like>
+                          </button>
                         </div>
-                      </div>
-                    </div>
 
-                    <div className="relative mr-2 flex items-center justify-center">
-                      <div>
-                        <div
-                          className={`flex items-center justify-center rounded-full p-2 ${
-                            isDislikeHovered
-                              ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-                              : 'bg-white-3000 dark:bg-transparent'
-                          }`}
-                        >
-                          <Dislike
-                            className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'} cursor-pointer`}
+                        <div className="relative mr-2 flex items-center justify-center">
+                          <button
+                            type="button"
+                            className="bg-white-3000 dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent"
                             onClick={() => {
                               if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
@@ -607,12 +591,19 @@ const ConversationBubble = forwardRef<
                                 handleFeedback?.('DISLIKE');
                               }
                             }}
-                            onMouseEnter={() => setIsDislikeHovered(true)}
-                            onMouseLeave={() => setIsDislikeHovered(false)}
-                          ></Dislike>
+                            aria-label={
+                              feedback === 'DISLIKE'
+                                ? 'Remove dislike'
+                                : 'Dislike'
+                            }
+                          >
+                            <Dislike
+                              className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'}`}
+                            ></Dislike>
+                          </button>
                         </div>
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -654,7 +645,7 @@ function AllSources(sources: AllSourcesProps) {
         <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
         <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
       </div>
-      <div className="mt-6 flex h-[90%] w-60 flex-col items-center gap-4 overflow-y-auto sm:w-80">
+      <div className="scrollbar-thin mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
         {sources.sources.map((source, index) => {
           const isExternalSource = source.link && source.link !== 'local';
           return (
@@ -812,6 +803,7 @@ function Thought({
   thought: string;
   preprocessLaTeX: (content: string) => string;
 }) {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const [isThoughtOpen, setIsThoughtOpen] = useState(true);
 
@@ -832,7 +824,9 @@ function Thought({
           className="flex flex-row items-center gap-2"
           onClick={() => setIsThoughtOpen(!isThoughtOpen)}
         >
-          <p className="text-base font-semibold">Reasoning</p>
+          <p className="text-base font-semibold">
+            {t('conversation.reasoning')}
+          </p>
           <img
             src={ChevronDown}
             alt="ChevronDown"

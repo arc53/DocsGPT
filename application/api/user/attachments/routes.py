@@ -10,7 +10,7 @@ from application.api import api
 from application.api.user.base import agents_collection, storage
 from application.api.user.tasks import store_attachment
 from application.core.settings import settings
-from application.tts.google_tts import GoogleTTS
+from application.tts.tts_creator import TTSCreator
 from application.utils import safe_filename
 
 
@@ -130,11 +130,15 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
+        from application.utils import clean_text_for_tts
+
         data = request.get_json()
         text = data["text"]
+        cleaned_text = clean_text_for_tts(text)
+
         try:
-            tts_instance = GoogleTTS()
-            audio_base64, detected_language = tts_instance.text_to_speech(text)
+            tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
+            audio_base64, detected_language = tts_instance.text_to_speech(cleaned_text)
             return make_response(
                 jsonify(
                     {

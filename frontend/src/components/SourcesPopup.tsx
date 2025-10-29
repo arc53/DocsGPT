@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Doc } from '../models/misc';
@@ -107,7 +108,7 @@ export default function SourcesPopup({
     onClose();
   };
 
-  return (
+  const popupContent = (
     <div
       ref={popupRef}
       className="bg-lotion dark:bg-charleston-green-2 fixed z-50 flex flex-col rounded-xl shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
@@ -171,11 +172,7 @@ export default function SourcesPopup({
                                     : doc.date !== option.date,
                                 )
                               : [];
-                          dispatch(
-                            setSelectedDocs(
-                              updatedDocs.length > 0 ? updatedDocs : null,
-                            ),
-                          );
+                          dispatch(setSelectedDocs(updatedDocs));
                           handlePostDocumentSelect(
                             updatedDocs.length > 0 ? updatedDocs : null,
                           );
@@ -218,7 +215,7 @@ export default function SourcesPopup({
             </>
           ) : (
             <div className="dark:text-bright-gray p-4 text-center text-gray-500 dark:text-[14px]">
-              {t('noSourcesAvailable')}
+              {t('conversation.sources.noSourcesAvailable')}
             </div>
           )}
         </div>
@@ -245,4 +242,6 @@ export default function SourcesPopup({
       </div>
     </div>
   );
+
+  return createPortal(popupContent, document.body);
 }

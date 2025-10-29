@@ -2,11 +2,11 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { RootState } from '../store';
 
 export interface Attachment {
+  id: string; // Unique identifier for the attachment (required for state management)
   fileName: string;
   progress: number;
   status: 'uploading' | 'processing' | 'completed' | 'failed';
-  taskId: string;
-  id?: string;
+  taskId: string; // Server-assigned task ID (used for API calls)
   token_count?: number;
 }
 
@@ -47,12 +47,12 @@ export const uploadSlice = createSlice({
     updateAttachment: (
       state,
       action: PayloadAction<{
-        taskId: string;
+        id: string;
         updates: Partial<Attachment>;
       }>,
     ) => {
       const index = state.attachments.findIndex(
-        (att) => att.taskId === action.payload.taskId,
+        (att) => att.id === action.payload.id,
       );
       if (index !== -1) {
         state.attachments[index] = {
@@ -63,8 +63,25 @@ export const uploadSlice = createSlice({
     },
     removeAttachment: (state, action: PayloadAction<string>) => {
       state.attachments = state.attachments.filter(
-        (att) => att.taskId !== action.payload && att.id !== action.payload,
+        (att) => att.id !== action.payload,
       );
+    },
+    // Reorder attachments array by moving item from sourceIndex to destinationIndex
+    reorderAttachments: (
+      state,
+      action: PayloadAction<{ sourceIndex: number; destinationIndex: number }>,
+    ) => {
+      const { sourceIndex, destinationIndex } = action.payload;
+      if (
+        sourceIndex < 0 ||
+        destinationIndex < 0 ||
+        sourceIndex >= state.attachments.length ||
+        destinationIndex >= state.attachments.length
+      )
+        return;
+
+      const [moved] = state.attachments.splice(sourceIndex, 1);
+      state.attachments.splice(destinationIndex, 0, moved);
     },
     clearAttachments: (state) => {
       state.attachments = state.attachments.filter(
@@ -121,6 +138,7 @@ export const {
   addAttachment,
   updateAttachment,
   removeAttachment,
+  reorderAttachments,
   clearAttachments,
   addUploadTask,
   updateUploadTask,
