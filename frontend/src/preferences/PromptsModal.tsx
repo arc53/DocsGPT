@@ -39,9 +39,9 @@ const useToolVariables = () => {
                       (param: any) => param.filled_by_llm !== false,
                     );
 
-                  if (!hasLLMParams) {
+                  if (hasLLMParams) {
                     filteredActions.push({
-                      label: `${tool.displayName || tool.name}: ${action.name}`,
+                      label: action.name,
                       value: `tools.${tool.name}.${action.name}`,
                     });
                   }
@@ -96,35 +96,30 @@ function AddPrompt({
           placeholder={t('modals.prompts.promptName')}
           type="text"
           className="mb-5"
-          edgeRoundness="rounded-sm"
+          edgeRoundness="rounded"
+          textSize="medium"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
           labelBgClassName="bg-white dark:bg-[#26272E]"
-          borderVariant="thin"
+          borderVariant="thick"
         />
-
-        <div className="mb-2 text-xs font-medium text-[#6B6B6B] dark:text-[#A0A0A5]">
-          {t('modals.prompts.promptText')}
-        </div>
 
         <div className="relative w-full">
           <textarea
             id="new-prompt-content"
-            className="h-48 w-full rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-purple-400 dark:border-[#3C3C44] dark:bg-[#26272E] dark:text-white"
+            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none dark:bg-[#26272E] dark:text-white"
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
+            placeholder=" "
           />
-
-          {!newPromptContent && (
-            <div className="pointer-events-none absolute top-2 left-3 text-sm text-gray-400">
-              {t('modals.prompts.placeholderText')}{' '}
-              {/* <span className="text-green-500">{'{summaries}'}</span>
-              <br />
-              This is the code:
-              <br />
-              <span className="text-green-500">(code)</span> */}
-            </div>
-          )}
+          <label
+            htmlFor="new-prompt-content"
+            className={`absolute select-none ${
+              newPromptContent ? '-top-2.5 left-3 text-xs' : ''
+            } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
+          >
+            {t('modals.prompts.promptText')}
+          </label>
         </div>
       </div>
 
@@ -150,14 +145,30 @@ function AddPrompt({
                 const cursorPosition = textarea.selectionStart;
                 const textBefore = newPromptContent.slice(0, cursorPosition);
                 const textAfter = newPromptContent.slice(cursorPosition);
-                const newText = textBefore + `{${option.value}}` + textAfter;
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
+
+                const newText =
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{${option.value}}` +
+                  textAfter;
                 setNewPromptContent(newText);
 
                 setTimeout(() => {
                   textarea.focus();
                   textarea.setSelectionRange(
-                    cursorPosition + option.value.length + 2,
-                    cursorPosition + option.value.length + 2,
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
                   );
                 }, 0);
               }
@@ -180,14 +191,29 @@ function AddPrompt({
                 const cursorPosition = textarea.selectionStart;
                 const textBefore = newPromptContent.slice(0, cursorPosition);
                 const textAfter = newPromptContent.slice(cursorPosition);
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
+
                 const newText =
-                  textBefore + `{{ ${option.value} }}` + textAfter;
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{{ ${option.value} }}` +
+                  textAfter;
                 setNewPromptContent(newText);
                 setTimeout(() => {
                   textarea.focus();
                   textarea.setSelectionRange(
-                    cursorPosition + option.value.length + 6,
-                    cursorPosition + option.value.length + 6,
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
                   );
                 }, 0);
               }
@@ -206,7 +232,7 @@ function AddPrompt({
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+            className="flex items-center gap-2 text-sm font-medium text-[#7D54D1] hover:underline"
           >
             <img
               src={BookIcon}
@@ -276,30 +302,30 @@ function EditPrompt({
           placeholder={t('modals.prompts.promptName')}
           type="text"
           className="mb-5"
-          edgeRoundness="rounded-sm"
+          edgeRoundness="rounded"
+          textSize="medium"
           value={editPromptName}
           onChange={(e) => setEditPromptName(e.target.value)}
           labelBgClassName="bg-white dark:bg-[#26272E]"
-          borderVariant="thin"
+          borderVariant="thick"
         />
-
-        <div className="mb-2 text-xs font-medium text-[#6B6B6B] dark:text-[#A0A0A5]">
-          {t('modals.prompts.promptText')}
-        </div>
 
         <div className="relative w-full">
           <textarea
             id="edit-prompt-content"
-            className="h-48 w-full rounded-lg border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-purple-400 dark:border-[#3C3C44] dark:bg-[#26272E] dark:text-white"
+            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none focus:border-2 focus:border-purple-400 dark:bg-[#26272E] dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
+            placeholder=" "
           />
-
-          {!editPromptContent && (
-            <div className="pointer-events-none absolute top-2 left-3 text-sm text-gray-400">
-              {t('modals.prompts.placeholderText')}
-            </div>
-          )}
+          <label
+            htmlFor="edit-prompt-content"
+            className={`absolute select-none ${
+              editPromptContent ? '-top-2.5 left-3 text-xs' : ''
+            } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
+          >
+            {t('modals.prompts.promptText')}
+          </label>
         </div>
       </div>
 
@@ -325,14 +351,30 @@ function EditPrompt({
                 const cursorPosition = textarea.selectionStart;
                 const textBefore = editPromptContent.slice(0, cursorPosition);
                 const textAfter = editPromptContent.slice(cursorPosition);
-                const newText = textBefore + `{${option.value}}` + textAfter;
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
+
+                const newText =
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{${option.value}}` +
+                  textAfter;
                 setEditPromptContent(newText);
 
                 setTimeout(() => {
                   textarea.focus();
                   textarea.setSelectionRange(
-                    cursorPosition + option.value.length + 2,
-                    cursorPosition + option.value.length + 2,
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
                   );
                 }, 0);
               }
@@ -355,14 +397,29 @@ function EditPrompt({
                 const cursorPosition = textarea.selectionStart;
                 const textBefore = editPromptContent.slice(0, cursorPosition);
                 const textAfter = editPromptContent.slice(cursorPosition);
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
+
                 const newText =
-                  textBefore + `{{ ${option.value} }}` + textAfter;
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{{ ${option.value} }}` +
+                  textAfter;
                 setEditPromptContent(newText);
                 setTimeout(() => {
                   textarea.focus();
                   textarea.setSelectionRange(
-                    cursorPosition + option.value.length + 6,
-                    cursorPosition + option.value.length + 6,
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
                   );
                 }, 0);
               }
@@ -381,7 +438,7 @@ function EditPrompt({
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+            className="flex items-center gap-2 text-sm font-medium text-[#7D54D1] hover:underline"
           >
             <img
               src={BookIcon}
@@ -542,6 +599,7 @@ export default function PromptsModal({
         }
       }}
       className="mt-24 w-[650px] rounded-2xl bg-white px-8 py-6 dark:bg-[#1E1E2A]"
+      contentClassName="!overflow-visible"
     >
       {view}
     </WrapperModal>
