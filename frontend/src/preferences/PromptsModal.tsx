@@ -33,15 +33,25 @@ const useToolVariables = () => {
               // Only include active tools
               tool.actions.forEach((action: any) => {
                 if (action.active) {
-                  const hasLLMParams =
-                    action.parameters?.properties &&
-                    Object.values(action.parameters.properties).some(
-                      (param: any) => param.filled_by_llm !== false,
+                  const canUseAction =
+                    !action.parameters?.properties ||
+                    Object.entries(action.parameters.properties).every(
+                      ([paramName, param]: [string, any]) => {
+                        // Parameter is usable if:
+                        // 1. It's filled by LLM (true) OR
+                        // 2. It has a value in the tool config
+                        return (
+                          param.filled_by_llm === true ||
+                          (tool.config &&
+                            tool.config[paramName] &&
+                            tool.config[paramName] !== '')
+                        );
+                      },
                     );
 
-                  if (hasLLMParams) {
+                  if (canUseAction) {
                     filteredActions.push({
-                      label: action.name,
+                      label: `${action.name} (${tool.displayName || tool.name})`,
                       value: `tools.${tool.name}.${action.name}`,
                     });
                   }
@@ -232,7 +242,7 @@ function AddPrompt({
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#7D54D1] hover:underline"
+            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
           >
             <img
               src={BookIcon}
@@ -438,7 +448,7 @@ function EditPrompt({
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#7D54D1] hover:underline"
+            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
           >
             <img
               src={BookIcon}
