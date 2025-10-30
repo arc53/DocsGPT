@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/arc53-docsgpt-badge.png)](https://mseep.ai/app/arc53-docsgpt)
+
 <h1 align="center">
   DocsGPT  🦖
 </h1>
