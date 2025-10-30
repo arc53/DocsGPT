@@ -121,6 +121,7 @@ function AddPrompt({
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
             placeholder=" "
+            aria-label={t('prompts.textAriaLabel')}
           />
           <label
             htmlFor="new-prompt-content"
@@ -327,6 +328,7 @@ function EditPrompt({
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
             placeholder=" "
+            aria-label={t('prompts.textAriaLabel')}
           />
           <label
             htmlFor="edit-prompt-content"

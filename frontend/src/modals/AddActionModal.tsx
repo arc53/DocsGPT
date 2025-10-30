@@ -44,7 +44,7 @@ export default function AddActionModal({
     >
       <div>
         <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
-          New Action
+          {t('modals.addAction.title')}
         </h2>
         <div className="relative mt-6 px-3">
           <Input
@@ -57,7 +57,7 @@ export default function AddActionModal({
             }}
             borderVariant="thin"
             labelBgClassName="bg-white dark:bg-charleston-green-2"
-            placeholder="Action Name"
+            placeholder={t('modals.addAction.actionNamePlaceholder')}
             required={true}
           />
           <p
@@ -66,8 +66,8 @@ export default function AddActionModal({
             }`}
           >
             {functionNameError
-              ? 'Invalid function name format. Use only letters, numbers, underscores, and hyphens.'
-              : 'Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)'}
+              ? t('modals.addAction.invalidFormat')
+              : t('modals.addAction.formatHelp')}
           </p>
         </div>
         <div className="mt-3 flex flex-row-reverse gap-1 px-3">
@@ -75,7 +75,7 @@ export default function AddActionModal({
             onClick={handleAddAction}
             className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all"
           >
-            Add
+            {t('modals.addAction.addButton')}
           </button>
           <button
             onClick={() => {

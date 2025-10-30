@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import MessageInput from '../components/MessageInput';
@@ -17,6 +18,7 @@ import { selectSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 
 export default function AgentPreview() {
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
   const queries = useSelector(selectPreviewQueries);
@@ -130,8 +132,7 @@ export default function AgentPreview() {
           />
         </div>
         <p className="text-gray-4000 dark:text-sonic-silver w-full bg-transparent text-center text-xs md:inline">
-          This is a preview of the agent. You can publish it to start using it
-          in conversations.
+          {t('agents.preview.testMessage')}
         </p>
       </div>
     </div>

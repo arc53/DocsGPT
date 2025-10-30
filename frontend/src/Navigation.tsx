@@ -411,7 +411,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           {recentAgents?.length > 0 ? (
             <div>
               <div className="mx-4 my-auto mt-2 flex h-6 items-center">
-                <p className="mt-1 ml-4 text-sm font-semibold">Agents</p>
+                <p className="mt-1 ml-4 text-sm font-semibold">
+                  {t('navigation.agents')}
+                </p>
               </div>
               <div className="agents-container">
                 <div>

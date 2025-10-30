@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../utils/stringUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import {
@@ -66,6 +67,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     );
   };
 
+  const { t } = useTranslation();
   const [files, setFiles] = useState<CloudFile[]>([]);
   const [selectedFiles, setSelectedFiles] =
     useState<string[]>(initialSelectedFiles);
@@ -417,7 +419,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               <div className="mb-3 max-w-md">
                 <Input
                   type="text"
-                  placeholder="Search files and folders..."
+                  placeholder={t('filePicker.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   colorVariant="silver"
@@ -431,7 +433,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
               {/* Selected Files Message */}
               <div className="pb-3 text-sm text-gray-600 dark:text-gray-400">
-                {selectedFiles.length + selectedFolders.length} selected
+                {t('filePicker.itemsSelected', {
+                  count: selectedFiles.length + selectedFolders.length,
+                })}
               </div>
             </div>
 
@@ -448,9 +452,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                       <TableHead>
                         <TableRow>
                           <TableHeader width="40px"></TableHeader>
-                          <TableHeader width="60%">Name</TableHeader>
-                          <TableHeader width="20%">Last Modified</TableHeader>
-                          <TableHeader width="20%">Size</TableHeader>
+                          <TableHeader width="60%">
+                            {t('filePicker.name')}
+                          </TableHeader>
+                          <TableHeader width="20%">
+                            {t('filePicker.lastModified')}
+                          </TableHeader>
+                          <TableHeader width="20%">
+                            {t('filePicker.size')}
+                          </TableHeader>
                         </TableRow>
                       </TableHead>
                       <TableBody>

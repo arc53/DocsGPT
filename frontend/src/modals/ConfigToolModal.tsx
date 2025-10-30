@@ -66,7 +66,7 @@ export default function ConfigToolModal({
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
             borderVariant="thin"
-            placeholder="Enter custom name (optional)"
+            placeholder={t('modals.configTool.customNamePlaceholder')}
             labelBgClassName="bg-white dark:bg-charleston-green-2"
           />
         </div>
