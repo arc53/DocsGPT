@@ -133,7 +133,7 @@ function AddPrompt({
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between gap-4">
+      <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
         <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
@@ -143,7 +143,7 @@ function AddPrompt({
           </span>
         </p>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Dropdown
             options={[{ label: 'Summaries', value: 'summaries' }]}
             selectedValue={'System Variables'}
@@ -184,10 +184,10 @@ function AddPrompt({
               }
             }}
             placeholder="System Variables"
-            size="w-[185px]"
+            size="w-[140px] sm:w-[185px]"
             rounded="3xl"
             border="border"
-            contentSize="text-[14px]"
+            contentSize="text-[12px] sm:text-[14px]"
           />
 
           <Dropdown
@@ -229,15 +229,15 @@ function AddPrompt({
               }
             }}
             placeholder="Tool Variables"
-            size="w-[171px]"
+            size="w-[140px] sm:w-[171px]"
             rounded="3xl"
             border="border"
-            contentSize="text-[14px]"
+            contentSize="text-[12px] sm:text-[14px]"
           />
         </div>
       </div>
-      <div className="mt-4 flex justify-between text-[14px]">
-        <div className="flex justify-center">
+      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+        <div className="flex justify-start">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
@@ -256,7 +256,7 @@ function AddPrompt({
           </Link>
         </div>
 
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end gap-2 sm:gap-4">
           <button
             onClick={() => setModalState('INACTIVE')}
             className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
@@ -266,7 +266,7 @@ function AddPrompt({
 
           <button
             onClick={handleAddPrompt}
-            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:opacity-50"
+            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
             disabled={disableSave}
           >
             {t('modals.prompts.save')}
@@ -323,7 +323,7 @@ function EditPrompt({
         <div className="relative w-full">
           <textarea
             id="edit-prompt-content"
-            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none focus:border-2 focus:border-purple-400 dark:bg-[#26272E] dark:text-white"
+            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none dark:bg-[#26272E] dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
             placeholder=" "
@@ -339,7 +339,7 @@ function EditPrompt({
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between gap-4">
+      <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
         <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
@@ -349,7 +349,7 @@ function EditPrompt({
           </span>
         </p>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Dropdown
             options={[{ label: 'Summaries', value: 'summaries' }]}
             selectedValue={'System Variables'}
@@ -390,10 +390,10 @@ function EditPrompt({
               }
             }}
             placeholder="System Variables"
-            size="w-[185px]"
+            size="w-[140px] sm:w-[185px]"
             rounded="3xl"
             border="border"
-            contentSize="text-[14px]"
+            contentSize="text-[12px] sm:text-[14px]"
           />
 
           <Dropdown
@@ -435,15 +435,15 @@ function EditPrompt({
               }
             }}
             placeholder="Tool Variables"
-            size="w-[171px]"
+            size="w-[140px] sm:w-[171px]"
             rounded="3xl"
             border="border"
-            contentSize="text-[14px]"
+            contentSize="text-[12px] sm:text-[14px]"
           />
         </div>
       </div>
-      <div className="mt-4 flex justify-between text-[14px]">
-        <div className="flex justify-center">
+      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+        <div className="flex justify-start">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
@@ -462,7 +462,7 @@ function EditPrompt({
           </Link>
         </div>
 
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end gap-2 sm:gap-4">
           <button
             onClick={() => setModalState('INACTIVE')}
             className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
@@ -475,8 +475,12 @@ function EditPrompt({
               handleEditPrompt &&
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
-            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:opacity-50"
-            disabled={currentPromptEdit.type === 'public' || disableSave}
+            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            disabled={
+              currentPromptEdit.type === 'public' ||
+              disableSave ||
+              !editPromptName
+            }
             title={
               disableSave && editPromptName
                 ? t('modals.prompts.nameExists')
@@ -536,23 +540,28 @@ export default function PromptsModal({
         (prompt) =>
           newName === prompt.name && prompt.id !== currentPromptEdit.id,
       );
-      const nameValid = newName && !nameExists;
-      const contentChanged = editPromptContent !== currentPromptEdit.content;
-
-      setDisableSave(!(nameValid || contentChanged));
+      setDisableSave(
+        !(
+          newName &&
+          !nameExists &&
+          editPromptName &&
+          editPromptContent.trim() !== ''
+        ),
+      );
       setEditPromptName(newName);
     } else {
       const nameExists = existingPrompts.find(
         (prompt) => newName === prompt.name,
       );
-      setDisableSave(!(newName && !nameExists));
+      setDisableSave(
+        !(newName && !nameExists && newPromptContent.trim() !== ''),
+      );
       setNewPromptName(newName);
     }
   };
 
   const handleContentChange = (edit: boolean, newContent: string) => {
     if (edit) {
-      const contentChanged = newContent !== currentPromptEdit.content;
       const nameValid =
         editPromptName &&
         !existingPrompts.find(
@@ -560,10 +569,13 @@ export default function PromptsModal({
             editPromptName === prompt.name &&
             prompt.id !== currentPromptEdit.id,
         );
-
-      setDisableSave(!(nameValid || contentChanged));
+      setDisableSave(!(nameValid && newContent.trim() !== ''));
       setEditPromptContent(newContent);
     } else {
+      const nameValid =
+        newPromptName &&
+        !existingPrompts.find((prompt) => newPromptName === prompt.name);
+      setDisableSave(!(nameValid && newContent.trim() !== ''));
       setNewPromptContent(newContent);
     }
   };
@@ -608,7 +620,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mt-24 w-[650px] rounded-2xl bg-white px-8 py-6 dark:bg-[#1E1E2A]"
+      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-6 dark:bg-[#1E1E2A]"
       contentClassName="!overflow-visible"
     >
       {view}
