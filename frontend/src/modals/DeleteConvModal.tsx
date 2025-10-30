@@ -38,7 +38,7 @@ export default function DeleteConvModal({
     <ConfirmationModal
       message={t('modals.deleteConv.confirm')}
       modalState={modalState}
-      setModalState={setModalState}
+      setModalState={(state) => dispatch(setModalState(state))}
       submitLabel={t('modals.deleteConv.delete')}
       handleSubmit={handleSubmit}
       handleCancel={handleCancel}

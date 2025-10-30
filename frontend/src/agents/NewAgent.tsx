@@ -1,5 +1,6 @@
 import isEqual from 'lodash/isEqual';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -30,6 +31,7 @@ const embeddingsName =
   'huggingface_sentence-transformers/all-mpnet-base-v2';
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { agentId } = useParams();
@@ -87,8 +89,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const modeConfig = {
     new: {
-      heading: 'New Agent',
-      buttonText: 'Publish',
+      heading: t('agents.form.headings.new'),
+      buttonText: t('agents.form.buttons.publish'),
       showDelete: false,
       showSaveDraft: true,
       showLogs: false,
@@ -96,8 +98,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       trackChanges: false,
     },
     edit: {
-      heading: 'Edit Agent',
-      buttonText: 'Save',
+      heading: t('agents.form.headings.edit'),
+      buttonText: t('agents.form.buttons.save'),
       showDelete: true,
       showSaveDraft: false,
       showLogs: true,
@@ -105,8 +107,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       trackChanges: true,
     },
     draft: {
-      heading: 'New Agent (Draft)',
-      buttonText: 'Publish',
+      heading: t('agents.form.headings.draft'),
+      buttonText: t('agents.form.buttons.publish'),
       showDelete: true,
       showSaveDraft: true,
       showLogs: false,
@@ -116,8 +118,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const agentTypes = [
-    { label: 'Classic', value: 'classic' },
-    { label: 'ReAct', value: 'react' },
+    { label: t('agents.form.agentTypes.classic'), value: 'classic' },
+    { label: t('agents.form.agentTypes.react'), value: 'react' },
   ];
 
   const isPublishable = () => {
@@ -543,7 +545,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
         <p className="text-eerie-black dark:text-bright-gray mt-px text-sm font-semibold">
-          Back to all agents
+          {t('agents.backToAll')}
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
@@ -555,7 +557,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             className="text-purple-30 dark:text-light-gray mr-4 rounded-3xl py-2 text-sm font-medium dark:bg-transparent"
             onClick={handleCancel}
           >
-            Cancel
+            {t('agents.form.buttons.cancel')}
           </button>
           {modeConfig[effectiveMode].showDelete && agent.id && (
             <button
@@ -563,7 +565,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               onClick={() => setDeleteConfirmation('ACTIVE')}
             >
               <span className="block h-4 w-4 bg-[url('/src/assets/red-trash.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/white-trash.svg')]" />
-              Delete
+              {t('agents.form.buttons.delete')}
             </button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
@@ -578,7 +580,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 {draftLoading ? (
                   <Spinner size="small" color="#976af3" />
                 ) : (
-                  'Save Draft'
+                  t('agents.form.buttons.saveDraft')
                 )}
               </span>
             </button>
@@ -589,7 +591,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               onClick={() => navigate(`/agents/logs/${agent.id}`)}
             >
               <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
-              Logs
+              {t('agents.form.buttons.logs')}
             </button>
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
@@ -597,7 +599,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => setAgentDetails('ACTIVE')}
             >
-              Access Details
+              {t('agents.form.buttons.accessDetails')}
             </button>
           )}
           <button
@@ -618,17 +620,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       <div className="mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] bg-[#F6F6F6] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden dark:bg-[#383838]">
         <div className="scrollbar-thin col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
-            <h2 className="text-lg font-semibold">Meta</h2>
+            <h2 className="text-lg font-semibold">
+              {t('agents.form.sections.meta')}
+            </h2>
             <input
               className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
               type="text"
               value={agent.name}
-              placeholder="Agent name"
+              placeholder={t('agents.form.placeholders.agentName')}
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
               className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 h-32 w-full rounded-xl border bg-white px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
-              placeholder="Describe your agent"
+              placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
               onChange={(e) =>
                 setAgent({ ...agent, description: e.target.value })
@@ -641,9 +645,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onUpload={handleUpload}
                 onRemove={() => setImageFile(null)}
                 uploadText={[
-                  { text: 'Click to upload', colorClass: 'text-[#7D54D1]' },
                   {
-                    text: ' or drag and drop',
+                    text: t('agents.form.upload.clickToUpload'),
+                    colorClass: 'text-[#7D54D1]',
+                  },
+                  {
+                    text: t('agents.form.upload.dragAndDrop'),
                     colorClass: 'text-[#525252]',
                   },
                 ]}
@@ -651,7 +658,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </div>
           </div>
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
-            <h2 className="text-lg font-semibold">Source</h2>
+            <h2 className="text-lg font-semibold">
+              {t('agents.form.sections.source')}
+            </h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
                 <button
@@ -672,11 +681,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                               source.name === id ||
                               source.retriever === id,
                           );
-                          return matchedDoc?.name || `External KB`;
+                          return (
+                            matchedDoc?.name || t('agents.form.externalKb')
+                          );
                         })
                         .filter(Boolean)
                         .join(', ')
-                    : 'Select sources'}
+                    : t('agents.form.placeholders.selectSources')}
                 </button>
                 <MultiSelectPopup
                   isOpen={isSourcePopupOpen}
@@ -720,9 +731,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       setSelectedSourceIds(newSelectedIds);
                     }
                   }}
-                  title="Select Sources"
-                  searchPlaceholder="Search sources..."
-                  noOptionsMessage="No sources available"
+                  title={t('agents.form.sourcePopup.title')}
+                  searchPlaceholder={t(
+                    'agents.form.sourcePopup.searchPlaceholder',
+                  )}
+                  noOptionsMessage={t(
+                    'agents.form.sourcePopup.noOptionsMessage',
+                  )}
                 />
               </div>
               <div className="mt-3">
@@ -737,7 +752,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   border="border"
                   buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
                   optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
-                  placeholder="Chunks per query"
+                  placeholder={t('agents.form.placeholders.chunksPerQuery')}
                   placeholderClassName="text-gray-400 dark:text-silver"
                   contentSize="text-sm"
                 />
@@ -757,7 +772,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     setAgent({ ...agent, prompt_id: id })
                   }
                   setPrompts={setPrompts}
-                  title="Prompt"
+                  title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold dark:text-[#E0E0E0]"
                   showAddButton={false}
                   dropdownProps={{
@@ -777,12 +792,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-20 shrink-0 basis-full rounded-3xl border-2 border-solid px-5 py-[11px] text-sm transition-colors hover:text-white sm:basis-auto"
                 onClick={() => setAddPromptModal('ACTIVE')}
               >
-                Add
+                {t('agents.form.buttons.add')}
               </button>
             </div>
           </div>
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
-            <h2 className="text-lg font-semibold">Tools</h2>
+            <h2 className="text-lg font-semibold">
+              {t('agents.form.sections.tools')}
+            </h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
               <button
                 ref={toolAnchorButtonRef}
@@ -798,7 +815,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       .map((tool) => tool.display_name || tool.name)
                       .filter(Boolean)
                       .join(', ')
-                  : 'Select tools'}
+                  : t('agents.form.placeholders.selectTools')}
               </button>
               <MultiSelectPopup
                 isOpen={isToolsPopupOpen}
@@ -817,14 +834,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       })),
                   )
                 }
-                title="Select Tools"
-                searchPlaceholder="Search tools..."
-                noOptionsMessage="No tools available"
+                title={t('agents.form.toolsPopup.title')}
+                searchPlaceholder={t(
+                  'agents.form.toolsPopup.searchPlaceholder',
+                )}
+                noOptionsMessage={t('agents.form.toolsPopup.noOptionsMessage')}
               />
             </div>
           </div>
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
-            <h2 className="text-lg font-semibold">Agent type</h2>
+            <h2 className="text-lg font-semibold">
+              {t('agents.form.sections.agentType')}
+            </h2>
             <div className="mt-3">
               <Dropdown
                 options={agentTypes}
@@ -842,7 +863,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 border="border"
                 buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
                 optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
-                placeholder="Select type"
+                placeholder={t('agents.form.placeholders.selectType')}
                 placeholderClassName="text-gray-400 dark:text-silver"
                 contentSize="text-sm"
               />
@@ -856,7 +877,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               className="flex w-full items-center justify-between text-left focus:outline-none"
             >
               <div>
-                <h2 className="text-lg font-semibold">Advanced</h2>
+                <h2 className="text-lg font-semibold">
+                  {t('agents.form.sections.advanced')}
+                </h2>
               </div>
               <div className="ml-4 flex items-center">
                 <svg
@@ -879,9 +902,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             {isAdvancedSectionExpanded && (
               <div className="mt-3">
                 <div>
-                  <h2 className="text-sm font-medium">JSON response schema</h2>
+                  <h2 className="text-sm font-medium">
+                    {t('agents.form.advanced.jsonSchema')}
+                  </h2>
                   <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                    Define a JSON schema to enforce structured output format
+                    {t('agents.form.advanced.jsonSchemaDescription')}
                   </p>
                 </div>
                 <textarea
@@ -915,17 +940,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }`}
                     />
                     {jsonSchemaValid
-                      ? 'Valid JSON'
-                      : 'Invalid JSON - fix to enable saving'}
+                      ? t('agents.form.advanced.validJson')
+                      : t('agents.form.advanced.invalidJson')}
                   </div>
                 )}
 
                 <div className="mt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-medium">Token limiting</h2>
+                      <h2 className="text-sm font-medium">
+                        {t('agents.form.advanced.tokenLimiting')}
+                      </h2>
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        Limit daily total tokens that can be used by this agent
+                        {t('agents.form.advanced.tokenLimitingDescription')}
                       </p>
                     </div>
                     <button
@@ -965,7 +992,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       })
                     }
                     disabled={!agent.limited_token_mode}
-                    placeholder="Enter token limit"
+                    placeholder={t('agents.form.placeholders.enterTokenLimit')}
                     className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-2 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E] ${
                       !agent.limited_token_mode
                         ? 'cursor-not-allowed opacity-50'
@@ -977,10 +1004,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <div className="mt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-medium">Request limiting</h2>
+                      <h2 className="text-sm font-medium">
+                        {t('agents.form.advanced.requestLimiting')}
+                      </h2>
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        Limit daily total requests that can be made to this
-                        agent
+                        {t('agents.form.advanced.requestLimitingDescription')}
                       </p>
                     </div>
                     <button
@@ -1020,7 +1048,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       })
                     }
                     disabled={!agent.limited_request_mode}
-                    placeholder="Enter request limit"
+                    placeholder={t(
+                      'agents.form.placeholders.enterRequestLimit',
+                    )}
                     className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-2 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E] ${
                       !agent.limited_request_mode
                         ? 'cursor-not-allowed opacity-50'
@@ -1033,22 +1063,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </div>
         </div>
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2 dark:text-[#E0E0E0]">
-          <h2 className="text-lg font-semibold">Preview</h2>
+          <h2 className="text-lg font-semibold">
+            {t('agents.form.sections.preview')}
+          </h2>
           <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
             <AgentPreviewArea />
           </div>
         </div>
       </div>
       <ConfirmationModal
-        message="Are you sure you want to delete this agent?"
+        message={t('agents.deleteConfirmation')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
-        submitLabel="Delete"
+        submitLabel={t('agents.form.buttons.delete')}
         handleSubmit={() => {
           handleDelete(agent.id || '');
           setDeleteConfirmation('INACTIVE');
         }}
-        cancelLabel="Cancel"
+        cancelLabel={t('agents.form.buttons.cancel')}
         variant="danger"
       />
       <AgentDetailsModal
@@ -1071,6 +1103,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 }
 
 function AgentPreviewArea() {
+  const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
     <div className="dark:bg-raisin-black w-full rounded-[30px] border border-[#F6F6F6] bg-white max-[1179px]:h-[600px] min-[1180px]:h-full dark:border-[#7E7E7E]">
@@ -1082,7 +1115,7 @@ function AgentPreviewArea() {
         <div className="flex h-full w-full flex-col items-center justify-center gap-2">
           <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
           <p className="dark:text-gray-4000 text-xs text-[#18181B]">
-            Published agents can be previewed here
+            {t('agents.form.preview.publishedPreview')}
           </p>
         </div>
       )}

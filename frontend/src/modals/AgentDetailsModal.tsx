@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import { Agent } from '../agents/types';
@@ -24,6 +25,7 @@ export default function AgentDetailsModal({
   modalState,
   setModalState,
 }: AgentDetailsModalProps) {
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
 
   const [sharedToken, setSharedToken] = useState<string | null>(
@@ -86,13 +88,13 @@ export default function AgentDetailsModal({
     >
       <div>
         <h2 className="text-jet dark:text-bright-gray text-xl font-semibold">
-          Access Details
+          {t('modals.agentDetails.title')}
         </h2>
         <div className="mt-8 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
-                Public Link
+                {t('modals.agentDetails.publicLink')}
               </h2>
             </div>
             {sharedToken ? (
@@ -117,7 +119,9 @@ export default function AgentDetailsModal({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <span className="text-sm">Learn more</span>
+                  <span className="text-sm">
+                    {t('modals.agentDetails.learnMore')}
+                  </span>
                   <img
                     src="/src/assets/external-link.svg"
                     alt="External link"
@@ -133,14 +137,14 @@ export default function AgentDetailsModal({
                 {loadingStates.publicLink ? (
                   <Spinner size="small" color="#976af3" />
                 ) : (
-                  'Generate'
+                  t('modals.agentDetails.generate')
                 )}
               </button>
             )}
           </div>
           <div className="flex flex-col gap-3">
             <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
-              API Key
+              {t('modals.agentDetails.apiKey')}
             </h2>
             {apiKey ? (
               <div className="flex flex-col gap-2">
@@ -162,7 +166,7 @@ export default function AgentDetailsModal({
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Test
+                      {t('modals.agentDetails.test')}
                       <img
                         src="/src/assets/external-link.svg"
                         alt="External link"
@@ -174,14 +178,14 @@ export default function AgentDetailsModal({
               </div>
             ) : (
               <button className="border-purple-30 text-purple-30 hover:bg-purple-30 w-28 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white">
-                Generate
+                {t('modals.agentDetails.generate')}
               </button>
             )}
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
-                Webhook URL
+                {t('modals.agentDetails.webhookUrl')}
               </h2>
             </div>
             {webhookUrl ? (
@@ -202,7 +206,9 @@ export default function AgentDetailsModal({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <span className="text-sm">Learn more</span>
+                  <span className="text-sm">
+                    {t('modals.agentDetails.learnMore')}
+                  </span>
                   <img
                     src="/src/assets/external-link.svg"
                     alt="External link"
@@ -218,7 +224,7 @@ export default function AgentDetailsModal({
                 {loadingStates.webhook ? (
                   <Spinner size="small" color="#976af3" />
                 ) : (
-                  'Generate'
+                  t('modals.agentDetails.generate')
                 )}
               </button>
             )}

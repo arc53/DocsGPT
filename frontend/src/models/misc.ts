@@ -39,18 +39,3 @@ export type DocumentsProps = {
   paginatedDocuments: Doc[] | null;
   handleDeleteDocument: (index: number, document: Doc) => void;
 };
-
-export type CreateAPIKeyModalProps = {
-  close: () => void;
-  createAPIKey: (payload: {
-    name: string;
-    source: string;
-    prompt_id: string;
-    chunks: string;
-  }) => void;
-};
-
-export type SaveAPIKeyModalProps = {
-  apiKey: string;
-  close: () => void;
-};

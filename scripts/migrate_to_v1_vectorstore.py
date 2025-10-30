@@ -84,6 +84,21 @@ def migrate_mongo_atlas_vector_to_v1_vectorstore():
     logger.info("Mongo Atlas migration completed")
 
 if __name__ == "__main__":
-    migrate_faiss_to_v1_vectorstore()
-    migrate_to_v1_vectorstore_mongo()
-    migrate_mongo_atlas_vector_to_v1_vectorstore()
+    try:
+        logger.info("Starting FAISS migration...")
+        migrate_faiss_to_v1_vectorstore()
+        logger.info("FAISS migration completed successfully ")
+
+        logger.info("Starting local Mongo migration...")
+        migrate_to_v1_vectorstore_mongo()
+        logger.info("Local Mongo migration completed successfully ")
+
+        logger.info("Starting Mongo Atlas migration...")
+        migrate_mongo_atlas_vector_to_v1_vectorstore()
+        logger.info("Mongo Atlas migration completed successfully ")
+
+        logger.info(" All migrations completed successfully!")
+
+    except Exception as e:
+        logger.error(f" Migration failed due to error: {e}")
+        logger.warning(" Please verify database state or restore from backups if necessary.")

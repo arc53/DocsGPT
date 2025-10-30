@@ -172,11 +172,7 @@ export default function SourcesPopup({
                                     : doc.date !== option.date,
                                 )
                               : [];
-                          dispatch(
-                            setSelectedDocs(
-                              updatedDocs.length > 0 ? updatedDocs : null,
-                            ),
-                          );
+                          dispatch(setSelectedDocs(updatedDocs));
                           handlePostDocumentSelect(
                             updatedDocs.length > 0 ? updatedDocs : null,
                           );
