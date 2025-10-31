@@ -23,10 +23,18 @@ class Settings(BaseSettings):
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     LLM_TOKEN_LIMITS: dict = {
+        "gpt-4o": 128000,
         "gpt-4o-mini": 128000,
+        "gpt-4": 8192,
         "gpt-3.5-turbo": 4096,
-        "claude-2": 1e5,
-        "gemini-2.5-flash": 1e6,
+        "claude-2": int(1e5),
+        "gemini-2.5-flash": int(1e6),
+    }
+    DEFAULT_LLM_TOKEN_LIMIT: int = 128000
+    RESERVED_TOKENS: dict = {
+        "system_prompt": 500,
+        "current_query": 500,
+        "safety_buffer": 1000,
     }
     DEFAULT_AGENT_LIMITS: dict = {
         "token_limit": 50000,
@@ -132,6 +140,9 @@ class Settings(BaseSettings):
 
     TTS_PROVIDER: str = "google_tts" # google_tts or elevenlabs
     ELEVENLABS_API_KEY: Optional[str] = None
+
+    # Tool pre-fetch settings
+    ENABLE_TOOL_PREFETCH: bool = True
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")

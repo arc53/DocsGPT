@@ -74,6 +74,17 @@ def count_tokens_docs(docs):
     return tokens
 
 
+def calculate_doc_token_budget(
+    gpt_model: str = "gpt-4o", history_token_limit: int = 2000
+) -> int:
+    total_context = settings.LLM_TOKEN_LIMITS.get(
+        gpt_model, settings.DEFAULT_LLM_TOKEN_LIMIT
+    )
+    reserved = sum(settings.RESERVED_TOKENS.values())
+    doc_budget = total_context - history_token_limit - reserved
+    return max(doc_budget, 1000)
+
+
 def get_missing_fields(data, required_fields):
     """Check for missing required fields. Returns list of missing field names."""
     return [field for field in required_fields if field not in data]
@@ -141,8 +152,8 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
         max_token_limit
         if max_token_limit
         and max_token_limit
-        < settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
-        else settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
+        < settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_LLM_TOKEN_LIMIT)
+        else settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_LLM_TOKEN_LIMIT)
     )
 
     if not history:

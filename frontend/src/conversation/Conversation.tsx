@@ -130,7 +130,7 @@ export default function Conversation() {
           }),
         );
         handleQuestion({
-          question: queries[queries.length - 1].prompt,
+          question: question,
           isRetry: true,
         });
       } else {

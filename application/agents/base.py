@@ -12,7 +12,6 @@ from application.core.settings import settings
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
-from application.retriever.base import BaseRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +26,7 @@ class BaseAgent(ABC):
         user_api_key: Optional[str] = None,
         prompt: str = "",
         chat_history: Optional[List[Dict]] = None,
+        retrieved_docs: Optional[List[Dict]] = None,
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
         json_schema: Optional[Dict] = None,
@@ -53,6 +53,7 @@ class BaseAgent(ABC):
             user_api_key=user_api_key,
             decoded_token=decoded_token,
         )
+        self.retrieved_docs = retrieved_docs or []
         self.llm_handler = LLMHandlerCreator.create_handler(
             llm_name if llm_name else "default"
         )
@@ -65,13 +66,13 @@ class BaseAgent(ABC):
 
     @log_activity()
     def gen(
-        self, query: str, retriever: BaseRetriever, log_context: LogContext = None
+        self, query: str, log_context: LogContext = None
     ) -> Generator[Dict, None, None]:
-        yield from self._gen_inner(query, retriever, log_context)
+        yield from self._gen_inner(query, log_context)
 
     @abstractmethod
     def _gen_inner(
-        self, query: str, retriever: BaseRetriever, log_context: LogContext
+        self, query: str, log_context: LogContext
     ) -> Generator[Dict, None, None]:
         pass
 
@@ -150,6 +151,7 @@ class BaseAgent(ABC):
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
 
         # Check if parsing failed
+
         if tool_id is None or action_name is None:
             error_message = f"Error: Failed to parse LLM tool call. Tool name: {getattr(call, 'name', 'unknown')}"
             logger.error(error_message)
@@ -164,13 +166,14 @@ class BaseAgent(ABC):
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return "Failed to parse tool call.", call_id
-
         # Check if tool_id exists in available tools
+
         if tool_id not in tools_dict:
             error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
             logger.error(error_message)
 
             # Return error result
+
             tool_call_data = {
                 "tool_name": "unknown",
                 "call_id": call_id,
@@ -181,7 +184,6 @@ class BaseAgent(ABC):
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return f"Tool with ID {tool_id} not found.", call_id
-
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
             "call_id": call_id,
@@ -223,6 +225,7 @@ class BaseAgent(ABC):
         tm = ToolManager(config={})
 
         # Prepare tool_config and add tool_id for memory tools
+
         if tool_data["name"] == "api_tool":
             tool_config = {
                 "url": tool_data["config"]["actions"][action_name]["url"],
@@ -234,8 +237,8 @@ class BaseAgent(ABC):
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
             # Add tool_id from MongoDB _id for tools that need instance isolation (like memory tool)
             # Use MongoDB _id if available, otherwise fall back to enumerated tool_id
-            tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
 
+            tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,
@@ -276,24 +279,14 @@ class BaseAgent(ABC):
         self,
         system_prompt: str,
         query: str,
-        retrieved_data: List[Dict],
     ) -> List[Dict]:
-        docs_with_filenames = []
-        for doc in retrieved_data:
-            filename = doc.get("filename") or doc.get("title") or doc.get("source")
-            if filename:
-                chunk_header = str(filename)
-                docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
-            else:
-                docs_with_filenames.append(doc["text"])
-        docs_together = "\n\n".join(docs_with_filenames)
-        p_chat_combine = system_prompt.replace("{summaries}", docs_together)
-        messages_combine = [{"role": "system", "content": p_chat_combine}]
+        """Build messages using pre-rendered system prompt"""
+        messages = [{"role": "system", "content": system_prompt}]
 
         for i in self.chat_history:
             if "prompt" in i and "response" in i:
-                messages_combine.append({"role": "user", "content": i["prompt"]})
-                messages_combine.append({"role": "assistant", "content": i["response"]})
+                messages.append({"role": "user", "content": i["prompt"]})
+                messages.append({"role": "assistant", "content": i["response"]})
             if "tool_calls" in i:
                 for tool_call in i["tool_calls"]:
                     call_id = tool_call.get("call_id") or str(uuid.uuid4())
@@ -313,26 +306,14 @@ class BaseAgent(ABC):
                         }
                     }
 
-                    messages_combine.append(
+                    messages.append(
                         {"role": "assistant", "content": [function_call_dict]}
                     )
-                    messages_combine.append(
+                    messages.append(
                         {"role": "tool", "content": [function_response_dict]}
                     )
-        messages_combine.append({"role": "user", "content": query})
-        return messages_combine
-
-    def _retriever_search(
-        self,
-        retriever: BaseRetriever,
-        query: str,
-        log_context: Optional[LogContext] = None,
-    ) -> List[Dict]:
-        retrieved_data = retriever.search(query)
-        if log_context:
-            data = build_stack_data(retriever, exclude_attributes=["llm"])
-            log_context.stacks.append({"component": "retriever", "data": data})
-        return retrieved_data
+        messages.append({"role": "user", "content": query})
+        return messages
 
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
         gen_kwargs = {"model": self.gpt_model, "messages": messages}
@@ -343,7 +324,6 @@ class BaseAgent(ABC):
             and self.tools
         ):
             gen_kwargs["tools"] = self.tools
-
         if (
             self.json_schema
             and hasattr(self.llm, "_supports_structured_output")
@@ -357,7 +337,6 @@ class BaseAgent(ABC):
                     gen_kwargs["response_format"] = structured_format
                 elif self.llm_name == "google":
                     gen_kwargs["response_schema"] = structured_format
-
         resp = self.llm.gen_stream(**gen_kwargs)
 
         if log_context:

@@ -8,7 +8,3 @@ class BaseRetriever(ABC):
     @abstractmethod
     def search(self, *args, **kwargs):
         pass
-
-    @abstractmethod
-    def get_params(self):
-        pass
