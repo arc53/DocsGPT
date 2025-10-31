@@ -422,11 +422,11 @@ class StreamProcessor:
                 tool_id = str(tool_doc.get("_id"))
 
                 if filtering_enabled:
-                    # Check if referenced by name or by ID
-                    required_actions_by_name = required_tool_actions.get(tool_name, set())
+                    required_actions_by_name = required_tool_actions.get(
+                        tool_name, set()
+                    )
                     required_actions_by_id = required_tool_actions.get(tool_id, set())
 
-                    # Combine both sets of required actions
                     required_actions = required_actions_by_name | required_actions_by_id
 
                     if not required_actions:
@@ -434,17 +434,14 @@ class StreamProcessor:
                 else:
                     required_actions = None
 
-                # Try to pre-fetch data from this tool
                 tool_data = self._fetch_tool_data(tool_doc, required_actions)
                 if tool_data:
-                    # Store under tool name for backward compatibility
                     tools_data[tool_name] = tool_data
-                    # Also store under tool_id to support {{ tools.TOOL_ID.action }}
                     tools_data[tool_id] = tool_data
 
             return tools_data if tools_data else None
         except Exception as e:
-            logger.warning(f"Failed to pre-fetch tools: {str(e)}")
+            logger.warning(f"Failed to pre-fetch tools: {type(e).__name__}")
             return None
 
     def _fetch_tool_data(
@@ -452,24 +449,7 @@ class StreamProcessor:
         tool_doc: Dict[str, Any],
         required_actions: Optional[Set[Optional[str]]],
     ) -> Optional[Dict[str, Any]]:
-        """Generic method to fetch data from any tool for pre-injection into prompt
-
-        This method calls each action defined by the tool using:
-        1. Parameter values from the tool's config (if saved by user)
-        2. Default values from action metadata (if defined)
-        3. Skips the action if required parameters are missing
-
-        Example:
-            Tool config: {"symbol": "BTC", "currency": "USD"}
-            Action: cryptoprice_get(symbol, currency)
-            Result: Calls with symbol="BTC", currency="USD"
-
-        Args:
-            tool_doc: Tool document from database containing name, config, and parameter values
-
-        Returns:
-            Dictionary with action results, or None if pre-fetch failed/not supported
-        """
+        """Fetch and execute tool actions with saved parameters"""
         try:
             from application.agents.tools.tool_manager import ToolManager
 
@@ -477,25 +457,23 @@ class StreamProcessor:
             tool_config = tool_doc.get("config", {}).copy()
             tool_config["tool_id"] = str(tool_doc["_id"])
 
-            # Initialize the tool manager with the tool's config and load the specific tool
             tool_manager = ToolManager(config={tool_name: tool_config})
             user_id = self.initial_user_id or "local"
             tool = tool_manager.load_tool(tool_name, tool_config, user_id=user_id)
 
-            # Get actions metadata from the loaded tool
             if not tool:
+                logger.debug(f"Tool '{tool_name}' failed to load")
                 return None
 
             tool_actions = tool.get_actions_metadata()
             if not tool_actions:
+                logger.debug(f"Tool '{tool_name}' has no actions")
                 return None
 
-            # Get saved action parameters from tool document
-            # Parameters are stored in: tool_doc["actions"][i]["parameters"]["properties"][param_name]["value"]
             saved_actions = tool_doc.get("actions", [])
 
-            include_all_actions = (
-                required_actions is None or (required_actions and None in required_actions)
+            include_all_actions = required_actions is None or (
+                required_actions and None in required_actions
             )
             allowed_actions: Set[str] = (
                 {action for action in required_actions if isinstance(action, str)}
@@ -503,81 +481,82 @@ class StreamProcessor:
                 else set()
             )
 
-            # Execute each action with parameters from saved values
             action_results = {}
             for action_meta in tool_actions:
                 action_name = action_meta.get("name")
                 if action_name is None:
                     continue
-                if not include_all_actions and allowed_actions and action_name not in allowed_actions:
+                if (
+                    not include_all_actions
+                    and allowed_actions
+                    and action_name not in allowed_actions
+                ):
                     continue
 
                 try:
-                    # Find the corresponding saved action in the tool document
                     saved_action = None
                     for sa in saved_actions:
                         if sa.get("name") == action_name:
                             saved_action = sa
                             break
 
-                    # Get parameters from action metadata
                     action_params = action_meta.get("parameters", {})
                     properties = action_params.get("properties", {})
 
-                    # Build kwargs from saved parameter values
                     kwargs = {}
                     for param_name, param_spec in properties.items():
-                        # First priority: Check saved action parameters in MongoDB
                         if saved_action:
-                            saved_props = saved_action.get("parameters", {}).get("properties", {})
+                            saved_props = saved_action.get("parameters", {}).get(
+                                "properties", {}
+                            )
                             if param_name in saved_props:
                                 param_value = saved_props[param_name].get("value")
                                 if param_value is not None:
                                     kwargs[param_name] = param_value
                                     continue
 
-                        # Second priority: Check if value exists in tool_config
                         if param_name in tool_config:
                             kwargs[param_name] = tool_config[param_name]
-                        # Third priority: Use default if available
                         elif "default" in param_spec:
                             kwargs[param_name] = param_spec["default"]
 
-                    # Call action with parameters from config or defaults
                     result = tool.execute_action(action_name, **kwargs)
-
-                    # Store result using the full action name
                     action_results[action_name] = result
-                except Exception:
-                    # Continue with other actions even if one fails
+                except Exception as e:
+                    logger.debug(
+                        f"Action '{action_name}' execution failed: {type(e).__name__}"
+                    )
                     continue
 
             return action_results if action_results else None
 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Tool pre-fetch failed for '{tool_name}': {type(e).__name__}")
             return None
 
     def _get_prompt_content(self) -> Optional[str]:
         """Retrieve and cache the raw prompt content for the current agent configuration."""
         if self._prompt_content is not None:
             return self._prompt_content
-        prompt_id = self.agent_config.get("prompt_id") if isinstance(self.agent_config, dict) else None
+        prompt_id = (
+            self.agent_config.get("prompt_id")
+            if isinstance(self.agent_config, dict)
+            else None
+        )
         if not prompt_id:
             return None
         try:
             self._prompt_content = get_prompt(prompt_id, self.prompts_collection)
-        except Exception:
+        except ValueError as e:
+            logger.debug(f"Invalid prompt ID '{prompt_id}': {str(e)}")
+            self._prompt_content = None
+        except Exception as e:
+            logger.debug(f"Failed to fetch prompt '{prompt_id}': {type(e).__name__}")
             self._prompt_content = None
         return self._prompt_content
 
     def _get_required_tool_actions(self) -> Optional[Dict[str, Set[Optional[str]]]]:
-        """Determine which tool actions are referenced in the prompt template.
-
-        Returns:
-            Dict mapping tool name to set of action names referenced.
-            An empty dict indicates no tool references.
-            None indicates filtering could not be determined (e.g., missing prompt).
-        """
+        """Determine which tool actions are referenced in the prompt template"""
         if self._required_tool_actions is not None:
             return self._required_tool_actions
 
@@ -596,7 +575,8 @@ class StreamProcessor:
             usages = template_engine.extract_tool_usages(prompt_content)
             self._required_tool_actions = usages
             return self._required_tool_actions
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to extract tool usages: {type(e).__name__}")
             self._required_tool_actions = {}
             return self._required_tool_actions
 
@@ -631,7 +611,9 @@ class StreamProcessor:
         """Create and return the configured agent with rendered prompt"""
         raw_prompt = self._get_prompt_content()
         if raw_prompt is None:
-            raw_prompt = get_prompt(self.agent_config["prompt_id"], self.prompts_collection)
+            raw_prompt = get_prompt(
+                self.agent_config["prompt_id"], self.prompts_collection
+            )
             self._prompt_content = raw_prompt
 
         rendered_prompt = self.prompt_renderer.render_prompt(

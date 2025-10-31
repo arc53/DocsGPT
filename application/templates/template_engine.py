@@ -2,13 +2,13 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 
 from jinja2 import (
-    Environment,
-    select_autoescape,
     ChainableUndefined,
+    Environment,
+    nodes,
+    select_autoescape,
     TemplateSyntaxError,
 )
 from jinja2.exceptions import UndefinedError
-from jinja2 import nodes
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,11 @@ class TemplateEngine:
         try:
             self._env.from_string(template_content)
             return True
-        except TemplateSyntaxError:
+        except TemplateSyntaxError as e:
+            logger.debug(f"Template syntax invalid at line {e.lineno}: {e.message}")
+            return False
+        except Exception as e:
+            logger.debug(f"Template validation error: {type(e).__name__}: {str(e)}")
             return False
 
     def extract_variables(self, template_content: str) -> Set[str]:
@@ -95,32 +99,26 @@ class TemplateEngine:
         try:
             ast = self._env.parse(template_content)
             return set(self._env.get_template_module(ast).make_module().keys())
-        except Exception:
+        except TemplateSyntaxError as e:
+            logger.debug(f"Cannot extract variables - syntax error at line {e.lineno}")
+            return set()
+        except Exception as e:
+            logger.debug(f"Cannot extract variables: {type(e).__name__}")
             return set()
 
     def extract_tool_usages(
         self, template_content: str
     ) -> Dict[str, Set[Optional[str]]]:
-        """
-        Extract tool and action references from a template.
-
-        Returns a mapping of tool names to a set of action names referenced.
-        If an action name is None, it indicates the template references the tool
-        without specifying a particular action (e.g. {{ tools.cryptoprice }}).
-        """
+        """Extract tool and action references from a template"""
         if not template_content:
             return {}
         try:
             ast = self._env.parse(template_content)
         except TemplateSyntaxError as e:
-            logger.warning(
-                f"extract_tool_usages: unable to parse template (line {e.lineno}): {e.message}"
-            )
+            logger.debug(f"extract_tool_usages - syntax error at line {e.lineno}")
             return {}
         except Exception as e:
-            logger.warning(
-                f"extract_tool_usages: unexpected error while parsing template: {str(e)}"
-            )
+            logger.debug(f"extract_tool_usages - parse error: {type(e).__name__}")
             return {}
 
         usages: Dict[str, Set[Optional[str]]] = {}
@@ -135,7 +133,6 @@ class TemplateEngine:
             tool_entry = usages.setdefault(tool_name, set())
             tool_entry.add(action_name)
 
-        # Handle dotted attribute access (e.g., tools.cryptoprice.cryptoprice_get.price)
         for node in ast.find_all(nodes.Getattr):
             path = []
             current = node
@@ -146,7 +143,6 @@ class TemplateEngine:
                 path.reverse()
                 record(path)
 
-        # Handle dictionary-style access (e.g., tools['cryptoprice']['cryptoprice_get'])
         for node in ast.find_all(nodes.Getitem):
             path = []
             current = node
@@ -155,7 +151,6 @@ class TemplateEngine:
                 if isinstance(key, nodes.Const) and isinstance(key.value, str):
                     path.append(key.value)
                 else:
-                    # Non-constant keys can't be resolved statically
                     path = []
                     break
                 current = current.node
