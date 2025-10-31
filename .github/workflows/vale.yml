@@ -19,7 +19,7 @@ jobs:
       - name: Vale linter
         uses: errata-ai/vale-action@v2
         with:
-          files: '["docs", "*.md"]'
+          files: docs
           fail_on_error: false
           version: 3.0.5
         env:
