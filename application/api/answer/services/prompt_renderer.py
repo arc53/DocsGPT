@@ -47,8 +47,12 @@ class PromptRenderer:
         """
         if not prompt_content:
             return ""
-        if not self._uses_template_syntax(prompt_content):
+
+        uses_template = self._uses_template_syntax(prompt_content)
+
+        if not uses_template:
             return self._apply_legacy_substitutions(prompt_content, docs_together)
+
         try:
             context = self.namespace_manager.build_context(
                 user_id=user_id,

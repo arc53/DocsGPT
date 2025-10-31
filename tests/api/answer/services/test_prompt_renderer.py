@@ -676,7 +676,9 @@ class TestStreamProcessorPromptRendering:
 
         assert result is None
 
-    def test_pre_fetch_tools_disabled_per_tool_config(self, mock_mongo_db):
+    def test_pre_fetch_tools_skips_tool_with_no_actions(self, mock_mongo_db):
+        from unittest.mock import MagicMock, patch
+
         from application.api.answer.services.stream_processor import StreamProcessor
         from application.core.mongo_db import MongoDB
         from bson import ObjectId
@@ -687,16 +689,30 @@ class TestStreamProcessorPromptRendering:
             "name": "memory",
             "user": "user1",
             "status": True,
-            "config": {"pre_fetch_enabled": False},
+            "config": {},
         }
         db["user_tools"].insert_one(tool_doc)
 
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
-        result = processor.pre_fetch_tools()
+        with patch(
+            "application.agents.tools.tool_manager.ToolManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
 
-        assert result is None
+            # Mock the tool instance
+            mock_tool = MagicMock()
+            mock_manager.load_tool.return_value = mock_tool
+
+            # Tool has no actions
+            mock_tool.get_actions_metadata.return_value = []
+
+            result = processor.pre_fetch_tools()
+
+            # Should return None when tool has no actions
+            assert result is None
 
     def test_pre_fetch_tools_enabled_by_default(self, mock_mongo_db, monkeypatch):
         from unittest.mock import MagicMock, patch
@@ -718,16 +734,27 @@ class TestStreamProcessorPromptRendering:
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
-        with patch("application.agents.tools.memory.MemoryTool") as mock_tool:
-            memory_instance = MagicMock()
-            memory_instance.execute_action.return_value = "Directory: /\n- file.txt"
-            mock_tool.return_value = memory_instance
+        with patch(
+            "application.agents.tools.tool_manager.ToolManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
+
+            # Mock the tool instance returned by load_tool
+            mock_tool = MagicMock()
+            mock_manager.load_tool.return_value = mock_tool
+
+            # Mock get_actions_metadata on the tool instance
+            mock_tool.get_actions_metadata.return_value = [
+                {"name": "memory_ls", "description": "List files", "parameters": {"properties": {}}}
+            ]
+            mock_tool.execute_action.return_value = "Directory: /\n- file.txt"
 
             result = processor.pre_fetch_tools()
 
             assert result is not None
             assert "memory" in result
-            assert result["memory"]["available"] is True
+            assert "memory_ls" in result["memory"]
 
     def test_pre_fetch_tools_no_tools_configured(self, mock_mongo_db):
         from application.api.answer.services.stream_processor import StreamProcessor
@@ -759,13 +786,25 @@ class TestStreamProcessorPromptRendering:
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
-        with patch("application.agents.tools.memory.MemoryTool") as mock_tool:
-            memory_instance = MagicMock()
-            memory_instance.execute_action.return_value = "Error: Something went wrong"
-            mock_tool.return_value = memory_instance
+        with patch(
+            "application.agents.tools.tool_manager.ToolManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
+
+            # Mock the tool instance
+            mock_tool = MagicMock()
+            mock_manager.load_tool.return_value = mock_tool
+
+            mock_tool.get_actions_metadata.return_value = [
+                {"name": "memory_ls", "description": "List files", "parameters": {"properties": {}}}
+            ]
+            # Simulate execution error
+            mock_tool.execute_action.side_effect = Exception("Tool error")
 
             result = processor.pre_fetch_tools()
 
+            # Should return None when all actions fail
             assert result is None
 
     def test_pre_fetch_tools_memory_returns_empty(self, mock_mongo_db):
@@ -788,11 +827,24 @@ class TestStreamProcessorPromptRendering:
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
-        with patch("application.agents.tools.memory.MemoryTool") as mock_tool:
-            memory_instance = MagicMock()
-            memory_instance.execute_action.return_value = ""
-            mock_tool.return_value = memory_instance
+        with patch(
+            "application.agents.tools.tool_manager.ToolManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
+
+            # Mock the tool instance
+            mock_tool = MagicMock()
+            mock_manager.load_tool.return_value = mock_tool
+
+            mock_tool.get_actions_metadata.return_value = [
+                {"name": "memory_ls", "description": "List files", "parameters": {"properties": {}}}
+            ]
+            # Return empty string
+            mock_tool.execute_action.return_value = ""
 
             result = processor.pre_fetch_tools()
 
-            assert result is None
+            # Empty result should still be included
+            assert result is not None
+            assert "memory" in result

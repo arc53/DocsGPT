@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Set
 
 from jinja2 import (
     Environment,
@@ -8,6 +8,7 @@ from jinja2 import (
     TemplateSyntaxError,
 )
 from jinja2.exceptions import UndefinedError
+from jinja2 import nodes
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class TemplateEngine:
         except TemplateSyntaxError:
             return False
 
-    def extract_variables(self, template_content: str) -> set[str]:
+    def extract_variables(self, template_content: str) -> Set[str]:
         """
         Extract all variable names from template.
 
@@ -96,3 +97,70 @@ class TemplateEngine:
             return set(self._env.get_template_module(ast).make_module().keys())
         except Exception:
             return set()
+
+    def extract_tool_usages(
+        self, template_content: str
+    ) -> Dict[str, Set[Optional[str]]]:
+        """
+        Extract tool and action references from a template.
+
+        Returns a mapping of tool names to a set of action names referenced.
+        If an action name is None, it indicates the template references the tool
+        without specifying a particular action (e.g. {{ tools.cryptoprice }}).
+        """
+        if not template_content:
+            return {}
+        try:
+            ast = self._env.parse(template_content)
+        except TemplateSyntaxError as e:
+            logger.warning(
+                f"extract_tool_usages: unable to parse template (line {e.lineno}): {e.message}"
+            )
+            return {}
+        except Exception as e:
+            logger.warning(
+                f"extract_tool_usages: unexpected error while parsing template: {str(e)}"
+            )
+            return {}
+
+        usages: Dict[str, Set[Optional[str]]] = {}
+
+        def record(path: List[str]) -> None:
+            if not path:
+                return
+            tool_name = path[0]
+            action_name = path[1] if len(path) > 1 else None
+            if not tool_name:
+                return
+            tool_entry = usages.setdefault(tool_name, set())
+            tool_entry.add(action_name)
+
+        # Handle dotted attribute access (e.g., tools.cryptoprice.cryptoprice_get.price)
+        for node in ast.find_all(nodes.Getattr):
+            path = []
+            current = node
+            while isinstance(current, nodes.Getattr):
+                path.append(current.attr)
+                current = current.node
+            if isinstance(current, nodes.Name) and current.name == "tools":
+                path.reverse()
+                record(path)
+
+        # Handle dictionary-style access (e.g., tools['cryptoprice']['cryptoprice_get'])
+        for node in ast.find_all(nodes.Getitem):
+            path = []
+            current = node
+            while isinstance(current, nodes.Getitem):
+                key = current.arg
+                if isinstance(key, nodes.Const) and isinstance(key.value, str):
+                    path.append(key.value)
+                else:
+                    # Non-constant keys can't be resolved statically
+                    path = []
+                    break
+                current = current.node
+            if path and isinstance(current, nodes.Name) and current.name == "tools":
+                path.reverse()
+                record(path)
+
+        return usages
