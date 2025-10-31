@@ -386,8 +386,20 @@
       "promptName": "Nombre del Prompt",
       "promptText": "Texto del Prompt",
       "save": "Guardar",
+      "cancel": "Cancelar",
       "nameExists": "El nombre ya existe",
-      "deleteConfirmation": "¿Estás seguro de que deseas eliminar el prompt '{{name}}'?"
+      "deleteConfirmation": "¿Estás seguro de que deseas eliminar el prompt '{{name}}'?",
+      "placeholderText": "Escribe tu texto de prompt aquí...",
+      "addExamplePlaceholder": "Por favor, resume este texto:",
+      "variablesLabel": "Variables",
+      "variablesSubtext": "Haz clic para insertar en el prompt",
+      "variablesDescription": "Haz clic para insertar en el prompt",
+      "systemVariables": "Variables del sistema",
+      "toolVariables": "Variables de herramientas",
+      "learnAboutPrompts": "Aprende sobre los Prompts →",
+      "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
+      "promptTypePublic": "público",
+      "promptTypePrivate": "privado"
     },
     "chunk": {
       "add": "Agregar Fragmento",

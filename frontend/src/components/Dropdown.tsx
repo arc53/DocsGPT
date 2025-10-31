@@ -60,7 +60,7 @@ function Dropdown<T extends DropdownOption>({
         }`}
       >
         {typeof selectedValue === 'string' ? (
-          <span className="dark:text-bright-gray truncate">
+          <span className={`dark:text-bright-gray truncate ${contentSize}`}>
             {selectedValue}
           </span>
         ) : (

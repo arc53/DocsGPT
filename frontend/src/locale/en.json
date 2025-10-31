@@ -386,8 +386,20 @@
       "promptName": "Prompt Name",
       "promptText": "Prompt Text",
       "save": "Save",
+      "cancel": "Cancel",
       "nameExists": "Name already exists",
-      "deleteConfirmation": "Are you sure you want to delete the prompt '{{name}}'?"
+      "deleteConfirmation": "Are you sure you want to delete the prompt '{{name}}'?",
+      "placeholderText": "Type your prompt text here...",
+      "addExamplePlaceholder": "Please summarize this text:",
+      "variablesLabel": "Variables",
+      "variablesSubtext": "Click To Insert Into Prompt",
+      "variablesDescription": "Click to insert into prompt",
+      "systemVariables": "Click to insert into prompt",
+      "toolVariables": "Tool Variables",
+      "learnAboutPrompts": "Learn about Prompts →",
+      "publicPromptEditDisabled": "Public prompts cannot be edited",
+      "promptTypePublic": "public",
+      "promptTypePrivate": "private"
     },
     "chunk": {
       "add": "Add Chunk",
