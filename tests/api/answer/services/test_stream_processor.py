@@ -441,7 +441,7 @@ class TestToolPreFetch:
                 "price": 2500.00
             }
 
-            tools_data = processor.pre_fetch_tools()
+            processor.pre_fetch_tools()
 
             # Should use default values when saved values are missing
             call_args = mock_tool.execute_action.call_args
