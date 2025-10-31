@@ -157,8 +157,8 @@ export default function Tools() {
       ) : (
         <div className="mt-8">
           <div className="relative flex flex-col">
-            <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="w-full sm:w-auto">
+            <div className="my-3 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="w-full max-w-full sm:w-auto sm:min-w-[280px]">
                 <Input
                   maxLength={256}
                   placeholder={t('settings.tools.searchPlaceholder')}
@@ -168,10 +168,11 @@ export default function Tools() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   borderVariant="thin"
+                  className="w-full min-w-0 min-w-[120px]"
                 />
               </div>
               <button
-                className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+                className="bg-purple-30 hover:bg-violets-are-blue flex h-[32px] w-full min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white sm:w-auto"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}

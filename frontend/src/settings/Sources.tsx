@@ -301,12 +301,12 @@ export default function Sources({
             {t('settings.sources.title')}
           </h2>
         </div>
-        <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="w-full sm:w-auto">
+        <div className="mb-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="w-full max-w-full sm:w-auto sm:min-w-[280px]">
             <label htmlFor="document-search-input" className="sr-only">
               {t('settings.sources.searchPlaceholder')}
             </label>
-            <div className="relative w-[280px]">
+            <div className="relative w-full min-w-0">
               <input
                 maxLength={256}
                 placeholder={t('settings.sources.searchPlaceholder')}
@@ -318,12 +318,12 @@ export default function Sources({
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="border-silver dark:border-silver/40 text-jet dark:text-bright-gray focus:border-silver dark:focus:border-silver/60 h-[32px] w-full rounded-full border bg-transparent px-3 text-sm outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="border-silver dark:border-silver/40 text-jet dark:text-bright-gray focus:border-silver dark:focus:border-silver/60 h-[32px] w-full min-w-0 min-w-[120px] rounded-full border bg-transparent px-3 text-sm outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
               />
             </div>
           </div>
           <button
-            className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white"
+            className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] w-full min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] whitespace-normal text-white sm:w-auto"
             title={t('settings.sources.addSource')}
             onClick={() => {
               setIsOnboarding(false);
