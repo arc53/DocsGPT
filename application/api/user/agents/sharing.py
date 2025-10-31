@@ -68,6 +68,7 @@ class SharedAgent(Resource):
                     and (source_doc := db.dereference(shared_agent.get("source")))
                     else ""
                 ),
+                "granted_origins": shared_agent.get("granted_origins", []),
                 "chunks": shared_agent.get("chunks", "0"),
                 "retriever": shared_agent.get("retriever", "classic"),
                 "prompt_id": shared_agent.get("prompt_id", "default"),
@@ -149,6 +150,7 @@ class SharedAgents(Resource):
                     "image": (
                         generate_image_url(agent["image"]) if agent.get("image") else ""
                     ),
+                    "granted_origins": agent.get("granted_origins", []),
                     "tools": agent.get("tools", []),
                     "tool_details": resolve_tool_details(agent.get("tools", [])),
                     "agent_type": agent.get("agent_type", ""),

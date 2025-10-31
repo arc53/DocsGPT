@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     CONNECTOR_REDIRECT_BASE_URI: Optional[str] = (
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
+    
+    # Origin Headers for frontend
+    FRONTEND_ORIGINS: list[str] = ["https://app.docsgpt.cloud/", "https://ent.docsgpt.cloud/"]
 
     # GitHub source
     GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
