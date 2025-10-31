@@ -8,3 +8,4 @@ ignore:
   - "**/coverage/**"
   - "**/public/**"
   - "**/static/**"
+vocab: DocsGPT

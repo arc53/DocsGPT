@@ -38,13 +38,6 @@ env
 URl
 agentic
 llama_cpp
-compatable
-fromatting
-qucik
-benefitial
-Additionaly
-expains
-upploaded
 parsable
 SDKs
 boolean
