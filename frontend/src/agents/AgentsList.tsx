@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -17,6 +18,7 @@ import { agentSectionsConfig } from './agents.config';
 import { Agent } from './types';
 
 export default function AgentsList() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const selectedAgent = useSelector(selectSelectedAgent);
@@ -33,11 +35,10 @@ export default function AgentsList() {
   return (
     <div className="p-4 md:p-12">
       <h1 className="text-eerie-black mb-0 text-[32px] font-bold lg:text-[40px] dark:text-[#E0E0E0]">
-        Agents
+        {t('agents.title')}
       </h1>
       <p className="dark:text-gray-4000 mt-5 text-[15px] text-[#71717A]">
-        Discover and create custom versions of DocsGPT that combine
-        instructions, extra knowledge, and any combination of skills
+        {t('agents.description')}
       </p>
       {agentSectionsConfig.map((sectionConfig) => (
         <AgentSection key={sectionConfig.id} config={sectionConfig} />
@@ -51,6 +52,7 @@ function AgentSection({
 }: {
   config: (typeof agentSectionsConfig)[number];
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
@@ -85,16 +87,18 @@ function AgentSection({
       <div className="flex w-full items-center justify-between">
         <div className="flex flex-col gap-2">
           <h2 className="text-[18px] font-semibold text-[#18181B] dark:text-[#E0E0E0]">
-            {config.title}
+            {t(`agents.sections.${config.id}.title`)}
           </h2>
-          <p className="text-[13px] text-[#71717A]">{config.description}</p>
+          <p className="text-[13px] text-[#71717A]">
+            {t(`agents.sections.${config.id}.description`)}
+          </p>
         </div>
         {config.showNewAgentButton && (
           <button
             className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
             onClick={() => navigate('/agents/new')}
           >
-            New Agent
+            {t('agents.newAgent')}
           </button>
         )}
       </div>
@@ -117,13 +121,13 @@ function AgentSection({
           </div>
         ) : (
           <div className="flex h-72 w-full flex-col items-center justify-center gap-3 text-base text-[#18181B] dark:text-[#E0E0E0]">
-            <p>{config.emptyStateDescription}</p>
+            <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
             {config.showNewAgentButton && (
               <button
                 className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
                 onClick={() => navigate('/agents/new')}
               >
-                New Agent
+                {t('agents.newAgent')}
               </button>
             )}
           </div>

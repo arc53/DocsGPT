@@ -27,8 +27,8 @@ import {
 } from '../preferences/preferenceSlice';
 import Upload from '../upload/Upload';
 import { formatDate } from '../utils/dateTimeUtils';
-import FileTreeComponent from '../components/FileTreeComponent';
-import ConnectorTreeComponent from '../components/ConnectorTreeComponent';
+import FileTree from '../components/FileTree';
+import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
 
 const formatTokens = (tokens: number): string => {
@@ -273,13 +273,13 @@ export default function Sources({
     <div className="mt-8 flex flex-col">
       {documentToView.isNested ? (
         documentToView.type === 'connector:file' ? (
-          <ConnectorTreeComponent
+          <ConnectorTree
             docId={documentToView.id || ''}
             sourceName={documentToView.name}
             onBackToDocuments={() => setDocumentToView(undefined)}
           />
         ) : (
-          <FileTreeComponent
+          <FileTree
             docId={documentToView.id || ''}
             sourceName={documentToView.name}
             onBackToDocuments={() => setDocumentToView(undefined)}

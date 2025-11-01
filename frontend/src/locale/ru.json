@@ -185,8 +185,58 @@
       "cancel": "Отмена",
       "addNew": "Добавить новое",
       "name": "Имя",
-      "type": "Тип"
-    }
+      "type": "Тип",
+      "mcp": {
+        "addServer": "Add MCP Server",
+        "editServer": "Edit Server",
+        "serverName": "Server Name",
+        "serverUrl": "Server URL",
+        "headerName": "Header Name",
+        "timeout": "Timeout (seconds)",
+        "testConnection": "Test Connection",
+        "testing": "Testing",
+        "saving": "Saving",
+        "save": "Save",
+        "cancel": "Cancel",
+        "noAuth": "No Authentication",
+        "oauthInProgress": "Waiting for OAuth completion...",
+        "oauthCompleted": "OAuth completed successfully",
+        "authType": "Authentication Type",
+        "defaultServerName": "My MCP Server",
+        "authTypes": {
+          "none": "No Authentication",
+          "apiKey": "API Key",
+          "bearer": "Bearer Token",
+          "oauth": "OAuth",
+          "basic": "Basic Authentication"
+        },
+        "placeholders": {
+          "serverUrl": "https://api.example.com",
+          "apiKey": "Your secret API key",
+          "bearerToken": "Your secret token",
+          "username": "Your username",
+          "password": "Your password",
+          "oauthScopes": "OAuth scopes (comma separated)"
+        },
+        "errors": {
+          "nameRequired": "Server name is required",
+          "urlRequired": "Server URL is required",
+          "invalidUrl": "Please enter a valid URL",
+          "apiKeyRequired": "API key is required",
+          "tokenRequired": "Bearer token is required",
+          "usernameRequired": "Username is required",
+          "passwordRequired": "Password is required",
+          "testFailed": "Connection test failed",
+          "saveFailed": "Failed to save MCP server",
+          "oauthFailed": "OAuth process failed or was cancelled",
+          "oauthTimeout": "OAuth process timed out, please try again",
+          "timeoutRange": "Timeout must be between 1 and 300 seconds"
+        }
+      }
+    },
+    "scrollTabsLeft": "Прокрутить вкладки влево",
+    "tabsAriaLabel": "Вкладки настроек",
+    "scrollTabsRight": "Прокрутить вкладки вправо"
   },
   "modals": {
     "uploadDoc": {
@@ -218,8 +268,8 @@
         "addQuery": "Добавить запрос"
       },
       "drag": {
-        "title": "Загрузить исходный файл",
-        "description": "Перетащите файл сюда, чтобы добавить его как источник"
+        "title": "Перетащите вложения сюда",
+        "description": "Отпустите, чтобы загрузить ваши вложения"
       },
       "progress": {
         "upload": "Идет загрузка",
@@ -306,7 +356,8 @@
       "disclaimer": "Ваш ключ будет показан только один раз.",
       "copy": "Копировать",
       "copied": "Скопировано",
-      "confirm": "Я сохранил ключ"
+      "confirm": "Я сохранил ключ",
+      "apiKeyLabel": "API Key"
     },
     "deleteConv": {
       "confirm": "Вы уверены, что хотите удалить все разговоры?",
@@ -324,18 +375,31 @@
       "apiKeyLabel": "API ключ / OAuth",
       "apiKeyPlaceholder": "Введите API ключ / OAuth",
       "addButton": "Добавить инструмент",
-      "closeButton": "Закрыть"
+      "closeButton": "Закрыть",
+      "customNamePlaceholder": "Enter custom name (optional)"
     },
     "prompts": {
-      "addPrompt": "Добавить подсказку",
-      "addDescription": "Добавить вашу пользовательскую подсказку и сохранить её в DocsGPT",
-      "editPrompt": "Редактировать подсказку",
-      "editDescription": "Редактировать вашу пользовательскую подсказку и сохранить её в DocsGPT",
-      "promptName": "Название подсказки",
-      "promptText": "Текст подсказки",
+      "addPrompt": "Добавить промпт",
+      "addDescription": "Добавьте свой собственный промпт и сохраните его в DocsGPT",
+      "editPrompt": "Редактировать промпт",
+      "editDescription": "Отредактируйте свой промпт и сохраните его в DocsGPT",
+      "promptName": "Название промпта",
+      "promptText": "Текст промпта",
       "save": "Сохранить",
-      "nameExists": "Название уже существует",
-      "deleteConfirmation": "Вы уверены, что хотите удалить подсказку «{{name}}»?"
+      "cancel": "Отмена",
+      "nameExists": "Имя уже существует",
+      "deleteConfirmation": "Вы уверены, что хотите удалить промпт «{{name}}»?",
+      "placeholderText": "Введите текст вашего промпта здесь...",
+      "addExamplePlaceholder": "Пожалуйста, кратко изложите этот текст:",
+      "variablesLabel": "Переменные",
+      "variablesSubtext": "Нажмите, чтобы вставить в промпт",
+      "variablesDescription": "Нажмите, чтобы вставить в промпт",
+      "systemVariables": "Системные переменные",
+      "toolVariables": "Переменные инструментов",
+      "learnAboutPrompts": "Узнать о промптах →",
+      "publicPromptEditDisabled": "Публичные промпты нельзя редактировать",
+      "promptTypePublic": "публичный",
+      "promptTypePrivate": "приватный"
     },
     "chunk": {
       "add": "Добавить фрагмент",
@@ -349,6 +413,22 @@
       "cancel": "Отмена",
       "delete": "Удалить",
       "deleteConfirmation": "Вы уверены, что хотите удалить этот фрагмент?"
+    },
+    "addAction": {
+      "title": "New Action",
+      "actionNamePlaceholder": "Action Name",
+      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
+      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
+      "addButton": "Add"
+    },
+    "agentDetails": {
+      "title": "Access Details",
+      "publicLink": "Public Link",
+      "apiKey": "API Key",
+      "webhookUrl": "Webhook URL",
+      "generate": "Generate",
+      "test": "Test",
+      "learnMore": "Learn more"
     }
   },
   "sharedConv": {
@@ -391,6 +471,153 @@
       "attach": "Прикрепить",
       "remove": "Удалить вложение"
     },
-    "retry": "Повторить"
+    "retry": "Повторить",
+    "reasoning": "Рассуждение"
+  },
+  "agents": {
+    "title": "Агенты",
+    "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
+    "newAgent": "Новый Агент",
+    "backToAll": "Вернуться ко всем агентам",
+    "sections": {
+      "template": {
+        "title": "От DocsGPT",
+        "description": "Агенты, предоставленные DocsGPT",
+        "emptyState": "Шаблонные агенты не найдены."
+      },
+      "user": {
+        "title": "Мои",
+        "description": "Агенты, созданные или опубликованные вами",
+        "emptyState": "У вас пока нет созданных агентов."
+      },
+      "shared": {
+        "title": "Поделились со мной",
+        "description": "Агенты, импортированные по публичной ссылке",
+        "emptyState": "Общие агенты не найдены."
+      }
+    },
+    "form": {
+      "headings": {
+        "new": "Новый Агент",
+        "edit": "Редактировать Агента",
+        "draft": "Новый Агент (Черновик)"
+      },
+      "buttons": {
+        "publish": "Опубликовать",
+        "save": "Сохранить",
+        "saveDraft": "Сохранить Черновик",
+        "cancel": "Отмена",
+        "delete": "Удалить",
+        "logs": "Логи",
+        "accessDetails": "Детали Доступа",
+        "add": "Добавить"
+      },
+      "sections": {
+        "meta": "Мета",
+        "source": "Источник",
+        "prompt": "Промпт",
+        "tools": "Инструменты",
+        "agentType": "Тип агента",
+        "advanced": "Расширенные",
+        "preview": "Предпросмотр"
+      },
+      "placeholders": {
+        "agentName": "Имя агента",
+        "describeAgent": "Опишите вашего агента",
+        "selectSources": "Выберите источники",
+        "chunksPerQuery": "Фрагментов на запрос",
+        "selectType": "Выберите тип",
+        "selectTools": "Выберите инструменты",
+        "enterTokenLimit": "Введите лимит токенов",
+        "enterRequestLimit": "Введите лимит запросов"
+      },
+      "sourcePopup": {
+        "title": "Выберите Источники",
+        "searchPlaceholder": "Поиск источников...",
+        "noOptionsMessage": "Нет доступных источников"
+      },
+      "toolsPopup": {
+        "title": "Выберите Инструменты",
+        "searchPlaceholder": "Поиск инструментов...",
+        "noOptionsMessage": "Нет доступных инструментов"
+      },
+      "upload": {
+        "clickToUpload": "Нажмите для загрузки",
+        "dragAndDrop": " или перетащите"
+      },
+      "agentTypes": {
+        "classic": "Классический",
+        "react": "ReAct"
+      },
+      "advanced": {
+        "jsonSchema": "Схема ответа JSON",
+        "jsonSchemaDescription": "Определите схему JSON для применения структурированного формата вывода",
+        "validJson": "Валидный JSON",
+        "invalidJson": "Невалидный JSON - исправьте для сохранения",
+        "tokenLimiting": "Лимит токенов",
+        "tokenLimitingDescription": "Ограничить ежедневное общее количество токенов, которые может использовать этот агент",
+        "requestLimiting": "Лимит запросов",
+        "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту"
+      },
+      "preview": {
+        "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
+      },
+      "externalKb": "Внешняя БЗ"
+    },
+    "logs": {
+      "title": "Логи Агента",
+      "lastUsedAt": "Последнее использование",
+      "noUsageHistory": "Нет истории использования",
+      "tableHeader": "Логи конечной точки агента"
+    },
+    "shared": {
+      "notFound": "Агент не найден. Убедитесь, что агент является общим."
+    },
+    "preview": {
+      "testMessage": "Протестируйте своего агента здесь. Опубликованные агенты можно использовать в разговорах."
+    },
+    "deleteConfirmation": "Вы уверены, что хотите удалить этого агента?"
+  },
+  "components": {
+    "fileUpload": {
+      "clickToUpload": "Click to upload or drag and drop",
+      "dropFiles": "Drop the files here",
+      "fileTypes": "PNG, JPG, JPEG up to",
+      "sizeLimitUnit": "MB",
+      "fileSizeError": "File exceeds {{size}}MB limit"
+    }
+  },
+  "pageNotFound": {
+    "title": "404",
+    "message": "The page you are looking for does not exist.",
+    "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "Поиск файлов и папок...",
+    "itemsSelected": "{{count}} выбрано",
+    "name": "Имя",
+    "lastModified": "Последнее изменение",
+    "size": "Размер"
+  },
+  "actionButtons": {
+    "openNewChat": "Открыть новый чат",
+    "share": "Поделиться"
+  },
+  "mermaid": {
+    "downloadOptions": "Параметры загрузки",
+    "viewCode": "Просмотр кода",
+    "decreaseZoom": "Уменьшить масштаб",
+    "resetZoom": "Сбросить масштаб",
+    "increaseZoom": "Увеличить масштаб"
+  },
+  "navigation": {
+    "agents": "Агенты"
+  },
+  "notification": {
+    "ariaLabel": "Уведомление",
+    "closeAriaLabel": "Закрыть уведомление"
+  },
+  "prompts": {
+    "textAriaLabel": "Текст подсказки"
   }
 }

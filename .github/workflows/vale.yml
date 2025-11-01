@@ -1,0 +1,26 @@
+name: Vale Documentation Linter
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**/*.md'
+      - 'docs/**/*.mdx'
+      - '**/*.md'
+      - '.vale.ini'
+      - '.github/styles/**'
+
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Vale linter
+        uses: errata-ai/vale-action@v2
+        with:
+          files: docs
+          fail_on_error: false
+          version: 3.0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

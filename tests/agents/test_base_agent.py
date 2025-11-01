@@ -64,17 +64,14 @@ class TestBaseAgentBuildMessages:
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
-        system_prompt = "System: {summaries}"
+        system_prompt = "System prompt content"
         query = "What is Python?"
-        retrieved_data = [
-            {"text": "Python is a programming language", "filename": "python.txt"}
-        ]
 
-        messages = agent._build_messages(system_prompt, query, retrieved_data)
+        messages = agent._build_messages(system_prompt, query)
 
         assert len(messages) >= 2
         assert messages[0]["role"] == "system"
-        assert "Python is a programming language" in messages[0]["content"]
+        assert messages[0]["content"] == system_prompt
         assert messages[-1]["role"] == "user"
         assert messages[-1]["content"] == query
 
@@ -88,11 +85,10 @@ class TestBaseAgentBuildMessages:
         agent_base_params["chat_history"] = sample_chat_history
         agent = ClassicAgent(**agent_base_params)
 
-        system_prompt = "System: {summaries}"
+        system_prompt = "System prompt"
         query = "New question?"
-        retrieved_data = [{"text": "Data", "filename": "file.txt"}]
 
-        messages = agent._build_messages(system_prompt, query, retrieved_data)
+        messages = agent._build_messages(system_prompt, query)
 
         user_messages = [m for m in messages if m["role"] == "user"]
         assistant_messages = [m for m in messages if m["role"] == "assistant"]
@@ -118,9 +114,7 @@ class TestBaseAgentBuildMessages:
         agent_base_params["chat_history"] = tool_call_history
         agent = ClassicAgent(**agent_base_params)
 
-        messages = agent._build_messages(
-            "System: {summaries}", "query", [{"text": "data", "filename": "file.txt"}]
-        )
+        messages = agent._build_messages("System prompt", "query")
 
         tool_messages = [m for m in messages if m["role"] == "tool"]
         assert len(tool_messages) > 0
@@ -129,32 +123,25 @@ class TestBaseAgentBuildMessages:
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
-        retrieved_data = [{"text": "Document without filename or title"}]
 
-        messages = agent._build_messages("System: {summaries}", "query", retrieved_data)
+        messages = agent._build_messages("System prompt", "query")
 
         assert messages[0]["role"] == "system"
-        assert "Document without filename" in messages[0]["content"]
+        assert messages[0]["content"] == "System prompt"
 
     def test_build_messages_uses_title_as_fallback(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
-        retrieved_data = [{"text": "Data", "title": "Title Doc"}]
 
-        messages = agent._build_messages("System: {summaries}", "query", retrieved_data)
-
-        assert "Title Doc" in messages[0]["content"]
+        agent._build_messages("System prompt", "query")
 
     def test_build_messages_uses_source_as_fallback(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
-        retrieved_data = [{"text": "Data", "source": "source.txt"}]
 
-        messages = agent._build_messages("System: {summaries}", "query", retrieved_data)
-
-        assert "source.txt" in messages[0]["content"]
+        agent._build_messages("System prompt", "query")
 
 
 @pytest.mark.unit
@@ -473,40 +460,6 @@ class TestBaseAgentToolExecution:
         assert len(truncated) == 1
         assert len(truncated[0]["result"]) <= 53
         assert truncated[0]["result"].endswith("...")
-
-
-@pytest.mark.unit
-class TestBaseAgentRetrieverSearch:
-
-    def test_retriever_search(
-        self,
-        agent_base_params,
-        mock_retriever,
-        mock_llm_creator,
-        mock_llm_handler_creator,
-        log_context,
-    ):
-        agent = ClassicAgent(**agent_base_params)
-
-        results = agent._retriever_search(mock_retriever, "test query", log_context)
-
-        assert len(results) == 2
-        mock_retriever.search.assert_called_once_with("test query")
-
-    def test_retriever_search_logs_context(
-        self,
-        agent_base_params,
-        mock_retriever,
-        mock_llm_creator,
-        mock_llm_handler_creator,
-        log_context,
-    ):
-        agent = ClassicAgent(**agent_base_params)
-
-        agent._retriever_search(mock_retriever, "test query", log_context)
-
-        assert len(log_context.stacks) == 1
-        assert log_context.stacks[0]["component"] == "retriever"
 
 
 @pytest.mark.unit

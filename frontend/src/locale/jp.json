@@ -185,8 +185,58 @@
       "cancel": "キャンセル",
       "addNew": "新規追加",
       "name": "名前",
-      "type": "タイプ"
-    }
+      "type": "タイプ",
+      "mcp": {
+        "addServer": "Add MCP Server",
+        "editServer": "Edit Server",
+        "serverName": "Server Name",
+        "serverUrl": "Server URL",
+        "headerName": "Header Name",
+        "timeout": "Timeout (seconds)",
+        "testConnection": "Test Connection",
+        "testing": "Testing",
+        "saving": "Saving",
+        "save": "Save",
+        "cancel": "Cancel",
+        "noAuth": "No Authentication",
+        "oauthInProgress": "Waiting for OAuth completion...",
+        "oauthCompleted": "OAuth completed successfully",
+        "authType": "Authentication Type",
+        "defaultServerName": "My MCP Server",
+        "authTypes": {
+          "none": "No Authentication",
+          "apiKey": "API Key",
+          "bearer": "Bearer Token",
+          "oauth": "OAuth",
+          "basic": "Basic Authentication"
+        },
+        "placeholders": {
+          "serverUrl": "https://api.example.com",
+          "apiKey": "Your secret API key",
+          "bearerToken": "Your secret token",
+          "username": "Your username",
+          "password": "Your password",
+          "oauthScopes": "OAuth scopes (comma separated)"
+        },
+        "errors": {
+          "nameRequired": "Server name is required",
+          "urlRequired": "Server URL is required",
+          "invalidUrl": "Please enter a valid URL",
+          "apiKeyRequired": "API key is required",
+          "tokenRequired": "Bearer token is required",
+          "usernameRequired": "Username is required",
+          "passwordRequired": "Password is required",
+          "testFailed": "Connection test failed",
+          "saveFailed": "Failed to save MCP server",
+          "oauthFailed": "OAuth process failed or was cancelled",
+          "oauthTimeout": "OAuth process timed out, please try again",
+          "timeoutRange": "Timeout must be between 1 and 300 seconds"
+        }
+      }
+    },
+    "scrollTabsLeft": "タブを左にスクロール",
+    "tabsAriaLabel": "設定タブ",
+    "scrollTabsRight": "タブを右にスクロール"
   },
   "modals": {
     "uploadDoc": {
@@ -218,8 +268,8 @@
         "addQuery": "クエリを追加"
       },
       "drag": {
-        "title": "ソースファイルをアップロード",
-        "description": "ファイルをここにドロップしてソースとして追加してください"
+        "title": "添付ファイルをここにドロップ",
+        "description": "リリースして添付ファイルをアップロード"
       },
       "progress": {
         "upload": "アップロード中",
@@ -306,7 +356,8 @@
       "disclaimer": "キーが表示されるのはこのときだけです。",
       "copy": "コピー",
       "copied": "コピーしました",
-      "confirm": "キーを保存しました"
+      "confirm": "キーを保存しました",
+      "apiKeyLabel": "API Key"
     },
     "deleteConv": {
       "confirm": "すべての会話を削除してもよろしいですか?",
@@ -324,18 +375,31 @@
       "apiKeyLabel": "APIキー / OAuth",
       "apiKeyPlaceholder": "APIキー / OAuthを入力してください",
       "addButton": "ツールを追加",
-      "closeButton": "閉じる"
+      "closeButton": "閉じる",
+      "customNamePlaceholder": "Enter custom name (optional)"
     },
     "prompts": {
       "addPrompt": "プロンプトを追加",
-      "addDescription": "カスタムプロンプトを追加してDocsGPTに保存",
+      "addDescription": "カスタムプロンプトを追加して DocsGPT に保存します",
       "editPrompt": "プロンプトを編集",
-      "editDescription": "カスタムプロンプトを編集してDocsGPTに保存",
+      "editDescription": "カスタムプロンプトを編集して DocsGPT に保存します",
       "promptName": "プロンプト名",
-      "promptText": "プロンプトテキスト",
+      "promptText": "プロンプトのテキスト",
       "save": "保存",
-      "nameExists": "名前が既に存在します",
-      "deleteConfirmation": "プロンプト「{{name}}」を削除してもよろしいですか？"
+      "cancel": "キャンセル",
+      "nameExists": "この名前はすでに存在します",
+      "deleteConfirmation": "プロンプト『{{name}}』を削除してもよろしいですか？",
+      "placeholderText": "ここにプロンプトのテキストを入力してください…",
+      "addExamplePlaceholder": "このテキストを要約してください：",
+      "variablesLabel": "変数",
+      "variablesSubtext": "クリックしてプロンプトに挿入",
+      "variablesDescription": "クリックしてプロンプトに挿入",
+      "systemVariables": "システム変数",
+      "toolVariables": "ツール変数",
+      "learnAboutPrompts": "プロンプトについて学ぶ →",
+      "publicPromptEditDisabled": "公開プロンプトは編集できません",
+      "promptTypePublic": "公開",
+      "promptTypePrivate": "非公開"
     },
     "chunk": {
       "add": "チャンクを追加",
@@ -349,6 +413,22 @@
       "cancel": "キャンセル",
       "delete": "削除",
       "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
+    },
+    "addAction": {
+      "title": "New Action",
+      "actionNamePlaceholder": "Action Name",
+      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
+      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
+      "addButton": "Add"
+    },
+    "agentDetails": {
+      "title": "Access Details",
+      "publicLink": "Public Link",
+      "apiKey": "API Key",
+      "webhookUrl": "Webhook URL",
+      "generate": "Generate",
+      "test": "Test",
+      "learnMore": "Learn more"
     }
   },
   "sharedConv": {
@@ -391,6 +471,153 @@
       "attach": "添付",
       "remove": "添付ファイルを削除"
     },
-    "retry": "再試行"
+    "retry": "再試行",
+    "reasoning": "推論"
+  },
+  "agents": {
+    "title": "エージェント",
+    "description": "指示、追加知識、スキルの組み合わせを含むDocsGPTのカスタムバージョンを発見して作成します",
+    "newAgent": "新しいエージェント",
+    "backToAll": "すべてのエージェントに戻る",
+    "sections": {
+      "template": {
+        "title": "DocsGPT提供",
+        "description": "DocsGPTが提供するエージェント",
+        "emptyState": "テンプレートエージェントが見つかりません。"
+      },
+      "user": {
+        "title": "自分のエージェント",
+        "description": "あなたが作成または公開したエージェント",
+        "emptyState": "まだ作成されたエージェントがありません。"
+      },
+      "shared": {
+        "title": "共有されたエージェント",
+        "description": "公開リンクを使用してインポートされたエージェント",
+        "emptyState": "共有エージェントが見つかりません。"
+      }
+    },
+    "form": {
+      "headings": {
+        "new": "新しいエージェント",
+        "edit": "エージェントを編集",
+        "draft": "新しいエージェント（下書き）"
+      },
+      "buttons": {
+        "publish": "公開",
+        "save": "保存",
+        "saveDraft": "下書きを保存",
+        "cancel": "キャンセル",
+        "delete": "削除",
+        "logs": "ログ",
+        "accessDetails": "アクセス詳細",
+        "add": "追加"
+      },
+      "sections": {
+        "meta": "メタ",
+        "source": "ソース",
+        "prompt": "プロンプト",
+        "tools": "ツール",
+        "agentType": "エージェントタイプ",
+        "advanced": "詳細設定",
+        "preview": "プレビュー"
+      },
+      "placeholders": {
+        "agentName": "エージェント名",
+        "describeAgent": "エージェントを説明してください",
+        "selectSources": "ソースを選択",
+        "chunksPerQuery": "クエリごとのチャンク数",
+        "selectType": "タイプを選択",
+        "selectTools": "ツールを選択",
+        "enterTokenLimit": "トークン制限を入力",
+        "enterRequestLimit": "リクエスト制限を入力"
+      },
+      "sourcePopup": {
+        "title": "ソースを選択",
+        "searchPlaceholder": "ソースを検索...",
+        "noOptionsMessage": "利用可能なソースがありません"
+      },
+      "toolsPopup": {
+        "title": "ツールを選択",
+        "searchPlaceholder": "ツールを検索...",
+        "noOptionsMessage": "利用可能なツールがありません"
+      },
+      "upload": {
+        "clickToUpload": "クリックしてアップロード",
+        "dragAndDrop": " またはドラッグ＆ドロップ"
+      },
+      "agentTypes": {
+        "classic": "クラシック",
+        "react": "ReAct"
+      },
+      "advanced": {
+        "jsonSchema": "JSON応答スキーマ",
+        "jsonSchemaDescription": "構造化された出力形式を適用するためのJSONスキーマを定義します",
+        "validJson": "有効なJSON",
+        "invalidJson": "無効なJSON - 保存を有効にするには修正してください",
+        "tokenLimiting": "トークン制限",
+        "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
+        "requestLimiting": "リクエスト制限",
+        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します"
+      },
+      "preview": {
+        "publishedPreview": "公開されたエージェントはここでプレビューできます"
+      },
+      "externalKb": "外部KB"
+    },
+    "logs": {
+      "title": "エージェントログ",
+      "lastUsedAt": "最終使用日時",
+      "noUsageHistory": "使用履歴がありません",
+      "tableHeader": "エージェントエンドポイントログ"
+    },
+    "shared": {
+      "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。"
+    },
+    "preview": {
+      "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。"
+    },
+    "deleteConfirmation": "このエージェントを削除してもよろしいですか？"
+  },
+  "components": {
+    "fileUpload": {
+      "clickToUpload": "Click to upload or drag and drop",
+      "dropFiles": "Drop the files here",
+      "fileTypes": "PNG, JPG, JPEG up to",
+      "sizeLimitUnit": "MB",
+      "fileSizeError": "File exceeds {{size}}MB limit"
+    }
+  },
+  "pageNotFound": {
+    "title": "404",
+    "message": "The page you are looking for does not exist.",
+    "goHome": "Go Back Home"
+  },
+  "filePicker": {
+    "searchPlaceholder": "ファイルとフォルダを検索...",
+    "itemsSelected": "{{count}} 件選択済み",
+    "name": "名前",
+    "lastModified": "最終更新日",
+    "size": "サイズ"
+  },
+  "actionButtons": {
+    "openNewChat": "新しいチャットを開く",
+    "share": "共有"
+  },
+  "mermaid": {
+    "downloadOptions": "ダウンロードオプション",
+    "viewCode": "コードを表示",
+    "decreaseZoom": "ズームアウト",
+    "resetZoom": "ズームをリセット",
+    "increaseZoom": "ズームイン"
+  },
+  "navigation": {
+    "agents": "エージェント"
+  },
+  "notification": {
+    "ariaLabel": "通知",
+    "closeAriaLabel": "通知を閉じる"
+  },
+  "prompts": {
+    "textAriaLabel": "プロンプトテキスト"
   }
 }

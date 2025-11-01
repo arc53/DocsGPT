@@ -74,6 +74,17 @@ def count_tokens_docs(docs):
     return tokens
 
 
+def calculate_doc_token_budget(
+    gpt_model: str = "gpt-4o", history_token_limit: int = 2000
+) -> int:
+    total_context = settings.LLM_TOKEN_LIMITS.get(
+        gpt_model, settings.DEFAULT_LLM_TOKEN_LIMIT
+    )
+    reserved = sum(settings.RESERVED_TOKENS.values())
+    doc_budget = total_context - history_token_limit - reserved
+    return max(doc_budget, 1000)
+
+
 def get_missing_fields(data, required_fields):
     """Check for missing required fields. Returns list of missing field names."""
     return [field for field in required_fields if field not in data]
@@ -141,8 +152,8 @@ def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
         max_token_limit
         if max_token_limit
         and max_token_limit
-        < settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
-        else settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_MAX_HISTORY)
+        < settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_LLM_TOKEN_LIMIT)
+        else settings.LLM_TOKEN_LIMITS.get(gpt_model, settings.DEFAULT_LLM_TOKEN_LIMIT)
     )
 
     if not history:
@@ -187,3 +198,44 @@ def generate_image_url(image_path):
     else:
         base_url = getattr(settings, "API_URL", "http://localhost:7091")
         return f"{base_url}/api/images/{image_path}"
+
+
+def clean_text_for_tts(text: str) -> str:
+    """
+    clean text for Text-to-Speech processing.
+    """
+    # Handle code blocks and links
+    text = re.sub(r'```mermaid[\s\S]*?```', ' flowchart, ', text)  ## ```mermaid...```
+    text = re.sub(r'```[\s\S]*?```', ' code block, ', text)  ## ```code```
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  ## [text](url)
+    text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', '', text)  ## ![alt](url)
+
+    # Remove markdown formatting
+    text = re.sub(r'`([^`]+)`', r'\1', text)  ## `code`
+    text = re.sub(r'\{([^}]*)\}', r' \1 ', text)  ## {text}
+    text = re.sub(r'[{}]', ' ', text)  ## unmatched {}
+    text = re.sub(r'\[([^\]]+)\]', r' \1 ', text)  ## [text]
+    text = re.sub(r'[\[\]]', ' ', text)  ## unmatched []
+    text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)  ## **bold** __bold__
+    text = re.sub(r'(\*|_)(.*?)\1', r'\2', text)  ## *italic* _italic_
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  ## # headers
+    text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)  ## > blockquotes
+    text = re.sub(r'^[\s]*[-\*\+]\s+', '', text, flags=re.MULTILINE)  ## - * + lists
+    text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)  ## 1. numbered lists
+    text = re.sub(r'^[\*\-_]{3,}\s*$', '', text, flags=re.MULTILINE)  ## --- *** ___ rules
+    text = re.sub(r'<[^>]*>', '', text)  ## <html> tags
+
+    #Remove non-ASCII (emojis, special Unicode)
+    text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
+
+    #Replace special sequences
+    text = re.sub(r'-->', ', ', text)  ## -->
+    text = re.sub(r'<--', ', ', text)  ## <--
+    text = re.sub(r'=>', ', ', text)  ## =>
+    text = re.sub(r'::', ' ', text)  ## ::
+
+    #Normalize whitespace
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+
+    return text

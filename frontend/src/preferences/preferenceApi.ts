@@ -90,9 +90,27 @@ export function getLocalApiKey(): string | null {
   return key;
 }
 
-export function getLocalRecentDocs(): Doc[] | null {
-  const docs = localStorage.getItem('DocsGPTRecentDocs');
-  return docs ? (JSON.parse(docs) as Doc[]) : null;
+export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
+  const docsString = localStorage.getItem('DocsGPTRecentDocs');
+  const selectedDocs = docsString ? (JSON.parse(docsString) as Doc[]) : null;
+
+  if (!sourceDocs || !selectedDocs || selectedDocs.length === 0) {
+    return selectedDocs;
+  }
+  const isDocAvailable = (selected: Doc) => {
+    return sourceDocs.some((source) => {
+      if (source.id && selected.id) {
+        return source.id === selected.id;
+      }
+      return source.name === selected.name && source.date === selected.date;
+    });
+  };
+
+  const validDocs = selectedDocs.filter(isDocAvailable);
+
+  setLocalRecentDocs(validDocs.length > 0 ? validDocs : null);
+
+  return validDocs.length > 0 ? validDocs : null;
 }
 
 export function getLocalPrompt(): string | null {

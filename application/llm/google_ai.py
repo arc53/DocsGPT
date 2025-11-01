@@ -163,10 +163,14 @@ class GoogleLLM(BaseLLM):
                         if "text" in item:
                             parts.append(types.Part.from_text(text=item["text"]))
                         elif "function_call" in item:
+                            # Remove null values from args to avoid API errors
+                            cleaned_args = self._remove_null_values(
+                                item["function_call"]["args"]
+                            )
                             parts.append(
                                 types.Part.from_function_call(
                                     name=item["function_call"]["name"],
-                                    args=item["function_call"]["args"],
+                                    args=cleaned_args,
                                 )
                             )
                         elif "function_response" in item:
@@ -386,7 +390,7 @@ class GoogleLLM(BaseLLM):
                 elif hasattr(chunk, "text"):
                     yield chunk.text
         finally:
-            if hasattr(response, 'close'):
+            if hasattr(response, "close"):
                 response.close()
 
     def _supports_tools(self):
