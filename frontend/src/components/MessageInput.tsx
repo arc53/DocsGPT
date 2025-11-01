@@ -90,13 +90,10 @@ export default function MessageInput({
   const uploadFiles = useCallback(
     (files: File[]) => {
       const apiHost = import.meta.env.VITE_API_HOST;
-
-      files.forEach((file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const xhr = new XMLHttpRequest();
+      
+      // Create mapping of files to unique IDs for tracking
+      const fileAttachments = files.map((file) => {
         const uniqueId = crypto.randomUUID();
-
         const newAttachment = {
           id: uniqueId,
           fileName: file.name,
@@ -104,59 +101,123 @@ export default function MessageInput({
           status: 'uploading' as const,
           taskId: '',
         };
-
+        
         dispatch(addAttachment(newAttachment));
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
+        return { file, attachment: newAttachment };
+      });
+      
+      // Create single FormData with all files
+      const formData = new FormData();
+      fileAttachments.forEach(({ file }) => {
+        formData.append('file', file);
+      });
+      
+      const xhr = new XMLHttpRequest();
+      
+      // Track overall upload progress
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          // Update progress for all uploading files
+          fileAttachments.forEach(({ attachment }) => {
             dispatch(
               updateAttachment({
-                id: uniqueId,
+                id: attachment.id,
                 updates: { progress },
               }),
             );
-          }
-        });
-
-        xhr.onload = () => {
-          if (xhr.status === 200) {
+          });
+        }
+      });
+      
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
             const response = JSON.parse(xhr.responseText);
-            if (response.task_id) {
+            
+            // Handle new batch response format
+            if (response.results && Array.isArray(response.results)) {
+              response.results.forEach((result: any, index: number) => {
+                const fileAttachment = fileAttachments[index];
+                if (!fileAttachment) return;
+                
+                if (result.success && result.task_id) {
+                  dispatch(
+                    updateAttachment({
+                      id: fileAttachment.attachment.id,
+                      updates: {
+                        taskId: result.task_id,
+                        status: 'processing',
+                        progress: 10,
+                      },
+                    }),
+                  );
+                } else {
+                  dispatch(
+                    updateAttachment({
+                      id: fileAttachment.attachment.id,
+                      updates: { 
+                        status: 'failed',
+                        error: result.error || result.message || 'Upload failed'
+                      },
+                    }),
+                  );
+                }
+              });
+            } else {
+              // Fallback for single file response (backward compatibility)
+              const firstAttachment = fileAttachments[0];
+              if (firstAttachment && response.task_id) {
+                dispatch(
+                  updateAttachment({
+                    id: firstAttachment.attachment.id,
+                    updates: {
+                      taskId: response.task_id,
+                      status: 'processing',
+                      progress: 10,
+                    },
+                  }),
+                );
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing upload response:', error);
+            fileAttachments.forEach(({ attachment }) => {
               dispatch(
                 updateAttachment({
-                  id: uniqueId,
-                  updates: {
-                    taskId: response.task_id,
-                    status: 'processing',
-                    progress: 10,
-                  },
+                  id: attachment.id,
+                  updates: { status: 'failed' },
                 }),
               );
-            }
-          } else {
+            });
+          }
+        } else {
+          // Handle HTTP error status
+          fileAttachments.forEach(({ attachment }) => {
             dispatch(
               updateAttachment({
-                id: uniqueId,
+                id: attachment.id,
                 updates: { status: 'failed' },
               }),
             );
-          }
-        };
-
-        xhr.onerror = () => {
+          });
+        }
+      };
+      
+      xhr.onerror = () => {
+        fileAttachments.forEach(({ attachment }) => {
           dispatch(
             updateAttachment({
-              id: uniqueId,
+              id: attachment.id,
               updates: { status: 'failed' },
             }),
           );
-        };
-
-        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        xhr.send(formData);
-      });
+        });
+      };
+      
+      xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.send(formData);
     },
     [dispatch, token],
   );
