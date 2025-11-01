@@ -45,13 +45,6 @@ class StoreAttachment(Resource):
             if single_file:
                 files = [single_file]
         
-        current_app.logger.info(f"request.files keys: {list(request.files.keys())}")
-        current_app.logger.info(f"request.files.getlist('file'): {len(files)} items")
-        
-        current_app.logger.info(f"Received {len(files)} file(s) for upload")
-        for idx, f in enumerate(files):
-            current_app.logger.info(f"File {idx}: {f.filename if f else 'None'}, size: {f.content_length if f else 'N/A'}")
-        
         if not files or all(f.filename == "" for f in files):
             return make_response(
                 jsonify({"status": "error", "message": "Missing file(s)"}),
@@ -79,20 +72,12 @@ class StoreAttachment(Resource):
             original_file_count = len(files)
             
             for idx, file in enumerate(files):
-                if file.filename == "":
-                    current_app.logger.warning(f"Skipping file at index {idx}: empty filename")
-                    continue
-                
                 try:
                     attachment_id = ObjectId()
                     original_filename = safe_filename(os.path.basename(file.filename))
                     relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
 
-                    current_app.logger.info(f"Processing file {idx}: {original_filename} -> {relative_path}")
-            
                     metadata = storage.save_file(file, relative_path)
-                    current_app.logger.info(f"File {idx} saved successfully: {original_filename}")
-
                     file_info = {
                         "filename": original_filename,
                         "attachment_id": str(attachment_id),
@@ -106,7 +91,6 @@ class StoreAttachment(Resource):
                         "filename": original_filename,
                         "attachment_id": str(attachment_id),
                     })
-                    current_app.logger.info(f"Successfully queued file {idx}: {original_filename} with task_id {task.id}")
                 except Exception as file_err:
                     current_app.logger.error(f"Error processing file {idx} ({file.filename}): {file_err}", exc_info=True)
                     errors.append({
@@ -123,8 +107,6 @@ class StoreAttachment(Resource):
                     400,
                 )
             
-            current_app.logger.info(f"Response decision: original_file_count={original_file_count}, len(tasks)={len(tasks)}")
-            
             if original_file_count == 1 and len(tasks) == 1:
                 current_app.logger.info("Returning single task_id response")
                 return make_response(
@@ -138,7 +120,6 @@ class StoreAttachment(Resource):
                     200,
                 )
             else:
-                current_app.logger.info(f"Returning tasks array response with {len(tasks)} tasks")
                 response_data = {
                     "success": True,
                     "tasks": tasks,
