@@ -133,10 +133,9 @@ class ConversationService:
 
             messages_summary = [
                 {
-                    "role": "assistant",
-                    "content": "Summarise following conversation in no more than 3 "
-                    "words, respond ONLY with the summary, use the same "
-                    "language as the user query",
+                    "role": "system",
+                    "content": "You are a helpful assistant that creates concise conversation titles. "
+                    "Summarize conversations in 3 words or less using the same language as the user.",
                 },
                 {
                     "role": "user",

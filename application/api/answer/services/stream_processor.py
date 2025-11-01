@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from bson.dbref import DBRef
 
@@ -11,10 +11,15 @@ from bson.objectid import ObjectId
 
 from application.agents.agent_creator import AgentCreator
 from application.api.answer.services.conversation_service import ConversationService
+from application.api.answer.services.prompt_renderer import PromptRenderer
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.retriever.retriever_creator import RetrieverCreator
-from application.utils import get_gpt_model, limit_chat_history
+from application.utils import (
+    calculate_doc_token_budget,
+    get_gpt_model,
+    limit_chat_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +78,16 @@ class StreamProcessor:
         self.all_sources = []
         self.attachments = []
         self.history = []
+        self.retrieved_docs = []
         self.agent_config = {}
         self.retriever_config = {}
         self.is_shared_usage = False
         self.shared_token = None
         self.gpt_model = get_gpt_model()
         self.conversation_service = ConversationService()
+        self.prompt_renderer = PromptRenderer()
+        self._prompt_content: Optional[str] = None
+        self._required_tool_actions: Optional[Dict[str, Set[Optional[str]]]] = None
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -311,19 +320,312 @@ class StreamProcessor:
             )
 
     def _configure_retriever(self):
-        """Configure the retriever based on request data"""
+        history_token_limit = int(self.data.get("token_limit", 2000))
+        doc_token_limit = calculate_doc_token_budget(
+            gpt_model=self.gpt_model, history_token_limit=history_token_limit
+        )
+
         self.retriever_config = {
             "retriever_name": self.data.get("retriever", "classic"),
             "chunks": int(self.data.get("chunks", 2)),
-            "token_limit": self.data.get("token_limit", settings.DEFAULT_MAX_HISTORY),
+            "doc_token_limit": doc_token_limit,
+            "history_token_limit": history_token_limit,
         }
 
         api_key = self.data.get("api_key") or self.agent_key
         if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
 
-    def create_agent(self):
-        """Create and return the configured agent"""
+    def create_retriever(self):
+        return RetrieverCreator.create_retriever(
+            self.retriever_config["retriever_name"],
+            source=self.source,
+            chat_history=self.history,
+            prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
+            chunks=self.retriever_config["chunks"],
+            doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
+            gpt_model=self.gpt_model,
+            user_api_key=self.agent_config["user_api_key"],
+            decoded_token=self.decoded_token,
+        )
+
+    def pre_fetch_docs(self, question: str) -> tuple[Optional[str], Optional[list]]:
+        """Pre-fetch documents for template rendering before agent creation"""
+        if self.data.get("isNoneDoc", False):
+            logger.info("Pre-fetch skipped: isNoneDoc=True")
+            return None, None
+        try:
+            retriever = self.create_retriever()
+            logger.info(
+                f"Pre-fetching docs with chunks={retriever.chunks}, doc_token_limit={retriever.doc_token_limit}"
+            )
+            docs = retriever.search(question)
+            logger.info(f"Pre-fetch retrieved {len(docs) if docs else 0} documents")
+
+            if not docs:
+                logger.info("Pre-fetch: No documents returned from search")
+                return None, None
+            self.retrieved_docs = docs
+
+            docs_with_filenames = []
+            for doc in docs:
+                filename = doc.get("filename") or doc.get("title") or doc.get("source")
+                if filename:
+                    chunk_header = str(filename)
+                    docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
+                else:
+                    docs_with_filenames.append(doc["text"])
+            docs_together = "\n\n".join(docs_with_filenames)
+
+            logger.info(f"Pre-fetch docs_together size: {len(docs_together)} chars")
+
+            return docs_together, docs
+        except Exception as e:
+            logger.error(f"Failed to pre-fetch docs: {str(e)}", exc_info=True)
+            return None, None
+
+    def pre_fetch_tools(self) -> Optional[Dict[str, Any]]:
+        """Pre-fetch tool data for template rendering before agent creation
+
+        Can be controlled via:
+        1. Global setting: ENABLE_TOOL_PREFETCH in .env
+        2. Per-request: disable_tool_prefetch in request data
+        """
+        if not settings.ENABLE_TOOL_PREFETCH:
+            logger.info(
+                "Tool pre-fetching disabled globally via ENABLE_TOOL_PREFETCH setting"
+            )
+            return None
+
+        if self.data.get("disable_tool_prefetch", False):
+            logger.info("Tool pre-fetching disabled for this request")
+            return None
+
+        required_tool_actions = self._get_required_tool_actions()
+        filtering_enabled = required_tool_actions is not None
+
+        try:
+            user_tools_collection = self.db["user_tools"]
+            user_id = self.initial_user_id or "local"
+
+            user_tools = list(
+                user_tools_collection.find({"user": user_id, "status": True})
+            )
+
+            if not user_tools:
+                return None
+
+            tools_data = {}
+
+            for tool_doc in user_tools:
+                tool_name = tool_doc.get("name")
+                tool_id = str(tool_doc.get("_id"))
+
+                if filtering_enabled:
+                    required_actions_by_name = required_tool_actions.get(
+                        tool_name, set()
+                    )
+                    required_actions_by_id = required_tool_actions.get(tool_id, set())
+
+                    required_actions = required_actions_by_name | required_actions_by_id
+
+                    if not required_actions:
+                        continue
+                else:
+                    required_actions = None
+
+                tool_data = self._fetch_tool_data(tool_doc, required_actions)
+                if tool_data:
+                    tools_data[tool_name] = tool_data
+                    tools_data[tool_id] = tool_data
+
+            return tools_data if tools_data else None
+        except Exception as e:
+            logger.warning(f"Failed to pre-fetch tools: {type(e).__name__}")
+            return None
+
+    def _fetch_tool_data(
+        self,
+        tool_doc: Dict[str, Any],
+        required_actions: Optional[Set[Optional[str]]],
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch and execute tool actions with saved parameters"""
+        try:
+            from application.agents.tools.tool_manager import ToolManager
+
+            tool_name = tool_doc.get("name")
+            tool_config = tool_doc.get("config", {}).copy()
+            tool_config["tool_id"] = str(tool_doc["_id"])
+
+            tool_manager = ToolManager(config={tool_name: tool_config})
+            user_id = self.initial_user_id or "local"
+            tool = tool_manager.load_tool(tool_name, tool_config, user_id=user_id)
+
+            if not tool:
+                logger.debug(f"Tool '{tool_name}' failed to load")
+                return None
+
+            tool_actions = tool.get_actions_metadata()
+            if not tool_actions:
+                logger.debug(f"Tool '{tool_name}' has no actions")
+                return None
+
+            saved_actions = tool_doc.get("actions", [])
+
+            include_all_actions = required_actions is None or (
+                required_actions and None in required_actions
+            )
+            allowed_actions: Set[str] = (
+                {action for action in required_actions if isinstance(action, str)}
+                if required_actions
+                else set()
+            )
+
+            action_results = {}
+            for action_meta in tool_actions:
+                action_name = action_meta.get("name")
+                if action_name is None:
+                    continue
+                if (
+                    not include_all_actions
+                    and allowed_actions
+                    and action_name not in allowed_actions
+                ):
+                    continue
+
+                try:
+                    saved_action = None
+                    for sa in saved_actions:
+                        if sa.get("name") == action_name:
+                            saved_action = sa
+                            break
+
+                    action_params = action_meta.get("parameters", {})
+                    properties = action_params.get("properties", {})
+
+                    kwargs = {}
+                    for param_name, param_spec in properties.items():
+                        if saved_action:
+                            saved_props = saved_action.get("parameters", {}).get(
+                                "properties", {}
+                            )
+                            if param_name in saved_props:
+                                param_value = saved_props[param_name].get("value")
+                                if param_value is not None:
+                                    kwargs[param_name] = param_value
+                                    continue
+
+                        if param_name in tool_config:
+                            kwargs[param_name] = tool_config[param_name]
+                        elif "default" in param_spec:
+                            kwargs[param_name] = param_spec["default"]
+
+                    result = tool.execute_action(action_name, **kwargs)
+                    action_results[action_name] = result
+                except Exception as e:
+                    logger.debug(
+                        f"Action '{action_name}' execution failed: {type(e).__name__}"
+                    )
+                    continue
+
+            return action_results if action_results else None
+
+        except Exception as e:
+            logger.debug(f"Tool pre-fetch failed for '{tool_name}': {type(e).__name__}")
+            return None
+
+    def _get_prompt_content(self) -> Optional[str]:
+        """Retrieve and cache the raw prompt content for the current agent configuration."""
+        if self._prompt_content is not None:
+            return self._prompt_content
+        prompt_id = (
+            self.agent_config.get("prompt_id")
+            if isinstance(self.agent_config, dict)
+            else None
+        )
+        if not prompt_id:
+            return None
+        try:
+            self._prompt_content = get_prompt(prompt_id, self.prompts_collection)
+        except ValueError as e:
+            logger.debug(f"Invalid prompt ID '{prompt_id}': {str(e)}")
+            self._prompt_content = None
+        except Exception as e:
+            logger.debug(f"Failed to fetch prompt '{prompt_id}': {type(e).__name__}")
+            self._prompt_content = None
+        return self._prompt_content
+
+    def _get_required_tool_actions(self) -> Optional[Dict[str, Set[Optional[str]]]]:
+        """Determine which tool actions are referenced in the prompt template"""
+        if self._required_tool_actions is not None:
+            return self._required_tool_actions
+
+        prompt_content = self._get_prompt_content()
+        if prompt_content is None:
+            return None
+
+        if "{{" not in prompt_content or "}}" not in prompt_content:
+            self._required_tool_actions = {}
+            return self._required_tool_actions
+
+        try:
+            from application.templates.template_engine import TemplateEngine
+
+            template_engine = TemplateEngine()
+            usages = template_engine.extract_tool_usages(prompt_content)
+            self._required_tool_actions = usages
+            return self._required_tool_actions
+        except Exception as e:
+            logger.debug(f"Failed to extract tool usages: {type(e).__name__}")
+            self._required_tool_actions = {}
+            return self._required_tool_actions
+
+    def _fetch_memory_tool_data(
+        self, tool_doc: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch memory tool data for pre-injection into prompt"""
+        try:
+            tool_config = tool_doc.get("config", {}).copy()
+            tool_config["tool_id"] = str(tool_doc["_id"])
+
+            from application.agents.tools.memory import MemoryTool
+
+            memory_tool = MemoryTool(tool_config, self.initial_user_id)
+
+            root_view = memory_tool.execute_action("view", path="/")
+
+            if "Error:" in root_view or not root_view.strip():
+                return None
+
+            return {"root": root_view, "available": True}
+        except Exception as e:
+            logger.warning(f"Failed to fetch memory tool data: {str(e)}")
+            return None
+
+    def create_agent(
+        self,
+        docs_together: Optional[str] = None,
+        docs: Optional[list] = None,
+        tools_data: Optional[Dict[str, Any]] = None,
+    ):
+        """Create and return the configured agent with rendered prompt"""
+        raw_prompt = self._get_prompt_content()
+        if raw_prompt is None:
+            raw_prompt = get_prompt(
+                self.agent_config["prompt_id"], self.prompts_collection
+            )
+            self._prompt_content = raw_prompt
+
+        rendered_prompt = self.prompt_renderer.render_prompt(
+            prompt_content=raw_prompt,
+            user_id=self.initial_user_id,
+            request_id=self.data.get("request_id"),
+            passthrough_data=self.data.get("passthrough"),
+            docs=docs,
+            docs_together=docs_together,
+            tools_data=tools_data,
+        )
+
         return AgentCreator.create_agent(
             self.agent_config["agent_type"],
             endpoint="stream",
@@ -331,23 +633,10 @@ class StreamProcessor:
             gpt_model=self.gpt_model,
             api_key=settings.API_KEY,
             user_api_key=self.agent_config["user_api_key"],
-            prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
+            prompt=rendered_prompt,
             chat_history=self.history,
+            retrieved_docs=self.retrieved_docs,
             decoded_token=self.decoded_token,
             attachments=self.attachments,
             json_schema=self.agent_config.get("json_schema"),
-        )
-
-    def create_retriever(self):
-        """Create and return the configured retriever"""
-        return RetrieverCreator.create_retriever(
-            self.retriever_config["retriever_name"],
-            source=self.source,
-            chat_history=self.history,
-            prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
-            chunks=self.retriever_config["chunks"],
-            token_limit=self.retriever_config["token_limit"],
-            gpt_model=self.gpt_model,
-            user_api_key=self.agent_config["user_api_key"],
-            decoded_token=self.decoded_token,
         )

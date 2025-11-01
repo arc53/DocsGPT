@@ -23,6 +23,7 @@ export type InputProps = {
     e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
   ) => void;
   leftIcon?: React.ReactNode;
+  edgeRoundness?: string;
 };
 
 export type MermaidRendererProps = {

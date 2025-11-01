@@ -1,8 +1,77 @@
 import { ActiveState } from '../models/misc';
 import Input from '../components/Input';
+import { Link } from 'react-router-dom';
+
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import WrapperModal from '../modals/WrapperModal';
+import Dropdown from '../components/Dropdown';
+import BookIcon from '../assets/book.svg';
+import userService from '../api/services/userService';
+import { selectToken } from '../preferences/preferenceSlice';
+import { UserToolType } from '../settings/types';
+
+// Custom hook for fetching tool variables
+const useToolVariables = () => {
+  const token = useSelector(selectToken);
+  const [toolVariables, setToolVariables] = React.useState<
+    { label: string; value: string }[]
+  >([]);
+
+  React.useEffect(() => {
+    const fetchToolVariables = async () => {
+      try {
+        const response = await userService.getUserTools(token);
+        const data = await response.json();
+
+        if (data.success && data.tools) {
+          const filteredActions: { label: string; value: string }[] = [];
+
+          data.tools.forEach((tool: UserToolType) => {
+            if (tool.actions && tool.status) {
+              // Only include active tools
+              tool.actions.forEach((action: any) => {
+                if (action.active) {
+                  const canUseAction =
+                    !action.parameters?.properties ||
+                    Object.entries(action.parameters.properties).every(
+                      ([paramName, param]: [string, any]) => {
+                        // Parameter is usable if:
+                        // 1. It's filled by LLM (true) OR
+                        // 2. It has a value in the tool config
+                        return (
+                          param.filled_by_llm === true ||
+                          (tool.config &&
+                            tool.config[paramName] &&
+                            tool.config[paramName] !== '')
+                        );
+                      },
+                    );
+
+                  if (canUseAction) {
+                    filteredActions.push({
+                      label: `${action.name} (${tool.displayName || tool.name})`,
+                      value: `tools.${tool.name}.${action.name}`,
+                    });
+                  }
+                }
+              });
+            }
+          });
+
+          setToolVariables(filteredActions);
+        }
+      } catch (error) {
+        console.error('Error fetching tool variables:', error);
+      }
+    };
+
+    fetchToolVariables();
+  }, [token]);
+
+  return toolVariables;
+};
 
 function AddPrompt({
   setModalState,
@@ -22,52 +91,188 @@ function AddPrompt({
   disableSave: boolean;
 }) {
   const { t } = useTranslation();
+  const toolVariables = useToolVariables();
 
   return (
     <div>
-      <p className="text-jet dark:text-bright-gray mb-1 text-xl">
+      <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
         {t('modals.prompts.addPrompt')}
       </p>
-      <p className="text-sonic-silver mb-7 text-xs dark:text-[#7F7F82]">
+      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-[#9A9AA0]">
         {t('modals.prompts.addDescription')}
       </p>
       <div>
         <Input
           placeholder={t('modals.prompts.promptName')}
           type="text"
-          className="mb-4"
+          className="mb-5"
+          edgeRoundness="rounded"
+          textSize="medium"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
           labelBgClassName="bg-white dark:bg-[#26272E]"
-          borderVariant="thin"
+          borderVariant="thick"
         />
-        <div className="relative top-[7px] left-3">
-          <span className="text-silver dark:text-silver bg-white px-1 text-xs dark:bg-[#26272E]">
+
+        <div className="relative w-full">
+          <textarea
+            id="new-prompt-content"
+            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none dark:bg-[#26272E] dark:text-white"
+            value={newPromptContent}
+            onChange={(e) => setNewPromptContent(e.target.value)}
+            placeholder=" "
+            aria-label={t('prompts.textAriaLabel')}
+          />
+          <label
+            htmlFor="new-prompt-content"
+            className={`absolute select-none ${
+              newPromptContent ? '-top-2.5 left-3 text-xs' : ''
+            } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
+          >
             {t('modals.prompts.promptText')}
-          </span>
+          </label>
         </div>
-        <label htmlFor="new-prompt-content" className="sr-only">
-          {t('modals.prompts.promptText')}
-        </label>
-        <textarea
-          id="new-prompt-content"
-          className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
-          value={newPromptContent}
-          onChange={(e) => setNewPromptContent(e.target.value)}
-          aria-label={t('prompts.textAriaLabel')}
-        ></textarea>
       </div>
-      <div className="mt-6 flex flex-row-reverse">
-        <button
-          onClick={handleAddPrompt}
-          className="bg-purple-30 hover:bg-violets-are-blue disabled:hover:bg-purple-30 rounded-3xl px-5 py-2 text-sm text-white transition-all"
-          disabled={disableSave}
-          title={
-            disableSave && newPromptName ? t('modals.prompts.nameExists') : ''
-          }
-        >
-          {t('modals.prompts.save')}
-        </button>
+
+      <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
+        <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span className="font-bold">
+            {t('modals.prompts.variablesLabel')}
+          </span>
+          <span className="text-xs text-[10px] font-medium text-gray-500">
+            {t('modals.prompts.variablesDescription')}
+          </span>
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <Dropdown
+            options={[{ label: 'Summaries', value: 'summaries' }]}
+            selectedValue={'System Variables'}
+            onSelect={(option) => {
+              const textarea = document.getElementById(
+                'new-prompt-content',
+              ) as HTMLTextAreaElement;
+              if (textarea) {
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = newPromptContent.slice(0, cursorPosition);
+                const textAfter = newPromptContent.slice(cursorPosition);
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
+
+                const newText =
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{${option.value}}` +
+                  textAfter;
+                setNewPromptContent(newText);
+
+                setTimeout(() => {
+                  textarea.focus();
+                  textarea.setSelectionRange(
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
+                  );
+                }, 0);
+              }
+            }}
+            placeholder="System Variables"
+            size="w-[140px] sm:w-[185px]"
+            rounded="3xl"
+            border="border"
+            contentSize="text-[12px] sm:text-[14px]"
+          />
+
+          <Dropdown
+            options={toolVariables}
+            selectedValue={'Tool Variables'}
+            onSelect={(option) => {
+              const textarea = document.getElementById(
+                'new-prompt-content',
+              ) as HTMLTextAreaElement;
+              if (textarea) {
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = newPromptContent.slice(0, cursorPosition);
+                const textAfter = newPromptContent.slice(cursorPosition);
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
+
+                const newText =
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{{ ${option.value} }}` +
+                  textAfter;
+                setNewPromptContent(newText);
+                setTimeout(() => {
+                  textarea.focus();
+                  textarea.setSelectionRange(
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
+                  );
+                }, 0);
+              }
+            }}
+            placeholder="Tool Variables"
+            size="w-[140px] sm:w-[171px]"
+            rounded="3xl"
+            border="border"
+            contentSize="text-[12px] sm:text-[14px]"
+          />
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+        <div className="flex justify-start">
+          <Link
+            to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+          >
+            <img
+              src={BookIcon}
+              alt=""
+              className="flex h-4 w-3 flex-shrink-0 items-center justify-center"
+              aria-hidden="true"
+            />
+            <span className="text-[14px] font-bold">
+              {t('modals.prompts.learnAboutPrompts')}
+            </span>
+          </Link>
+        </div>
+
+        <div className="flex justify-end gap-2 sm:gap-4">
+          <button
+            onClick={() => setModalState('INACTIVE')}
+            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+          >
+            {t('modals.prompts.cancel')}
+          </button>
+
+          <button
+            onClick={handleAddPrompt}
+            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            disabled={disableSave}
+          >
+            {t('modals.prompts.save')}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -93,54 +298,191 @@ function EditPrompt({
   disableSave: boolean;
 }) {
   const { t } = useTranslation();
+  const toolVariables = useToolVariables();
 
   return (
     <div>
-      <div className="">
-        <p className="text-jet dark:text-bright-gray mb-1 text-xl">
-          {t('modals.prompts.editPrompt')}
-        </p>
-        <p className="text-sonic-silver mb-7 text-xs dark:text-[#7F7F82]">
-          {t('modals.prompts.editDescription')}
-        </p>
-        <div>
-          <Input
-            placeholder={t('modals.prompts.promptName')}
-            type="text"
-            className="mb-4"
-            value={editPromptName}
-            onChange={(e) => setEditPromptName(e.target.value)}
-            labelBgClassName="bg-white dark:bg-charleston-green-2"
-            borderVariant="thin"
-          />
-          <div className="relative top-[7px] left-3">
-            <span className="text-silver dark:bg-charleston-green-2 dark:text-silver bg-white px-1 text-xs">
-              {t('modals.prompts.promptText')}
-            </span>
-          </div>
-          <label htmlFor="edit-prompt-content" className="sr-only">
-            {t('modals.prompts.promptText')}
-          </label>
+      <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
+        {t('modals.prompts.editPrompt')}
+      </p>
+      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-[#9A9AA0]">
+        {t('modals.prompts.editDescription')}
+      </p>
+      <div>
+        <Input
+          placeholder={t('modals.prompts.promptName')}
+          type="text"
+          className="mb-5"
+          edgeRoundness="rounded"
+          textSize="medium"
+          value={editPromptName}
+          onChange={(e) => setEditPromptName(e.target.value)}
+          labelBgClassName="bg-white dark:bg-[#26272E]"
+          borderVariant="thick"
+        />
+
+        <div className="relative w-full">
           <textarea
             id="edit-prompt-content"
-            className="border-silver dark:border-silver/40 h-56 w-full resize-none rounded-lg border-2 px-3 py-2 outline-hidden dark:bg-transparent dark:text-white"
+            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none dark:bg-[#26272E] dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
+            placeholder=" "
             aria-label={t('prompts.textAriaLabel')}
-          ></textarea>
+          />
+          <label
+            htmlFor="edit-prompt-content"
+            className={`absolute select-none ${
+              editPromptContent ? '-top-2.5 left-3 text-xs' : ''
+            } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
+          >
+            {t('modals.prompts.promptText')}
+          </label>
         </div>
-        <div className="mt-6 flex flex-row-reverse gap-4">
+      </div>
+
+      <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
+        <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span className="font-bold">
+            {t('modals.prompts.variablesLabel')}
+          </span>
+          <span className="text-xs text-[10px] font-medium text-gray-500">
+            {t('modals.prompts.variablesDescription')}
+          </span>
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <Dropdown
+            options={[{ label: 'Summaries', value: 'summaries' }]}
+            selectedValue={'System Variables'}
+            onSelect={(option) => {
+              const textarea = document.getElementById(
+                'edit-prompt-content',
+              ) as HTMLTextAreaElement;
+              if (textarea) {
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = editPromptContent.slice(0, cursorPosition);
+                const textAfter = editPromptContent.slice(cursorPosition);
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
+
+                const newText =
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{${option.value}}` +
+                  textAfter;
+                setEditPromptContent(newText);
+
+                setTimeout(() => {
+                  textarea.focus();
+                  textarea.setSelectionRange(
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      2 +
+                      (needsSpace ? 1 : 0),
+                  );
+                }, 0);
+              }
+            }}
+            placeholder="System Variables"
+            size="w-[140px] sm:w-[185px]"
+            rounded="3xl"
+            border="border"
+            contentSize="text-[12px] sm:text-[14px]"
+          />
+
+          <Dropdown
+            options={toolVariables}
+            selectedValue={'Tool Variables'}
+            onSelect={(option) => {
+              const textarea = document.getElementById(
+                'edit-prompt-content',
+              ) as HTMLTextAreaElement;
+              if (textarea) {
+                const cursorPosition = textarea.selectionStart;
+                const textBefore = editPromptContent.slice(0, cursorPosition);
+                const textAfter = editPromptContent.slice(cursorPosition);
+
+                // Add leading space if needed
+                const needsSpace =
+                  cursorPosition > 0 &&
+                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
+
+                const newText =
+                  textBefore +
+                  (needsSpace ? ' ' : '') +
+                  `{{ ${option.value} }}` +
+                  textAfter;
+                setEditPromptContent(newText);
+                setTimeout(() => {
+                  textarea.focus();
+                  textarea.setSelectionRange(
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
+                    cursorPosition +
+                      option.value.length +
+                      6 +
+                      (needsSpace ? 1 : 0),
+                  );
+                }, 0);
+              }
+            }}
+            placeholder="Tool Variables"
+            size="w-[140px] sm:w-[171px]"
+            rounded="3xl"
+            border="border"
+            contentSize="text-[12px] sm:text-[14px]"
+          />
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+        <div className="flex justify-start">
+          <Link
+            to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+          >
+            <img
+              src={BookIcon}
+              alt=""
+              className="flex h-4 w-3 flex-shrink-0 items-center justify-center"
+              aria-hidden="true"
+            />
+            <span className="text-[14px] font-bold">
+              {t('modals.prompts.learnAboutPrompts')}
+            </span>
+          </Link>
+        </div>
+
+        <div className="flex justify-end gap-2 sm:gap-4">
           <button
-            className={`bg-purple-30 hover:bg-violets-are-blue disabled:hover:bg-purple-30 rounded-3xl px-5 py-2 text-sm text-white transition-all ${
-              currentPromptEdit.type === 'public'
-                ? 'cursor-not-allowed opacity-50'
-                : ''
-            }`}
+            onClick={() => setModalState('INACTIVE')}
+            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+          >
+            {t('modals.prompts.cancel')}
+          </button>
+
+          <button
             onClick={() => {
               handleEditPrompt &&
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
-            disabled={currentPromptEdit.type === 'public' || disableSave}
+            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            disabled={
+              currentPromptEdit.type === 'public' ||
+              disableSave ||
+              !editPromptName
+            }
             title={
               disableSave && editPromptName
                 ? t('modals.prompts.nameExists')
@@ -200,23 +542,28 @@ export default function PromptsModal({
         (prompt) =>
           newName === prompt.name && prompt.id !== currentPromptEdit.id,
       );
-      const nameValid = newName && !nameExists;
-      const contentChanged = editPromptContent !== currentPromptEdit.content;
-
-      setDisableSave(!(nameValid || contentChanged));
+      setDisableSave(
+        !(
+          newName &&
+          !nameExists &&
+          editPromptName &&
+          editPromptContent.trim() !== ''
+        ),
+      );
       setEditPromptName(newName);
     } else {
       const nameExists = existingPrompts.find(
         (prompt) => newName === prompt.name,
       );
-      setDisableSave(!(newName && !nameExists));
+      setDisableSave(
+        !(newName && !nameExists && newPromptContent.trim() !== ''),
+      );
       setNewPromptName(newName);
     }
   };
 
   const handleContentChange = (edit: boolean, newContent: string) => {
     if (edit) {
-      const contentChanged = newContent !== currentPromptEdit.content;
       const nameValid =
         editPromptName &&
         !existingPrompts.find(
@@ -224,10 +571,13 @@ export default function PromptsModal({
             editPromptName === prompt.name &&
             prompt.id !== currentPromptEdit.id,
         );
-
-      setDisableSave(!(nameValid || contentChanged));
+      setDisableSave(!(nameValid && newContent.trim() !== ''));
       setEditPromptContent(newContent);
     } else {
+      const nameValid =
+        newPromptName &&
+        !existingPrompts.find((prompt) => newPromptName === prompt.name);
+      setDisableSave(!(nameValid && newContent.trim() !== ''));
       setNewPromptContent(newContent);
     }
   };
@@ -272,7 +622,8 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mt-24 sm:w-[512px]"
+      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-6 dark:bg-[#1E1E2A]"
+      contentClassName="!overflow-visible"
     >
       {view}
     </WrapperModal>

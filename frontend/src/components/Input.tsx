@@ -20,6 +20,7 @@ const Input = ({
   onChange,
   onPaste,
   onKeyDown,
+  edgeRoundness = 'rounded-full',
 }: InputProps) => {
   const colorStyles = {
     silver: 'border-silver dark:border-silver/40',
@@ -43,7 +44,7 @@ const Input = ({
     <div className={`relative ${className}`}>
       <input
         ref={inputRef}
-        className={`peer text-jet dark:text-bright-gray h-[42px] w-full rounded-full bg-transparent ${leftIcon ? 'pl-10' : 'px-3'} py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
+        className={`peer text-jet dark:text-bright-gray h-[42px] w-full ${edgeRoundness} bg-transparent ${leftIcon ? 'pl-10' : 'px-3'} py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
         type={type}
         id={id}
         name={name}

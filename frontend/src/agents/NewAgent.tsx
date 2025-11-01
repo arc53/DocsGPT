@@ -200,13 +200,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
-      formData.append('token_limit', JSON.stringify(agent.token_limit));
-    } else formData.append('token_limit', '0');
+      formData.append('token_limit', agent.token_limit.toString());
+    } else {
+      formData.append('limited_token_mode', 'False');
+      formData.append('token_limit', '0');
+    }
 
     if (agent.limited_request_mode && agent.request_limit) {
       formData.append('limited_request_mode', 'True');
-      formData.append('request_limit', JSON.stringify(agent.request_limit));
-    } else formData.append('request_limit', '0');
+      formData.append('request_limit', agent.request_limit.toString());
+    } else {
+      formData.append('limited_request_mode', 'False');
+      formData.append('request_limit', '0');
+    }
 
     if (imageFile) formData.append('image', imageFile);
 
@@ -297,15 +303,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('json_schema', JSON.stringify(agent.json_schema));
     }
 
+    // Always send the limited mode fields
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
-      formData.append('token_limit', JSON.stringify(agent.token_limit));
-    } else formData.append('token_limit', '0');
+      formData.append('token_limit', agent.token_limit.toString());
+    } else {
+      formData.append('limited_token_mode', 'False');
+      formData.append('token_limit', '0');
+    }
 
     if (agent.limited_request_mode && agent.request_limit) {
       formData.append('limited_request_mode', 'True');
-      formData.append('request_limit', JSON.stringify(agent.request_limit));
-    } else formData.append('request_limit', '0');
+      formData.append('request_limit', agent.request_limit.toString());
+    } else {
+      formData.append('limited_request_mode', 'False');
+      formData.append('request_limit', '0');
+    }
 
     try {
       setPublishLoading(true);

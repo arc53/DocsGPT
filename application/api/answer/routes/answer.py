@@ -54,6 +54,10 @@ class AnswerResource(Resource, BaseAnswerResource):
                 default=True,
                 description="Whether to save the conversation",
             ),
+            "passthrough": fields.Raw(
+                required=False,
+                description="Dynamic parameters to inject into prompt template",
+            ),
         },
     )
 
@@ -69,8 +73,17 @@ class AnswerResource(Resource, BaseAnswerResource):
             processor.initialize()
             if not processor.decoded_token:
                 return make_response({"error": "Unauthorized"}, 401)
-            agent = processor.create_agent()
-            retriever = processor.create_retriever()
+
+            docs_together, docs_list = processor.pre_fetch_docs(
+                data.get("question", "")
+            )
+            tools_data = processor.pre_fetch_tools()
+
+            agent = processor.create_agent(
+                docs_together=docs_together,
+                docs=docs_list,
+                tools_data=tools_data,
+            )
 
             if error := self.check_usage(processor.agent_config):
                 return error
@@ -78,7 +91,6 @@ class AnswerResource(Resource, BaseAnswerResource):
             stream = self.complete_stream(
                 question=data["question"],
                 agent=agent,
-                retriever=retriever,
                 conversation_id=processor.conversation_id,
                 user_api_key=processor.agent_config.get("user_api_key"),
                 decoded_token=processor.decoded_token,

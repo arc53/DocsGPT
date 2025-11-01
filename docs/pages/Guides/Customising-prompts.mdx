@@ -1,49 +1,453 @@
 ---
-title: Customizing Prompts 
-description: This guide will explain how to change prompts in DocsGPT and why it might be benefitial. Additionaly this article expains additional variables that can be used in prompts.
+title: Customizing Prompts
+description: This guide explains how to customize prompts in DocsGPT using the new template-based system with dynamic variable injection.
 ---
 
 import Image from 'next/image'
 
-# Customizing the Main Prompt
+# Customizing Prompts in DocsGPT
 
-Customizing the main prompt for DocsGPT gives you the ability to tailor the AI's responses to your specific requirements. By modifying the prompt text, you can achieve more accurate and relevant answers. Here's how you can do it:
+Customizing prompts for DocsGPT gives you powerful control over the AI's behavior and responses. With the new template-based system, you can inject dynamic context through organized namespaces, making prompts flexible and maintainable without hardcoding values.
+
+## Quick Start
 
 1. Navigate to `SideBar -> Settings`.
-
-
-
-
-2.In Settings select the `Active Prompt` now you will be able to see various prompts style.x
-
-
-
-
-3.Click on the `edit icon`  on the prompt of your choice and you will be able to see the current prompt for it,you can now customise  the prompt as per your choice.
+2. In Settings, select the `Active Prompt` to see various prompt styles.
+3. Click on the `edit icon` on your chosen prompt to customize it.
 
 ### Video Demo
 <Image src="/prompts.gif" alt="prompts" width={800} height={500} />
 
+---
 
+## Template-Based Prompt System
 
-## Example Prompt Modification
+DocsGPT now uses **Jinja2 templating** with four organized namespaces for dynamic variable injection:
 
-**Original Prompt:**
+### Available Namespaces
+
+#### 1. **`system`** - System Metadata
+Access system-level information:
+
+```jinja
+{{ system.date }}         # Current date (YYYY-MM-DD)
+{{ system.time }}         # Current time (HH:MM:SS)
+{{ system.timestamp }}    # ISO 8601 timestamp
+{{ system.request_id }}   # Unique request identifier
+{{ system.user_id }}      # Current user ID
+```
+
+#### 2. **`source`** - Retrieved Documents
+Access RAG (Retrieval-Augmented Generation) document context:
+
+```jinja
+{{ source.content }}      # Concatenated document content
+{{ source.summaries }}    # Alias for content (backward compatible)
+{{ source.documents }}    # List of document objects
+{{ source.count }}        # Number of retrieved documents
+```
+
+#### 3. **`passthrough`** - Request Parameters
+Access custom parameters passed in the API request:
+
+```jinja
+{{ passthrough.company }}     # Custom field from request
+{{ passthrough.user_name }}   # User-provided data
+{{ passthrough.context }}     # Any custom parameter
+```
+
+To use passthrough data, send it in your API request:
+```json
+{
+  "question": "What is the pricing?",
+  "passthrough": {
+    "company": "Acme Corp",
+    "user_name": "Alice",
+    "plan_type": "enterprise"
+  }
+}
+```
+
+#### 4. **`tools`** - Pre-fetched Tool Data
+Access results from tools that run before the agent (like memory tool):
+
+```jinja
+{{ tools.memory.root }}       # Memory tool directory listing
+{{ tools.memory.available }}  # Boolean: is memory available
+```
+
+---
+
+## Example Prompts
+
+### Basic Prompt with Documents
+```jinja
+You are a helpful AI assistant for DocsGPT.
+
+Current date: {{ system.date }}
+
+Use the following documents to answer the question:
+
+{{ source.content }}
+
+Provide accurate, helpful answers with code examples when relevant.
+```
+
+### Advanced Prompt with All Namespaces
+```jinja
+You are an AI assistant for {{ passthrough.company }}.
+
+**System Info:**
+- Date: {{ system.date }}
+- Request ID: {{ system.request_id }}
+
+**User Context:**
+- User: {{ passthrough.user_name }}
+- Role: {{ passthrough.role }}
+
+**Available Documents ({{ source.count }}):**
+{{ source.content }}
+
+**Memory Context:**
+{% if tools.memory.available %}
+{{ tools.memory.root }}
+{% else %}
+No saved context available.
+{% endif %}
+
+Please provide detailed, accurate answers based on the documents above.
+```
+
+### Conditional Logic Example
+```jinja
+You are a DocsGPT assistant.
+
+{% if source.count > 0 %}
+I found {{ source.count }} relevant document(s):
+
+{{ source.content }}
+
+Base your answer on these documents.
+{% else %}
+No documents were found. Please answer based on your general knowledge.
+{% endif %}
+```
+
+---
+
+## Migration Guide
+
+### Legacy Format (Still Supported)
+The old `{summaries}` format continues to work for backward compatibility:
+
 ```markdown
-You are a DocsGPT, friendly and helpful AI assistant by Arc53 that provides help with documents. You give thorough answers with code examples if possible.
-Use the following pieces of context to help answer the users question. If it's not relevant to the question, provide friendly responses.
-You have access to chat history, and can use it to help answer the question.
-When using code examples, use the following format:
+You are a helpful assistant.
 
-(code)
+Documents:
 {summaries}
 ```
 
-Note that `{summaries}` allows model to see and respond to your upploaded documents. If you don't want this functionality you can safely remove it from the customized prompt.
+This will automatically substitute `{summaries}` with document content.
 
-Feel free to customize the prompt to align it with your specific use case or the kind of responses you want from the AI. For example, you can focus on specific document types, industries, or topics to get more targeted results.
+### New Template Format (Recommended)
+Migrate to the new template syntax for more flexibility:
+
+```jinja
+You are a helpful assistant.
+
+Documents:
+{{ source.content }}
+```
+
+**Migration mapping:**
+- `{summaries}` → `{{ source.content }}` or `{{ source.summaries }}`
+
+---
+
+## Best Practices
+
+### 1. **Use Descriptive Context**
+```jinja
+**Retrieved Documents:**
+{{ source.content }}
+
+**User Query Context:**
+- Company: {{ passthrough.company }}
+- Department: {{ passthrough.department }}
+```
+
+### 2. **Handle Missing Data Gracefully**
+```jinja
+{% if passthrough.user_name %}
+Hello {{ passthrough.user_name }}!
+{% endif %}
+```
+
+### 3. **Leverage Memory for Continuity**
+```jinja
+{% if tools.memory.available %}
+**Previous Context:**
+{{ tools.memory.root }}
+{% endif %}
+
+**Current Question:**
+Please consider the above context when answering.
+```
+
+### 4. **Add Clear Instructions**
+```jinja
+You are a technical support assistant.
+
+**Guidelines:**
+1. Always reference the documents below
+2. Provide step-by-step instructions
+3. Include code examples when relevant
+
+**Reference Documents:**
+{{ source.content }}
+```
+
+---
+
+## Advanced Features
+
+### Looping Over Documents
+```jinja
+{% for doc in source.documents %}
+**Source {{ loop.index }}:** {{ doc.filename }}
+{{ doc.text }}
+
+{% endfor %}
+```
+
+### Date-Based Behavior
+```jinja
+{% if system.date > "2025-01-01" %}
+Note: This is information from 2025 or later.
+{% endif %}
+```
+
+### Custom Formatting
+```jinja
+**Request Information**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Request ID: {{ system.request_id }}
+• User: {{ passthrough.user_name | default("Guest") }}
+• Time: {{ system.time }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+---
+
+## Tool Pre-Fetching
+
+### Memory Tool Configuration
+Enable memory tool pre-fetching to inject saved context into prompts:
+
+```python
+# In your tool configuration
+{
+  "name": "memory",
+  "config": {
+    "pre_fetch_enabled": true  # Default: true
+  }
+}
+```
+
+Control pre-fetching globally:
+```bash
+# .env file
+ENABLE_TOOL_PREFETCH=true
+```
+
+Or per-request:
+```json
+{
+  "question": "What are the requirements?",
+  "disable_tool_prefetch": false
+}
+```
+
+---
+
+## Debugging Prompts
+
+### View Rendered Prompts in Logs
+Set log level to `INFO` to see the final rendered prompt sent to the LLM:
+
+```bash
+export LOG_LEVEL=INFO
+```
+
+You'll see output like:
+```
+INFO - Rendered system prompt for agent (length: 1234 chars):
+================================================================================
+You are a helpful assistant for Acme Corp.
+
+Current date: 2025-10-30
+Request ID: req_abc123
+
+Documents:
+Technical documentation about...
+================================================================================
+```
+
+### Template Validation
+Test your template syntax before saving:
+```python
+from application.api.answer.services.prompt_renderer import PromptRenderer
+
+renderer = PromptRenderer()
+is_valid = renderer.validate_template("Your prompt with {{ variables }}")
+```
+
+---
+
+## Common Use Cases
+
+### 1. Customer Support Bot
+```jinja
+You are a customer support assistant for {{ passthrough.company }}.
+
+**Customer:** {{ passthrough.customer_name }}
+**Ticket ID:** {{ system.request_id }}
+**Date:** {{ system.date }}
+
+**Knowledge Base:**
+{{ source.content }}
+
+**Previous Interactions:**
+{{ tools.memory.root }}
+
+Please provide helpful, friendly support based on the knowledge base above.
+```
+
+### 2. Technical Documentation Assistant
+```jinja
+You are a technical documentation expert.
+
+**Available Documentation ({{ source.count }} documents):**
+{{ source.content }}
+
+**Requirements:**
+- Provide code examples in {{ passthrough.language }}
+- Focus on {{ passthrough.framework }} best practices
+- Include relevant links when possible
+```
+
+### 3. Internal Knowledge Base
+```jinja
+You are an internal AI assistant for {{ passthrough.department }}.
+
+**Employee:** {{ passthrough.employee_name }}
+**Access Level:** {{ passthrough.access_level }}
+
+**Relevant Documents:**
+{{ source.content }}
+
+Provide detailed answers appropriate for {{ passthrough.access_level }} access level.
+```
+
+---
+
+## Template Syntax Reference
+
+### Variables
+```jinja
+{{ variable_name }}              # Output variable
+{{ namespace.field }}            # Access nested field
+{{ variable | default("N/A") }}  # Default value
+```
+
+### Conditionals
+```jinja
+{% if condition %}
+  Content
+{% elif other_condition %}
+  Other content
+{% else %}
+  Default content
+{% endif %}
+```
+
+### Loops
+```jinja
+{% for item in list %}
+  {{ item.field }}
+{% endfor %}
+```
+
+### Comments
+```jinja
+{# This is a comment and won't appear in output #}
+```
+
+---
+
+## Security Considerations
+
+1. **Input Sanitization**: Passthrough data is automatically sanitized to prevent injection attacks
+2. **Type Filtering**: Only primitive types (string, int, float, bool, None) are allowed in passthrough
+3. **Autoescaping**: Jinja2 autoescaping is enabled by default
+4. **Size Limits**: Consider the token budget when including large documents
+
+---
+
+## Troubleshooting
+
+### Problem: Variables Not Rendering
+**Solution:** Ensure you're using the correct namespace:
+```jinja
+❌ {{ company }}
+✅ {{ passthrough.company }}
+```
+
+### Problem: Empty Output for Tool Data
+**Solution:** Check that tool pre-fetching is enabled and the tool is configured correctly.
+
+### Problem: Syntax Errors
+**Solution:** Validate template syntax. Common issues:
+```jinja
+❌ {{ variable }     # Missing closing brace
+❌ {% if x %         # Missing closing %}
+✅ {{ variable }}
+✅ {% if x %}...{% endif %}
+```
+
+### Problem: Legacy Prompts Not Working
+**Solution:** The system auto-detects template syntax. If your prompt uses `{summaries}`, it will work in legacy mode. To use new features, add `{{ }}` syntax.
+
+---
+
+## API Reference
+
+### Render Prompt via API
+```python
+from application.api.answer.services.prompt_renderer import PromptRenderer
+
+renderer = PromptRenderer()
+rendered = renderer.render_prompt(
+    prompt_content="Your template with {{ passthrough.name }}",
+    user_id="user_123",
+    request_id="req_456",
+    passthrough_data={"name": "Alice"},
+    docs_together="Document content here",
+    tools_data={"memory": {"root": "Files: notes.txt"}}
+)
+```
+
+---
 
 ## Conclusion
 
-Customizing the main prompt for DocsGPT allows you to tailor the AI's responses to your unique requirements. Whether you need in-depth explanations, code examples, or specific insights, you can achieve it by modifying the main prompt. Remember to experiment and fine-tune your prompts to get the best results.
+The new template-based prompt system provides powerful flexibility while maintaining backward compatibility. By leveraging namespaces, you can create dynamic, context-aware prompts that adapt to your specific use case.
 
+**Key Benefits:**
+- ✅ Dynamic variable injection
+- ✅ Organized namespaces
+- ✅ Backward compatible
+- ✅ Security built-in
+- ✅ Easy to debug
+
+Start with simple templates and gradually add complexity as needed. Happy prompting! 🚀

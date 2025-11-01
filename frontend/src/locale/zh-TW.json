@@ -386,8 +386,20 @@
       "promptName": "提示名稱",
       "promptText": "提示文字",
       "save": "儲存",
+      "cancel": "取消",
       "nameExists": "名稱已存在",
-      "deleteConfirmation": "您確定要刪除提示「{{name}}」嗎？"
+      "deleteConfirmation": "您確定要刪除提示「{{name}}」嗎？",
+      "placeholderText": "在此輸入提示內容...",
+      "addExamplePlaceholder": "請總結此文本：",
+      "variablesLabel": "變數",
+      "variablesSubtext": "點擊以插入提示中",
+      "variablesDescription": "點擊以插入到提示中",
+      "systemVariables": "點擊以插入提示中",
+      "toolVariables": "工具變數",
+      "learnAboutPrompts": "了解提示 →",
+      "publicPromptEditDisabled": "公共提示無法編輯",
+      "promptTypePublic": "公共",
+      "promptTypePrivate": "私人"
     },
     "chunk": {
       "add": "新增區塊",
