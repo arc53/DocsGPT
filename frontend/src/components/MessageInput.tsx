@@ -86,88 +86,195 @@ export default function MessageInput({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [browserOS]);
-
-  const uploadFiles = useCallback(
-    (files: File[]) => {
-      const apiHost = import.meta.env.VITE_API_HOST;
-
-      files.forEach((file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const xhr = new XMLHttpRequest();
-        const uniqueId = crypto.randomUUID();
-
-        const newAttachment = {
-          id: uniqueId,
-          fileName: file.name,
-          progress: 0,
-          status: 'uploading' as const,
-          taskId: '',
-        };
-
-        dispatch(addAttachment(newAttachment));
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
-            dispatch(
-              updateAttachment({
-                id: uniqueId,
-                updates: { progress },
-              }),
-            );
-          }
-        });
-
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            const response = JSON.parse(xhr.responseText);
-            if (response.task_id) {
-              dispatch(
-                updateAttachment({
-                  id: uniqueId,
-                  updates: {
-                    taskId: response.task_id,
-                    status: 'processing',
-                    progress: 10,
-                  },
-                }),
-              );
-            }
-          } else {
-            dispatch(
-              updateAttachment({
-                id: uniqueId,
-                updates: { status: 'failed' },
-              }),
-            );
-          }
-        };
-
-        xhr.onerror = () => {
-          dispatch(
-            updateAttachment({
-              id: uniqueId,
-              updates: { status: 'failed' },
-            }),
-          );
-        };
-
-        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        xhr.send(formData);
-      });
-    },
-    [dispatch, token],
-  );
-
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
 
     const files = Array.from(e.target.files);
-    uploadFiles(files);
+    const formData = new FormData();
 
-    // clear input so same file can be selected again
+    files.forEach((file) => formData.append('file', file));
+
+    const apiHost = import.meta.env.VITE_API_HOST;
+    const xhr = new XMLHttpRequest();
+
+    const indexToUiId: Record<number, string> = {};
+    files.forEach((file, i) => {
+      const uiId = crypto.randomUUID();
+      indexToUiId[i] = uiId;
+      dispatch(
+        addAttachment({
+          id: uiId,
+          fileName: file.name,
+          progress: 0,
+          status: 'uploading' as const,
+          taskId: '',
+        }),
+      );
+    });
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const progress = Math.round((event.loaded / event.total) * 100);
+        Object.values(indexToUiId).forEach((uiId) => {
+          dispatch(
+            updateAttachment({
+              id: uiId,
+              updates: { progress },
+            }),
+          );
+        });
+      }
+    });
+
+    xhr.onload = () => {
+      const status = xhr.status;
+      if (status === 200) {
+        try {
+          const response = JSON.parse(xhr.responseText);
+
+          if (Array.isArray(response?.tasks)) {
+            const tasks = response.tasks as Array<{
+              task_id?: string;
+              filename?: string;
+              attachment_id?: string;
+              path?: string;
+            }>;
+
+            tasks.forEach((t, idx) => {
+              const uiId = indexToUiId[idx];
+              if (!uiId) return;
+              if (t?.task_id) {
+                dispatch(
+                  updateAttachment({
+                    id: uiId,
+                    updates: {
+                      taskId: t.task_id,
+                      status: 'processing',
+                      progress: 10,
+                    },
+                  }),
+                );
+              } else {
+                dispatch(
+                  updateAttachment({
+                    id: uiId,
+                    updates: { status: 'failed' },
+                  }),
+                );
+              }
+            });
+
+            if (tasks.length < files.length) {
+              for (let i = tasks.length; i < files.length; i++) {
+                const uiId = indexToUiId[i];
+                if (uiId) {
+                  dispatch(
+                    updateAttachment({
+                      id: uiId,
+                      updates: { status: 'failed' },
+                    }),
+                  );
+                }
+              }
+            }
+          } else if (response?.task_id) {
+            if (files.length === 1) {
+              const uiId = indexToUiId[0];
+              if (uiId) {
+                dispatch(
+                  updateAttachment({
+                    id: uiId,
+                    updates: {
+                      taskId: response.task_id,
+                      status: 'processing',
+                      progress: 10,
+                    },
+                  }),
+                );
+              }
+            } else {
+              console.warn(
+                'Server returned a single task_id for multiple files. Update backend to return tasks[].',
+              );
+              const firstUi = indexToUiId[0];
+              if (firstUi) {
+                dispatch(
+                  updateAttachment({
+                    id: firstUi,
+                    updates: {
+                      taskId: response.task_id,
+                      status: 'processing',
+                      progress: 10,
+                    },
+                  }),
+                );
+              }
+              for (let i = 1; i < files.length; i++) {
+                const uiId = indexToUiId[i];
+                if (uiId) {
+                  dispatch(
+                    updateAttachment({
+                      id: uiId,
+                      updates: { status: 'failed' },
+                    }),
+                  );
+                }
+              }
+            }
+          } else {
+            console.error('Unexpected upload response shape', response);
+            Object.values(indexToUiId).forEach((id) =>
+              dispatch(
+                updateAttachment({
+                  id,
+                  updates: { status: 'failed' },
+                }),
+              ),
+            );
+          }
+        } catch (err) {
+          console.error(
+            'Failed to parse upload response',
+            err,
+            xhr.responseText,
+          );
+          Object.values(indexToUiId).forEach((id) =>
+            dispatch(
+              updateAttachment({
+                id,
+                updates: { status: 'failed' },
+              }),
+            ),
+          );
+        }
+      } else {
+        console.error('Upload failed', status, xhr.responseText);
+        Object.values(indexToUiId).forEach((id) =>
+          dispatch(
+            updateAttachment({
+              id,
+              updates: { status: 'failed' },
+            }),
+          ),
+        );
+      }
+    };
+
+    xhr.onerror = () => {
+      console.error('Upload network error');
+      Object.values(indexToUiId).forEach((id) =>
+        dispatch(
+          updateAttachment({
+            id,
+            updates: { status: 'failed' },
+          }),
+        ),
+      );
+    };
+
+    xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.send(formData);
     e.target.value = '';
   };
 
@@ -529,6 +636,7 @@ export default function MessageInput({
                 className="hidden"
                 multiple
                 onChange={handleFileAttachment}
+                multiple
               />
             </label>
             {/* Additional badges can be added here in the future */}
