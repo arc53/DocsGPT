@@ -1,11 +1,15 @@
-# Folders to ignore
-node_modules
-dist
-out
+# Ignore folders
+node_modules/
+dist/
+out/
 .vscode-test/
+
+# Ignore files
 .env
+*.vsix
+
+# Ignore all JSON files except specific config files
 *.json
 !package.json
 !package-lock.json
 !tsconfig.json
-*.vsix
