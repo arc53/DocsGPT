@@ -1,0 +1,11 @@
+# Folders to ignore
+node_modules
+dist
+out
+.vscode-test/
+.env
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+*.vsix
