@@ -396,6 +396,18 @@
       "variablesDescription": "點擊以插入到提示中",
       "systemVariables": "點擊以插入提示中",
       "toolVariables": "工具變數",
+      "systemVariablesDropdownLabel": "系統變數",
+      "systemVariableOptions": {
+        "sourceContent": "來源內容",
+        "sourceSummaries": "內容別名（向後相容）",
+        "sourceDocuments": "文件物件列表",
+        "sourceCount": "擷取的文件數量",
+        "systemDate": "目前日期 (YYYY-MM-DD)",
+        "systemTime": "目前時間 (HH:MM:SS)",
+        "systemTimestamp": "ISO 8601 時間戳記",
+        "systemRequestId": "唯一請求識別碼",
+        "systemUserId": "目前使用者 ID"
+      },
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",

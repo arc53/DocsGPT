@@ -396,6 +396,18 @@
       "variablesDescription": "Click to insert into prompt",
       "systemVariables": "Click to insert into prompt",
       "toolVariables": "Tool Variables",
+      "systemVariablesDropdownLabel": "System Variables",
+      "systemVariableOptions": {
+        "sourceContent": "Sources content",
+        "sourceSummaries": "Alias for content (backward compatible)",
+        "sourceDocuments": "Document objects list",
+        "sourceCount": "Number of retrieved documents",
+        "systemDate": "Current date (YYYY-MM-DD)",
+        "systemTime": "Current time (HH:MM:SS)",
+        "systemTimestamp": "ISO 8601 timestamp",
+        "systemRequestId": "Unique request identifier",
+        "systemUserId": "Current user ID"
+      },
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
       "promptTypePublic": "public",
