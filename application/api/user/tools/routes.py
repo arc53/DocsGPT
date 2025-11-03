@@ -56,9 +56,10 @@ class GetTools(Resource):
             tools = user_tools_collection.find({"user": user})
             user_tools = []
             for tool in tools:
-                tool["id"] = str(tool["_id"])
-                tool.pop("_id")
-                user_tools.append(tool)
+                tool_copy = {**tool}
+                tool_copy["id"] = str(tool["_id"])
+                tool_copy.pop("_id", None)
+                user_tools.append(tool_copy)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

@@ -12,6 +12,141 @@ import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
 
+const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const highlightPromptVariables = (text: string) => {
+  if (!text) {
+    return '&#8203;';
+  }
+  variablePattern.lastIndex = 0;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = variablePattern.exec(text)) !== null) {
+    const precedingText = text.slice(lastIndex, match.index);
+    if (precedingText) {
+      result += escapeHtml(precedingText);
+    }
+    result += `<span class="prompt-variable-highlight">${escapeHtml(match[0])}</span>`;
+    lastIndex = match.index + match[0].length;
+  }
+
+  const remainingText = text.slice(lastIndex);
+  if (remainingText) {
+    result += escapeHtml(remainingText);
+  }
+
+  return result || '&#8203;';
+};
+
+const systemVariableOptionDefinitions = [
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.sourceContent',
+    value: 'source.content',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.sourceSummaries',
+    value: 'source.summaries',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.sourceDocuments',
+    value: 'source.documents',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.sourceCount',
+    value: 'source.count',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.systemDate',
+    value: 'system.date',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.systemTime',
+    value: 'system.time',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.systemTimestamp',
+    value: 'system.timestamp',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.systemRequestId',
+    value: 'system.request_id',
+  },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.systemUserId',
+    value: 'system.user_id',
+  },
+];
+
+const buildSystemVariableOptions = (translate: (key: string) => string) =>
+  systemVariableOptionDefinitions.map(({ value, labelKey }) => ({
+    value,
+    label: translate(labelKey),
+  }));
+
+type PromptTextareaProps = {
+  id: string;
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  ariaLabel: string;
+};
+
+function PromptTextarea({
+  id,
+  value,
+  onChange,
+  ariaLabel,
+}: PromptTextareaProps) {
+  const [scrollOffsets, setScrollOffsets] = React.useState({ top: 0, left: 0 });
+  const highlightedValue = React.useMemo(
+    () => highlightPromptVariables(value),
+    [value],
+  );
+
+  const handleScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
+    const { scrollTop, scrollLeft } = event.currentTarget;
+    setScrollOffsets({
+      top: scrollTop,
+      left: scrollLeft,
+    });
+  };
+
+  return (
+    <>
+      <div
+        className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded bg-white px-3 py-2 dark:bg-[#26272E]"
+        aria-hidden="true"
+      >
+        <div
+          className="min-h-full text-base leading-[1.5] break-words whitespace-pre-wrap text-transparent"
+          style={{
+            transform: `translate(${-scrollOffsets.left}px, ${-scrollOffsets.top}px)`,
+          }}
+          dangerouslySetInnerHTML={{ __html: highlightedValue }}
+        />
+      </div>
+      <textarea
+        id={id}
+        className="peer border-silver dark:border-silver/40 relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none dark:bg-transparent dark:text-white"
+        value={value}
+        onChange={onChange}
+        onScroll={handleScroll}
+        placeholder=" "
+        aria-label={ariaLabel}
+      />
+    </>
+  );
+}
+
 // Custom hook for fetching tool variables
 const useToolVariables = () => {
   const token = useSelector(selectToken);
@@ -50,9 +185,13 @@ const useToolVariables = () => {
                     );
 
                   if (canUseAction) {
+                    const toolIdentifier = tool.id ?? tool.name;
+                    if (!toolIdentifier) {
+                      return;
+                    }
                     filteredActions.push({
                       label: `${action.name} (${tool.displayName || tool.name})`,
-                      value: `tools.${tool.name}.${action.name}`,
+                      value: `tools.${toolIdentifier}.${action.name}`,
                     });
                   }
                 }
@@ -91,6 +230,10 @@ function AddPrompt({
   disableSave: boolean;
 }) {
   const { t } = useTranslation();
+  const systemVariableOptions = React.useMemo(
+    () => buildSystemVariableOptions(t),
+    [t],
+  );
   const toolVariables = useToolVariables();
 
   return (
@@ -115,17 +258,15 @@ function AddPrompt({
         />
 
         <div className="relative w-full">
-          <textarea
+          <PromptTextarea
             id="new-prompt-content"
-            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none dark:bg-[#26272E] dark:text-white"
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
-            placeholder=" "
-            aria-label={t('prompts.textAriaLabel')}
+            ariaLabel={t('prompts.textAriaLabel')}
           />
           <label
             htmlFor="new-prompt-content"
-            className={`absolute select-none ${
+            className={`absolute z-20 select-none ${
               newPromptContent ? '-top-2.5 left-3 text-xs' : ''
             } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
           >
@@ -146,8 +287,8 @@ function AddPrompt({
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Dropdown
-            options={[{ label: 'Summaries', value: 'summaries' }]}
-            selectedValue={'System Variables'}
+            options={systemVariableOptions}
+            selectedValue={t('modals.prompts.systemVariablesDropdownLabel')}
             onSelect={(option) => {
               const textarea = document.getElementById(
                 'new-prompt-content',
@@ -165,7 +306,7 @@ function AddPrompt({
                 const newText =
                   textBefore +
                   (needsSpace ? ' ' : '') +
-                  `{${option.value}}` +
+                  `{{ ${option.value} }}` +
                   textAfter;
                 setNewPromptContent(newText);
 
@@ -174,17 +315,17 @@ function AddPrompt({
                   textarea.setSelectionRange(
                     cursorPosition +
                       option.value.length +
-                      2 +
+                      6 +
                       (needsSpace ? 1 : 0),
                     cursorPosition +
                       option.value.length +
-                      2 +
+                      6 +
                       (needsSpace ? 1 : 0),
                   );
                 }, 0);
               }
             }}
-            placeholder="System Variables"
+            placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
             size="w-[140px] sm:w-[185px]"
             rounded="3xl"
             border="border"
@@ -298,6 +439,10 @@ function EditPrompt({
   disableSave: boolean;
 }) {
   const { t } = useTranslation();
+  const systemVariableOptions = React.useMemo(
+    () => buildSystemVariableOptions(t),
+    [t],
+  );
   const toolVariables = useToolVariables();
 
   return (
@@ -322,17 +467,15 @@ function EditPrompt({
         />
 
         <div className="relative w-full">
-          <textarea
+          <PromptTextarea
             id="edit-prompt-content"
-            className="peer border-silver dark:border-silver/40 h-48 w-full resize-none rounded border-2 bg-white px-3 py-2 text-base text-gray-800 outline-none dark:bg-[#26272E] dark:text-white"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
-            placeholder=" "
-            aria-label={t('prompts.textAriaLabel')}
+            ariaLabel={t('prompts.textAriaLabel')}
           />
           <label
             htmlFor="edit-prompt-content"
-            className={`absolute select-none ${
+            className={`absolute z-20 select-none ${
               editPromptContent ? '-top-2.5 left-3 text-xs' : ''
             } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
           >
@@ -353,8 +496,8 @@ function EditPrompt({
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Dropdown
-            options={[{ label: 'Summaries', value: 'summaries' }]}
-            selectedValue={'System Variables'}
+            options={systemVariableOptions}
+            selectedValue={t('modals.prompts.systemVariablesDropdownLabel')}
             onSelect={(option) => {
               const textarea = document.getElementById(
                 'edit-prompt-content',
@@ -372,7 +515,7 @@ function EditPrompt({
                 const newText =
                   textBefore +
                   (needsSpace ? ' ' : '') +
-                  `{${option.value}}` +
+                  `{{ ${option.value} }}` +
                   textAfter;
                 setEditPromptContent(newText);
 
@@ -381,17 +524,17 @@ function EditPrompt({
                   textarea.setSelectionRange(
                     cursorPosition +
                       option.value.length +
-                      2 +
+                      6 +
                       (needsSpace ? 1 : 0),
                     cursorPosition +
                       option.value.length +
-                      2 +
+                      6 +
                       (needsSpace ? 1 : 0),
                   );
                 }, 0);
               }
             }}
-            placeholder="System Variables"
+            placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
             size="w-[140px] sm:w-[185px]"
             rounded="3xl"
             border="border"

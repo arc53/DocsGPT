@@ -396,6 +396,18 @@
       "variablesDescription": "Нажмите, чтобы вставить в промпт",
       "systemVariables": "Системные переменные",
       "toolVariables": "Переменные инструментов",
+      "systemVariablesDropdownLabel": "Системные переменные",
+      "systemVariableOptions": {
+        "sourceContent": "Содержимое источников",
+        "sourceSummaries": "Псевдоним содержимого (обратная совместимость)",
+        "sourceDocuments": "Список объектов документов",
+        "sourceCount": "Количество полученных документов",
+        "systemDate": "Текущая дата (ГГГГ-ММ-ДД)",
+        "systemTime": "Текущее время (ЧЧ:ММ:СС)",
+        "systemTimestamp": "Отметка времени ISO 8601",
+        "systemRequestId": "Уникальный идентификатор запроса",
+        "systemUserId": "Идентификатор текущего пользователя"
+      },
       "learnAboutPrompts": "Узнать о промптах →",
       "publicPromptEditDisabled": "Публичные промпты нельзя редактировать",
       "promptTypePublic": "публичный",
