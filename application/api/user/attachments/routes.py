@@ -178,15 +178,11 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
-        from application.utils import clean_text_for_tts
-
         data = request.get_json()
         text = data["text"]
-        cleaned_text = clean_text_for_tts(text)
-
         try:
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
-            audio_base64, detected_language = tts_instance.text_to_speech(cleaned_text)
+            audio_base64, detected_language = tts_instance.text_to_speech(text)
             return make_response(
                 jsonify(
                     {

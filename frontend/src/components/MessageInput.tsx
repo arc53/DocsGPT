@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useDropzone } from 'react-dropzone';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -8,7 +6,6 @@ import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
 import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
-import DragFileUpload from '../assets/DragFileUpload.svg';
 import ExitIcon from '../assets/exit.svg';
 import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
@@ -20,7 +17,6 @@ import {
   selectAttachments,
   updateAttachment,
 } from '../upload/uploadSlice';
-import { reorderAttachments } from '../upload/uploadSlice';
 
 import { ActiveState } from '../models/misc';
 import {
@@ -57,7 +53,6 @@ export default function MessageInput({
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
-  const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
@@ -278,50 +273,6 @@ export default function MessageInput({
     e.target.value = '';
   };
 
-  // Drag and drop handler
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      uploadFiles(acceptedFiles);
-      setHandleDragActive(false);
-    },
-    [uploadFiles],
-  );
-
-  const { getRootProps, getInputProps } = useDropzone({
-    onDrop,
-    noClick: true,
-    noKeyboard: true,
-    multiple: true,
-    onDragEnter: () => {
-      setHandleDragActive(true);
-    },
-    onDragLeave: () => {
-      setHandleDragActive(false);
-    },
-    maxSize: 25000000,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'text/plain': ['.txt'],
-      'text/x-rst': ['.rst'],
-      'text/x-markdown': ['.md'],
-      'application/zip': ['.zip'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-      'application/json': ['.json'],
-      'text/csv': ['.csv'],
-      'text/html': ['.html'],
-      'application/epub+zip': ['.epub'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-        '.xlsx',
-      ],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        ['.pptx'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpeg'],
-      'image/jpg': ['.jpg'],
-    },
-  });
-
   useEffect(() => {
     const checkTaskStatus = () => {
       const processingAttachments = attachments.filter(
@@ -428,131 +379,86 @@ export default function MessageInput({
     handleAbort();
   };
 
-  // Drag state for reordering
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-
-  // no preview object URLs to revoke (preview removed per reviewer request)
-
-  const findIndexById = (id: string) =>
-    attachments.findIndex((a) => a.id === id);
-
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    setDraggingId(id);
-    try {
-      e.dataTransfer.setData('text/plain', id);
-      e.dataTransfer.effectAllowed = 'move';
-    } catch (err) {
-      // ignore
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDropOn = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer.getData('text/plain');
-    if (!sourceId || sourceId === targetId) return;
-
-    const sourceIndex = findIndexById(sourceId);
-    const destIndex = findIndexById(targetId);
-    if (sourceIndex === -1 || destIndex === -1) return;
-
-    dispatch(reorderAttachments({ sourceIndex, destinationIndex: destIndex }));
-    setDraggingId(null);
-  };
-
   return (
-    <div {...getRootProps()} className="flex w-full flex-col">
-      <input {...getInputProps()} />
+    <div className="flex w-full flex-col">
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment) => {
-            return (
-              <div
-                key={attachment.id}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, attachment.id)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDropOn(e, attachment.id)}
-                className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
-                  attachment.status !== 'completed'
-                    ? 'opacity-70'
-                    : 'opacity-100'
-                } ${draggingId === attachment.id ? 'ring-dashed opacity-60 ring-2 ring-purple-200' : ''}`}
-                title={attachment.fileName}
-              >
-                <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
-                  {attachment.status === 'completed' && (
-                    <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {attachment.status === 'failed' && (
-                    <img
-                      src={AlertIcon}
-                      alt="Failed"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {(attachment.status === 'uploading' ||
-                    attachment.status === 'processing') && (
-                    <div className="flex h-[15px] w-[15px] items-center justify-center">
-                      <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-0"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="transparent"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <circle
-                          className="text-[#ECECF1]"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                          strokeDasharray="62.83"
-                          strokeDashoffset={
-                            62.83 * (1 - attachment.progress / 100)
-                          }
-                          transform="rotate(-90 12 12)"
-                        />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-
-                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                  {attachment.fileName}
-                </span>
-
-                <button
-                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
-                  onClick={() => {
-                    dispatch(removeAttachment(attachment.id));
-                  }}
-                  aria-label={t('conversation.attachments.remove')}
-                >
+          {attachments.map((attachment) => (
+            <div
+              key={attachment.id}
+              className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
+                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
+              }`}
+              title={attachment.fileName}
+            >
+              <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
+                {attachment.status === 'completed' && (
                   <img
-                    src={ExitIcon}
-                    alt={t('conversation.attachments.remove')}
-                    className="h-2.5 w-2.5 filter dark:invert"
+                    src={DocumentationDark}
+                    alt="Attachment"
+                    className="h-[15px] w-[15px] object-fill"
                   />
-                </button>
+                )}
+
+                {attachment.status === 'failed' && (
+                  <img
+                    src={AlertIcon}
+                    alt="Failed"
+                    className="h-[15px] w-[15px] object-fill"
+                  />
+                )}
+
+                {(attachment.status === 'uploading' ||
+                  attachment.status === 'processing') && (
+                  <div className="flex h-[15px] w-[15px] items-center justify-center">
+                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-0"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="transparent"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <circle
+                        className="text-[#ECECF1]"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                        strokeDasharray="62.83"
+                        strokeDashoffset={
+                          62.83 * (1 - attachment.progress / 100)
+                        }
+                        transform="rotate(-90 12 12)"
+                      />
+                    </svg>
+                  </div>
+                )}
               </div>
-            );
-          })}
+
+              <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
+                {attachment.fileName}
+              </span>
+
+              <button
+                className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                onClick={() => {
+                  dispatch(removeAttachment(attachment.id));
+                }}
+                aria-label={t('conversation.attachments.remove')}
+              >
+                <img
+                  src={ExitIcon}
+                  alt={t('conversation.attachments.remove')}
+                  className="h-2.5 w-2.5 filter dark:invert"
+                />
+              </button>
+            </div>
+          ))}
         </div>
 
         <div className="w-full">
@@ -634,7 +540,6 @@ export default function MessageInput({
               <input
                 type="file"
                 className="hidden"
-                multiple
                 onChange={handleFileAttachment}
                 multiple
               />
@@ -695,20 +600,6 @@ export default function MessageInput({
           close={() => setUploadModalState('INACTIVE')}
         />
       )}
-
-      {handleDragActive &&
-        createPortal(
-          <div className="dark:bg-gray-alpha/50 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
-            <img className="filter dark:invert" src={DragFileUpload} />
-            <span className="text-outer-space dark:text-silver px-2 text-2xl font-bold">
-              {t('modals.uploadDoc.drag.title')}
-            </span>
-            <span className="text-s text-outer-space dark:text-silver w-48 p-2 text-center">
-              {t('modals.uploadDoc.drag.description')}
-            </span>
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }
