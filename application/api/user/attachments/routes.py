@@ -1,6 +1,7 @@
 """File attachments and media routes."""
 
 import os
+import time
 from typing import Any, Dict, List, Tuple
 
 from bson.objectid import ObjectId
@@ -128,7 +129,7 @@ class StoreAttachment(Resource):
             )
     
     def _process_files_batch(self, files: List[FileStorage], user: str) -> List[Dict[str, Any]]:
-        """Process multiple files in batch.
+        """Process multiple files in batch with enhanced error isolation.
         
         Args:
             files: List of FileStorage objects to process
@@ -141,28 +142,53 @@ class StoreAttachment(Resource):
         """
         results = []
         
-        for file in files:
+        for i, file in enumerate(files):
             try:
+                current_app.logger.info(
+                    f"Processing file {i+1}/{len(files)}: {getattr(file, 'filename', 'unknown')}",
+                    extra={"user": user, "batch_size": len(files)}
+                )
                 result = self._process_single_file(file, user)
                 results.append(result)
+                
+                if result["success"]:
+                    current_app.logger.info(
+                        f"Successfully queued file for processing: {result['filename']}",
+                        extra={"user": user, "task_id": result["task_id"], "attachment_id": result["attachment_id"]}
+                    )
+                else:
+                    current_app.logger.warning(
+                        f"Failed to process file: {result['filename']}, error: {result.get('error', 'Unknown')}",
+                        extra={"user": user}
+                    )
+                    
             except Exception as err:
+                filename = getattr(file, "filename", "unknown")
                 current_app.logger.error(
-                    f"Error processing file {getattr(file, 'filename', 'unknown')}: {err}",
-                    exc_info=True
+                    f"Exception processing file {filename}: {err}",
+                    exc_info=True,
+                    extra={"user": user, "file_index": i}
                 )
                 results.append({
                     "success": False,
-                    "filename": getattr(file, "filename", "unknown"),
+                    "filename": filename,
                     "attachment_id": None,
                     "task_id": None,
                     "message": "File processing failed",
                     "error": str(err)
                 })
         
+        # Log batch summary
+        successful_count = sum(1 for result in results if result["success"])
+        current_app.logger.info(
+            f"Batch processing completed: {successful_count}/{len(results)} files successful",
+            extra={"user": user, "success_rate": successful_count / len(results) if results else 0}
+        )
+        
         return results
     
     def _process_single_file(self, file: FileStorage, user: str) -> Dict[str, Any]:
-        """Process a single file upload.
+        """Process a single file upload with comprehensive error handling.
         
         Args:
             file: FileStorage object to process
@@ -191,27 +217,122 @@ class StoreAttachment(Resource):
         original_filename = safe_filename(os.path.basename(file.filename))
         relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
         
-        # Save file to storage
-        metadata = storage.save_file(file, relative_path)
-        
-        # Prepare file info for background task
-        file_info = {
-            "filename": original_filename,
-            "attachment_id": str(attachment_id),
-            "path": relative_path,
-            "metadata": metadata,
-        }
-        
-        # Queue background processing task
-        task = store_attachment.delay(file_info, user)
-        
-        return {
-            "success": True,
-            "filename": original_filename,
-            "attachment_id": str(attachment_id),
-            "task_id": task.id,
-            "message": "File uploaded successfully. Processing started."
-        }
+        try:
+            # Save file to storage
+            current_app.logger.debug(
+                f"Saving file to storage: {original_filename} -> {relative_path}",
+                extra={"user": user, "attachment_id": str(attachment_id)}
+            )
+            metadata = storage.save_file(file, relative_path)
+            
+            # CRITICAL FIX: Verify file was actually saved and is accessible
+            # This prevents the race condition that was causing Celery worker crashes
+            max_verification_attempts = 3
+            file_verified = False
+            
+            for attempt in range(max_verification_attempts):
+                try:
+                    # Check if file exists
+                    if storage.file_exists(relative_path):
+                        # Additional verification: ensure file is readable
+                        test_file = storage.get_file(relative_path)
+                        test_file.close()
+                        file_verified = True
+                        current_app.logger.debug(
+                            f"File verification successful on attempt {attempt + 1}: {original_filename}",
+                            extra={"user": user, "attachment_id": str(attachment_id)}
+                        )
+                        break
+                    else:
+                        current_app.logger.warning(
+                            f"File existence check failed on attempt {attempt + 1}: {relative_path}",
+                            extra={"user": user, "attachment_id": str(attachment_id)}
+                        )
+                except Exception as verify_error:
+                    current_app.logger.warning(
+                        f"File verification attempt {attempt + 1} failed: {verify_error}",
+                        extra={"user": user, "attachment_id": str(attachment_id)}
+                    )
+                
+                # If not the last attempt, wait before retrying
+                if attempt < max_verification_attempts - 1 and not file_verified:
+                    wait_time = 0.1 * (attempt + 1)  # Exponential backoff: 0.1, 0.2, 0.3 seconds
+                    current_app.logger.debug(
+                        f"Waiting {wait_time}s before retry {attempt + 2} for file: {original_filename}"
+                    )
+                    time.sleep(wait_time)
+            
+            if not file_verified:
+                error_msg = f"File save verification failed after {max_verification_attempts} attempts: {original_filename}"
+                current_app.logger.error(
+                    error_msg,
+                    extra={"user": user, "attachment_id": str(attachment_id), "path": relative_path}
+                )
+                # Attempt cleanup of potentially corrupted file
+                try:
+                    if storage.file_exists(relative_path):
+                        storage.delete_file(relative_path)
+                        current_app.logger.info(
+                            f"Cleaned up unverified file: {relative_path}",
+                            extra={"user": user, "attachment_id": str(attachment_id)}
+                        )
+                except Exception as cleanup_error:
+                    current_app.logger.warning(
+                        f"Failed to cleanup unverified file {relative_path}: {cleanup_error}",
+                        extra={"user": user, "attachment_id": str(attachment_id)}
+                    )
+                
+                raise Exception(error_msg)
+            
+            # Prepare file info for background task
+            file_info = {
+                "filename": original_filename,
+                "attachment_id": str(attachment_id),
+                "path": relative_path,
+                "metadata": metadata,
+            }
+            
+            # Queue background processing task only after successful verification
+            current_app.logger.debug(
+                f"Queuing background task for verified file: {original_filename}",
+                extra={"user": user, "attachment_id": str(attachment_id)}
+            )
+            task = store_attachment.delay(file_info, user)
+            
+            current_app.logger.info(
+                f"File upload and verification completed successfully: {original_filename}",
+                extra={
+                    "user": user,
+                    "attachment_id": str(attachment_id),
+                    "task_id": task.id,
+                    "file_size": getattr(file, 'content_length', 'unknown')
+                }
+            )
+            
+            return {
+                "success": True,
+                "filename": original_filename,
+                "attachment_id": str(attachment_id),
+                "task_id": task.id,
+                "message": "File uploaded successfully. Processing started."
+            }
+            
+        except Exception as storage_error:
+            current_app.logger.error(
+                f"Storage operation failed for file {original_filename}: {storage_error}",
+                exc_info=True,
+                extra={"user": user, "attachment_id": str(attachment_id)}
+            )
+            
+            # Return structured error response instead of re-raising
+            return {
+                "success": False,
+                "filename": original_filename,
+                "attachment_id": str(attachment_id),
+                "task_id": None,
+                "message": "File upload failed",
+                "error": str(storage_error)
+            }
 
 
 @attachments_ns.route("/images/<path:image_path>")
