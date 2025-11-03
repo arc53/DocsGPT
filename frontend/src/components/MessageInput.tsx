@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -6,6 +8,7 @@ import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
 import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
+import DragFileUpload from '../assets/DragFileUpload.svg';
 import ExitIcon from '../assets/exit.svg';
 import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
@@ -16,6 +19,7 @@ import {
   removeAttachment,
   selectAttachments,
   updateAttachment,
+  reorderAttachments,
 } from '../upload/uploadSlice';
 
 import { ActiveState } from '../models/misc';
@@ -53,6 +57,7 @@ export default function MessageInput({
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
+  const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
@@ -72,7 +77,7 @@ export default function MessageInput({
         (browserOS === 'mac' && event.metaKey && event.key === 'k')
       ) {
         event.preventDefault();
-        setIsSourcesPopupOpen(!isSourcesPopupOpen);
+        setIsSourcesPopupOpen((s) => !s);
       }
     };
 
@@ -81,143 +86,171 @@ export default function MessageInput({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [browserOS]);
-  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
 
-    const files = Array.from(e.target.files);
-    const formData = new FormData();
+  const uploadFiles = useCallback(
+    (files: File[]) => {
+      if (!files || files.length === 0) return;
 
-    files.forEach((file) => formData.append('file', file));
+      const apiHost = import.meta.env.VITE_API_HOST;
 
-    const apiHost = import.meta.env.VITE_API_HOST;
-    const xhr = new XMLHttpRequest();
+      if (files.length > 1) {
+        const formData = new FormData();
+        const indexToUiId: Record<number, string> = {};
 
-    const indexToUiId: Record<number, string> = {};
-    files.forEach((file, i) => {
-      const uiId = crypto.randomUUID();
-      indexToUiId[i] = uiId;
-      dispatch(
-        addAttachment({
-          id: uiId,
-          fileName: file.name,
-          progress: 0,
-          status: 'uploading' as const,
-          taskId: '',
-        }),
-      );
-    });
-
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        Object.values(indexToUiId).forEach((uiId) => {
+        files.forEach((file, i) => {
+          formData.append('file', file);
+          const uiId = crypto.randomUUID();
+          indexToUiId[i] = uiId;
           dispatch(
-            updateAttachment({
+            addAttachment({
               id: uiId,
-              updates: { progress },
+              fileName: file.name,
+              progress: 0,
+              status: 'uploading' as const,
+              taskId: '',
             }),
           );
         });
-      }
-    });
 
-    xhr.onload = () => {
-      const status = xhr.status;
-      if (status === 200) {
-        try {
-          const response = JSON.parse(xhr.responseText);
+        const xhr = new XMLHttpRequest();
 
-          if (Array.isArray(response?.tasks)) {
-            const tasks = response.tasks as Array<{
-              task_id?: string;
-              filename?: string;
-              attachment_id?: string;
-              path?: string;
-            }>;
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            Object.values(indexToUiId).forEach((uiId) =>
+              dispatch(
+                updateAttachment({
+                  id: uiId,
+                  updates: { progress },
+                }),
+              ),
+            );
+          }
+        });
 
-            tasks.forEach((t, idx) => {
-              const uiId = indexToUiId[idx];
-              if (!uiId) return;
-              if (t?.task_id) {
-                dispatch(
-                  updateAttachment({
-                    id: uiId,
-                    updates: {
-                      taskId: t.task_id,
-                      status: 'processing',
-                      progress: 10,
-                    },
-                  }),
-                );
+        xhr.onload = () => {
+          const status = xhr.status;
+          if (status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+
+              if (Array.isArray(response?.tasks)) {
+                const tasks = response.tasks as Array<{
+                  task_id?: string;
+                  filename?: string;
+                  attachment_id?: string;
+                  path?: string;
+                }>;
+
+                tasks.forEach((t, idx) => {
+                  const uiId = indexToUiId[idx];
+                  if (!uiId) return;
+                  if (t?.task_id) {
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: {
+                          taskId: t.task_id,
+                          status: 'processing',
+                          progress: 10,
+                        },
+                      }),
+                    );
+                  } else {
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: { status: 'failed' },
+                      }),
+                    );
+                  }
+                });
+
+                if (tasks.length < files.length) {
+                  for (let i = tasks.length; i < files.length; i++) {
+                    const uiId = indexToUiId[i];
+                    if (uiId) {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: { status: 'failed' },
+                        }),
+                      );
+                    }
+                  }
+                }
+              } else if (response?.task_id) {
+                if (files.length === 1) {
+                  const uiId = indexToUiId[0];
+                  if (uiId) {
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: {
+                          taskId: response.task_id,
+                          status: 'processing',
+                          progress: 10,
+                        },
+                      }),
+                    );
+                  }
+                } else {
+                  console.warn(
+                    'Server returned a single task_id for multiple files. Update backend to return tasks[].',
+                  );
+                  const firstUi = indexToUiId[0];
+                  if (firstUi) {
+                    dispatch(
+                      updateAttachment({
+                        id: firstUi,
+                        updates: {
+                          taskId: response.task_id,
+                          status: 'processing',
+                          progress: 10,
+                        },
+                      }),
+                    );
+                  }
+                  for (let i = 1; i < files.length; i++) {
+                    const uiId = indexToUiId[i];
+                    if (uiId) {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: { status: 'failed' },
+                        }),
+                      );
+                    }
+                  }
+                }
               } else {
+                console.error('Unexpected upload response shape', response);
+                Object.values(indexToUiId).forEach((id) =>
+                  dispatch(
+                    updateAttachment({
+                      id,
+                      updates: { status: 'failed' },
+                    }),
+                  ),
+                );
+              }
+            } catch (err) {
+              console.error(
+                'Failed to parse upload response',
+                err,
+                xhr.responseText,
+              );
+              Object.values(indexToUiId).forEach((id) =>
                 dispatch(
                   updateAttachment({
-                    id: uiId,
+                    id,
                     updates: { status: 'failed' },
                   }),
-                );
-              }
-            });
-
-            if (tasks.length < files.length) {
-              for (let i = tasks.length; i < files.length; i++) {
-                const uiId = indexToUiId[i];
-                if (uiId) {
-                  dispatch(
-                    updateAttachment({
-                      id: uiId,
-                      updates: { status: 'failed' },
-                    }),
-                  );
-                }
-              }
-            }
-          } else if (response?.task_id) {
-            if (files.length === 1) {
-              const uiId = indexToUiId[0];
-              if (uiId) {
-                dispatch(
-                  updateAttachment({
-                    id: uiId,
-                    updates: {
-                      taskId: response.task_id,
-                      status: 'processing',
-                      progress: 10,
-                    },
-                  }),
-                );
-              }
-            } else {
-              console.warn(
-                'Server returned a single task_id for multiple files. Update backend to return tasks[].',
+                ),
               );
-              const firstUi = indexToUiId[0];
-              if (firstUi) {
-                dispatch(
-                  updateAttachment({
-                    id: firstUi,
-                    updates: {
-                      taskId: response.task_id,
-                      status: 'processing',
-                      progress: 10,
-                    },
-                  }),
-                );
-              }
-              for (let i = 1; i < files.length; i++) {
-                const uiId = indexToUiId[i];
-                if (uiId) {
-                  dispatch(
-                    updateAttachment({
-                      id: uiId,
-                      updates: { status: 'failed' },
-                    }),
-                  );
-                }
-              }
             }
           } else {
-            console.error('Unexpected upload response shape', response);
+            console.error('Upload failed', status, xhr.responseText);
             Object.values(indexToUiId).forEach((id) =>
               dispatch(
                 updateAttachment({
@@ -227,12 +260,10 @@ export default function MessageInput({
               ),
             );
           }
-        } catch (err) {
-          console.error(
-            'Failed to parse upload response',
-            err,
-            xhr.responseText,
-          );
+        };
+
+        xhr.onerror = () => {
+          console.error('Upload network error');
           Object.values(indexToUiId).forEach((id) =>
             dispatch(
               updateAttachment({
@@ -241,37 +272,174 @@ export default function MessageInput({
               }),
             ),
           );
-        }
-      } else {
-        console.error('Upload failed', status, xhr.responseText);
-        Object.values(indexToUiId).forEach((id) =>
+        };
+
+        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+        return;
+      }
+
+      // Single-file path: upload each file individually (original repo behavior)
+      files.forEach((file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const xhr = new XMLHttpRequest();
+        const uniqueId = crypto.randomUUID();
+
+        const newAttachment = {
+          id: uniqueId,
+          fileName: file.name,
+          progress: 0,
+          status: 'uploading' as const,
+          taskId: '',
+        };
+
+        dispatch(addAttachment(newAttachment));
+
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            dispatch(
+              updateAttachment({
+                id: uniqueId,
+                updates: { progress },
+              }),
+            );
+          }
+        });
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.task_id) {
+                dispatch(
+                  updateAttachment({
+                    id: uniqueId,
+                    updates: {
+                      taskId: response.task_id,
+                      status: 'processing',
+                      progress: 10,
+                    },
+                  }),
+                );
+              } else {
+                // If backend returned tasks[] for single-file, handle gracefully:
+                if (
+                  Array.isArray(response?.tasks) &&
+                  response.tasks[0]?.task_id
+                ) {
+                  dispatch(
+                    updateAttachment({
+                      id: uniqueId,
+                      updates: {
+                        taskId: response.tasks[0].task_id,
+                        status: 'processing',
+                        progress: 10,
+                      },
+                    }),
+                  );
+                } else {
+                  dispatch(
+                    updateAttachment({
+                      id: uniqueId,
+                      updates: { status: 'failed' },
+                    }),
+                  );
+                }
+              }
+            } catch (err) {
+              console.error(
+                'Failed to parse upload response',
+                err,
+                xhr.responseText,
+              );
+              dispatch(
+                updateAttachment({
+                  id: uniqueId,
+                  updates: { status: 'failed' },
+                }),
+              );
+            }
+          } else {
+            dispatch(
+              updateAttachment({
+                id: uniqueId,
+                updates: { status: 'failed' },
+              }),
+            );
+          }
+        };
+
+        xhr.onerror = () => {
           dispatch(
             updateAttachment({
-              id,
+              id: uniqueId,
               updates: { status: 'failed' },
             }),
-          ),
-        );
-      }
-    };
+          );
+        };
 
-    xhr.onerror = () => {
-      console.error('Upload network error');
-      Object.values(indexToUiId).forEach((id) =>
-        dispatch(
-          updateAttachment({
-            id,
-            updates: { status: 'failed' },
-          }),
-        ),
-      );
-    };
+        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+      });
+    },
+    [dispatch, token],
+  );
 
-    xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.send(formData);
+  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    uploadFiles(files);
+    // clear input so same file can be selected again
     e.target.value = '';
   };
+
+  // Drag & drop via react-dropzone
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      uploadFiles(acceptedFiles);
+      setHandleDragActive(false);
+    },
+    [uploadFiles],
+  );
+
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop,
+    noClick: true,
+    noKeyboard: true,
+    multiple: true,
+    onDragEnter: () => {
+      setHandleDragActive(true);
+    },
+    onDragLeave: () => {
+      setHandleDragActive(false);
+    },
+    maxSize: 25000000,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'text/x-rst': ['.rst'],
+      'text/x-markdown': ['.md'],
+      'application/zip': ['.zip'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        ['.docx'],
+      'application/json': ['.json'],
+      'text/csv': ['.csv'],
+      'text/html': ['.html'],
+      'application/epub+zip': ['.epub'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        ['.pptx'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpeg'],
+      'image/jpg': ['.jpg'],
+    },
+  });
 
   useEffect(() => {
     const checkTaskStatus = () => {
@@ -379,86 +547,134 @@ export default function MessageInput({
     handleAbort();
   };
 
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  const findIndexById = (id: string) =>
+    attachments.findIndex((a) => a.id === id);
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggingId(id);
+    try {
+      e.dataTransfer.setData('text/plain', id);
+      e.dataTransfer.effectAllowed = 'move';
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropOn = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (!sourceId || sourceId === targetId) return;
+
+    const sourceIndex = findIndexById(sourceId);
+    const destIndex = findIndexById(targetId);
+    if (sourceIndex === -1 || destIndex === -1) return;
+
+    dispatch(reorderAttachments({ sourceIndex, destinationIndex: destIndex }));
+    setDraggingId(null);
+  };
+
   return (
-    <div className="flex w-full flex-col">
+    <div {...getRootProps()} className="flex w-full flex-col">
+      {/* react-dropzone input (for drag/drop) */}
+      <input {...getInputProps()} />
+
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
-                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-              }`}
-              title={attachment.fileName}
-            >
-              <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                {attachment.status === 'completed' && (
-                  <img
-                    src={DocumentationDark}
-                    alt="Attachment"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {attachment.status === 'failed' && (
-                  <img
-                    src={AlertIcon}
-                    alt="Failed"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {(attachment.status === 'uploading' ||
-                  attachment.status === 'processing') && (
-                  <div className="flex h-[15px] w-[15px] items-center justify-center">
-                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-0"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="transparent"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <circle
-                        className="text-[#ECECF1]"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                        strokeDasharray="62.83"
-                        strokeDashoffset={
-                          62.83 * (1 - attachment.progress / 100)
-                        }
-                        transform="rotate(-90 12 12)"
-                      />
-                    </svg>
-                  </div>
-                )}
-              </div>
-
-              <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                {attachment.fileName}
-              </span>
-
-              <button
-                className="ml-1.5 flex items-center justify-center rounded-full p-1"
-                onClick={() => {
-                  dispatch(removeAttachment(attachment.id));
-                }}
-                aria-label={t('conversation.attachments.remove')}
+          {attachments.map((attachment) => {
+            return (
+              <div
+                key={attachment.id}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, attachment.id)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDropOn(e, attachment.id)}
+                className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
+                  attachment.status !== 'completed'
+                    ? 'opacity-70'
+                    : 'opacity-100'
+                } ${
+                  draggingId === attachment.id
+                    ? 'ring-dashed opacity-60 ring-2 ring-purple-200'
+                    : ''
+                }`}
+                title={attachment.fileName}
               >
-                <img
-                  src={ExitIcon}
-                  alt={t('conversation.attachments.remove')}
-                  className="h-2.5 w-2.5 filter dark:invert"
-                />
-              </button>
-            </div>
-          ))}
+                <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
+                  {attachment.status === 'completed' && (
+                    <img
+                      src={DocumentationDark}
+                      alt="Attachment"
+                      className="h-[15px] w-[15px] object-fill"
+                    />
+                  )}
+
+                  {attachment.status === 'failed' && (
+                    <img
+                      src={AlertIcon}
+                      alt="Failed"
+                      className="h-[15px] w-[15px] object-fill"
+                    />
+                  )}
+
+                  {(attachment.status === 'uploading' ||
+                    attachment.status === 'processing') && (
+                    <div className="flex h-[15px] w-[15px] items-center justify-center">
+                      <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-0"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="transparent"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <circle
+                          className="text-[#ECECF1]"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                          strokeDasharray="62.83"
+                          strokeDashoffset={
+                            62.83 * (1 - attachment.progress / 100)
+                          }
+                          transform="rotate(-90 12 12)"
+                        />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
+                  {attachment.fileName}
+                </span>
+
+                <button
+                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                  onClick={() => {
+                    dispatch(removeAttachment(attachment.id));
+                  }}
+                  aria-label={t('conversation.attachments.remove')}
+                >
+                  <img
+                    src={ExitIcon}
+                    alt={t('conversation.attachments.remove')}
+                    className="h-2.5 w-2.5 filter dark:invert"
+                  />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <div className="w-full">
@@ -540,8 +756,8 @@ export default function MessageInput({
               <input
                 type="file"
                 className="hidden"
-                onChange={handleFileAttachment}
                 multiple
+                onChange={handleFileAttachment}
               />
             </label>
             {/* Additional badges can be added here in the future */}
@@ -600,6 +816,20 @@ export default function MessageInput({
           close={() => setUploadModalState('INACTIVE')}
         />
       )}
+
+      {handleDragActive &&
+        createPortal(
+          <div className="dark:bg-gray-alpha/50 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
+            <img className="filter dark:invert" src={DragFileUpload} />
+            <span className="text-outer-space dark:text-silver px-2 text-2xl font-bold">
+              {t('modals.uploadDoc.drag.title')}
+            </span>
+            <span className="text-s text-outer-space dark:text-silver w-48 p-2 text-center">
+              {t('modals.uploadDoc.drag.description')}
+            </span>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
