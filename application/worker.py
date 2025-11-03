@@ -6,6 +6,7 @@ import os
 import shutil
 import string
 import tempfile
+import time
 from typing import Any, Dict
 import zipfile
 
@@ -807,6 +808,7 @@ def sync_worker(self, frequency):
 def attachment_worker(self, file_info, user):
     """
     Process and store a single attachment without vectorization.
+    Enhanced with retry logic to handle race conditions and storage issues.
     """
 
     mongo = MongoDB.get_client()
@@ -818,52 +820,243 @@ def attachment_worker(self, file_info, user):
     relative_path = file_info["path"]
     metadata = file_info.get("metadata", {})
 
+    # Configuration for retry mechanism
+    max_retries = 3
+    base_delay = 0.5  # 500ms base delay
+    
+    # Track processing attempts
+    processing_start = time.time()
+
     try:
         self.update_state(state="PROGRESS", meta={"current": 10})
         storage = StorageCreator.get_storage()
 
-        self.update_state(
-            state="PROGRESS", meta={"current": 30, "status": "Processing content"}
+        logging.info(
+            f"Starting attachment processing for file: {filename}",
+            extra={
+                "user": user, 
+                "attachment_id": attachment_id, 
+                "path": relative_path,
+                "max_retries": max_retries
+            }
         )
 
-        content = storage.process_file(
-            relative_path,
-            lambda local_path, **kwargs: SimpleDirectoryReader(
-                input_files=[local_path], exclude_hidden=True, errors="ignore"
-            )
-            .load_data()[0]
-            .text,
-        )
+        # CRITICAL FIX: Implement retry logic with exponential backoff
+        # This resolves the race condition that was causing worker crashes
+        content = None
+        processing_successful = False
+        
+        for attempt in range(max_retries):
+            try:
+                # Log attempt details
+                attempt_start = time.time()
+                logging.debug(
+                    f"Processing attempt {attempt + 1}/{max_retries} for file: {filename}",
+                    extra={
+                        "user": user,
+                        "attachment_id": attachment_id,
+                        "attempt": attempt + 1,
+                        "elapsed_since_start": round(time.time() - processing_start, 2)
+                    }
+                )
+                
+                # Pre-flight check: verify file exists before attempting to process
+                if not storage.file_exists(relative_path):
+                    raise FileNotFoundError(f"Attachment file not found: {relative_path}")
+                
+                # Additional verification: ensure file is readable
+                try:
+                    test_file = storage.get_file(relative_path)
+                    test_file.close()
+                    logging.debug(
+                        f"File readability verified for: {filename}",
+                        extra={"user": user, "attachment_id": attachment_id, "attempt": attempt + 1}
+                    )
+                except Exception as read_error:
+                    raise FileNotFoundError(f"File exists but not readable: {relative_path}, error: {str(read_error)}")
+                
+                self.update_state(
+                    state="PROGRESS", 
+                    meta={
+                        "current": 30, 
+                        "status": f"Processing content (attempt {attempt + 1})"
+                    }
+                )
 
+                # Process file content using the storage interface
+                content = storage.process_file(
+                    relative_path,
+                    lambda local_path, **kwargs: SimpleDirectoryReader(
+                        input_files=[local_path], exclude_hidden=True, errors="ignore"
+                    )
+                    .load_data()[0]
+                    .text,
+                )
+                
+                # Verify content was extracted successfully
+                if not content or len(content.strip()) == 0:
+                    raise ValueError(f"No content extracted from file: {filename}")
+                
+                processing_successful = True
+                attempt_duration = time.time() - attempt_start
+                
+                logging.info(
+                    f"File processing successful on attempt {attempt + 1}: {filename}",
+                    extra={
+                        "user": user,
+                        "attachment_id": attachment_id,
+                        "attempt": attempt + 1,
+                        "attempt_duration": round(attempt_duration, 2),
+                        "content_length": len(content),
+                        "total_processing_time": round(time.time() - processing_start, 2)
+                    }
+                )
+                break  # Success, exit retry loop
+                
+            except FileNotFoundError as fnf_error:
+                attempt_duration = time.time() - attempt_start
+                
+                if attempt == max_retries - 1:
+                    # Final attempt failed, log comprehensive error
+                    logging.error(
+                        f"File not found after {max_retries} attempts for attachment: {filename}",
+                        extra={
+                            "user": user,
+                            "attachment_id": attachment_id,
+                            "path": relative_path,
+                            "final_error": str(fnf_error),
+                            "total_processing_time": round(time.time() - processing_start, 2),
+                            "all_attempts_failed": True
+                        },
+                        exc_info=True
+                    )
+                    raise fnf_error
+                else:
+                    # Not final attempt, log warning and prepare for retry
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    logging.warning(
+                        f"File not found on attempt {attempt + 1}/{max_retries} for {filename}, retrying in {delay}s",
+                        extra={
+                            "user": user,
+                            "attachment_id": attachment_id,
+                            "path": relative_path,
+                            "attempt": attempt + 1,
+                            "retry_delay": delay,
+                            "attempt_duration": round(attempt_duration, 2),
+                            "error": str(fnf_error)
+                        }
+                    )
+                    time.sleep(delay)
+                    
+            except Exception as processing_error:
+                attempt_duration = time.time() - attempt_start
+                
+                if attempt == max_retries - 1:
+                    # Final attempt failed with non-FileNotFound error
+                    logging.error(
+                        f"Processing failed after {max_retries} attempts for attachment: {filename}",
+                        extra={
+                            "user": user,
+                            "attachment_id": attachment_id,
+                            "path": relative_path,
+                            "final_error": str(processing_error),
+                            "error_type": type(processing_error).__name__,
+                            "total_processing_time": round(time.time() - processing_start, 2)
+                        },
+                        exc_info=True
+                    )
+                    raise processing_error
+                else:
+                    # Not final attempt, log error and retry
+                    delay = base_delay * (2 ** attempt)
+                    logging.warning(
+                        f"Processing attempt {attempt + 1}/{max_retries} failed for {filename}, retrying in {delay}s",
+                        extra={
+                            "user": user,
+                            "attachment_id": attachment_id,
+                            "attempt": attempt + 1,
+                            "retry_delay": delay,
+                            "attempt_duration": round(attempt_duration, 2),
+                            "error": str(processing_error),
+                            "error_type": type(processing_error).__name__
+                        }
+                    )
+                    time.sleep(delay)
+        
+        if not processing_successful or not content:
+            raise Exception(f"Failed to process attachment after {max_retries} attempts: {filename}")
+        
+        # Process content (token counting and truncation if needed)
         token_count = num_tokens_from_string(content)
+        original_token_count = token_count
+        
         if token_count > 100000:
             content = content[:250000]
             token_count = num_tokens_from_string(content)
+            logging.info(
+                f"Content truncated for large file: {filename}",
+                extra={
+                    "user": user,
+                    "attachment_id": attachment_id,
+                    "original_tokens": original_token_count,
+                    "truncated_tokens": token_count,
+                    "truncated_chars": 250000
+                }
+            )
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
         )
 
+        # Determine MIME type
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
+        # Store in database
         doc_id = ObjectId(attachment_id)
-        attachments_collection.insert_one(
-            {
-                "_id": doc_id,
-                "user": user,
-                "path": relative_path,
-                "filename": filename,
-                "content": content,
-                "token_count": token_count,
-                "mime_type": mime_type,
-                "date": datetime.datetime.now(),
-                "metadata": metadata,
+        attachment_document = {
+            "_id": doc_id,
+            "user": user,
+            "path": relative_path,
+            "filename": filename,
+            "content": content,
+            "token_count": token_count,
+            "mime_type": mime_type,
+            "date": datetime.datetime.now(),
+            "metadata": metadata,
+            "processing_stats": {
+                "attempts_needed": max([i for i in range(max_retries) if i == max_retries - 1 or processing_successful]) + 1,
+                "total_processing_time": round(time.time() - processing_start, 2),
+                "original_token_count": original_token_count,
+                "content_truncated": token_count != original_token_count
             }
-        )
-
-        logging.info(
-            f"Stored attachment with ID: {attachment_id}", extra={"user": user}
-        )
+        }
+        
+        try:
+            attachments_collection.insert_one(attachment_document)
+            
+            logging.info(
+                f"Successfully stored attachment with ID: {attachment_id}", 
+                extra={
+                    "user": user,
+                    "filename": filename,
+                    "attachment_id": attachment_id,
+                    "token_count": token_count,
+                    "mime_type": mime_type,
+                    "total_processing_time": round(time.time() - processing_start, 2),
+                    "database_stored": True
+                }
+            )
+        except Exception as db_error:
+            logging.error(
+                f"Failed to store attachment in database: {filename}",
+                extra={
+                    "user": user,
+                    "attachment_id": attachment_id,
+                    "database_error": str(db_error)
+                },
+                exc_info=True
+            )
+            raise Exception(f"Database storage failed for attachment {filename}: {str(db_error)}")
 
         self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
 
@@ -874,14 +1067,31 @@ def attachment_worker(self, file_info, user):
             "attachment_id": attachment_id,
             "mime_type": mime_type,
             "metadata": metadata,
+            "processing_stats": {
+                "total_time": round(time.time() - processing_start, 2),
+                "attempts_needed": attachment_document["processing_stats"]["attempts_needed"],
+                "content_truncated": attachment_document["processing_stats"]["content_truncated"]
+            }
         }
+        
     except Exception as e:
+        total_processing_time = time.time() - processing_start
+        
         logging.error(
-            f"Error processing file {filename}: {e}",
-            extra={"user": user},
+            f"Critical error processing attachment {filename}: {e}",
+            extra={
+                "user": user,
+                "attachment_id": attachment_id,
+                "path": relative_path,
+                "total_processing_time": round(total_processing_time, 2),
+                "critical_failure": True,
+                "error_type": type(e).__name__
+            },
             exc_info=True,
         )
-        raise
+        
+        # Re-raise with additional context for upstream error handling
+        raise Exception(f"Attachment processing failed for {filename} after {round(total_processing_time, 2)}s: {str(e)}")
 
 
 def agent_webhook_worker(self, agent_id, payload):
