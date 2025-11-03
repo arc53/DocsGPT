@@ -97,9 +97,7 @@ class ShareConversation(Resource):
                     api_uuid = pre_existing_api_document["key"]
                     pre_existing = shared_conversations_collections.find_one(
                         {
-                            "conversation_id": DBRef(
-                                "conversations", ObjectId(conversation_id)
-                            ),
+                            "conversation_id": ObjectId(conversation_id),
                             "isPromptable": is_promptable,
                             "first_n_queries": current_n_queries,
                             "user": user,
@@ -120,10 +118,7 @@ class ShareConversation(Resource):
                         shared_conversations_collections.insert_one(
                             {
                                 "uuid": explicit_binary,
-                                "conversation_id": {
-                                    "$ref": "conversations",
-                                    "$id": ObjectId(conversation_id),
-                                },
+                                "conversation_id": ObjectId(conversation_id),
                                 "isPromptable": is_promptable,
                                 "first_n_queries": current_n_queries,
                                 "user": user,
@@ -154,10 +149,7 @@ class ShareConversation(Resource):
                     shared_conversations_collections.insert_one(
                         {
                             "uuid": explicit_binary,
-                            "conversation_id": {
-                                "$ref": "conversations",
-                                "$id": ObjectId(conversation_id),
-                            },
+                            "conversation_id": ObjectId(conversation_id),
                             "isPromptable": is_promptable,
                             "first_n_queries": current_n_queries,
                             "user": user,
@@ -175,9 +167,7 @@ class ShareConversation(Resource):
                     )
             pre_existing = shared_conversations_collections.find_one(
                 {
-                    "conversation_id": DBRef(
-                        "conversations", ObjectId(conversation_id)
-                    ),
+                    "conversation_id": ObjectId(conversation_id),
                     "isPromptable": is_promptable,
                     "first_n_queries": current_n_queries,
                     "user": user,
@@ -197,10 +187,7 @@ class ShareConversation(Resource):
                 shared_conversations_collections.insert_one(
                     {
                         "uuid": explicit_binary,
-                        "conversation_id": {
-                            "$ref": "conversations",
-                            "$id": ObjectId(conversation_id),
-                        },
+                        "conversation_id": ObjectId(conversation_id),
                         "isPromptable": is_promptable,
                         "first_n_queries": current_n_queries,
                         "user": user,
@@ -233,10 +220,12 @@ class GetPubliclySharedConversations(Resource):
             if (
                 shared
                 and "conversation_id" in shared
-                and isinstance(shared["conversation_id"], DBRef)
             ):
-                conversation_ref = shared["conversation_id"]
-                conversation = db.dereference(conversation_ref)
+                # conversation_id is now stored as an ObjectId, not a DBRef
+                conversation_id = shared["conversation_id"]
+                conversation = conversations_collection.find_one(
+                    {"_id": conversation_id}
+                )
                 if conversation is None:
                     return make_response(
                         jsonify(
