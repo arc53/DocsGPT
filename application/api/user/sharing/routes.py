@@ -13,7 +13,6 @@ from application.api.user.base import (
     agents_collection,
     attachments_collection,
     conversations_collection,
-    db,
     shared_conversations_collections,
 )
 from application.utils import check_required_fields

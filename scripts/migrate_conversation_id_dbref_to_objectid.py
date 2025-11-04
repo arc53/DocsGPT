@@ -87,7 +87,7 @@ def migrate_conversation_id_dbref_to_objectid():
             if isinstance(doc.get("conversation_id"), DBRef):
                 remaining_dbref += 1
 
-        logger.info(f"Migration completed:")
+        logger.info("Migration completed:")
         logger.info(f"  - Total documents processed: {len(documents_with_dbref)}")
         logger.info(f"  - Successfully migrated: {migrated_count}")
         logger.info(f"  - Errors encountered: {error_count}")
