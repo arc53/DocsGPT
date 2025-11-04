@@ -396,6 +396,18 @@
       "variablesDescription": "クリックしてプロンプトに挿入",
       "systemVariables": "システム変数",
       "toolVariables": "ツール変数",
+      "systemVariablesDropdownLabel": "System Variables",
+      "systemVariableOptions": {
+        "sourceContent": "Sources content",
+        "sourceSummaries": "Alias for content (backward compatible)",
+        "sourceDocuments": "Document objects list",
+        "sourceCount": "Number of retrieved documents",
+        "systemDate": "Current date (YYYY-MM-DD)",
+        "systemTime": "Current time (HH:MM:SS)",
+        "systemTimestamp": "ISO 8601 timestamp",
+        "systemRequestId": "Unique request identifier",
+        "systemUserId": "Current user ID"
+      },
       "learnAboutPrompts": "プロンプトについて学ぶ →",
       "publicPromptEditDisabled": "公開プロンプトは編集できません",
       "promptTypePublic": "公開",

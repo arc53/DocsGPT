@@ -396,6 +396,18 @@
       "variablesDescription": "Haz clic para insertar en el prompt",
       "systemVariables": "Variables del sistema",
       "toolVariables": "Variables de herramientas",
+      "systemVariablesDropdownLabel": "Variables del sistema",
+      "systemVariableOptions": {
+        "sourceContent": "Contenido de las fuentes",
+        "sourceSummaries": "Alias del contenido (compatibilidad retroactiva)",
+        "sourceDocuments": "Lista de objetos de documentos",
+        "sourceCount": "Número de documentos recuperados",
+        "systemDate": "Fecha actual (YYYY-MM-DD)",
+        "systemTime": "Hora actual (HH:MM:SS)",
+        "systemTimestamp": "Marca de tiempo ISO 8601",
+        "systemRequestId": "Identificador único de solicitud",
+        "systemUserId": "ID del usuario actual"
+      },
       "learnAboutPrompts": "Aprende sobre los Prompts →",
       "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
       "promptTypePublic": "público",

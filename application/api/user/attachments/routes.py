@@ -25,7 +25,7 @@ class StoreAttachment(Resource):
         api.model(
             "AttachmentModel",
             {
-                "file": fields.Raw(required=True, description="File to upload"),
+                "file": fields.Raw(required=True, description="File(s) to upload"),
                 "api_key": fields.String(
                     required=False, description="API key (optional)"
                 ),
@@ -33,18 +33,24 @@ class StoreAttachment(Resource):
         )
     )
     @api.doc(
-        description="Stores a single attachment without vectorization or training. Supports user or API key authentication."
+        description="Stores one or multiple attachments without vectorization or training. Supports user or API key authentication."
     )
     def post(self):
         decoded_token = getattr(request, "decoded_token", None)
         api_key = request.form.get("api_key") or request.args.get("api_key")
-        file = request.files.get("file")
-
-        if not file or file.filename == "":
+        
+        files = request.files.getlist("file")
+        if not files:
+            single_file = request.files.get("file")
+            if single_file:
+                files = [single_file]
+        
+        if not files or all(f.filename == "" for f in files):
             return make_response(
-                jsonify({"status": "error", "message": "Missing file"}),
+                jsonify({"status": "error", "message": "Missing file(s)"}),
                 400,
             )
+        
         user = None
         if decoded_token:
             user = safe_filename(decoded_token.get("sub"))
@@ -59,32 +65,74 @@ class StoreAttachment(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Authentication required"}), 401
             )
+        
         try:
-            attachment_id = ObjectId()
-            original_filename = safe_filename(os.path.basename(file.filename))
-            relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
+            tasks = []
+            errors = []
+            original_file_count = len(files)
+            
+            for idx, file in enumerate(files):
+                try:
+                    attachment_id = ObjectId()
+                    original_filename = safe_filename(os.path.basename(file.filename))
+                    relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
 
-            metadata = storage.save_file(file, relative_path)
-
-            file_info = {
-                "filename": original_filename,
-                "attachment_id": str(attachment_id),
-                "path": relative_path,
-                "metadata": metadata,
-            }
-
-            task = store_attachment.delay(file_info, user)
-
-            return make_response(
-                jsonify(
-                    {
-                        "success": True,
-                        "task_id": task.id,
-                        "message": "File uploaded successfully. Processing started.",
+                    metadata = storage.save_file(file, relative_path)
+                    file_info = {
+                        "filename": original_filename,
+                        "attachment_id": str(attachment_id),
+                        "path": relative_path,
+                        "metadata": metadata,
                     }
-                ),
-                200,
-            )
+
+                    task = store_attachment.delay(file_info, user)
+                    tasks.append({
+                        "task_id": task.id,
+                        "filename": original_filename,
+                        "attachment_id": str(attachment_id),
+                    })
+                except Exception as file_err:
+                    current_app.logger.error(f"Error processing file {idx} ({file.filename}): {file_err}", exc_info=True)
+                    errors.append({
+                        "filename": file.filename,
+                        "error": str(file_err)
+                    })
+            
+            if not tasks:
+                error_msg = "No valid files to upload"
+                if errors:
+                    error_msg += f". Errors: {errors}"
+                return make_response(
+                    jsonify({"status": "error", "message": error_msg, "errors": errors}),
+                    400,
+                )
+            
+            if original_file_count == 1 and len(tasks) == 1:
+                current_app.logger.info("Returning single task_id response")
+                return make_response(
+                    jsonify(
+                        {
+                            "success": True,
+                            "task_id": tasks[0]["task_id"],
+                            "message": "File uploaded successfully. Processing started.",
+                        }
+                    ),
+                    200,
+                )
+            else:
+                response_data = {
+                    "success": True,
+                    "tasks": tasks,
+                    "message": f"{len(tasks)} file(s) uploaded successfully. Processing started.",
+                }
+                if errors:
+                    response_data["errors"] = errors
+                    response_data["message"] += f" {len(errors)} file(s) failed."
+                
+                return make_response(
+                    jsonify(response_data),
+                    200,
+                )
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": str(err)}), 400)
@@ -130,15 +178,11 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
-        from application.utils import clean_text_for_tts
-
         data = request.get_json()
         text = data["text"]
-        cleaned_text = clean_text_for_tts(text)
-
         try:
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
-            audio_base64, detected_language = tts_instance.text_to_speech(cleaned_text)
+            audio_base64, detected_language = tts_instance.text_to_speech(text)
             return make_response(
                 jsonify(
                     {

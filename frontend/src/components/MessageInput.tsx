@@ -19,8 +19,8 @@ import {
   removeAttachment,
   selectAttachments,
   updateAttachment,
+  reorderAttachments,
 } from '../upload/uploadSlice';
-import { reorderAttachments } from '../upload/uploadSlice';
 
 import { ActiveState } from '../models/misc';
 import {
@@ -77,7 +77,7 @@ export default function MessageInput({
         (browserOS === 'mac' && event.metaKey && event.key === 'k')
       ) {
         event.preventDefault();
-        setIsSourcesPopupOpen(!isSourcesPopupOpen);
+        setIsSourcesPopupOpen((s) => !s);
       }
     };
 
@@ -89,8 +89,198 @@ export default function MessageInput({
 
   const uploadFiles = useCallback(
     (files: File[]) => {
+      if (!files || files.length === 0) return;
+
       const apiHost = import.meta.env.VITE_API_HOST;
 
+      if (files.length > 1) {
+        const formData = new FormData();
+        const indexToUiId: Record<number, string> = {};
+
+        files.forEach((file, i) => {
+          formData.append('file', file);
+          const uiId = crypto.randomUUID();
+          indexToUiId[i] = uiId;
+          dispatch(
+            addAttachment({
+              id: uiId,
+              fileName: file.name,
+              progress: 0,
+              status: 'uploading' as const,
+              taskId: '',
+            }),
+          );
+        });
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            Object.values(indexToUiId).forEach((uiId) =>
+              dispatch(
+                updateAttachment({
+                  id: uiId,
+                  updates: { progress },
+                }),
+              ),
+            );
+          }
+        });
+
+        xhr.onload = () => {
+          const status = xhr.status;
+          if (status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+
+              if (Array.isArray(response?.tasks)) {
+                const tasks = response.tasks as Array<{
+                  task_id?: string;
+                  filename?: string;
+                  attachment_id?: string;
+                  path?: string;
+                }>;
+
+                tasks.forEach((t, idx) => {
+                  const uiId = indexToUiId[idx];
+                  if (!uiId) return;
+                  if (t?.task_id) {
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: {
+                          taskId: t.task_id,
+                          status: 'processing',
+                          progress: 10,
+                        },
+                      }),
+                    );
+                  } else {
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: { status: 'failed' },
+                      }),
+                    );
+                  }
+                });
+
+                if (tasks.length < files.length) {
+                  for (let i = tasks.length; i < files.length; i++) {
+                    const uiId = indexToUiId[i];
+                    if (uiId) {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: { status: 'failed' },
+                        }),
+                      );
+                    }
+                  }
+                }
+              } else if (response?.task_id) {
+                if (files.length === 1) {
+                  const uiId = indexToUiId[0];
+                  if (uiId) {
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: {
+                          taskId: response.task_id,
+                          status: 'processing',
+                          progress: 10,
+                        },
+                      }),
+                    );
+                  }
+                } else {
+                  console.warn(
+                    'Server returned a single task_id for multiple files. Update backend to return tasks[].',
+                  );
+                  const firstUi = indexToUiId[0];
+                  if (firstUi) {
+                    dispatch(
+                      updateAttachment({
+                        id: firstUi,
+                        updates: {
+                          taskId: response.task_id,
+                          status: 'processing',
+                          progress: 10,
+                        },
+                      }),
+                    );
+                  }
+                  for (let i = 1; i < files.length; i++) {
+                    const uiId = indexToUiId[i];
+                    if (uiId) {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: { status: 'failed' },
+                        }),
+                      );
+                    }
+                  }
+                }
+              } else {
+                console.error('Unexpected upload response shape', response);
+                Object.values(indexToUiId).forEach((id) =>
+                  dispatch(
+                    updateAttachment({
+                      id,
+                      updates: { status: 'failed' },
+                    }),
+                  ),
+                );
+              }
+            } catch (err) {
+              console.error(
+                'Failed to parse upload response',
+                err,
+                xhr.responseText,
+              );
+              Object.values(indexToUiId).forEach((id) =>
+                dispatch(
+                  updateAttachment({
+                    id,
+                    updates: { status: 'failed' },
+                  }),
+                ),
+              );
+            }
+          } else {
+            console.error('Upload failed', status, xhr.responseText);
+            Object.values(indexToUiId).forEach((id) =>
+              dispatch(
+                updateAttachment({
+                  id,
+                  updates: { status: 'failed' },
+                }),
+              ),
+            );
+          }
+        };
+
+        xhr.onerror = () => {
+          console.error('Upload network error');
+          Object.values(indexToUiId).forEach((id) =>
+            dispatch(
+              updateAttachment({
+                id,
+                updates: { status: 'failed' },
+              }),
+            ),
+          );
+        };
+
+        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+        return;
+      }
+
+      // Single-file path: upload each file individually (original repo behavior)
       files.forEach((file) => {
         const formData = new FormData();
         formData.append('file', file);
@@ -121,16 +311,54 @@ export default function MessageInput({
 
         xhr.onload = () => {
           if (xhr.status === 200) {
-            const response = JSON.parse(xhr.responseText);
-            if (response.task_id) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.task_id) {
+                dispatch(
+                  updateAttachment({
+                    id: uniqueId,
+                    updates: {
+                      taskId: response.task_id,
+                      status: 'processing',
+                      progress: 10,
+                    },
+                  }),
+                );
+              } else {
+                // If backend returned tasks[] for single-file, handle gracefully:
+                if (
+                  Array.isArray(response?.tasks) &&
+                  response.tasks[0]?.task_id
+                ) {
+                  dispatch(
+                    updateAttachment({
+                      id: uniqueId,
+                      updates: {
+                        taskId: response.tasks[0].task_id,
+                        status: 'processing',
+                        progress: 10,
+                      },
+                    }),
+                  );
+                } else {
+                  dispatch(
+                    updateAttachment({
+                      id: uniqueId,
+                      updates: { status: 'failed' },
+                    }),
+                  );
+                }
+              }
+            } catch (err) {
+              console.error(
+                'Failed to parse upload response',
+                err,
+                xhr.responseText,
+              );
               dispatch(
                 updateAttachment({
                   id: uniqueId,
-                  updates: {
-                    taskId: response.task_id,
-                    status: 'processing',
-                    progress: 10,
-                  },
+                  updates: { status: 'failed' },
                 }),
               );
             }
@@ -154,7 +382,7 @@ export default function MessageInput({
         };
 
         xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.send(formData);
       });
     },
@@ -163,15 +391,13 @@ export default function MessageInput({
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-
     const files = Array.from(e.target.files);
     uploadFiles(files);
-
     // clear input so same file can be selected again
     e.target.value = '';
   };
 
-  // Drag and drop handler
+  // Drag & drop via react-dropzone
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       uploadFiles(acceptedFiles);
@@ -321,10 +547,7 @@ export default function MessageInput({
     handleAbort();
   };
 
-  // Drag state for reordering
   const [draggingId, setDraggingId] = useState<string | null>(null);
-
-  // no preview object URLs to revoke (preview removed per reviewer request)
 
   const findIndexById = (id: string) =>
     attachments.findIndex((a) => a.id === id);
@@ -359,7 +582,9 @@ export default function MessageInput({
 
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
+      {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
+
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
@@ -374,7 +599,11 @@ export default function MessageInput({
                   attachment.status !== 'completed'
                     ? 'opacity-70'
                     : 'opacity-100'
-                } ${draggingId === attachment.id ? 'ring-dashed opacity-60 ring-2 ring-purple-200' : ''}`}
+                } ${
+                  draggingId === attachment.id
+                    ? 'ring-dashed opacity-60 ring-2 ring-purple-200'
+                    : ''
+                }`}
                 title={attachment.fileName}
               >
                 <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
