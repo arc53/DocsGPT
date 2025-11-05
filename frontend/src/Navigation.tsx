@@ -567,7 +567,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <div className="flex items-center gap-1 pr-4">
                 <NavLink
                   target="_blank"
-                  to={'https://discord.gg/WHJdfbQDR4'}
+                  to={'https://discord.gg/vN7YFfdMpj'}
                   className={
                     'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
                   }
