@@ -17,6 +17,7 @@ from application.api.answer import answer  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
+from application.api.auth.routes import auth_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.settings import settings  # noqa: E402
 
@@ -28,10 +29,12 @@ if platform.system() == "Windows":
 dotenv.load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = settings.JWT_SECRET_KEY or os.urandom(32).hex()  # Required for sessions
 app.register_blueprint(user)
 app.register_blueprint(answer)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
+app.register_blueprint(auth_bp)  # Register auth blueprint
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
@@ -72,8 +75,14 @@ def home():
 def get_config():
     response = {
         "auth_type": settings.AUTH_TYPE,
-        "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt"],
+        "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "authentik"],
     }
+    
+    # Add Authentik-specific config
+    if settings.AUTH_TYPE == "authentik":
+        response["authentik_enabled"] = True
+        response["authentik_redirect_uri"] = settings.AUTHENTIK_REDIRECT_URI
+    
     return jsonify(response)
 
 
@@ -92,6 +101,11 @@ def generate_token():
 def authenticate_request():
     if request.method == "OPTIONS":
         return "", 200
+    
+    # Skip authentication for auth endpoints to avoid circular dependency
+    if request.path.startswith("/api/auth/") or request.path in ["/api/config", "/"]:
+        return
+    
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None
