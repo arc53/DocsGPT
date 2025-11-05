@@ -10,7 +10,7 @@ current_dir = os.path.dirname(
 
 
 class Settings(BaseSettings):
-    AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, or None
+    AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, authentik, or None
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = (
         None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
@@ -143,6 +143,14 @@ class Settings(BaseSettings):
 
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
+
+    # Authentik OIDC configuration
+    AUTHENTIK_BASE_URL: Optional[str] = None  # Authentik instance base URL
+    AUTHENTIK_CLIENT_ID: Optional[str] = None  # OAuth2 client ID from Authentik
+    AUTHENTIK_CLIENT_SECRET: Optional[str] = None  # OAuth2 client secret from Authentik
+    AUTHENTIK_REDIRECT_URI: Optional[str] = None  # OAuth2 redirect URI
+    AUTHENTIK_SCOPES: str = "openid profile email"  # OIDC scopes
+    AUTHENTIK_VERIFY_SSL: bool = True  # Whether to verify SSL certificates
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
