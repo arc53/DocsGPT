@@ -60,7 +60,7 @@
     "eslint-plugin-promise": "^6.6.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-unused-imports": "^4.1.4",
-    "husky": "^8.0.0",
+    "husky": "^9.1.7",
     "lint-staged": "^15.3.0",
     "postcss": "^8.4.49",
     "prettier": "^3.5.3",
