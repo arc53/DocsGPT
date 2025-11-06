@@ -13,6 +13,10 @@ updates:
     directory: "/frontend" # Location of package manifests
     schedule:
       interval: "daily"
+  - package-ecosystem: "npm"
+    directory: "/extensions/react-widget"
+    schedule:
+      interval: "daily"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
