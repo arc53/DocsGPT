@@ -82,7 +82,7 @@ class Settings(BaseSettings):
         None  # azure deployment name for embeddings
     )
     OPENAI_BASE_URL: Optional[str] = (
-        None  # openai base url for open ai compatable models
+        None  # openai base url for open ai compatible models
     )
 
     # elasticsearch
