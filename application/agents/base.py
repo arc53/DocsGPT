@@ -34,6 +34,7 @@ class BaseAgent(ABC):
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
         request_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["request_limit"],
+        model_id: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -47,11 +48,13 @@ class BaseAgent(ABC):
         self.tools: List[Dict] = []
         self.tool_calls: List[Dict] = []
         self.chat_history: List[Dict] = chat_history if chat_history is not None else []
+        self.model_id = model_id
         self.llm = LLMCreator.create_llm(
             llm_name,
             api_key=api_key,
             user_api_key=user_api_key,
             decoded_token=decoded_token,
+            model_id=model_id,
         )
         self.retrieved_docs = retrieved_docs or []
         self.llm_handler = LLMHandlerCreator.create_handler(

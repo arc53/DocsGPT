@@ -22,15 +22,7 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "docsgpt"
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
-    LLM_TOKEN_LIMITS: dict = {
-        "gpt-4o": 128000,
-        "gpt-4o-mini": 128000,
-        "gpt-4": 8192,
-        "gpt-3.5-turbo": 4096,
-        "claude-2": int(1e5),
-        "gemini-2.5-flash": int(1e6),
-    }
-    DEFAULT_LLM_TOKEN_LIMIT: int = 128000
+    DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry
     RESERVED_TOKENS: dict = {
         "system_prompt": 500,
         "current_query": 500,
@@ -64,14 +56,22 @@ class Settings(BaseSettings):
     )
 
     # GitHub source
-    GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
+    GITHUB_ACCESS_TOKEN: Optional[str] = None  # PAT token with read repo access
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
 
-    API_KEY: Optional[str] = None  # LLM api key
+    API_KEY: Optional[str] = None  # LLM api key (used by LLM_PROVIDER)
+
+    # Provider-specific API keys (for multi-model support)
+    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    HUGGINGFACE_API_KEY: Optional[str] = None
+
     EMBEDDINGS_KEY: Optional[str] = (
         None  # api key for embeddings (if using openai, just copy API_KEY)
     )
@@ -138,11 +138,12 @@ class Settings(BaseSettings):
     # Encryption settings
     ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
-    TTS_PROVIDER: str = "google_tts" # google_tts or elevenlabs
+    TTS_PROVIDER: str = "google_tts"  # google_tts or elevenlabs
     ELEVENLABS_API_KEY: Optional[str] = None
 
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
+
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")

@@ -7,6 +7,10 @@ from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
 from application.api.answer.services.conversation_service import ConversationService
+from application.core.model_utils import (
+    get_api_key_for_provider,
+    get_provider_from_model_id,
+)
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
@@ -54,7 +58,6 @@ class BaseAnswerResource:
         api_key = agent_config.get("user_api_key")
         if not api_key:
             return None
-
         agents_collection = self.db["agents"]
         agent = agents_collection.find_one({"key": api_key})
 
@@ -62,7 +65,6 @@ class BaseAnswerResource:
             return make_response(
                 jsonify({"success": False, "message": "Invalid API key."}), 401
             )
-
         limited_token_mode_raw = agent.get("limited_token_mode", False)
         limited_request_mode_raw = agent.get("limited_request_mode", False)
 
@@ -110,15 +112,12 @@ class BaseAnswerResource:
             daily_token_usage = token_result[0]["total_tokens"] if token_result else 0
         else:
             daily_token_usage = 0
-
         if limited_request_mode:
             daily_request_usage = token_usage_collection.count_documents(match_query)
         else:
             daily_request_usage = 0
-
         if not limited_token_mode and not limited_request_mode:
             return None
-
         token_exceeded = (
             limited_token_mode and token_limit > 0 and daily_token_usage >= token_limit
         )
@@ -138,7 +137,6 @@ class BaseAnswerResource:
                 ),
                 429,
             )
-
         return None
 
     def complete_stream(
@@ -155,6 +153,7 @@ class BaseAnswerResource:
         agent_id: Optional[str] = None,
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
+        model_id: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -173,6 +172,7 @@ class BaseAnswerResource:
             agent_id: ID of agent used
             is_shared_usage: Flag for shared agent usage
             shared_token: Token for shared agent
+            model_id: Model ID used for the request
             retrieved_docs: Pre-fetched documents for sources (optional)
 
         Yields:
@@ -220,7 +220,6 @@ class BaseAnswerResource:
                 elif "type" in line:
                     data = json.dumps(line)
                     yield f"data: {data}\n\n"
-
             if is_structured and structured_chunks:
                 structured_data = {
                     "type": "structured_answer",
@@ -230,15 +229,22 @@ class BaseAnswerResource:
                 }
                 data = json.dumps(structured_data)
                 yield f"data: {data}\n\n"
-
             if isNoneDoc:
                 for doc in source_log_docs:
                     doc["source"] = "None"
+            provider = (
+                get_provider_from_model_id(model_id)
+                if model_id
+                else settings.LLM_PROVIDER
+            )
+            system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
+
             llm = LLMCreator.create_llm(
-                settings.LLM_PROVIDER,
-                api_key=settings.API_KEY,
+                provider or settings.LLM_PROVIDER,
+                api_key=system_api_key,
                 user_api_key=user_api_key,
                 decoded_token=decoded_token,
+                model_id=model_id,
             )
 
             if should_save_conversation:
@@ -250,7 +256,7 @@ class BaseAnswerResource:
                     source_log_docs,
                     tool_calls,
                     llm,
-                    self.gpt_model,
+                    model_id or self.gpt_model,
                     decoded_token,
                     index=index,
                     api_key=user_api_key,
@@ -258,6 +264,7 @@ class BaseAnswerResource:
                     is_shared_usage=is_shared_usage,
                     shared_token=shared_token,
                     attachment_ids=attachment_ids,
+                    model_id=model_id,
                 )
             else:
                 conversation_id = None
@@ -280,12 +287,11 @@ class BaseAnswerResource:
                 log_data["structured_output"] = True
                 if schema_info:
                     log_data["schema"] = schema_info
-
             # Clean up text fields to be no longer than 10000 characters
+
             for key, value in log_data.items():
                 if isinstance(value, str) and len(value) > 10000:
                     log_data[key] = value[:10000]
-
             self.user_logs_collection.insert_one(log_data)
 
             data = json.dumps({"type": "end"})
@@ -293,6 +299,7 @@ class BaseAnswerResource:
         except GeneratorExit:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
             # Save partial response
+
             if should_save_conversation and response_full:
                 try:
                     if isNoneDoc:
@@ -312,7 +319,7 @@ class BaseAnswerResource:
                         source_log_docs,
                         tool_calls,
                         llm,
-                        self.gpt_model,
+                        model_id or self.gpt_model,
                         decoded_token,
                         index=index,
                         api_key=user_api_key,
@@ -320,6 +327,7 @@ class BaseAnswerResource:
                         is_shared_usage=is_shared_usage,
                         shared_token=shared_token,
                         attachment_ids=attachment_ids,
+                        model_id=model_id,
                     )
                 except Exception as e:
                     logger.error(
@@ -369,7 +377,7 @@ class BaseAnswerResource:
                     thought = event["thought"]
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
-                    return None, None, None, None, event["error"]
+                    return None, None, None, None, event["error"], None
                 elif event["type"] == "end":
                     stream_ended = True
             except (json.JSONDecodeError, KeyError) as e:
@@ -377,8 +385,7 @@ class BaseAnswerResource:
                 continue
         if not stream_ended:
             logger.error("Stream ended unexpectedly without an 'end' event.")
-            return None, None, None, None, "Stream ended unexpectedly"
-
+            return None, None, None, None, "Stream ended unexpectedly", None
         result = (
             conversation_id,
             response_full,
@@ -390,7 +397,6 @@ class BaseAnswerResource:
 
         if is_structured:
             result = result + ({"structured": True, "schema": schema_info},)
-
         return result
 
     def error_stream_generate(self, err_response):

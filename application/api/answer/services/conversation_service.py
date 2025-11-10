@@ -60,13 +60,14 @@ class ConversationService:
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
         attachment_ids: Optional[List[str]] = None,
+        model_id: Optional[str] = None,
     ) -> str:
         """Save or update a conversation in the database"""
         user_id = decoded_token.get("sub")
         if not user_id:
             raise ValueError("User ID not found in token")
         current_time = datetime.now(timezone.utc)
-        
+
         # clean up in sources array such that we save max 1k characters for text part
         for source in sources:
             if "text" in source and isinstance(source["text"], str):
@@ -90,6 +91,7 @@ class ConversationService:
                         f"queries.{index}.tool_calls": tool_calls,
                         f"queries.{index}.timestamp": current_time,
                         f"queries.{index}.attachments": attachment_ids,
+                        f"queries.{index}.model_id": model_id,
                     }
                 },
             )
@@ -120,6 +122,7 @@ class ConversationService:
                             "tool_calls": tool_calls,
                             "timestamp": current_time,
                             "attachments": attachment_ids,
+                            "model_id": model_id,
                         }
                     }
                 },
@@ -162,6 +165,7 @@ class ConversationService:
                         "tool_calls": tool_calls,
                         "timestamp": current_time,
                         "attachments": attachment_ids,
+                        "model_id": model_id,
                     }
                 ],
             }
