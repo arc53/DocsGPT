@@ -15,6 +15,7 @@ const prompt = localStorage.getItem('DocsGPTPrompt');
 const chunks = localStorage.getItem('DocsGPTChunks');
 const token_limit = localStorage.getItem('DocsGPTTokenLimit');
 const doc = localStorage.getItem('DocsGPTRecentDocs');
+const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
 const preloadedState: { preference: Preference } = {
   preference: {
@@ -47,6 +48,9 @@ const preloadedState: { preference: Preference } = {
     agents: null,
     sharedAgents: null,
     selectedAgent: null,
+    selectedModel: selectedModel ? JSON.parse(selectedModel) : null,
+    availableModels: [],
+    modelsLoading: false,
   },
 };
 const store = configureStore({

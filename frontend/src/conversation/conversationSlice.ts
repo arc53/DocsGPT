@@ -157,6 +157,7 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.selectedAgent?.id,
         attachmentIds,
         true, // Always save conversation
+        state.preference.selectedModel?.id,
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -171,6 +172,7 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.selectedAgent?.id,
         attachmentIds,
         true, // Always save conversation
+        state.preference.selectedModel?.id,
       );
       if (answer) {
         let sourcesPrepped = [];
