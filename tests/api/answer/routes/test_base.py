@@ -412,7 +412,7 @@ class TestCompleteStreamMethod:
                     resource.complete_stream(
                         question="Test?",
                         agent=mock_agent,
-                            conversation_id=None,
+                        conversation_id=None,
                         user_api_key=None,
                         decoded_token=decoded_token,
                         should_save_conversation=True,
@@ -500,9 +500,10 @@ class TestProcessResponseStream:
 
             result = resource.process_response_stream(iter(stream))
 
-            assert len(result) == 5
+            assert len(result) == 6
             assert result[0] is None
             assert result[4] == "Test error"
+            assert result[5] is None
 
     def test_handles_malformed_stream_data(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
