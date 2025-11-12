@@ -270,6 +270,11 @@ class CreateAgent(Resource):
                     data["json_schema"] = json.loads(data["json_schema"])
                 except json.JSONDecodeError:
                     data["json_schema"] = None
+            if "models" in data:
+                try:
+                    data["models"] = json.loads(data["models"])
+                except json.JSONDecodeError:
+                    data["models"] = []
         print(f"Received data: {data}")
 
         # Validate JSON schema if provided
@@ -509,7 +514,7 @@ class UpdateAgent(Resource):
                 data = request.get_json()
             else:
                 data = request.form.to_dict()
-                json_fields = ["tools", "sources", "json_schema"]
+                json_fields = ["tools", "sources", "json_schema", "models"]
                 for field in json_fields:
                     if field in data and data[field]:
                         try:

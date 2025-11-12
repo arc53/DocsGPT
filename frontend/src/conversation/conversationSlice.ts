@@ -49,6 +49,9 @@ export const fetchAnswer = createAsyncThunk<
   }
 
   const currentConversationId = state.conversation.conversationId;
+  const modelId =
+    state.preference.selectedAgent?.default_model_id ||
+    state.preference.selectedModel?.id;
 
   if (state.preference) {
     if (API_STREAMING) {
@@ -156,8 +159,8 @@ export const fetchAnswer = createAsyncThunk<
         indx,
         state.preference.selectedAgent?.id,
         attachmentIds,
-        true, // Always save conversation
-        state.preference.selectedModel?.id,
+        true,
+        modelId,
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -171,8 +174,8 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.token_limit,
         state.preference.selectedAgent?.id,
         attachmentIds,
-        true, // Always save conversation
-        state.preference.selectedModel?.id,
+        true,
+        modelId,
       );
       if (answer) {
         let sourcesPrepped = [];

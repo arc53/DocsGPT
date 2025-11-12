@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
@@ -26,6 +27,7 @@ import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 
+import type { Model } from '../models/types';
 const embeddingsName =
   import.meta.env.VITE_EMBEDDINGS_NAME ||
   'huggingface_sentence-transformers/all-mpnet-base-v2';
@@ -59,18 +61,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     token_limit: undefined,
     limited_request_mode: false,
     request_limit: undefined,
+    models: [],
+    default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [prompts, setPrompts] = useState<
     { name: string; id: string; type: string }[]
   >([]);
   const [userTools, setUserTools] = useState<OptionType[]>([]);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
+  const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<
     Set<string | number>
   >(new Set());
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
@@ -86,6 +95,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const toolAnchorButtonRef = useRef<HTMLButtonElement>(null);
+  const modelAnchorButtonRef = useRef<HTMLButtonElement>(null);
 
   const modeConfig = {
     new: {
@@ -224,6 +234,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('json_schema', JSON.stringify(agent.json_schema));
     }
 
+    if (agent.models && agent.models.length > 0) {
+      formData.append('models', JSON.stringify(agent.models));
+    }
+    if (agent.default_model_id) {
+      formData.append('default_model_id', agent.default_model_id);
+    }
+
     try {
       setDraftLoading(true);
       const response =
@@ -320,6 +337,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('request_limit', '0');
     }
 
+    if (agent.models && agent.models.length > 0) {
+      formData.append('models', JSON.stringify(agent.models));
+    }
+    if (agent.default_model_id) {
+      formData.append('default_model_id', agent.default_model_id);
+    }
+
     try {
       setPublishLoading(true);
       const response =
@@ -388,8 +412,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       setPrompts(data);
     };
+    const getModels = async () => {
+      const response = await modelService.getModels(null);
+      if (!response.ok) throw new Error('Failed to fetch models');
+      const data = await response.json();
+      const transformed = modelService.transformModels(data.models || []);
+      setAvailableModels(transformed);
+    };
     getTools();
     getPrompts();
+    getModels();
   }, [token]);
 
   // Auto-select default source if none selected
@@ -461,6 +493,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       getAgent();
     }
   }, [agentId, mode, token]);
+
+  useEffect(() => {
+    if (agent.models && agent.models.length > 0 && availableModels.length > 0) {
+      const agentModelIds = new Set(agent.models);
+      if (agentModelIds.size > 0 && selectedModelIds.size === 0) {
+        setSelectedModelIds(agentModelIds);
+      }
+    }
+  }, [agent.models, availableModels.length]);
+
+  useEffect(() => {
+    const modelsArray = Array.from(selectedModelIds);
+    if (modelsArray.length > 0) {
+      setAgent((prev) => ({
+        ...prev,
+        models: modelsArray,
+        default_model_id: modelsArray.includes(prev.default_model_id || '')
+          ? prev.default_model_id
+          : modelsArray[0],
+      }));
+    } else {
+      setAgent((prev) => ({
+        ...prev,
+        models: [],
+        default_model_id: '',
+      }));
+    }
+  }, [selectedModelIds]);
 
   useEffect(() => {
     const selectedSources = Array.from(selectedSourceIds)
@@ -880,6 +940,82 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 placeholderClassName="text-gray-400 dark:text-silver"
                 contentSize="text-sm"
               />
+            </div>
+          </div>
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+            <h2 className="text-lg font-semibold">
+              {t('agents.form.sections.models')}
+            </h2>
+            <div className="mt-3 flex flex-col gap-3">
+              <button
+                ref={modelAnchorButtonRef}
+                onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
+                className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
+                  selectedModelIds.size > 0
+                    ? 'text-jet dark:text-bright-gray'
+                    : 'dark:text-silver text-gray-400'
+                }`}
+              >
+                {selectedModelIds.size > 0
+                  ? availableModels
+                      .filter((m) => selectedModelIds.has(m.id))
+                      .map((m) => m.display_name)
+                      .join(', ')
+                  : t('agents.form.placeholders.selectModels')}
+              </button>
+              <MultiSelectPopup
+                isOpen={isModelsPopupOpen}
+                onClose={() => setIsModelsPopupOpen(false)}
+                anchorRef={modelAnchorButtonRef}
+                options={availableModels.map((model) => ({
+                  id: model.id,
+                  label: model.display_name,
+                }))}
+                selectedIds={selectedModelIds}
+                onSelectionChange={(newSelectedIds: Set<string | number>) =>
+                  setSelectedModelIds(
+                    new Set(Array.from(newSelectedIds).map(String)),
+                  )
+                }
+                title={t('agents.form.modelsPopup.title')}
+                searchPlaceholder={t(
+                  'agents.form.modelsPopup.searchPlaceholder',
+                )}
+                noOptionsMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+              />
+              {selectedModelIds.size > 0 && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    {t('agents.form.labels.defaultModel')}
+                  </label>
+                  <Dropdown
+                    options={availableModels
+                      .filter((m) => selectedModelIds.has(m.id))
+                      .map((m) => ({
+                        label: m.display_name,
+                        value: m.id,
+                      }))}
+                    selectedValue={
+                      availableModels.find(
+                        (m) => m.id === agent.default_model_id,
+                      )?.display_name || null
+                    }
+                    onSelect={(option: { label: string; value: string }) =>
+                      setAgent({ ...agent, default_model_id: option.value })
+                    }
+                    size="w-full"
+                    rounded="3xl"
+                    border="border"
+                    buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                    optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
+                    placeholder={t(
+                      'agents.form.placeholders.selectDefaultModel',
+                    )}
+                    placeholderClassName="text-gray-400 dark:text-silver"
+                    contentSize="text-sm"
+                  />
+                </div>
+              )}
             </div>
           </div>
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
