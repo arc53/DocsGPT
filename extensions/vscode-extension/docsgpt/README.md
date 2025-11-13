@@ -1,71 +1,29 @@
 # docsgpt README
-
-This is the README for your extension "docsgpt". After writing up a brief description, we recommend including the following sections.
+DocsGPT VS Code Extension integrates DocsGPT AI-powered documentation search and generation directly into Visual Studio Code. This open-source extension helps developers interact with documentation efficiently.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+*   **Seamless Integration**: Adds a dedicated DocsGPT view to your activity bar for easy access.
+*   **Conversational AI**: Chat with your DocsGPT agent directly within the VS Code sidebar.
+*   **Context-Aware**: Maintains conversation history until you start a new chat.
+*   **Simple Setup**: A welcome screen guides you to configure the extension.
+*   **Secure API Key Storage**: Your API key is stored securely using the VS Code Secret Storage API.
+*   **Easy Configuration**: Use the `DocsGPT: Set DocsGPT API Key` command to set or update your key.
+*   **Conversation Management**: Easily start a new chat session with the "Reset Chat" button.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+1.  **Visual Studio Code**: Version `1.85.0` or newer.
+2.  **DocsGPT API Key**: You need an API key from a DocsGPT instance.
+    *   **Cloud**: Go to app.docsgpt.cloud, create an agent, click 'Publish', and copy the generated API key.
 
 ## Known Issues
+Currently, only the "answer model" of the DocsGPT API is implemented. Support for other features like document management is planned for future releases.
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+## API Key Security
+
+We take your security seriously. Your DocsGPT API key is stored securely using the official [VS Code Secret Storage API](https://code.visualstudio.com/api/references/vscode-api#SecretStorage). It is **not** stored in plaintext in your settings and is managed by your operating system's credential manager.
+
+Currently implemented the answer model only of docsgpt. 
 
 ## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
