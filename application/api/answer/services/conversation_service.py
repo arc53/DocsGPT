@@ -52,7 +52,7 @@ class ConversationService:
         sources: List[Dict[str, Any]],
         tool_calls: List[Dict[str, Any]],
         llm: Any,
-        gpt_model: str,
+        model_id: str,
         decoded_token: Dict[str, Any],
         index: Optional[int] = None,
         api_key: Optional[str] = None,
@@ -60,7 +60,6 @@ class ConversationService:
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
         attachment_ids: Optional[List[str]] = None,
-        model_id: Optional[str] = None,
     ) -> str:
         """Save or update a conversation in the database"""
         user_id = decoded_token.get("sub")
@@ -149,7 +148,7 @@ class ConversationService:
             ]
 
             completion = llm.gen(
-                model=gpt_model, messages=messages_summary, max_tokens=30
+                model=model_id, messages=messages_summary, max_tokens=30
             )
 
             conversation_data = {

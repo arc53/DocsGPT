@@ -9,13 +9,14 @@ from flask_restx import Namespace
 from application.api.answer.services.conversation_service import ConversationService
 from application.core.model_utils import (
     get_api_key_for_provider,
+    get_default_model_id,
     get_provider_from_model_id,
 )
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
-from application.utils import check_required_fields, get_gpt_model
+from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class BaseAnswerResource:
         db = mongo[settings.MONGO_DB_NAME]
         self.db = db
         self.user_logs_collection = db["user_logs"]
-        self.gpt_model = get_gpt_model()
+        self.default_model_id = get_default_model_id()
         self.conversation_service = ConversationService()
 
     def validate_request(
@@ -256,7 +257,7 @@ class BaseAnswerResource:
                     source_log_docs,
                     tool_calls,
                     llm,
-                    model_id or self.gpt_model,
+                    model_id or self.default_model_id,
                     decoded_token,
                     index=index,
                     api_key=user_api_key,
@@ -264,7 +265,6 @@ class BaseAnswerResource:
                     is_shared_usage=is_shared_usage,
                     shared_token=shared_token,
                     attachment_ids=attachment_ids,
-                    model_id=model_id,
                 )
             else:
                 conversation_id = None
@@ -319,7 +319,7 @@ class BaseAnswerResource:
                         source_log_docs,
                         tool_calls,
                         llm,
-                        model_id or self.gpt_model,
+                        model_id or self.default_model_id,
                         decoded_token,
                         index=index,
                         api_key=user_api_key,
@@ -327,7 +327,6 @@ class BaseAnswerResource:
                         is_shared_usage=is_shared_usage,
                         shared_token=shared_token,
                         attachment_ids=attachment_ids,
-                        model_id=model_id,
                     )
                 except Exception as e:
                     logger.error(

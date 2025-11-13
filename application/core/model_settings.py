@@ -39,9 +39,10 @@ class AvailableModel:
     description: str = ""
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     enabled: bool = True
+    base_url: Optional[str] = None
 
     def to_dict(self) -> Dict:
-        return {
+        result = {
             "id": self.id,
             "provider": self.provider.value,
             "display_name": self.display_name,
@@ -53,6 +54,9 @@ class AvailableModel:
             "context_window": self.capabilities.context_window,
             "enabled": self.enabled,
         }
+        if self.base_url:
+            result["base_url"] = self.base_url
+        return result
 
 
 class ModelRegistry:

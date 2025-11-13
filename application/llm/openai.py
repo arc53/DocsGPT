@@ -11,22 +11,25 @@ from application.storage.storage_creator import StorageCreator
 
 class OpenAILLM(BaseLLM):
 
-    def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
+    def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
         self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
         self.user_api_key = user_api_key
 
-        if (
+        # Priority: 1) Parameter base_url, 2) Settings OPENAI_BASE_URL, 3) Default
+        effective_base_url = None
+        if base_url and isinstance(base_url, str) and base_url.strip():
+            effective_base_url = base_url
+        elif (
             isinstance(settings.OPENAI_BASE_URL, str)
             and settings.OPENAI_BASE_URL.strip()
         ):
-            self.client = OpenAI(
-                api_key=self.api_key, base_url=settings.OPENAI_BASE_URL
-            )
+            effective_base_url = settings.OPENAI_BASE_URL
         else:
-            DEFAULT_OPENAI_API_BASE = "https://api.openai.com/v1"
-            self.client = OpenAI(api_key=self.api_key, base_url=DEFAULT_OPENAI_API_BASE)
+            effective_base_url = "https://api.openai.com/v1"
+
+        self.client = OpenAI(api_key=self.api_key, base_url=effective_base_url)
         self.storage = StorageCreator.get_storage()
 
     def _clean_messages_openai(self, messages):

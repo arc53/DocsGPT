@@ -118,7 +118,7 @@ class StreamProcessor:
             ]
         else:
             self.history = limit_chat_history(
-                json.loads(self.data.get("history", "[]")), gpt_model=self.model_id
+                json.loads(self.data.get("history", "[]")), model_id=self.model_id
             )
 
     def _process_attachments(self):
@@ -151,12 +151,19 @@ class StreamProcessor:
 
     def _validate_and_set_model(self):
         """Validate and set model_id from request"""
+        from application.core.model_settings import ModelRegistry
 
         requested_model = self.data.get("model_id")
 
         if requested_model:
             if not validate_model_id(requested_model):
-                raise ValueError(f"Invalid model_id: {requested_model}")
+                registry = ModelRegistry.get_instance()
+                available_models = [m.id for m in registry.get_enabled_models()]
+                raise ValueError(
+                    f"Invalid model_id '{requested_model}'. "
+                    f"Available models: {', '.join(available_models[:5])}"
+                    + (f" and {len(available_models) - 5} more" if len(available_models) > 5 else "")
+                )
             self.model_id = requested_model
         else:
             self.model_id = get_default_model_id()
@@ -340,7 +347,7 @@ class StreamProcessor:
     def _configure_retriever(self):
         history_token_limit = int(self.data.get("token_limit", 2000))
         doc_token_limit = calculate_doc_token_budget(
-            gpt_model=self.model_id, history_token_limit=history_token_limit
+            model_id=self.model_id, history_token_limit=history_token_limit
         )
 
         self.retriever_config = {
@@ -362,7 +369,7 @@ class StreamProcessor:
             prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
             chunks=self.retriever_config["chunks"],
             doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
-            gpt_model=self.model_id,
+            model_id=self.model_id,
             user_api_key=self.agent_config["user_api_key"],
             decoded_token=self.decoded_token,
         )
@@ -655,7 +662,7 @@ class StreamProcessor:
             self.agent_config["agent_type"],
             endpoint="stream",
             llm_name=provider or settings.LLM_PROVIDER,
-            gpt_model=self.model_id,
+            model_id=self.model_id,
             api_key=system_api_key,
             user_api_key=self.agent_config["user_api_key"],
             prompt=rendered_prompt,
@@ -664,5 +671,4 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             attachments=self.attachments,
             json_schema=self.agent_config.get("json_schema"),
-            model_id=self.model_id,
         )

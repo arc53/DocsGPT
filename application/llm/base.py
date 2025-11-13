@@ -14,9 +14,11 @@ class BaseLLM(ABC):
         self,
         decoded_token=None,
         model_id=None,
+        base_url=None,
     ):
         self.decoded_token = decoded_token
         self.model_id = model_id
+        self.base_url = base_url
         self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
         self._fallback_llm = None
         self._fallback_sequence_index = 0

@@ -77,9 +77,9 @@ def count_tokens_docs(docs):
 
 
 def calculate_doc_token_budget(
-    gpt_model: str = "gpt-4o", history_token_limit: int = 2000
+    model_id: str = "gpt-4o", history_token_limit: int = 2000
 ) -> int:
-    total_context = get_token_limit(gpt_model)
+    total_context = get_token_limit(model_id)
     reserved = sum(settings.RESERVED_TOKENS.values())
     doc_budget = total_context - history_token_limit - reserved
     return max(doc_budget, 1000)
@@ -144,9 +144,9 @@ def get_hash(data):
     return hashlib.md5(data.encode(), usedforsecurity=False).hexdigest()
 
 
-def limit_chat_history(history, max_token_limit=None, gpt_model="docsgpt"):
+def limit_chat_history(history, max_token_limit=None, model_id="docsgpt-local"):
     """Limit chat history to fit within token limit."""
-    model_token_limit = get_token_limit(gpt_model)
+    model_token_limit = get_token_limit(model_id)
     max_token_limit = (
         max_token_limit
         if max_token_limit and max_token_limit < model_token_limit

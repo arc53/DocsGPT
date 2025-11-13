@@ -33,14 +33,23 @@ class LLMCreator:
     def create_llm(
         cls, type, api_key, user_api_key, decoded_token, model_id=None, *args, **kwargs
     ):
+        from application.core.model_utils import get_base_url_for_model
+
         llm_class = cls.llms.get(type.lower())
         if not llm_class:
             raise ValueError(f"No LLM class found for type {type}")
+
+        # Extract base_url from model configuration if model_id is provided
+        base_url = None
+        if model_id:
+            base_url = get_base_url_for_model(model_id)
+
         return llm_class(
             api_key,
             user_api_key,
             decoded_token=decoded_token,
             model_id=model_id,
+            base_url=base_url,
             *args,
             **kwargs,
         )

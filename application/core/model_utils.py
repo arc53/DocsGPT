@@ -77,3 +77,15 @@ def get_token_limit(model_id: str) -> int:
     if model:
         return model.capabilities.context_window
     return settings.DEFAULT_LLM_TOKEN_LIMIT
+
+
+def get_base_url_for_model(model_id: str) -> Optional[str]:
+    """
+    Get the custom base_url for a specific model if configured.
+    Returns None if no custom base_url is set.
+    """
+    registry = ModelRegistry.get_instance()
+    model = registry.get_model(model_id)
+    if model:
+        return model.base_url
+    return None

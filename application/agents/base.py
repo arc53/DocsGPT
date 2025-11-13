@@ -21,7 +21,7 @@ class BaseAgent(ABC):
         self,
         endpoint: str,
         llm_name: str,
-        gpt_model: str,
+        model_id: str,
         api_key: str,
         user_api_key: Optional[str] = None,
         prompt: str = "",
@@ -34,11 +34,10 @@ class BaseAgent(ABC):
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
         request_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["request_limit"],
-        model_id: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
-        self.gpt_model = gpt_model
+        self.model_id = model_id
         self.api_key = api_key
         self.user_api_key = user_api_key
         self.prompt = prompt
@@ -48,7 +47,6 @@ class BaseAgent(ABC):
         self.tools: List[Dict] = []
         self.tool_calls: List[Dict] = []
         self.chat_history: List[Dict] = chat_history if chat_history is not None else []
-        self.model_id = model_id
         self.llm = LLMCreator.create_llm(
             llm_name,
             api_key=api_key,
@@ -319,7 +317,7 @@ class BaseAgent(ABC):
         return messages
 
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
-        gen_kwargs = {"model": self.gpt_model, "messages": messages}
+        gen_kwargs = {"model": self.model_id, "messages": messages}
 
         if (
             hasattr(self.llm, "_supports_tools")
