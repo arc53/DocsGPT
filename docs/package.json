@@ -8,9 +8,9 @@
   "dependencies": {
     "@vercel/analytics": "^1.1.1",
     "docsgpt-react": "^0.5.1",
-    "next": "^15.3.3",
-    "nextra": "^2.13.2",
-    "nextra-theme-docs": "^2.13.2",
+    "next": "^15.5.6",
+    "nextra": "^4.6.0",
+    "nextra-theme-docs": "^4.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   }
