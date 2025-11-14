@@ -15,7 +15,7 @@ class TestBaseAgentInitialization:
 
         assert agent.endpoint == agent_base_params["endpoint"]
         assert agent.llm_name == agent_base_params["llm_name"]
-        assert agent.gpt_model == agent_base_params["gpt_model"]
+        assert agent.model_id == agent_base_params["model_id"]
         assert agent.api_key == agent_base_params["api_key"]
         assert agent.prompt == agent_base_params["prompt"]
         assert agent.user == agent_base_params["decoded_token"]["sub"]
@@ -480,7 +480,7 @@ class TestBaseAgentLLMGeneration:
 
         mock_llm.gen_stream.assert_called_once()
         call_args = mock_llm.gen_stream.call_args[1]
-        assert call_args["model"] == agent.gpt_model
+        assert call_args["model"] == agent.model_id
         assert call_args["messages"] == messages
 
     def test_llm_gen_with_tools(

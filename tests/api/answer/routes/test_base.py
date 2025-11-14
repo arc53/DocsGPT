@@ -274,8 +274,8 @@ class TestGPTModelRetrieval:
         with flask_app.app_context():
             resource = BaseAnswerResource()
 
-            assert hasattr(resource, "gpt_model")
-            assert resource.gpt_model is not None
+            assert hasattr(resource, "default_model_id")
+            assert resource.default_model_id is not None
 
 
 @pytest.mark.unit
