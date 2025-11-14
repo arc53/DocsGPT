@@ -52,7 +52,7 @@ class ConversationService:
         sources: List[Dict[str, Any]],
         tool_calls: List[Dict[str, Any]],
         llm: Any,
-        gpt_model: str,
+        model_id: str,
         decoded_token: Dict[str, Any],
         index: Optional[int] = None,
         api_key: Optional[str] = None,
@@ -66,7 +66,7 @@ class ConversationService:
         if not user_id:
             raise ValueError("User ID not found in token")
         current_time = datetime.now(timezone.utc)
-        
+
         # clean up in sources array such that we save max 1k characters for text part
         for source in sources:
             if "text" in source and isinstance(source["text"], str):
@@ -90,6 +90,7 @@ class ConversationService:
                         f"queries.{index}.tool_calls": tool_calls,
                         f"queries.{index}.timestamp": current_time,
                         f"queries.{index}.attachments": attachment_ids,
+                        f"queries.{index}.model_id": model_id,
                     }
                 },
             )
@@ -120,6 +121,7 @@ class ConversationService:
                             "tool_calls": tool_calls,
                             "timestamp": current_time,
                             "attachments": attachment_ids,
+                            "model_id": model_id,
                         }
                     }
                 },
@@ -146,7 +148,7 @@ class ConversationService:
             ]
 
             completion = llm.gen(
-                model=gpt_model, messages=messages_summary, max_tokens=30
+                model=model_id, messages=messages_summary, max_tokens=30
             )
 
             conversation_data = {
@@ -162,6 +164,7 @@ class ConversationService:
                         "tool_calls": tool_calls,
                         "timestamp": current_time,
                         "attachments": attachment_ids,
+                        "model_id": model_id,
                     }
                 ],
             }

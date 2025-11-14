@@ -10,6 +10,7 @@ from .agents import agents_ns, agents_sharing_ns, agents_webhooks_ns
 from .analytics import analytics_ns
 from .attachments import attachments_ns
 from .conversations import conversations_ns
+from .models import models_ns
 from .prompts import prompts_ns
 from .sharing import sharing_ns
 from .sources import sources_chunks_ns, sources_ns, sources_upload_ns
@@ -26,6 +27,9 @@ api.add_namespace(attachments_ns)
 
 # Conversations
 api.add_namespace(conversations_ns)
+
+# Models
+api.add_namespace(models_ns)
 
 # Agents (main, sharing, webhooks)
 api.add_namespace(agents_ns)

@@ -1,5 +1,7 @@
 import json
 
+from openai import OpenAI
+
 from application.core.settings import settings
 from application.llm.base import BaseLLM
 
@@ -7,12 +9,11 @@ from application.llm.base import BaseLLM
 class DocsGPTAPILLM(BaseLLM):
 
     def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
-        from openai import OpenAI
 
         super().__init__(*args, **kwargs)
-        self.client = OpenAI(api_key="sk-docsgpt-public", base_url="https://oai.arc53.com")
+        self.api_key = "sk-docsgpt-public"
+        self.client = OpenAI(api_key=self.api_key, base_url="https://oai.arc53.com")
         self.user_api_key = user_api_key
-        self.api_key = api_key
 
     def _clean_messages_openai(self, messages):
         cleaned_messages = []
@@ -22,7 +23,6 @@ class DocsGPTAPILLM(BaseLLM):
 
             if role == "model":
                 role = "assistant"
-
             if role and content is not None:
                 if isinstance(content, str):
                     cleaned_messages.append({"role": role, "content": content})
@@ -69,7 +69,6 @@ class DocsGPTAPILLM(BaseLLM):
                             )
                 else:
                     raise ValueError(f"Unexpected content type: {type(content)}")
-
         return cleaned_messages
 
     def _raw_gen(
@@ -121,7 +120,6 @@ class DocsGPTAPILLM(BaseLLM):
             response = self.client.chat.completions.create(
                 model="docsgpt", messages=messages, stream=stream, **kwargs
             )
-
         try:
             for line in response:
                 if (
@@ -133,7 +131,7 @@ class DocsGPTAPILLM(BaseLLM):
                 elif len(line.choices) > 0:
                     yield line.choices[0]
         finally:
-            if hasattr(response, 'close'):
+            if hasattr(response, "close"):
                 response.close()
 
     def _supports_tools(self):

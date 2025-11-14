@@ -21,7 +21,7 @@ class BaseAgent(ABC):
         self,
         endpoint: str,
         llm_name: str,
-        gpt_model: str,
+        model_id: str,
         api_key: str,
         user_api_key: Optional[str] = None,
         prompt: str = "",
@@ -37,7 +37,7 @@ class BaseAgent(ABC):
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
-        self.gpt_model = gpt_model
+        self.model_id = model_id
         self.api_key = api_key
         self.user_api_key = user_api_key
         self.prompt = prompt
@@ -52,6 +52,7 @@ class BaseAgent(ABC):
             api_key=api_key,
             user_api_key=user_api_key,
             decoded_token=decoded_token,
+            model_id=model_id,
         )
         self.retrieved_docs = retrieved_docs or []
         self.llm_handler = LLMHandlerCreator.create_handler(
@@ -316,7 +317,7 @@ class BaseAgent(ABC):
         return messages
 
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
-        gen_kwargs = {"model": self.gpt_model, "messages": messages}
+        gen_kwargs = {"model": self.model_id, "messages": messages}
 
         if (
             hasattr(self.llm, "_supports_tools")

@@ -13,8 +13,9 @@ from application.storage.storage_creator import StorageCreator
 class GoogleLLM(BaseLLM):
     def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.api_key = api_key
+        self.api_key = api_key or settings.GOOGLE_API_KEY or settings.API_KEY
         self.user_api_key = user_api_key
+        
         self.client = genai.Client(api_key=self.api_key)
         self.storage = StorageCreator.get_storage()
 
@@ -47,21 +48,19 @@ class GoogleLLM(BaseLLM):
         """
         if not attachments:
             return messages
-
         prepared_messages = messages.copy()
 
         # Find the user message to attach files to the last one
+
         user_message_index = None
         for i in range(len(prepared_messages) - 1, -1, -1):
             if prepared_messages[i].get("role") == "user":
                 user_message_index = i
                 break
-
         if user_message_index is None:
             user_message = {"role": "user", "content": []}
             prepared_messages.append(user_message)
             user_message_index = len(prepared_messages) - 1
-
         if isinstance(prepared_messages[user_message_index].get("content"), str):
             text_content = prepared_messages[user_message_index]["content"]
             prepared_messages[user_message_index]["content"] = [
@@ -69,7 +68,6 @@ class GoogleLLM(BaseLLM):
             ]
         elif not isinstance(prepared_messages[user_message_index].get("content"), list):
             prepared_messages[user_message_index]["content"] = []
-
         files = []
         for attachment in attachments:
             mime_type = attachment.get("mime_type")
@@ -92,11 +90,9 @@ class GoogleLLM(BaseLLM):
                                 "text": f"[File could not be processed: {attachment.get('path', 'unknown')}]",
                             }
                         )
-
         if files:
             logging.info(f"GoogleLLM: Adding {len(files)} files to message")
             prepared_messages[user_message_index]["content"].append({"files": files})
-
         return prepared_messages
 
     def _upload_file_to_google(self, attachment):
@@ -111,14 +107,11 @@ class GoogleLLM(BaseLLM):
         """
         if "google_file_uri" in attachment:
             return attachment["google_file_uri"]
-
         file_path = attachment.get("path")
         if not file_path:
             raise ValueError("No file path provided in attachment")
-
         if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
-
         try:
             file_uri = self.storage.process_file(
                 file_path,
@@ -136,7 +129,6 @@ class GoogleLLM(BaseLLM):
                 attachments_collection.update_one(
                     {"_id": attachment["_id"]}, {"$set": {"google_file_uri": file_uri}}
                 )
-
             return file_uri
         except Exception as e:
             logging.error(f"Error uploading file to Google AI: {e}", exc_info=True)
@@ -153,7 +145,6 @@ class GoogleLLM(BaseLLM):
                 role = "model"
             elif role == "tool":
                 role = "model"
-
             parts = []
             if role and content is not None:
                 if isinstance(content, str):
@@ -164,6 +155,7 @@ class GoogleLLM(BaseLLM):
                             parts.append(types.Part.from_text(text=item["text"]))
                         elif "function_call" in item:
                             # Remove null values from args to avoid API errors
+
                             cleaned_args = self._remove_null_values(
                                 item["function_call"]["args"]
                             )
@@ -194,10 +186,8 @@ class GoogleLLM(BaseLLM):
                             )
                 else:
                     raise ValueError(f"Unexpected content type: {type(content)}")
-
                 if parts:
                     cleaned_messages.append(types.Content(role=role, parts=parts))
-
         return cleaned_messages
 
     def _clean_schema(self, schema_obj):
@@ -233,8 +223,8 @@ class GoogleLLM(BaseLLM):
                 cleaned[key] = [self._clean_schema(item) for item in value]
             else:
                 cleaned[key] = value
-
         # Validate that required properties actually exist in properties
+
         if "required" in cleaned and "properties" in cleaned:
             valid_required = []
             properties_keys = set(cleaned["properties"].keys())
@@ -247,7 +237,6 @@ class GoogleLLM(BaseLLM):
                 cleaned.pop("required", None)
         elif "required" in cleaned and "properties" not in cleaned:
             cleaned.pop("required", None)
-
         return cleaned
 
     def _clean_tools_format(self, tools_list):
@@ -263,7 +252,6 @@ class GoogleLLM(BaseLLM):
                     cleaned_properties = {}
                     for k, v in properties.items():
                         cleaned_properties[k] = self._clean_schema(v)
-
                     genai_function = dict(
                         name=function["name"],
                         description=function["description"],
@@ -282,10 +270,8 @@ class GoogleLLM(BaseLLM):
                         name=function["name"],
                         description=function["description"],
                     )
-
                 genai_tool = types.Tool(function_declarations=[genai_function])
                 genai_tools.append(genai_tool)
-
         return genai_tools
 
     def _raw_gen(
@@ -307,16 +293,14 @@ class GoogleLLM(BaseLLM):
         if messages[0].role == "system":
             config.system_instruction = messages[0].parts[0].text
             messages = messages[1:]
-
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
-
         # Add response schema for structured output if provided
+
         if response_schema:
             config.response_schema = response_schema
             config.response_mime_type = "application/json"
-
         response = client.models.generate_content(
             model=model,
             contents=messages,
@@ -347,17 +331,16 @@ class GoogleLLM(BaseLLM):
         if messages[0].role == "system":
             config.system_instruction = messages[0].parts[0].text
             messages = messages[1:]
-
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
-
         # Add response schema for structured output if provided
+
         if response_schema:
             config.response_schema = response_schema
             config.response_mime_type = "application/json"
-
         # Check if we have both tools and file attachments
+
         has_attachments = False
         for message in messages:
             for part in message.parts:
@@ -366,7 +349,6 @@ class GoogleLLM(BaseLLM):
                     break
             if has_attachments:
                 break
-
         logging.info(
             f"GoogleLLM: Starting stream generation. Model: {model}, Messages: {json.dumps(messages, default=str)}, Has attachments: {has_attachments}"
         )
@@ -405,7 +387,6 @@ class GoogleLLM(BaseLLM):
         """Convert JSON schema to Google AI structured output format."""
         if not json_schema:
             return None
-
         type_map = {
             "object": "OBJECT",
             "array": "ARRAY",
@@ -418,12 +399,10 @@ class GoogleLLM(BaseLLM):
         def convert(schema):
             if not isinstance(schema, dict):
                 return schema
-
             result = {}
             schema_type = schema.get("type")
             if schema_type:
                 result["type"] = type_map.get(schema_type.lower(), schema_type.upper())
-
             for key in [
                 "description",
                 "nullable",
@@ -435,7 +414,6 @@ class GoogleLLM(BaseLLM):
             ]:
                 if key in schema:
                     result[key] = schema[key]
-
             if "format" in schema:
                 format_value = schema["format"]
                 if schema_type == "string":
@@ -445,21 +423,17 @@ class GoogleLLM(BaseLLM):
                         result["format"] = format_value
                 else:
                     result["format"] = format_value
-
             if "properties" in schema:
                 result["properties"] = {
                     k: convert(v) for k, v in schema["properties"].items()
                 }
                 if "propertyOrdering" not in result and result.get("type") == "OBJECT":
                     result["propertyOrdering"] = list(result["properties"].keys())
-
             if "items" in schema:
                 result["items"] = convert(schema["items"])
-
             for field in ["anyOf", "oneOf", "allOf"]:
                 if field in schema:
                     result[field] = [convert(s) for s in schema[field]]
-
             return result
 
         try:
