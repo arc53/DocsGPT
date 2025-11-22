@@ -247,12 +247,13 @@ const ConversationBubble = forwardRef<
       const processedContent = preprocessLaTeX(content);
 
       const contentSegments: Array<{
-        type: 'text' | 'mermaid';
+        type: 'text' | 'mermaid' | 'code';
         content: string;
+        language?: string;
       }> = [];
 
       let lastIndex = 0;
-      const regex = /```mermaid\n([\s\S]*?)```/g;
+      const regex = /```(\w*)\n([\s\S]*?)```/g;
       let match;
 
       while ((match = regex.exec(processedContent)) !== null) {
@@ -260,8 +261,21 @@ const ConversationBubble = forwardRef<
         if (textBefore) {
           contentSegments.push({ type: 'text', content: textBefore });
         }
+        const lang = match[1].trim();
+        const blockContent = match[2].trim();
+        if (lang === 'mermaid') {
+          contentSegments.push({ type: 'mermaid', content: blockContent });
+        } else if (blockContent.startsWith('|')) {
+          contentSegments.push({ type: 'text', content: blockContent });
+        } else {
+          contentSegments.push({
+            type: 'code',
+            content: blockContent,
+            language: lang,
+          });
+        }
 
-        contentSegments.push({ type: 'mermaid', content: match[1].trim() });
+        //contentSegments.push({ type: 'mermaid', content: match[1].trim() });
 
         lastIndex = match.index + match[0].length;
       }
@@ -276,7 +290,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex flex-wrap self-start ${className} group dark:text-bright-gray flex-col`}
+        className={`my-8 flex flex-wrap self-start ${className} group dark:text-bright-gray flex-col`}
       >
         {DisableSourceFE ||
         type === 'ERROR' ||
@@ -309,7 +323,7 @@ const ConversationBubble = forwardRef<
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
-                          <p className="ellipsis-text h-12 text-xs break-words">
+                          <p className="ellipsis-text wrap-break-words h-12 text-xs">
                             {source.text}
                           </p>
                           <div
@@ -353,7 +367,7 @@ const ConversationBubble = forwardRef<
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
-                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm break-words text-ellipsis">
+                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
                               {source.text}
                             </p>
                           </div>
@@ -400,7 +414,7 @@ const ConversationBubble = forwardRef<
               </p>
             </div>
             <div
-              className={`fade-in-bubble bg-gray-1000 dark:bg-gun-metal mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
+              className={`fade-in-bubble mr-5 flex max-w-full rounded-[18px] bg-transparent px-6 py-4 dark:bg-transparent ${
                 type === 'ERROR'
                   ? 'text-red-3000 dark:border-red-2000 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
                   : 'flex-col rounded-3xl'
@@ -412,56 +426,19 @@ const ConversationBubble = forwardRef<
                   <>
                     {contentSegments.map((segment, index) => (
                       <Fragment key={index}>
-                        {segment.type === 'text' ? (
+                        {segment.type === 'text' && (
                           <ReactMarkdown
-                            className="fade-in flex flex-col gap-3 leading-normal break-words whitespace-pre-wrap"
+                            className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
                             remarkPlugins={[remarkGfm, remarkMath]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
-                              code(props) {
-                                const {
-                                  children,
-                                  className,
-                                  node,
-                                  ref,
-                                  ...rest
-                                } = props;
-                                const match = /language-(\w+)/.exec(
-                                  className || '',
-                                );
-                                const language = match ? match[1] : '';
+                              code({ children }) {
+                                // const match = /language-(\w+)/.exec(
+                                //   className || '',
+                                // );
 
-                                return match ? (
-                                  <div className="group border-light-silver dark:border-raisin-black relative overflow-hidden rounded-[14px] border">
-                                    <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
-                                      <span className="text-just-black dark:text-chinese-white text-xs font-medium">
-                                        {language}
-                                      </span>
-                                      <CopyButton
-                                        textToCopy={String(children).replace(
-                                          /\n$/,
-                                          '',
-                                        )}
-                                      />
-                                    </div>
-                                    <SyntaxHighlighter
-                                      {...rest}
-                                      PreTag="div"
-                                      language={language}
-                                      style={
-                                        isDarkTheme ? vscDarkPlus : oneLight
-                                      }
-                                      className="mt-0!"
-                                      customStyle={{
-                                        margin: 0,
-                                        borderRadius: 0,
-                                        scrollbarWidth: 'thin',
-                                      }}
-                                    >
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  </div>
-                                ) : (
+                                // Block code handled outside via SyntaxHighlighter
+                                return (
                                   <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal whitespace-pre-line">
                                     {children}
                                   </code>
@@ -470,7 +447,7 @@ const ConversationBubble = forwardRef<
                               ul({ children }) {
                                 return (
                                   <ul
-                                    className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
+                                    className={`my-4 list-outside list-disc space-y-2 pl-4 whitespace-normal ${classes.list}`}
                                   >
                                     {children}
                                   </ul>
@@ -479,15 +456,22 @@ const ConversationBubble = forwardRef<
                               ol({ children }) {
                                 return (
                                   <ol
-                                    className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
+                                    className={`my-4 list-outside list-decimal space-y-2 pl-4 whitespace-normal ${classes.list}`}
                                   >
                                     {children}
                                   </ol>
                                 );
                               },
+                              li({ children }) {
+                                return (
+                                  <li className="leading-relaxed text-gray-800 dark:text-gray-200">
+                                    {children}
+                                  </li>
+                                );
+                              },
                               table({ children }) {
                                 return (
-                                  <div className="border-silver/40 dark:border-silver/40 relative overflow-x-auto rounded-lg border">
+                                  <div className="border-silver/40 dark:border-silver/40 relative my-4 overflow-x-auto rounded-lg border">
                                     <table className="dark:text-bright-gray w-full text-left text-gray-700">
                                       {children}
                                     </table>
@@ -522,7 +506,8 @@ const ConversationBubble = forwardRef<
                           >
                             {segment.content}
                           </ReactMarkdown>
-                        ) : (
+                        )}
+                        {segment.type === 'mermaid' && (
                           <div
                             className="my-4 w-full"
                             style={{ minWidth: '100%' }}
@@ -531,6 +516,31 @@ const ConversationBubble = forwardRef<
                               code={segment.content}
                               isLoading={isStreaming}
                             />
+                          </div>
+                        )}
+                        {segment.type === 'code' && (
+                          <div className="group border-light-silver dark:border-raisin-black relative my-4 overflow-hidden rounded-[14px] border">
+                            <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
+                              <span className="text-just-black dark:text-chinese-white text-xs font-medium">
+                                {segment.language}
+                              </span>
+
+                              <CopyButton textToCopy={segment.content} />
+                            </div>
+                            <SyntaxHighlighter
+                              PreTag="div"
+                              language={segment.language || 'text'}
+                              style={isDarkTheme ? vscDarkPlus : oneLight}
+                              className="mt-0!"
+                              customStyle={{
+                                margin: 0,
+                                borderRadius: 0,
+                                scrollbarWidth: 'thin',
+                                fontSize: 14,
+                              }}
+                            >
+                              {segment.content}
+                            </SyntaxHighlighter>
                           </div>
                         )}
                       </Fragment>
