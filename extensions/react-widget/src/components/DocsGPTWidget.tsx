@@ -293,8 +293,6 @@ const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     margin: 0px;
     &:hover ${Feedback} * {
     visibility: visible ;
-    
-    
   }
 `;
 const Message = styled.div<{ type: MESSAGE_TYPE }>`
@@ -304,14 +302,13 @@ const Message = styled.div<{ type: MESSAGE_TYPE }>`
     color: ${props => props.type === 'ANSWER' ? props.theme.primary.text : '#fff'};
     border: none;
     float: ${props => props.type === 'QUESTION' ? 'right' : 'left'};
-    max-width: ${props => props.type === 'ANSWER' ? '90%' : '80%'};
+    max-width: ${props => props.type === 'ANSWER' ? '100%' : '80'};
     overflow: auto;
     margin: 4px;
     display: block;
     line-height: 1.5;
     padding: 12px;
     border-radius: 6px;
-     overflow-wrap: break-word; 
 `;
 const Markdown = styled.div`
  pre {
@@ -325,7 +322,7 @@ const Markdown = styled.div`
     }
 
     h1 {
-      font-size: clamp(14px,40vw,16px);
+      font-size: 16px;
     }
 
     h2 {
@@ -337,7 +334,6 @@ const Markdown = styled.div`
     }
 
     p {
-      
       margin: 0px;
     }
 
@@ -358,52 +354,8 @@ const Markdown = styled.div`
 
     ul{
       padding:0px;
-      margin: 1rem 0;                   
-      list-style-position: outside;     
-      list-style-type: disc;         
-      padding-left: 1rem;              
-      white-space: normal;
+      list-style-position: inside;
     }
-    
-    ol{
-      padding:0px;
-      margin: 1rem 0;                   
-      list-style-position: outside;     
-      list-style-type: decimal;         
-      padding-left: 1rem;              
-      white-space: normal;
-    }
-    li{
-       line-height: 1.625;
-    }
-    .dgpt-table-container { 
-      margin: 20px 0;
-      width:100%;
-      overflow-x: auto; 
-      border: 1px solid #a2a2ab; 
-      border-radius: 6px; 
-      -webkit-overflow-scrolling: touch;
-    }
-    table, .dgpt-table { 
-      width: 100%; 
-      border-collapse: collapse; 
-      text-align: left; 
-      min-width:600px;
-      
-    }
-    thead, .dgpt-thead { 
-      font-size: 12px; 
-      text-transform: uppercase; 
-    }
-    
-    
-    th, .dgpt-th, td, .dgpt-td { 
-      padding: 10px;
-      border-bottom: 1px solid #a2a2ab; 
-      font-size:14px;
-    }
-    
-    
 `
 const ErrorAlert = styled.div`
   color: #b91c1c;
@@ -668,15 +620,6 @@ export const WidgetCore = ({
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const md = new MarkdownIt();
-  //Custom markdown for the table
-  md.renderer.rules.table_open = () => '<div class="dgpt-table-container"><table class="dgpt-table">';
-  md.renderer.rules.table_close = () => '</table></div>';
-  md.renderer.rules.thead_open = () => '<thead class="dgpt-thead">';
-  md.renderer.rules.tr_open = () => '<tr class="dgpt-tr">';
-  md.renderer.rules.td_open = () => '<th class="dgpt-th">';
-  md.renderer.rules.th_open = () => '<td class="dgpt-td">';
-
-
 
   React.useEffect(() => {
     if (isOpen) {
@@ -855,9 +798,6 @@ export const WidgetCore = ({
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
   if (!mounted) return null;
-
-
-  
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
       {isOpen && size === 'large' &&
