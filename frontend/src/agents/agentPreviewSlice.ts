@@ -52,6 +52,10 @@ export const fetchPreviewAnswer = createAsyncThunk<
     }
 
     if (state.preference) {
+      const modelId =
+        state.preference.selectedAgent?.default_model_id ||
+        state.preference.selectedModel?.id;
+
       if (API_STREAMING) {
         await handleFetchAnswerSteaming(
           question,
@@ -120,22 +124,23 @@ export const fetchPreviewAnswer = createAsyncThunk<
           indx,
           state.preference.selectedAgent?.id,
           attachmentIds,
-          false, // Don't save preview conversations
+          false,
+          modelId,
         );
       } else {
-        // Non-streaming implementation
         const answer = await handleFetchAnswer(
           question,
           signal,
           state.preference.token,
           state.preference.selectedDocs,
-          null, // No conversation ID for previews
+          null,
           state.preference.prompt.id,
           state.preference.chunks,
           state.preference.token_limit,
           state.preference.selectedAgent?.id,
           attachmentIds,
-          false, // Don't save preview conversations
+          false,
+          modelId,
         );
 
         if (answer) {

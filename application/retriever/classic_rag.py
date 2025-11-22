@@ -16,7 +16,7 @@ class ClassicRAG(BaseRetriever):
         prompt="",
         chunks=2,
         doc_token_limit=50000,
-        gpt_model="docsgpt",
+        model_id="docsgpt-local",
         user_api_key=None,
         llm_name=settings.LLM_PROVIDER,
         api_key=settings.API_KEY,
@@ -40,7 +40,7 @@ class ClassicRAG(BaseRetriever):
             f"ClassicRAG initialized with chunks={self.chunks}, user_api_key={user_identifier}, "
             f"sources={'active_docs' in source and source['active_docs'] is not None}"
         )
-        self.gpt_model = gpt_model
+        self.model_id = model_id
         self.doc_token_limit = doc_token_limit
         self.user_api_key = user_api_key
         self.llm_name = llm_name
@@ -100,7 +100,7 @@ class ClassicRAG(BaseRetriever):
         ]
 
         try:
-            rephrased_query = self.llm.gen(model=self.gpt_model, messages=messages)
+            rephrased_query = self.llm.gen(model=self.model_id, messages=messages)
             print(f"Rephrased query: {rephrased_query}")
             return rephrased_query if rephrased_query else self.original_question
         except Exception as e:

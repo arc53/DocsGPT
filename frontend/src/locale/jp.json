@@ -530,6 +530,7 @@
         "prompt": "プロンプト",
         "tools": "ツール",
         "agentType": "エージェントタイプ",
+        "models": "モデル",
         "advanced": "詳細設定",
         "preview": "プレビュー"
       },
@@ -540,6 +541,8 @@
         "chunksPerQuery": "クエリごとのチャンク数",
         "selectType": "タイプを選択",
         "selectTools": "ツールを選択",
+        "selectModels": "このエージェントのモデルを選択",
+        "selectDefaultModel": "デフォルトモデルを選択",
         "enterTokenLimit": "トークン制限を入力",
         "enterRequestLimit": "リクエスト制限を入力"
       },
@@ -553,6 +556,11 @@
         "searchPlaceholder": "ツールを検索...",
         "noOptionsMessage": "利用可能なツールがありません"
       },
+      "modelsPopup": {
+        "title": "モデルを選択",
+        "searchPlaceholder": "モデルを検索...",
+        "noOptionsMessage": "利用可能なモデルがありません"
+      },
       "upload": {
         "clickToUpload": "クリックしてアップロード",
         "dragAndDrop": " またはドラッグ＆ドロップ"
@@ -560,6 +568,9 @@
       "agentTypes": {
         "classic": "クラシック",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "デフォルトモデル"
       },
       "advanced": {
         "jsonSchema": "JSON応答スキーマ",

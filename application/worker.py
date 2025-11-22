@@ -165,7 +165,7 @@ def run_agent_logic(agent_config, input_data):
             agent_type,
             endpoint="webhook",
             llm_name=settings.LLM_PROVIDER,
-            gpt_model=settings.LLM_NAME,
+            model_id=settings.LLM_NAME,
             api_key=settings.API_KEY,
             user_api_key=user_api_key,
             prompt=prompt,
@@ -180,7 +180,7 @@ def run_agent_logic(agent_config, input_data):
             prompt=prompt,
             chunks=chunks,
             token_limit=settings.DEFAULT_MAX_HISTORY,
-            gpt_model=settings.LLM_NAME,
+            model_id=settings.LLM_NAME,
             user_api_key=user_api_key,
             decoded_token=decoded_token,
         )

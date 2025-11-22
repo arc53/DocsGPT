@@ -282,7 +282,7 @@ class LLMHandler(ABC):
                     messages = e.value
                     break
             response = agent.llm.gen(
-                model=agent.gpt_model, messages=messages, tools=agent.tools
+                model=agent.model_id, messages=messages, tools=agent.tools
             )
             parsed = self.parse_response(response)
             self.llm_calls.append(build_stack_data(agent.llm))
@@ -337,7 +337,7 @@ class LLMHandler(ABC):
                 tool_calls = {}
 
                 response = agent.llm.gen_stream(
-                    model=agent.gpt_model, messages=messages, tools=agent.tools
+                    model=agent.model_id, messages=messages, tools=agent.tools
                 )
                 self.llm_calls.append(build_stack_data(agent.llm))
 

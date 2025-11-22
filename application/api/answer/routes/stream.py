@@ -57,6 +57,10 @@ class StreamResource(Resource, BaseAnswerResource):
                 default=True,
                 description="Whether to save the conversation",
             ),
+            "model_id": fields.String(
+                required=False,
+                description="Model ID to use for this request",
+            ),
             "attachments": fields.List(
                 fields.String, required=False, description="List of attachment IDs"
             ),
@@ -101,6 +105,7 @@ class StreamResource(Resource, BaseAnswerResource):
                     agent_id=data.get("agent_id"),
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,
+                    model_id=processor.model_id,
                 ),
                 mimetype="text/event-stream",
             )
