@@ -1,0 +1,646 @@
+{
+  "language": "Deutsch",
+  "chat": "Chat",
+  "chats": "Chats",
+  "newChat": "Neuer Chat",
+  "inputPlaceholder": "Wie kann DocsGPT dir helfen?",
+  "tagline": "DocsGPT verwendet GenAI, bitte überprüfe kritische Informationen anhand der Quellen.",
+  "sourceDocs": "Quelle",
+  "none": "Keine",
+  "cancel": "Abbrechen",
+  "help": "Hilfe",
+  "emailUs": "E-Mail senden",
+  "documentation": "Dokumentation",
+  "manageAgents": "Agenten verwalten",
+  "demo": [
+    {
+      "header": "Über DocsGPT lernen",
+      "query": "Was ist DocsGPT?"
+    },
+    {
+      "header": "Dokumentation zusammenfassen",
+      "query": "Fasse den aktuellen Kontext zusammen"
+    },
+    {
+      "header": "Code schreiben",
+      "query": "Schreibe Code für eine API-Anfrage an /api/answer"
+    },
+    {
+      "header": "Lernunterstützung",
+      "query": "Schreibe mögliche Fragen zum Kontext"
+    }
+  ],
+  "settings": {
+    "label": "Einstellungen",
+    "general": {
+      "label": "Allgemein",
+      "selectTheme": "Design auswählen",
+      "light": "Hell",
+      "dark": "Dunkel",
+      "selectLanguage": "Sprache auswählen",
+      "chunks": "Chunks pro Anfrage",
+      "prompt": "Aktiver Prompt",
+      "deleteAllLabel": "Alle Konversationen löschen",
+      "deleteAllBtn": "Alle löschen",
+      "addNew": "Neu hinzufügen",
+      "convHistory": "Konversationsverlauf",
+      "none": "Keine",
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "unlimited": "Unbegrenzt",
+      "default": "Standard",
+      "add": "Hinzufügen"
+    },
+    "sources": {
+      "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
+      "label": "Quellen",
+      "name": "Quellenname",
+      "date": "Vektor-Datum",
+      "type": "Typ",
+      "tokenUsage": "Token-Verbrauch",
+      "noData": "Keine vorhandenen Quellen",
+      "searchPlaceholder": "Suchen...",
+      "addNew": "Neu hinzufügen",
+      "addSource": "Quelle hinzufügen",
+      "addChunk": "Chunk hinzufügen",
+      "preLoaded": "Vorgeladen",
+      "private": "Privat",
+      "sync": "Synchronisieren",
+      "syncing": "Synchronisiere...",
+      "syncConfirmation": "Bist du sicher, dass du \"{{sourceName}}\" synchronisieren möchtest? Dies aktualisiert den Inhalt mit deinem Cloud-Speicher und kann Änderungen an einzelnen Chunks überschreiben.",
+      "syncFrequency": {
+        "never": "Nie",
+        "daily": "Täglich",
+        "weekly": "Wöchentlich",
+        "monthly": "Monatlich"
+      },
+      "actions": "Aktionen",
+      "view": "Anzeigen",
+      "deleteWarning": "Bist du sicher, dass du \"{{name}}\" löschen möchtest?",
+      "confirmDelete": "Bist du sicher, dass du diese Datei löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "backToAll": "Zurück zu allen Quellen",
+      "chunks": "Chunks",
+      "noChunks": "Keine Chunks gefunden",
+      "noChunksAlt": "Keine Chunks gefunden",
+      "goToSources": "Zu den Quellen",
+      "uploadNew": "Neu hochladen",
+      "searchFiles": "Dateien suchen...",
+      "noResults": "Keine Ergebnisse gefunden",
+      "fileName": "Name",
+      "tokens": "Tokens",
+      "size": "Größe",
+      "fileAlt": "Datei",
+      "folderAlt": "Ordner",
+      "parentFolderAlt": "Übergeordneter Ordner",
+      "menuAlt": "Menü",
+      "tokensUnit": "Tokens",
+      "editAlt": "Bearbeiten",
+      "uploading": "Wird hochgeladen…",
+      "deleting": "Wird gelöscht…",
+      "queued": "In Warteschlange: {{count}}",
+      "addFile": "Datei hinzufügen",
+      "uploadingFilesTitle": "Dateien werden hochgeladen...",
+      "deletingTitle": "Wird gelöscht...",
+      "deleteDirectoryWarning": "Bist du sicher, dass du das Verzeichnis \"{{name}}\" und seinen gesamten Inhalt löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "searchAlt": "Suchen"
+    },
+    "apiKeys": {
+      "label": "Chatbots",
+      "name": "Name",
+      "key": "API-Schlüssel",
+      "sourceDoc": "Quelldokument",
+      "createNew": "Neu erstellen",
+      "noData": "Keine vorhandenen Chatbots",
+      "deleteConfirmation": "Bist du sicher, dass du den API-Schlüssel '{{name}}' löschen möchtest?",
+      "description": "Hier kannst du deine Chatbots erstellen und verwalten. Chatbots können als Widgets auf Websites eingebunden oder in deinen Anwendungen verwendet werden."
+    },
+    "analytics": {
+      "label": "Analytik",
+      "filterByChatbot": "Nach Chatbot filtern",
+      "selectChatbot": "Chatbot auswählen",
+      "filterOptions": {
+        "hour": "Stunde",
+        "last24Hours": "24 Stunden",
+        "last7Days": "7 Tage",
+        "last15Days": "15 Tage",
+        "last30Days": "30 Tage"
+      },
+      "messages": "Nachrichten",
+      "tokenUsage": "Token-Verbrauch",
+      "userFeedback": "Benutzer-Feedback",
+      "filterPlaceholder": "Filter",
+      "none": "Keine",
+      "positiveFeedback": "Positives Feedback",
+      "negativeFeedback": "Negatives Feedback"
+    },
+    "logs": {
+      "label": "Protokolle",
+      "filterByChatbot": "Nach Chatbot filtern",
+      "selectChatbot": "Chatbot auswählen",
+      "none": "Keine",
+      "tableHeader": "API-generierte / Chatbot-Konversationen"
+    },
+    "tools": {
+      "label": "Werkzeuge",
+      "searchPlaceholder": "Werkzeuge suchen...",
+      "addTool": "Werkzeug hinzufügen",
+      "noToolsFound": "Keine Werkzeuge gefunden",
+      "selectToolSetup": "Wähle ein Werkzeug zur Einrichtung",
+      "settingsIconAlt": "Einstellungssymbol",
+      "configureToolAria": "{{toolName}} konfigurieren",
+      "toggleToolAria": "{{toolName}} umschalten",
+      "manageTools": "Zu den Werkzeugen",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "deleteWarning": "Bist du sicher, dass du das Werkzeug \"{{toolName}}\" löschen möchtest?",
+      "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
+      "leaveWithoutSaving": "Ohne Speichern verlassen",
+      "saveAndLeave": "Speichern und verlassen",
+      "customName": "Benutzerdefinierter Name",
+      "customNamePlaceholder": "Gib einen benutzerdefinierten Namen ein (optional)",
+      "authentication": "Authentifizierung",
+      "actions": "Aktionen",
+      "addAction": "Aktion hinzufügen",
+      "noActionsFound": "Keine Aktionen gefunden",
+      "url": "URL",
+      "urlPlaceholder": "URL eingeben",
+      "method": "Methode",
+      "description": "Beschreibung",
+      "descriptionPlaceholder": "Beschreibung eingeben",
+      "headers": "Header",
+      "queryParameters": "Abfrageparameter",
+      "body": "Body",
+      "deleteActionWarning": "Bist du sicher, dass du die Aktion \"{{name}}\" löschen möchtest?",
+      "backToAllTools": "Zurück zu allen Werkzeugen",
+      "save": "Speichern",
+      "fieldName": "Feldname",
+      "fieldType": "Feldtyp",
+      "filledByLLM": "Vom LLM ausgefüllt",
+      "fieldDescription": "Feldbeschreibung",
+      "value": "Wert",
+      "addProperty": "Eigenschaft hinzufügen",
+      "propertyName": "Neuer Eigenschaftsschlüssel",
+      "add": "Hinzufügen",
+      "cancel": "Abbrechen",
+      "addNew": "Neu hinzufügen",
+      "name": "Name",
+      "type": "Typ",
+      "mcp": {
+        "addServer": "MCP-Server hinzufügen",
+        "editServer": "Server bearbeiten",
+        "serverName": "Servername",
+        "serverUrl": "Server-URL",
+        "headerName": "Header-Name",
+        "timeout": "Timeout (Sekunden)",
+        "testConnection": "Verbindung testen",
+        "testing": "Teste...",
+        "saving": "Speichere...",
+        "save": "Speichern",
+        "cancel": "Abbrechen",
+        "noAuth": "Keine Authentifizierung",
+        "oauthInProgress": "Warte auf OAuth-Abschluss...",
+        "oauthCompleted": "OAuth erfolgreich abgeschlossen",
+        "authType": "Authentifizierungstyp",
+        "defaultServerName": "Mein MCP-Server",
+        "authTypes": {
+          "none": "Keine Authentifizierung",
+          "apiKey": "API-Schlüssel",
+          "bearer": "Bearer-Token",
+          "oauth": "OAuth",
+          "basic": "Basis-Authentifizierung"
+        },
+        "placeholders": {
+          "serverUrl": "https://api.beispiel.com",
+          "apiKey": "Dein geheimer API-Schlüssel",
+          "bearerToken": "Dein geheimes Token",
+          "username": "Dein Benutzername",
+          "password": "Dein Passwort",
+          "oauthScopes": "OAuth-Bereiche (kommagetrennt)"
+        },
+        "errors": {
+          "nameRequired": "Servername ist erforderlich",
+          "urlRequired": "Server-URL ist erforderlich",
+          "invalidUrl": "Bitte gib eine gültige URL ein",
+          "apiKeyRequired": "API-Schlüssel ist erforderlich",
+          "tokenRequired": "Bearer-Token ist erforderlich",
+          "usernameRequired": "Benutzername ist erforderlich",
+          "passwordRequired": "Passwort ist erforderlich",
+          "testFailed": "Verbindungstest fehlgeschlagen",
+          "saveFailed": "MCP-Server konnte nicht gespeichert werden",
+          "oauthFailed": "OAuth-Prozess fehlgeschlagen oder abgebrochen",
+          "oauthTimeout": "OAuth-Prozess abgelaufen, bitte erneut versuchen",
+          "timeoutRange": "Timeout muss zwischen 1 und 300 Sekunden liegen"
+        }
+      }
+    },
+    "scrollTabsLeft": "Tabs nach links scrollen",
+    "tabsAriaLabel": "Einstellungs-Tabs",
+    "scrollTabsRight": "Tabs nach rechts scrollen"
+  },
+  "modals": {
+    "uploadDoc": {
+      "label": "Neues Dokument hochladen",
+      "select": "Wähle, wie du dein Dokument zu DocsGPT hochladen möchtest",
+      "selectSource": "Wähle die Art, wie du deine Quelle hinzufügen möchtest",
+      "selectedFiles": "Ausgewählte Dateien",
+      "noFilesSelected": "Keine Dateien ausgewählt",
+      "file": "Vom Gerät hochladen",
+      "back": "Zurück",
+      "wait": "Bitte warten ...",
+      "remote": "Von Website sammeln",
+      "start": "Chat starten",
+      "name": "Name",
+      "choose": "Dateien auswählen",
+      "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip hoch (max. 25 MB)",
+      "uploadedFiles": "Hochgeladene Dateien",
+      "cancel": "Abbrechen",
+      "train": "Trainieren",
+      "link": "Link",
+      "urlLink": "URL-Link",
+      "repoUrl": "Repository-URL",
+      "reddit": {
+        "id": "Client-ID",
+        "secret": "Client-Secret",
+        "agent": "User-Agent",
+        "searchQueries": "Suchanfragen",
+        "numberOfPosts": "Anzahl der Beiträge",
+        "addQuery": "Anfrage hinzufügen"
+      },
+      "drag": {
+        "title": "Anhänge hier ablegen",
+        "description": "Loslassen, um deine Anhänge hochzuladen"
+      },
+      "progress": {
+        "upload": "Upload läuft",
+        "training": "Upload läuft",
+        "completed": "Upload abgeschlossen",
+        "failed": "Upload fehlgeschlagen",
+        "wait": "Dies kann einige Minuten dauern",
+        "preparing": "Upload wird vorbereitet",
+        "tokenLimit": "Token-Limit überschritten, bitte lade ein kleineres Dokument hoch",
+        "expandDetails": "Upload-Details erweitern",
+        "collapseDetails": "Upload-Details einklappen",
+        "dismiss": "Upload-Benachrichtigung schließen",
+        "uploadProgress": "Upload-Fortschritt {{progress}}%",
+        "clear": "Löschen"
+      },
+      "showAdvanced": "Erweiterte Optionen anzeigen",
+      "hideAdvanced": "Erweiterte Optionen ausblenden",
+      "ingestors": {
+        "local_file": {
+          "label": "Datei hochladen",
+          "heading": "Neues Dokument hochladen"
+        },
+        "crawler": {
+          "label": "Crawler",
+          "heading": "Inhalt mit Web-Crawler hinzufügen"
+        },
+        "url": {
+          "label": "Link",
+          "heading": "Inhalt von URL hinzufügen"
+        },
+        "github": {
+          "label": "GitHub",
+          "heading": "Inhalt von GitHub hinzufügen"
+        },
+        "reddit": {
+          "label": "Reddit",
+          "heading": "Inhalt von Reddit hinzufügen"
+        },
+        "google_drive": {
+          "label": "Google Drive",
+          "heading": "Von Google Drive hochladen"
+        }
+      },
+      "connectors": {
+        "auth": {
+          "connectedUser": "Verbundener Benutzer",
+          "authFailed": "Authentifizierung fehlgeschlagen",
+          "authUrlFailed": "Autorisierungs-URL konnte nicht abgerufen werden",
+          "popupBlocked": "Authentifizierungsfenster konnte nicht geöffnet werden. Bitte erlaube Popups.",
+          "authCancelled": "Authentifizierung wurde abgebrochen",
+          "connectedAs": "Verbunden als {{email}}",
+          "disconnect": "Trennen"
+        },
+        "googleDrive": {
+          "connect": "Mit Google Drive verbinden",
+          "sessionExpired": "Sitzung abgelaufen. Bitte verbinde dich erneut mit Google Drive.",
+          "sessionExpiredGeneric": "Sitzung abgelaufen. Bitte verbinde dein Konto erneut.",
+          "validateFailed": "Sitzung konnte nicht validiert werden. Bitte verbinde dich erneut.",
+          "noSession": "Keine gültige Sitzung gefunden. Bitte verbinde dich erneut mit Google Drive.",
+          "noAccessToken": "Kein Zugriffstoken verfügbar. Bitte verbinde dich erneut mit Google Drive.",
+          "pickerFailed": "Dateiauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
+          "selectedFiles": "Ausgewählte Dateien",
+          "selectFiles": "Dateien auswählen",
+          "loading": "Laden...",
+          "noFilesSelected": "Keine Dateien oder Ordner ausgewählt",
+          "folders": "Ordner",
+          "files": "Dateien",
+          "remove": "Entfernen",
+          "folderAlt": "Ordner",
+          "fileAlt": "Datei"
+        }
+      }
+    },
+    "createAPIKey": {
+      "label": "Neuen API-Schlüssel erstellen",
+      "apiKeyName": "API-Schlüssel-Name",
+      "chunks": "Chunks pro Anfrage",
+      "prompt": "Aktiven Prompt auswählen",
+      "sourceDoc": "Quelldokument",
+      "create": "Erstellen"
+    },
+    "saveKey": {
+      "note": "Bitte speichere deinen Schlüssel",
+      "disclaimer": "Dies ist das einzige Mal, dass dein Schlüssel angezeigt wird.",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "confirm": "Ich habe den Schlüssel gespeichert",
+      "apiKeyLabel": "API-Schlüssel"
+    },
+    "deleteConv": {
+      "confirm": "Bist du sicher, dass du alle Konversationen löschen möchtest?",
+      "delete": "Löschen"
+    },
+    "shareConv": {
+      "label": "Öffentliche Seite zum Teilen erstellen",
+      "note": "Quelldokument, persönliche Informationen und weitere Konversationen bleiben privat",
+      "create": "Erstellen",
+      "option": "Benutzern weitere Eingaben erlauben"
+    },
+    "configTool": {
+      "title": "Werkzeug-Konfiguration",
+      "type": "Typ",
+      "apiKeyLabel": "API-Schlüssel / OAuth",
+      "apiKeyPlaceholder": "API-Schlüssel / OAuth eingeben",
+      "addButton": "Werkzeug hinzufügen",
+      "closeButton": "Schließen",
+      "customNamePlaceholder": "Benutzerdefinierten Namen eingeben (optional)"
+    },
+    "prompts": {
+      "addPrompt": "Prompt hinzufügen",
+      "addDescription": "Füge deinen benutzerdefinierten Prompt hinzu und speichere ihn in DocsGPT",
+      "editPrompt": "Prompt bearbeiten",
+      "editDescription": "Bearbeite deinen benutzerdefinierten Prompt und speichere ihn in DocsGPT",
+      "promptName": "Prompt-Name",
+      "promptText": "Prompt-Text",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "nameExists": "Name existiert bereits",
+      "deleteConfirmation": "Bist du sicher, dass du den Prompt '{{name}}' löschen möchtest?",
+      "placeholderText": "Gib hier deinen Prompt-Text ein...",
+      "addExamplePlaceholder": "Bitte fasse diesen Text zusammen:",
+      "variablesLabel": "Variablen",
+      "variablesSubtext": "Klicken zum Einfügen in den Prompt",
+      "variablesDescription": "Klicken zum Einfügen in den Prompt",
+      "systemVariables": "Klicken zum Einfügen in den Prompt",
+      "toolVariables": "Werkzeug-Variablen",
+      "systemVariablesDropdownLabel": "System-Variablen",
+      "systemVariableOptions": {
+        "sourceContent": "Quelleninhalte",
+        "sourceSummaries": "Alias für Inhalte (abwärtskompatibel)",
+        "sourceDocuments": "Dokumentenobjekte-Liste",
+        "sourceCount": "Anzahl der abgerufenen Dokumente",
+        "systemDate": "Aktuelles Datum (JJJJ-MM-TT)",
+        "systemTime": "Aktuelle Uhrzeit (HH:MM:SS)",
+        "systemTimestamp": "ISO 8601 Zeitstempel",
+        "systemRequestId": "Eindeutige Anfrage-ID",
+        "systemUserId": "Aktuelle Benutzer-ID"
+      },
+      "learnAboutPrompts": "Mehr über Prompts erfahren →",
+      "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
+      "promptTypePublic": "öffentlich",
+      "promptTypePrivate": "privat"
+    },
+    "chunk": {
+      "add": "Chunk hinzufügen",
+      "edit": "Bearbeiten",
+      "title": "Titel",
+      "enterTitle": "Titel eingeben",
+      "bodyText": "Textkörper",
+      "promptText": "Prompt-Text",
+      "save": "Speichern",
+      "close": "Schließen",
+      "cancel": "Abbrechen",
+      "delete": "Löschen",
+      "deleteConfirmation": "Bist du sicher, dass du diesen Chunk löschen möchtest?"
+    },
+    "addAction": {
+      "title": "Neue Aktion",
+      "actionNamePlaceholder": "Aktionsname",
+      "invalidFormat": "Ungültiges Funktionsnamenformat. Verwende nur Buchstaben, Zahlen, Unterstriche und Bindestriche.",
+      "formatHelp": "Verwende nur Buchstaben, Zahlen, Unterstriche und Bindestriche (z.B. `get_data`, `send_report`, etc.)",
+      "addButton": "Hinzufügen"
+    },
+    "agentDetails": {
+      "title": "Zugangsdaten",
+      "publicLink": "Öffentlicher Link",
+      "apiKey": "API-Schlüssel",
+      "webhookUrl": "Webhook-URL",
+      "generate": "Generieren",
+      "test": "Testen",
+      "learnMore": "Mehr erfahren"
+    }
+  },
+  "sharedConv": {
+    "subtitle": "Erstellt mit",
+    "button": "Mit DocsGPT starten",
+    "meta": "DocsGPT verwendet GenAI, bitte überprüfe kritische Informationen anhand der Quellen."
+  },
+  "convTile": {
+    "share": "Teilen",
+    "delete": "Löschen",
+    "rename": "Umbenennen",
+    "deleteWarning": "Bist du sicher, dass du diese Konversation löschen möchtest?"
+  },
+  "pagination": {
+    "rowsPerPage": "Zeilen pro Seite",
+    "pageOf": "Seite {{currentPage}} von {{totalPages}}",
+    "firstPage": "Erste Seite",
+    "previousPage": "Vorherige Seite",
+    "nextPage": "Nächste Seite",
+    "lastPage": "Letzte Seite"
+  },
+  "conversation": {
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "speak": "Vorlesen",
+    "answer": "Antwort",
+    "edit": {
+      "update": "Aktualisieren",
+      "cancel": "Abbrechen",
+      "placeholder": "Aktualisierte Anfrage eingeben..."
+    },
+    "sources": {
+      "title": "Quellen",
+      "text": "Wähle deine Quellen",
+      "link": "Quellen-Link",
+      "view_more": "{{count}} weitere Quellen",
+      "noSourcesAvailable": "Keine Quellen verfügbar"
+    },
+    "attachments": {
+      "attach": "Anhängen",
+      "remove": "Anhang entfernen"
+    },
+    "retry": "Erneut versuchen",
+    "reasoning": "Begründung"
+  },
+  "agents": {
+    "title": "Agenten",
+    "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
+    "newAgent": "Neuer Agent",
+    "backToAll": "Zurück zu allen Agenten",
+    "sections": {
+      "template": {
+        "title": "Von DocsGPT",
+        "description": "Von DocsGPT bereitgestellte Agenten",
+        "emptyState": "Keine Vorlagen-Agenten gefunden."
+      },
+      "user": {
+        "title": "Von mir",
+        "description": "Von dir erstellte oder veröffentlichte Agenten",
+        "emptyState": "Du hast noch keine Agenten erstellt."
+      },
+      "shared": {
+        "title": "Mit mir geteilt",
+        "description": "Über einen öffentlichen Link importierte Agenten",
+        "emptyState": "Keine geteilten Agenten gefunden."
+      }
+    },
+    "form": {
+      "headings": {
+        "new": "Neuer Agent",
+        "edit": "Agent bearbeiten",
+        "draft": "Neuer Agent (Entwurf)"
+      },
+      "buttons": {
+        "publish": "Veröffentlichen",
+        "save": "Speichern",
+        "saveDraft": "Entwurf speichern",
+        "cancel": "Abbrechen",
+        "delete": "Löschen",
+        "logs": "Protokolle",
+        "accessDetails": "Zugangsdaten",
+        "add": "Hinzufügen"
+      },
+      "sections": {
+        "meta": "Meta",
+        "source": "Quelle",
+        "prompt": "Prompt",
+        "tools": "Werkzeuge",
+        "agentType": "Agententyp",
+        "models": "Modelle",
+        "advanced": "Erweitert",
+        "preview": "Vorschau"
+      },
+      "placeholders": {
+        "agentName": "Agentenname",
+        "describeAgent": "Beschreibe deinen Agenten",
+        "selectSources": "Quellen auswählen",
+        "chunksPerQuery": "Chunks pro Anfrage",
+        "selectType": "Typ auswählen",
+        "selectTools": "Werkzeuge auswählen",
+        "selectModels": "Modelle für diesen Agenten auswählen",
+        "selectDefaultModel": "Standardmodell auswählen",
+        "enterTokenLimit": "Token-Limit eingeben",
+        "enterRequestLimit": "Anfrage-Limit eingeben"
+      },
+      "sourcePopup": {
+        "title": "Quellen auswählen",
+        "searchPlaceholder": "Quellen suchen...",
+        "noOptionsMessage": "Keine Quellen verfügbar"
+      },
+      "toolsPopup": {
+        "title": "Werkzeuge auswählen",
+        "searchPlaceholder": "Werkzeuge suchen...",
+        "noOptionsMessage": "Keine Werkzeuge verfügbar"
+      },
+      "modelsPopup": {
+        "title": "Modelle auswählen",
+        "searchPlaceholder": "Modelle suchen...",
+        "noOptionsMessage": "Keine Modelle verfügbar"
+      },
+      "upload": {
+        "clickToUpload": "Klicken zum Hochladen",
+        "dragAndDrop": " oder per Drag & Drop"
+      },
+      "agentTypes": {
+        "classic": "Klassisch",
+        "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "Standardmodell"
+      },
+      "advanced": {
+        "jsonSchema": "JSON-Antwortschema",
+        "jsonSchemaDescription": "Definiere ein JSON-Schema, um ein strukturiertes Ausgabeformat zu erzwingen",
+        "validJson": "Gültiges JSON",
+        "invalidJson": "Ungültiges JSON - zur Aktivierung des Speicherns beheben",
+        "tokenLimiting": "Token-Limitierung",
+        "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
+        "requestLimiting": "Anfrage-Limitierung",
+        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen"
+      },
+      "preview": {
+        "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"
+      },
+      "externalKb": "Externe KB"
+    },
+    "logs": {
+      "title": "Agenten-Protokolle",
+      "lastUsedAt": "Zuletzt verwendet am",
+      "noUsageHistory": "Kein Nutzungsverlauf",
+      "tableHeader": "Agenten-Endpunkt-Protokolle"
+    },
+    "shared": {
+      "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist."
+    },
+    "preview": {
+      "testMessage": "Teste deinen Agenten hier. Veröffentlichte Agenten können in Konversationen verwendet werden."
+    },
+    "deleteConfirmation": "Bist du sicher, dass du diesen Agenten löschen möchtest?"
+  },
+  "components": {
+    "fileUpload": {
+      "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
+      "dropFiles": "Dateien hier ablegen",
+      "fileTypes": "PNG, JPG, JPEG bis zu",
+      "sizeLimitUnit": "MB",
+      "fileSizeError": "Datei überschreitet {{size}}MB-Limit"
+    }
+  },
+  "pageNotFound": {
+    "title": "404",
+    "message": "Die gesuchte Seite existiert nicht.",
+    "goHome": "Zur Startseite"
+  },
+  "filePicker": {
+    "searchPlaceholder": "Dateien und Ordner suchen...",
+    "itemsSelected": "{{count}} ausgewählt",
+    "name": "Name",
+    "lastModified": "Zuletzt geändert",
+    "size": "Größe"
+  },
+  "actionButtons": {
+    "openNewChat": "Neuen Chat öffnen",
+    "share": "Teilen"
+  },
+  "mermaid": {
+    "downloadOptions": "Download-Optionen",
+    "viewCode": "Code anzeigen",
+    "decreaseZoom": "Verkleinern",
+    "resetZoom": "Zoom zurücksetzen",
+    "increaseZoom": "Vergrößern"
+  },
+  "navigation": {
+    "agents": "Agenten"
+  },
+  "notification": {
+    "ariaLabel": "Benachrichtigung",
+    "closeAriaLabel": "Benachrichtigung schließen"
+  },
+  "prompts": {
+    "textAriaLabel": "Prompt-Text"
+  }
+}
