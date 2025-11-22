@@ -248,7 +248,7 @@ export default function ConversationTile({
                   event.stopPropagation();
                   setOpen(!isOpen);
                 }}
-                className="mr-2 flex w-4 justify-center"
+                className="mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200 hover:bg-gray-300 dark:hover:bg-gray-600"
               >
                 <img src={threeDots} width={8} alt="menu" />
               </button>
