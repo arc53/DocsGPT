@@ -442,15 +442,31 @@ const PromptContainer = styled.form`
   display: flex;
   justify-content: space-evenly;
 `;
-const StyledInput = styled.input`
+const StyledTextarea = styled.textarea`
   width: 100%;
   border: 1px solid #686877;
   padding-left: 12px;
   background-color: transparent;
   font-size: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   border-radius: 6px;
   color: ${props => props.theme.text};
   outline: none;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #38383b transparent;
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: #38383b;
+    border-radius: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
 `;
 const StyledButton = styled.button`
   display: flex;
@@ -847,6 +863,12 @@ export const WidgetCore = ({
     setPrompt('');
     await stream(userQuery);
   }
+  const handlePromptKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      await appendQuery(prompt);
+    }
+  }
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
@@ -972,10 +994,14 @@ export const WidgetCore = ({
             <div>
               <PromptContainer
                 onSubmit={handleSubmit}>
-                <StyledInput
+                <StyledTextarea
                   autoFocus
-                  value={prompt} onChange={(event) => setPrompt(event.target.value)}
-                  type='text' placeholder="Ask your question" />
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="Ask your question"
+                  onKeyDown={handlePromptKeyDown}
+                  rows={1}
+                />
                 <StyledButton
                   disabled={prompt.trim().length == 0 || status !== 'idle'}>
                   <PaperPlaneIcon width={18} height={18} color='white' />
